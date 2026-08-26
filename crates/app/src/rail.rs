@@ -797,6 +797,14 @@ pub fn rail(
         // collapse the rail at all, it hides it.
         .collapsible(SidebarCollapsible::None)
         .w_full()
+        // One hairline down the rail's edge, not two. `Sidebar` draws a 1px
+        // right border of its own, and the split it sits in draws a 1px drag
+        // handle hard against it in the same border colour -- so the edge read
+        // as a 2px rule that no single declaration accounted for. The handle is
+        // the one to keep: it is the affordance, it brightens while the rail is
+        // being dragged, and it is drawn whenever the rail is, since a hidden
+        // rail takes the whole split with it.
+        .border_r_0()
         // Not `SidebarHeader`: it carries a hover highlight of its own, so the
         // workspace identity lit up on hover as though it were a control. Its
         // children carry their own `px_2` instead, which is the inset

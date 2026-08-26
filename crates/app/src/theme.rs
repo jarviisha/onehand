@@ -140,6 +140,29 @@ fn paint(colors: &mut ThemeConfigColors, ramp: &Ramp) {
     set(&mut colors.accent, ramp.selected);
     set(&mut colors.accent_foreground, ramp.selected_ink);
     set(&mut colors.border, ramp.hairline);
+    // The rail runs on the ramp like everything else.
+    //
+    // The library ships a whole second set of sidebar tokens with values of
+    // their own rather than leaving them to fall back on the ones above, so a
+    // ramp that stopped at `accent` left the most-clicked surface in the window
+    // quietly running on somebody else's palette: the rail's fill sat one notch
+    // off white in the light palette and dead level with the surface in the
+    // dark one, its selected row was a paler fill than every other selection on
+    // screen, and its ink was brighter than the prose beside it -- none of it
+    // from anything either ramp says.
+    //
+    // Written from the steps already named rather than added to the `Ramp`,
+    // because none of them is a new step. The rail *is* the reading surface,
+    // separated from the conversation by the hairline down its edge; a row
+    // selected there is selected in exactly the sense a row anywhere else is;
+    // and the guide line down an expanded project is the same hairline as any
+    // other. Naming them again with values of their own would be inventing a
+    // second ramp for one panel and having to keep the two in step by hand.
+    set(&mut colors.sidebar, ramp.background);
+    set(&mut colors.sidebar_foreground, ramp.foreground);
+    set(&mut colors.sidebar_accent, ramp.selected);
+    set(&mut colors.sidebar_accent_foreground, ramp.selected_ink);
+    set(&mut colors.sidebar_border, ramp.hairline);
     set(&mut colors.popover, ramp.floating);
     set(&mut colors.popover_foreground, ramp.foreground);
     // Left to its own devices this one is derived as a fraction of the selected
@@ -417,6 +440,40 @@ mod tests {
     #[test]
     fn the_dark_ramp_holds_every_step_and_every_ink() {
         assert_ramp("dark", &resolve(&DARK, ThemeMode::Dark), STEP);
+    }
+
+    /// The rail's tokens have to be *written*, not left to fall back.
+    ///
+    /// This is the one family where an unset slot is not a fallback at all. The
+    /// configs the ramp is written over carry a whole second palette for the
+    /// sidebar — a fill, an ink, a selected fill and its ink, a hairline — so a
+    /// slot left alone keeps the value that arrived rather than deriving one
+    /// from the steps above it. That is how the most-clicked panel in the
+    /// window came to run on a palette nobody here chose: its fill a notch off
+    /// the reading surface in one mode and level with it in the other, its
+    /// selected row paler than every other selection on screen, its ink
+    /// brighter than the prose beside it.
+    #[test]
+    fn the_rail_runs_on_the_ramp() {
+        for (name, ramp) in [("light", &LIGHT), ("dark", &DARK)] {
+            let mut colors = ThemeConfigColors::default();
+            paint(&mut colors, ramp);
+            for (token, slot) in [
+                ("the fill", &colors.sidebar),
+                ("the ink", &colors.sidebar_foreground),
+                ("the selected fill", &colors.sidebar_accent),
+                (
+                    "ink on the selected fill",
+                    &colors.sidebar_accent_foreground,
+                ),
+                ("the hairline", &colors.sidebar_border),
+            ] {
+                assert!(
+                    slot.is_some(),
+                    "{name}: {token} in the rail is left to whatever config the ramp is written over"
+                );
+            }
+        }
     }
 
     /// The collapse that made the app own a palette in the first place: the
