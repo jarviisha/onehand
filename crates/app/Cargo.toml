@@ -1,0 +1,78 @@
+[package]
+name = "onehand"
+version = "0.1.0"
+edition = "2024"
+description = "A desktop GUI host for AI coding agents"
+
+# Edition 2024 matches gpui-component upstream, so its macros and async
+# closures behave the same here as they do in its own workspace.
+
+# Library + thin binary: the registry and asset plumbing stay reachable from
+# tests without opening a window.
+[lib]
+name = "onehand"
+path = "src/lib.rs"
+
+[[bin]]
+name = "onehand"
+path = "src/main.rs"
+
+[dependencies]
+onehand-core = { path = "../core" }
+
+# gpui-component IS pinned by rev (DECISIONS.md §2).
+# The `tree-sitter-*` set is deliberately a *subset*, not `tree-sitter-languages`
+# (all ~35). Decision D3: the Workbench stays a quick editor -- highlighting
+# for the languages this codebase is edited in, and no LSP. Each grammar is
+# build time and binary size for a language nobody has opened.
+gpui-component = { git = "https://github.com/longbridge/gpui-component", rev = "9e3a29dcbdebc318632bf68203f26c33e9f0e902", features = [
+    "tree-sitter",
+    "tree-sitter-rust",
+    "tree-sitter-typescript",
+    "tree-sitter-tsx",
+    "tree-sitter-javascript",
+    "tree-sitter-python",
+    "tree-sitter-go",
+    "tree-sitter-markdown",
+    "tree-sitter-toml",
+    "tree-sitter-yaml",
+    "tree-sitter-bash",
+    "tree-sitter-css",
+    "tree-sitter-html",
+] }
+gpui-component-assets = { git = "https://github.com/longbridge/gpui-component", rev = "9e3a29dcbdebc318632bf68203f26c33e9f0e902" }
+
+# gpui deliberately carries NO rev here. Upstream gpui-component declares it as
+# a revless Zed git dependency, and cargo keys git sources by URL *plus* rev --
+# so naming a rev on our side makes a second, distinct source and the build ends
+# up with two incompatible `gpui` crates in one graph ("expected gpui::app::App,
+# found App"). Staying revless unifies them; the exact commit is then pinned by
+# Cargo.lock, which is committed. Move it with:
+#   cargo update -p gpui --precise <sha>
+gpui = { git = "https://github.com/zed-industries/zed", features = ["profiler"] }
+gpui_platform = { git = "https://github.com/zed-industries/zed", features = ["font-kit", "x11", "wayland", "runtime_shaders"] }
+
+anyhow = "1"
+
+# Vendored: upstream is a render core with no interaction layer at all
+# (DECISIONS.md §3). See vendor/gpui-terminal/Cargo.toml.
+gpui-terminal = { path = "../../vendor/gpui-terminal" }
+portable-pty = "0.9"
+
+# The ACP adapter's serve loop is tokio-based, so it needs a tokio reactor to be
+# polled on; GPUI runs on smol. `crate::acp` owns the runtime that bridges them.
+tokio = { version = "1", features = ["rt", "rt-multi-thread"] }
+# `Stream` + the channel the two executors hand events across. Neither belongs
+# to tokio or to smol, which is the point.
+futures = "0.3"
+
+# Native folder picker. Driven blocking on the background executor, never on the
+# UI loop (CLAUDE.md "Native dialogs and file scans run off the UI loop").
+rfd = "0.15"
+
+# Desktop notification when a turn ends while the window is unfocused.
+notify-rust = "4"
+
+[dev-dependencies]
+# Reads the pinned icon manifest in the registry consistency test.
+toml = "0.8"

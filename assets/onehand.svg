@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256">
+  <rect x="8" y="8" width="240" height="240" rx="56" fill="#16161e"/>
+  <rect x="8" y="8" width="240" height="240" rx="56" fill="none" stroke="#2a2b3a" stroke-width="4"/>
+  <!-- prompt chevron -->
+  <path d="M76 92 L118 128 L76 164" fill="none" stroke="#7EA6F2" stroke-width="18" stroke-linecap="round" stroke-linejoin="round"/>
+  <!-- cursor bar -->
+  <line x1="138" y1="164" x2="186" y2="164" stroke="#c0caf5" stroke-width="18" stroke-linecap="round"/>
+  <!-- sparkle -->
+  <path d="M186 84 l7 17 17 7 -17 7 -7 17 -7 -17 -17 -7 17 -7 z" fill="#7EA6F2"/>
+</svg>

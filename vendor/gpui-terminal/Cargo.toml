@@ -1,0 +1,32 @@
+# Vendored from https://github.com/zortax/gpui-terminal @ 51f0292 (MIT OR Apache-2.0).
+#
+# Why vendored rather than depended on: upstream is a good render core with no
+# interaction layer at all -- selection, scrolling and clipboard are
+# empty TODOs upstream, and that layer is where every one of onehand's terminal
+# patches lives (DECISIONS.md §3). Everything onehand adds is marked
+# with an "onehand patch" comment, so the delta against upstream stays readable
+# without a diff.
+[package]
+name = "gpui-terminal"
+version = "0.1.0"
+edition = "2024"
+license = "MIT OR Apache-2.0"
+description = "Terminal emulator component for gpui (vendored)"
+
+[dependencies]
+# onehand patch: upstream takes `gpui` from crates.io. gpui-component takes it
+# from the Zed git repo *without* a rev, and cargo keys a git source by URL plus
+# rev -- so naming a rev here, or leaving this on crates.io, produces a second
+# `gpui` in the graph and "expected gpui::App, found App". Revless git is what
+# unifies them; Cargo.lock is the pin.
+gpui = { git = "https://github.com/zed-industries/zed" }
+alacritty_terminal = "0.25.1"
+anyhow = "1"
+portable-pty = "0.9"
+ropey = "1"
+parking_lot = "0.12"
+flume = "0.12"
+
+[dependencies.arboard]
+version = "3"
+features = ["wayland-data-control"]

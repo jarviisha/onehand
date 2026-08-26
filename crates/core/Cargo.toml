@@ -1,0 +1,37 @@
+[package]
+name = "onehand-core"
+version = "0.1.0"
+edition = "2021"
+description = "GUI-free core of onehand: config, the workspace tree, ACP, and pure text logic"
+
+# This crate must never depend on a GUI framework. It is the part of onehand
+# that outlives any one front end, and the part that stays unit-testable
+# without booting a window.
+
+[lib]
+name = "onehand_core"
+path = "src/lib.rs"
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+toml = "0.8"
+serde_json = "1"  # JSON-RPC wire format for ACP
+dirs = "5"
+
+# Subprocess + async I/O. Not a GUI dependency: the ACP adapter and `git status`
+# both run off any UI loop, and the same runtime backs the GPUI shell later.
+tokio = { version = "1", features = [
+    "rt", "rt-multi-thread", "process", "io-util", "sync", "time", "macros", "fs",
+] }
+
+# `Stream`/`Sink` for the ACP event stream. Depended on directly rather than
+# through whatever a front end happens to re-export: that is what keeps this
+# crate GUI-free.
+futures = "0.3"
+
+# Real PTYs for the ACP terminal extension (agent-run commands).
+#
+# Kept in step with `crates/app`, which needs the same crate for the shell
+# panel: two majors here means two copies of a PTY implementation compiled into
+# one binary, and a `MasterPty` from one that cannot be handed to the other.
+portable-pty = "0.9"

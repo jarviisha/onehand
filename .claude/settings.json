@@ -1,0 +1,20 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(cargo search *)",
+      "Bash(rm -f .cargo-checksum.json .cargo_vcs_info.json Cargo.toml.orig)",
+      "Bash(cargo tree *)",
+      "Bash(git status *)",
+      "Bash(timeout 60 env ACP_CMD=\"node examples/mock_terminal_agent.js\" cargo run --example acp_smoke go)",
+      "Bash(awk -F'[, ]+' '{print $2}')",
+      "Bash(awk '{print $2, $3}')",
+      "Bash(grep -n \"DESIGN.md\\\\` is the \\\\*\\\\*binding UI contract\\\\*\\\\*\" CLAUDE.md)",
+      "Bash(ps -eo pid,rss,etime,args --sort=-rss)",
+      "Bash(cargo metadata *)",
+      "Bash(python3 -c \"import json,sys; d=json.load\\(sys.stdin\\); print\\('packages:', len\\(d['packages']\\)\\)\")"
+    ],
+    "additionalDirectories": [
+      "/home/jarviisha/.local/share/applications"
+    ]
+  }
+}

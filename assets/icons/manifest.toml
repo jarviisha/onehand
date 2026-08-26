@@ -1,0 +1,11 @@
+simple_icons_version = "16.21.0"
+
+# This table is the single source of truth for checked-in icon assets, and it
+# holds brand marks only. Values use "provider:upstream-slug".
+#
+# Every UI glyph comes from `gpui_component::IconName` instead — the enum
+# generated from the SVGs `gpui-component-assets` ships. A brand mark is what
+# that set cannot supply: it belongs to the product it stands for rather than
+# to a general-purpose UI kit.
+[icons]
+claude-code = "simple-icons:claude"

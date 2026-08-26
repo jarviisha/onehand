@@ -1,0 +1,5 @@
+Searched | DbSet<Counter> | in BackEndAPI/Data/AppDbContext.cs | Search
+Inspected | src/chat/view.rs | - | Inspect
+Ran tests | cargo test | - | Test
+Checked | cargo clippy | - | Check
+Built | cargo build | - | Build

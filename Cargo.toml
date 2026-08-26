@@ -1,0 +1,49 @@
+# A virtual manifest: the workspace root owns no code.
+#
+# The app is a member like any other (`crates/app`), so nothing about the layout
+# says which crate is "the" one -- `cargo run` answers that, because there is
+# only one binary in the workspace.
+[workspace]
+members = ["crates/app", "crates/core", "vendor/gpui-terminal"]
+resolver = "2"
+
+# No `default-members`: bare `cargo run` / `cargo check` / `cargo test` should
+# cover everything there is.
+
+[profile.release]
+lto = true
+codegen-units = 1
+
+# `cargo run` is a debug build, and an unoptimized build of *this* dependency
+# graph is not one anybody can scroll. Every frame of this app goes through
+# other people's hot loops — taffy's layout solver, the text system's shaping
+# and line-layout cache, the markdown walk behind every answer, tree-sitter,
+# the terminal's grid — and unoptimized they cost tens of milliseconds where
+# they should cost tens of microseconds. The result reads exactly like a
+# rendering bug: the transcript stutters under the wheel and the whole panel
+# feels heavy, on a machine with nothing to do.
+#
+# So dependencies are built optimized even in a debug build. They are compiled
+# once and then cached, which is a price paid at the first build rather than at
+# every frame; the crates in this workspace stay at a level that still builds
+# quickly and still steps sensibly in a debugger.
+#
+# `debug` is cut to line tables for the same reason, measured rather than
+# guessed. A debug test binary here was 950 MB, of which 873 MB — 93% — was
+# DWARF and only 37 MB was machine code; `.debug_loc` alone, the table saying
+# which register each variable lives in at each instruction, was 262 MB. That
+# table only pays off under a debugger stepping through optimized dependency
+# code, which is not how anything here is diagnosed. Line tables keep what is:
+# function names and file:line in every panic and backtrace.
+#
+# The size matters more than it looks, because cargo never reclaims `target`.
+# Every source edit mints a fresh binary under a new hash and orphans the old
+# one, with no garbage collector and no bound — so the per-binary cost is paid
+# once per edit, forever, and 95% of a grown `deps` directory is generations
+# nobody can reach.
+[profile.dev]
+opt-level = 1
+debug = "line-tables-only"
+
+[profile.dev.package."*"]
+opt-level = 3
