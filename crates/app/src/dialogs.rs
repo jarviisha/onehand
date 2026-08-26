@@ -10,36 +10,14 @@
 use crate::shell::Shell;
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
-    App, AppContext, ClickEvent, Context, Entity, InteractiveElement, IntoElement, ParentElement,
-    SharedString, Styled, Window, div,
+    App, AppContext, ClickEvent, Context, Entity, IntoElement, ParentElement, SharedString, Styled,
+    Window, div,
 };
 use gpui_component::button::{ButtonGroup, ButtonVariants};
 use gpui_component::dialog::Dialog;
 use gpui_component::input::{Input, InputState};
 use gpui_component::{ActiveTheme, Disableable, Icon, IconName, Selectable, StyledExt};
 use onehand_core::config::{AgentSpec, Appearance};
-
-/// A rail footer row that opens a dialog.
-///
-/// Shares [`crate::rail::rail_row`] with the rest of the rail, so these
-/// secondary actions sit on the same icon column as the project rows above them
-/// rather than reading as a separate surface. Ghost styling: only the primary
-/// action carries a fill.
-fn action_trigger(
-    id: &'static str,
-    icon: IconName,
-    label: &'static str,
-    cx: &App,
-) -> impl IntoElement + use<> {
-    // Resolved up front: the hover closure outlives this borrow of `cx`.
-    let (accent, accent_fg) = (
-        cx.theme().sidebar_accent,
-        cx.theme().sidebar_accent_foreground,
-    );
-
-    crate::rail::rail_row(id, icon, label, cx)
-        .hover(|row| row.bg(accent.opacity(0.8)).text_color(accent_fg))
-}
 
 /// The add/edit form's fields. `editing` is `Some(i)` when an existing agent is
 /// being changed and `None` when a new one is being added, so one form serves
@@ -178,7 +156,12 @@ pub fn agent_manager(shell: &Shell, cx: &mut Context<Shell>) -> Dialog {
     let editing = draft.editing.is_some();
 
     Dialog::new(cx)
-        .trigger(action_trigger("open-agents", IconName::Bot, "Agents", cx))
+        .trigger(crate::rail::rail_row(
+            "open-agents",
+            IconName::Bot,
+            "Agents",
+            cx,
+        ))
         .title("Agents")
         .content(move |content, _, cx: &mut App| {
             let rows = specs
@@ -277,7 +260,7 @@ pub fn workspace_settings(shell: &Shell, cx: &mut Context<Shell>) -> Dialog {
     let recents = shell.recents(cx);
 
     Dialog::new(cx)
-        .trigger(action_trigger(
+        .trigger(crate::rail::rail_row(
             "open-settings",
             IconName::Settings,
             "Settings",
@@ -587,7 +570,12 @@ pub const SHORTCUTS: &[Shortcut] = &[
 
 pub fn help(cx: &mut Context<Shell>) -> Dialog {
     Dialog::new(cx)
-        .trigger(action_trigger("open-help", IconName::Info, "Help", cx))
+        .trigger(crate::rail::rail_row(
+            "open-help",
+            IconName::Info,
+            "Help",
+            cx,
+        ))
         .title("Keyboard shortcuts")
         .content(|content, _, cx: &mut App| {
             content.child(

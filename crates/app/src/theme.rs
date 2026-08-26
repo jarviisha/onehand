@@ -140,27 +140,37 @@ fn paint(colors: &mut ThemeConfigColors, ramp: &Ramp) {
     set(&mut colors.accent, ramp.selected);
     set(&mut colors.accent_foreground, ramp.selected_ink);
     set(&mut colors.border, ramp.hairline);
-    // The rail runs on the ramp like everything else.
+    // The rail runs on the ramp too, but one notch quieter than the
+    // conversation, because it is chrome rather than a second thing to read.
     //
-    // The library ships a whole second set of sidebar tokens with values of
-    // their own rather than leaving them to fall back on the ones above, so a
-    // ramp that stopped at `accent` left the most-clicked surface in the window
-    // quietly running on somebody else's palette: the rail's fill sat one notch
-    // off white in the light palette and dead level with the surface in the
-    // dark one, its selected row was a paler fill than every other selection on
-    // screen, and its ink was brighter than the prose beside it -- none of it
-    // from anything either ramp says.
+    // Every one of these has to be written out. The library ships a whole
+    // second set of sidebar tokens with values of their own rather than letting
+    // them fall back on the ones above, so a ramp that stopped at `accent` left
+    // the most-clicked panel in the window running on somebody else's palette:
+    // its fill sat a notch off white in the light palette and dead level with
+    // the surface in the dark one, and its ink and its selected row were
+    // whatever that other palette happened to say.
     //
     // Written from the steps already named rather than added to the `Ramp`,
-    // because none of them is a new step. The rail *is* the reading surface,
-    // separated from the conversation by the hairline down its edge; a row
-    // selected there is selected in exactly the sense a row anywhere else is;
-    // and the guide line down an expanded project is the same hairline as any
-    // other. Naming them again with values of their own would be inventing a
-    // second ramp for one panel and having to keep the two in step by hand.
+    // because none of them is a new step:
+    //
+    // - The rail sits *on* the reading surface, separated from the conversation
+    //   by the hairline down its edge rather than by a fill of its own.
+    // - Its ink is the ramp's quiet ink. A rail row is a name to aim at, not a
+    //   sentence to read, and at prose strength a column of thirty of them
+    //   out-shouted the conversation they exist to get you to.
+    // - A filled row takes the faintest step there is. Which row is selected is
+    //   carried by its ink and its weight instead, both of which the library
+    //   sets from the tokens below -- so the marked row stays the one loud thing
+    //   in the rail without the rail gaining a slab of colour to say so.
+    // - The guide line down an expanded project is the same hairline as any
+    //   other.
+    //
+    // Naming any of it again with values of its own would be inventing a second
+    // ramp for one panel and having to keep the two in step by hand.
     set(&mut colors.sidebar, ramp.background);
-    set(&mut colors.sidebar_foreground, ramp.foreground);
-    set(&mut colors.sidebar_accent, ramp.selected);
+    set(&mut colors.sidebar_foreground, ramp.well_ink);
+    set(&mut colors.sidebar_accent, ramp.hover);
     set(&mut colors.sidebar_accent_foreground, ramp.selected_ink);
     set(&mut colors.sidebar_border, ramp.hairline);
     set(&mut colors.popover, ramp.floating);
@@ -450,9 +460,8 @@ mod tests {
     /// slot left alone keeps the value that arrived rather than deriving one
     /// from the steps above it. That is how the most-clicked panel in the
     /// window came to run on a palette nobody here chose: its fill a notch off
-    /// the reading surface in one mode and level with it in the other, its
-    /// selected row paler than every other selection on screen, its ink
-    /// brighter than the prose beside it.
+    /// the reading surface in one mode and level with it in the other, its ink
+    /// and its selected row whatever that other palette happened to say.
     #[test]
     fn the_rail_runs_on_the_ramp() {
         for (name, ramp) in [("light", &LIGHT), ("dark", &DARK)] {
@@ -473,6 +482,43 @@ mod tests {
                     "{name}: {token} in the rail is left to whatever config the ramp is written over"
                 );
             }
+        }
+    }
+
+    /// The rail is quieter than the conversation, and the marked row is still
+    /// the loud thing in it.
+    ///
+    /// Both halves matter. The rail's ink is deliberately below prose strength
+    /// — a column of names to aim at, not a body of text — and the fill under a
+    /// marked row is the faintest step there is, so what says *which* row is
+    /// selected is the ink and the weight on it rather than a slab of colour.
+    /// That only works while that ink is legible on that fill and clearly
+    /// louder than the rows around it, neither of which the pairing gets for
+    /// free: it is the one place in the app where the selected ink lands on the
+    /// hover step.
+    #[test]
+    fn the_rail_is_quiet_and_its_marked_row_is_not() {
+        for (name, ramp, mode) in [
+            ("light", &LIGHT, ThemeMode::Light),
+            ("dark", &DARK, ThemeMode::Dark),
+        ] {
+            let theme = resolve(ramp, mode);
+
+            let ratio = contrast(theme.sidebar_accent_foreground, theme.sidebar_accent);
+            assert!(
+                ratio >= AA,
+                "{name}: ink on the rail's marked row is {ratio:.2}, under {AA}"
+            );
+            assert!(
+                contrast(theme.sidebar_foreground, theme.sidebar)
+                    < contrast(theme.foreground, theme.background),
+                "{name}: the rail's ink is as loud as the conversation's prose"
+            );
+            assert!(
+                contrast(theme.sidebar_accent_foreground, theme.sidebar)
+                    > contrast(theme.sidebar_foreground, theme.sidebar),
+                "{name}: the rail's marked row is no louder than the rows around it"
+            );
         }
     }
 

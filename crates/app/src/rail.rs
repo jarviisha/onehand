@@ -72,8 +72,15 @@ fn ellipsize(s: &str, max: usize) -> SharedString {
 /// style-refinable from outside, so `.w_full()` on a Button can only ever
 /// produce a centred banner.
 ///
-/// Returns the row bare -- no background, no hover. `hover` panics in debug if
-/// set twice, so each caller owns its own state styling.
+/// Ghost, and that includes the primary action. A rail is chrome the
+/// conversation sits in front of, and a filled row is the loudest thing that
+/// can happen in one -- the fill *New session* used to carry made the panel's
+/// quietest job, getting out of the way, impossible for the one control the eye
+/// lands on first. What marks it as the primary action is its place at the top
+/// of the rail and the tooltip naming the project it would start in.
+///
+/// Carries its own hover, so no caller may add a second one: `hover` panics in
+/// debug when it is set twice.
 pub(crate) fn rail_row(
     id: &'static str,
     icon: IconName,
@@ -81,8 +88,14 @@ pub(crate) fn rail_row(
     cx: &App,
 ) -> Stateful<Div> {
     let radius = cx.theme().radius;
+    // Resolved up front: the hover closure outlives this borrow of `cx`.
+    let (accent, accent_fg) = (
+        cx.theme().sidebar_accent,
+        cx.theme().sidebar_accent_foreground,
+    );
     div()
         .id(id)
+        .hover(move |row| row.bg(accent.opacity(0.8)).text_color(accent_fg))
         .h_flex()
         .items_center()
         .w_full()
@@ -930,11 +943,6 @@ fn new_session_block(
     active_root: Option<&str>,
     cx: &mut Context<Shell>,
 ) -> impl IntoElement {
-    let (bg, fg, hover_bg) = (
-        cx.theme().primary,
-        cx.theme().primary_foreground,
-        cx.theme().primary_hover,
-    );
     let agents: Vec<SharedString> = shell
         .agents(cx)
         .iter()
@@ -947,9 +955,6 @@ fn new_session_block(
     let hint = new_session_hint(active_root, agents.first().map(SharedString::as_ref));
 
     let primary = rail_row("new-session", IconName::Plus, "New session", cx)
-        .bg(bg)
-        .text_color(fg)
-        .hover(|row| row.bg(hover_bg))
         .tooltip(move |window, cx| Tooltip::new(hint.clone()).build(window, cx))
         .on_click(
             cx.listener(|shell: &mut Shell, _: &ClickEvent, window, cx| {
