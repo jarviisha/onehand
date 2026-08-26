@@ -66,6 +66,15 @@ pub struct SelectSession {
 /// enough that quitting right after a resize still saves it.
 const SAVE_DEBOUNCE: std::time::Duration = std::time::Duration::from_millis(600);
 
+/// What the app calls itself to the desktop.
+///
+/// Three things have to agree on this exact string or the app draws a generic
+/// placeholder instead of its icon: the window's `app_id`, the base name of the
+/// installed desktop entry, and that entry's `StartupWMClass`. It is a
+/// reverse-DNS-free plain name because that is what the installed entry is
+/// named, and the two are compared literally.
+const APP_ID: &str = "onehand";
+
 /// How long a project must stay selected before its agent is started ahead of
 /// the session that would run it.
 ///
@@ -2281,8 +2290,22 @@ pub fn open_or_focus(workspace: Workspace, cx: &mut App) {
 fn open_window(workspace: Workspace, cx: &mut App) {
     let storage_dir = workspace.storage_dir.clone();
     cx.spawn(async move |cx| {
+        let options = gpui::WindowOptions {
+            // The window's identity to the desktop, and the only reason the app
+            // has an icon at all.
+            //
+            // Nothing about a window carries a picture on Linux. The compositor
+            // gets one by matching what the window calls itself against an
+            // installed desktop entry -- Wayland compares this string to the
+            // entry's file name, X11 compares the `WM_CLASS` it becomes to
+            // `StartupWMClass`. Left unset, the window answers with nothing to
+            // match, so every entry on disk is unreachable and the result is
+            // the generic placeholder no matter how many icons are installed.
+            app_id: Some(APP_ID.into()),
+            ..Default::default()
+        };
         let handle = cx
-            .open_window(Default::default(), |window, cx| {
+            .open_window(options, |window, cx| {
                 let shell = cx.new(|cx| {
                     let mut shell = Shell::new(workspace, window, cx);
                     shell.refresh_git(cx);

@@ -22,7 +22,7 @@ OURS := -p onehand -p onehand-core
 
 .DEFAULT_GOAL := help
 
-.PHONY: help run release-run build release check test fmt fmt-check clippy lint smoke clean
+.PHONY: help run release-run build release check test fmt fmt-check clippy lint smoke desktop clean
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*## "}; {printf "  \033[36m%-14s\033[0m %s\n", $$1, $$2}'
@@ -61,6 +61,9 @@ lint: fmt-check clippy ## Formatting check + clippy
 
 smoke: ## Headless ACP smoke test (ACP_CMD=… overrides the adapter)
 	$(CARGO) run -p onehand-core --example acp_smoke
+
+desktop: ## Install the desktop entry + app icon (needs `make release` first)
+	./scripts/install-desktop.sh
 
 clean: ## Remove build artifacts
 	$(CARGO) clean
