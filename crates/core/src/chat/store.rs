@@ -643,6 +643,23 @@ fn write_meta(dir: &Path, meta: &MetaWrite) -> std::io::Result<()> {
     crate::config::write_atomic(&path, &text)
 }
 
+/// Remove a conversation and everything kept with it. Blocking.
+///
+/// The whole directory, which is what makes this one call rather than a hunt:
+/// a conversation's images live inside it, so nothing is left behind holding
+/// megabytes with no line referring to it any more. Taken under the same lock
+/// as a save, so a write already in flight finishes into the directory rather
+/// than half into a directory being taken away.
+pub fn delete(dir: &Path) -> std::io::Result<()> {
+    let lock = writer_for(dir);
+    let _held = lock.lock().unwrap_or_else(|e| e.into_inner());
+    match std::fs::remove_dir_all(dir) {
+        // Already gone is the outcome asked for, not a failure to report.
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        other => other,
+    }
+}
+
 /// The lock for one conversation directory, made on first use.
 fn writer_for(dir: &Path) -> Arc<Mutex<()>> {
     static WRITERS: OnceLock<Mutex<HashMap<PathBuf, Arc<Mutex<()>>>>> = OnceLock::new();
@@ -1035,6 +1052,37 @@ mod tests {
             panic!()
         };
         assert_eq!(last.text, format!("message {}", MAX_RESTORED_ITEMS + 9));
+        let _ = std::fs::remove_dir_all(&store);
+    }
+
+    /// Deleting takes the whole directory, which is the point of there being
+    /// one: the images a conversation collected are inside it, so nothing is
+    /// left holding megabytes that no line refers to any more.
+    #[test]
+    fn deleting_a_conversation_takes_its_images_with_it() {
+        let store = scratch("delete");
+        let mut chat = chat_in(&store, "s1");
+        chat.items.push(ChatItem::Tool(ToolItem::new(ToolCall {
+            id: "t1".into(),
+            title: "Read shot.png".into(),
+            description: None,
+            kind: ToolKind::parse("read"),
+            status: ToolStatus::parse("completed"),
+            content: vec![ToolContent::Image(Arc::new(b"pretend-png".to_vec()))],
+        })));
+        save(&mut chat);
+
+        let dir = conv_dir(&store, "s1");
+        assert!(dir.join("blobs").exists());
+        delete(&dir).unwrap();
+
+        assert!(!dir.exists());
+        assert!(read_meta(&dir).is_none());
+        assert!(list_conversations(&store, Path::new("/r"), None).is_empty());
+        // Deleting what is already gone is the outcome asked for.
+        assert!(delete(&dir).is_ok());
+        // And it took only its own: the store is still there for the rest.
+        assert!(store.exists());
         let _ = std::fs::remove_dir_all(&store);
     }
 

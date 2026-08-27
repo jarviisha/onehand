@@ -135,6 +135,19 @@ pub struct ChatPane {
     /// next press there skipped its own confirmation and threw away a turn
     /// nobody had been warned about.
     restart_armed: Option<u64>,
+    /// The conversation a delete was asked for, so the second press is the
+    /// confirmation.
+    ///
+    /// The *conversation*, for the same reason a restart arms a session rather
+    /// than the pane: an arming press made on one row says nothing about the
+    /// row below it, and a bare flag would let one press on one conversation
+    /// delete a different one.
+    ///
+    /// Deleting is the only thing this app does that cannot be undone by doing
+    /// it again -- a closed session respawns, a removed project is added back,
+    /// a deleted conversation is gone -- so it is guarded whether or not
+    /// anything is running.
+    delete_armed: Option<PathBuf>,
     /// A handle to this pane, for the callbacks the list builds outside the
     /// `render` that owns `Context<Self>`.
     handle: gpui::WeakEntity<Self>,
@@ -222,6 +235,7 @@ impl ChatPane {
                 find: None,
                 zoom: crate::zoom::Zoom::default(),
                 restart_armed: None,
+                delete_armed: None,
                 window: window.window_handle(),
                 handle: cx.entity().downgrade(),
                 empty: None,
@@ -275,6 +289,11 @@ impl ChatPane {
             let stored = asked_for.as_deref().and_then(onehand_core::chat::load);
             self.connect(uid, stored, cx);
         }
+        // A conversation is coming on screen, so the page that arming press was
+        // made on is not what the user is looking at any more. An arm that
+        // outlived a trip into a session and back would be waiting on a row
+        // nobody had just pressed.
+        self.delete_armed = None;
         if switching_away(self.active, uid) {
             self.leave_shown_session(window, cx);
             self.restore_draft(uid, window, cx);
@@ -636,6 +655,9 @@ impl ChatPane {
             path,
             history: None,
         });
+        // The page being replaced takes its arming press with it: a press made
+        // against a row on one project's page speaks for nothing on another's.
+        self.delete_armed = None;
         self.scan_project_history(cx);
         // Going to no session at all is still leaving the one that was showing,
         // and the draft has to be put down here too: a prompt left in the box
@@ -679,6 +701,73 @@ impl ChatPane {
                     return;
                 };
                 project.history = Some(past);
+                cx.notify();
+            });
+        })
+        .detach();
+    }
+
+    /// Delete an archived conversation, on the second press.
+    ///
+    /// Offered on the project page and nowhere else, and that is the guard
+    /// doing most of the work rather than a rule anybody has to remember: the
+    /// page is what shows when the selected project has **no session on it**,
+    /// so the conversations listed there are the ones nothing is writing to.
+    /// A live conversation deleted underneath its own session would not even
+    /// stay deleted -- the session's next turn writes the file again, holding
+    /// only what came after, because its mark says the rest is already on disk.
+    /// A session in another *window* is the case the page's own shape does not
+    /// cover, so the check below covers it.
+    fn delete_conversation(&mut self, dir: PathBuf, cx: &mut Context<Self>) {
+        if delete_needs_arming(self.delete_armed.as_deref(), &dir) {
+            self.delete_armed = Some(dir);
+            cx.notify();
+            return;
+        }
+        self.delete_armed = None;
+
+        let store = onehand_core::chat::conversations_dir();
+        let live = self
+            .conversations
+            .values()
+            .filter_map(Conversation::session)
+            .any(|session| {
+                session
+                    .read(cx)
+                    .chat
+                    .session_id
+                    .as_deref()
+                    .is_some_and(|sid| onehand_core::chat::conv_dir(&store, sid) == dir)
+            });
+        if live {
+            cx.emit(ChatPaneEvent::ConversationNotDeleted(
+                "it is open in a session".to_string(),
+            ));
+            cx.notify();
+            return;
+        }
+
+        let removing = dir.clone();
+        cx.spawn(async move |pane, cx| {
+            let done = cx
+                .background_executor()
+                .spawn(async move { onehand_core::chat::delete(&removing) })
+                .await;
+            let _ = pane.update(cx, |pane: &mut Self, cx| {
+                match done {
+                    // Taken off the page here rather than by scanning the
+                    // directory again: the row is gone because the thing it
+                    // named is gone, and a second read of the store to
+                    // discover that is a read that can also answer late.
+                    Ok(()) => {
+                        if let Some(project) = pane.empty.as_mut()
+                            && let Some(history) = project.history.as_mut()
+                        {
+                            history.retain(|conv| conv.dir != dir);
+                        }
+                    }
+                    Err(e) => cx.emit(ChatPaneEvent::ConversationNotDeleted(e.to_string())),
+                }
                 cx.notify();
             });
         })
@@ -1111,6 +1200,10 @@ impl ChatPane {
         };
         let now = onehand_core::chat::now_secs();
         let muted = cx.theme().muted_foreground;
+        let danger = crate::theme::status_ink(cx).danger;
+        // Read out here rather than inside the rows: the rows borrow `cx` to
+        // build their own callbacks, and this is one answer for all of them.
+        let armed = self.delete_armed.clone();
         // Bounded, and the bound says so below. A project worked in for months
         // has more archives than this page is for, and none of this scrolls.
         let shown: Vec<ConvMeta> = project
@@ -1185,20 +1278,52 @@ impl ChatPane {
                         );
                         let (agent, archive) =
                             (SharedString::from(meta.agent.clone()), meta.dir.clone());
-                        conversation_card(
-                            ("home", i),
-                            meta.title.clone().into(),
-                            subtitle.into(),
-                            cx,
-                        )
-                        .on_click(cx.listener(
-                            move |_: &mut Self, _, _, cx| {
-                                cx.emit(ChatPaneEvent::StartSession {
-                                    agent: Some(agent.clone()),
-                                    resume: Some(archive.clone()),
-                                });
-                            },
-                        ))
+                        let armed = armed.as_deref() == Some(meta.dir.as_path());
+                        let dir = meta.dir.clone();
+                        div()
+                            .h_flex()
+                            .gap_2()
+                            .w_full()
+                            .items_center()
+                            .child(
+                                conversation_card(
+                                    ("home", i),
+                                    meta.title.clone().into(),
+                                    subtitle.into(),
+                                    cx,
+                                )
+                                .flex_1()
+                                .on_click(cx.listener(
+                                    move |_: &mut Self, _, _, cx| {
+                                        cx.emit(ChatPaneEvent::StartSession {
+                                            agent: Some(agent.clone()),
+                                            resume: Some(archive.clone()),
+                                        });
+                                    },
+                                )),
+                            )
+                            // A word rather than a glyph, and this is the one
+                            // control in the app that earns the distinction:
+                            // everything else it offers can be done again --
+                            // a closed session respawns, a removed project is
+                            // added back -- and a deleted conversation cannot.
+                            // The confirming state has to be a word anyway, so
+                            // a picture would only be half the control.
+                            .child(
+                                crate::controls::action(("home-delete", i))
+                                    .ghost()
+                                    .small()
+                                    .text_color(danger)
+                                    .label(if armed { "Delete?" } else { "Delete" })
+                                    .tooltip(if armed {
+                                        "Press again to delete this conversation for good"
+                                    } else {
+                                        "Delete this conversation"
+                                    })
+                                    .on_click(cx.listener(move |pane: &mut Self, _, _, cx| {
+                                        pane.delete_conversation(dir.clone(), cx);
+                                    })),
+                            )
                     }))
                     .children((hidden > 0).then(|| {
                         div()
@@ -1935,6 +2060,13 @@ pub enum ChatPaneEvent {
     /// re-entered, a conversation that fails to save is gone. Every other write
     /// in the app says so when it fails; this one used to fail in silence.
     ArchiveFailed(String),
+    /// A conversation the user asked to delete is still there, and why.
+    ///
+    /// Its own variant rather than a second use of the one above, because the
+    /// two need opposite sentences: one says work was not kept, this one says
+    /// work was not thrown away. Reporting a refusal as a failure to save would
+    /// send the reader looking for the wrong thing entirely.
+    ConversationNotDeleted(String),
 }
 
 impl EventEmitter<ChatPaneEvent> for ChatPane {}
@@ -2524,13 +2656,28 @@ fn restart_needs_arming(busy: bool, armed: Option<u64>, uid: u64) -> bool {
     busy && armed != Some(uid)
 }
 
+/// Whether deleting `dir` still needs its confirming press.
+///
+/// Unlike a restart there is no condition that makes this safe to do in one
+/// press: a restart is only guarded while a turn is in flight, because that is
+/// the only time it throws anything away. A delete always does, and it is the
+/// one thing here that doing again does not undo.
+///
+/// What is armed is the conversation, not the page. Arming on one row and
+/// pressing the row below it must ask again -- otherwise the second press
+/// deletes something the first one never named.
+fn delete_needs_arming(armed: Option<&std::path::Path>, dir: &std::path::Path) -> bool {
+    armed != Some(dir)
+}
+
 #[cfg(test)]
 mod tests {
     use super::{
         BLOCK_GAP, COMPACT_GAP, RunKind, SessionSignal, TURN_GAP, TranscriptItemId, away_from_tail,
-        lead_gap, restart_needs_arming, switching_away, viewport, waits_alone,
+        delete_needs_arming, lead_gap, restart_needs_arming, switching_away, viewport, waits_alone,
     };
     use onehand_core::chat::Link;
+    use std::path::Path;
 
     /// The two sides of a prompt are one space, so they are one number —
     /// whatever sits above the prompt and whatever follows it.
@@ -2737,6 +2884,27 @@ mod tests {
     #[test]
     fn arming_one_session_never_confirms_another() {
         assert!(restart_needs_arming(true, Some(1), 2));
+    }
+
+    /// Deleting is guarded unconditionally, and the guard names the row.
+    ///
+    /// There is no state that makes a delete safe to do in one press, the way
+    /// an idle session makes a restart safe: everything else this app offers can
+    /// be done again, and a deleted conversation cannot. And arming one row must
+    /// never confirm the row below it — the second press would then delete
+    /// something the first one never named.
+    #[test]
+    fn deleting_always_asks_first_and_asks_about_one_row() {
+        let (one, two) = (Path::new("/store/a"), Path::new("/store/b"));
+        assert!(delete_needs_arming(None, one), "first press arms");
+        assert!(
+            !delete_needs_arming(Some(one), one),
+            "the second press on the same conversation goes through"
+        );
+        assert!(
+            delete_needs_arming(Some(one), two),
+            "a press aimed at one conversation says nothing about another"
+        );
     }
 
     /// A healthy, idle, already-read session draws **nothing**. This is the

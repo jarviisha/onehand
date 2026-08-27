@@ -22,6 +22,6 @@ pub use model::{
     MAX_TERM_BYTES,
 };
 pub use store::{
-    commit, conv_dir, conversations_dir, list_conversations, load, now_secs, ConfigPick, ConvMeta,
-    ConversationSnapshot, PendingWrite, Prefs,
+    commit, conv_dir, conversations_dir, delete, list_conversations, load, now_secs, ConfigPick,
+    ConvMeta, ConversationSnapshot, PendingWrite, Prefs,
 };

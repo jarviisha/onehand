@@ -433,6 +433,16 @@ fails if a binding is added without a row — a shortcut nobody can find is a sh
   immediately after they chose not to resume one. It is reached from a live session's header menu
   (*Resume another conversation…*), and the choice still happens *before* anything reconnects:
   connecting first would start a fresh conversation and archive it.
+- **Deleting is offered on the project page and nowhere else**, and the placement is most of the
+  guard: that page is what shows when the selected project has *no session on it*, so every row on it
+  names a conversation nothing is writing to. A live conversation deleted underneath its own session
+  would not even stay deleted — the next turn writes the file again holding only what came after,
+  because the session's mark says the rest is already on disk. A session in another window is the case
+  the page's shape does not cover, so `ChatPane::delete_conversation` checks for one. The control is a
+  **word, not a glyph**, and arms on the first press: everything else the app offers can be done again,
+  and this cannot. `store::delete` removes the whole directory, so a conversation's images go with it.
+  **Nothing is ever deleted automatically** — there is no retention sweep, by decision, because that
+  would be the app throwing away work nobody asked it to.
 - **The project page** is the store's other reader: with no session on the selected project, the
   pane draws that project's past conversations (`list_conversations` with no agent named — every agent,
   not just the session's, since there is no session yet) above a *New session* button. Picking one emits

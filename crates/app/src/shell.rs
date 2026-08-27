@@ -526,6 +526,13 @@ impl Shell {
                         Notification::error(format!("Conversation not saved — {why}")),
                         cx,
                     ),
+                    // A warning rather than an error: nothing went wrong and
+                    // nothing was lost -- the conversation is exactly where it
+                    // was, which is the opposite of the message above.
+                    E::ConversationNotDeleted(why) => window.push_notification(
+                        Notification::warning(format!("Conversation not deleted — {why}")),
+                        cx,
+                    ),
                 }
                 // A finished turn also changes what the rail's session dots
                 // say, and the rail is drawn from a query rather than from
