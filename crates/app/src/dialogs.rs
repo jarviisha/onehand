@@ -447,6 +447,114 @@ pub fn rename_session(shell: &Shell, cx: &mut Context<Shell>) -> Dialog {
         }))
 }
 
+/// Split a project onto a branch of its own, as a git worktree.
+///
+/// The folder is **shown, not typed**. It is derived from the branch name, so a
+/// second field holding it would be a copy of a reading -- one that either
+/// fights every keystroke in the field above it or silently stops following it.
+/// What is left for the user to decide is the part the derivation cannot know:
+/// which folder to put it under, and that is a picker rather than a path to
+/// spell out.
+pub fn new_worktree(shell: &Shell, cx: &mut Context<Shell>) -> Dialog {
+    let input = shell.worktree_branch().clone();
+    let Some(draft) = shell.worktree_draft() else {
+        return Dialog::new(cx);
+    };
+    let (label, error, busy) = (draft.label.clone(), draft.error.clone(), draft.busy);
+    let target = shell
+        .worktree_target(cx)
+        .map(|dir| SharedString::from(dir.display().to_string()));
+    let named = target.is_some();
+    let (muted, danger) = (
+        cx.theme().muted_foreground,
+        crate::theme::status_ink(cx).danger,
+    );
+
+    Dialog::new(cx)
+        .title("New worktree")
+        .content(move |content, _, _: &mut App| {
+            content.child(
+                div()
+                    .v_flex()
+                    .gap_2()
+                    .w_full()
+                    .child(
+                        div()
+                            .text_sm()
+                            .text_color(muted)
+                            .child(format!("A second checkout of {label}, on its own branch.")),
+                    )
+                    .child(Input::new(&input))
+                    // Where it lands, in full. A worktree is a folder that
+                    // appears on disk without anyone browsing to it, so the one
+                    // thing this form owes the reader is the path it is about
+                    // to create -- before it exists, not in a toast afterwards.
+                    .child(
+                        div()
+                            .text_xs()
+                            .text_color(muted)
+                            .child(target.clone().unwrap_or_else(|| {
+                                SharedString::from("Name the branch to see where its folder goes.")
+                            })),
+                    )
+                    .when_some(error.clone(), |col, why| {
+                        col.child(div().text_xs().text_color(danger).child(why))
+                    }),
+            )
+        })
+        .footer(
+            div()
+                .h_flex()
+                .gap_2()
+                .justify_end()
+                .w_full()
+                .child(
+                    crate::controls::action("worktree-parent")
+                        .ghost()
+                        .label("Put it somewhere else…")
+                        .disabled(busy)
+                        .on_click(cx.listener(|shell: &mut Shell, _: &ClickEvent, _, cx| {
+                            shell.pick_worktree_parent(cx);
+                        })),
+                )
+                .child(
+                    crate::controls::action("cancel-worktree")
+                        .ghost()
+                        .label("Cancel")
+                        .on_click(cx.listener(|shell: &mut Shell, _: &ClickEvent, _, cx| {
+                            shell.cancel_worktree(cx);
+                        })),
+                )
+                .child({
+                    // Spent while git is working and while there is no name to
+                    // work from: cloning a working tree takes long enough that
+                    // a button still offering itself invites the second press
+                    // that would ask for the same folder twice.
+                    let create =
+                        crate::controls::action("create-worktree")
+                            .primary()
+                            .label(if busy {
+                                "Creating…"
+                            } else {
+                                "Create worktree"
+                            });
+                    match busy || !named {
+                        true => crate::controls::resting(create).disabled(true),
+                        false => create.on_click(cx.listener(
+                            |shell: &mut Shell, _: &ClickEvent, _, cx| {
+                                shell.commit_worktree(cx);
+                            },
+                        )),
+                    }
+                }),
+        )
+        // Esc and the close button have to clear what is putting this on screen,
+        // or the dialog dismisses itself and the next frame renders it back.
+        .on_close(cx.listener(|shell: &mut Shell, _, _, cx| {
+            shell.cancel_worktree(cx);
+        }))
+}
+
 /// One row of the Help window's shortcut table.
 pub struct Shortcut {
     /// How the row is written for a human.

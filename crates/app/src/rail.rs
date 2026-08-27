@@ -452,13 +452,15 @@ fn git_facts(
 fn project_menu(
     root_idx: usize,
     pinned: bool,
+    is_repo: bool,
     shell: WeakEntity<Shell>,
 ) -> impl IntoElement + use<> {
     rail_control(("project-menu", root_idx), IconName::Ellipsis)
         .tooltip("What can be done with this project")
         .dropdown_menu_with_anchor(Anchor::TopRight, move |menu, _, cx| {
             let danger = crate::theme::status_ink(cx).danger;
-            let (pin, start, terminal, copy, refresh, remove) = (
+            let (pin, start, split, terminal, copy, refresh, remove) = (
+                shell.clone(),
                 shell.clone(),
                 shell.clone(),
                 shell.clone(),
@@ -490,6 +492,23 @@ fn project_menu(
                             .ok();
                     }),
             )
+            // Only where there is a repository to split. On a plain folder the
+            // entry could not do anything but report that git said no, and an
+            // entry whose whole job is to fail is one the eye has to learn to
+            // skip.
+            .when(is_repo, |menu| {
+                menu.item(
+                    PopupMenuItem::new("New worktree…")
+                        .icon(Icon::new(crate::icons::Icon::GitBranch))
+                        .on_click(move |_, window, cx: &mut App| {
+                            split
+                                .update(cx, |shell: &mut Shell, cx| {
+                                    shell.begin_worktree(root_idx, window, cx);
+                                })
+                                .ok();
+                        }),
+                )
+            })
             .item(
                 PopupMenuItem::new("Open terminal")
                     .icon(Icon::new(IconName::SquareTerminal))
@@ -555,6 +574,9 @@ fn folder_row(
     // shrink as a unit -- which is how the count, the more valuable half, ended
     // up being the part that got clipped off the right edge.
     let git = window_state.git.get(&root.path);
+    // A status at all is the answer to "is this a git repository": the sweep
+    // only records a root `git status` succeeded in.
+    let is_repo = git.is_some();
     let branch = git.map(|status| SharedString::from(status.branch.clone()));
     let changed = git.map(|status| status.changed).unwrap_or(0);
     let path = SharedString::from(root.path.display().to_string());
@@ -658,6 +680,7 @@ fn folder_row(
                     row.child(div().flex_none().occlude().child(project_menu(
                         root_idx,
                         pinned,
+                        is_repo,
                         menu_target,
                     )))
                 })

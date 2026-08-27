@@ -20,3 +20,8 @@ claude-code = "simple-icons:claude"
 # any kind, and its nearest shape is `replace` — a find-and-replace mark, which
 # reads as swapping one box for another rather than as editing a file.
 square-pen = "lucide:square-pen"
+# Splitting a project onto its own branch, in the project row's menu. The
+# bundled set holds no branch, fork or split of any kind — its only git-adjacent
+# drawing is the GitHub brand mark, which names a website rather than the
+# operation.
+git-branch = "lucide:git-branch"

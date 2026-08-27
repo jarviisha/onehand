@@ -87,6 +87,7 @@ impl IconNamed for Icon {
 
 icons! {
     ClaudeCode => "claude-code",
+    GitBranch => "git-branch",
     SquarePen => "square-pen",
 }
 

@@ -22,6 +22,7 @@ use onehand_core::config::{AgentSpec, AppConfig, Appearance, PanelLayout};
 use onehand_core::config::{Load, WorkspaceConfig};
 use onehand_core::gitstat;
 use onehand_core::workspace::{self, Workspace};
+use onehand_core::worktree;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
@@ -242,6 +243,33 @@ pub struct PanelFacts {
     pub terminal_live: bool,
 }
 
+/// A worktree being set up: which project is being split, where its second
+/// checkout goes, and how the last attempt went.
+///
+/// The branch name is not here — it lives in an `InputState` the shell keeps
+/// across dialogs, the way the conversation rename does, so the field and its
+/// change subscription are built once instead of per opening.
+pub struct WorktreeDraft {
+    /// The project being split, held by path rather than by index: this
+    /// outlives its own frames, and a project removed underneath it must not
+    /// hand its index -- and with it a worktree of the wrong repository -- to
+    /// whichever project slides into that slot.
+    pub root: PathBuf,
+    /// That project's label, for saying out loud what is being split.
+    pub label: String,
+    /// A folder the user chose to put the worktree under. `None` ⇒ beside the
+    /// project it came from, which is what `onehand_core::worktree` decides.
+    pub parent: Option<PathBuf>,
+    /// What is wrong: the name rule that refused, or git's own words about the
+    /// attempt. Cleared by the next keystroke, because the reader has already
+    /// started answering it.
+    pub error: Option<String>,
+    /// A `git worktree add` in flight. It clones a working tree, which on a
+    /// large repository is long enough that a button with no answer reads as a
+    /// press that missed.
+    pub busy: bool,
+}
+
 pub struct Shell {
     window: WorkspaceWindow,
     /// Whether the rail is off screen entirely.
@@ -277,6 +305,11 @@ pub struct Shell {
     renaming: Option<u64>,
     /// The conversation-rename field.
     rename_input: Entity<InputState>,
+    /// The project being split onto a branch of its own, if that dialog is
+    /// open. `Some` is what puts it on screen, the same as the rename above.
+    worktree_draft: Option<WorktreeDraft>,
+    /// The new branch's name field.
+    worktree_branch: Entity<InputState>,
 
     /// A pending workspace write. Replacing it cancels the one before, which
     /// is the whole debounce — see [`Shell::save_workspace_soon`].
@@ -573,6 +606,27 @@ impl Shell {
         )
         .detach();
 
+        let worktree_branch =
+            cx.new(|cx| InputState::new(window, cx).placeholder("feat/what-it-is-for"));
+
+        // The folder the worktree would land in is written under this field and
+        // derived from it, so it only moves if something outside the input is
+        // told the input changed. The complaint above it goes at the same time:
+        // it is about a name that is already being replaced.
+        cx.subscribe_in(
+            &worktree_branch,
+            window,
+            |shell: &mut Self, _, event: &InputEvent, _, cx| {
+                if matches!(event, InputEvent::Change) {
+                    if let Some(draft) = shell.worktree_draft.as_mut() {
+                        draft.error = None;
+                    }
+                    cx.notify();
+                }
+            },
+        )
+        .detach();
+
         Self {
             window: WorkspaceWindow::new(workspace),
             rail_hidden: false,
@@ -583,6 +637,8 @@ impl Shell {
             rename_input: cx.new(|cx| {
                 InputState::new(window, cx).placeholder("What this conversation is about")
             }),
+            worktree_draft: None,
+            worktree_branch,
             dock,
             chat,
             workbench,
@@ -983,6 +1039,163 @@ impl Shell {
         self.show_active_session(window, cx);
         self.save_workspace(window, cx);
         cx.notify();
+    }
+
+    /// Open the split-onto-a-branch form on a project.
+    ///
+    /// Offered on git repositories only, which the rail decides from the status
+    /// it already holds -- so this is reached with a repository in hand and has
+    /// no check of its own to make beyond the root still being there.
+    pub fn begin_worktree(&mut self, root_idx: usize, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(root) = self.window.workspace.roots.get(root_idx) else {
+            return;
+        };
+        let (root, label) = (root.path.clone(), root.label.clone());
+        self.worktree_branch
+            .update(cx, |state, cx| state.set_value("", window, cx));
+        self.worktree_draft = Some(WorktreeDraft {
+            root,
+            label,
+            parent: None,
+            error: None,
+            busy: false,
+        });
+        self.worktree_branch.focus_handle(cx).focus(window, cx);
+        cx.notify();
+    }
+
+    pub fn worktree_draft(&self) -> Option<&WorktreeDraft> {
+        self.worktree_draft.as_ref()
+    }
+
+    pub fn worktree_branch(&self) -> &Entity<InputState> {
+        &self.worktree_branch
+    }
+
+    /// Where the worktree would land, given the name typed so far. `None` while
+    /// there is no name to derive a folder from.
+    ///
+    /// Derived on every read rather than mirrored into a second field: the
+    /// folder is a *reading* of the branch name, and a copy of it would be one
+    /// more thing to keep in step with a field being typed into.
+    pub fn worktree_target(&self, cx: &App) -> Option<PathBuf> {
+        let draft = self.worktree_draft.as_ref()?;
+        let branch = self.worktree_branch.read(cx).value();
+        let branch = branch.trim();
+        if branch.is_empty() {
+            return None;
+        }
+        Some(match draft.parent.as_deref() {
+            Some(parent) => worktree::worktree_dir_in(parent, &draft.root, branch),
+            None => worktree::worktree_dir(&draft.root, branch),
+        })
+    }
+
+    /// Choose a folder to put the worktree under, instead of the one beside the
+    /// project.
+    ///
+    /// The *parent* is picked, not the worktree itself: the native picker only
+    /// offers folders that already exist, and `git worktree add` wants one that
+    /// does not. So the choice is where to put it, and the name stays derived
+    /// from the branch -- which also means changing the branch after choosing
+    /// still moves the folder with it.
+    pub fn pick_worktree_parent(&mut self, cx: &mut Context<Self>) {
+        cx.spawn(async move |shell, cx| {
+            let Some(dir) = pick_folder(cx).await else {
+                return;
+            };
+            shell
+                .update(cx, |shell: &mut Self, cx| {
+                    if let Some(draft) = shell.worktree_draft.as_mut() {
+                        draft.parent = Some(dir);
+                        draft.error = None;
+                    }
+                    cx.notify();
+                })
+                .ok();
+        })
+        .detach();
+    }
+
+    /// Close the form without creating anything.
+    pub fn cancel_worktree(&mut self, cx: &mut Context<Self>) {
+        if self.worktree_draft.take().is_some() {
+            cx.notify();
+        }
+    }
+
+    /// Create the worktree, then adopt it as a project root of its own.
+    ///
+    /// A root, not a mode of the project it came from: a worktree is a whole
+    /// second checkout, so its file tree, its terminal, its git status and its
+    /// sessions are all different from the original's -- and every one of those
+    /// is already keyed by path, so the workspace tree holds it correctly with
+    /// nothing added.
+    ///
+    /// The form stays on screen until git answers. It is the one place the
+    /// error can be shown against the name that caused it, and a dialog that
+    /// closed on the press would have to report a failure as a toast about a
+    /// folder the user can no longer see the name of.
+    pub fn commit_worktree(&mut self, cx: &mut Context<Self>) {
+        let Some(draft) = self.worktree_draft.as_mut() else {
+            return;
+        };
+        if draft.busy {
+            return;
+        }
+        let branch = self.worktree_branch.read(cx).value().trim().to_string();
+        if let Err(why) = worktree::validate_branch(&branch) {
+            if let Some(draft) = self.worktree_draft.as_mut() {
+                draft.error = Some(why.to_string());
+            }
+            cx.notify();
+            return;
+        }
+        let Some(dir) = self.worktree_target(cx) else {
+            return;
+        };
+        let Some(draft) = self.worktree_draft.as_mut() else {
+            return;
+        };
+        let root = draft.root.clone();
+        draft.busy = true;
+        cx.notify();
+
+        cx.spawn(async move |shell, cx| {
+            let made = {
+                let (root, branch) = (root.clone(), branch.clone());
+                cx.background_executor()
+                    .spawn(async move { worktree::add_blocking(&root, &branch, &dir) })
+                    .await
+            };
+            shell
+                .update_in(cx, |shell: &mut Self, window, cx| {
+                    match made {
+                        Ok(dir) => {
+                            shell.worktree_draft = None;
+                            let label = workspace::label_for(&dir);
+                            let idx = shell.window.workspace.add_root(dir);
+                            shell.window.workspace.select_root(idx);
+                            shell.show_active_session(window, cx);
+                            shell.refresh_git(cx);
+                            shell.save_workspace(window, cx);
+                            window.push_notification(
+                                Notification::info(format!("Added {label}, on {branch}")),
+                                cx,
+                            );
+                        }
+                        Err(why) => {
+                            if let Some(draft) = shell.worktree_draft.as_mut() {
+                                draft.busy = false;
+                                draft.error = Some(why);
+                            }
+                        }
+                    }
+                    cx.notify();
+                })
+                .ok();
+        })
+        .detach();
     }
 
     /// Open the rename field on a conversation.
@@ -2243,6 +2456,14 @@ impl Render for Shell {
             .children(
                 self.renaming
                     .map(|_| crate::dialogs::rename_session(self, cx)),
+            )
+            // Opened from the same kind of menu entry, and mounted here for the
+            // same reason: there is no control left on screen to hang a
+            // `Dialog::trigger` on by the time it is wanted.
+            .children(
+                self.worktree_draft
+                    .is_some()
+                    .then(|| crate::dialogs::new_worktree(self, cx)),
             )
             .children(sheet_layer)
             .children(dialog_layer)

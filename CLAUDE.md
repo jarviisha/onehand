@@ -60,7 +60,7 @@ Tests are inline `#[cfg(test)]` modules — there is no `tests/` directory.
 | Path | Crate | What |
 |---|---|---|
 | `crates/app` | `onehand` | the GPUI front end + the binary |
-| `crates/core` | `onehand-core` | GUI-free logic: config, the workspace tree, ACP, the chat model, editor rules, completion, git status, the directory flatten |
+| `crates/core` | `onehand-core` | GUI-free logic: config, the workspace tree, ACP, the chat model, editor rules, completion, git status, worktree rules, the directory flatten |
 | `vendor/gpui-terminal` | `gpui-terminal` | a vendored terminal grid + the interaction layer upstream never had |
 
 The workspace root is a **virtual manifest** — it owns nothing but the member list and the release
@@ -268,17 +268,28 @@ status bar.
   branch, the count in words and the root's path in a tooltip. The primary *New session* button names
   the project it would start in, in its tooltip.
 - **Both row kinds carry one ••• menu on the active row**, never a ✕. A project's holds *Pin to top*
-  / *Unpin*, *New session*, *Open terminal*, *Copy project path*, *Refresh Git status*, then,
+  / *Unpin*, *New session*, *New worktree…* (git repositories only), *Open terminal*,
+  *Copy project path*, *Refresh Git status*, then,
   separated and in the danger tint, *Remove from workspace* (still guarded by a second click while
   the root has live sessions or unsaved buffers). A session's holds *Rename…*, *Restart the agent*,
   *Export as Markdown…* and, in the danger tint, *Close session* (guarded only mid-turn, since the
   transcript is written at the end of every turn — `Shell::close_session`, also `Ctrl+Shift+W`). The
   session menu is **also** the row's right-click menu, on every row and not just the active one;
   Restart and Export select the session first, so they always act on what is on screen.
-- **Renaming is a `Dialog` with no trigger.** Every other dialog is opened by a control that carries
-  `Dialog::trigger`; this one is opened from a menu entry that is gone by the time it appears, so
-  `Shell::renaming` being `Some` is what puts it on screen and Esc/Cancel/close must all clear it.
-  A rename archives immediately rather than at the end of the next turn.
+- **Two `Dialog`s have no trigger: renaming a conversation, and splitting a project into a
+  worktree.** Every other dialog is opened by a control that carries `Dialog::trigger`; these are
+  opened from a menu entry that is gone by the time they appear, so `Shell::renaming` /
+  `Shell::worktree_draft` being `Some` is what puts each on screen and Esc/Cancel/close must all
+  clear it. A rename archives immediately rather than at the end of the next turn.
+- **A worktree becomes a project root of its own**, added to the same workspace and selected
+  (`Shell::commit_worktree`). It is a whole second checkout, so its file tree, terminal, git status
+  and sessions all differ from the original's — and every one of those is already keyed by path, so
+  the workspace tree holds it with nothing added. The rules are core's
+  (`onehand_core::worktree`): the branch-name check that answers before anything is created, the
+  slug, and the folder — **beside** the project rather than inside it, because a second checkout
+  under the first shows up in that project's own file tree and `git status`. The dialog derives the
+  folder from the branch name and only lets the *parent* be picked; an existing branch is checked
+  out and a new name is created off HEAD, one call deciding which.
 - **Pinning is explicit and changes only the drawing order.** `Workspace::display_order` is a stable
   partition, `roots` never moves, and pins are stored by path so a root added elsewhere in the file
   cannot slide a pin onto another project. Nothing reorders the list on the app's own initiative.
@@ -468,8 +479,9 @@ Listed because a missing feature nobody wrote down reads as a bug in the ones th
   resolve draws *nothing* rather than failing the build. Bumping the `gpui-component` rev means
   looking at the app's chrome afterwards.
   `crate::icons` holds **only what that enum cannot draw**: brand marks, plus the occasional shape
-  the bundled set has no drawing of at all (today exactly one — a pencil, for the transcript's
-  *Changed* group). An `IconName` whose *name* reads oddly does not qualify; a missing drawing does.
+  the bundled set has no drawing of at all (today two — a pencil, for the transcript's *Changed*
+  group, and a branch, for splitting a project into a worktree).
+  An `IconName` whose *name* reads oddly does not qualify; a missing drawing does.
   To add one: update [assets/icons/manifest.toml](assets/icons/manifest.toml) with the reason beside
   the entry, run [scripts/sync-icons.sh](scripts/sync-icons.sh) (it knows Simple Icons for marks and
   Lucide for shapes), register it in the `icons!` macro. A test fails if manifest and registry
