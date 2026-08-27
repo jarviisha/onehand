@@ -842,17 +842,64 @@ mod tests {
         let _ = std::fs::remove_dir_all(&store);
     }
 
+    /// …and a save with nothing new does not move the conversation's date
+    /// either, which is what stops the picker reordering itself around
+    /// conversations that were merely opened.
     #[test]
     fn a_second_save_with_nothing_new_writes_no_line() {
         let store = scratch("nothing-new");
+        let dir = conv_dir(&store, "s1");
         let mut chat = chat_in(&store, "s1");
         chat.push_user("only".into(), Vec::new());
         save(&mut chat);
-        let items = conv_dir(&store, "s1").join("items.jsonl");
+        let items = dir.join("items.jsonl");
         let once = std::fs::read(&items).unwrap();
+        let dated = read_meta(&dir).unwrap().updated;
 
         save(&mut chat);
         assert_eq!(std::fs::read(&items).unwrap(), once);
+        assert_eq!(read_meta(&dir).unwrap().updated, dated);
+        let _ = std::fs::remove_dir_all(&store);
+    }
+
+    /// The question the whole format turns on: a `session/load` re-delivers the
+    /// conversation as ordinary content, so what stops it being written down a
+    /// second time?
+    ///
+    /// Through the real file rather than in memory, because the answer is a
+    /// claim about the file: the mark says how much of the transcript is
+    /// already in it, the replay is not added while it is arriving, and what
+    /// settles it decides whether the file is left alone or becomes what was
+    /// replayed.
+    #[test]
+    fn a_replay_is_not_written_a_second_time() {
+        use crate::acp::AcpEvent;
+
+        let store = scratch("replay");
+        let dir = conv_dir(&store, "s1");
+        let mut first = chat_in(&store, "s1");
+        first.push_user("what does this do".into(), Vec::new());
+        first.apply(AcpEvent::AgentChunk("it does this".into()));
+        save(&mut first);
+        assert_eq!(load(&dir).unwrap().items.len(), 2);
+
+        // Reopened, and the adapter replays exactly what is already there.
+        let mut next = chat_in(&store, "s1");
+        next.resume_from(load(&dir).unwrap());
+        next.apply(AcpEvent::UserChunk("what does this do".into()));
+        next.apply(AcpEvent::AgentChunk("it does this".into()));
+        // Nothing is written while the replay is arriving.
+        assert!(next.flush().is_none());
+
+        next.push_user("and now this".into(), Vec::new());
+        save(&mut next);
+
+        let back = load(&dir).unwrap();
+        assert_eq!(
+            back.items.len(),
+            3,
+            "the conversation once, and the new prompt after it"
+        );
         let _ = std::fs::remove_dir_all(&store);
     }
 

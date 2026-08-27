@@ -83,6 +83,12 @@ One window hosts exactly one workspace. The frame is a navigation **rail** plus 
   conversations must not be told it has none for the half-second a directory
   read takes. One line of grey text saying *Start a session in X* was the first
   thing a new user saw and the one screen in the app with nothing to press.
+  Each row also carries the one way to **delete** a conversation, and it is a
+  word in the danger tint rather than an icon: everything else this app offers
+  can be done again, this cannot, and a destructive control should be read
+  rather than recognized. It arms on the first press and says so, and it is
+  offered here and nowhere else — this page is what shows when a project has no
+  session on it, so every row on it is a conversation nothing is writing to.
 - The **rail** is app chrome, not a panel: it lives outside the dock, so the dock
   cannot swallow it and a layout restore cannot lose it. `Ctrl+Shift+B` **hides
   it entirely** — it is never narrowed to an icon column, because at that width
