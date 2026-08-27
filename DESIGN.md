@@ -290,16 +290,20 @@ terminal panel over the vendored grid, and per-panel zoom.
 **Every icon is an SVG.** No Unicode or emoji glyphs as icons. Shell-prompt
 typography inside a code block (`❯`, `$`) is text, not an icon, and is exempt.
 
-- **Every UI glyph comes from gpui-component's `IconName`**, the enum generated
-  from the SVGs it bundles. That set has to stay loaded anyway — its own
-  components reference `icons/…` internally in ~97 places — and drawing the app's
-  chrome from it is what keeps one stroke weight across the two.
-- **`crate::icons` is brand marks only**: a product's mark belongs to that
-  product, not to a general-purpose UI kit. To add one: update
-  [assets/icons/manifest.toml](assets/icons/manifest.toml), run
-  [scripts/sync-icons.sh](scripts/sync-icons.sh), register it in the `icons!`
-  macro. A test fails if the manifest and the registry disagree. The two live in
-  separate namespaces and the asset source serves both.
+- **Nearly every UI glyph comes from gpui-component's `IconName`**, the enum
+  generated from the SVGs it bundles. That set has to stay loaded anyway — its
+  own components reference `icons/…` internally in ~97 places — and drawing the
+  app's chrome from it is what keeps one stroke weight across the two.
+- **`crate::icons` holds only what that set cannot draw**: a brand mark, which
+  belongs to the product it stands for rather than to a general-purpose UI kit,
+  and the occasional shape the bundled set has no drawing of at all — taken from
+  Lucide, which it is packaged from, so the weight still matches. A name that
+  merely reads oddly does not qualify; an absence does. To add one: update
+  [assets/icons/manifest.toml](assets/icons/manifest.toml) with the reason
+  beside the entry, run [scripts/sync-icons.sh](scripts/sync-icons.sh), register
+  it in the `icons!` macro. A test fails if the manifest and the registry
+  disagree. The two live in separate namespaces and the asset source serves
+  both.
 - The bundled set covers less than the app once carried, so a number of glyphs
   are approximations rather than the icon the design would pick. DECISIONS.md
   §6 lists which, and what each gave up.

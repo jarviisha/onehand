@@ -140,7 +140,7 @@ at ~700–900 lines. `Ctrl+Shift+N` is not bound.
 
 ## 4. Icons
 
-### D6 · UI icons come 100% from `IconName`; `assets/icons/` is brand marks only
+### D6 · UI icons come from `IconName`; `assets/icons/` holds only what it cannot draw
 
 **The bundled set has to ship.** There are ~97 places inside gpui-component that call `IconName::…`
 themselves (`select` → `ChevronDown`; `dock/tab_panel` → `Ellipsis` / `Maximize` / `PanelLeft`; dialog
@@ -149,11 +149,22 @@ themselves (`select` → `ChevronDown`; `dock/tab_panel` → `Ellipsis` / `Maxim
 
 | Source | Content | Used by |
 |---|---|---|
-| `gpui-component-assets` (99 SVG, Apache-2.0) | every UI glyph | the library **and** onehand's code, through `IconName` |
-| `assets/icons/` (1 brand mark, CC0-1.0) | what that enum cannot hold | onehand's code, through `impl IconNamed` |
+| `gpui-component-assets` (99 SVG, Apache-2.0) | nearly every UI glyph | the library **and** onehand's code, through `IconName` |
+| `assets/icons/` (2 SVG: CC0-1.0 + ISC) | what that enum cannot hold | onehand's code, through `impl IconNamed` |
 
-The boundary is **brand mark**, not "app versus library": a product's mark belongs to that product,
-and no version of a general-purpose UI kit is going to start shipping one.
+The boundary is **what the bundled set cannot draw**, not "app versus library". Two things fall
+outside it. A *brand mark*: a product's mark belongs to that product, and no version of a
+general-purpose UI kit is going to start shipping one. And a *missing shape*: a glyph the bundled set
+holds no equivalent of at all — added one at a time, fetched from Lucide, which is the same upstream
+gpui-component packages, so the stroke weight matches its neighbours exactly.
+
+That second half is a **narrow amendment**, and the thing it must not become is a slow return of the
+48-glyph set this decision deleted. The test is the drawing, not the name: `IconName::Delete` being
+the ⌫ key rather than a waste bin is an *approximation*, and approximations stay. Only an absence
+qualifies. So far exactly one has: the transcript's *Changed* activity group, whose subject is a file
+edited in place, and for which the bundled set offers no pencil of any kind — `Replace` is a
+find-and-replace mark, two boxes swapped, which is what that group is not. It is now
+`assets/icons/square-pen.svg`, and the reason rides next to the manifest entry rather than here.
 
 #### The cost, written down because it is paid silently
 
@@ -172,17 +183,18 @@ are all still true word for word; they are simply no longer the ones being chose
 
 The bundled set covers only 21 of the 49 former icons. The remaining 24 are approximations rather than
 equivalents — notably `attach` → `Inbox`, `@` → `Asterisk`, `/` → `Dash`, `pin` → `Star`,
-`trash` → `Delete` (the ⌫ key), `stop` → `Pause`, `clock` → `Calendar`, `edit` → `Replace`,
-`tool` → `Settings2`. `file-text` / `file-diff` / `file-code` all collapse into `File`, so a tool card
-no longer distinguishes read from edit from run by shape.
+`trash` → `Delete` (the ⌫ key), `stop` → `Pause`, `clock` → `Calendar`, `tool` → `Settings2`.
+`file-text` / `file-diff` / `file-code` all collapse into `File`, so a tool card no longer
+distinguishes read from edit from run by shape. One of the 24 has since been withdrawn rather than
+approximated — `edit` → `Replace`, above.
 
-`assets/icons/manifest.toml` is the source of truth for what remains; `scripts/sync-icons.sh` now
-knows only the `simple-icons` provider. To add a brand mark: edit the manifest → run the script →
-register it in the `icons!` macro. A test keeps the three in agreement.
+`assets/icons/manifest.toml` is the source of truth for what is checked in; `scripts/sync-icons.sh`
+knows two providers and no more. To add one: edit the manifest, with the reason beside the entry →
+run the script → register it in the `icons!` macro. A test keeps the three in agreement.
 
-**Licensing:** `assets/icons/licenses/` — `claude-code` is Simple Icons, CC0-1.0; the bundled
-`gpui-component-assets` is Apache-2.0 and is Lucide underneath, so the ISC notice still has to travel
-with the binary. All permissive, no conflict.
+**Licensing:** `assets/icons/licenses/` — `claude-code` is Simple Icons, CC0-1.0; `square-pen` is
+Lucide, ISC; the bundled `gpui-component-assets` is Apache-2.0 and is Lucide underneath, so that ISC
+notice has to travel with the binary either way. All permissive, no conflict.
 
 ---
 
@@ -222,8 +234,8 @@ Listed because a missing feature nobody wrote down reads as a bug in the ones th
 - **Core dictates no runtime.** Blocking functions plus thin async wrappers. GPUI runs on smol and has
   no tokio reactor, so a core awaiting tokio I/O directly would panic inside the UI process.
 - Shared logic lives in core and is not restated in the front end.
-- Every UI glyph goes through `gpui_component::IconName`; `crate::icons::Icon` is brand marks only
-  (§4).
+- Every UI glyph goes through `gpui_component::IconName`; `crate::icons::Icon` holds only what that
+  enum cannot draw at all (§4).
 - `impl IntoElement` returned from a view-building function: consider `+ use<>` — edition 2024
   captures every lifetime.
 - Only `assets` and `shell` are `pub` in `crates/app`; every other module is private, so rustc's

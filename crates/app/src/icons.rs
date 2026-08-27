@@ -1,10 +1,17 @@
-//! The app's icon registry for the GPUI shell — **brand marks only**.
+//! The app's icon registry for the GPUI shell — **what the bundled set cannot
+//! supply, and nothing else**.
 //!
-//! Every UI glyph comes from `gpui_component::IconName`, the enum generated
-//! from the 99 SVGs `gpui-component-assets` ships. What is left here is the set
-//! that enum cannot hold: a brand mark belongs to the product it stands for,
-//! not to a general-purpose UI kit, and no version of that kit is going to
-//! start shipping one.
+//! Nearly every UI glyph comes from `gpui_component::IconName`, the enum
+//! generated from the 99 SVGs `gpui-component-assets` ships. Two kinds of thing
+//! that enum cannot hold are checked in here instead. A **brand mark** belongs
+//! to the product it stands for rather than to a general-purpose UI kit, and no
+//! version of that kit is going to start shipping one. A **missing shape** is a
+//! glyph the bundled set holds no equivalent of at all — added one at a time,
+//! with the reason recorded beside the manifest entry, and never merely because
+//! a name there is unlovely. The repo has already carried a self-hosted set of
+//! 48 UI glyphs and deleted it; the point of that deletion was one stroke
+//! weight across the library's chrome and the app's, and an entry here that
+//! duplicates a shape the library already draws spends exactly that.
 //!
 //! The cost of leaning on the library's names is real and worth naming, since
 //! it is paid silently: the library **renames icons when it packages them**
@@ -27,13 +34,13 @@ pub const PREFIX: &str = "onehand/icons/";
 
 macro_rules! icons {
     ($($variant:ident => $file:literal),* $(,)?) => {
-        /// A compile-time identifier for one checked-in brand mark.
+        /// A compile-time identifier for one checked-in SVG.
         ///
         /// `dead_code` is allowed for the whole enum on purpose: this is a
         /// *registry*, and its contract is that it mirrors
         /// `assets/icons/manifest.toml` exactly — which is what
         /// `registry_and_manifest_have_the_same_assets` asserts. A variant with
-        /// no call site is a curated mark nobody has needed yet, not a mistake;
+        /// no call site is a curated asset nobody has needed yet, not a mistake;
         /// dropping it to satisfy the lint would break the mirror the test
         /// checks and leave a shipped SVG unreachable.
         #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -80,6 +87,7 @@ impl IconNamed for Icon {
 
 icons! {
     ClaudeCode => "claude-code",
+    SquarePen => "square-pen",
 }
 
 #[cfg(test)]

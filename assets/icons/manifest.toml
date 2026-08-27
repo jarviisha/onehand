@@ -1,11 +1,22 @@
 simple_icons_version = "16.21.0"
+lucide_version = "1.34.0"
 
-# This table is the single source of truth for checked-in icon assets, and it
-# holds brand marks only. Values use "provider:upstream-slug".
+# This table is the single source of truth for checked-in icon assets. Values
+# use "provider:upstream-slug".
 #
-# Every UI glyph comes from `gpui_component::IconName` instead — the enum
-# generated from the SVGs `gpui-component-assets` ships. A brand mark is what
-# that set cannot supply: it belongs to the product it stands for rather than
-# to a general-purpose UI kit.
+# Nearly every UI glyph comes from `gpui_component::IconName` instead — the enum
+# generated from the SVGs `gpui-component-assets` ships. Only two kinds of thing
+# are checked in here, because that set cannot supply them:
+#
+#   * a brand mark, which belongs to the product it stands for rather than to a
+#     general-purpose UI kit;
+#   * a glyph the bundled set holds no equivalent of at all, added one at a time
+#     with its reason written beside it. That is not a door back to a
+#     self-hosted UI set: when `IconName` already carries the shape, the entry
+#     does not belong here, whatever it would be named.
 [icons]
 claude-code = "simple-icons:claude"
+# The transcript's "Changed" activity group. The bundled set has no pencil of
+# any kind, and its nearest shape is `replace` — a find-and-replace mark, which
+# reads as swapping one box for another rather than as editing a file.
+square-pen = "lucide:square-pen"

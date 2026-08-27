@@ -460,17 +460,20 @@ Listed because a missing feature nobody wrote down reads as a bug in the ones th
 
 ## Rules
 
-- **Every icon is an SVG, and every UI glyph comes from `gpui_component::IconName`.** No Unicode or
+- **Every icon is an SVG, and nearly every UI glyph comes from `gpui_component::IconName`.** No Unicode or
   emoji glyphs as icons. `IconName` is generated from the SVGs `gpui-component-assets` ships, which
   is also what the library's own components reach for in ~97 places — so that set has to stay loaded
   regardless. Two things this costs, both silent: the library **renames icons when it packages
   them** (its `close` is Lucide's `x`, its `delete` is the backspace key), and an icon that fails to
   resolve draws *nothing* rather than failing the build. Bumping the `gpui-component` rev means
   looking at the app's chrome afterwards.
-  `crate::icons` is now **brand marks only** — the one thing that enum cannot supply. To add one:
-  update [assets/icons/manifest.toml](assets/icons/manifest.toml), run
-  [scripts/sync-icons.sh](scripts/sync-icons.sh), register it in the `icons!` macro. A test fails if
-  manifest and registry disagree.
+  `crate::icons` holds **only what that enum cannot draw**: brand marks, plus the occasional shape
+  the bundled set has no drawing of at all (today exactly one — a pencil, for the transcript's
+  *Changed* group). An `IconName` whose *name* reads oddly does not qualify; a missing drawing does.
+  To add one: update [assets/icons/manifest.toml](assets/icons/manifest.toml) with the reason beside
+  the entry, run [scripts/sync-icons.sh](scripts/sync-icons.sh) (it knows Simple Icons for marks and
+  Lucide for shapes), register it in the `icons!` macro. A test fails if manifest and registry
+  disagree.
 - **Code describes; it never cites.** No comment, doc comment or runtime string may name another
   document — not `CLAUDE.md`, not `DESIGN.md` / `DESIGN-ANSWER.md`, not `DECISIONS.md`, and no
   section number, anchor or item code belonging to one. The guard's list of forbidden names is

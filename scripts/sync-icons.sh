@@ -3,9 +3,10 @@ set -euo pipefail
 
 # Refetch every checked-in SVG from its pinned upstream.
 #
-# The manifest holds brand marks only: UI glyphs come from gpui-component's own
-# bundled set, reached through its `IconName` enum, so there is nothing here to
-# fetch for them. That is why this script knows one provider.
+# The manifest holds what gpui-component's bundled set cannot supply: brand
+# marks, plus the occasional glyph that set holds no equivalent of. Everything
+# else is reached through its `IconName` enum and is never fetched here. That is
+# why this script knows two providers and no more.
 
 script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 repo_dir="$(cd -- "$script_dir/.." && pwd)"
@@ -18,8 +19,9 @@ value_from_manifest() {
 }
 
 simple_icons_version="$(value_from_manifest simple_icons_version)"
+lucide_version="$(value_from_manifest lucide_version)"
 
-if [[ -z "$simple_icons_version" ]]; then
+if [[ -z "$simple_icons_version" || -z "$lucide_version" ]]; then
     echo "icon manifest is missing a source version" >&2
     exit 1
 fi
@@ -53,6 +55,11 @@ awk '
                 "https://raw.githubusercontent.com/simple-icons/simple-icons/${simple_icons_version}/icons/${upstream_name}.svg" \
                 -o "$output"
             ;;
+        lucide)
+            curl -fsSL --retry 3 --max-time 30 \
+                "https://raw.githubusercontent.com/lucide-icons/lucide/${lucide_version}/icons/${upstream_name}.svg" \
+                -o "$output"
+            ;;
         *)
             echo "unknown icon provider: $provider" >&2
             echo "UI glyphs come from gpui-component's IconName, not from here." >&2
@@ -65,4 +72,4 @@ done
 # Publish only after every source file has been downloaded.
 cp "$staged_dir"/*.svg "$icon_dir/"
 
-echo "Synced brand marks from Simple Icons ${simple_icons_version}."
+echo "Synced icons from Simple Icons ${simple_icons_version} and Lucide ${lucide_version}."

@@ -1705,7 +1705,7 @@ pub fn activity_strip(
 ) -> gpui::AnyElement {
     let (name, icon) = activity_identity(group);
     ghost_row(
-        icon,
+        Icon::empty().path(icon),
         id,
         div()
             .h_flex()
@@ -1723,19 +1723,29 @@ pub fn activity_strip(
     )
 }
 
-/// Stable identity for a semantic activity section.
+/// Stable identity for a semantic activity section: its name, and the asset
+/// path of its icon.
 ///
 /// The summary changes with every member that joins a run; the name and icon
 /// do not. Keeping both on the group lets a reader identify the kind of work
 /// before reading its counts.
-fn activity_identity(group: activity::ActivityGroup) -> (&'static str, IconName) {
+///
+/// A path rather than an icon name because the set these are drawn from is not
+/// one enum: the bundled library set has no pencil of any kind, so *Changed*
+/// comes from the app's own checked-in assets while its five neighbours do not.
+/// The path is what both kinds resolve to anyway.
+fn activity_identity(group: activity::ActivityGroup) -> (&'static str, SharedString) {
+    use gpui_component::IconNamed as _;
     match group {
-        activity::ActivityGroup::Explored => ("Explored", IconName::Search),
-        activity::ActivityGroup::Changed => ("Changed", IconName::Replace),
-        activity::ActivityGroup::Ran => ("Ran", IconName::SquareTerminal),
-        activity::ActivityGroup::Verified => ("Verified", IconName::CircleCheck),
-        activity::ActivityGroup::Reasoned => ("Reasoned", IconName::Info),
-        activity::ActivityGroup::Other => ("Other", IconName::Settings2),
+        activity::ActivityGroup::Explored => ("Explored", IconName::Search.path()),
+        // A pencil on a page. The library's nearest shape, `Replace`, is a
+        // find-and-replace mark -- one box swapped for another, which is what
+        // this group is *not*: it edited files in place.
+        activity::ActivityGroup::Changed => ("Changed", crate::icons::Icon::SquarePen.path()),
+        activity::ActivityGroup::Ran => ("Ran", IconName::SquareTerminal.path()),
+        activity::ActivityGroup::Verified => ("Verified", IconName::CircleCheck.path()),
+        activity::ActivityGroup::Reasoned => ("Reasoned", IconName::Info.path()),
+        activity::ActivityGroup::Other => ("Other", IconName::Settings2.path()),
     }
 }
 
@@ -1851,7 +1861,7 @@ pub fn activity_summary(members: &[&ChatItem]) -> String {
 /// louder than the group naming them. Weight still separates a name from a
 /// summary; size no longer has to.
 fn ghost_row(
-    icon: IconName,
+    icon: impl Into<Icon>,
     id: gpui::ElementId,
     body: gpui::AnyElement,
     trailing: Option<gpui::AnyElement>,
@@ -2047,12 +2057,13 @@ mod tests {
         let mut names = identities.iter().map(|(name, _)| *name).collect::<Vec<_>>();
         names.sort_unstable();
         names.dedup();
-        // Compared by asset path: `IconName` is not `Ord`, and the path is the
-        // fact the test is actually about -- two groups drawing the same SVG is
-        // the collision worth catching, whatever the two variants are called.
+        // The identity already carries the asset path, which is the fact this
+        // test is about: two groups drawing the same SVG is the collision worth
+        // catching, whatever the two names in front of it are -- and the six
+        // are no longer even drawn from one enum.
         let mut icons = identities
             .iter()
-            .map(|(_, icon)| gpui_component::IconNamed::path(icon.clone()))
+            .map(|(_, icon)| icon.clone())
             .collect::<Vec<_>>();
         icons.sort_unstable();
         icons.dedup();
