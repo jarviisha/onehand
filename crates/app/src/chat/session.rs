@@ -164,7 +164,12 @@ impl ChatSession {
             .detach();
 
             Self {
-                chat: Chat::new(uid, root, spec.name.clone()),
+                chat: Chat::new(
+                    uid,
+                    root,
+                    spec.name.clone(),
+                    Some(onehand_core::chat::conversations_dir()),
+                ),
                 md: HashMap::new(),
                 images: RefCell::new(HashMap::new()),
                 activity_open: HashSet::new(),
@@ -273,10 +278,10 @@ impl ChatSession {
     /// parsing what it holds.
     pub fn adopt(
         &mut self,
-        stored: &onehand_core::chat::persist::StoredConversation,
+        snapshot: onehand_core::chat::ConversationSnapshot,
         cx: &mut Context<Self>,
     ) {
-        self.chat.resume_from(stored);
+        self.chat.resume_from(snapshot);
         self.sync_md(cx);
         cx.notify();
     }

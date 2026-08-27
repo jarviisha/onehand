@@ -695,7 +695,7 @@ mod tests {
 
     /// An answer, then two reads that fold into one activity strip.
     fn chat() -> Chat {
-        let mut chat = Chat::new(1, PathBuf::from("/tmp/project"), "claude".to_string());
+        let mut chat = Chat::new(1, PathBuf::from("/tmp/project"), "claude".to_string(), None);
         chat.items = vec![
             ChatItem::Agent(Md::parse("here is what I found")),
             read("Read src/a.rs"),

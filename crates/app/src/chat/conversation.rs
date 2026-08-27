@@ -182,7 +182,7 @@ mod tests {
 
     fn meta() -> ConvMeta {
         ConvMeta {
-            path: PathBuf::from("/tmp/sessions/one.json"),
+            dir: PathBuf::from("/tmp/conversations/one"),
             session_id: "one".to_string(),
             agent: "claude".to_string(),
             updated: 0,

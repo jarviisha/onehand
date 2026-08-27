@@ -191,7 +191,7 @@ module owns, and events cross to GPUI on a plain `futures` channel belonging to 
 - `pane.rs` — what the shell mounts: session switching, the resume picker, the project page, the find bar, unseen
   badges, and the run plan the virtualized list reads.
 
-The **model** is core's (`onehand_core::chat`): `Chat` + `apply(AcpEvent)`, the archive format, the
+The **model** is core's (`onehand_core::chat`): `Chat` + `apply(AcpEvent)`, the conversation store, the
 find pass, and the activity-run rules. `ChatSession` derefs to it, which is what lets the whole
 renderer read `chat.items` / `chat.busy` without knowing where the model lives.
 
@@ -394,13 +394,36 @@ fails if a binding is added without a row — a shortcut nobody can find is a sh
 
 ### Persistence
 
-- **Transcripts.** Every conversation is a JSON file under `<config_dir>/onehand/sessions/`, named by
-  the agent's ACP `sessionId`, carrying root/agent/updated/items. A fresh `session/new` means a new
-  id and a new file. Saving skips while the chat is empty, so a fresh session never clobbers a saved
-  one. **Written at the end of every turn**, not only when the session is dropped: the snapshot is
-  built on the UI thread and the write goes to the background executor, so a crash costs the turn in
-  flight rather than the whole conversation.
-- **Resumed selector state.** The archive also records the session's last mode and config-option
+- **Transcripts** ([crates/core/src/chat/store.rs](crates/core/src/chat/store.rs)). Every conversation
+  is a **directory** under `<config_dir>/onehand/conversations/`, named by the agent's ACP `sessionId`:
+  `meta.json` (rewritten whole), `items.jsonl` (**only ever appended to**), `blobs/` (image results, by
+  content hash). A fresh `session/new` means a new id and a new directory. Nothing is written while the
+  chat is empty, so a fresh session never creates a directory beside conversations that were had.
+  **Written at the end of every turn**, not only when the session is dropped: the write is prepared on
+  the UI thread and carried out on the background executor, so a crash costs the turn in flight rather
+  than the whole conversation.
+
+  The split earns three things at once. A turn writes *its own turn*, so the cost of a turn stops
+  growing with the conversation it belongs to. Listing reads one small file per conversation instead of
+  parsing every transcript in full — `meta.json` carries the first prompt for exactly that reason.
+  And appending removes a class of failure rather than guarding against it: while every save replaced
+  the file, any moment the transcript in memory was *short* — a resume halfway through re-delivering
+  itself, a session being taken apart — was a moment saving destroyed what was on disk.
+
+  What it costs is that a line already written is not revisited, so an item that changes after its turn
+  ended keeps the shape it was written in. That is why a rename writes **metadata only**
+  (`Chat::flush_meta`): a rename can land mid-turn, and a line written then describes a tool call that
+  never finished. `<config_dir>/onehand/sessions/` is the previous store — left where it is, never read.
+- **The mark, and the replay.** `Chat` carries how much of the transcript is already on disk, so a
+  restart hands it to its replacement (`take_snapshot`) rather than writing the conversation into its
+  own file twice. A `session/load` re-delivers the conversation as ordinary content events, and there
+  is **no event anywhere that says a replay has finished** — so the adopted copy is kept until
+  something settles the question, and nothing is written while it is open. Settling puts the copy back
+  whenever the replay came up shorter, which is not only a failed resume: a *successful* load replays
+  the conversation as the agent holds it, without the tool cards, plans and reasoning the file holds.
+  A replay that delivered more rewrites the file instead of being added to it, because a re-delivery is
+  chunked as the agent chose rather than as the file was.
+- **Resumed selector state.** `meta.json` also records the session's last mode and config-option
   picks, because the adapter rebuilds those from static `settings.json` on every `session/load` — a
   reopened conversation would otherwise silently drop them. **Model is deliberately skipped**: the SDK
   re-reads it from the transcript, and re-pushing a picker alias could switch the context lane rather
@@ -410,9 +433,9 @@ fails if a binding is added without a row — a shortcut nobody can find is a sh
   immediately after they chose not to resume one. It is reached from a live session's header menu
   (*Resume another conversation…*), and the choice still happens *before* anything reconnects:
   connecting first would start a fresh conversation and archive it.
-- **The project page** is the archive's other reader: with no session on the selected project, the
-  pane draws that project's past conversations (`list_root_conversations` — every agent, not just the
-  session's, since there is no session yet) above a *New session* button. Picking one emits
+- **The project page** is the store's other reader: with no session on the selected project, the
+  pane draws that project's past conversations (`list_conversations` with no agent named — every agent,
+  not just the session's, since there is no session yet) above a *New session* button. Picking one emits
   `ChatPaneEvent::StartSession`, and the shell mints the session, hands the pane the archive
   (`ChatPane::resume_next`) and *then* shows it — a resume that arrives after the adapter is up has
   already lost. An agent named by an archive but no longer configured falls back to the default

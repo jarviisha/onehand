@@ -13,7 +13,8 @@ use crate::acp::{
     ToolCallUpdate, ToolContent, ToolStatus,
 };
 use crate::attachment::{AttachmentDelivery, AttachmentSnapshot, StagedAttachment};
-use crate::chat::persist;
+use crate::chat::store;
+use crate::chat::store::{ConfigPick, ConversationSnapshot, MetaWrite, PendingWrite, Prefs};
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use std::time::Instant;
@@ -965,6 +966,32 @@ pub struct Chat {
     /// work the caller would have done anyway -- where a wrong *description*
     /// would leave the wrong thing on screen.
     revision: u64,
+
+    // ── what is on disk ──
+    /// Where this conversation is kept. `None` never persists — which is what
+    /// makes a chat built in a test provably inert, and what lets the store's
+    /// own tests point one at a directory of their own.
+    pub store: Option<PathBuf>,
+    /// How many transcript positions (history then items) are already written.
+    ///
+    /// Positions rather than lines: the two differ only by the cards that are a
+    /// question rather than a record, which are never written and never move.
+    /// Advanced when a save is *built*, not when it lands, so a second save
+    /// before the first has finished has nothing left to add rather than a
+    /// duplicate of it.
+    persisted: usize,
+    /// The next save replaces the transcript file instead of adding to it.
+    ///
+    /// Set in exactly one place, and see it for why: a replay that arrives
+    /// chunked differently from the file cannot be spliced onto it.
+    rewrite: bool,
+    /// Whether what was read back stopped at the read bound.
+    ///
+    /// A conversation long enough to hit it comes back as its tail, and a tail
+    /// must never be written back over the file it is a tail of. Written this
+    /// way round so a chat that was never read from disk — which is every chat
+    /// in every test — is not one by default.
+    bounded: bool,
 }
 
 /// Live state of one referenced terminal (the card renders this).
@@ -977,12 +1004,17 @@ pub struct TermView {
 
 impl Chat {
     /// A chat bound to a session's uid + root + agent (uid scopes widget ids;
-    /// root/agent feed the persisted metadata).
-    pub fn new(uid: u64, root: PathBuf, agent: String) -> Self {
+    /// root/agent feed the persisted metadata), kept in `store`.
+    ///
+    /// The store is a parameter rather than something reached for inside,
+    /// because a chat that persists and a chat that does not are the same type
+    /// and the difference has to be made where one is built.
+    pub fn new(uid: u64, root: PathBuf, agent: String, store: Option<PathBuf>) -> Self {
         let mut chat = Self::default();
         chat.uid = uid;
         chat.root = root;
         chat.agent = agent;
+        chat.store = store;
         chat
     }
 
@@ -996,35 +1028,215 @@ impl Chat {
         matches!(self.replay, Replay::Armed)
     }
 
-    /// What a save should write: the live transcript, unless a replay is
-    /// halfway through re-delivering the conversation, in which case it is the
-    /// copy that is known to be whole.
+    /// Everything not yet on disk, and the metadata that goes with it.
     ///
-    /// The single place the rule is applied, because the archive has a single
-    /// place it is built from. Refusing to *save* mid-replay rather than
-    /// refusing to *describe* the conversation is deliberate: the same snapshot
-    /// is what a restart hands the replacement adapter, and a restart that came
-    /// back empty-handed would silently start a brand-new session and leave the
-    /// conversation orphaned on disk.
-    pub fn archivable_items(&self) -> Vec<&ChatItem> {
-        match &self.replay {
-            Replay::Partial(stash) => stash.iter().collect(),
-            Replay::Settled | Replay::Armed => {
-                self.history.iter().chain(self.items.iter()).collect()
+    /// `None` when there is nowhere to write, nothing to identify the
+    /// conversation by, or nothing new — which is what keeps a session nobody
+    /// used from creating a directory and standing in the list beside
+    /// conversations that were had.
+    ///
+    /// The mark moves here, as the save is *built* rather than when it lands,
+    /// so a second save started before the first has finished finds nothing
+    /// left to add instead of adding it twice.
+    pub fn flush(&mut self) -> Option<PendingWrite> {
+        // Nothing is written while a replay is in flight. What `items` holds
+        // then is a re-delivery of lines that are already on disk, at indices
+        // that mean a different thing on each side of the comparison.
+        if matches!(self.replay, Replay::Partial(_)) {
+            return None;
+        }
+        let total = self.history.len() + self.items.len();
+        let from = if self.rewrite { 0 } else { self.persisted };
+        if from >= total {
+            return None;
+        }
+
+        let mut lines = Vec::new();
+        let mut blobs = Vec::new();
+        for item in self.history.iter().chain(self.items.iter()).skip(from) {
+            if let Some((line, mut carried)) = store::line_of(self, item) {
+                lines.push(line);
+                blobs.append(&mut carried);
+            }
+        }
+
+        let mut write = self.meta_write(total)?;
+        // Only a save that added messages moves the conversation's date -- see
+        // the field on the file for why the list must not reorder otherwise.
+        write.meta.updated = (!lines.is_empty()).then(store::now_secs);
+        write.lines = lines;
+        write.blobs = blobs;
+        write.rewrite = self.rewrite;
+
+        self.persisted = total;
+        self.rewrite = false;
+        Some(write)
+    }
+
+    /// The metadata alone — a rename, a reset, a change of selector.
+    ///
+    /// Separate from [`Self::flush`] because these can happen *during* a turn,
+    /// and a line written mid-turn describes a tool call that has not finished.
+    /// It would never be revisited: the turn's own save writes only what came
+    /// after it, so the half-finished card is what the conversation would hold
+    /// from then on.
+    ///
+    /// `None` for a conversation with nothing on disk yet. Metadata by itself
+    /// would put an empty conversation in the list.
+    pub fn flush_meta(&mut self) -> Option<PendingWrite> {
+        if self.persisted == 0 {
+            return None;
+        }
+        self.meta_write(self.persisted)
+    }
+
+    /// The metadata half of a save, with no lines in it yet.
+    fn meta_write(&self, items: usize) -> Option<PendingWrite> {
+        let store = self.store.as_ref()?;
+        let session_id = self.session_id.clone()?;
+        Some(PendingWrite {
+            dir: store::conv_dir(store, &session_id),
+            lines: Vec::new(),
+            blobs: Vec::new(),
+            rewrite: false,
+            meta: MetaWrite {
+                session_id,
+                root: self.root.display().to_string(),
+                agent: self.agent.clone(),
+                title: self.custom_title.clone(),
+                preview: self.first_prompt(),
+                prefs: self.prefs(),
+                updated: None,
+                items,
+            },
+        })
+    }
+
+    /// The first thing the user said, capped — what names a conversation in the
+    /// picker when nobody has renamed it.
+    ///
+    /// Kept in the metadata so listing never has to open a transcript to find
+    /// it, which is what listing used to do to every conversation in the store.
+    fn first_prompt(&self) -> String {
+        const PREVIEW_MAX: usize = 200;
+        self.history
+            .iter()
+            .chain(self.items.iter())
+            .find_map(|it| match it {
+                ChatItem::User(u) => Some(u.text.clone()),
+                _ => None,
+            })
+            .map(|text| match text.char_indices().nth(PREVIEW_MAX) {
+                Some((cut, _)) => text[..cut].to_string(),
+                None => text,
+            })
+            .unwrap_or_default()
+    }
+
+    /// The mode and config picks this conversation is currently on.
+    fn prefs(&self) -> Prefs {
+        Prefs {
+            mode: self.current_mode.clone(),
+            config: self
+                .config_options
+                .iter()
+                .filter_map(|o| {
+                    o.current.clone().map(|value| ConfigPick {
+                        id: o.id.clone(),
+                        value,
+                    })
+                })
+                .collect(),
+        }
+    }
+
+    /// Build and write, for the paths with no async context to hand the write
+    /// off to — a session being taken apart, or the app closing.
+    ///
+    /// A failure is logged and nothing more, deliberately: this runs while the
+    /// window it would have spoken to is being torn down. The per-turn save
+    /// covers the same conversation every turn and does report, so a standing
+    /// condition has already been said out loud long before this runs.
+    pub fn save_blocking(&mut self) {
+        if let Some(write) = self.flush() {
+            if let Err(e) = store::commit(&write) {
+                eprintln!("onehand: conversation not archived: {e}");
             }
         }
     }
 
-    /// Close the replay window, putting the adopted archive back if the replay
+    /// Lift this conversation out, leaving the chat empty — the handoff a
+    /// restart makes to the session replacing it.
+    ///
+    /// A move rather than a copy, and that is what makes it safe: the chat it
+    /// came from is about to be dropped, and a drop still holding these items
+    /// would write them a second time. It carries the mark with it, so the
+    /// replacement continues the same file rather than starting one.
+    pub fn take_snapshot(&mut self) -> Option<ConversationSnapshot> {
+        let session_id = self.session_id.clone()?;
+        // Whatever is known to be whole. Mid-replay that is the copy that was
+        // adopted, not the re-delivery that has not finished arriving.
+        let items = match std::mem::replace(&mut self.replay, Replay::Settled) {
+            Replay::Partial(stash) => {
+                self.history.clear();
+                self.items.clear();
+                stash
+            }
+            Replay::Settled | Replay::Armed => {
+                let mut items = std::mem::take(&mut self.history);
+                items.append(&mut self.items);
+                items
+            }
+        };
+        // The cards that are a question go, since the adapter that asked is the
+        // one being replaced and an answer would reach nobody. Dropping one
+        // shifts every position after it, so any dropped from before the mark
+        // come off the mark too.
+        let mut dropped_before = 0;
+        let mut kept = Vec::with_capacity(items.len());
+        for (at, item) in items.into_iter().enumerate() {
+            if matches!(item, ChatItem::Permission(_) | ChatItem::Ask(_)) {
+                if at < self.persisted {
+                    dropped_before += 1;
+                }
+                continue;
+            }
+            kept.push(item);
+        }
+
+        Some(ConversationSnapshot {
+            session_id,
+            title: self.custom_title.clone(),
+            updated: self.last_activity.unwrap_or_else(store::now_secs),
+            // The file's own, and the file keeps it: a snapshot passing through
+            // memory has no business telling a conversation when it began.
+            created: 0,
+            prefs: self.prefs(),
+            items: kept,
+            written: self.persisted.saturating_sub(dropped_before),
+            complete: !self.bounded,
+        })
+    }
+
+    /// Close the replay window, putting the adopted copy back if the replay
     /// came up short of it.
     ///
     /// Short is the only case that restores. A replay that delivered at least as
-    /// much as the archive *is* the better record — it is the agent's own, and
-    /// it can legitimately be longer than the file when a previous run died
-    /// between the last save and the end of a turn. Locally-minted notices are
-    /// not part of the count and are kept either way: they say why the resume
-    /// went the way it did, which is exactly what the user needs on screen when
-    /// this restores anything.
+    /// much *is* the better record — it is the agent's own, and it can be longer
+    /// than the file when a previous run died between the last save and the end
+    /// of a turn. Locally-minted notices are not part of the count and are kept
+    /// either way: they say why the resume went as it did, which is exactly what
+    /// the reader needs on screen when this puts a conversation back.
+    ///
+    /// The two outcomes leave the file in different states, and that is why the
+    /// rewrite exists. Putting the copy back leaves the file as it was, so the
+    /// mark is what it was. Keeping the replay means the file has to *become*
+    /// it: a re-delivery is chunked as the agent chose rather than as the file
+    /// was, so adding to it at an index that means a different thing on each
+    /// side is how a seam drops or doubles a message. Once per resume, and the
+    /// same size of read the resume already paid for. Never when the transcript
+    /// came back bounded, because then what is on screen is a tail and the file
+    /// is longer than it.
     fn settle_replay(&mut self) {
         let Replay::Partial(stash) = std::mem::replace(&mut self.replay, Replay::Settled) else {
             return;
@@ -1034,11 +1246,15 @@ impl Chat {
             .iter()
             .filter(|it| !matches!(it, ChatItem::Notice { .. }))
             .count();
-        if replayed < stash.len() {
+        if replayed < stash.len() || self.bounded {
+            self.persisted = stash.len();
             self.history = stash;
             self.items
                 .retain(|it| matches!(it, ChatItem::Notice { .. }));
             self.touch();
+        } else {
+            self.rewrite = true;
+            self.persisted = 0;
         }
     }
 
@@ -1137,49 +1353,51 @@ impl Chat {
     /// on `Connected` — means the first replayed content drops the placeholder
     /// history regardless of event order; a `session/new` fallback disarms it via
     /// `Connected { resumed: false }` so old history stays as read-only context.
-    pub fn load_history(&mut self, items: Vec<ChatItem>, session_id: String) {
-        // Loading over a live transcript (restart keeps the chat):
-        // archive anything the live items still hold, then reset them — the
-        // loaded history *is* this conversation, and a `session/load` replay
-        // re-delivers it into `items`. Without the reset the view (history ⧺
-        // items) shows everything twice and the next turn-end save doubles
-        // the archive on disk.
-        if let Err(e) = persist::save_chat(self) {
-            eprintln!("onehand: conversation not archived: {e}");
-        }
+    /// `written` is how many of `items` are already on disk — the mark the
+    /// conversation carries on from.
+    pub fn load_history(&mut self, items: Vec<ChatItem>, session_id: String, written: usize) {
+        // The loaded transcript *is* this conversation, and a `session/load`
+        // replay re-delivers it into `items`. Without the reset the view
+        // (history ⧺ items) shows everything twice.
+        //
+        // Nothing is saved on the way past any more. Under a file that is only
+        // added to there is nothing to rescue: whatever the live items held is
+        // either already written, or is being carried in here with the mark
+        // that says so.
         self.items.clear();
         self.terminals.clear();
         self.history = items;
+        self.persisted = written;
         self.session_id = Some(session_id);
         self.replay = Replay::Armed;
+        self.rewrite = false;
         self.touch();
     }
 
-    /// Adopt an archived conversation: its transcript, its title, the selector
-    /// state to replay, and when it was last touched.
+    /// Adopt a conversation: its transcript, its title, the selector state to
+    /// replay, when it was last touched, and how much of it is on disk.
     ///
-    /// Four things have to happen together and none of them is optional, which
-    /// is why they are one call rather than four at a call site. Forget
-    /// `arm_prefs` and a reopened conversation silently loses its effort/agent
-    /// (the adapter rebuilds those from static settings on `session/load`);
-    /// forget `last_activity` and the rail dates the session from the moment it
-    /// was reopened rather than from its last real turn.
-    pub fn resume_from(&mut self, stored: &crate::chat::persist::StoredConversation) {
-        self.load_history(
-            crate::chat::persist::restore(stored),
-            stored.session_id.clone(),
-        );
-        self.custom_title = stored.title.clone();
+    /// They happen together and none of them is optional, which is why this is
+    /// one call rather than five at a call site. Forget `arm_prefs` and a
+    /// reopened conversation silently loses its effort/agent (the adapter
+    /// rebuilds those from static settings on `session/load`); forget
+    /// `last_activity` and the rail dates the session from the moment it was
+    /// reopened rather than from its last real turn; forget the mark and the
+    /// conversation is written to its own file a second time.
+    pub fn resume_from(&mut self, snapshot: ConversationSnapshot) {
+        self.bounded = !snapshot.complete;
+        self.custom_title = snapshot.title;
+        self.last_activity = Some(snapshot.updated);
         self.arm_prefs(
-            stored.prefs.mode.clone(),
-            stored
+            snapshot.prefs.mode,
+            snapshot
                 .prefs
                 .config
-                .iter()
-                .map(|c| (c.id.clone(), c.value.clone()))
+                .into_iter()
+                .map(|c| (c.id, c.value))
                 .collect(),
         );
-        self.last_activity = Some(stored.updated);
+        self.load_history(snapshot.items, snapshot.session_id, snapshot.written);
     }
 
     /// Arm the mode + config picks to replay once this resumed session
@@ -1265,7 +1483,7 @@ impl Chat {
                 | AcpEvent::ConfigOptions(_)
                 | AcpEvent::Connected { .. }
         );
-        let event_at = (!metadata).then(persist::now_secs);
+        let event_at = (!metadata).then(store::now_secs);
         if let Some(event_at) = event_at {
             self.last_activity = Some(event_at);
         }
@@ -1401,7 +1619,7 @@ impl Chat {
                 view.exit_code = exit_code;
             }
             AcpEvent::TurnEnded { .. } => {
-                self.finish_active_turn(event_at.unwrap_or_else(persist::now_secs));
+                self.finish_active_turn(event_at.unwrap_or_else(store::now_secs));
                 self.busy = false;
                 self.finalize_thought();
                 // A turn that ends with unanswered permission cards (a
@@ -1878,9 +2096,12 @@ impl Chat {
         // The same call covers the harder half: a replay that started, stopped
         // partway, and was then typed over. Settling puts the adopted copy back
         // when what arrived was less than what was adopted, so the prompt is
-        // added to the whole conversation rather than to a fragment of it.
+        // added to the whole conversation rather than to a fragment of it —
+        // and it leaves the mark saying which of the two the file now holds,
+        // which is what keeps this prompt from being written as message one of
+        // a conversation that already has forty.
         self.settle_replay();
-        let sent_at = persist::now_secs();
+        let sent_at = store::now_secs();
         self.last_activity = Some(sent_at);
         self.items.push(ChatItem::User(UserMsg {
             text,
@@ -2116,9 +2337,7 @@ impl Chat {
 /// read-only directory — has already been said out loud long before this runs.
 impl Drop for Chat {
     fn drop(&mut self) {
-        if let Err(e) = persist::save_chat(self) {
-            eprintln!("onehand: conversation not archived: {e}");
-        }
+        self.save_blocking();
     }
 }
 
@@ -2544,7 +2763,7 @@ mod tests {
         let mut chat = Chat::default();
         chat.items.push(ChatItem::User(UserMsg::text("hi")));
         chat.items.push(ChatItem::Agent(Md::parse("reply")));
-        chat.load_history(vec![ChatItem::User(UserMsg::text("hi"))], "sid-1".into());
+        chat.load_history(vec![ChatItem::User(UserMsg::text("hi"))], "sid-1".into(), 1);
         assert!(chat.items.is_empty());
         assert_eq!(chat.history.len(), 1);
         assert!(chat.replay_pending());
@@ -2556,95 +2775,111 @@ mod tests {
         // A resume whose `session/load` replays nothing: the first user prompt
         // must keep the loaded history (it is the only copy of the
         // conversation), while real replayed content still consumes it.
-        let mut chat = Chat::default();
-        chat.load_history(vec![ChatItem::User(UserMsg::text("old"))], "sid-1".into());
+        let mut chat = resumed_chat(1);
         chat.push_user("new prompt".into(), Vec::new());
         assert_eq!(chat.history.len(), 1, "history must survive a user prompt");
         assert!(!chat.replay_pending());
+        // And the prompt is added to the conversation, not written as the whole
+        // of it: one line, after the one already there.
+        let write = chat.flush().expect("the prompt is new");
+        assert_eq!(write.lines.len(), 1);
+        assert!(!write.rewrite);
 
-        let mut chat = Chat::default();
-        chat.load_history(vec![ChatItem::User(UserMsg::text("old"))], "sid-1".into());
+        let mut chat = resumed_chat(1);
         chat.apply(AcpEvent::AgentChunk("replayed".into()));
         assert!(chat.history.is_empty(), "a real replay still drops history");
     }
 
-    /// An archive with `n` messages, adopted, with an id so it can be saved.
+    /// A conversation of `n` messages, resumed from a store it will never be
+    /// written to — every assertion here is about what a save *would* carry.
     fn resumed_chat(n: usize) -> Chat {
-        let mut chat = Chat::new(1, PathBuf::from("/r"), "Claude".into());
-        let archive = (0..n)
-            .map(|i| ChatItem::User(UserMsg::text(format!("message {i}"))))
-            .collect();
-        chat.load_history(archive, "sid-1".into());
+        let mut chat = Chat::new(
+            1,
+            PathBuf::from("/r"),
+            "Claude".into(),
+            Some(PathBuf::from("/store")),
+        );
+        chat.resume_from(ConversationSnapshot {
+            session_id: "sid-1".into(),
+            title: None,
+            updated: 1,
+            created: 1,
+            prefs: Prefs::default(),
+            items: (0..n)
+                .map(|i| ChatItem::User(UserMsg::text(format!("message {i}"))))
+                .collect(),
+            written: n,
+            complete: true,
+        });
         chat
     }
 
-    /// The headline rule: a replay that stops halfway must not become the
-    /// archive.
+    /// The headline rule: a replay that stops halfway is not written down.
     ///
     /// A `session/load` re-delivers the conversation as ordinary content, so the
     /// first piece of it takes the adopted copy off the screen — and at that
     /// moment an adapter that dies leaves two messages standing where fifty
-    /// were. Every save writes what the transcript holds, so the two-message
-    /// version used to be written straight over the fifty-message file.
+    /// were. What `items` holds then is a re-delivery of lines already on disk,
+    /// so nothing about it can be added to the file without saying those lines
+    /// twice or writing a fragment as though it were the whole.
     #[test]
-    fn an_interrupted_replay_never_shrinks_the_archive() {
+    fn an_interrupted_replay_is_never_written() {
         let mut chat = resumed_chat(3);
         chat.apply(AcpEvent::AgentChunk("first replayed answer".into()));
         // On screen the adopted copy is gone, exactly as before.
         assert!(chat.history.is_empty());
-        // What a save would write is not.
-        assert_eq!(persist::build_stored(&chat).unwrap().items.len(), 3);
+        assert!(chat.flush().is_none(), "and nothing is written from it");
 
-        // The adapter then dies. Closing the session writes the same three.
+        // The adapter then dies. Closing the session still writes nothing, so
+        // the three messages on disk stay three messages.
         chat.apply(AcpEvent::Disconnected("adapter exited".into()));
-        assert_eq!(persist::build_stored(&chat).unwrap().items.len(), 3);
+        assert!(chat.flush().is_none());
     }
 
-    /// A resume that succeeds can still deliver less than the archive holds.
+    /// A resume that succeeds can still deliver less than the file holds.
     ///
-    /// The replay is the conversation as the *agent* holds it, and the archive
+    /// The replay is the conversation as the *agent* holds it, and the file
     /// holds things the agent has no reason to send back — the tool cards, the
     /// plans, the reasoning. Trading the full transcript for the agent's summary
-    /// of it would be permanent from the next turn end onwards, so the shorter
-    /// side never wins, however the load went.
+    /// of it would be permanent, so the shorter side never wins, however the
+    /// load went.
     #[test]
-    fn a_short_replay_loses_to_the_archive_even_when_the_load_succeeded() {
+    fn a_short_replay_loses_to_the_file_even_when_the_load_succeeded() {
         let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
         let mut chat = resumed_chat(4);
         chat.apply(AcpEvent::AgentChunk("a summary of all that".into()));
         chat.apply(AcpEvent::Connected { tx, resumed: true });
 
-        assert_eq!(chat.history.len(), 4, "the archive is back on screen");
-        assert_eq!(persist::build_stored(&chat).unwrap().items.len(), 4);
+        assert_eq!(chat.history.len(), 4, "the conversation is back on screen");
+        assert!(chat.flush().is_none(), "and the file is left as it was");
     }
 
     /// …and once the load has answered with everything, the replay *is* the
-    /// record.
+    /// record — which means the file has to become it rather than gain it.
     #[test]
-    fn a_completed_replay_archives_what_was_replayed() {
+    fn a_completed_replay_rewrites_the_file_with_what_was_replayed() {
         let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
         let mut chat = resumed_chat(2);
         chat.apply(AcpEvent::UserChunk("message 0".into()));
         chat.apply(AcpEvent::AgentChunk("answer".into()));
         chat.apply(AcpEvent::Connected { tx, resumed: true });
 
-        let stored = persist::build_stored(&chat).unwrap();
         assert!(chat.history.is_empty());
-        assert_eq!(
-            stored.items.len(),
-            2,
-            "the replayed transcript, not the old"
-        );
         assert!(!chat.replay_pending());
+        let write = chat.flush().expect("the replay has to be written down");
+        assert!(write.rewrite, "spliced onto the old lines, it would seam");
+        assert_eq!(write.lines.len(), 2, "the replayed transcript, not the old");
+        // And it is written once: the mark now says the file holds it.
+        assert!(chat.flush().is_none());
     }
 
     /// A resume the adapter could not honour puts the conversation back.
     ///
-    /// The client falls back to a fresh session and says so; the archive it
-    /// failed to load is the only copy there is, and what the adapter managed
-    /// to stream before failing is a fragment of it.
+    /// The client falls back to a fresh session and says so; the file it failed
+    /// to load is the only copy there is, and what the adapter managed to
+    /// stream before failing is a fragment of it.
     #[test]
-    fn a_failed_resume_puts_the_archive_back() {
+    fn a_failed_resume_puts_the_conversation_back() {
         let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
         let mut chat = resumed_chat(3);
         chat.apply(AcpEvent::UserChunk("message 0".into()));
@@ -2658,10 +2893,13 @@ mod tests {
             "and the fragment is gone, but not the reason"
         );
         assert!(matches!(chat.items[0], ChatItem::Notice { .. }));
-        assert_eq!(persist::build_stored(&chat).unwrap().items.len(), 4);
+        // The three are already on disk; only the reason is new.
+        let write = chat.flush().expect("the notice is worth keeping");
+        assert!(!write.rewrite);
+        assert_eq!(write.lines.len(), 1);
     }
 
-    /// A replay longer than the archive is the better record, and survives
+    /// A replay longer than the file is the better record, and survives
     /// settling. That happens when a previous run died between the last save
     /// and the end of a turn: the agent has the turn, the file does not.
     #[test]
@@ -2674,7 +2912,51 @@ mod tests {
         chat.push_user("carry on".into(), Vec::new());
 
         assert!(chat.history.is_empty(), "the shorter copy is not put back");
-        assert_eq!(persist::build_stored(&chat).unwrap().items.len(), 7);
+        let write = chat.flush().unwrap();
+        assert!(write.rewrite);
+        assert_eq!(write.lines.len(), 7);
+    }
+
+    /// A transcript that came back as its tail must never be written back over
+    /// the file it is a tail of.
+    #[test]
+    fn a_bounded_transcript_never_rewrites_the_file() {
+        let mut chat = resumed_chat(2);
+        chat.bounded = true;
+        for i in 0..3 {
+            chat.apply(AcpEvent::UserChunk(format!("message {i}")));
+            chat.apply(AcpEvent::AgentChunk("answer".into()));
+        }
+        chat.push_user("carry on".into(), Vec::new());
+
+        let write = chat.flush().unwrap();
+        assert!(!write.rewrite, "the file is longer than what is on screen");
+        assert_eq!(write.lines.len(), 1, "only the new prompt is added");
+    }
+
+    /// A restart carries the mark, so the replacement session continues the
+    /// file rather than writing the conversation into it again.
+    #[test]
+    fn a_restart_carries_the_mark() {
+        let mut chat = resumed_chat(2);
+        chat.push_user("and one more".into(), Vec::new());
+
+        let snapshot = chat.take_snapshot().expect("there is a conversation");
+        assert_eq!(snapshot.items.len(), 3);
+        assert_eq!(snapshot.written, 2, "two of the three are already on disk");
+        // The chat it came from has nothing left to write, which is what keeps
+        // its own drop from saying all of it a second time.
+        assert!(chat.flush().is_none());
+
+        let mut next = Chat::new(
+            2,
+            PathBuf::from("/r"),
+            "Claude".into(),
+            Some(PathBuf::from("/store")),
+        );
+        next.resume_from(snapshot);
+        let write = next.flush().expect("the unwritten prompt still is");
+        assert_eq!(write.lines.len(), 1);
     }
 
     #[test]
@@ -2972,7 +3254,7 @@ mod tests {
     /// picked, which is several seconds before anything can be sent to it.
     #[test]
     fn connecting_outranks_everything_the_status_could_say() {
-        let mut chat = Chat::new(1, PathBuf::from("/tmp/p"), "Claude Code".to_string());
+        let mut chat = Chat::new(1, PathBuf::from("/tmp/p"), "Claude Code".to_string(), None);
         assert_eq!(
             chat.link,
             Link::Connecting,
@@ -3028,27 +3310,23 @@ mod tests {
     /// the adapter will *not* rebuild, and the date the rail shows.
     #[test]
     fn resuming_adopts_transcript_title_prefs_and_date() {
-        use crate::chat::persist::{StoredConfig, StoredConversation, StoredPrefs};
-
         let mut chat = Chat::default();
-        let stored = StoredConversation {
-            version: 1,
+        chat.resume_from(ConversationSnapshot {
             session_id: "sess-9".into(),
-            root: "/tmp/x".into(),
-            agent: "Claude Code".into(),
-            updated: 1_700_000_000,
             title: Some("Ship the parser".into()),
-            items: Vec::new(),
-            prefs: StoredPrefs {
+            updated: 1_700_000_000,
+            created: 1_600_000_000,
+            prefs: Prefs {
                 mode: Some("plan".into()),
-                config: vec![StoredConfig {
+                config: vec![ConfigPick {
                     id: "effort".into(),
                     value: "high".into(),
                 }],
             },
-        };
-
-        chat.resume_from(&stored);
+            items: Vec::new(),
+            written: 0,
+            complete: true,
+        });
 
         assert_eq!(chat.session_id.as_deref(), Some("sess-9"));
         assert_eq!(chat.custom_title.as_deref(), Some("Ship the parser"));

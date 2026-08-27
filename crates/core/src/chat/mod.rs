@@ -10,7 +10,7 @@
 pub mod activity;
 pub mod find;
 pub mod model;
-pub mod persist;
+pub mod store;
 
 pub use activity::{
     first_line_trunc, group, presentation, ActivityGroup, ActivityKind, Presentation,
@@ -21,7 +21,7 @@ pub use model::{
     QueuedPrompt, SubmitBlock, TermView, Thought, ToolItem, TranscriptItemId, TurnAnswer, UserMsg,
     MAX_TERM_BYTES,
 };
-pub use persist::{
-    build_stored, capture_prefs, list_conversations, list_root_conversations, now_secs, restore,
-    save_chat, ConvMeta, StoredConversation, StoredPrefs,
+pub use store::{
+    commit, conv_dir, conversations_dir, list_conversations, load, now_secs, ConfigPick, ConvMeta,
+    ConversationSnapshot, PendingWrite, Prefs,
 };

@@ -272,9 +272,7 @@ impl ChatPane {
             // Nothing went with it: the project page lists that project's
             // archives above the button that starts a session, and a session
             // already running reaches the same picker from its header menu.
-            let stored = asked_for
-                .as_deref()
-                .and_then(onehand_core::chat::persist::load);
+            let stored = asked_for.as_deref().and_then(onehand_core::chat::load);
             self.connect(uid, stored, cx);
         }
         if switching_away(self.active, uid) {
@@ -340,7 +338,7 @@ impl ChatPane {
     fn start(&mut self, uid: u64, resume: Option<ConvMeta>, cx: &mut Context<Self>) {
         let stored = resume
             .as_ref()
-            .and_then(|meta| onehand_core::chat::persist::load(&meta.path));
+            .and_then(|meta| onehand_core::chat::load(&meta.dir));
         self.connect(uid, stored, cx);
     }
 
@@ -353,7 +351,7 @@ impl ChatPane {
     fn connect(
         &mut self,
         uid: u64,
-        stored: Option<onehand_core::chat::persist::StoredConversation>,
+        stored: Option<onehand_core::chat::ConversationSnapshot>,
         cx: &mut Context<Self>,
     ) {
         let Some(conv) = self.conversations.get_mut(&uid) else {
@@ -373,12 +371,12 @@ impl ChatPane {
             cx,
         );
         if let Some(stored) = stored {
-            // The archive is adopted *before* the adapter's replay lands, so a
-            // stale resume still shows the conversation instead of a blank pane.
-            // Through the session rather than into its model directly: adopting
-            // is what parses the markdown being adopted, and a transcript whose
-            // blocks are unparsed draws its own source.
-            session.update(cx, |session, cx| session.adopt(&stored, cx));
+            // The conversation is adopted *before* the adapter's replay lands,
+            // so a stale resume still shows it instead of a blank pane. Through
+            // the session rather than into its model directly: adopting is what
+            // parses the markdown being adopted, and a transcript whose blocks
+            // are unparsed draws its own source.
+            session.update(cx, |session, cx| session.adopt(stored, cx));
         }
 
         let agent = spec.name.clone();
@@ -445,17 +443,17 @@ impl ChatPane {
         self.conversations.get_mut(&self.active?)
     }
 
-    /// Archive a conversation to its session file, off the UI loop.
+    /// Write a finished turn to the conversation's file, off the UI loop.
     ///
-    /// This is the per-turn save `persist.rs` describes and nothing was calling
-    /// : the archive used to be written only from `Chat`'s
-    /// `Drop`, so a crash -- or any exit where GPUI does not run entity drops --
-    /// took the whole conversation with it.
+    /// The transcript is written at the end of *every* turn rather than only
+    /// when the session is dropped, so a crash -- or any exit where GPUI does
+    /// not run entity drops -- costs the turn in flight instead of the whole
+    /// conversation.
     ///
-    /// Split the way `persist` asks for: `build_stored` is a cheap snapshot and
-    /// stays on the UI thread (it needs `&Chat`), while the serialize + write
-    /// goes to the background executor. `write_stored` is write-then-rename, so
-    /// this racing the `Drop` save leaves one complete file either way.
+    /// Split in two: preparing the write needs the transcript and so stays on
+    /// the UI thread, while the writing itself goes to the background executor.
+    /// Preparing is what moves the conversation's mark, so two of these in
+    /// flight at once cannot both carry the same turn.
     ///
     /// The result is carried back rather than dropped: this is the only save in
     /// the app whose failure the user could not recover from by redoing the
@@ -463,15 +461,39 @@ impl ChatPane {
     /// the answer comes home to -- the write outlives the turn that started it,
     /// and by the time it lands the session may not even be the one on screen.
     fn archive_detached(uid: u64, session: &Entity<ChatSession>, cx: &mut Context<Self>) {
-        // `None` while the session has no id or nothing worth saving, which is
-        // what keeps a fresh session from clobbering a stored one.
-        let Some(stored) = onehand_core::chat::persist::build_stored(&session.read(cx).chat) else {
+        // `None` while the session has nowhere to write, no id, or nothing new
+        // -- which is what keeps a session nobody used from standing in the
+        // list beside conversations that were had.
+        let Some(pending) = session.update(cx, |session, _| session.chat.flush()) else {
             return;
         };
+        Self::commit_detached(uid, pending, cx);
+    }
+
+    /// Write only what a conversation is *called* and what it is set to.
+    ///
+    /// Kept apart from the turn's own write because a rename can happen in the
+    /// middle of one, and a line written mid-turn describes a tool call that has
+    /// not finished -- which nothing would ever revisit, since the turn's save
+    /// writes only what came after it.
+    fn archive_meta_detached(uid: u64, session: &Entity<ChatSession>, cx: &mut Context<Self>) {
+        let Some(pending) = session.update(cx, |session, _| session.chat.flush_meta()) else {
+            return;
+        };
+        Self::commit_detached(uid, pending, cx);
+    }
+
+    /// Hand a prepared write to the background executor and bring the answer
+    /// back to the session it belongs to.
+    fn commit_detached(
+        uid: u64,
+        pending: onehand_core::chat::PendingWrite,
+        cx: &mut Context<Self>,
+    ) {
         cx.spawn(async move |pane, cx| {
             let written = cx
                 .background_executor()
-                .spawn(async move { onehand_core::chat::persist::write_stored(&stored) })
+                .spawn(async move { onehand_core::chat::commit(&pending) })
                 .await;
             let _ = pane.update(cx, |pane: &mut Self, cx| {
                 // A session closed while its own write was in flight has
@@ -544,11 +566,16 @@ impl ChatPane {
         }
         self.restart_armed = None;
 
-        // Snapshotted only now: an arming press does not need it, and the
-        // snapshot copies the whole transcript.
+        // Taken only now: an arming press does not need it.
+        //
+        // The conversation is *moved* out of the old session rather than copied
+        // from it. The old one is about to be dropped, and a drop still holding
+        // these items would write them to the file a second time -- while the
+        // mark riding along is what lets the replacement carry on the same file
+        // instead of starting the conversation again inside it.
         let stored = self
             .session_of(uid)
-            .and_then(|s| onehand_core::chat::persist::build_stored(&s.read(cx).chat));
+            .and_then(|s| s.update(cx, |s, _| s.chat.take_snapshot()));
         // `connect` drops the old adapter before spawning the new one, so
         // nothing here has to take the session apart first.
         self.connect(uid, stored, cx);
@@ -634,7 +661,13 @@ impl ChatPane {
         cx.spawn(async move |pane, cx| {
             let past = cx
                 .background_executor()
-                .spawn(async move { onehand_core::chat::list_root_conversations(&scan) })
+                .spawn(async move {
+                    onehand_core::chat::list_conversations(
+                        &onehand_core::chat::conversations_dir(),
+                        &scan,
+                        None,
+                    )
+                })
                 .await;
             let _ = pane.update(cx, |pane: &mut Self, cx| {
                 // Reading a directory of archives takes long enough that the
@@ -812,10 +845,13 @@ impl ChatPane {
 
     /// Give a conversation a name of the user's choosing.
     ///
-    /// Archived immediately rather than at the end of the next turn. A rename
-    /// is often the last thing done to a finished conversation, and a title
-    /// that survives only until the next prompt is a title that is usually
+    /// Written down immediately rather than at the end of the next turn. A
+    /// rename is often the last thing done to a finished conversation, and a
+    /// title that survives only until the next prompt is a title that is usually
     /// lost.
+    ///
+    /// The name only, not the transcript: a rename can land in the middle of a
+    /// turn, and this must not commit a half-finished turn to the file.
     ///
     /// Returns whether anything changed — a blank name is not a rename, and
     /// `Chat::rename` is where that rule lives.
@@ -826,7 +862,7 @@ impl ChatPane {
         if !session.update(cx, |session, _| session.chat.rename(title)) {
             return false;
         }
-        Self::archive_detached(uid, &session, cx);
+        Self::archive_meta_detached(uid, &session, cx);
         cx.notify();
         true
     }
@@ -838,7 +874,7 @@ impl ChatPane {
             return;
         };
         session.update(cx, |session, _| session.chat.reset_title());
-        Self::archive_detached(uid, &session, cx);
+        Self::archive_meta_detached(uid, &session, cx);
         cx.notify();
     }
 
@@ -997,7 +1033,7 @@ impl ChatPane {
     /// first, plus the option to start fresh.
     fn resume_picker(&mut self, uid: u64, cx: &mut Context<Self>) -> impl IntoElement + use<> {
         let past = self.choices_of(uid);
-        let now = onehand_core::chat::persist::now_secs();
+        let now = onehand_core::chat::now_secs();
 
         div()
             .size_full()
@@ -1073,7 +1109,7 @@ impl ChatPane {
                 .child("Add a project to start a session")
                 .into_any_element();
         };
-        let now = onehand_core::chat::persist::now_secs();
+        let now = onehand_core::chat::now_secs();
         let muted = cx.theme().muted_foreground;
         // Bounded, and the bound says so below. A project worked in for months
         // has more archives than this page is for, and none of this scrolls.
@@ -1148,7 +1184,7 @@ impl ChatPane {
                             meta.agent
                         );
                         let (agent, archive) =
-                            (SharedString::from(meta.agent.clone()), meta.path.clone());
+                            (SharedString::from(meta.agent.clone()), meta.dir.clone());
                         conversation_card(
                             ("home", i),
                             meta.title.clone().into(),
@@ -1323,10 +1359,10 @@ impl ChatPane {
 
     /// Go back to choosing which past conversation this session should run.
     ///
-    /// The live one is archived on the way out: the transcript is written at
-    /// the end of every turn, so an idle conversation is already on disk, but
-    /// the title and the selector picks are only captured by a snapshot and
-    /// leaving without one would lose them.
+    /// The live one has its name and settings written on the way out: the
+    /// transcript is written at the end of every turn, so an idle conversation
+    /// is already on disk, but the title and the selector picks are metadata
+    /// and leaving without writing them would lose them.
     ///
     /// The adapter stays up until a choice is made. Dropping it here would gain
     /// nothing -- the choice is what decides which conversation to connect to,
@@ -1339,13 +1375,19 @@ impl ChatPane {
             return;
         };
         if let Some(session) = conv.session() {
-            Self::archive_detached(uid, &session.clone(), cx);
+            Self::archive_meta_detached(uid, &session.clone(), cx);
         }
         let (root, agent) = (conv.root.clone(), conv.spec.name.clone());
         cx.spawn(async move |pane, cx| {
             let past = cx
                 .background_executor()
-                .spawn(async move { onehand_core::chat::list_conversations(&root, &agent) })
+                .spawn(async move {
+                    onehand_core::chat::list_conversations(
+                        &onehand_core::chat::conversations_dir(),
+                        &root,
+                        Some(&agent),
+                    )
+                })
                 .await;
             let _ = pane.update(cx, |pane: &mut Self, cx| {
                 // An empty list is not a picker with nothing in it -- it is a
