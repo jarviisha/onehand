@@ -518,9 +518,14 @@ pub fn new_worktree(shell: &Shell, cx: &mut Context<Shell>) -> Dialog {
                         })),
                 )
                 .child(
+                    // Spent while git is working, for the same reason Create is
+                    // and one more: the command cannot be called back, so a
+                    // Cancel that still offered itself would be promising to
+                    // undo something already happening on disk.
                     crate::controls::action("cancel-worktree")
                         .ghost()
                         .label("Cancel")
+                        .disabled(busy)
                         .on_click(cx.listener(|shell: &mut Shell, _: &ClickEvent, _, cx| {
                             shell.cancel_worktree(cx);
                         })),

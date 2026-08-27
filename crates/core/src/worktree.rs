@@ -99,10 +99,69 @@ pub fn worktree_dir(root: &Path, branch: &str) -> PathBuf {
 /// precisely the case where that collision is waiting.
 pub fn worktree_dir_in(parent: &Path, root: &Path, branch: &str) -> PathBuf {
     let (repo, branch) = (slug(&label_for(root)), slug(branch));
+    // A branch of nothing but punctuation slugs away to nothing, and git will
+    // take such a name: `+++` is a branch. Both folder names that would follow
+    // are wrong, and the second is dangerous — a trailing dash, or, when the
+    // project has no name to prefix with either, the *parent itself*, which is
+    // then what `git worktree add` is pointed at. A stand-in keeps the target
+    // inside the folder it was supposed to go in; two such branches want the
+    // same folder, and git refusing the second is the right way to find that
+    // out, since the alternative is a folder name nobody can read.
+    let branch = if branch.is_empty() {
+        "branch".to_string()
+    } else {
+        branch
+    };
     if repo.is_empty() {
         parent.join(branch)
     } else {
         parent.join(format!("{repo}-{branch}"))
+    }
+}
+
+/// The top level of the repository `root` sits in, if it sits in one.
+///
+/// A project root does not have to *be* a repository — a folder inside one is a
+/// project the app supports everywhere else, git status included — and a
+/// worktree cannot be taken of a folder: git checks out repositories. So the
+/// question every part of this has to be asked about is the repository, not the
+/// root: put the second checkout beside *that*, name it after *that*, and the
+/// worktree lands next to the repository instead of inside it, which is what the
+/// whole beside-rather-than-inside rule was for.
+///
+/// Blocking, and runtime-agnostic like every other process call in this crate.
+pub fn repo_top_blocking(root: &Path) -> Option<PathBuf> {
+    let out = std::process::Command::new("git")
+        .arg("-C")
+        .arg(root)
+        .args(["rev-parse", "--show-toplevel"])
+        .output()
+        .ok()?;
+    if !out.status.success() {
+        return None;
+    }
+    let text = String::from_utf8_lossy(&out.stdout).trim().to_string();
+    if text.is_empty() {
+        return None;
+    }
+    let top = PathBuf::from(text);
+    Some(std::fs::canonicalize(&top).unwrap_or(top))
+}
+
+/// The folder to adopt inside a fresh checkout, when the project split was a
+/// folder inside the repository rather than the repository itself.
+///
+/// The new root is the *same subtree* of the new checkout. Handing back the
+/// repository top instead would quietly change which files the project's agent,
+/// file tree and terminal are pointed at — the user split one part of a
+/// monorepo and would find themselves standing in all of it.
+///
+/// Pure: whether that subtree exists on the branch being checked out is a
+/// question for whoever has just run git, not for the rule.
+pub fn subtree_in(made: &Path, top: &Path, root: &Path) -> PathBuf {
+    match root.strip_prefix(top) {
+        Ok(rel) if !rel.as_os_str().is_empty() => made.join(rel),
+        _ => made.to_path_buf(),
     }
 }
 
@@ -262,6 +321,54 @@ mod tests {
         assert_eq!(worktree_dir(Path::new("/"), "fix"), PathBuf::from("/fix"));
     }
 
+    /// A branch git accepts but a slug cannot represent still has to land
+    /// somewhere, and the somewhere must be a new folder inside the parent.
+    #[test]
+    fn a_branch_that_slugs_to_nothing_still_names_a_folder() {
+        assert_eq!(slug("+++"), "", "this is the name that has no slug");
+        assert_eq!(validate_branch("+++"), Ok(()), "and git would take it");
+
+        // Not `/code/onehand-`, which reads as a typo…
+        assert_eq!(
+            worktree_dir(Path::new("/code/onehand"), "+++"),
+            PathBuf::from("/code/onehand-branch")
+        );
+        // …and above all not the parent itself, which is what would then be
+        // handed to `git worktree add` as the directory to create.
+        assert_eq!(
+            worktree_dir(Path::new("/"), "+++"),
+            PathBuf::from("/branch")
+        );
+    }
+
+    /// Splitting a folder *inside* a repository puts the checkout beside the
+    /// repository, and adopts the same folder inside it.
+    #[test]
+    fn a_subtree_keeps_its_place_in_the_new_checkout() {
+        let (top, root) = (Path::new("/code/mono"), Path::new("/code/mono/apps/web"));
+        // Named and placed after the repository, since that is what git checks
+        // out -- not after the folder that was split.
+        assert_eq!(
+            worktree_dir(top, "fix"),
+            PathBuf::from("/code/mono-fix"),
+            "beside the repository, not inside it"
+        );
+        assert_eq!(
+            subtree_in(Path::new("/code/mono-fix"), top, root),
+            PathBuf::from("/code/mono-fix/apps/web")
+        );
+        // A root that is the repository adopts the checkout itself.
+        assert_eq!(
+            subtree_in(Path::new("/code/mono-fix"), top, top),
+            PathBuf::from("/code/mono-fix")
+        );
+        // And a root that is not under the top at all is not forced under it.
+        assert_eq!(
+            subtree_in(Path::new("/code/mono-fix"), top, Path::new("/elsewhere")),
+            PathBuf::from("/code/mono-fix")
+        );
+    }
+
     #[test]
     fn git_complaints_are_trimmed_to_the_sentence() {
         assert_eq!(
@@ -294,6 +401,16 @@ mod tests {
         std::fs::write(repo.join("a.txt"), "x").unwrap();
         git(&repo, &["add", "a.txt"]);
         git(&repo, &["commit", "-qm", "one"]);
+
+        // A folder inside the repository answers with the repository, which is
+        // what decides where its worktree goes and what it is called.
+        let inner = repo.join("apps").join("web");
+        std::fs::create_dir_all(&inner).unwrap();
+        let top = std::fs::canonicalize(&repo).unwrap();
+        assert_eq!(repo_top_blocking(&inner), Some(top.clone()));
+        assert_eq!(repo_top_blocking(&repo), Some(top));
+        // Somewhere that is no repository at all has no top to answer with.
+        assert_eq!(repo_top_blocking(Path::new("/")), None);
 
         // A name nothing answers to is created off HEAD.
         let made = add_blocking(&repo, "feat/x", &worktree_dir(&repo, "feat/x")).unwrap();

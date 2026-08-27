@@ -257,8 +257,19 @@ pub struct WorktreeDraft {
     pub root: PathBuf,
     /// That project's label, for saying out loud what is being split.
     pub label: String,
+    /// The repository the project sits in, which is what git will actually
+    /// check out. Read off disk just after the form opens, so it is `None` for
+    /// the moment before that answer lands -- and for a root that is no
+    /// repository at all, which the form is not offered on.
+    ///
+    /// A project root is often the repository itself, and then this changes
+    /// nothing. It matters when the root is a folder *inside* one: the second
+    /// checkout has to go beside the repository rather than into it, and be
+    /// named after it, because a worktree of half a repository is not a thing
+    /// git can make.
+    pub top: Option<PathBuf>,
     /// A folder the user chose to put the worktree under. `None` ⇒ beside the
-    /// project it came from, which is what `onehand_core::worktree` decides.
+    /// repository it came from, which is what `onehand_core::worktree` decides.
     pub parent: Option<PathBuf>,
     /// What is wrong: the name rule that refused, or git's own words about the
     /// attempt. Cleared by the next keystroke, because the reader has already
@@ -1061,14 +1072,46 @@ impl Shell {
         self.worktree_branch
             .update(cx, |state, cx| state.set_value("", window, cx));
         self.worktree_draft = Some(WorktreeDraft {
-            root,
+            root: root.clone(),
             label,
+            top: None,
             parent: None,
             error: None,
             busy: false,
         });
         self.worktree_branch.focus_handle(cx).focus(window, cx);
         cx.notify();
+
+        // Asked off the UI loop, like every other thing this app learns from a
+        // process. Nothing is showing that depends on the answer yet -- the
+        // folder line stays blank until a branch is named -- so it lands well
+        // before it is read.
+        cx.spawn(async move |shell, cx| {
+            let found = cx
+                .background_executor()
+                .spawn({
+                    let root = root.clone();
+                    async move { worktree::repo_top_blocking(&root) }
+                })
+                .await;
+            shell
+                .update(cx, |shell: &mut Self, cx| {
+                    // Only the draft it was asked for: the form can have been
+                    // closed and reopened on another project in the meantime,
+                    // and a repository answered for one project is not an
+                    // answer about another.
+                    if let Some(draft) = shell
+                        .worktree_draft
+                        .as_mut()
+                        .filter(|draft| draft.root == root)
+                    {
+                        draft.top = found;
+                        cx.notify();
+                    }
+                })
+                .ok();
+        })
+        .detach();
     }
 
     pub fn worktree_draft(&self) -> Option<&WorktreeDraft> {
@@ -1092,9 +1135,14 @@ impl Shell {
         if branch.is_empty() {
             return None;
         }
+        // The repository, not the project, wherever the two differ: git checks
+        // out repositories, so a project that is a folder inside one has its
+        // second checkout placed and named after the repository -- next to it
+        // rather than into its own file tree.
+        let repo = draft.top.as_deref().unwrap_or(&draft.root);
         Some(match draft.parent.as_deref() {
-            Some(parent) => worktree::worktree_dir_in(parent, &draft.root, branch),
-            None => worktree::worktree_dir(&draft.root, branch),
+            Some(parent) => worktree::worktree_dir_in(parent, repo, branch),
+            None => worktree::worktree_dir(repo, branch),
         })
     }
 
@@ -1125,7 +1173,18 @@ impl Shell {
     }
 
     /// Close the form without creating anything.
+    ///
+    /// **Refused while git is working**, and refused here rather than at each
+    /// control, because there are three ways out of this form -- the button,
+    /// Esc, and the dialog's own ✕ -- and a rule held in one of them is a rule
+    /// two ways round it. A `git worktree add` in flight cannot be called back:
+    /// it is a process already writing a checkout to disk. Letting the form go
+    /// would leave that checkout to finish into a workspace with nowhere to put
+    /// it -- a folder that appeared on disk, on a branch, belonging to nothing.
     pub fn cancel_worktree(&mut self, cx: &mut Context<Self>) {
+        if self.worktree_draft.as_ref().is_some_and(|draft| draft.busy) {
+            return;
+        }
         if self.worktree_draft.take().is_some() {
             cx.notify();
         }
@@ -1165,21 +1224,41 @@ impl Shell {
             return;
         };
         let root = draft.root.clone();
+        let top = draft.top.clone();
         draft.busy = true;
         cx.notify();
 
         cx.spawn(async move |shell, cx| {
             let made = {
-                let (root, branch) = (root.clone(), branch.clone());
+                let (root, branch, top) = (root.clone(), branch.clone(), top.clone());
                 cx.background_executor()
-                    .spawn(async move { worktree::add_blocking(&root, &branch, &dir) })
+                    .spawn(async move {
+                        worktree::add_blocking(&root, &branch, &dir).map(|made| {
+                            // What git made is a checkout of the whole
+                            // repository. What is adopted is the part of it the
+                            // user actually split -- the same folder, in the new
+                            // tree. Falling back to the checkout itself when
+                            // that folder is not on this branch, because a root
+                            // pointing at nothing is worse than a wider one.
+                            let Some(top) = top else { return made };
+                            let subtree = worktree::subtree_in(&made, &top, &root);
+                            if subtree.is_dir() { subtree } else { made }
+                        })
+                    })
                     .await
             };
             shell
                 .update_in(cx, |shell: &mut Self, window, cx| {
                     match made {
                         Ok(dir) => {
-                            shell.worktree_draft = None;
+                            // Only the draft this was started from. It is the
+                            // one on screen in every ordinary case -- the form
+                            // refuses to close while it is working -- and
+                            // clearing whatever happens to be there instead
+                            // would throw away a form somebody had since opened.
+                            shell
+                                .worktree_draft
+                                .take_if(|draft| draft.root == root && draft.busy);
                             let label = workspace::label_for(&dir);
                             let idx = shell.window.workspace.add_root(dir);
                             shell.window.workspace.select_root(idx);
