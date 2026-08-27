@@ -5,6 +5,7 @@
 //! the keys it sets — a `[font]`-only file keeps the default agents.
 
 use serde::{Deserialize, Serialize};
+use std::io::Write as _;
 use std::path::{Path, PathBuf};
 
 /// A global agent *definition* — the menu a new session spawns from. Each
@@ -583,17 +584,38 @@ fn tmp_path(path: &Path, pid: u32, seq: u64) -> PathBuf {
     path.with_file_name(name)
 }
 
+/// Write `bytes` to `path` and do not return until the disk has them.
+///
+/// `std::fs::write` returns once the *kernel* has them, which is a different
+/// promise: the bytes sit in the page cache and reach the platter whenever the
+/// system gets round to it. That is fine for a file whose loss costs a re-typed
+/// setting, and not fine for one whose loss costs a conversation — and it is
+/// worse than it sounds when the write is followed by a rename, because losing
+/// power in between can promote a file whose contents never landed.
+///
+/// One place, because "wait for it" is the kind of step that gets left out of
+/// the second copy.
+pub(crate) fn write_synced(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
+    let mut file = std::fs::File::create(path)?;
+    file.write_all(bytes)?;
+    file.sync_all()
+}
+
 /// Write `text` to `path` so a reader never sees half of it.
 ///
-/// Write-then-rename: the rename is atomic, so the file on disk is always one
-/// complete snapshot and a crash mid-write leaves the previous one rather than
-/// a truncated file — and a truncated `onehand-workspace.toml` is a workspace
-/// that no longer loads.
+/// Write-then-rename, with the temp waited for before it is promoted: the
+/// rename is atomic, so the file on disk is always one complete snapshot and a
+/// crash mid-write leaves the previous one rather than a truncated file — and a
+/// truncated `onehand-workspace.toml` is a workspace that no longer loads.
 ///
 /// **Everything that must not be readable half-written goes through here.**
 /// The scheme was written twice once, and the second copy is how a bug fixed in
-/// the first survived. What it does *not* promise is a single writer: two
-/// processes saving one destination still race, and the last rename wins whole.
+/// the first survived. Two things it does *not* promise. Not a single writer:
+/// two processes saving one destination still race, and the last rename wins
+/// whole. And not that the *rename* is durable — the containing directory is
+/// not waited for, so a crash immediately after one can leave the previous
+/// version in place. That costs the newest save; it cannot cost a readable
+/// file, which is the property worth paying an extra wait per write for.
 pub fn write_atomic(path: &Path, text: &str) -> std::io::Result<()> {
     static TMP_SEQ: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
     if let Some(dir) = path.parent() {
@@ -601,7 +623,7 @@ pub fn write_atomic(path: &Path, text: &str) -> std::io::Result<()> {
     }
     let seq = TMP_SEQ.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     let tmp = tmp_path(path, std::process::id(), seq);
-    if let Err(e) = std::fs::write(&tmp, text) {
+    if let Err(e) = write_synced(&tmp, text.as_bytes()) {
         let _ = std::fs::remove_file(&tmp);
         return Err(e);
     }

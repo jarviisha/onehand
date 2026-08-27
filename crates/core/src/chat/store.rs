@@ -580,7 +580,10 @@ pub fn commit(write: &PendingWrite) -> std::io::Result<()> {
             // same file again — which is what makes a rewrite safe to repeat.
             let path = blobs.join(name);
             if !path.exists() {
-                std::fs::write(&path, bytes.as_slice())?;
+                // Waited for, like the line that will point at it: a blob that
+                // is half on disk is a picture that decodes to nothing, and the
+                // card would have no way to know it is showing a ruin.
+                crate::config::write_synced(&path, bytes.as_slice())?;
             }
         }
     }
@@ -606,6 +609,11 @@ pub fn commit(write: &PendingWrite) -> std::io::Result<()> {
         let mut body = write.lines.join("\n");
         body.push('\n');
         file.write_all(body.as_bytes())?;
+        // Waited for before this call answers. Without it "written at the end
+        // of every turn" means the kernel has the turn, not the disk — and the
+        // whole reason the write happens per turn rather than at the end of the
+        // session is to survive the machine going away.
+        file.sync_all()?;
     }
 
     write_meta(&write.dir, &write.meta)
