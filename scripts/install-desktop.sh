@@ -15,13 +15,26 @@ set -euo pipefail
 # this checkout is moved or renamed. An absolute path is how the previous entry
 # came to reference a directory that no longer holds this project.
 
-app_id="onehand"
+# The desktop identity is the checkout's name, not the project's, and the two
+# are kept apart on purpose. The front end this one replaced is still a checkout
+# beside it and still installs an entry called `onehand`; a desktop identity is
+# first-come-first-served, so sharing that string would give the two apps one
+# entry, one icon and one slot in the dock, with whichever was installed last
+# overwriting the other. `app_id` here must stay in step with the constant the
+# window announces (`crates/app/src/shell.rs`) -- they are compared literally.
+#
+# Everything else keeps the project's own name: the binary cargo builds, the
+# icon checked in beside it, and the per-user config directory both front ends
+# share.
+app_id="onehand-gpui"
+app_name="Onehand GPUI"
+project="onehand"
 
 script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 repo_dir="$(cd -- "$script_dir/.." && pwd)"
 
-icon_src="$repo_dir/assets/$app_id.svg"
-binary="$repo_dir/target/release/$app_id"
+icon_src="$repo_dir/assets/$project.svg"
+binary="$repo_dir/target/release/$project"
 
 data_dir="${XDG_DATA_HOME:-$HOME/.local/share}"
 icon_dir="$data_dir/icons/hicolor/scalable/apps"
@@ -46,7 +59,7 @@ install -m 0644 "$icon_src" "$icon_dir/$app_id.svg"
 cat > "$entry_dir/$app_id.desktop" <<EOF
 [Desktop Entry]
 Type=Application
-Name=Onehand
+Name=$app_name
 GenericName=AI Coding Agent Host
 Comment=Desktop GUI hosting AI coding agents over ACP
 Exec=$binary %F

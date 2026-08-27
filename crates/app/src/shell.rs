@@ -73,7 +73,14 @@ const SAVE_DEBOUNCE: std::time::Duration = std::time::Duration::from_millis(600)
 /// installed desktop entry, and that entry's `StartupWMClass`. It is a
 /// reverse-DNS-free plain name because that is what the installed entry is
 /// named, and the two are compared literally.
-const APP_ID: &str = "onehand";
+///
+/// **Deliberately not the binary's name.** The front end this one replaced is
+/// still a checkout of its own and still installs an entry called `onehand`,
+/// and a desktop identity is first-come-first-served: two apps announcing one
+/// name share an entry, an icon and a slot in the dock, and whichever installs
+/// last overwrites the other's entry. So the identity is the checkout's name
+/// while the binary, the icon file and the config directory keep the project's.
+const APP_ID: &str = "onehand-gpui";
 
 /// How long a project must stay selected before its agent is started ahead of
 /// the session that would run it.
