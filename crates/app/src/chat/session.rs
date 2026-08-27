@@ -347,6 +347,15 @@ impl ChatSession {
     ) -> bool {
         let sent = self.chat.submit(text, attachments);
         if sent {
+            // A prompt is also what closes a resumed session's replay window,
+            // and closing it can put a whole conversation back on screen -- the
+            // one the adapter started re-delivering and never finished. Those
+            // blocks were taken out of the transcript when the replay began, so
+            // the parse cache dropped them; coming back, they have to be parsed
+            // again or every answer in the conversation draws as its own
+            // markdown source. The event path is covered because the pump syncs
+            // whenever the transcript moved; this path has no event.
+            self.sync_md(cx);
             cx.notify();
         }
         sent

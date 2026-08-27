@@ -799,6 +799,36 @@ pub enum Link {
     Lost,
 }
 
+/// Where a resumed conversation is between adopting its archive and finding out
+/// what the agent actually replayed.
+///
+/// It carries the archive rather than a yes/no because of what the middle state
+/// costs. A `session/load` replays the conversation as ordinary content events,
+/// so the first of them has to drop the adopted copy or the transcript shows
+/// everything twice — but at that moment the replay has *started*, not
+/// finished, and there is no event anywhere in the protocol that says it has.
+/// An adapter that dies or stalls halfway therefore leaves a transcript holding
+/// two messages of fifty, and every save writes what the transcript holds. The
+/// two-message version was written over the fifty-message file, which is a
+/// conversation destroyed by reopening it.
+///
+/// So the adopted copy is kept until something settles the question, and until
+/// then it — not the live transcript — is what gets archived.
+#[derive(Default)]
+enum Replay {
+    /// Not resuming, or the question is answered: `history ⧺ items` is the
+    /// record.
+    #[default]
+    Settled,
+    /// An archive was adopted and nothing has been replayed into it yet.
+    Armed,
+    /// Replayed content has started arriving. The vec is what `history` held —
+    /// the last transcript known to be whole. What is in `items` is a
+    /// re-delivery of it that may stop at any point, so it is not yet the
+    /// record.
+    Partial(Vec<ChatItem>),
+}
+
 /// What applying one event did, for the front end that has to react to it.
 ///
 /// Deliberately two facts and not a description of the edit. Naming the exact
@@ -880,9 +910,9 @@ pub struct Chat {
     /// each submitted prompt, seeded from the archive's `updated` on resume.
     /// Drives the rail session row's relative-time label. Runtime-only.
     pub last_activity: Option<u64>,
-    /// After a `Connected { resumed: true }`, the next real content event drops
-    /// the loaded history (so a stale resume keeps history instead of blanking).
-    pub replay_pending: bool,
+    /// Where this conversation is between adopting an archive and knowing what
+    /// the agent's replay actually delivered. See [`Replay`].
+    replay: Replay,
     /// Whether the trailing `User` item is still an *open* chunk target: user
     /// chunks of one replayed message merge into it, but any other content
     /// event seals it so the next user chunk starts its own bubble (two
@@ -959,6 +989,57 @@ impl Chat {
     /// The transcript's current revision. See the field.
     pub fn revision(&self) -> u64 {
         self.revision
+    }
+
+    /// Whether an adopted archive is still waiting for the agent to replay it.
+    pub fn replay_pending(&self) -> bool {
+        matches!(self.replay, Replay::Armed)
+    }
+
+    /// What a save should write: the live transcript, unless a replay is
+    /// halfway through re-delivering the conversation, in which case it is the
+    /// copy that is known to be whole.
+    ///
+    /// The single place the rule is applied, because the archive has a single
+    /// place it is built from. Refusing to *save* mid-replay rather than
+    /// refusing to *describe* the conversation is deliberate: the same snapshot
+    /// is what a restart hands the replacement adapter, and a restart that came
+    /// back empty-handed would silently start a brand-new session and leave the
+    /// conversation orphaned on disk.
+    pub fn archivable_items(&self) -> Vec<&ChatItem> {
+        match &self.replay {
+            Replay::Partial(stash) => stash.iter().collect(),
+            Replay::Settled | Replay::Armed => {
+                self.history.iter().chain(self.items.iter()).collect()
+            }
+        }
+    }
+
+    /// Close the replay window, putting the adopted archive back if the replay
+    /// came up short of it.
+    ///
+    /// Short is the only case that restores. A replay that delivered at least as
+    /// much as the archive *is* the better record — it is the agent's own, and
+    /// it can legitimately be longer than the file when a previous run died
+    /// between the last save and the end of a turn. Locally-minted notices are
+    /// not part of the count and are kept either way: they say why the resume
+    /// went the way it did, which is exactly what the user needs on screen when
+    /// this restores anything.
+    fn settle_replay(&mut self) {
+        let Replay::Partial(stash) = std::mem::replace(&mut self.replay, Replay::Settled) else {
+            return;
+        };
+        let replayed = self
+            .items
+            .iter()
+            .filter(|it| !matches!(it, ChatItem::Notice { .. }))
+            .count();
+        if replayed < stash.len() {
+            self.history = stash;
+            self.items
+                .retain(|it| matches!(it, ChatItem::Notice { .. }));
+            self.touch();
+        }
     }
 
     /// Record that the transcript changed.
@@ -1063,12 +1144,14 @@ impl Chat {
         // re-delivers it into `items`. Without the reset the view (history ⧺
         // items) shows everything twice and the next turn-end save doubles
         // the archive on disk.
-        persist::save_chat(self);
+        if let Err(e) = persist::save_chat(self) {
+            eprintln!("onehand: conversation not archived: {e}");
+        }
         self.items.clear();
         self.terminals.clear();
         self.history = items;
         self.session_id = Some(session_id);
-        self.replay_pending = true;
+        self.replay = Replay::Armed;
         self.touch();
     }
 
@@ -1146,11 +1229,12 @@ impl Chat {
         }
     }
 
-    /// Drop the loaded history the first time real replayed content arrives.
+    /// Take the loaded history off the screen the first time real replayed
+    /// content arrives — and keep hold of it, because "the replay has begun" is
+    /// not "the replay has finished". See [`Replay`].
     fn consume_replay(&mut self) {
-        if self.replay_pending {
-            self.history.clear();
-            self.replay_pending = false;
+        if matches!(self.replay, Replay::Armed) {
+            self.replay = Replay::Partial(std::mem::take(&mut self.history));
         }
     }
 
@@ -1162,6 +1246,13 @@ impl Chat {
     /// belong with the reducer that knows them, and a second copy is a second
     /// thing to keep in step.
     pub fn apply(&mut self, event: AcpEvent) -> ApplyOutcome {
+        // Asked of the transcript itself rather than derived from the event's
+        // kind. The two agree for every ordinary event, and disagree for the one
+        // that matters: a failed resume is announced by a *metadata* event, and
+        // settling it can put a whole conversation back on screen. Reported as
+        // unchanged, that conversation would be drawn from blocks nobody had
+        // parsed — every answer in it rendering as its own markdown source.
+        let before = self.revision;
         // Session-metadata events (handshake, mode/command advertisements)
         // aren't conversation activity; anything else refreshes the rail's
         // relative-time label — "now" while a session works, aging once quiet.
@@ -1203,11 +1294,28 @@ impl Chat {
                 self.tx = Some(tx);
                 self.link = Link::Connected;
                 self.resumed = resumed;
-                // History-drop was already armed in `load_history`; re-evaluate it
-                // here so a `session/new` fallback (resumed=false) disarms and keeps
-                // the old history as context, while a resume that hasn't dropped yet
-                // (history still present) stays armed for the replay.
-                self.replay_pending = resumed && !self.history.is_empty();
+                // The replay window was armed in `load_history`; this is where it
+                // can close.
+                //
+                // A window that has already seen content settles here, whichever
+                // way the load went: this event *is* the load's answer, so
+                // nothing more is coming. Settling is the same call in both
+                // cases — including its rule that the adopted archive goes back
+                // when the replay came up shorter, which is not only the failed
+                // resume. A successful `session/load` replays the conversation
+                // as the *agent* holds it, and the archive holds things the
+                // agent has no reason to send back: the tool cards, the plans,
+                // the reasoning. Taking a replay's word for it there would trade
+                // a full transcript for a summary of it, permanently, at the
+                // next turn end.
+                //
+                // One that has seen no content stays armed on a real resume,
+                // since the answer can land before the updates it answers for —
+                // and settles on a fallback, which is the adapter saying there
+                // was nothing to replay.
+                if !resumed || !matches!(self.replay, Replay::Armed) || self.history.is_empty() {
+                    self.settle_replay();
+                }
                 // A real resume replays the session's own selector state; a
                 // `session/new` fallback (resumed=false) is a fresh session that
                 // should keep the adapter's defaults, so drop the armed prefs
@@ -1325,7 +1433,7 @@ impl Chat {
         }
 
         ApplyOutcome {
-            transcript_changed: !metadata,
+            transcript_changed: self.revision != before,
             turn_ended,
         }
     }
@@ -1766,7 +1874,12 @@ impl Chat {
         // protocol allows it), that history is the only copy of the
         // conversation — clearing it here would erase it from the archive on
         // the next turn-end save. Keep it as read-only context instead.
-        self.replay_pending = false;
+        //
+        // The same call covers the harder half: a replay that started, stopped
+        // partway, and was then typed over. Settling puts the adopted copy back
+        // when what arrived was less than what was adopted, so the prompt is
+        // added to the whole conversation rather than to a fragment of it.
+        self.settle_replay();
         let sent_at = persist::now_secs();
         self.last_activity = Some(sent_at);
         self.items.push(ChatItem::User(UserMsg {
@@ -1994,9 +2107,18 @@ impl Chat {
 
 /// Archive the conversation when the chat is dropped (session closed / app
 /// exit). `save_chat` is a no-op while empty, so this never clobbers.
+///
+/// A failure here is logged and nothing more, which is the whole answer at this
+/// one point: a chat is dropped while its window is being torn down, so there
+/// is nothing left to raise a message on, and blocking teardown on one would be
+/// worse than the loss. The per-turn save covers the same conversation every
+/// turn and *does* speak up, so any standing condition — a full disk, a
+/// read-only directory — has already been said out loud long before this runs.
 impl Drop for Chat {
     fn drop(&mut self) {
-        persist::save_chat(self);
+        if let Err(e) = persist::save_chat(self) {
+            eprintln!("onehand: conversation not archived: {e}");
+        }
     }
 }
 
@@ -2425,7 +2547,7 @@ mod tests {
         chat.load_history(vec![ChatItem::User(UserMsg::text("hi"))], "sid-1".into());
         assert!(chat.items.is_empty());
         assert_eq!(chat.history.len(), 1);
-        assert!(chat.replay_pending);
+        assert!(chat.replay_pending());
         assert_eq!(chat.session_id.as_deref(), Some("sid-1"));
     }
 
@@ -2438,12 +2560,121 @@ mod tests {
         chat.load_history(vec![ChatItem::User(UserMsg::text("old"))], "sid-1".into());
         chat.push_user("new prompt".into(), Vec::new());
         assert_eq!(chat.history.len(), 1, "history must survive a user prompt");
-        assert!(!chat.replay_pending);
+        assert!(!chat.replay_pending());
 
         let mut chat = Chat::default();
         chat.load_history(vec![ChatItem::User(UserMsg::text("old"))], "sid-1".into());
         chat.apply(AcpEvent::AgentChunk("replayed".into()));
         assert!(chat.history.is_empty(), "a real replay still drops history");
+    }
+
+    /// An archive with `n` messages, adopted, with an id so it can be saved.
+    fn resumed_chat(n: usize) -> Chat {
+        let mut chat = Chat::new(1, PathBuf::from("/r"), "Claude".into());
+        let archive = (0..n)
+            .map(|i| ChatItem::User(UserMsg::text(format!("message {i}"))))
+            .collect();
+        chat.load_history(archive, "sid-1".into());
+        chat
+    }
+
+    /// The headline rule: a replay that stops halfway must not become the
+    /// archive.
+    ///
+    /// A `session/load` re-delivers the conversation as ordinary content, so the
+    /// first piece of it takes the adopted copy off the screen — and at that
+    /// moment an adapter that dies leaves two messages standing where fifty
+    /// were. Every save writes what the transcript holds, so the two-message
+    /// version used to be written straight over the fifty-message file.
+    #[test]
+    fn an_interrupted_replay_never_shrinks_the_archive() {
+        let mut chat = resumed_chat(3);
+        chat.apply(AcpEvent::AgentChunk("first replayed answer".into()));
+        // On screen the adopted copy is gone, exactly as before.
+        assert!(chat.history.is_empty());
+        // What a save would write is not.
+        assert_eq!(persist::build_stored(&chat).unwrap().items.len(), 3);
+
+        // The adapter then dies. Closing the session writes the same three.
+        chat.apply(AcpEvent::Disconnected("adapter exited".into()));
+        assert_eq!(persist::build_stored(&chat).unwrap().items.len(), 3);
+    }
+
+    /// A resume that succeeds can still deliver less than the archive holds.
+    ///
+    /// The replay is the conversation as the *agent* holds it, and the archive
+    /// holds things the agent has no reason to send back — the tool cards, the
+    /// plans, the reasoning. Trading the full transcript for the agent's summary
+    /// of it would be permanent from the next turn end onwards, so the shorter
+    /// side never wins, however the load went.
+    #[test]
+    fn a_short_replay_loses_to_the_archive_even_when_the_load_succeeded() {
+        let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
+        let mut chat = resumed_chat(4);
+        chat.apply(AcpEvent::AgentChunk("a summary of all that".into()));
+        chat.apply(AcpEvent::Connected { tx, resumed: true });
+
+        assert_eq!(chat.history.len(), 4, "the archive is back on screen");
+        assert_eq!(persist::build_stored(&chat).unwrap().items.len(), 4);
+    }
+
+    /// …and once the load has answered with everything, the replay *is* the
+    /// record.
+    #[test]
+    fn a_completed_replay_archives_what_was_replayed() {
+        let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
+        let mut chat = resumed_chat(2);
+        chat.apply(AcpEvent::UserChunk("message 0".into()));
+        chat.apply(AcpEvent::AgentChunk("answer".into()));
+        chat.apply(AcpEvent::Connected { tx, resumed: true });
+
+        let stored = persist::build_stored(&chat).unwrap();
+        assert!(chat.history.is_empty());
+        assert_eq!(
+            stored.items.len(),
+            2,
+            "the replayed transcript, not the old"
+        );
+        assert!(!chat.replay_pending());
+    }
+
+    /// A resume the adapter could not honour puts the conversation back.
+    ///
+    /// The client falls back to a fresh session and says so; the archive it
+    /// failed to load is the only copy there is, and what the adapter managed
+    /// to stream before failing is a fragment of it.
+    #[test]
+    fn a_failed_resume_puts_the_archive_back() {
+        let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
+        let mut chat = resumed_chat(3);
+        chat.apply(AcpEvent::UserChunk("message 0".into()));
+        chat.apply(AcpEvent::Error("session/load failed".into()));
+        chat.apply(AcpEvent::Connected { tx, resumed: false });
+
+        assert_eq!(chat.history.len(), 3, "the conversation is back on screen");
+        assert_eq!(
+            chat.items.len(),
+            1,
+            "and the fragment is gone, but not the reason"
+        );
+        assert!(matches!(chat.items[0], ChatItem::Notice { .. }));
+        assert_eq!(persist::build_stored(&chat).unwrap().items.len(), 4);
+    }
+
+    /// A replay longer than the archive is the better record, and survives
+    /// settling. That happens when a previous run died between the last save
+    /// and the end of a turn: the agent has the turn, the file does not.
+    #[test]
+    fn a_replay_that_delivered_more_is_kept() {
+        let mut chat = resumed_chat(2);
+        for i in 0..3 {
+            chat.apply(AcpEvent::UserChunk(format!("message {i}")));
+            chat.apply(AcpEvent::AgentChunk("answer".into()));
+        }
+        chat.push_user("carry on".into(), Vec::new());
+
+        assert!(chat.history.is_empty(), "the shorter copy is not put back");
+        assert_eq!(persist::build_stored(&chat).unwrap().items.len(), 7);
     }
 
     #[test]
@@ -2829,7 +3060,7 @@ mod tests {
         // The rail dates a resumed session from its last real turn, not from
         // the moment it was reopened.
         assert_eq!(chat.last_activity, Some(1_700_000_000));
-        assert!(chat.replay_pending, "a resume arms the replay window");
+        assert!(chat.replay_pending(), "a resume arms the replay window");
     }
 
     /// Cancelling must resolve parked permissions *before* it cancels: ACP

@@ -19,6 +19,9 @@ const VERSION: u32 = 1;
 /// The persisted shape of one conversation.
 #[derive(Serialize, Deserialize)]
 pub struct StoredConversation {
+    /// Defaulted rather than required: a file missing the key is one written
+    /// before this build, which is exactly the file that must still open.
+    #[serde(default)]
     pub version: u32,
     pub session_id: String,
     pub root: String,
@@ -263,9 +266,8 @@ pub fn now_secs() -> u64 {
 pub fn build_stored(chat: &Chat) -> Option<StoredConversation> {
     let sid = chat.session_id.as_deref()?;
     let items: Vec<StoredItem> = chat
-        .history
-        .iter()
-        .chain(chat.items.iter())
+        .archivable_items()
+        .into_iter()
         .filter_map(|it| store_item(chat, it))
         .collect();
     if items.is_empty() {
@@ -303,33 +305,34 @@ pub fn capture_prefs(chat: &Chat) -> StoredPrefs {
 /// Serialize + write a prepared snapshot to its session file. Blocking; call from
 /// a blocking pool (`spawn_blocking`), not inline in the UI loop.
 ///
-/// Write-then-rename, with a per-call temp name: the turn-end pool write and the
-/// synchronous `Drop` save can race on the same conversation, and a plain
-/// `fs::write` interleaving (or a crash mid-write) would leave truncated JSON
-/// that [`load`] rejects forever — the conversation would silently vanish from
-/// the resume picker. The rename is atomic, so the file is always one complete
-/// snapshot (last writer wins).
-pub fn write_stored(conv: &StoredConversation) {
-    static TMP_SEQ: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
-    let path = conv_path(&conv.session_id);
-    if let Some(dir) = path.parent() {
-        let _ = std::fs::create_dir_all(dir);
-    }
-    if let Ok(json) = serde_json::to_string_pretty(conv) {
-        let seq = TMP_SEQ.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-        let tmp = path.with_extension(format!("tmp{seq}"));
-        if std::fs::write(&tmp, json).is_ok() && std::fs::rename(&tmp, &path).is_err() {
-            let _ = std::fs::remove_file(&tmp);
-        }
-    }
+/// The write goes through [`crate::config::write_atomic`] rather than having a
+/// copy of write-then-rename here. It needs the property for its own reason —
+/// the turn-end pool write and the synchronous `Drop` save can race on one
+/// conversation, and a plain `fs::write` interleaving (or a crash mid-write)
+/// would leave truncated JSON that [`load`] rejects forever, so the
+/// conversation would silently vanish from the resume picker — but a second
+/// copy of the scheme is a second place for it to be subtly wrong, which is
+/// what happened.
+///
+/// **Errors are returned, not swallowed.** A transcript is the one thing here
+/// the user cannot write again, so a full disk or a read-only directory has to
+/// be something a caller can say out loud.
+pub fn write_stored(conv: &StoredConversation) -> std::io::Result<()> {
+    let json = serde_json::to_string_pretty(conv).map_err(std::io::Error::other)?;
+    crate::config::write_atomic(&conv_path(&conv.session_id), &json)
 }
 
 /// Synchronous build + write, for the `Drop` path (session close / app exit,
 /// where there is no async context). The hot per-turn path uses
 /// [`build_stored`] + an off-thread [`write_stored`] instead.
-pub fn save_chat(chat: &Chat) {
-    if let Some(conv) = build_stored(chat) {
-        write_stored(&conv);
+///
+/// Nothing worth saving is `Ok(())`: a fresh session having no archive to write
+/// is not a failure, and reporting it as one would put an error on screen every
+/// time an empty conversation was closed.
+pub fn save_chat(chat: &Chat) -> std::io::Result<()> {
+    match build_stored(chat) {
+        Some(conv) => write_stored(&conv),
+        None => Ok(()),
     }
 }
 
@@ -407,9 +410,45 @@ fn store_content(chat: &Chat, c: &ToolContent) -> StoredContent {
 }
 
 /// Load a stored conversation file.
+///
+/// `None` covers three different things and only one of them is ordinary, so
+/// the other two say so on the way past. An archive that cannot be read or
+/// parsed is skipped by the listing, which means it never reaches the picker,
+/// which means nothing ever resumes it and nothing ever writes over it — it is
+/// invisible rather than destroyed. That is survivable, but silent it is not
+/// allowed to be: a conversation missing from the list with no explanation
+/// anywhere reads as the app having lost it.
 pub fn load(path: &Path) -> Option<StoredConversation> {
-    let text = std::fs::read_to_string(path).ok()?;
-    serde_json::from_str(&text).ok()
+    let text = match std::fs::read_to_string(path) {
+        Ok(text) => text,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return None,
+        Err(e) => {
+            eprintln!("onehand: cannot read {}: {e}", path.display());
+            return None;
+        }
+    };
+    let conv: StoredConversation = match serde_json::from_str(&text) {
+        Ok(conv) => conv,
+        Err(e) => {
+            eprintln!(
+                "onehand: bad conversation archive in {}: {e}",
+                path.display()
+            );
+            return None;
+        }
+    };
+    // The one thing a version is for. It was written from the start and read
+    // nowhere, so a file from a build that knew more than this one would have
+    // been parsed under the wrong schema and half-understood — which is worse
+    // than refusing it, because the next save would write the misreading back.
+    if conv.version > VERSION {
+        eprintln!(
+            "onehand: {} was written by a newer build and was not opened",
+            path.display()
+        );
+        return None;
+    }
+    Some(conv)
 }
 
 /// Rebuild renderable [`ChatItem`]s from a stored conversation.
@@ -535,11 +574,6 @@ fn list_matching(root: &Path, agent: Option<&str>) -> Vec<ConvMeta> {
     // Newest first: the picker's top row is the conversation most likely wanted.
     out.sort_by_key(|conv| std::cmp::Reverse(conv.updated));
     out
-}
-
-/// Delete a conversation archive.
-pub fn delete(path: &Path) {
-    let _ = std::fs::remove_file(path);
 }
 
 #[cfg(test)]
@@ -754,6 +788,39 @@ mod tests {
                 ..
             }
         ));
+    }
+
+    /// The one thing the version field is for, and the first time it is used.
+    ///
+    /// It was written from the start and read nowhere, so a file from a build
+    /// that knew a wider format would have been parsed under this one's schema
+    /// and half-understood — and the next save would have written that
+    /// misreading back over the original. Refusing it leaves the file alone.
+    #[test]
+    fn an_archive_from_a_newer_version_is_refused() {
+        let dir = std::env::temp_dir().join(format!("onehand-archive-test-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("c.json");
+        let body = r#""session_id":"s","root":"/r","agent":"Claude","updated":1,
+            "items":[{"t":"agent","text":"hi"}]"#;
+
+        std::fs::write(&path, format!("{{{body},\"version\":{VERSION}}}")).unwrap();
+        assert!(load(&path).is_some(), "this build's own files still open");
+
+        std::fs::write(&path, format!("{{{body},\"version\":{}}}", VERSION + 1)).unwrap();
+        assert!(load(&path).is_none());
+        assert!(path.exists(), "and the file it refused is still there");
+
+        // A missing key is a file written before the field existed, which is
+        // exactly the file that must keep opening.
+        std::fs::write(&path, format!("{{{body}}}")).unwrap();
+        assert!(load(&path).is_some());
+
+        // Nothing there at all is the ordinary answer, not a complaint.
+        assert!(load(&dir.join("nothing.json")).is_none());
+
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]

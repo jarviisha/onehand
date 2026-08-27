@@ -391,7 +391,7 @@ impl ChatPane {
             move |pane: &mut Self, session, event: &ChatEvent, cx| {
                 match event {
                     ChatEvent::TurnEnded => {
-                        Self::archive_detached(&session, cx);
+                        Self::archive_detached(uid, &session, cx);
                         pane.turn_ended_detached(uid, &agent, &root_label, cx);
                         cx.emit(ChatPaneEvent::WorkTreeTouched);
                     }
@@ -456,15 +456,45 @@ impl ChatPane {
     /// stays on the UI thread (it needs `&Chat`), while the serialize + write
     /// goes to the background executor. `write_stored` is write-then-rename, so
     /// this racing the `Drop` save leaves one complete file either way.
-    fn archive_detached(session: &Entity<ChatSession>, cx: &mut Context<Self>) {
+    ///
+    /// The result is carried back rather than dropped: this is the only save in
+    /// the app whose failure the user could not recover from by redoing the
+    /// action, so it is the last one that should have been silent. `uid` is what
+    /// the answer comes home to -- the write outlives the turn that started it,
+    /// and by the time it lands the session may not even be the one on screen.
+    fn archive_detached(uid: u64, session: &Entity<ChatSession>, cx: &mut Context<Self>) {
         // `None` while the session has no id or nothing worth saving, which is
         // what keeps a fresh session from clobbering a stored one.
         let Some(stored) = onehand_core::chat::persist::build_stored(&session.read(cx).chat) else {
             return;
         };
-        cx.background_executor()
-            .spawn(async move { onehand_core::chat::persist::write_stored(&stored) })
-            .detach();
+        cx.spawn(async move |pane, cx| {
+            let written = cx
+                .background_executor()
+                .spawn(async move { onehand_core::chat::persist::write_stored(&stored) })
+                .await;
+            let _ = pane.update(cx, |pane: &mut Self, cx| {
+                // A session closed while its own write was in flight has
+                // nowhere to file the answer, and nothing left to tell.
+                let Some(conv) = pane.conversations.get_mut(&uid) else {
+                    return;
+                };
+                match written {
+                    Ok(()) => conv.archive_failed = false,
+                    Err(e) => {
+                        // Only the edge. A directory that has gone read-only
+                        // fails at the end of every turn, and one message per
+                        // turn is how the first one gets lost.
+                        let first = !conv.archive_failed;
+                        conv.archive_failed = true;
+                        if first {
+                            cx.emit(ChatPaneEvent::ArchiveFailed(e.to_string()));
+                        }
+                    }
+                }
+            });
+        })
+        .detach();
     }
 
     /// This pane's zoom, for the shell to step.
@@ -796,7 +826,7 @@ impl ChatPane {
         if !session.update(cx, |session, _| session.chat.rename(title)) {
             return false;
         }
-        Self::archive_detached(&session, cx);
+        Self::archive_detached(uid, &session, cx);
         cx.notify();
         true
     }
@@ -808,7 +838,7 @@ impl ChatPane {
             return;
         };
         session.update(cx, |session, _| session.chat.reset_title());
-        Self::archive_detached(&session, cx);
+        Self::archive_detached(uid, &session, cx);
         cx.notify();
     }
 
@@ -1309,7 +1339,7 @@ impl ChatPane {
             return;
         };
         if let Some(session) = conv.session() {
-            Self::archive_detached(&session.clone(), cx);
+            Self::archive_detached(uid, &session.clone(), cx);
         }
         let (root, agent) = (conv.root.clone(), conv.spec.name.clone());
         cx.spawn(async move |pane, cx| {
@@ -1855,6 +1885,14 @@ pub enum ChatPaneEvent {
         agent: Option<SharedString>,
         resume: Option<PathBuf>,
     },
+    /// A conversation could not be written to disk.
+    ///
+    /// Announced rather than shown here because the pane has no window to show
+    /// it on, and because this is the one layer of the app's state the user
+    /// cannot produce again: a workspace or a config that fails to save can be
+    /// re-entered, a conversation that fails to save is gone. Every other write
+    /// in the app says so when it fails; this one used to fail in silence.
+    ArchiveFailed(String),
 }
 
 impl EventEmitter<ChatPaneEvent> for ChatPane {}

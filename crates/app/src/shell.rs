@@ -508,6 +508,13 @@ impl Shell {
                     E::StartSession { agent, resume } => {
                         shell.start_session(agent.clone(), resume.clone(), window, cx)
                     }
+                    // Said the same way every other failed write is said, and
+                    // for a stronger reason: a workspace that will not save can
+                    // be described again, a conversation cannot.
+                    E::ArchiveFailed(why) => window.push_notification(
+                        Notification::error(format!("Conversation not saved — {why}")),
+                        cx,
+                    ),
                 }
                 // A finished turn also changes what the rail's session dots
                 // say, and the rail is drawn from a query rather than from

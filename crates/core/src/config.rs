@@ -565,21 +565,42 @@ impl PanelLayout {
     }
 }
 
+/// The temp file one atomic write stages into, beside its destination.
+///
+/// Two properties, and the second is the one that was missing. It **appends**
+/// to the whole file name rather than replacing the extension, so a stem that
+/// already carries a dot keeps its name and a stray temp still says what it
+/// belongs to. And it carries the **process id**, so two onehand processes
+/// staging the same destination cannot pick the same staging file — which they
+/// did while the name was a counter alone, each process starting that counter
+/// at zero: one was still writing its temp when the other renamed that very
+/// temp onto the destination, and what landed was half a file. A pid plus a
+/// counter needs no clock and no dependency, and two processes that are both
+/// alive have different pids by definition.
+fn tmp_path(path: &Path, pid: u32, seq: u64) -> PathBuf {
+    let mut name = path.file_name().unwrap_or_default().to_os_string();
+    name.push(format!(".tmp{pid}-{seq}"));
+    path.with_file_name(name)
+}
+
 /// Write `text` to `path` so a reader never sees half of it.
 ///
-/// Write-then-rename with a per-call temp name, the same shape (and for the
-/// same reason) as `chat::persist::write_stored`, which had it from the start
-/// while every config writer used a plain `fs::write`. The
-/// rename is atomic, so the file on disk is always one complete snapshot: a
-/// crash mid-write leaves the previous one, not a truncated file — and a
-/// truncated `onehand-workspace.toml` is a workspace that no longer loads.
+/// Write-then-rename: the rename is atomic, so the file on disk is always one
+/// complete snapshot and a crash mid-write leaves the previous one rather than
+/// a truncated file — and a truncated `onehand-workspace.toml` is a workspace
+/// that no longer loads.
+///
+/// **Everything that must not be readable half-written goes through here.**
+/// The scheme was written twice once, and the second copy is how a bug fixed in
+/// the first survived. What it does *not* promise is a single writer: two
+/// processes saving one destination still race, and the last rename wins whole.
 pub fn write_atomic(path: &Path, text: &str) -> std::io::Result<()> {
     static TMP_SEQ: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
     if let Some(dir) = path.parent() {
         std::fs::create_dir_all(dir)?;
     }
     let seq = TMP_SEQ.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-    let tmp = path.with_extension(format!("tmp{seq}"));
+    let tmp = tmp_path(path, std::process::id(), seq);
     if let Err(e) = std::fs::write(&tmp, text) {
         let _ = std::fs::remove_file(&tmp);
         return Err(e);
@@ -885,6 +906,55 @@ mod tests {
         };
         cfg.save_to(&dir).unwrap();
         assert_eq!(WorkspaceConfig::load_from(&dir), Load::Found(cfg));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// The staging name has to separate two *processes*, not just two calls.
+    ///
+    /// A counter alone starts at zero in every process, so two onehand
+    /// instances saving the same file both staged into the same temp — one
+    /// still writing it while the other renamed it into place, which is exactly
+    /// the half-written file the rename exists to prevent.
+    #[test]
+    fn temp_names_cannot_collide_across_processes() {
+        let path = Path::new("/d/state.toml");
+        assert_ne!(tmp_path(path, 100, 0), tmp_path(path, 101, 0));
+        assert_ne!(tmp_path(path, 100, 0), tmp_path(path, 100, 1));
+        // A sibling of the destination, so the rename stays on one filesystem.
+        assert_eq!(tmp_path(path, 100, 0).parent(), path.parent());
+    }
+
+    /// Appending rather than replacing the extension: `with_extension` eats
+    /// everything after the last dot, so a session id carrying one lost part of
+    /// its name and two ids could stage into the same temp again.
+    #[test]
+    fn a_dotted_stem_keeps_its_name() {
+        let name = tmp_path(Path::new("/d/a.b.json"), 7, 0);
+        assert_eq!(
+            name.file_name().unwrap().to_str().unwrap(),
+            "a.b.json.tmp7-0"
+        );
+    }
+
+    /// A failed write leaves the destination alone *and* leaves nothing behind:
+    /// a temp that outlives its write is a file nobody will ever collect.
+    #[test]
+    fn write_atomic_leaves_no_temp_behind_when_the_rename_fails() {
+        let dir = std::env::temp_dir().join(format!("onehand-atomic-test-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        // The destination is a directory, so the rename cannot land.
+        let dest = dir.join("taken");
+        std::fs::create_dir_all(&dest).unwrap();
+
+        assert!(write_atomic(&dest, "hello").is_err());
+        let leftovers: Vec<_> = std::fs::read_dir(&dir)
+            .unwrap()
+            .flatten()
+            .map(|e| e.file_name())
+            .filter(|n| n.to_string_lossy().contains(".tmp"))
+            .collect();
+        assert!(leftovers.is_empty(), "left {leftovers:?} behind");
+
         let _ = std::fs::remove_dir_all(&dir);
     }
 

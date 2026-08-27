@@ -536,6 +536,47 @@ mod tests {
         );
     }
 
+    /// Writing a file so a reader never sees half of it is written once.
+    ///
+    /// Not a hypothetical. The write-then-rename dance was written twice — once
+    /// for the config files and once for the conversation archives — and the two
+    /// copies drifted: both named their staging file from a counter that starts
+    /// at zero in every process, so two onehand processes saving the same file
+    /// staged into the *same* temp, one writing it while the other renamed it
+    /// into place. Fixing that in one copy left the other broken, and nothing
+    /// pointed from either to the other.
+    ///
+    /// The rename is the thing to count, because it is the step that makes the
+    /// scheme what it is: anywhere else it appears, somebody has started a
+    /// second copy.
+    #[test]
+    fn an_atomic_write_is_written_in_one_place() {
+        // Assembled at run time so this test does not match its own source.
+        let promote = format!("fs::{}(", "rename");
+        let writers: Vec<String> = workspace_sources()
+            .into_iter()
+            .filter(|(_, source)| {
+                source
+                    .lines()
+                    .filter(|line| !line.trim_start().starts_with("//"))
+                    .any(|line| line.contains(&promote))
+            })
+            .map(|(path, _)| path)
+            .collect();
+        assert_eq!(
+            writers.len(),
+            1,
+            "`{promote}` appears in {writers:?}. A file that must not be read \
+             half-written goes through `config::write_atomic`; a second copy of \
+             the scheme is a second place for it to be quietly wrong."
+        );
+        assert!(
+            writers[0].ends_with("config.rs"),
+            "`{promote}` moved to {}; it belongs with the one atomic write",
+            writers[0]
+        );
+    }
+
     /// The first item code in `line`, if it holds one.
     ///
     /// A code is a capital `D` or `P` (the decision and finding registers),
