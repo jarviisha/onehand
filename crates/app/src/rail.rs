@@ -109,6 +109,23 @@ pub(crate) fn rail_row(
         .child(div().flex_1().min_w_0().truncate().child(label))
 }
 
+/// The rail's header rows, one step above the list they stand over.
+///
+/// Two rows get this — the workspace's name and the primary action — and they
+/// get it together, because they are a block: what everything below is *inside*,
+/// and the one thing to do about it. At the list's own size and tone they read
+/// as its first two entries, which is exactly what they are not; a step up in
+/// height, text size and weight is what makes the eye take them once and then
+/// scan the list underneath.
+///
+/// **The icon column does not move.** The label's x is what every row in the
+/// rail shares, so the icons stay 16px and only the row around them grows —
+/// bigger icons here would leave the header's labels a few pixels off the ones
+/// below, which reads as a mistake rather than as a hierarchy.
+fn lead_row(row: Stateful<Div>) -> Stateful<Div> {
+    row.h_8().text_base().font_medium()
+}
+
 /// A control the rail draws: ghost, extra small, icon-only.
 ///
 /// The pointer is not set here any more. It used to be, because the library
@@ -137,6 +154,21 @@ fn signal_hint(signal: SessionSignal) -> &'static str {
         SessionSignal::AwaitingUser => "Waiting for you",
         SessionSignal::Busy => "Working",
         SessionSignal::UnseenTurn => "Finished while you were away",
+    }
+}
+
+/// What a signal is called where there is room for a name but not a sentence.
+///
+/// Separate from [`signal_hint`], which is what to *do* about the state: a
+/// tooltip is read on purpose and can afford a clause, a badge is read in
+/// passing and can afford two words. Both live here so the rail's mark and the
+/// conversation header's badge cannot end up calling one condition two things.
+pub(crate) fn signal_word(signal: SessionSignal) -> &'static str {
+    match signal {
+        SessionSignal::Lost => "Disconnected",
+        SessionSignal::AwaitingUser => "Waiting for you",
+        SessionSignal::Busy => "Working",
+        SessionSignal::UnseenTurn => "Finished",
     }
 }
 
@@ -795,6 +827,9 @@ pub fn rail(
         .active_root()
         .map(|root| root.label.clone());
     let show_agent = window_state_shell.agents(cx).len() > 1;
+    let workspace_dir = window_state.workspace.storage_dir.clone();
+    let workspace_recents = window_state_shell.recents(cx);
+    let workspace_target = cx.entity().downgrade();
     let recent = recent_rows(window_state_shell, window_state, cx);
     // `display_order`, not `0..len`: pinned projects are drawn first while the
     // roots themselves stay put, so every index a row hands back still means
@@ -852,7 +887,13 @@ pub fn rail(
                 .gap_2()
                 .w_full()
                 .min_w_0()
-                .child(workspace_identity(name.into(), cx))
+                .child(workspace_identity(
+                    name.into(),
+                    workspace_dir,
+                    workspace_recents,
+                    workspace_target,
+                    cx,
+                ))
                 .child(new_session_block(
                     window_state_shell,
                     active_root.as_deref(),
@@ -894,36 +935,172 @@ pub fn rail(
         )
 }
 
-/// The workspace identity line.
+/// The workspace identity line, and the switcher behind it.
 ///
 /// A workspace name is free text and users write sentences into it -- the one in
 /// the screenshot wrapped onto two lines and pushed the primary action down the
 /// rail. It is an *identity*, so it gets exactly one line: truncated, on the
 /// rail's icon column like everything else.
-fn workspace_identity(name: SharedString, cx: &App) -> impl IntoElement + use<> {
-    let muted = cx.theme().muted_foreground;
-    div()
-        .h_flex()
-        .items_center()
-        .w_full()
-        .min_w_0()
-        .h_7()
-        .px_2()
-        .gap_x_2()
-        .child(
-            Icon::new(IconName::LayoutDashboard)
-                .size_4()
-                .text_color(muted),
-        )
-        .child(
-            div()
-                .flex_1()
-                .min_w_0()
-                .truncate()
-                .text_sm()
-                .font_semibold()
-                .child(name),
-        )
+///
+/// **The whole row is the switcher.** The workspace the rail is drawing was the
+/// one thing on screen with no way to be changed from the rail at all -- the
+/// switch was reachable only by opening Settings, two surfaces away from the
+/// name it changes. Behind a chevron at the row's end the target would have been
+/// a few pixels wide while the thing being pointed at is the name beside it, so
+/// the row carries the menu itself.
+///
+/// **Nothing marks it but the pointer.** No chevron, no second icon: this row
+/// sits above the rail's quietest chrome and a caret on it competed with the
+/// primary action right below. What says it is a control is the hover and the
+/// cursor, which this row deliberately did not have while it was a label, plus
+/// the tooltip that names what a press does.
+fn workspace_identity(
+    name: SharedString,
+    current: Option<std::path::PathBuf>,
+    recents: Vec<std::path::PathBuf>,
+    shell: WeakEntity<Shell>,
+    cx: &App,
+) -> impl IntoElement + use<> {
+    let radius = cx.theme().radius;
+    // Resolved up front: the hover closure outlives this borrow of `cx`.
+    let (accent, accent_fg) = (
+        cx.theme().sidebar_accent,
+        cx.theme().sidebar_accent_foreground,
+    );
+    let row = lead_row(
+        div()
+            .id("workspace-identity")
+            .h_flex()
+            .items_center()
+            .w_full()
+            .min_w_0()
+            .px_2()
+            .gap_x_2()
+            .rounded(radius)
+            .cursor_pointer()
+            .hover(move |row| row.bg(accent.opacity(0.8)).text_color(accent_fg))
+            .tooltip(|window, cx| Tooltip::new("Switch to another workspace").build(window, cx)),
+    )
+    // Full ink, not muted. It was the dimmest thing in the header while
+    // standing for the thing the header is about, so the eye read the row
+    // beginning at the name and the mark before it as decoration.
+    .child(Icon::new(IconName::LayoutDashboard).size_4())
+    // Semibold rather than the header block's medium: this is the one name in
+    // the window that says which workspace all of it belongs to.
+    .child(
+        div()
+            .flex_1()
+            .min_w_0()
+            .truncate()
+            .font_semibold()
+            .child(name),
+    );
+
+    crate::controls::MenuTrigger::new(row, accent)
+        .dropdown_menu_with_anchor(Anchor::TopLeft, workspace_menu(current, recents, shell))
+}
+
+/// The parent path of a workspace folder, shortened from the *front*.
+///
+/// A path is read from its tail: the last few components are what tell two
+/// checkouts of the same project apart, and they are exactly what trimming the
+/// end throws away. Keeping the last characters and marking the cut with a
+/// leading `…` is what makes the line identify a folder rather than name the
+/// drive it happens to sit on.
+fn ellipsize_front(s: &str, max: usize) -> SharedString {
+    let count = s.chars().count();
+    if count <= max {
+        return SharedString::from(s.to_string());
+    }
+    let kept: String = s.chars().skip(count - max.saturating_sub(1)).collect();
+    SharedString::from(format!("…{kept}"))
+}
+
+/// How much of a workspace's parent path a switcher row carries.
+const MAX_PARENT: usize = 30;
+
+/// Every workspace this launch knows about.
+///
+/// **Switching still means another window** -- one window hosts exactly one
+/// workspace, so a row here opens the workspace it names, or focuses the window
+/// already showing it. That is what makes the list safe to offer from the rail:
+/// nothing on screen is torn down by a click in it, and the workspace the window
+/// is drawing is marked and cannot be picked, because "switch to where you
+/// already are" is a click that does nothing and reads as a failure.
+///
+/// A row is named by its folder, with the parent path beside it, because the
+/// list is directories and a workspace's own name lives inside a file that
+/// reading here would put disk I/O in the middle of a frame.
+///
+/// The builder, not the trigger: the menu is rebuilt every time it opens, so the
+/// row it hangs off is free to be any element the rail wants.
+fn workspace_menu(
+    current: Option<std::path::PathBuf>,
+    recents: Vec<std::path::PathBuf>,
+    shell: WeakEntity<Shell>,
+) -> impl Fn(PopupMenu, &mut Window, &mut Context<PopupMenu>) -> PopupMenu + 'static {
+    move |menu, _, cx| {
+        let muted = cx.theme().muted_foreground;
+        let mut menu = menu;
+        // No heading over nothing: a workspace that has never been bound
+        // has no recents, and the two actions below stand on their own.
+        if !recents.is_empty() {
+            menu = menu.label("Workspaces");
+        }
+        for dir in &recents {
+            let is_current = current.as_deref() == Some(dir.as_path());
+            let label = ellipsize(
+                &dir.file_name()
+                    .map(|name| name.to_string_lossy().into_owned())
+                    .unwrap_or_else(|| dir.display().to_string()),
+                MAX_LABEL,
+            );
+            let parent = dir
+                .parent()
+                .map(|parent| ellipsize_front(&parent.display().to_string(), MAX_PARENT));
+            let target = shell.clone();
+            let dir = dir.clone();
+            menu = menu.item(
+                PopupMenuItem::element(move |_, _| {
+                    div()
+                        .h_flex()
+                        .items_center()
+                        .gap_2()
+                        .min_w_0()
+                        .child(div().flex_none().child(label.clone()))
+                        .children(parent.clone().map(|parent| {
+                            div().flex_none().text_xs().text_color(muted).child(parent)
+                        }))
+                })
+                .checked(is_current)
+                .disabled(is_current)
+                .on_click(move |_, _, cx: &mut App| {
+                    let dir = dir.clone();
+                    target
+                        .update(cx, |shell: &mut Shell, cx| shell.open_recent(dir, cx))
+                        .ok();
+                }),
+            );
+        }
+        let (open, new) = (shell.clone(), shell.clone());
+        menu.separator()
+            .item(
+                PopupMenuItem::new("Open workspace…")
+                    .icon(Icon::new(IconName::FolderOpen))
+                    .on_click(move |_, _, cx: &mut App| {
+                        open.update(cx, |shell: &mut Shell, cx| shell.open_workspace(cx))
+                            .ok();
+                    }),
+            )
+            .item(
+                PopupMenuItem::new("New workspace…")
+                    .icon(Icon::new(IconName::Plus))
+                    .on_click(move |_, _, cx: &mut App| {
+                        new.update(cx, |shell: &mut Shell, cx| shell.new_workspace(cx))
+                            .ok();
+                    }),
+            )
+    }
 }
 
 /// The rail's primary action, and the agent list behind it.
@@ -977,7 +1154,7 @@ fn new_session_block(
     // the chevron beside it is optional.
     let hint = new_session_hint(active_root, agents.first().map(SharedString::as_ref));
 
-    let primary = rail_row("new-session", IconName::Plus, "New session", cx)
+    let primary = lead_row(rail_row("new-session", IconName::Plus, "New session", cx))
         .tooltip(move |window, cx| Tooltip::new(hint.clone()).build(window, cx))
         .on_click(
             cx.listener(|shell: &mut Shell, _: &ClickEvent, window, cx| {

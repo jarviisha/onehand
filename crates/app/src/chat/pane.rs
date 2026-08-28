@@ -94,6 +94,17 @@ struct EmptyProject {
     /// still running, which is a different thing from a project that has none:
     /// one is a wait and the other is an answer.
     history: Option<Vec<ConvMeta>>,
+    /// Whether it is pinned to the top of the rail, and whether it is a git
+    /// repository.
+    ///
+    /// Two facts the page's own menu needs and cannot work out: one lives in the
+    /// workspace tree and the other in a `git status` sweep, and both are the
+    /// shell's. Pushed rather than asked for, like everything else the pane
+    /// knows about the window, and pushed again whenever either changes — a menu
+    /// still offering *Pin to top* on a project pinned a second ago is worse
+    /// than one that does not offer it at all.
+    pinned: bool,
+    is_repo: bool,
 }
 
 pub struct ChatPane {
@@ -170,6 +181,14 @@ pub struct ChatPane {
     /// Pushed for the same reason, and read in the panel's toolbar: the rail is
     /// the window's chrome and a dock panel has no handle on the window.
     rail_hidden: bool,
+    /// Whether the active project has a shell alive in the terminal dock.
+    ///
+    /// Pushed by the shell, like the flag above and for the same reason: the
+    /// dock is the window's and this panel has no handle on it. It is not the
+    /// dock's *open* state — it is whether a child process is running behind a
+    /// dock that may well be closed, which is the one thing the terminal button
+    /// cannot say by being a button.
+    terminal_live: bool,
     /// How tall the composer overlay measured, last time it was drawn.
     ///
     /// The composer floats over the transcript, so the transcript has to end
@@ -241,6 +260,7 @@ impl ChatPane {
                 empty: None,
                 pending_resume: None,
                 rail_hidden: false,
+                terminal_live: false,
                 composer_h: Default::default(),
             }
         })
@@ -654,6 +674,11 @@ impl ChatPane {
             label,
             path,
             history: None,
+            // Both arrive from the shell a moment later, on the same switch
+            // that brought this page up. Defaulting to "not pinned, not a
+            // repository" is what a menu drawn in that moment can honestly say.
+            pinned: false,
+            is_repo: false,
         });
         // The page being replaced takes its arming press with it: a press made
         // against a row on one project's page speaks for nothing on another's.
@@ -787,6 +812,37 @@ impl ChatPane {
     /// Told by the shell when the rail comes and goes.
     pub fn set_rail_hidden(&mut self, hidden: bool, cx: &mut Context<Self>) {
         self.rail_hidden = hidden;
+        cx.notify();
+    }
+
+    /// Told by the shell when a shell starts or dies on the active project.
+    ///
+    /// **Guarded**, unlike the rail's flag: a terminal notifies once per chunk
+    /// of whatever is printing into it, and the shell's own guard upstream is
+    /// about its own repaint. Repainting the whole conversation on every line a
+    /// build prints, to redraw a dot that has not moved, is the one thing this
+    /// must not cost.
+    /// Told by the shell what the selected project is, beyond its name.
+    ///
+    /// Guarded for the same reason the flag below is: this is pushed from the
+    /// same places a git sweep lands, and a sweep lands on every finished turn.
+    pub fn set_project_facts(&mut self, pinned: bool, is_repo: bool, cx: &mut Context<Self>) {
+        let Some(project) = self.empty.as_mut() else {
+            return;
+        };
+        if project.pinned == pinned && project.is_repo == is_repo {
+            return;
+        }
+        project.pinned = pinned;
+        project.is_repo = is_repo;
+        cx.notify();
+    }
+
+    pub fn set_terminal_live(&mut self, live: bool, cx: &mut Context<Self>) {
+        if self.terminal_live == live {
+            return;
+        }
+        self.terminal_live = live;
         cx.notify();
     }
 
@@ -1231,106 +1287,123 @@ impl ChatPane {
         div()
             .size_full()
             .v_flex()
-            .items_center()
-            .justify_center()
-            .p_6()
+            // The header stays. It is the panel's only chrome, and everything on
+            // it that this page can still answer is about the *project* rather
+            // than about a conversation: the file tree, a shell, the way back to
+            // a hidden rail. Dropping it here took all three away at exactly the
+            // moment there is no conversation to reach them from instead -- and
+            // a panel that loses its own chrome between one click and the next
+            // reads as one that broke.
+            .child(self.header(cx))
             .child(
                 div()
+                    .flex_1()
+                    .min_h_0()
                     .v_flex()
-                    .gap_3()
-                    .w_full()
-                    .max_w(px(560.))
+                    .items_center()
+                    .justify_center()
+                    .p_6()
                     .child(
                         div()
-                            .truncate()
-                            .font_semibold()
-                            .child(project.label.clone()),
-                    )
-                    .child(
-                        crate::controls::action("project-new-session")
-                            .primary()
-                            .icon(Icon::new(IconName::Plus))
-                            .label("New session")
-                            .on_click(cx.listener(|_: &mut Self, _, _, cx| {
-                                cx.emit(ChatPaneEvent::StartSession {
-                                    agent: None,
-                                    resume: None,
-                                });
-                            })),
-                    )
-                    .children(note.map(|note| div().text_xs().text_color(muted).child(note)))
-                    .children((!shown.is_empty()).then(|| {
-                        div()
-                            .text_xs()
-                            .text_color(muted)
-                            .child("Past conversations")
-                    }))
-                    .children(shown.into_iter().enumerate().map(|(i, meta)| {
-                        // The agent *is* named here, unlike in a session's own
-                        // picker: this list crosses every agent that has worked
-                        // in the project, and resuming a row starts a session on
-                        // the one that held it.
-                        let subtitle = format!(
-                            "{} · {} items · {}",
-                            rel_time(now, meta.updated),
-                            meta.item_count,
-                            meta.agent
-                        );
-                        let (agent, archive) =
-                            (SharedString::from(meta.agent.clone()), meta.dir.clone());
-                        let armed = armed.as_deref() == Some(meta.dir.as_path());
-                        let dir = meta.dir.clone();
-                        div()
-                            .h_flex()
-                            .gap_2()
+                            .v_flex()
+                            .gap_3()
                             .w_full()
-                            .items_center()
+                            .max_w(px(560.))
+                            // The project's name is *not* repeated here. The
+                            // header above says it now, in the same place it
+                            // says a conversation's name, and printing it again
+                            // two rows lower was one word twice on a page whose
+                            // whole job is to offer the few things there are.
                             .child(
-                                conversation_card(
-                                    ("home", i),
-                                    meta.title.clone().into(),
-                                    subtitle.into(),
-                                    cx,
-                                )
-                                .flex_1()
-                                .on_click(cx.listener(
-                                    move |_: &mut Self, _, _, cx| {
+                                crate::controls::action("project-new-session")
+                                    .primary()
+                                    .icon(Icon::new(IconName::Plus))
+                                    .label("New session")
+                                    .on_click(cx.listener(|_: &mut Self, _, _, cx| {
                                         cx.emit(ChatPaneEvent::StartSession {
-                                            agent: Some(agent.clone()),
-                                            resume: Some(archive.clone()),
+                                            agent: None,
+                                            resume: None,
                                         });
-                                    },
-                                )),
-                            )
-                            // A word rather than a glyph, and this is the one
-                            // control in the app that earns the distinction:
-                            // everything else it offers can be done again --
-                            // a closed session respawns, a removed project is
-                            // added back -- and a deleted conversation cannot.
-                            // The confirming state has to be a word anyway, so
-                            // a picture would only be half the control.
-                            .child(
-                                crate::controls::action(("home-delete", i))
-                                    .ghost()
-                                    .small()
-                                    .text_color(danger)
-                                    .label(if armed { "Delete?" } else { "Delete" })
-                                    .tooltip(if armed {
-                                        "Press again to delete this conversation for good"
-                                    } else {
-                                        "Delete this conversation"
-                                    })
-                                    .on_click(cx.listener(move |pane: &mut Self, _, _, cx| {
-                                        pane.delete_conversation(dir.clone(), cx);
                                     })),
                             )
-                    }))
-                    .children((hidden > 0).then(|| {
-                        div()
-                            .text_xs()
-                            .text_color(muted)
-                            .child(format!("{hidden} older not shown"))
-                    })),
+                            .children(
+                                note.map(|note| div().text_xs().text_color(muted).child(note)),
+                            )
+                            .children((!shown.is_empty()).then(|| {
+                                div()
+                                    .text_xs()
+                                    .text_color(muted)
+                                    .child("Past conversations")
+                            }))
+                            .children(shown.into_iter().enumerate().map(|(i, meta)| {
+                                // The agent *is* named here, unlike in a session's own
+                                // picker: this list crosses every agent that has worked
+                                // in the project, and resuming a row starts a session on
+                                // the one that held it.
+                                let subtitle = format!(
+                                    "{} · {} items · {}",
+                                    rel_time(now, meta.updated),
+                                    meta.item_count,
+                                    meta.agent
+                                );
+                                let (agent, archive) =
+                                    (SharedString::from(meta.agent.clone()), meta.dir.clone());
+                                let armed = armed.as_deref() == Some(meta.dir.as_path());
+                                let dir = meta.dir.clone();
+                                div()
+                                    .h_flex()
+                                    .gap_2()
+                                    .w_full()
+                                    .items_center()
+                                    .child(
+                                        conversation_card(
+                                            ("home", i),
+                                            meta.title.clone().into(),
+                                            subtitle.into(),
+                                            cx,
+                                        )
+                                        .flex_1()
+                                        .on_click(
+                                            cx.listener(move |_: &mut Self, _, _, cx| {
+                                                cx.emit(ChatPaneEvent::StartSession {
+                                                    agent: Some(agent.clone()),
+                                                    resume: Some(archive.clone()),
+                                                });
+                                            }),
+                                        ),
+                                    )
+                                    // A word rather than a glyph, and this is the one
+                                    // control in the app that earns the distinction:
+                                    // everything else it offers can be done again --
+                                    // a closed session respawns, a removed project is
+                                    // added back -- and a deleted conversation cannot.
+                                    // The confirming state has to be a word anyway, so
+                                    // a picture would only be half the control.
+                                    .child(
+                                        crate::controls::action(("home-delete", i))
+                                            .ghost()
+                                            .small()
+                                            .text_color(danger)
+                                            .label(if armed { "Delete?" } else { "Delete" })
+                                            .tooltip(if armed {
+                                                "Press again to delete this conversation for good"
+                                            } else {
+                                                "Delete this conversation"
+                                            })
+                                            .on_click(cx.listener(
+                                                move |pane: &mut Self, _, _, cx| {
+                                                    pane.delete_conversation(dir.clone(), cx);
+                                                },
+                                            )),
+                                    )
+                            }))
+                            .children((hidden > 0).then(|| {
+                                div()
+                                    .text_xs()
+                                    .text_color(muted)
+                                    .child(format!("{hidden} older not shown"))
+                            })),
+                    ),
             )
             .into_any_element()
     }
@@ -1543,7 +1616,13 @@ impl ChatPane {
     /// something the window has put away — the rail and the Workbench — have
     /// nowhere else to be offered from, and a route that exists only as a
     /// keystroke is a route only someone who already knows it can take.
-    fn header(&mut self, cx: &mut Context<Self>) -> impl IntoElement + use<> {
+    ///
+    /// **The name carries the conversation's own menu**, and the right-hand end
+    /// carries only what is about the *window*: find, and the way back to the
+    /// Workbench. That split is why there is no ••• here any more — a menu button
+    /// beside the name it acts on says nothing the name could not say itself, and
+    /// the things in it were all things done to the conversation the name is.
+    fn header(&self, cx: &mut Context<Self>) -> impl IntoElement + use<> {
         let chat = self.active_chat(cx);
         let title = chat.and_then(Chat::conversation_title).unwrap_or_else(|| {
             self.empty
@@ -1556,7 +1635,36 @@ impl ChatPane {
         // the block above says is noise, not reassurance.
         let status = chat.and_then(Chat::activity_status);
         let busy = chat.is_some_and(|chat| chat.busy);
-        let this = cx.entity();
+        let signal = self.active.and_then(|uid| self.signal(uid, cx));
+        // What the badge says, or nothing at all.
+        //
+        // **Two sources, in this order.** The activity status is the specific
+        // sentence -- which agent is being connected to, that approval is what
+        // is being waited on -- so it wins wherever there is one. Where there is
+        // not, a signal that is *not* busy still has something to say, and
+        // saying it here is new: a dead adapter used to leave this header
+        // silent, with only the rail's small triangle to notice. Busy with no
+        // status is the case that stays silent on purpose, because it means the
+        // transcript's own last block is already spelling out what is running.
+        let badge = match (status, signal) {
+            (Some(text), signal) => Some((signal, SharedString::from(text))),
+            (None, Some(signal)) if !matches!(signal, SessionSignal::Busy) => Some((
+                Some(signal),
+                SharedString::from(crate::rail::signal_word(signal)),
+            )),
+            _ => None,
+        };
+        // A conversation the agent has not named yet has no directory to remove:
+        // nothing is written until the first turn ends. The menu says so by
+        // refusing rather than by hiding the entry, which would make the whole
+        // menu change shape between one turn and the next.
+        let archive = chat
+            .and_then(|chat| chat.session_id.as_deref())
+            .map(|sid| onehand_core::chat::conv_dir(&onehand_core::chat::conversations_dir(), sid));
+        // The title is a menu only where there *is* a conversation. Standing on
+        // a project with no session the same line names the project, and every
+        // entry behind it would be about something that does not exist yet.
+        let live = chat.is_some();
 
         div()
             .h_flex()
@@ -1568,16 +1676,8 @@ impl ChatPane {
             .border_b_1()
             .border_color(cx.theme().border)
             .text_color(cx.theme().muted_foreground)
-            .child(div().flex_none().truncate().child(title))
-            .children(status.map(|status| {
-                div()
-                    .flex_1()
-                    .min_w_0()
-                    .truncate()
-                    .text_xs()
-                    .text_color(cx.theme().muted_foreground)
-                    .child(status)
-            }))
+            .child(self.title_control(title, busy, archive, cx))
+            .children(badge.map(|(signal, text)| status_badge(signal, text, cx)))
             .child(div().flex_1())
             // Hiding the rail must not be a one-way door: with it gone there is
             // no workspace name, no project list and no session list, and the
@@ -1587,16 +1687,33 @@ impl ChatPane {
             // button that unhides what is already on screen does nothing.
             .when(self.rail_hidden, |header| {
                 header.child(
-                    crate::controls::action("show-rail")
-                        .ghost()
-                        .xsmall()
-                        .icon(Icon::new(IconName::PanelLeft))
+                    header_control("show-rail", IconName::PanelLeft, cx)
                         .tooltip("Show the navigation rail")
                         .on_click(cx.listener(|_: &mut Self, _, _, cx| {
                             cx.emit(ChatPaneEvent::ShowRail);
                         })),
                 )
             })
+            // Only where there is a transcript to search. On the project page
+            // this would open a bar over a list of past conversations and report
+            // no matches for every word in them, which is a control that can
+            // only fail.
+            .when(live, |header| {
+                header.child(
+                    header_control("find", IconName::Search, cx)
+                        .tooltip("Find in this conversation")
+                        .on_click(cx.listener(|pane: &mut Self, _, window, cx| {
+                            pane.toggle_find(window, cx);
+                        })),
+                )
+            })
+            // Beside the Workbench button rather than in the status bar, where
+            // it used to be: both are docks this panel is sitting between, and
+            // a closed one leaves nothing on screen at all -- no edge, no strip,
+            // no name -- so the route to it belongs with the panel that took the
+            // space. Which mode it opens on and whether a second press closes it
+            // are the shell's rules.
+            .child(self.terminal_control(cx))
             // The Workbench closed leaves nothing on screen at all -- no strip,
             // no edge, no name -- so without this the file tree and the editor
             // exist only for someone who remembers two keystrokes. Offered from
@@ -1604,77 +1721,227 @@ impl ChatPane {
             // second press closes it are the shell's rules, and the chat has no
             // business knowing a dock is where the Workbench lives.
             .child(
-                crate::controls::action("workbench")
-                    .ghost()
-                    .xsmall()
-                    .icon(Icon::new(IconName::PanelRight))
+                header_control("workbench", IconName::PanelRight, cx)
                     .tooltip("Show the Workbench")
                     .on_click(cx.listener(|_: &mut Self, _, _, cx| {
                         cx.emit(ChatPaneEvent::ToggleWorkbench);
                     })),
             )
+            // Last, and only while there is a session to end. It keeps the
+            // conversation -- the transcript is written at the end of every turn
+            // and closing costs nothing that is not already on disk -- which is
+            // why it can be a control on the row while deleting stays behind the
+            // name, two presses and a warning away.
+            .when(live, |header| {
+                header.child(
+                    header_control("close-session", IconName::Close, cx)
+                        .tooltip("Close this session and its agent")
+                        .on_click(cx.listener(|_: &mut Self, _, _, cx| {
+                            cx.emit(ChatPaneEvent::CloseSession);
+                        })),
+                )
+            })
+    }
+
+    /// The way to the terminal, and whether a shell is already running in it.
+    ///
+    /// **The dot is the whole reason this is not one more plain button.** A
+    /// shell outliving a closed dock is the one fact the icon cannot carry: the
+    /// child is still running, it is still holding whatever it was doing, and
+    /// closing the window is what would end it. It rides at the corner rather
+    /// than inside the button so the button keeps the square metrics its
+    /// neighbours have — a child in the content row would make this one control
+    /// wider than the three beside it, which reads as a mistake.
+    ///
+    /// Success ink, the same colour the app uses for a turn that finished
+    /// unseen: both mean "something of yours is there and you are not looking at
+    /// it".
+    fn terminal_control(&self, cx: &mut Context<Self>) -> impl IntoElement + use<> {
+        let live = self.terminal_live;
+        let success = crate::theme::status_ink(cx).success;
+
+        div()
+            .relative()
+            .flex_none()
             .child(
-                crate::controls::action("find")
-                    .ghost()
-                    .xsmall()
-                    .icon(Icon::new(IconName::Search))
-                    .tooltip("Find in this conversation")
-                    .on_click(cx.listener(|pane: &mut Self, _, window, cx| {
-                        pane.toggle_find(window, cx);
+                header_control("terminal", IconName::SquareTerminal, cx)
+                    .tooltip(if live {
+                        "A shell is running here — show the terminal"
+                    } else {
+                        "Open a shell in this project"
+                    })
+                    .on_click(cx.listener(|_: &mut Self, _, _, cx| {
+                        cx.emit(ChatPaneEvent::ToggleTerminal);
                     })),
             )
+            .when(live, |control| {
+                control.child(
+                    div()
+                        .absolute()
+                        .top_0()
+                        .right_0()
+                        .size(rems(0.375))
+                        .rounded_full()
+                        .bg(success),
+                )
+            })
+    }
+
+    /// The name of the conversation on screen, and everything done *to* it.
+    ///
+    /// **The name is the control.** It is the loudest thing in the header --
+    /// full-strength ink and semibold against a row that is otherwise muted --
+    /// because it is the one thing there that answers "which conversation is
+    /// this", and it was drawn in the same grey as the status beside it. What
+    /// says it can be pressed is the hover: the background arrives and a chevron
+    /// appears at its end. The chevron's space is held whether or not it is
+    /// drawn, so the name does not move under the pointer that is about to
+    /// press it.
+    ///
+    /// **The project page gets the same control**, naming the project instead
+    /// and holding what is done to a project. Same shape on purpose: on that
+    /// page this line is still "what you are looking at", and a name that is a
+    /// menu in one state and inert in the other teaches the user it is neither.
+    /// Where there is no project at all it *is* inert — there is nothing behind
+    /// it to act on, and an empty menu is worse than none.
+    ///
+    /// **Closing the session is not in here.** It is a control at the right-hand
+    /// end of the header, with the rest of what is about the window — it keeps
+    /// every word of the conversation, so it does not belong beside the entry
+    /// that throws the conversation away.
+    fn title_control(
+        &self,
+        title: String,
+        busy: bool,
+        archive: Option<PathBuf>,
+        cx: &mut Context<Self>,
+    ) -> gpui::AnyElement {
+        let live = self.active_chat(cx).is_some();
+        let project = (!live).then_some(self.empty.as_ref()).flatten();
+        let name = div()
+            .truncate()
+            .text_color(cx.theme().foreground)
+            .font_semibold()
+            .child(title);
+        if !live && project.is_none() {
+            return div().flex_none().min_w_0().child(name).into_any_element();
+        }
+        let project = project.map(|project| (project.pinned, project.is_repo));
+
+        let (muted, radius) = (cx.theme().muted_foreground, cx.theme().radius);
+        // One colour for hover and for the open menu: while the menu is up the
+        // row it came from has to keep saying so, or the pointer moving down
+        // into the menu leaves nothing on screen pointing back at what it acts
+        // on.
+        let lit = cx.theme().secondary;
+        let this = cx.entity();
+
+        let row = div()
+            .id("conversation-title")
+            .group("conversation-title")
+            .h_flex()
+            .items_center()
+            .gap_1()
+            .flex_none()
+            .min_w_0()
+            .px_1p5()
+            .py_0p5()
+            .rounded(radius)
+            .cursor_pointer()
+            .hover(move |row| row.bg(lit))
+            .child(name)
             .child(
-                crate::controls::action("session-menu")
-                    .ghost()
-                    .xsmall()
-                    .icon(Icon::new(IconName::Ellipsis))
-                    .dropdown_menu_with_anchor(gpui::Anchor::TopRight, move |menu, _, cx| {
-                        let danger = crate::theme::status_ink(cx).danger;
-                        let (export, history, restart, close) =
-                            (this.clone(), this.clone(), this.clone(), this.clone());
-                        menu.item(
-                            PopupMenuItem::new("Export as Markdown…")
-                                .icon(Icon::new(IconName::ExternalLink))
-                                .on_click(move |_, _, cx: &mut App| {
-                                    export.update(cx, |pane: &mut Self, cx| pane.export(cx));
-                                }),
-                        )
-                        .item(
-                            // Disabled mid-turn rather than guarded by a second
-                            // click: going back to the picker throws the running
-                            // turn away exactly as a restart does, and a menu
-                            // that has to be opened twice to be believed is a
-                            // worse warning than an item that will not go.
-                            PopupMenuItem::new("Resume another conversation…")
-                                .icon(Icon::new(IconName::Undo))
-                                .disabled(busy)
-                                .on_click(move |_, _, cx: &mut App| {
-                                    history.update(cx, |pane: &mut Self, cx| pane.show_history(cx));
-                                }),
-                        )
-                        .item(
-                            PopupMenuItem::new("Restart the agent")
-                                .icon(Icon::new(IconName::Redo))
-                                .on_click(move |_, _, cx: &mut App| {
-                                    restart.update(cx, |_: &mut Self, cx| {
-                                        cx.emit(ChatPaneEvent::Restart)
-                                    });
-                                }),
-                        )
-                        .separator()
-                        .item(
-                            PopupMenuItem::element(move |_, _| {
-                                div().text_color(danger).child("Close session")
-                            })
-                            .icon(Icon::new(IconName::Close).text_color(danger))
-                            .on_click(move |_, _, cx: &mut App| {
-                                close.update(cx, |_: &mut Self, cx| {
-                                    cx.emit(ChatPaneEvent::CloseSession)
-                                });
-                            }),
-                        )
+                div()
+                    .flex_none()
+                    .invisible()
+                    .group_hover("conversation-title", |chevron| chevron.visible())
+                    .child(Icon::new(IconName::ChevronDown).size_3().text_color(muted)),
+            );
+
+        if let Some((pinned, is_repo)) = project {
+            let target = this.clone();
+            return crate::controls::MenuTrigger::new(row, lit)
+                .dropdown_menu_with_anchor(
+                    gpui::Anchor::TopLeft,
+                    project_menu(pinned, is_repo, target),
+                )
+                .into_any_element();
+        }
+
+        crate::controls::MenuTrigger::new(row, lit)
+            .dropdown_menu_with_anchor(gpui::Anchor::TopLeft, move |menu, _, cx| {
+                let danger = crate::theme::status_ink(cx).danger;
+                let (rename, export, history) = (this.clone(), this.clone(), this.clone());
+                let (restart, remove) = (this.clone(), this.clone());
+                let archive = archive.clone();
+                menu.item(
+                    PopupMenuItem::new("Rename…")
+                        .icon(Icon::new(crate::icons::Icon::SquarePen))
+                        .on_click(move |_, _, cx: &mut App| {
+                            rename.update(cx, |_: &mut Self, cx| cx.emit(ChatPaneEvent::Rename));
+                        }),
+                )
+                .item(
+                    PopupMenuItem::new("Export as Markdown…")
+                        .icon(Icon::new(IconName::ExternalLink))
+                        .on_click(move |_, _, cx: &mut App| {
+                            export.update(cx, |pane: &mut Self, cx| pane.export(cx));
+                        }),
+                )
+                // Named and refusing rather than absent. The transcript is held
+                // in a shape JSON can carry and this is the format another tool
+                // reads; leaving it out entirely would say the opposite.
+                .item(
+                    PopupMenuItem::new("Export as JSON… (not yet)")
+                        .icon(Icon::new(IconName::File))
+                        .disabled(true),
+                )
+                .separator()
+                .item(
+                    // Disabled mid-turn rather than guarded by a second click:
+                    // going back to the picker throws the running turn away
+                    // exactly as a restart does, and a menu that has to be
+                    // opened twice to be believed is a worse warning than an
+                    // item that will not go.
+                    PopupMenuItem::new("Resume another conversation…")
+                        .icon(Icon::new(IconName::Undo))
+                        .disabled(busy)
+                        .on_click(move |_, _, cx: &mut App| {
+                            history.update(cx, |pane: &mut Self, cx| pane.show_history(cx));
+                        }),
+                )
+                .item(
+                    PopupMenuItem::new("Restart the agent")
+                        .icon(Icon::new(IconName::Redo))
+                        .on_click(move |_, _, cx: &mut App| {
+                            restart.update(cx, |_: &mut Self, cx| cx.emit(ChatPaneEvent::Restart));
+                        }),
+                )
+                .separator()
+                .item(
+                    // The only entry here that ends something for good.
+                    // Closing the session -- which keeps every word of this on
+                    // disk -- is a control of its own at the other end of the
+                    // header, so the two are never one press apart.
+                    PopupMenuItem::element(move |_, _| {
+                        div().text_color(danger).child("Delete conversation")
+                    })
+                    .icon(Icon::new(IconName::Delete).text_color(danger))
+                    // Nothing on disk to remove until the first turn has ended,
+                    // and an entry that can only report that is one the eye has
+                    // to learn to skip.
+                    .disabled(archive.is_none())
+                    .on_click(move |_, _, cx: &mut App| {
+                        let Some(dir) = archive.clone() else {
+                            return;
+                        };
+                        remove.update(cx, |_: &mut Self, cx| {
+                            cx.emit(ChatPaneEvent::DeleteConversation(dir))
+                        });
                     }),
-            )
+                )
+            })
+            .into_any_element()
     }
 
     /// The find bar, when it is open.
@@ -1998,6 +2265,26 @@ pub enum Restart {
     Nothing,
 }
 
+/// The project-page menu's entries.
+///
+/// **Not a copy of the rail's project menu.** Two of that menu's entries are
+/// missing here on purpose: *New session* is the primary button in the middle of
+/// this very page, and *Open terminal* is a button at the end of the row the
+/// menu hangs off. Repeating either would be the page offering the same thing
+/// twice within an inch of itself.
+#[derive(Clone, Copy)]
+pub enum ProjectAction {
+    /// Pin to the top of the rail, or take the pin off.
+    TogglePin,
+    /// Split it into a second checkout. Offered on repositories only.
+    Worktree,
+    CopyPath,
+    RefreshGit,
+    /// Drop it from the workspace. The shell still guards this behind a second
+    /// press while anything is running in it.
+    Remove,
+}
+
 /// What the pane asks the shell for. Kept tiny on purpose: the chat's job is
 /// the conversation, and routing a file into the Workbench is the shell's.
 pub enum ChatPaneEvent {
@@ -2024,6 +2311,13 @@ pub enum ChatPaneEvent {
     /// mode to open on, and that a press while it is open and focused closes
     /// it — and two places deciding that would drift apart.
     ToggleWorkbench,
+    /// The terminal dock is closed and the user asked for it.
+    ///
+    /// Announced rather than acted on for exactly the reasons above: the dock is
+    /// the window's arrangement, and whether it opens, focuses or closes on this
+    /// press is the same three-state rule `Ctrl+Shift+\`` follows — one place
+    /// decides it or the two drift apart.
+    ToggleTerminal,
     /// Restart the agent on the conversation showing.
     ///
     /// Announced rather than done here even though the pane owns the adapter:
@@ -2037,6 +2331,30 @@ pub enum ChatPaneEvent {
     /// it, and the mid-turn guard belongs with the same one that guards the
     /// rail's ✕.
     CloseSession,
+    /// Something done to the project the pane is standing on with no session.
+    ///
+    /// One variant carrying an action rather than five of its own, because they
+    /// are one sentence with a word swapped: do this to the *selected* project.
+    /// The shell answers every one of them by reaching for the same root, and
+    /// the page that offers them is only ever drawn for that root — it is what
+    /// shows when the selected project has nothing running in it.
+    Project(ProjectAction),
+    /// Rename the conversation showing.
+    ///
+    /// Announced rather than done here because the rename is a dialog, and a
+    /// dialog belongs to the window: the shell already owns the field, the
+    /// trigger-less dialog it lives in and the reset-to-derived-title rule, and
+    /// the rail's own *Rename…* goes to the same place.
+    Rename,
+    /// Delete the conversation showing — the directory on disk, and with it the
+    /// session that is writing to it.
+    ///
+    /// The pane cannot do this alone and must not try. While the session is
+    /// alive its mark says the transcript so far is already on disk, so the very
+    /// next turn would write the file back holding only what came after: a
+    /// delete that does not stay deleted. Ending the session is what settles
+    /// that, and the session is a row in the workspace tree — the shell's.
+    DeleteConversation(PathBuf),
     /// Start a session on the project the pane is standing in — the project
     /// page's *New session*, and every past conversation listed under it.
     ///
@@ -2654,6 +2972,140 @@ fn switching_away(current: Option<u64>, next: u64) -> bool {
 /// had never been warned about.
 fn restart_needs_arming(busy: bool, armed: Option<u64>, uid: u64) -> bool {
     busy && armed != Some(uid)
+}
+
+/// What the project page's own name opens.
+///
+/// The same set the rail offers on a project row, minus the two this page
+/// already answers with a control of its own, and reached the same way the
+/// conversation's menu is — so the header's leftmost thing is always "what you
+/// are looking at, and what can be done to it", whichever of the two it is.
+///
+/// Every entry is announced, not done: a project is a row in the workspace tree,
+/// and the pane holds conversations. The builder rather than the element, so the
+/// row it hangs off stays the header's to draw.
+fn project_menu(
+    pinned: bool,
+    is_repo: bool,
+    pane: Entity<ChatPane>,
+) -> impl Fn(
+    gpui_component::menu::PopupMenu,
+    &mut Window,
+    &mut Context<gpui_component::menu::PopupMenu>,
+) -> gpui_component::menu::PopupMenu
++ 'static {
+    move |menu, _, cx| {
+        let danger = crate::theme::status_ink(cx).danger;
+        let act = |action: ProjectAction, pane: Entity<ChatPane>| {
+            move |_: &gpui::ClickEvent, _: &mut Window, cx: &mut App| {
+                pane.update(cx, |_: &mut ChatPane, cx| {
+                    cx.emit(ChatPaneEvent::Project(action))
+                });
+            }
+        };
+        menu.item(
+            // The label is the state readout as well as the action: with no pin
+            // marker anywhere on this page, a project would otherwise only say
+            // it is pinned by where it sits in a rail that may be hidden.
+            PopupMenuItem::new(if pinned { "Unpin" } else { "Pin to top" })
+                .icon(Icon::new(IconName::Star))
+                .on_click(act(ProjectAction::TogglePin, pane.clone())),
+        )
+        // Only where there is a repository to split. On a plain folder this
+        // could do nothing but report that git said no, and an entry whose whole
+        // job is to fail is one the eye has to learn to skip.
+        .when(is_repo, |menu| {
+            menu.item(
+                PopupMenuItem::new("New worktree…")
+                    .icon(Icon::new(crate::icons::Icon::GitBranch))
+                    .on_click(act(ProjectAction::Worktree, pane.clone())),
+            )
+        })
+        .item(
+            PopupMenuItem::new("Copy project path")
+                .icon(Icon::new(IconName::Copy))
+                .on_click(act(ProjectAction::CopyPath, pane.clone())),
+        )
+        .item(
+            PopupMenuItem::new("Refresh Git status")
+                .icon(Icon::new(IconName::Redo))
+                .on_click(act(ProjectAction::RefreshGit, pane.clone())),
+        )
+        .separator()
+        .item(
+            PopupMenuItem::element(move |_, _| {
+                div().text_color(danger).child("Remove from workspace")
+            })
+            .icon(Icon::new(IconName::Delete).text_color(danger))
+            .on_click(act(ProjectAction::Remove, pane.clone())),
+        )
+    }
+}
+
+/// One of the header's right-hand controls.
+///
+/// **Bigger and quieter than the library's default.** Two changes that pull in
+/// opposite directions and are one decision: at the smallest size these were
+/// three glyphs the pointer had to be aimed at, and at full-strength ink four
+/// icons in a row out-shouted the conversation's own name two inches to their
+/// left. A step up in size makes them easy to hit; a step down in tone puts them
+/// behind the name, which is what the header is for. What brings the ink back is
+/// hovering one — the fill arrives and says which is about to be pressed.
+///
+/// Built in one place because the alternative is four call sites that each have
+/// to remember two things, and the one that forgets is the one that looks wrong.
+fn header_control(id: &'static str, icon: IconName, cx: &App) -> gpui_component::button::Button {
+    crate::controls::action(id)
+        .ghost()
+        .small()
+        .icon(Icon::new(icon))
+        .text_color(cx.theme().muted_foreground)
+}
+
+/// How wide the header's status badge may get.
+///
+/// In rems, like every other size here, so it scales with the panel's own zoom.
+/// The badge sits between the conversation's name and the row's controls and is
+/// the least important of the three: what it says is either already visible in
+/// the transcript or is a state the rail is marking too, so it truncates rather
+/// than pushing either of its neighbours around.
+const BADGE_MAX_W: f32 = 14.;
+
+/// What the session is doing, beside the name of the conversation doing it.
+///
+/// **A pill, not a line of grey text.** It used to be exactly that -- the same
+/// muted ink as the header around it, at the same weight, so "Connecting to
+/// Claude Code…" read as part of the title rather than as a state that would go
+/// away. A filled shape with an edge is what separates the two: the name is ink
+/// on the surface, this is a thing sitting on it.
+///
+/// **The mark is the rail's own** ([`crate::rail::signal_mark`]), so one
+/// condition keeps one shape everywhere it appears -- a spinner for a turn in
+/// flight, a triangle for a lost adapter, a dot for a parked question -- and it
+/// brings its own tooltip with it. The colour lives in the mark and the words
+/// stay muted: tinting the whole badge would make a routine "Working…" as loud
+/// as a dead agent.
+fn status_badge(
+    signal: Option<SessionSignal>,
+    text: SharedString,
+    cx: &App,
+) -> impl IntoElement + use<> {
+    div()
+        .flex_none()
+        .h_flex()
+        .items_center()
+        .gap_1p5()
+        .max_w(rems(BADGE_MAX_W))
+        .px_2()
+        .py_0p5()
+        .rounded_full()
+        .bg(cx.theme().muted)
+        .border_1()
+        .border_color(cx.theme().border)
+        .text_xs()
+        .text_color(cx.theme().muted_foreground)
+        .children(signal.map(|signal| crate::rail::signal_mark(signal, cx)))
+        .child(div().min_w_0().truncate().child(text))
 }
 
 /// Whether deleting `dir` still needs its confirming press.

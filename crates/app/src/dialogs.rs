@@ -246,8 +246,11 @@ fn appearance_picker(shell: &Entity<Shell>, current: Appearance) -> impl IntoEle
 /// Settings: the appearance, then the workspace's own name, storage-folder
 /// binding, and the Workspaces section (new / open / recents).
 ///
-/// There is no in-window workspace switcher by design -- one window hosts
-/// exactly one workspace, so opening another one opens another window.
+/// No workspace is ever *replaced* in place -- one window hosts exactly one
+/// workspace, so every row here opens another window, or focuses the one
+/// already showing that folder. The rail's identity row offers the same list
+/// behind its own mark, which is where the switch is actually reached from; the
+/// section stays here because this is where the binding it depends on lives.
 pub fn workspace_settings(shell: &Shell, cx: &mut Context<Shell>) -> Dialog {
     let handle = cx.entity();
     let appearance = shell.appearance(cx);

@@ -395,6 +395,13 @@ pub struct Shell {
     /// index -- and with it its confirmation -- to whichever session slides
     /// into that place.
     pending_close: Option<u64>,
+    /// The conversation a delete has been armed on.
+    ///
+    /// By directory rather than by uid, unlike every other arming here: what is
+    /// being deleted is the thing on disk, and the session that happens to be
+    /// showing it is only the reason it has to be closed first. Arming on one
+    /// conversation and choosing another must ask again.
+    pending_delete: Option<std::path::PathBuf>,
     /// The panel currently filling the whole frame, rail included.
     ///
     /// Only the *app* direction is tracked here, because only that direction
@@ -514,8 +521,27 @@ impl Shell {
                         let mode = shell.workbench.read(cx).mode();
                         shell.show_workbench(mode, window, cx);
                     }
+                    E::ToggleTerminal => shell.show_terminal(window, cx),
+                    // Every one of these acts on the selected project, because
+                    // the page that offers them is what shows when the selected
+                    // project has nothing running in it.
+                    E::Project(action) => {
+                        use crate::chat::pane::ProjectAction as P;
+                        let root_idx = shell.window.workspace.active_root;
+                        match action {
+                            P::TogglePin => shell.toggle_pin(root_idx, window, cx),
+                            P::Worktree => shell.begin_worktree(root_idx, window, cx),
+                            P::CopyPath => shell.copy_root_path(root_idx, window, cx),
+                            P::RefreshGit => shell.refresh_git(cx),
+                            P::Remove => shell.remove_root(root_idx, window, cx),
+                        }
+                    }
                     E::Restart => shell.restart_session(window, cx),
                     E::CloseSession => shell.close_active_session(window, cx),
+                    E::Rename => shell.rename_active_session(window, cx),
+                    E::DeleteConversation(dir) => {
+                        shell.delete_conversation(dir.clone(), window, cx)
+                    }
                     E::StartSession { agent, resume } => {
                         shell.start_session(agent.clone(), resume.clone(), window, cx)
                     }
@@ -686,6 +712,7 @@ impl Shell {
             tab_cycle: None,
             pending_remove: None,
             pending_close: None,
+            pending_delete: None,
             app_maximized: None,
         }
     }
@@ -750,9 +777,37 @@ impl Shell {
         }
     }
 
-    /// Repaint only if a panel's notify changed something the bar shows.
+    /// Tell the project page what the selected project is, beyond its name.
+    ///
+    /// Two facts its menu needs and cannot work out: pinning lives in the
+    /// workspace tree, and "is this a repository" is whatever the last `git
+    /// status` sweep answered. Pushed from the three moments either can change —
+    /// arriving at a project, pinning one, and a sweep landing — because the
+    /// page is a separate panel and nothing about it is re-read per frame.
+    fn sync_project_facts(&mut self, cx: &mut Context<Self>) {
+        let Some((pinned, is_repo)) = self
+            .window
+            .workspace
+            .active_root()
+            .map(|root| (root.pinned, self.window.git.contains_key(&root.path)))
+        else {
+            return;
+        };
+        self.chat
+            .update(cx, |pane, cx| pane.set_project_facts(pinned, is_repo, cx));
+    }
+
+    /// Repaint only if a panel's notify changed something drawn from it.
+    ///
+    /// Two readers now: the status bar, which is redrawn by this window's own
+    /// notify, and the conversation header's terminal button, which is a panel
+    /// of its own and has to be told. The push is guarded on the pane's side as
+    /// well, because this runs on every chunk a build prints into the terminal.
     fn sync_panel_facts(&mut self, cx: &mut Context<Self>) {
         let facts = self.panel_facts(cx);
+        let live = facts.terminal_live;
+        self.chat
+            .update(cx, |pane, cx| pane.set_terminal_live(live, cx));
         if facts != self.panels {
             self.panels = facts;
             cx.notify();
@@ -907,6 +962,11 @@ impl Shell {
         self.terminal
             .update(cx, |panel, cx| panel.set_root(path.clone(), cx));
         self.follow_terminal_dock(&path, window, cx);
+        // Whether a shell is alive is a fact about the project being arrived at,
+        // not about the window, and the conversation header draws it. The
+        // observers that normally push it only fire when a panel notifies, and
+        // switching projects is a moment where nothing did.
+        self.sync_panel_facts(cx);
         let Some((uid, spec)) = session else {
             // The other two panels have already followed the selection, so the
             // chat must not be the one panel still showing the root the user
@@ -917,6 +977,10 @@ impl Shell {
             self.chat.update(cx, |pane, cx| {
                 pane.clear_active(Some((label, path.clone())), window, cx)
             });
+            // After, never before: `clear_active` builds the page's state fresh
+            // for the project being arrived at, so anything pushed into the old
+            // one is thrown away with it.
+            self.sync_project_facts(cx);
             // Nothing is running on this project and the page now on screen is
             // a list of past conversations over a *New session* button, so the
             // next thing asked of it is almost certainly a session. Start the
@@ -1360,6 +1424,92 @@ impl Shell {
         self.chat.update(cx, |pane, cx| pane.export(cx));
     }
 
+    /// Open the rename field on the conversation showing.
+    ///
+    /// The same dialog the rail's *Rename…* opens, reached from the header of
+    /// the conversation it renames — the two must not become two rules about
+    /// what a name may be.
+    pub fn rename_active_session(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(uid) = self.active_session_uid() else {
+            return;
+        };
+        self.begin_rename(uid, window, cx);
+    }
+
+    /// The session on screen, if there is one.
+    fn active_session_uid(&self) -> Option<u64> {
+        self.window
+            .workspace
+            .active_root()
+            .and_then(|root| root.active_session())
+            .map(|session| session.uid)
+    }
+
+    /// Delete the conversation showing: the directory on disk, and the session
+    /// that was writing to it.
+    ///
+    /// **The session goes first, and it goes without being asked about again.**
+    /// While it is alive its mark says the transcript up to here is already on
+    /// disk, so the next turn would write the file back holding only what came
+    /// after — the delete would not stay deleted, and what came back would be a
+    /// fragment. Dropping the session is also what ends its agent. The mid-turn
+    /// question `close_session` normally asks is skipped deliberately: this is
+    /// already the second press of a guarded control, and a second question
+    /// about a decision already confirmed teaches the user to click through
+    /// both.
+    ///
+    /// **Guarded by a second press**, because it is the one thing the app offers
+    /// that doing again does not undo. The guard is here rather than in the pane
+    /// so the warning and the act are one rule: the pane would have to arm, say
+    /// so through the window it does not have, and then disarm.
+    pub fn delete_conversation(
+        &mut self,
+        dir: std::path::PathBuf,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if self.pending_delete.as_deref() != Some(dir.as_path()) {
+            self.pending_delete = Some(dir);
+            window.push_notification(
+                Notification::warning(
+                    "Deleting this conversation cannot be undone. Choose it again to delete it",
+                ),
+                cx,
+            );
+            cx.notify();
+            return;
+        }
+        self.pending_delete = None;
+
+        if let Some(uid) = self.active_session_uid() {
+            // What lets the close through its own mid-turn guard: the question
+            // it would ask has already been asked, in stronger terms.
+            self.pending_close = Some(uid);
+            self.close_active_session(window, cx);
+        }
+
+        cx.spawn_in(window, async move |shell, cx| {
+            let removed = cx
+                .background_executor()
+                .spawn(async move { onehand_core::chat::delete(&dir) })
+                .await;
+            if let Err(e) = removed {
+                shell
+                    .update_in(cx, |_, window, cx| {
+                        // A warning, not an error: nothing was lost. The
+                        // conversation is exactly where it was, which is the
+                        // opposite of a failed save.
+                        window.push_notification(
+                            Notification::warning(format!("Conversation not deleted — {e}")),
+                            cx,
+                        );
+                    })
+                    .ok();
+            }
+        })
+        .detach();
+    }
+
     /// Close the session on screen — the keyboard half of the rail's ✕.
     pub fn close_active_session(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let root_idx = self.window.workspace.active_root;
@@ -1633,6 +1783,9 @@ impl Shell {
     pub fn toggle_pin(&mut self, root_idx: usize, window: &mut Window, cx: &mut Context<Self>) {
         self.window.workspace.toggle_pin(root_idx);
         self.save_workspace(window, cx);
+        // The project page's menu is the other place that says whether this is
+        // pinned, and it says it in the label of the entry that was just used.
+        self.sync_project_facts(cx);
         cx.notify();
     }
 
@@ -2376,6 +2529,10 @@ impl Shell {
                     shell
                         .workbench
                         .update(cx, |panel, cx| panel.set_git(git, cx));
+                    // This sweep is also the answer to "is the selected project
+                    // a repository", which decides whether its page offers to
+                    // split it into a worktree.
+                    shell.sync_project_facts(cx);
                     cx.notify();
                 })
                 .ok();

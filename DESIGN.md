@@ -41,7 +41,7 @@ One window hosts exactly one workspace. The frame is a navigation **rail** plus 
 
 ```
 ┌────────────────┬──────────────────────────────┬───────────────┐
-│ workspace ⌄    │ title · status         ⌕  ⋯  │               │
+│ workspace      │ title ⌄ · status   ⌕ ▣ ▤ ✕   │               │
 │ + New session  │                              │   Workbench   │
 │                │        agent pane            │  (right dock, │
 │ PROJECTS       │      (centre panel)          │   closed by   │
@@ -51,28 +51,35 @@ One window hosts exactly one workspace. The frame is a navigation **rail** plus 
 │                ├──────────────────────────────┴───────────────┤
 │ ⚙ settings     │        terminal (bottom dock, closed)        │
 ├────────────────┴──────────────────────────────────────────────┤
-│ project · branch · agent          unsaved · Terminal · 120%   │
+│ project · branch · agent                    unsaved · 120%    │
 └───────────────────────────────────────────────────────────────┘
      rail                        DockArea
 ```
 
-- The **agent pane's header** is the row above the transcript: the conversation's
-  title, what it is currently doing, Find, and a `⋯` holding Export, Resume
-  another conversation, Restart and Close. It carries session-level actions so
-  the composer's row can stay about the message being written, and a hairline
-  under it separates the chrome from the conversation.
-  It is drawn quiet — muted, no weight — because it names what is already on
-  screen; chrome that draws the eye is taking it from the conversation.
+- The **agent pane's header** is the row above the transcript, and it is split by
+  what a control is *about*. **The conversation's name is the menu**: it is the
+  one thing on the row drawn in full ink and weight, and pressing it opens
+  everything done to the conversation — rename, the exports, resume another,
+  restart, and, alone in the danger tint, delete. Its hover brings a background
+  and a chevron whose space is held either way, so the name does not shift under
+  the pointer about to press it. Beside it, a **badge** carries what the session
+  is doing: the rail's own signal mark plus a few words, colour in the mark and
+  the words muted, so a routine *Working…* is not as loud as a dead agent.
+  A hairline under the row separates the chrome from the conversation.
+  The right-hand end carries what is about the **window**, a size up and a tone
+  down — big enough to aim at, muted enough not to out-shout the name: find, the
+  terminal, the Workbench, the way back to a hidden rail, and last *Close
+  session*. There is no `⋯`; a menu button beside the name it acts on says
+  nothing the name could not say itself.
   **The agent pane is mounted as a bare panel, not a tab group**, so this is the
   only chrome it has: one tab that can never gain a sibling is not a tab, it is
   the conversation's own name printed a second time directly above the header
-  that says it. The two ways back to something the window has put away — the
-  rail and the Workbench — are therefore offered from here. The rail's button
-  appears only while the rail is gone, because a button that unhides what is
-  already on screen does nothing; the Workbench's stays, following the same
-  three-state rule as its key. The Workbench and the terminal keep their
-  tab groups, because theirs hold several tabs and switching is what a tab is
-  for.
+  that says it. Every way back to something the window has put away is therefore
+  offered from here. The rail's button appears only while the rail is gone,
+  because a button that unhides what is already on screen does nothing; the two
+  docks' buttons stay, following the same three-state rule as their keys. The
+  Workbench keeps its tab group, because it holds several tabs and switching is
+  what a tab is for.
 - **A project with no conversation open gets a page, not a sentence.** Selecting
   a project that has no session — every freshly added one, and any whose last
   session was closed — fills the centre with that project's name, a *New
@@ -125,8 +132,9 @@ One window hosts exactly one workspace. The frame is a navigation **rail** plus 
   title bar, because the library puts the button that reopens it there, and this
   terminal has no such button — leaving a bare band of chrome across the bottom
   of every window in every project, naming nothing and reopening nothing. The
-  ways back are `Ctrl+Shift+` `` ` `` and the status bar's Terminal cell, and
-  those are enough.
+  ways back are `Ctrl+Shift+` `` ` `` and the terminal button in the agent pane's
+  header — which carries a dot while a shell is alive, since a child process
+  outliving a closed dock is the one thing the icon cannot say.
 - **The terminal has no library tab bar either.** Its several tabs are its own,
   drawn inside the panel with the shell labels, their ✕ and the `+`; a tab group
   around it held one panel that could never gain a sibling and printed
@@ -148,14 +156,12 @@ One window hosts exactly one workspace. The frame is a navigation **rail** plus 
   are the agent pane header's and are not repeated here. What is left is either
   invisible while the rail is hidden (the active project, its branch and change
   count, the running agent and its one signal) or invisible everywhere (how many
-  open buffers are unsaved, whether a shell is alive behind a closed dock, and
-  any panel left at something other than 100%).
+  open buffers are unsaved, and any panel left at something other than 100%).
+  The terminal is **not** here: the two docks the conversation sits between are
+  one decision, so both are offered from the panel that gives up the space.
   A cell shows the pointer and lights on hover **iff** pressing it does
   something: the project copies its path, the git cell re-reads status, the
-  unsaved count opens the editor, the terminal cell opens the shell — and it is
-  offered whether or not one is running, because a closed bottom dock leaves the
-  terminal with no edge, no strip and no name anywhere in the window. The agent
-  cell is a reading and is drawn flat. Zoom is read from the panels themselves
+  unsaved count opens the editor. The agent cell is a reading and is drawn flat. Zoom is read from the panels themselves
   rather than from whichever holds focus, because focus moves without telling
   the window and a stale factor has nothing on screen to admit it.
   The session signal is drawn through the rail's own mark: one condition, one

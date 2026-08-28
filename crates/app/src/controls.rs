@@ -16,8 +16,13 @@
 //! that way, and the library's own default is overridden exactly once rather
 //! than at forty call sites that each have to remember.
 
-use gpui::ElementId;
+use gpui::{
+    Div, ElementId, Hsla, InteractiveElement, Interactivity, IntoElement, Stateful,
+    StyleRefinement, Styled,
+};
+use gpui_component::Selectable;
 use gpui_component::button::Button;
+use gpui_component::menu::DropdownMenu;
 
 /// A button that answers the pointer, which is every button this app draws.
 ///
@@ -33,6 +38,80 @@ pub(crate) fn action(id: impl Into<ElementId>) -> Button {
 
     Button::new(id).cursor_pointer()
 }
+
+/// A hand-made row used whole as the trigger for a dropdown menu.
+///
+/// The library opens a menu from anything that is [`Selectable`] — a `Button`,
+/// a `Tab`, a `ListItem` — and a `div` is not one. Without this, a row can only
+/// carry a menu by putting a small button at its end, which makes the target a
+/// few pixels wide while the thing the eye is pointing at is the whole row.
+/// Both the trait and `Stateful<Div>` come from other crates, so the impl
+/// cannot be written where either of them lives; a newtype here can carry it.
+///
+/// It forwards style and interactivity to the row, so the row is still what
+/// decides its own padding, hover and id, and answers `Selectable` on its own
+/// behalf — the menu sets that while it is open, which is what keeps the row lit
+/// under an open menu instead of going quiet as soon as the pointer moves off
+/// it and onto the menu.
+pub(crate) struct MenuTrigger {
+    row: Stateful<Div>,
+    open: bool,
+    /// What the row is filled with while its menu is open.
+    ///
+    /// Handed in rather than read from the theme here: the rail's rows and the
+    /// conversation's header are two surfaces with two resting colours, and a
+    /// trigger that picked one for both would light in the wrong one somewhere.
+    /// It is resolved at build time because [`Selectable::selected`] is handed
+    /// no context to read a theme from.
+    lit: Hsla,
+}
+
+impl MenuTrigger {
+    pub(crate) fn new(row: Stateful<Div>, lit: Hsla) -> Self {
+        Self {
+            row,
+            open: false,
+            lit,
+        }
+    }
+}
+
+impl Selectable for MenuTrigger {
+    fn selected(mut self, selected: bool) -> Self {
+        self.open = selected;
+        self
+    }
+
+    fn is_selected(&self) -> bool {
+        self.open
+    }
+}
+
+impl Styled for MenuTrigger {
+    fn style(&mut self) -> &mut StyleRefinement {
+        self.row.style()
+    }
+}
+
+impl InteractiveElement for MenuTrigger {
+    fn interactivity(&mut self) -> &mut Interactivity {
+        self.row.interactivity()
+    }
+}
+
+impl IntoElement for MenuTrigger {
+    type Element = Stateful<Div>;
+
+    fn into_element(self) -> Self::Element {
+        let lit = self.lit;
+        let open = self.open;
+        // `when` is gpui-component's builder helper; a plain branch keeps this
+        // free of the import and says the same thing.
+        if open { self.row.bg(lit) } else { self.row }
+    }
+}
+
+impl DropdownMenu for MenuTrigger {}
 
 /// The cursor for an action that is currently refusing.
 ///

@@ -190,6 +190,47 @@ module owns, and events cross to GPUI on a plain `futures` channel belonging to 
   because which of Send and Stop was pressed is a question about the turn, not about the click.
 - `pane.rs` — what the shell mounts: session switching, the resume picker, the project page, the find bar, unseen
   badges, and the run plan the virtualized list reads.
+  Its **header is the panel's only chrome** (the dock draws the conversation bare), and it is split by
+  what a control is *about*. **The conversation's name is itself the menu** — full-strength ink and
+  semibold against an otherwise muted row, with the hover background and a chevron whose space is held
+  whether or not it is drawn, so the name does not shift under the pointer. Behind it: *Rename…*,
+  *Export as Markdown…*, *Export as JSON…* (named and disabled — it is planned, and leaving it out
+  would say otherwise), *Resume another conversation…*, *Restart the agent*, and then, alone in the
+  danger tint, *Delete conversation* — the only entry there that ends something for good. It is a
+  **The header is drawn on the project page too**, and the page no longer prints the project's name
+  itself: the row names the project there and its menu is the project's (`chat::pane::project_menu`)
+  — *Pin to top*/*Unpin*, *New worktree…* on repositories, *Copy project path*, *Refresh Git status*,
+  then *Remove from workspace* in the danger tint. **Not a copy of the rail's**: *New session* is the
+  primary button in the middle of that page and *Open terminal* is a button at the end of the same
+  row, and offering either again would be the page saying one thing twice within an inch of itself.
+  The two facts that menu needs — pinned, and whether it is a git repository — are pushed by
+  `Shell::sync_project_facts` from the three moments either changes (arriving at a project, pinning
+  one, a git sweep landing), and the arrival push must happen **after** `clear_active`, which builds
+  the page's state fresh and would throw an earlier one away. Find and *Close session* are the two
+  controls that go on that page, since neither has anything to act on; the terminal, the Workbench
+  and the way back to a hidden rail stay, because all three are about the project and dropping the
+  row took them away at the one moment there is no conversation to reach them from.
+  Beside the name is a **status badge**: a pill carrying the rail's own `signal_mark` — one condition,
+  one shape everywhere — and either `Chat::activity_status` (the specific sentence: which agent is
+  being connected to, that approval is what is awaited) or, where there is none, the signal's short
+  name from `rail::signal_word`. Colour lives in the mark and the words stay muted, so a routine
+  *Working…* is not as loud as a dead agent. Busy with no activity status stays silent, because that
+  means the transcript's own last block is already saying what is running — but a **lost adapter now
+  says so here**, where the header used to be blank and only the rail's small triangle knew.
+  The right-hand end carries the row's controls (`ChatPane::header_control`, one builder so the call
+  sites cannot drift): find, the terminal, the Workbench, the way back to a hidden rail, and last
+  *Close session*, offered only while there is one. The terminal button carries a **dot in success ink
+  at its corner while a shell is alive** — a child process outliving a closed dock is the one thing
+  the icon cannot say, and closing the window is what would end it. The fact is pushed down from the
+  shell (`ChatPane::set_terminal_live`, from `Shell::sync_panel_facts` and from every project switch,
+  since a shell belongs to a project); the push is guarded on both sides because a terminal notifies
+  once per chunk a build prints. They are **a size up and a tone down** — big enough to aim at,
+  muted so four icons in a row do not out-shout the conversation's name beside them; the library's
+  hover fill brings the ink back on the one about to be pressed. **Closing is a control and deleting is
+  not**, and that is the split: closing keeps every word — the transcript is written at the end of
+  every turn — while deleting is the one thing the app cannot undo, so it stays behind the name, two
+  presses and a warning away, and the two are never adjacent. There is no ••• — a menu button beside
+  the name it acts on says nothing the name could not say itself.
 
 The **model** is core's (`onehand_core::chat`): `Chat` + `apply(AcpEvent)`, the conversation store, the
 find pass, and the activity-run rules. `ChatSession` derefs to it, which is what lets the whole
@@ -267,6 +308,24 @@ status bar.
   change count ride in the suffix — the count as a badge, not a coloured number — with the full
   branch, the count in words and the root's path in a tooltip. The primary *New session* button names
   the project it would start in, in its tooltip.
+- **The rail's two header rows are a block one step above the list** (`rail::lead_row`): the workspace
+  name and *New session*, taller, at a larger text size and a weight up, with the identity's icon in
+  full ink rather than muted. At the list's own scale they read as its first two entries, which is
+  what they are not. **The 16px icon column does not move** — only the row around it grows, or the
+  header's labels would sit a few pixels off every label below them.
+- **The workspace identity row *is* the switcher** (`rail::workspace_menu`) — the whole row opens the
+  menu, and nothing marks it but the hover, the pointer and the tooltip: no chevron, because a caret
+  on the rail's topmost row competed with the primary action directly below it. The menu is the
+  recents list — each row named by
+  its folder with the parent path beside it (shortened from the *front*, since a path is read from
+  its tail), the one on screen checked and unpickable — then *Open workspace…* and *New workspace…*.
+  **Nothing is replaced in place**: every entry funnels through `Shell::open_recent` /
+  `open_or_focus`, so a pick opens another window or focuses the one already showing that folder.
+  The same list is still in Settings, where the storage binding it depends on lives; what changed is
+  that reaching it no longer means opening a dialog two surfaces away from the name it changes.
+  A row can be a menu trigger at all because of `controls::MenuTrigger`: the library opens a menu
+  from anything `Selectable`, `Stateful<Div>` is not, and both of those are other crates' — so the
+  newtype that answers `Selectable` for a row is what stops the target being the icon at its end.
 - **Both row kinds carry one ••• menu on the active row**, never a ✕. A project's holds *Pin to top*
   / *Unpin*, *New session*, *New worktree…* (git repositories only), *Open terminal*,
   *Copy project path*, *Refresh Git status*, then,
@@ -340,9 +399,10 @@ status bar.
   branch and change count from `GitStatus::label` (click re-reads status), and the running agent
   behind the rail's own `signal_mark`, so one condition keeps one shape. Right: how many open buffers
   are unsaved (click opens the editor, and it is the one cell drawn in a colour, because unsaved work
-  is a standing condition rather than news), a Terminal cell offered **whether or not a shell is
-  running** — a closed bottom dock leaves the terminal with no edge, no strip and no name anywhere —
-  with a dot while one is alive, and one cell per panel left off 100%.
+  is a standing condition rather than news) and one cell per panel left off 100%. **The terminal is
+  not here** — it moved into the conversation header beside the Workbench button, because the two
+  docks the conversation sits between are one decision and the panel they take their space from is
+  where both belong.
   **The pointer is the contract**: a cell lights on hover iff pressing it does something; the agent
   cell is a reading and is drawn flat.
   Two things it must not do. **Zoom is read from the panels, not from focus** (`zoomed_panels`):
@@ -433,14 +493,22 @@ fails if a binding is added without a row — a shortcut nobody can find is a sh
   immediately after they chose not to resume one. It is reached from a live session's header menu
   (*Resume another conversation…*), and the choice still happens *before* anything reconnects:
   connecting first would start a fresh conversation and archive it.
-- **Deleting is offered on the project page and nowhere else**, and the placement is most of the
-  guard: that page is what shows when the selected project has *no session on it*, so every row on it
-  names a conversation nothing is writing to. A live conversation deleted underneath its own session
-  would not even stay deleted — the next turn writes the file again holding only what came after,
-  because the session's mark says the rest is already on disk. A session in another window is the case
-  the page's shape does not cover, so `ChatPane::delete_conversation` checks for one. The control is a
-  **word, not a glyph**, and arms on the first press: everything else the app offers can be done again,
-  and this cannot. `store::delete` removes the whole directory, so a conversation's images go with it.
+- **Deleting is offered in two places, and each carries its own guard.** A live conversation deleted
+  underneath its own session would not even stay deleted — the next turn writes the file again holding
+  only what came after, because the session's mark says the rest is already on disk. That one fact is
+  what both guards are about.
+  On the **project page** the placement *is* the guard: that page shows when the selected project has
+  no session on it, so every row on it names a conversation nothing is writing to. A session in another
+  window is the case the page's shape does not cover, so `ChatPane::delete_conversation` checks for one
+  and refuses. The control is a **word, not a glyph**, and arms on the first press.
+  From the **conversation's own title menu** there *is* a session, so `Shell::delete_conversation`
+  closes it first and unconditionally — dropping the session ends the agent and settles the mark, and
+  the mid-turn question `close_session` would normally ask is skipped because the delete has already
+  been confirmed once and a second question about a settled decision teaches the user to click through
+  both. The arming lives in the shell (`Shell::pending_delete`, keyed by directory, unlike every other
+  arming there) because the warning it raises is a notification and the pane has no window.
+  Both exist because everything else the app offers can be done again and this cannot.
+  `store::delete` removes the whole directory, so a conversation's images go with it.
   **Nothing is ever deleted automatically** — there is no retention sweep, by decision, because that
   would be the app throwing away work nobody asked it to.
 - **The project page** is the store's other reader: with no session on the selected project, the

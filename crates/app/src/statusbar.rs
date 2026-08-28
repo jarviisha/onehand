@@ -3,14 +3,16 @@
 //! One row along the bottom of the frame, under the rail *and* the dock, saying
 //! what the window is currently pointed at: which project, what git says about
 //! it, which agent is running and how it is doing, whether anything is unsaved,
-//! whether a shell is alive, and whether a panel is being read at something
-//! other than 100%.
+//! and whether a panel is being read at something other than 100%.
 //!
 //! **It says what nothing else on screen says.** The conversation's own name and
 //! what it is doing already sit in the agent pane's header, so neither is
 //! repeated here. Everything in this row is either invisible while the rail is
 //! hidden (the project, the branch, the agent) or invisible everywhere (the
-//! unsaved count, a live shell behind a closed dock, a zoom factor).
+//! unsaved count, a zoom factor). The terminal used to be here for the same
+//! reason and has moved into that header, next to the Workbench button: the two
+//! docks the conversation sits between are one decision, and the panel they take
+//! their space from is where both belong.
 //!
 //! **The pointer is the contract.** A cell that shows the pointer and lights on
 //! hover does something when pressed; a cell that does neither is a reading.
@@ -27,7 +29,7 @@ use crate::workbench::WorkbenchMode;
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
     App, ClickEvent, Context, Div, ElementId, InteractiveElement, IntoElement, ParentElement,
-    SharedString, Stateful, StatefulInteractiveElement, Styled, div, rems,
+    SharedString, Stateful, StatefulInteractiveElement, Styled, div,
 };
 use gpui_component::tooltip::Tooltip;
 use gpui_component::{ActiveTheme, Icon, IconName, StyledExt};
@@ -195,37 +197,12 @@ pub fn status_bar(
                     }),
             )
         })
-        // Always offered, not only while a shell runs. With the bottom dock
-        // closed the terminal has no edge, no strip and no name anywhere in the
-        // window, so it exists only for whoever already knows the keystroke --
-        // which is the same gap the rail and Workbench buttons in the agent
-        // pane's header were added to close.
-        .child({
-            let live = facts.terminal_live;
-            let success = crate::theme::status_ink(cx).success;
-            pressable("terminal", cx)
-                .child(Icon::new(IconName::SquareTerminal).size_3())
-                .child("Terminal")
-                // A shell outliving a closed dock is the fact the icon alone
-                // cannot carry: the child is still running, and closing the
-                // window is what would kill it.
-                .when(live, |row| {
-                    row.child(div().size(rems(0.375)).rounded_full().bg(success))
-                })
-                .on_click(
-                    cx.listener(|shell: &mut Shell, _: &ClickEvent, window, cx| {
-                        shell.show_terminal(window, cx);
-                    }),
-                )
-                .tooltip(move |window, cx| {
-                    Tooltip::new(if live {
-                        "A shell is running here — Ctrl+Shift+` shows it"
-                    } else {
-                        "Open a shell in this project — Ctrl+Shift+`"
-                    })
-                    .build(window, cx)
-                })
-        })
+        // The terminal is *not* here any more. It used to be the one route to a
+        // closed bottom dock, and it now sits in the conversation's header
+        // beside the Workbench button -- the two docks the conversation is
+        // between, offered from the panel that took their space, rather than one
+        // in each of two pieces of chrome. The live-shell dot went with it.
+        //
         // One cell per panel that is *not* at 100%, which is normally none and
         // occasionally one. Read from the panels themselves rather than from
         // whichever holds focus: focus moves without telling the window, so a
