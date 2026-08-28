@@ -265,8 +265,8 @@ in gets it closed. An open dock that stayed open across a switch showed the new 
 panel where the old project's shells had been, which reads as the terminal having lost them rather
 than as their having been left behind — and inheriting *open* into an unvisited root would reproduce
 exactly that. The handover happens in `Shell::follow_terminal_dock`, called from
-`show_active_session` and nowhere else: four controls can toggle this dock (the key, the status bar,
-the project menu, the dock's own chrome), so the state is **read off the dock at the switch** rather
+`show_active_session` and nowhere else: four controls can toggle this dock (the key, the conversation
+header, the project menu, the dock's own chrome), so the state is **read off the dock at the switch** rather
 than mirrored at each of them. A session switch inside one project is not a handover — it files the
 live state and moves nothing, or it would fight a user who had just opened it. The Workbench keeps
 one state for the window: its state is per root as well, but every root has a file tree, so an open
@@ -422,17 +422,22 @@ status bar.
 ### Keyboard, zoom, maximize
 
 App commands occupy an exact `Ctrl+Shift` namespace so plain Ctrl keys stay usable inside a PTY:
-`B` rail · `E` Files · `O` Editor · `` ` `` terminal · `A` composer · `F` find · `R` guarded restart ·
-`W` guarded close · `K` maximize. Plus `Ctrl+S` save, `Ctrl+1…9` session by position, `Ctrl+Tab` session by recency,
+`B` rail · `E` Files · `O` Editor · `A` composer · `F` find · `R` guarded restart ·
+`W` guarded close · `K` maximize. Plus `` Ctrl+` `` terminal, `Ctrl+S` save, `Ctrl+1…9` session by position, `Ctrl+Tab` session by recency,
 `Ctrl+=`/`Ctrl+-`/`Ctrl+0` zoom, and inside the composer `Up`/`Down` (its completion list) and
 `Ctrl+V` (an image or a file on the clipboard becomes an attachment; text is handed back to the input).
 
 **GPUI resolves these itself.** Key bindings are matched against the focus context stack *before* the
 key is delivered to whatever is focused, so an app binding reaches the app even while a PTY holds
-focus, and the terminal never sees that keystroke. Two kinds of deliberate exception to the
-namespace: `Ctrl+S`, bound `Shell && !Terminal` because the PTY has a real claim on it; and the
+focus, and the terminal never sees that keystroke. Three kinds of deliberate exception to the
+namespace: `Ctrl+S`, bound `Shell && !Terminal` because the PTY has a real claim on it; the
 composer's `Up`/`Down` and `Ctrl+V`, bound `ChatComposer > Input` and `ChatComposerCard > Input`
-because they have to be taken from the input that already binds them. A binding wins on the *depth* at which its predicate holds and only then on being
+because they have to be taken from the input that already binds them; and the terminal toggle, which
+is plain `` Ctrl+` `` because the shifted form **cannot be typed** — gpui names a key by the keysym
+the layout produces with the modifiers applied, so shift over the backtick yields `~` and shift is
+then dropped from the keystroke, leaving `ctrl-~`. `ctrl-shift-\`` matched nothing for as long as it
+was bound; the tilde is not bound in its place because it is shifted on some layouts and unshifted on
+others. A binding wins on the *depth* at which its predicate holds and only then on being
 registered later, and `A > B` scores at `B`'s depth — so that predicate ties with the input's own
 and the tie goes to the app, which binds after the library. The composer claims `ChatComposer` only
 while a list is open, so the keys otherwise still move the caret.
@@ -659,6 +664,15 @@ Listed because a missing feature nobody wrote down reads as a bug in the ones th
   `TerminalPanel::render` — the two bare panels — track their own handles, and the Workbench, which
   keeps its tab group, does not. Focus-on-click stays correct either way: gpui's handler runs in the
   bubble phase and an inner focusable takes the click first and calls `prevent_default`.
+- **A panel closed while it holds focus takes the whole keymap with it.** GPUI resolves a key along
+  the path from the dispatch tree's root down to the *focused* node; with nothing focused that path is
+  the root alone, and every `on_action` the shell hangs on its own frame sits below it, unreachable.
+  So unmounting the terminal — or closing the Workbench dock — with the caret inside leaves a window
+  where no shortcut works at all, including the one that would reopen the panel. It reads as "the key
+  only closes it, never opens it", which is nothing like a focus bug and sends you looking at the
+  binding. Both close paths call `ChatPane::reclaim_focus`, which asks *before* the panel leaves the
+  frame, since a handle that is not drawn cannot answer `contains_focused`. Any new panel that can be
+  taken off screen owes the same call.
 - **Zoom factors must snap to the step.** Binary floating point does not round-trip `1.0 - 0.1 + 0.1`,
   so an unsnapped factor drifts and `Ctrl+0` becomes the only way back to 100%.
 - **`vendor/gpui-terminal` is a vendored render core plus the interaction layer upstream never had.**

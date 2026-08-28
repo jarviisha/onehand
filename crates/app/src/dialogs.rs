@@ -607,9 +607,9 @@ pub const SHORTCUTS: &[Shortcut] = &[
         keys: &["ctrl-shift-e"],
     },
     Shortcut {
-        label: "Ctrl+Shift+`",
+        label: "Ctrl+`",
         what: "Toggle the terminal",
-        keys: &["ctrl-shift-`"],
+        keys: &["ctrl-`"],
     },
     Shortcut {
         label: "Ctrl+Shift+A",

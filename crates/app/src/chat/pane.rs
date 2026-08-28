@@ -203,6 +203,15 @@ pub struct ChatPane {
     /// frame so non-typing changes (initial mount, a permission arriving, an
     /// attachment disappearing) also update the list's bottom padding.
     composer_h: std::rc::Rc<std::cell::Cell<gpui::Pixels>>,
+    /// Whether the last frame this pane drew had a composer in it.
+    ///
+    /// Recorded by the renderer rather than worked out again by whoever asks,
+    /// because the composer is the last of six things the body can be and the
+    /// five ahead of it are early returns. A second reading of those
+    /// conditions would be a copy that drifts, and the cost of it being wrong
+    /// is silent: focus handed to an input that is not on screen leaves the
+    /// window with nothing focused at all.
+    composer_drawn: bool,
 }
 
 impl ChatPane {
@@ -262,6 +271,7 @@ impl ChatPane {
                 rail_hidden: false,
                 terminal_live: false,
                 composer_h: Default::default(),
+                composer_drawn: false,
             }
         })
     }
@@ -575,6 +585,31 @@ impl ChatPane {
             .state
             .focus_handle(cx)
             .focus(window, cx);
+        cx.notify();
+    }
+
+    /// Take focus back from a panel that is being unmounted.
+    ///
+    /// **A window with nothing focused answers no shortcut at all.** GPUI
+    /// resolves a key against the path from the root of the frame's dispatch
+    /// tree down to the focused node; with no focused node the path is the root
+    /// alone, and every handler the app hung on the window's own frame sits
+    /// below it, unreachable. That is what a closing panel leaves behind if the
+    /// caret was inside it -- the focused element is simply not in the next
+    /// frame, so the key that closed the panel cannot reopen it, and neither
+    /// can any other.
+    ///
+    /// The conversation is where focus belongs on the way out, since it is what
+    /// the panel was covering. The composer takes it when there is one on
+    /// screen, so typing resumes where the user left it; otherwise the pane's
+    /// own handle does, which is drawn unconditionally and is all the keymap
+    /// needs.
+    pub fn reclaim_focus(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.composer_drawn {
+            self.focus_composer(window, cx);
+            return;
+        }
+        self.focus_handle.clone().focus(window, cx);
         cx.notify();
     }
 
@@ -2457,6 +2492,9 @@ impl Render for ChatPane {
 
 impl ChatPane {
     fn body(&mut self, window: &mut Window, cx: &mut Context<Self>) -> gpui::AnyElement {
+        // Cleared here and set only on the one path that mounts a composer, so
+        // every early return below leaves it false without having to say so.
+        self.composer_drawn = false;
         // A session choosing which conversation to resume has no transcript and
         // no composer yet: nothing is connected until the choice is made.
         if let Some(uid) = self.active.filter(|uid| self.is_choosing(*uid)) {
@@ -2597,6 +2635,7 @@ impl ChatPane {
             .state
             .focus_handle(cx)
             .contains_focused(window, cx);
+        self.composer_drawn = true;
 
         div()
             .size_full()

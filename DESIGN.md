@@ -132,7 +132,7 @@ One window hosts exactly one workspace. The frame is a navigation **rail** plus 
   title bar, because the library puts the button that reopens it there, and this
   terminal has no such button — leaving a bare band of chrome across the bottom
   of every window in every project, naming nothing and reopening nothing. The
-  ways back are `Ctrl+Shift+` `` ` `` and the terminal button in the agent pane's
+  ways back are `` Ctrl+` `` and the terminal button in the agent pane's
   header — which carries a dot while a shell is alive, since a child process
   outliving a closed dock is the one thing the icon cannot say.
 - **The terminal has no library tab bar either.** Its several tabs are its own,

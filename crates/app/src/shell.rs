@@ -107,18 +107,35 @@ const WARM_DELAY: std::time::Duration = std::time::Duration::from_millis(500);
 /// told which combinations to drop would need editing every time this list
 /// grows.
 ///
-/// The one deliberate exception is `Ctrl+S`, bound `Shell && !Terminal`: it is
-/// outside the `Ctrl+Shift` namespace, so the PTY has a real claim on it.
-/// A `!` predicate matches only when that context appears nowhere in the
-/// stack, which is exactly "focus is not inside the terminal".
+/// Two deliberate exceptions leave the namespace. `Ctrl+S`, bound
+/// `Shell && !Terminal`, because the PTY has a real claim on it -- a `!`
+/// predicate matches only when that context appears nowhere in the stack,
+/// which is exactly "focus is not inside the terminal". And the terminal
+/// toggle, which is on plain ``Ctrl+` `` because the shifted form is a key no
+/// Linux keystroke can ever spell (the reason is at the binding itself).
 pub fn init_keymap(cx: &mut App) {
     cx.bind_keys([
         gpui::KeyBinding::new("ctrl-shift-b", ToggleRail, None),
         gpui::KeyBinding::new("ctrl-shift-e", ToggleFiles, None),
         gpui::KeyBinding::new("ctrl-shift-o", ToggleWorkbench, None),
-        // The outer terminal. Plain ``Ctrl+` `` stays free for whatever is
-        // running *inside* a PTY.
-        gpui::KeyBinding::new("ctrl-shift-`", ToggleTerminal, None),
+        // The outer terminal, and the one app command outside the `Ctrl+Shift`
+        // namespace by necessity rather than by preference.
+        //
+        // ``Ctrl+Shift+` `` is a keystroke that cannot be typed. gpui names a
+        // key by the keysym the layout produces *with the modifiers already
+        // applied*, so holding shift over the backtick key yields `asciitilde`
+        // -- and it then drops shift from the modifiers, because a symbol has
+        // no upper case for shift to be describing. The keystroke that arrives
+        // is `ctrl-~`; nothing ever produces `ctrl-shift-\``, so the binding
+        // matched nothing and the terminal had no key at all. Binding `ctrl-~`
+        // would spell it, but the tilde is a shifted character on some layouts
+        // and an unshifted one on others, so the key that opened the terminal
+        // would depend on the keyboard.
+        //
+        // The cost is that a PTY never sees plain ``Ctrl+` ``. That is the
+        // right trade: this is the key that *closes* the terminal too, so it
+        // has to reach the app from inside it, and few shells read it.
+        gpui::KeyBinding::new("ctrl-`", ToggleTerminal, None),
         gpui::KeyBinding::new("ctrl-shift-a", FocusComposer, None),
         gpui::KeyBinding::new("ctrl-shift-f", ToggleFind, None),
         gpui::KeyBinding::new("ctrl-shift-r", RestartSession, None),
@@ -366,8 +383,8 @@ pub struct Shell {
     /// Which root the bottom dock's current open/closed state belongs to.
     ///
     /// The handover has to read the dock *live* — the state is changed by a key,
-    /// by the status bar, by a rail menu entry and by the dock's own chrome, and
-    /// a memory updated at each of those is a memory with four places to forget.
+    /// by the conversation's header, by a rail menu entry and by the dock's own
+    /// chrome, and a memory updated at each of those has four places to forget.
     /// Knowing whose state is on screen is enough to file it correctly at the one
     /// moment it matters, which is the switch itself.
     terminal_root: Option<PathBuf>,
@@ -1884,6 +1901,12 @@ impl Shell {
             self.dock.update(cx, |dock, cx| {
                 dock.toggle_dock(DockPlacement::Right, window, cx)
             });
+            // The caret is inside the panel being closed, and a closed dock
+            // draws none of its content -- so leaving focus there would leave
+            // the window pointing at an element no frame contains, which is a
+            // window no shortcut reaches.
+            self.chat
+                .update(cx, |pane, cx| pane.reclaim_focus(window, cx));
             return;
         }
         self.workbench
@@ -1926,10 +1949,19 @@ impl Shell {
     /// put on it. What was left was a bare band of chrome across the bottom of
     /// every window, in every project, naming nothing and reopening nothing.
     /// With no bottom dock at all there is nothing to draw, and the way back is
-    /// the key and the status bar's Terminal cell.
+    /// the key and the terminal button in the conversation's header.
     fn set_terminal_visible(&mut self, visible: bool, window: &mut Window, cx: &mut Context<Self>) {
         if visible == self.dock.read(cx).is_dock_open(DockPlacement::Bottom, cx) {
             return;
+        }
+        // Asked while the panel is still in the frame, because a handle that is
+        // no longer drawn cannot answer it. Every route that takes the terminal
+        // off screen arrives here -- the key, the header button, the project
+        // menu, a project handing its dock over -- so the caret is given back
+        // once rather than at each of them.
+        if !visible && self.terminal.focus_handle(cx).contains_focused(window, cx) {
+            self.chat
+                .update(cx, |pane, cx| pane.reclaim_focus(window, cx));
         }
         if visible {
             // The panel entity is the same one every time, so the shells, their
