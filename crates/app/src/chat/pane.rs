@@ -2039,6 +2039,19 @@ impl ChatPane {
         Some(state)
     }
 
+    /// Take the reader back to where the latest activity is arriving.
+    ///
+    /// Through the viewport rather than straight at the list, because the list
+    /// cannot answer where that is: while a question is held at the top, the
+    /// activity is arriving in the room under it and the place to return to is
+    /// the question, which only the layout knows the row of.
+    fn jump_to_latest(&mut self, cx: &mut Context<Self>) {
+        if let Some(conv) = self.active_conversation_mut() {
+            conv.viewport.jump_to_latest();
+        }
+        cx.notify();
+    }
+
     /// Draw run `ix`. Called by the list, after `render` has returned.
     /// `window` is here for one thing the renderer cannot get any other way:
     /// the rem size in force for this subtree, which is what per-panel zoom
@@ -2574,7 +2587,6 @@ impl ChatPane {
         let this = cx.entity();
         let for_render = session.clone();
         let scrolled_up = away_from_tail(&list_state) && !holding;
-        let to_bottom = list_state.clone();
         // The field draws no ring of its own once the card is its border, so
         // the card has to answer "does typing go here" -- with an app keymap
         // that reaches over the terminal and a rail that can take focus, an
@@ -2646,9 +2658,8 @@ impl ChatPane {
                                                 .label("New activity")
                                                 .tooltip("Jump to the latest activity")
                                                 .on_click(cx.listener(
-                                                    move |_: &mut Self, _, _, cx| {
-                                                        to_bottom.scroll_to_end();
-                                                        cx.notify();
+                                                    |pane: &mut Self, _, _, cx| {
+                                                        pane.jump_to_latest(cx);
                                                     },
                                                 )),
                                         ),

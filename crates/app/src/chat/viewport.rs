@@ -463,10 +463,20 @@ impl Viewport {
         *known = count;
 
         // The tail is the only run that changes shape in place, and only while
-        // a turn streams into it. Re-splice just that one so its cached height
-        // does not freeze at the first chunk's.
+        // a turn streams into it. Ask for just that one to be measured again so
+        // its cached height does not freeze at the first chunk's.
+        //
+        // **Re-measured, not spliced.** A splice says the rows in the range are
+        // different rows, so the list gives up whatever position it held inside
+        // them: a reader partway down an answer taller than the panel is put
+        // back at that answer's first line, once per arriving chunk, which is
+        // every long answer being unreadable while it is written. Asking for a
+        // measurement says the row is the same row and is only a different
+        // height, which is exactly what a streamed chunk did to it -- and the
+        // list puts the reader back where they were once it knows the new
+        // height.
         if busy && count > 0 {
-            state.splice(count - 1..count, 1);
+            state.remeasure_items(count - 1..count);
         }
         let state = state.clone();
 
@@ -475,10 +485,23 @@ impl Viewport {
         // be put at the top. A reset throws the scroll position away, so a hold
         // that had already been placed has to be placed again -- but never over
         // a reader who has scrolled, whose position is theirs to keep.
+        //
+        // The third case is a list resting past its last row, which is where a
+        // scroll that came to rest at the very bottom leaves one. That is an
+        // ordinary place to be while a question is held -- the room under the
+        // turn ends the transcript exactly where the question meets the top
+        // edge, so the bottom and the question are one place -- but it is a
+        // place with no row beneath it to measure from, and a room that has
+        // never been measured asks for a whole panel of padding. The two
+        // together draw an empty panel that cannot measure its way back out.
+        // Naming the question's own row is the same picture wherever those two
+        // places agree, and the only one that can be measured where they do
+        // not.
+        let adrift = state.logical_scroll_top().item_ix >= count;
         let placing = self
             .hold
             .as_ref()
-            .is_some_and(|hold| !hold.reading && (hold.pending || lost_position));
+            .is_some_and(|hold| !hold.reading && (hold.pending || lost_position || adrift));
         if let Some(run) = held
             && placing
             && state.viewport_bounds().size.height > px(0.)
@@ -513,6 +536,42 @@ impl Viewport {
             }
         }
         state
+    }
+
+    /// Take the transcript back to where the latest activity is arriving.
+    ///
+    /// **Which is the held question, while there is one**, and not the end of
+    /// the transcript. With a room under the turn those are ordinarily the same
+    /// place, so asking the list for its end looks right — but only once the
+    /// room has been measured against a turn. Until then it is a whole panel of
+    /// padding, the end of the transcript is the end of *that*, and landing
+    /// there draws nothing but the padding: no row on screen, and none measured
+    /// either, so the room has nothing left to shrink against and nothing takes
+    /// the reader off the empty panel again. The question's own row is a place
+    /// that always exists.
+    ///
+    /// With no question held, the latest activity really is the tail, and the
+    /// list is handed back to following it.
+    pub fn jump_to_latest(&mut self) {
+        let Some((state, _)) = &self.list else {
+            return;
+        };
+        let state = state.clone();
+        let held = self.hold.as_ref().map(|hold| hold.prompt);
+        if let Some(run) = held.and_then(|prompt| self.run_of(prompt)) {
+            state.scroll_to(ListOffset {
+                item_ix: run,
+                offset_in_item: px(0.),
+            });
+            // The reader asked to come back, so the hold is resting on its
+            // question again -- which is also what takes this control off the
+            // screen, in the same frame as the press rather than the next one.
+            if let Some(hold) = &mut self.hold {
+                hold.reading = false;
+            }
+            return;
+        }
+        self.release(&state, None);
     }
 
     /// Which run draws `target`.
@@ -672,6 +731,7 @@ impl FindState {
 #[cfg(test)]
 mod tests {
     use super::Viewport;
+    use gpui::{ListOffset, px};
     use onehand_core::acp::{PermissionRequest, ToolCall, ToolKind, ToolStatus};
     use onehand_core::chat::{
         ActivityGroup, Chat, ChatItem, Md, PermItem, ToolItem, TranscriptItemId, UserMsg,
@@ -892,6 +952,109 @@ mod tests {
         let mut viewport = Viewport::default();
         viewport.replan(&chat, 0, |_| false);
         assert!(!viewport.holding());
+    }
+
+    /// A panel's worth of nothing, so the two positions the hold rests between
+    /// are the only thing a test is measuring.
+    const ROOM: super::TopRoom = super::TopRoom {
+        head: px(0.),
+        floor: px(64.),
+    };
+
+    /// The run a turn is streaming into has to be measured again on every
+    /// frame, or its height freezes at the first chunk's -- but asking for that
+    /// must not cost the reader their place inside it.
+    ///
+    /// Told the row had been *replaced*, the list gave up the offset it held
+    /// into it, so every arriving chunk put a reader partway down a long answer
+    /// back at that answer's first line: the whole of a streaming answer was
+    /// unreadable until it finished.
+    #[test]
+    fn the_streaming_run_is_measured_again_without_moving_the_reader() {
+        let mut viewport = Viewport::default();
+        viewport.replan(&chat(), 0, |_| false);
+        let state = viewport.list_state(true, ROOM);
+        let count = state.item_count();
+        assert!(count > 0);
+
+        // Partway down the run the answer is arriving in.
+        state.scroll_to(ListOffset {
+            item_ix: count - 1,
+            offset_in_item: px(600.),
+        });
+
+        // The next chunk lands: same rows, one of them a different height.
+        let state = viewport.list_state(true, ROOM);
+        assert_eq!(
+            state.item_count(),
+            count,
+            "measuring a row again is not a change of length"
+        );
+        assert_eq!(
+            state.logical_scroll_top().offset_in_item,
+            px(600.),
+            "the chunk took the reader back to the top of the answer"
+        );
+    }
+
+    /// The way back to the latest lands on the held question, and not on the
+    /// end of the transcript.
+    ///
+    /// The activity is arriving in the room under that question, so the two are
+    /// ordinarily one place -- but only once the room has been measured against
+    /// a turn. Until then it is a whole panel of padding, and the end of the
+    /// transcript is the end of *that*: a position with no row on screen and
+    /// none measured either, so nothing is left to shrink the room back down
+    /// and take the reader off an empty panel.
+    #[test]
+    fn jumping_to_the_latest_lands_on_the_held_question() {
+        let mut chat = chat();
+        let mut viewport = Viewport::default();
+        viewport.replan(&chat, 0, |_| false);
+        let _ = viewport.list_state(false, ROOM);
+
+        chat.items.push(ChatItem::User(UserMsg::text("and now?")));
+        viewport.replan(&chat, 0, |_| false);
+        let state = viewport.list_state(true, ROOM);
+        assert!(viewport.holding(), "a question just asked is held");
+        let question = viewport.run_of(TranscriptItemId::Live(3)).unwrap();
+
+        // The reader scrolls off the question, which is what puts the way back
+        // on screen in the first place.
+        state.scroll_to(ListOffset {
+            item_ix: 0,
+            offset_in_item: px(0.),
+        });
+
+        viewport.jump_to_latest();
+        let back = state.logical_scroll_top();
+        assert_eq!(
+            (back.item_ix, back.offset_in_item),
+            (question, px(0.)),
+            "the way back has to name a row, not the end of the padding"
+        );
+        assert!(
+            viewport.holding(),
+            "resting on the question again takes the control off the screen"
+        );
+    }
+
+    /// With no question held, the latest activity really is the tail, and the
+    /// list has to be handed back to following it -- or the next chunk arrives
+    /// under a reader who asked to be taken to it.
+    #[test]
+    fn jumping_with_nothing_held_follows_the_tail_again() {
+        let mut viewport = Viewport::default();
+        viewport.replan(&chat(), 0, |_| false);
+        let state = viewport.list_state(false, ROOM);
+        state.scroll_to(ListOffset {
+            item_ix: 0,
+            offset_in_item: px(0.),
+        });
+        assert!(!state.is_following_tail());
+
+        viewport.jump_to_latest();
+        assert!(state.is_following_tail());
     }
 
     /// The assumption the scroll target rests on: opening a strip changes what
