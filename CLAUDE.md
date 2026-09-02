@@ -258,7 +258,16 @@ plus `sendMessage` and `answerCallbackQuery`. Everything that is not the wire is
   and queued rather than refused mid-turn, since the sender cannot see that a turn is in flight — but
   **an occupied queue is a refusal**, because that queue is one slot and `Chat::queue` replaces what is
   in it: a message the sender knows did not go can be sent again, and one they believe went cannot be
-  recovered.
+  recovered. **`//x` sends `/x` on to the agent**, which is the only way its own slash commands are
+  reachable at all — every one of them collides with this language. A single slash is never forwarded:
+  guessing that an unrecognised word was meant for the agent would turn each mistyped bridge command
+  into a prompt nobody sent.
+- **A message that cannot be read is answered, not dropped.** A photo or a voice note comes back as
+  `RemoteEvent::Unreadable` and earns a sentence saying so. Silence is the answer reserved for a chat
+  that is not on the list, and giving the same answer to somebody who *is* makes a working bridge
+  indistinguishable, from the far side, from a crashed one. A caption is not read as the message
+  either: handing the agent "fix this" with no picture is a worse answer than saying the picture did
+  not travel.
   **A chat is bound by being told to and never by being guessed at**: one root runs as many sessions as
   it is asked to, so "the active one" moves every time somebody clicks a rail row, and a message sent
   from a train would land wherever the window happened to be pointing.
@@ -287,8 +296,13 @@ plus `sendMessage` and `answerCallbackQuery`. Everything that is not the wire is
   form gets *Skip* alone, which is always safe and is what stops a session standing still.
 - **A dropped long poll is the normal condition, not the failure.** Cuts, timeouts and rate limits are
   retried with a widening gap inside the channel and nothing is reported upward; only a refusal
-  retrying cannot fix — a token the far side rejects — ends the stream with `Disconnected`. Same
-  spirit as the ACP client racing `child.wait()`: what cannot recover surfaces, what can does not.
+  retrying cannot fix ends the stream with `Disconnected`. Same spirit as the ACP client racing
+  `child.wait()`: what cannot recover surfaces, what can does not. Three qualify — a rejected token, no
+  bot behind it, and **409, which is a different kind of unfixable**: another process is polling this
+  same bot, and a token has one queue, so two pollers split the messages rather than each receiving
+  them. Left as transient the two retry against each other for as long as both run and which one hears
+  any message is a coin toss. The far side ends the *older* poll, so treating it as terminal means the
+  instance already running stands down and the one just launched keeps the bot.
 
 ### The chat pane
 

@@ -406,12 +406,23 @@ impl Trouble {
 
 /// Whether a refusal from the API is one that retrying could ever fix.
 ///
-/// Only the two that are answers about the *credential*: the token was rejected,
-/// or there is no bot by that token at all. Everything else — a busy server, a
-/// chat that blocked the bot, a message that was too long — is either transient
-/// or about one message, and neither is a reason to take the bridge down.
+/// Two are answers about the *credential*: the token was rejected, or there is
+/// no bot by that token at all. Everything else — a busy server, a chat that
+/// blocked the bot, a message that was too long — is either transient or about
+/// one message, and neither is a reason to take the bridge down.
+///
+/// **409 is the third, and it is unfixable for a different reason.** It means
+/// another process is polling this same bot, and a token has exactly one queue:
+/// two pollers do not each get the messages, they split them, so half of what
+/// somebody sends reaches an app that is not the one they are looking at. Left
+/// as transient, the two back off and retry against each other for as long as
+/// both are running, and which of them hears any given message is a coin toss.
+/// The far side ends the *older* poll when a new one arrives, so treating it as
+/// terminal means the instance that was already there stands down and the one
+/// just started keeps the bot — which is the way round somebody who has just
+/// launched an app expects it.
 fn is_fatal(error_code: Option<i64>) -> bool {
-    matches!(error_code, Some(401) | Some(404))
+    matches!(error_code, Some(401) | Some(404) | Some(409))
 }
 
 /// The far side's envelope. Every method answers in this shape.
@@ -508,10 +519,13 @@ struct TgCallback {
 impl Update {
     /// This update as the model's own event, or nothing.
     ///
-    /// Nothing covers everything the bridge has no reading for: a photo, a
-    /// sticker, a press carrying no data, an edit to a message. Dropped here
-    /// rather than upward, because "an update arrived and meant nothing" is not
-    /// a fact the app has any use for.
+    /// Nothing is for what nobody is waiting on an answer to: a press carrying
+    /// no data, an update this build never asked for. **A message is different**
+    /// — somebody typed it and is watching for a reply — so one whose content
+    /// this build cannot read comes back as
+    /// [`RemoteEvent::Unreadable`] rather than vanishing. A photo dropped in
+    /// silence is indistinguishable, from the far side, from a bridge that has
+    /// crashed.
     fn into_event(self) -> Option<RemoteEvent> {
         if let Some(press) = self.callback_query {
             let chat = press.message?.chat.id.to_string();
@@ -522,9 +536,14 @@ impl Update {
             });
         }
         let message = self.message?;
-        Some(RemoteEvent::Message {
-            chat: message.chat.id.to_string(),
-            text: message.text?,
+        let chat = message.chat.id.to_string();
+        // A caption is not read as the message either. It is the text *beside* a
+        // photo, so taking it alone would hand the agent "fix this" with nothing
+        // to look at — a prompt about a picture that never travelled, which is a
+        // worse answer than saying the picture did not travel.
+        Some(match message.text {
+            Some(text) => RemoteEvent::Message { chat, text },
+            None => RemoteEvent::Unreadable { chat },
         })
     }
 }
@@ -550,9 +569,15 @@ mod tests {
     /// Taking the bridge down on a busy server would mean a minute of the far
     /// side's trouble costs the user their bridge until they restart the app.
     #[test]
-    fn only_a_rejected_token_is_fatal() {
+    fn only_what_retrying_cannot_fix_is_fatal() {
+        // The credential.
         assert!(is_fatal(Some(401)));
         assert!(is_fatal(Some(404)));
+        // Another process polling the same bot. A token has one queue, so two
+        // pollers split the messages rather than each getting them -- retrying
+        // is two instances taking turns losing half of what is sent.
+        assert!(is_fatal(Some(409)));
+        // Everything else is the far side's weather, or about one message.
         assert!(!is_fatal(Some(429)));
         assert!(!is_fatal(Some(500)));
         assert!(!is_fatal(Some(403)));
@@ -611,16 +636,34 @@ mod tests {
         );
     }
 
-    /// Everything the bridge has no reading for is dropped rather than reported.
-    /// A group the bot is in produces a steady stream of these.
+    /// **A message somebody typed is never dropped in silence.** They are
+    /// watching for a reply, and from the far side a photo that gets no answer
+    /// is indistinguishable from a bridge that has crashed. A caption is not
+    /// read as the message either: handing the agent "fix this" with no picture
+    /// is a worse answer than saying the picture did not travel.
     #[test]
-    fn an_update_with_nothing_to_read_is_dropped() {
-        assert_eq!(
-            parse_update(r#"{"update_id":9,"message":{"chat":{"id":1},"sticker":{}}}"#),
-            None
-        );
+    fn a_message_this_build_cannot_read_still_comes_back() {
+        for update in [
+            r#"{"update_id":9,"message":{"chat":{"id":1},"sticker":{}}}"#,
+            r#"{"update_id":9,"message":{"chat":{"id":1},"photo":[],"caption":"fix this"}}"#,
+            r#"{"update_id":9,"message":{"chat":{"id":1},"voice":{}}}"#,
+        ] {
+            assert_eq!(
+                parse_update(update),
+                Some(RemoteEvent::Unreadable {
+                    chat: "1".to_string()
+                }),
+                "for {update}"
+            );
+        }
+    }
+
+    /// What *is* dropped: updates nobody is waiting on an answer to.
+    #[test]
+    fn an_update_nobody_is_waiting_on_is_dropped() {
         assert_eq!(parse_update(r#"{"update_id":9}"#), None);
-        // A press with no data has nothing to act on, and no chat to reply in.
+        // A press with no data has nothing to act on -- and nothing was typed,
+        // so nobody is watching a chat for the reply.
         assert_eq!(
             parse_update(
                 r#"{"update_id":9,"callback_query":{"id":"c","message":{"chat":{"id":1}}}}"#

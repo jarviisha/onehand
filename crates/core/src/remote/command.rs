@@ -62,10 +62,29 @@ pub enum RemoteCommand {
 /// to find a command inside a sentence: a message beginning "help me work out
 /// why…" is a prompt, and a parser clever enough to see a command in it would be
 /// a parser that eats one message in fifty and never says which.
+///
+/// **A doubled slash is the way past that.** The agents have slash commands of
+/// their own — a session offers `/compact`, `/clear` and whatever else it
+/// advertises — and every one of them collides with this little language, so
+/// without an escape they are simply unreachable from outside the app. `//x`
+/// sends `/x` on to the agent. A doubled prefix rather than a `/send` wrapper
+/// because the thing being typed is still a command and should still look like
+/// one, and because an unknown word is a mistake worth reporting either way:
+/// this build refuses `/compact` by name rather than guessing that anything it
+/// does not recognise was meant for the agent, which would turn every mistyped
+/// bridge command into a prompt nobody meant to send.
 pub fn parse(line: &str) -> RemoteCommand {
     let line = line.trim();
     if line.is_empty() {
         return RemoteCommand::Nothing;
+    }
+    if let Some(escaped) = line.strip_prefix("//") {
+        let escaped = escaped.trim();
+        return if escaped.is_empty() {
+            RemoteCommand::Nothing
+        } else {
+            RemoteCommand::Prompt(format!("/{escaped}"))
+        };
     }
     let Some(rest) = line.strip_prefix('/') else {
         return RemoteCommand::Prompt(line.to_string());
@@ -211,6 +230,42 @@ mod tests {
             parse("\n fix the test\n\n  in editor.rs \n"),
             RemoteCommand::Prompt("fix the test\n\n  in editor.rs".into())
         );
+    }
+
+    /// The agents have slash commands of their own, and every one of them
+    /// collides with this language. Without the escape they are unreachable
+    /// from outside the app entirely.
+    #[test]
+    fn a_doubled_slash_sends_a_slash_command_on_to_the_agent() {
+        assert_eq!(
+            parse("//compact"),
+            RemoteCommand::Prompt("/compact".into()),
+            "the agent's own command, not this build's"
+        );
+        assert_eq!(
+            parse("//model opus"),
+            RemoteCommand::Prompt("/model opus".into())
+        );
+        // Even one this build *does* know: the escape is what says who it is
+        // for, so `//sessions` is a prompt and not a listing.
+        assert_eq!(
+            parse("//sessions"),
+            RemoteCommand::Prompt("/sessions".into())
+        );
+        assert_eq!(
+            parse("  //  clear  "),
+            RemoteCommand::Prompt("/clear".into())
+        );
+        // Nothing but slashes is nothing to send on.
+        assert_eq!(parse("//"), RemoteCommand::Nothing);
+    }
+
+    /// An unknown word stays a mistake to report rather than being passed
+    /// through. Guessing that anything unrecognised was meant for the agent
+    /// would turn every mistyped bridge command into a prompt nobody sent.
+    #[test]
+    fn a_single_slash_is_never_forwarded() {
+        assert_eq!(parse("/compact"), RemoteCommand::Unknown("compact".into()));
     }
 
     #[test]

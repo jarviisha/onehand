@@ -87,6 +87,17 @@ pub enum RemoteEvent {
     Connected { name: String },
     /// Someone wrote to the bot.
     Message { chat: ChatId, text: String },
+    /// Something arrived from a chat that this build cannot read — a photo, a
+    /// voice note, a sticker.
+    ///
+    /// **Reported rather than dropped**, and that is the whole reason it exists.
+    /// Silence is the answer reserved for a chat that is not allowed to reach
+    /// the app at all, and giving the same answer to somebody who *is* allowed
+    /// makes a bridge that is working look like one that has died — they sent a
+    /// screenshot, nothing came back, and there is no way from the outside to
+    /// tell that apart from a crashed process. What the app says is the app's
+    /// business; that it must say *something* is this variant.
+    Unreadable { chat: ChatId },
     /// Someone pressed a button on a message the app sent.
     ///
     /// `data` is what [`Button::data`] carried; `press_id` is what an

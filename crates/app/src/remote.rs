@@ -333,6 +333,22 @@ fn receive(event: RemoteEvent, cx: &mut App) {
                 Shared::global(cx).remote.send(Outbound::text(chat, reply));
             }
         }
+        RemoteEvent::Unreadable { chat } => {
+            // The gate first, as everywhere: a stranger sending a photo learns
+            // nothing, including that this went unread.
+            if !allowed(&chat, cx) {
+                return;
+            }
+            // Somebody allowed is owed an answer even when the answer is no.
+            // They typed something and are watching for a reply, and silence
+            // here is indistinguishable from a bridge that has stopped running.
+            Shared::global(cx).remote.send(Outbound::text(
+                chat,
+                "I can only read text — an image or a voice note doesn't travel. \
+                 Type what you want done and it will go to the session."
+                    .to_string(),
+            ));
+        }
         RemoteEvent::Pressed {
             chat,
             press_id,
@@ -697,6 +713,7 @@ const HELP: &str = "\
 /help — this
 
 Anything else is sent as a prompt to the session this chat is pointed at.
+//<command> sends the agent's own slash command — //compact, //clear.
 
 Notifications arrive here on their own: a turn that finished, an agent waiting \
 on you, an agent that stopped answering. While you're at the keyboard the ones \
