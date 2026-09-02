@@ -248,6 +248,19 @@ plus `sendMessage` and `answerCallbackQuery`. Everything that is not the wire is
   **A chat is bound by being told to and never by being guessed at**: one root runs as many sessions as
   it is asked to, so "the active one" moves every time somebody clicks a rail row, and a message sent
   from a train would land wherever the window happened to be pointing.
+- **Reopening.** `/archive` lists saved conversations flat across every project, newest first, capped
+  at ten — the question asked from a phone is "put back the one I was in", not "let me browse a
+  month". `/open <n>` mints a session on that conversation's *own* root and resumes it, then points the
+  chat at what it just opened (not a guess: naming the conversation is naming where the next prompt
+  goes). Two things this needs that nothing else on the bridge does. The scan reads a file per
+  conversation, so it goes to `cx.background_executor()` and **sends its own reply when it lands**
+  rather than returning one — the only command that answers late. And it needs a `Window`, because
+  showing the new session is what spawns its adapter, so it reaches the shell through
+  `OpenWindow::handle` instead of the entity alone. **The number is a place in the listing, not an
+  identity** — a saved conversation is named on disk by an agent-chosen session id, too long to type
+  and too long for a button to carry. What makes a place safe here is that the bridge keeps the listing
+  exactly as it went out and `/open` counts into *that*; re-scanning would reintroduce the drift that
+  made session numbers uids in the first place.
 - **Answering.** A parked ask goes out with the question and inline buttons. A press carries `uid`,
   the card's position in the transcript, and the option's position in that card — positions and never
   identifiers, because the payload is capped (64 bytes) and an option id is the agent's to choose.

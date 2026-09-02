@@ -555,7 +555,10 @@ impl Shell {
                         shell.confirm_delete_conversation(dir.clone(), window, cx)
                     }
                     E::StartSession { agent, resume } => {
-                        shell.start_session(agent.clone(), resume.clone(), window, cx)
+                        // The uid is only wanted where the caller has to name
+                        // what it just made; a click on the page has the new
+                        // session in front of it.
+                        let _ = shell.start_session(agent.clone(), resume.clone(), window, cx);
                     }
                     // Said the same way every other failed write is said, and
                     // for a stronger reason: a workspace that will not save can
@@ -1872,13 +1875,15 @@ impl Shell {
     /// been renamed or removed in the agent manager — a conversation the user
     /// can see listed must still be openable, and which agent replays it is the
     /// smaller loss.
+    /// Returns the new session's uid, for a caller that has to say which one it
+    /// just made.
     pub fn start_session(
         &mut self,
         agent: Option<SharedString>,
         resume: Option<PathBuf>,
         window: &mut Window,
         cx: &mut Context<Self>,
-    ) {
+    ) -> Option<u64> {
         let idx = agent
             .and_then(|name| {
                 Shared::global(cx)
@@ -1887,7 +1892,7 @@ impl Shell {
                     .position(|spec| spec.name == name.as_ref())
             })
             .unwrap_or(0);
-        self.spawn_session(idx, resume, window, cx);
+        self.spawn_session(idx, resume, window, cx)
     }
 
     /// Mint a session on the active root and show it, resuming `archive` if one
@@ -1903,21 +1908,21 @@ impl Shell {
         archive: Option<PathBuf>,
         window: &mut Window,
         cx: &mut Context<Self>,
-    ) {
+    ) -> Option<u64> {
         self.agent_menu_open = false;
         let Some(spec) = Shared::global(cx).agents.get(idx).cloned() else {
             window.push_notification(Notification::warning("No agents configured"), cx);
-            return;
+            return None;
         };
         let uid = cx.update_global::<Shared, _>(|shared, _| shared.next_uid());
-        if self.window.workspace.add_session(spec, uid).is_some() {
-            if let Some(archive) = archive {
-                self.chat
-                    .update(cx, |pane, _| pane.resume_next(uid, archive));
-            }
-            self.show_active_session(window, cx);
-            cx.notify();
+        self.window.workspace.add_session(spec, uid)?;
+        if let Some(archive) = archive {
+            self.chat
+                .update(cx, |pane, _| pane.resume_next(uid, archive));
         }
+        self.show_active_session(window, cx);
+        cx.notify();
+        Some(uid)
     }
 
     /// Show a Workbench mode, opening the dock if it is closed.
@@ -2482,6 +2487,48 @@ impl Shell {
         let away = !crate::remote::is_away(cx);
         let said = crate::remote::set_away(away, cx);
         crate::remote::broadcast(said, cx);
+    }
+
+    /// Every project root this window holds, as `(path, label)`.
+    ///
+    /// For the bridge, which has to know what there is before it can go looking
+    /// on disk for what was said in it.
+    pub fn remote_roots(&self) -> Vec<(PathBuf, String)> {
+        self.window
+            .workspace
+            .roots
+            .iter()
+            .map(|root| (root.path.clone(), root.label.clone()))
+            .collect()
+    }
+
+    /// Reopen a saved conversation on `root`, from outside the app.
+    ///
+    /// `None` for a root this window does not hold, which is the same handshake
+    /// the prompt and press paths use to find the window that does.
+    ///
+    /// **The project is named rather than assumed.** Minting a session goes to
+    /// the workspace's active root, which is whichever project somebody last
+    /// clicked — so without selecting it first, a conversation reopened from a
+    /// train would land on an unrelated checkout and run its first prompt there.
+    /// Returns the new session's number, so the reply can name what a later
+    /// `/use` would.
+    pub fn remote_open(
+        &mut self,
+        root: &Path,
+        archive: PathBuf,
+        agent: Option<SharedString>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> Option<u64> {
+        let idx = self
+            .window
+            .workspace
+            .roots
+            .iter()
+            .position(|candidate| candidate.path == root)?;
+        self.select_root(idx, window, cx);
+        self.start_session(agent, Some(archive), window, cx)
     }
 
     /// Every session this window is running, for the bridge that has to describe

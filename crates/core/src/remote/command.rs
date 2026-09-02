@@ -20,6 +20,19 @@ pub enum RemoteCommand {
     Use(u64),
     /// `/use` with nothing to act on — no number, or a word that is not one.
     UseWhich,
+    /// `/archive` — the conversations on disk, across every project.
+    Archive,
+    /// `/open <n>` — reopen the n-th conversation of the last [`Self::Archive`]
+    /// listing.
+    ///
+    /// **A place in that listing, not an identity.** A saved conversation is
+    /// named on disk by an agent-chosen session id, which is far too long to
+    /// type on a phone and too long for a button to carry — so what a chat holds
+    /// is a number, and what makes the number safe is that the listing it counts
+    /// into is kept exactly as it was sent rather than read off disk again.
+    Open(usize),
+    /// `/open` with nothing to act on — no number, or a word that is not one.
+    OpenWhich,
     /// `/away` — stop assuming the window can be seen.
     ///
     /// The app decides what a notification is worth by asking whether the user
@@ -81,6 +94,13 @@ pub fn parse(line: &str) -> RemoteCommand {
             Some(uid) => RemoteCommand::Use(uid),
             None => RemoteCommand::UseWhich,
         },
+        "archive" => RemoteCommand::Archive,
+        // Counted from one, because that is how the listing is printed. Zero is
+        // not a row anybody was offered, so it is the same mistake as a word.
+        "open" => match words.next().and_then(|n| n.parse::<usize>().ok()) {
+            Some(place) if place >= 1 => RemoteCommand::Open(place),
+            _ => RemoteCommand::OpenWhich,
+        },
         // `start` is what a client sends by itself the first time a chat is
         // opened, and it means "what is this". That is the same question `help`
         // asks, and answering it with "I do not know that word" is the worst
@@ -103,6 +123,20 @@ mod tests {
         assert_eq!(parse("/use 7"), RemoteCommand::Use(7));
         assert_eq!(parse("/away"), RemoteCommand::Away);
         assert_eq!(parse("/here"), RemoteCommand::Here);
+        assert_eq!(parse("/archive"), RemoteCommand::Archive);
+        assert_eq!(parse("/open 2"), RemoteCommand::Open(2));
+    }
+
+    /// `/open` counts into the listing as printed, which starts at one. A zero
+    /// is a row nobody was offered, so it is the same mistake as a word — and
+    /// reading it as a place would take the first row on every mistyped press.
+    #[test]
+    fn open_needs_a_place_in_the_listing() {
+        assert_eq!(parse("/open"), RemoteCommand::OpenWhich);
+        assert_eq!(parse("/open 0"), RemoteCommand::OpenWhich);
+        assert_eq!(parse("/open -1"), RemoteCommand::OpenWhich);
+        assert_eq!(parse("/open the second"), RemoteCommand::OpenWhich);
+        assert_eq!(parse("/open 1"), RemoteCommand::Open(1));
     }
 
     /// The two that say where the user is are opposites, and reading one as the

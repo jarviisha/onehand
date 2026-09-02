@@ -85,6 +85,36 @@ struct Live {
     /// Borrows are taken and released inside single functions here, so none is
     /// ever held across a call.
     bindings: RefCell<HashMap<String, u64>>,
+    /// The archive listing each chat was last sent.
+    ///
+    /// **Kept exactly as it went out, and never read off disk again.** A saved
+    /// conversation has no small stable name to put in a message — on disk it is
+    /// an agent-chosen session id, too long to type and too long for a button to
+    /// carry — so a chat holds a place in a list, and a place is only safe while
+    /// the list it counts into cannot move underneath it. Re-scanning on `/open`
+    /// would reintroduce exactly the drift that made session numbers uids.
+    ///
+    /// Replaced whole by the next `/archive`, so it is one listing per chat and
+    /// not a history of them.
+    archives: RefCell<HashMap<String, Vec<ArchivePick>>>,
+}
+
+/// One row of an archive listing, and everything reopening it needs.
+///
+/// Carries the project as well as the conversation, because minting a session
+/// goes to whichever project was last clicked — a conversation reopened from a
+/// train would otherwise land on an unrelated checkout.
+#[derive(Clone)]
+pub struct ArchivePick {
+    /// The project root this conversation was had in.
+    root: std::path::PathBuf,
+    project: String,
+    /// The conversation's directory, which is what a resume is given.
+    dir: std::path::PathBuf,
+    agent: String,
+    title: String,
+    /// When it was last written, for the listing's own "when".
+    updated: u64,
 }
 
 impl RemoteBridge {
@@ -249,6 +279,7 @@ pub fn boot(cfg: &RemoteConfig, cx: &mut App) {
             tx: requests,
             allowed: tg.allowed_chats.clone(),
             bindings: RefCell::new(HashMap::new()),
+            archives: RefCell::new(HashMap::new()),
         });
     });
 
@@ -406,6 +437,168 @@ pub fn broadcast(text: String, cx: &App) {
     }
 }
 
+/// How many saved conversations one `/archive` offers.
+///
+/// A flat handful across every project rather than a browsable index: the
+/// question somebody asks from a phone is "put back the one I was in", and a
+/// month of work would otherwise draw a column of hundreds for the sake of the
+/// two anybody came for. What the cap cut off is said on screen rather than
+/// silently dropped.
+const MAX_ARCHIVES: usize = 10;
+
+/// Every project root this process holds, deduplicated.
+///
+/// Two windows can hold the same root — one workspace per window, and nothing
+/// stops a folder being in both — so a conversation in it would otherwise be
+/// listed twice under the same number.
+fn roots(cx: &App) -> Vec<(std::path::PathBuf, String)> {
+    let shells: Vec<_> = Shared::global(cx)
+        .windows
+        .iter()
+        .map(|w| w.shell.clone())
+        .collect();
+    let mut out: Vec<(std::path::PathBuf, String)> = Vec::new();
+    for shell in shells.into_iter().filter_map(|shell| shell.upgrade()) {
+        for root in shell.read(cx).remote_roots() {
+            if !out.iter().any(|(path, _)| *path == root.0) {
+                out.push(root);
+            }
+        }
+    }
+    out
+}
+
+/// Read what is on disk for `roots`, newest first.
+///
+/// **Blocking, and called from the background executor only.** It opens the
+/// conversation store and reads a small file per conversation in it, which is
+/// hundreds of reads on a machine that has been used for a while — on the UI
+/// thread that is a visible stall, in the middle of a frame, for a message
+/// nobody is watching the screen for.
+fn scan_archives(roots: Vec<(std::path::PathBuf, String)>) -> Vec<ArchivePick> {
+    let store = onehand_core::chat::conversations_dir();
+    let mut found: Vec<ArchivePick> = Vec::new();
+    for (root, project) in roots {
+        // Every agent, not one: the listing is about what was said, and which
+        // adapter said it is a detail below that.
+        for meta in onehand_core::chat::list_conversations(&store, &root, None) {
+            found.push(ArchivePick {
+                root: root.clone(),
+                project: project.clone(),
+                dir: meta.dir,
+                agent: meta.agent,
+                title: meta.title,
+                updated: meta.updated,
+            });
+        }
+    }
+    // Newest first, which is what makes a cap of ten worth having.
+    found.sort_by_key(|pick| std::cmp::Reverse(pick.updated));
+    found.truncate(MAX_ARCHIVES);
+    found
+}
+
+/// Answer `/archive`, off the UI thread.
+///
+/// Nothing is returned: the scan cannot finish inside this call, so the reply is
+/// sent when it lands rather than handed back. Detached, because the task's
+/// whole life is the one message it ends with — and a chat that loses its answer
+/// because the window it was scanning for closed has lost nothing that mattered.
+fn list_archive(chat: &str, cx: &mut App) {
+    let roots = roots(cx);
+    let chat = chat.to_string();
+    cx.spawn(async move |cx| {
+        let found = cx
+            .background_executor()
+            .spawn(async move { scan_archives(roots) })
+            .await;
+        cx.update(|cx| {
+            let text = archive_listing(&found);
+            if let Some(live) = Shared::global(cx).remote.live.as_ref() {
+                live.archives
+                    .borrow_mut()
+                    .insert(chat.clone(), found.clone());
+            }
+            Shared::global(cx).remote.send(Outbound::text(chat, text));
+        });
+    })
+    .detach();
+}
+
+/// The `/archive` reply.
+fn archive_listing(found: &[ArchivePick]) -> String {
+    if found.is_empty() {
+        return "Nothing saved yet — a conversation is written at the end of its first turn."
+            .to_string();
+    }
+    let now = onehand_core::chat::now_secs();
+    let mut out = String::from("Archive\n\n");
+    for (place, pick) in found.iter().enumerate() {
+        out.push_str(&format!(
+            "{} · {} — {}\n    {} · {}\n",
+            place + 1,
+            pick.project,
+            pick.title,
+            pick.agent,
+            crate::chat::pane::rel_time(now, pick.updated),
+        ));
+    }
+    out.push_str("\n/open <number> puts one back.");
+    out
+}
+
+/// Answer `/open`.
+fn open_archive(chat: &str, place: usize, cx: &mut App) -> String {
+    let pick = Shared::global(cx).remote.live.as_ref().and_then(|live| {
+        live.archives.borrow().get(chat).and_then(|list| {
+            // Counted from one, as the listing prints it.
+            list.get(place - 1).cloned()
+        })
+    });
+    let Some(pick) = pick else {
+        return "Ask for /archive first — the numbers count into that listing.".to_string();
+    };
+
+    // Every window is asked and the one holding that project answers, the same
+    // handshake the prompt and press paths use. A window is needed here and not
+    // there: showing the new session is what spawns its adapter.
+    let windows: Vec<_> = Shared::global(cx)
+        .windows
+        .iter()
+        .map(|w| (w.handle, w.shell.clone()))
+        .collect();
+    let agent = gpui::SharedString::from(pick.agent.clone());
+    let opened = windows.into_iter().find_map(|(handle, shell)| {
+        let shell = shell.upgrade()?;
+        let (root, dir, agent) = (pick.root.clone(), pick.dir.clone(), agent.clone());
+        handle
+            .update(cx, |_, window, cx| {
+                shell.update(cx, |shell, cx| {
+                    shell.remote_open(&root, dir, Some(agent), window, cx)
+                })
+            })
+            .ok()
+            .flatten()
+    });
+
+    match opened {
+        Some(uid) => {
+            // Pointed at what was just asked for. Not a guess: naming the
+            // conversation to reopen is naming where the next prompt goes, and
+            // making them say it twice would be the bridge pretending not to
+            // have understood.
+            bind(chat, Some(uid), cx);
+            format!(
+                "Opened {} — {} as session {uid}, and pointed this chat at it.",
+                pick.project, pick.title
+            )
+        }
+        // The project was removed from every workspace since the listing was
+        // sent, so there is nowhere to put the conversation back.
+        None => format!("{} is no longer open as a project.", pick.project),
+    }
+}
+
 /// What one prompt did, wherever it landed.
 pub enum Handled {
     /// It went in and a turn started.
@@ -431,6 +624,17 @@ fn answer(chat: &str, text: &str, cx: &mut App) -> Option<String> {
             listing(chat, cx)
         )),
         RemoteCommand::Use(uid) => Some(point_at(chat, uid, cx)),
+        // The one command with nothing to say yet: reading the store is a file
+        // per conversation, so it goes to the background and sends its own reply
+        // when it lands.
+        RemoteCommand::Archive => {
+            list_archive(chat, cx);
+            None
+        }
+        RemoteCommand::Open(place) => Some(open_archive(chat, place, cx)),
+        RemoteCommand::OpenWhich => {
+            Some("Which one? /archive lists them, then /open <number>.".to_string())
+        }
         RemoteCommand::Away => Some(set_away(true, cx)),
         RemoteCommand::Here => Some(set_away(false, cx)),
         RemoteCommand::Prompt(prompt) => Some(send_prompt(chat, &prompt, cx)),
@@ -441,6 +645,8 @@ fn answer(chat: &str, text: &str, cx: &mut App) -> Option<String> {
 const HELP: &str = "\
 /sessions — every session onehand is running, and what each is doing
 /use <number> — point this chat at one of them
+/archive — conversations saved on disk, newest first
+/open <number> — put one of them back and point this chat at it
 /away — you've left the machine; announce everything here
 /here — you're back; go quiet again while you're looking
 /help — this
