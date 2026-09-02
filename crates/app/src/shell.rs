@@ -2489,6 +2489,14 @@ impl Shell {
         crate::remote::broadcast(said, cx);
     }
 
+    /// Forget the badge on the conversation this window is showing.
+    ///
+    /// A pass-through, for the bridge: coming back from away has to clear it,
+    /// and the bridge is where both ways of coming back meet.
+    pub fn mark_active_seen(&mut self, cx: &mut Context<Self>) {
+        self.chat.update(cx, |pane, cx| pane.mark_active_seen(cx));
+    }
+
     /// Every project root this window holds, as `(path, label)`.
     ///
     /// For the bridge, which has to know what there is before it can go looking

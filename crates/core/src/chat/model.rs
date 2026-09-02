@@ -2375,9 +2375,9 @@ impl Chat {
             _ => false,
         })
     }
-    /// What this conversation is doing right now, for the header's status line —
-    /// The end of the agent's last answer, for anything that has to say what a
-    /// turn came to somewhere the transcript is not.
+    /// The end of what the agent said **in the turn that just ended**, for
+    /// anything that has to say what a turn came to somewhere the transcript is
+    /// not.
     ///
     /// **The end and not the beginning**, which is the whole point. An answer
     /// opens by restating the problem and closes by saying what was done about
@@ -2394,16 +2394,27 @@ impl Chat {
     /// the rest of the answer. What is left is marked with a leading ellipsis,
     /// because an excerpt that does not say it is one reads as the whole reply.
     ///
-    /// `None` when the turn produced no prose at all: a turn can end on a tool
-    /// call or be cancelled before the agent says anything, and inventing a
+    /// `None` when *this* turn produced no prose at all: a turn can end on a
+    /// tool call or be cancelled before the agent says anything, and inventing a
     /// sentence for that would be worse than the headline alone.
+    ///
+    /// **Bounded to the turn, which is the whole of the promise above.** Reading
+    /// back through the entire transcript would find the previous turn's closing
+    /// paragraph and announce it as this one's result — a wrong answer wearing
+    /// the shape of a right one, and worse than saying nothing, because the
+    /// reader has no way to tell. A turn begins at the last thing the user said,
+    /// which is the same boundary [`Self::turn_answer`] works from.
     pub fn answer_tail(&self, max: usize) -> Option<String> {
         // The live transcript only. `history` is a resumed conversation's
         // archive, so reaching into it would let a session that has just come
         // back announce, as the result of its first turn, the end of a turn from
         // last week.
-        let text = self
+        let turn = self
             .items
+            .iter()
+            .rposition(|item| matches!(item, ChatItem::User(_)))
+            .map_or(0, |index| index + 1);
+        let text = self.items[turn..]
             .iter()
             .rev()
             .find_map(|item| match item {
@@ -2449,6 +2460,7 @@ impl Chat {
         Some(format!("…{}", tail[start..].trim_start()))
     }
 
+    /// What this conversation is doing right now, for the header's status line —
     /// `None` when there is nothing to say. Derived from the link and, once
     /// that is up, from the live transcript while a turn is in flight.
     pub fn activity_status(&self) -> Option<String> {
@@ -3487,13 +3499,29 @@ mod tests {
         );
     }
 
-    /// The *last* answer, not the first: a turn that spoke, ran a tool and
-    /// spoke again ends on the second one, and that is the summary.
+    /// **The turn, not the transcript.** A turn that ran a tool and said
+    /// nothing must not reach back past the prompt that started it and announce
+    /// the *previous* turn's closing paragraph as this one's result -- a wrong
+    /// answer in the shape of a right one, which the reader has no way to catch.
     #[test]
-    fn the_last_answer_is_the_one_that_is_carried() {
+    fn a_silent_turn_does_not_borrow_the_last_one_s_summary() {
         let chat = chat_with(vec![
+            ChatItem::User(UserMsg::text("first ask")),
+            agent("All done — the parser is fixed."),
+            ChatItem::User(UserMsg::text("second ask")),
+            ChatItem::notice("a tool ran"),
+        ]);
+        assert_eq!(chat.answer_tail(200), None);
+    }
+
+    /// The *last* answer of the turn, not the first: a turn that spoke, ran a
+    /// tool and spoke again ends on the second one, and that is the summary.
+    #[test]
+    fn the_last_answer_of_the_turn_is_the_one_that_is_carried() {
+        let chat = chat_with(vec![
+            ChatItem::User(UserMsg::text("go")),
             agent("Let me look at the parser."),
-            ChatItem::User(UserMsg::text("ok")),
+            ChatItem::notice("a tool ran"),
             agent("Fixed it."),
         ]);
         assert_eq!(chat.answer_tail(200).as_deref(), Some("Fixed it."));

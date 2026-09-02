@@ -305,7 +305,20 @@ fn receive(event: RemoteEvent, cx: &mut App) {
         }
         RemoteEvent::Disconnected(why) => {
             eprintln!("onehand: the remote bridge stopped: {why}");
-            cx.update_global::<Shared, _>(|shared, _| shared.remote.shut_down());
+            cx.update_global::<Shared, _>(|shared, _| {
+                shared.remote.shut_down();
+                // **Away goes with it, and this is not tidying.** Both ways of
+                // turning it off need the channel: the status bar draws its
+                // switch only while one is live, and `/here` arrives over the
+                // one that just died. Left set, it is a mode with no way out
+                // short of restarting the app -- and one that goes on treating
+                // every window as unwatched, so a turn ending in the
+                // conversation being read still badges it and still interrupts
+                // the desktop. Being wrong about the user's presence costs
+                // nothing while there is nowhere to announce to.
+                shared.away = false;
+            });
+            cx.refresh_windows();
         }
         RemoteEvent::Message { chat, text } => {
             // The one gate, and it comes before everything: a chat that is not
@@ -409,6 +422,27 @@ fn bind(chat: &str, uid: Option<u64>, cx: &App) {
 pub fn set_away(away: bool, cx: &mut App) -> String {
     cx.update_global::<Shared, _>(|shared, _| shared.away = away);
     cx.refresh_windows();
+    if !away {
+        // **Coming back clears the badge on what is being looked at.** While
+        // away every turn is treated as unwatched, including one that ended in
+        // the conversation on screen — and the badge is otherwise only cleared
+        // when a window *becomes* active, which never happens for one that was
+        // focused the whole time somebody was in the next room. The result was a
+        // dot on the single conversation they were reading.
+        //
+        // Only the window that is actually in front: a background window's
+        // badges were not read, and clearing them would be this rule lying about
+        // a different window than the one it fixed.
+        let active: Vec<_> = Shared::global(cx)
+            .windows
+            .iter()
+            .filter(|w| cx.active_window() == Some(w.handle))
+            .map(|w| w.shell.clone())
+            .collect();
+        for shell in active.into_iter().filter_map(|shell| shell.upgrade()) {
+            shell.update(cx, |shell, cx| shell.mark_active_seen(cx));
+        }
+    }
     if away {
         "Away. Everything gets announced here now, whatever is on screen."
     } else {
@@ -475,7 +509,7 @@ fn roots(cx: &App) -> Vec<(std::path::PathBuf, String)> {
 /// hundreds of reads on a machine that has been used for a while — on the UI
 /// thread that is a visible stall, in the middle of a frame, for a message
 /// nobody is watching the screen for.
-fn scan_archives(roots: Vec<(std::path::PathBuf, String)>) -> Vec<ArchivePick> {
+fn scan_archives(roots: Vec<(std::path::PathBuf, String)>) -> (Vec<ArchivePick>, usize) {
     let store = onehand_core::chat::conversations_dir();
     let mut found: Vec<ArchivePick> = Vec::new();
     for (root, project) in roots {
@@ -494,8 +528,11 @@ fn scan_archives(roots: Vec<(std::path::PathBuf, String)>) -> Vec<ArchivePick> {
     }
     // Newest first, which is what makes a cap of ten worth having.
     found.sort_by_key(|pick| std::cmp::Reverse(pick.updated));
+    // The total travels with the page, because a listing that quietly stops at
+    // ten reads as a machine that has had ten conversations.
+    let total = found.len();
     found.truncate(MAX_ARCHIVES);
-    found
+    (found, total)
 }
 
 /// Answer `/archive`, off the UI thread.
@@ -508,12 +545,12 @@ fn list_archive(chat: &str, cx: &mut App) {
     let roots = roots(cx);
     let chat = chat.to_string();
     cx.spawn(async move |cx| {
-        let found = cx
+        let (found, total) = cx
             .background_executor()
             .spawn(async move { scan_archives(roots) })
             .await;
         cx.update(|cx| {
-            let text = archive_listing(&found);
+            let text = archive_listing(&found, total);
             if let Some(live) = Shared::global(cx).remote.live.as_ref() {
                 live.archives
                     .borrow_mut()
@@ -526,7 +563,7 @@ fn list_archive(chat: &str, cx: &mut App) {
 }
 
 /// The `/archive` reply.
-fn archive_listing(found: &[ArchivePick]) -> String {
+fn archive_listing(found: &[ArchivePick], total: usize) -> String {
     if found.is_empty() {
         return "Nothing saved yet — a conversation is written at the end of its first turn."
             .to_string();
@@ -541,6 +578,14 @@ fn archive_listing(found: &[ArchivePick]) -> String {
             pick.title,
             pick.agent,
             crate::chat::pane::rel_time(now, pick.updated),
+        ));
+    }
+    // Said rather than silently dropped: a list that stops at ten with no word
+    // about it reads as a machine that has had ten conversations.
+    if total > found.len() {
+        out.push_str(&format!(
+            "\n{} newest of {total}. The rest are in the app.\n",
+            found.len()
         ));
     }
     out.push_str("\n/open <number> puts one back.");

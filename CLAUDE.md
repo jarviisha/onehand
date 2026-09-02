@@ -218,7 +218,12 @@ plus `sendMessage` and `answerCallbackQuery`. Everything that is not the wire is
   `Announcement::detail` — the line a reader on the far side needs and a reader at the window does
   not, since the desktop notification is one keystroke from the transcript and a phone is not. The end
   and not the beginning: an answer opens by restating the problem and closes by saying what was done
-  about it. **The silence rules are the
+  about it — and **bounded to the turn that just ended**, since reading back past the prompt that
+  started it would announce the previous turn's closing paragraph as this one's result, which is a
+  wrong answer in the shape of a right one. Which card the ask carries is decided by the `UserAsk` the
+  event handed over and never by looking for one kind before the other: both can be parked at once,
+  and a headline saying "has a question" over a permission's Allow and Deny is answerable, so
+  answering it does something nobody asked for. **The silence rules are the
   desktop's, unchanged**: a finished turn says nothing while any part of its window is in front of the
   user, while a parked ask and a lost adapter speak unless the user is looking at *that* conversation
   — an agent standing still stands still until somebody notices, and reading one conversation is when
@@ -233,7 +238,13 @@ plus `sendMessage` and `answerCallbackQuery`. Everything that is not the wire is
   window is walking away from all of them, and **not persisted** — a launch that came up believing the
   user was elsewhere would message somebody sitting in front of it about every turn. Thrown from the
   status bar (`Shell::toggle_away`) or from the chat (`/away`, `/here`), both through
-  `remote::set_away`, since a mode with two setters is a mode that means two things. The switch is
+  `remote::set_away`, since a mode with two setters is a mode that means two things. Two things that
+  setter owes, both because the switch has no other way home. **A dead channel clears it**: the status
+  bar draws the switch only while one is live and `/here` would arrive over the channel that just
+  died, so leaving it set is a mode with no exit short of a restart. And **coming back clears the badge
+  on what is on screen**, on the active window only — every turn is unwatched while away, including
+  one that ended in the conversation being read, and `unseen` is otherwise cleared when a window
+  *becomes* active, which never happens to one that was focused the whole time. The switch is
   drawn only where a channel is live, is an eye and its absence because that is literally the question
   it answers, and is silent when off and named in the standing-condition colour when on.
 - **In.** `/away` and `/here` set the presence fact above from wherever the user actually is —
@@ -244,7 +255,10 @@ plus `sendMessage` and `answerCallbackQuery`. Everything that is not the wire is
   closes, so a number read and then typed back would land on a different conversation. Anything not
   starting with `/` is a prompt for the bound session, submitted straight into it rather than through
   the composer (one composer serves the pane and it holds what the person at the keyboard was typing),
-  and queued rather than refused mid-turn, since the sender cannot see that a turn is in flight.
+  and queued rather than refused mid-turn, since the sender cannot see that a turn is in flight — but
+  **an occupied queue is a refusal**, because that queue is one slot and `Chat::queue` replaces what is
+  in it: a message the sender knows did not go can be sent again, and one they believe went cannot be
+  recovered.
   **A chat is bound by being told to and never by being guessed at**: one root runs as many sessions as
   it is asked to, so "the active one" moves every time somebody clicks a rail row, and a message sent
   from a train would land wherever the window happened to be pointing.

@@ -966,6 +966,14 @@ impl ChatPane {
     /// composer queues: the sender is not watching the transcript and cannot
     /// tell that a turn is in flight, so refusing would mean their message is
     /// simply lost to timing they had no way to see.
+    ///
+    /// **But the queue is one slot, and `Chat::queue` replaces what is in it.**
+    /// A prompt from outside dropped into an occupied slot destroys whatever was
+    /// there — the draft somebody at the keyboard queued behind this turn, or the
+    /// message this same chat sent a moment earlier — and both of those were
+    /// acknowledged as though they were going to be sent. So an occupied slot is
+    /// a refusal, said out loud: a message the sender knows did not go can be
+    /// sent again, and one they believe went cannot be recovered at all.
     pub fn remote_prompt(
         &mut self,
         uid: u64,
@@ -978,8 +986,14 @@ impl ChatPane {
             // Read before anything is sent: submitting clears the condition
             // that would have explained a refusal.
             let blocker = session.chat.submit_blocker(text, &[]);
+            let taken = session.chat.queued.is_some();
             match blocker {
                 None if session.submit(text, &[], cx) => Handled::Sent,
+                Some(onehand_core::chat::SubmitBlock::Busy) if taken => Handled::Refused(
+                    "a prompt is already waiting behind this turn — send it again once that one \
+                     has gone"
+                        .to_string(),
+                ),
                 Some(onehand_core::chat::SubmitBlock::Busy) if session.chat.queue(text, &[]) => {
                     cx.notify();
                     Handled::Queued
@@ -1258,7 +1272,7 @@ impl ChatPane {
             // point at the window, because the card is already in it; a message
             // on a phone is the only place the answer can be given from, so it
             // has to carry what is being asked as well as who is asking.
-            let (detail, buttons) = self.parked_ask(uid, cx);
+            let (detail, buttons) = self.parked_ask(uid, ask, cx);
             crate::remote::announce(
                 &origin,
                 crate::remote::Announcement {
@@ -1275,31 +1289,48 @@ impl ChatPane {
     /// What `uid` is waiting on, and what can be answered without opening the
     /// app.
     ///
+    /// **`ask` decides which card is read, and it is not a hint.** An agent can
+    /// have a permission open and then ask a question, or the reverse, and the
+    /// two live in separate lists — so looking for one kind before the other
+    /// would take the wrong card whenever both are parked. The headline is
+    /// already written from `ask` by the time this is called, and a message that
+    /// says "has a question for you" over a permission's title, with that
+    /// permission's Allow and Deny beneath it, is worse than one with no buttons
+    /// at all: it is answerable, and answering it does something nobody asked
+    /// for.
+    ///
     /// Empty buttons is a real answer and not a failure: the card may have been
     /// settled in the window between the event and this, and a form with several
     /// questions is one a row of buttons cannot express. The message still goes,
     /// because knowing an agent is blocked is worth more than being able to
     /// unblock it from here.
-    fn parked_ask(&self, uid: u64, cx: &App) -> (Option<String>, Vec<Vec<Button>>) {
+    fn parked_ask(
+        &self,
+        uid: u64,
+        ask: onehand_core::chat::UserAsk,
+        cx: &App,
+    ) -> (Option<String>, Vec<Vec<Button>>) {
+        use onehand_core::chat::UserAsk;
         let Some(chat) = self.session_of(uid).map(|s| &s.read(cx).chat) else {
             return (None, Vec::new());
         };
-        // The most recent of each, because that is the one that just parked --
-        // an older unanswered card is already sitting in somebody's chat with
-        // its own buttons.
-        if let Some((item, perm)) = chat.pending_permissions().last() {
-            return (
-                Some(perm.req.title.clone()),
-                press::permission_buttons(uid, *item, &perm.req.options),
-            );
+        // The most recent of whichever kind just parked -- an older unanswered
+        // card is already sitting in somebody's chat with its own buttons.
+        match ask {
+            UserAsk::Permission => chat.pending_permissions().last().map(|(item, perm)| {
+                (
+                    Some(perm.req.title.clone()),
+                    press::permission_buttons(uid, *item, &perm.req.options),
+                )
+            }),
+            UserAsk::Question => chat.pending_asks().last().map(|(item, parked)| {
+                (
+                    Some(parked.req.message.clone()),
+                    press::question_buttons(uid, *item, &parked.req.fields),
+                )
+            }),
         }
-        if let Some((item, ask)) = chat.pending_asks().last() {
-            return (
-                Some(ask.req.message.clone()),
-                press::question_buttons(uid, *item, &ask.req.fields),
-            );
-        }
-        (None, Vec::new())
+        .unwrap_or((None, Vec::new()))
     }
 
     /// Answer a permission or a question from outside the app.
