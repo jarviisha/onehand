@@ -122,3 +122,32 @@ pub(crate) fn resting(button: Button) -> Button {
 
     button.cursor_default()
 }
+
+/// Refusing, and looking like it, in one call.
+///
+/// [`resting`] is the cursor half of a refusal and `disabled` is the behaviour
+/// half, and while they were two separate calls six controls here had made one
+/// without the other: a Save with nothing to save, a Submit with nothing
+/// chosen, an Unbind with nothing bound, a Cancel already cancelling. Every one
+/// of them sat under a pointer promising a press would do something.
+///
+/// It has to be explicit because the library re-applies the caller's own style
+/// refinement *after* the cursor it picks, so [`action`]'s pointer outlives
+/// being disabled — the control goes quiet, refuses the click, and still
+/// beckons. Taking the pointer back in the same call that refuses is what stops
+/// the two halves drifting apart again.
+pub(crate) trait Refuses: Sized {
+    /// Refuse presses while `refusing` holds, and say so in the cursor.
+    fn refuses(self, refusing: bool) -> Self;
+}
+
+impl Refuses for Button {
+    fn refuses(self, refusing: bool) -> Self {
+        use gpui_component::Disableable as _;
+
+        match refusing {
+            true => resting(self).disabled(true),
+            false => self,
+        }
+    }
+}

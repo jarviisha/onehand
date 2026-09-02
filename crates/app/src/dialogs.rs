@@ -7,6 +7,7 @@
 //! dialog to the control that opens it -- so the invariant is structural here
 //! rather than something to remember to maintain.
 
+use crate::controls::Refuses as _;
 use crate::shell::Shell;
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
@@ -14,9 +15,11 @@ use gpui::{
     Window, div,
 };
 use gpui_component::button::{ButtonGroup, ButtonVariants};
-use gpui_component::dialog::Dialog;
+use gpui_component::dialog::{Dialog, DialogClose, DialogFooter, DialogTitle};
 use gpui_component::input::{Input, InputState};
-use gpui_component::{ActiveTheme, Disableable, Icon, IconName, Selectable, StyledExt};
+use gpui_component::{
+    ActiveTheme, Disableable, Icon, IconName, Selectable, Sizable as _, StyledExt,
+};
 use onehand_core::config::{AgentSpec, Appearance};
 
 /// The add/edit form's fields. `editing` is `Some(i)` when an existing agent is
@@ -131,6 +134,52 @@ fn agent_row(shell: &Entity<Shell>, idx: usize, spec: &AgentSpec, cx: &App) -> i
         )
 }
 
+/// A dialog's name, and the ✕ that closes it.
+///
+/// Both sit in the dialog's *content* rather than in its own `title` and
+/// `close_button` slots, for two separate reasons that happen to share one
+/// answer.
+///
+/// **The name.** A dialog opened from a trigger rebuilds itself from nothing on
+/// every press, and what survives that is its content builder, its style and its
+/// props — not its title, header or footer, which are elements and so cannot be
+/// cloned into a closure that runs again on each open. A name set through the
+/// slot is therefore dropped in silence on exactly the three dialogs this app
+/// opens from the rail, and the content builder is the only slot left to put it
+/// in. Every dialog here goes through this one, trigger or not: a rule half the
+/// call sites follow is the rule the next call site forgets.
+///
+/// **The ✕.** The library builds its own out of a plain library button inside
+/// the dialog element, so it never passes through the app's action wrapper and
+/// ends up the single control on a dialog drawing the arrow cursor while
+/// everything inside it answers the pointer. Turning that one off and drawing
+/// ours puts it on the line that already carries the name.
+///
+/// It still closes through the library's own `DialogClose`, which dispatches the
+/// dialog's cancel action — the same path the built-in took, so the handlers
+/// that clear a half-finished rename or worktree still run. The fixed box around
+/// it is what contains that element's `size_full`, which would otherwise take
+/// the whole row away from the name beside it.
+fn title_row(name: &'static str) -> impl IntoElement {
+    div()
+        .h_flex()
+        .items_center()
+        .justify_between()
+        .gap_2()
+        .w_full()
+        .child(DialogTitle::new().min_w_0().truncate().child(name))
+        .child(
+            div().flex_none().size_6().child(
+                DialogClose::new().child(
+                    crate::controls::action("dialog-close")
+                        .small()
+                        .ghost()
+                        .icon(Icon::new(IconName::Close)),
+                ),
+            ),
+        )
+}
+
 /// A labelled form field.
 fn field(label: &'static str, state: &Entity<InputState>) -> impl IntoElement {
     div()
@@ -162,54 +211,62 @@ pub fn agent_manager(shell: &Shell, cx: &mut Context<Shell>) -> Dialog {
             "Agents",
             cx,
         ))
-        .title("Agents")
+        .close_button(false)
         .content(move |content, _, cx: &mut App| {
             let rows = specs
                 .iter()
                 .enumerate()
                 .map(|(i, spec)| agent_row(&handle, i, spec, cx).into_any_element())
                 .collect::<Vec<_>>();
-            content.child(
-                div()
-                    .v_flex()
-                    .gap_3()
-                    .w_full()
-                    .children(rows)
-                    .child(field("Name", &name))
-                    .child(field("Command", &command))
-                    .child(field("Args", &args)),
-            )
-        })
-        .footer(
-            div()
-                .h_flex()
-                .gap_2()
-                .justify_end()
-                .w_full()
+            // Cloned per build rather than captured once: the content of a
+            // triggered dialog is rebuilt on every open, so a handle moved into
+            // a click would be gone the second time the window is shown.
+            let (clear, save) = (handle.clone(), handle.clone());
+            content
+                .child(title_row("Agents"))
                 .child(
-                    crate::controls::action("clear-agent")
-                        .ghost()
-                        .label(if editing { "Cancel edit" } else { "Clear" })
-                        .on_click(
-                            cx.listener(|shell: &mut Shell, _: &ClickEvent, window, cx| {
-                                shell.clear_agent_draft(window, cx);
-                            }),
-                        ),
+                    div()
+                        .v_flex()
+                        .gap_3()
+                        .w_full()
+                        .children(rows)
+                        .child(field("Name", &name))
+                        .child(field("Command", &command))
+                        .child(field("Args", &args)),
                 )
                 .child(
-                    crate::controls::action("save-agent")
-                        .primary()
-                        // Disabled until name and command are both non-blank:
-                        // an agent missing either cannot be launched.
-                        .disabled(!saveable)
-                        .label(if editing { "Save" } else { "Add" })
-                        .on_click(
-                            cx.listener(|shell: &mut Shell, _: &ClickEvent, window, cx| {
-                                shell.save_agent_draft(window, cx);
-                            }),
+                    DialogFooter::new()
+                        .w_full()
+                        .child(
+                            crate::controls::action("clear-agent")
+                                .ghost()
+                                .label(if editing { "Cancel edit" } else { "Clear" })
+                                .on_click(
+                                    move |_: &ClickEvent, window: &mut Window, cx: &mut App| {
+                                        clear.update(cx, |shell, cx| {
+                                            shell.clear_agent_draft(window, cx)
+                                        });
+                                    },
+                                ),
+                        )
+                        .child(
+                            crate::controls::action("save-agent")
+                                .primary()
+                                // Disabled until name and command are both
+                                // non-blank: an agent missing either cannot be
+                                // launched.
+                                .refuses(!saveable)
+                                .label(if editing { "Save" } else { "Add" })
+                                .on_click(
+                                    move |_: &ClickEvent, window: &mut Window, cx: &mut App| {
+                                        save.update(cx, |shell, cx| {
+                                            shell.save_agent_draft(window, cx)
+                                        });
+                                    },
+                                ),
                         ),
-                ),
-        )
+                )
+        })
 }
 
 /// The light/dark/system picker.
@@ -269,7 +326,7 @@ pub fn workspace_settings(shell: &Shell, cx: &mut Context<Shell>) -> Dialog {
             "Settings",
             cx,
         ))
-        .title("Settings")
+        .close_button(false)
         .content(move |content, _, cx: &mut App| {
             let storage = storage.clone();
             let rows = recents
@@ -285,7 +342,7 @@ pub fn workspace_settings(shell: &Shell, cx: &mut Context<Shell>) -> Dialog {
                     crate::controls::action(("recent", i))
                         .ghost()
                         .w_full()
-                        .disabled(is_current)
+                        .refuses(is_current)
                         .label(if is_current {
                             SharedString::from(format!("{label}  (current)"))
                         } else {
@@ -298,90 +355,99 @@ pub fn workspace_settings(shell: &Shell, cx: &mut Context<Shell>) -> Dialog {
                 })
                 .collect::<Vec<_>>();
 
-            content.child(
-                div()
-                    .v_flex()
-                    .gap_3()
-                    .w_full()
-                    .child(
-                        div()
-                            .v_flex()
-                            .gap_1()
-                            .child(div().text_xs().child("Appearance"))
-                            .child(appearance_picker(&handle, appearance)),
-                    )
-                    .child(field("Workspace name", &name))
-                    .child(
-                        div()
-                            .v_flex()
-                            .gap_1()
-                            .child(div().text_xs().child("Storage folder"))
-                            .child(div().text_color(cx.theme().muted_foreground).child(
-                                storage.unwrap_or_else(|| {
-                                    // An unbound workspace persists nothing;
-                                    // say so rather than showing a blank.
-                                    SharedString::from("Not bound — nothing is saved")
-                                }),
-                            )),
-                    )
-                    .child(div().text_xs().child("Workspaces"))
-                    .child(
-                        div()
-                            .h_flex()
-                            .gap_2()
-                            .w_full()
-                            .child({
-                                let handle = handle.clone();
-                                crate::controls::action("new-workspace")
-                                    .ghost()
-                                    .label("New workspace…")
-                                    .on_click(
-                                        move |_: &ClickEvent, _: &mut Window, cx: &mut App| {
-                                            handle.update(cx, |shell, cx| shell.new_workspace(cx));
-                                        },
-                                    )
-                            })
-                            .child({
-                                let handle = handle.clone();
-                                crate::controls::action("open-workspace")
-                                    .ghost()
-                                    .label("Open workspace…")
-                                    .on_click(
-                                        move |_: &ClickEvent, _: &mut Window, cx: &mut App| {
-                                            handle.update(cx, |shell, cx| shell.open_workspace(cx));
-                                        },
-                                    )
-                            }),
-                    )
-                    .children(rows),
-            )
-        })
-        .footer(
-            div()
-                .h_flex()
-                .gap_2()
-                .justify_end()
-                .w_full()
+            // Cloned per build rather than captured once: the content of a
+            // triggered dialog is rebuilt on every open, so a handle moved into
+            // a click would be gone the second time the window is shown.
+            let (unbind, bind) = (handle.clone(), handle.clone());
+            content
+                .child(title_row("Settings"))
                 .child(
-                    crate::controls::action("unbind-storage")
-                        .ghost()
-                        .disabled(!bound)
-                        .label("Unbind")
-                        .on_click(
-                            cx.listener(|shell: &mut Shell, _: &ClickEvent, window, cx| {
-                                shell.unbind_storage(window, cx);
-                            }),
-                        ),
+                    div()
+                        .v_flex()
+                        .gap_3()
+                        .w_full()
+                        .child(
+                            div()
+                                .v_flex()
+                                .gap_1()
+                                .child(div().text_xs().child("Appearance"))
+                                .child(appearance_picker(&handle, appearance)),
+                        )
+                        .child(field("Workspace name", &name))
+                        .child(
+                            div()
+                                .v_flex()
+                                .gap_1()
+                                .child(div().text_xs().child("Storage folder"))
+                                .child(div().text_color(cx.theme().muted_foreground).child(
+                                    storage.unwrap_or_else(|| {
+                                        // An unbound workspace persists nothing;
+                                        // say so rather than showing a blank.
+                                        SharedString::from("Not bound — nothing is saved")
+                                    }),
+                                )),
+                        )
+                        .child(div().text_xs().child("Workspaces"))
+                        .child(
+                            div()
+                                .h_flex()
+                                .gap_2()
+                                .w_full()
+                                .child({
+                                    let handle = handle.clone();
+                                    crate::controls::action("new-workspace")
+                                        .ghost()
+                                        .label("New workspace…")
+                                        .on_click(
+                                            move |_: &ClickEvent, _: &mut Window, cx: &mut App| {
+                                                handle.update(cx, |shell, cx| {
+                                                    shell.new_workspace(cx)
+                                                });
+                                            },
+                                        )
+                                })
+                                .child({
+                                    let handle = handle.clone();
+                                    crate::controls::action("open-workspace")
+                                        .ghost()
+                                        .label("Open workspace…")
+                                        .on_click(
+                                            move |_: &ClickEvent, _: &mut Window, cx: &mut App| {
+                                                handle.update(cx, |shell, cx| {
+                                                    shell.open_workspace(cx)
+                                                });
+                                            },
+                                        )
+                                }),
+                        )
+                        .children(rows),
                 )
                 .child(
-                    crate::controls::action("bind-storage")
-                        .primary()
-                        .label("Choose folder…")
-                        .on_click(cx.listener(|shell: &mut Shell, _: &ClickEvent, _, cx| {
-                            shell.pick_storage_dir(cx);
-                        })),
-                ),
-        )
+                    DialogFooter::new()
+                        .w_full()
+                        .child(
+                            crate::controls::action("unbind-storage")
+                                .ghost()
+                                .refuses(!bound)
+                                .label("Unbind")
+                                .on_click(
+                                    move |_: &ClickEvent, window: &mut Window, cx: &mut App| {
+                                        unbind.update(cx, |shell, cx| {
+                                            shell.unbind_storage(window, cx)
+                                        });
+                                    },
+                                ),
+                        )
+                        .child(
+                            crate::controls::action("bind-storage")
+                                .primary()
+                                .label("Choose folder…")
+                                .on_click(move |_: &ClickEvent, _: &mut Window, cx: &mut App| {
+                                    bind.update(cx, |shell, cx| shell.pick_storage_dir(cx));
+                                }),
+                        ),
+                )
+        })
 }
 
 /// The conversation-rename window.
@@ -401,9 +467,11 @@ pub fn rename_session(shell: &Shell, cx: &mut Context<Shell>) -> Dialog {
     let resettable = shell.rename_is_override(cx);
 
     Dialog::new(cx)
-        .title("Rename conversation")
+        .close_button(false)
         .content(move |content, _, _: &mut App| {
-            content.child(div().v_flex().gap_1().w_full().child(Input::new(&input)))
+            content
+                .child(title_row("Rename conversation"))
+                .child(div().v_flex().gap_1().w_full().child(Input::new(&input)))
         })
         .footer(
             div()
@@ -474,9 +542,9 @@ pub fn new_worktree(shell: &Shell, cx: &mut Context<Shell>) -> Dialog {
     );
 
     Dialog::new(cx)
-        .title("New worktree")
+        .close_button(false)
         .content(move |content, _, _: &mut App| {
-            content.child(
+            content.child(title_row("New worktree")).child(
                 div()
                     .v_flex()
                     .gap_2()
@@ -515,7 +583,7 @@ pub fn new_worktree(shell: &Shell, cx: &mut Context<Shell>) -> Dialog {
                     crate::controls::action("worktree-parent")
                         .ghost()
                         .label("Put it somewhere else…")
-                        .disabled(busy)
+                        .refuses(busy)
                         .on_click(cx.listener(|shell: &mut Shell, _: &ClickEvent, _, cx| {
                             shell.pick_worktree_parent(cx);
                         })),
@@ -528,7 +596,7 @@ pub fn new_worktree(shell: &Shell, cx: &mut Context<Shell>) -> Dialog {
                     crate::controls::action("cancel-worktree")
                         .ghost()
                         .label("Cancel")
-                        .disabled(busy)
+                        .refuses(busy)
                         .on_click(cx.listener(|shell: &mut Shell, _: &ClickEvent, _, cx| {
                             shell.cancel_worktree(cx);
                         })),
@@ -692,9 +760,9 @@ pub fn help(cx: &mut Context<Shell>) -> Dialog {
             "Help",
             cx,
         ))
-        .title("Keyboard shortcuts")
+        .close_button(false)
         .content(|content, _, cx: &mut App| {
-            content.child(
+            content.child(title_row("Keyboard shortcuts")).child(
                 div().v_flex().gap_2().w_full().children(
                     SHORTCUTS
                         .iter()
@@ -720,6 +788,35 @@ pub fn help(cx: &mut Context<Shell>) -> Dialog {
 #[cfg(test)]
 mod tests {
     use super::SHORTCUTS;
+
+    /// No dialog here names itself through the library's own title slot.
+    ///
+    /// A dialog opened from a trigger is rebuilt when that trigger is pressed,
+    /// out of its content builder, its style and its props. Its title, header
+    /// and footer are elements, which cannot be cloned into a builder that runs
+    /// again on every open, so they do not survive the trip -- and the three
+    /// dialogs this app opens from the rail lost their name and their buttons
+    /// that way, in silence, while otherwise working.
+    ///
+    /// The name goes in the content instead, and on every dialog rather than
+    /// only the triggered ones: one shape is what stops the next dialog picking
+    /// the wrong one. This is here because nothing else says no -- the slot
+    /// exists, compiles, and does nothing.
+    #[test]
+    fn no_dialog_names_itself_through_the_library_slot() {
+        // Assembled at run time so this test is not a match for itself.
+        let slot = format!(".{}(", "title");
+        for (n, line) in include_str!("dialogs.rs").lines().enumerate() {
+            assert!(
+                !line.contains(&slot),
+                "dialogs.rs:{}: names the dialog through the library's title \
+                 slot, which a triggered dialog drops on its way back open. \
+                 Put the name in the content instead.\n    {}",
+                n + 1,
+                line.trim()
+            );
+        }
+    }
 
     /// The Help window is the whole keymap. A shortcut nobody can find is a
     /// shortcut nobody has, so the table is not documentation of the bindings
