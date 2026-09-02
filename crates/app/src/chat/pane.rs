@@ -21,11 +21,12 @@ use gpui::{
     Stateful, StatefulInteractiveElement, Styled, Window, div, list, px, rems,
 };
 use gpui_component::button::ButtonVariants as _;
+use gpui_component::dialog::{DialogClose, DialogFooter};
 use gpui_component::dock::{Panel, PanelControl, PanelEvent};
 use gpui_component::input::{Input, InputEvent, InputState};
 use gpui_component::menu::{DropdownMenu as _, PopupMenuItem};
 use gpui_component::spinner::Spinner;
-use gpui_component::{ActiveTheme, Icon, IconName, Sizable as _, StyledExt};
+use gpui_component::{ActiveTheme, Icon, IconName, Sizable as _, StyledExt, WindowExt as _};
 use onehand_core::chat::{Chat, ConvMeta, Link, TranscriptItemId};
 use onehand_core::config::AgentSpec;
 use std::collections::HashMap;
@@ -146,19 +147,6 @@ pub struct ChatPane {
     /// next press there skipped its own confirmation and threw away a turn
     /// nobody had been warned about.
     restart_armed: Option<u64>,
-    /// The conversation a delete was asked for, so the second press is the
-    /// confirmation.
-    ///
-    /// The *conversation*, for the same reason a restart arms a session rather
-    /// than the pane: an arming press made on one row says nothing about the
-    /// row below it, and a bare flag would let one press on one conversation
-    /// delete a different one.
-    ///
-    /// Deleting is the only thing this app does that cannot be undone by doing
-    /// it again -- a closed session respawns, a removed project is added back,
-    /// a deleted conversation is gone -- so it is guarded whether or not
-    /// anything is running.
-    delete_armed: Option<PathBuf>,
     /// A handle to this pane, for the callbacks the list builds outside the
     /// `render` that owns `Context<Self>`.
     handle: gpui::WeakEntity<Self>,
@@ -263,7 +251,6 @@ impl ChatPane {
                 find: None,
                 zoom: crate::zoom::Zoom::default(),
                 restart_armed: None,
-                delete_armed: None,
                 window: window.window_handle(),
                 handle: cx.entity().downgrade(),
                 empty: None,
@@ -319,11 +306,6 @@ impl ChatPane {
             let stored = asked_for.as_deref().and_then(onehand_core::chat::load);
             self.connect(uid, stored, cx);
         }
-        // A conversation is coming on screen, so the page that arming press was
-        // made on is not what the user is looking at any more. An arm that
-        // outlived a trip into a session and back would be waiting on a row
-        // nobody had just pressed.
-        self.delete_armed = None;
         if switching_away(self.active, uid) {
             self.leave_shown_session(window, cx);
             self.restore_draft(uid, window, cx);
@@ -715,9 +697,6 @@ impl ChatPane {
             pinned: false,
             is_repo: false,
         });
-        // The page being replaced takes its arming press with it: a press made
-        // against a row on one project's page speaks for nothing on another's.
-        self.delete_armed = None;
         self.scan_project_history(cx);
         // Going to no session at all is still leaving the one that was showing,
         // and the draft has to be put down here too: a prompt left in the box
@@ -767,7 +746,73 @@ impl ChatPane {
         .detach();
     }
 
-    /// Delete an archived conversation, on the second press.
+    /// Ask before deleting a conversation, and delete only on the answer.
+    ///
+    /// A modal rather than a control that arms on the first press and acts on
+    /// the second. Arming reads as a control that did nothing: the press lands,
+    /// the word changes, and a user who has looked away comes back to a row
+    /// that is one accidental press from gone with no warning left on screen.
+    /// This one names the conversation it is about, cannot be missed, and has
+    /// to be answered before anything else in the window can be -- which is the
+    /// weight the only irreversible thing this app does should carry.
+    ///
+    /// **The name is passed in rather than looked up.** The archive list is the
+    /// page's, and by the time the answer comes back the page may have been
+    /// replaced by another project's; the sentence the user is reading has to
+    /// be about the row they pressed.
+    fn confirm_delete(
+        &mut self,
+        dir: PathBuf,
+        name: SharedString,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let pane = cx.entity();
+        window.open_alert_dialog(cx, move |alert, _, _| {
+            // Cloned per build: a dialog's builder runs again on every frame it
+            // is on screen, so nothing captured here can be consumed by one.
+            let (pane, dir, name) = (pane.clone(), dir.clone(), name.clone());
+            alert
+                // The library's own title and description survive here, unlike
+                // on a dialog opened from a trigger: this builder is what the
+                // window keeps, so both are rebuilt with the rest of it.
+                .title("Delete this conversation?")
+                .description(format!(
+                    "“{name}” will be removed from disk, with every message and \
+                     image in it. This cannot be undone."
+                ))
+                // Ours rather than the default pair, for the reason every button
+                // in this app is ours: the library draws its own with the arrow
+                // cursor, and the one dialog that asks before destroying
+                // something is the last place to say "this does nothing" with
+                // the pointer. Keep is first and plain, Delete last and in the
+                // danger tint.
+                .footer(
+                    DialogFooter::new()
+                        .child(
+                            DialogClose::new().child(
+                                crate::controls::action("keep-conversation")
+                                    .ghost()
+                                    .label("Keep"),
+                            ),
+                        )
+                        .child(
+                            crate::controls::action("confirm-delete-conversation")
+                                .danger()
+                                .label("Delete")
+                                .on_click(move |_, window: &mut Window, cx: &mut App| {
+                                    window.close_dialog(cx);
+                                    let dir = dir.clone();
+                                    pane.update(cx, |pane: &mut Self, cx| {
+                                        pane.delete_conversation(dir, cx);
+                                    });
+                                }),
+                        ),
+                )
+        });
+    }
+
+    /// Delete an archived conversation, the question already answered.
     ///
     /// Offered on the project page and nowhere else, and that is the guard
     /// doing most of the work rather than a rule anybody has to remember: the
@@ -779,13 +824,6 @@ impl ChatPane {
     /// A session in another *window* is the case the page's own shape does not
     /// cover, so the check below covers it.
     fn delete_conversation(&mut self, dir: PathBuf, cx: &mut Context<Self>) {
-        if delete_needs_arming(self.delete_armed.as_deref(), &dir) {
-            self.delete_armed = Some(dir);
-            cx.notify();
-            return;
-        }
-        self.delete_armed = None;
-
         let store = onehand_core::chat::conversations_dir();
         let live = self
             .conversations
@@ -1292,9 +1330,6 @@ impl ChatPane {
         let now = onehand_core::chat::now_secs();
         let muted = cx.theme().muted_foreground;
         let danger = crate::theme::status_ink(cx).danger;
-        // Read out here rather than inside the rows: the rows borrow `cx` to
-        // build their own callbacks, and this is one answer for all of them.
-        let armed = self.delete_armed.clone();
         // Bounded, and the bound says so below. A project worked in for months
         // has more archives than this page is for, and none of this scrolls.
         let shown: Vec<ConvMeta> = project
@@ -1383,54 +1418,51 @@ impl ChatPane {
                                 );
                                 let (agent, archive) =
                                     (SharedString::from(meta.agent.clone()), meta.dir.clone());
-                                let armed = armed.as_deref() == Some(meta.dir.as_path());
                                 let dir = meta.dir.clone();
-                                div()
-                                    .h_flex()
-                                    .gap_2()
-                                    .w_full()
-                                    .items_center()
-                                    .child(
-                                        conversation_card(
-                                            ("home", i),
-                                            meta.title.clone().into(),
-                                            subtitle.into(),
-                                            cx,
-                                        )
-                                        .flex_1()
-                                        .on_click(
-                                            cx.listener(move |_: &mut Self, _, _, cx| {
-                                                cx.emit(ChatPaneEvent::StartSession {
-                                                    agent: Some(agent.clone()),
-                                                    resume: Some(archive.clone()),
-                                                });
-                                            }),
-                                        ),
-                                    )
-                                    // A word rather than a glyph, and this is the one
-                                    // control in the app that earns the distinction:
-                                    // everything else it offers can be done again --
-                                    // a closed session respawns, a removed project is
-                                    // added back -- and a deleted conversation cannot.
-                                    // The confirming state has to be a word anyway, so
-                                    // a picture would only be half the control.
-                                    .child(
-                                        crate::controls::action(("home-delete", i))
-                                            .ghost()
-                                            .small()
-                                            .text_color(danger)
-                                            .label(if armed { "Delete?" } else { "Delete" })
-                                            .tooltip(if armed {
-                                                "Press again to delete this conversation for good"
-                                            } else {
-                                                "Delete this conversation"
-                                            })
-                                            .on_click(cx.listener(
-                                                move |pane: &mut Self, _, _, cx| {
-                                                    pane.delete_conversation(dir.clone(), cx);
-                                                },
-                                            )),
-                                    )
+                                let name = SharedString::from(meta.title.clone());
+                                conversation_card(
+                                    ("home", i),
+                                    meta.title.clone().into(),
+                                    subtitle.into(),
+                                    cx,
+                                )
+                                .on_click(cx.listener(move |_: &mut Self, _, _, cx| {
+                                    cx.emit(ChatPaneEvent::StartSession {
+                                        agent: Some(agent.clone()),
+                                        resume: Some(archive.clone()),
+                                    });
+                                }))
+                                // A word rather than a glyph, and this is the one
+                                // control in the app that earns the distinction:
+                                // everything else it offers can be done again --
+                                // a closed session respawns, a removed project is
+                                // added back -- and a deleted conversation cannot.
+                                //
+                                // Inside the card, so it is plainly about the
+                                // conversation beside it rather than about the row
+                                // it happened to be nearest. That puts one clickable
+                                // inside another, which is what the stop below is
+                                // for: without it the press that asks to delete a
+                                // conversation also opens it.
+                                .child(
+                                    crate::controls::action(("home-delete", i))
+                                        .ghost()
+                                        .small()
+                                        .text_color(danger)
+                                        .label("Delete")
+                                        .tooltip("Delete this conversation")
+                                        .on_click(cx.listener(
+                                            move |pane: &mut Self, _, window, cx| {
+                                                cx.stop_propagation();
+                                                pane.confirm_delete(
+                                                    dir.clone(),
+                                                    name.clone(),
+                                                    window,
+                                                    cx,
+                                                );
+                                            },
+                                        )),
+                                )
                             }))
                             .children((hidden > 0).then(|| {
                                 div()
@@ -2937,6 +2969,14 @@ fn waiting_hint(what: SharedString, cx: &App) -> impl IntoElement + use<> {
 /// the same question from two places: the caller supplies the subtitle, which
 /// is the only part that differs, and hangs its own click on the result. Two
 /// hand-written card styles is how one of them ends up not looking clickable.
+///
+/// **A row, not a column, so a caller can add its own control at the end.** The
+/// name and the line under it are one column inside it, taking the width that
+/// is left; anything a caller hangs on afterwards sits at the right-hand edge,
+/// inside the card's own border rather than out beside it. The project page's
+/// delete is the reason -- a control that acts on one conversation belongs
+/// within the card naming it, and the same shape holds for the picker, which
+/// simply adds nothing.
 fn conversation_card(
     id: impl Into<ElementId>,
     title: SharedString,
@@ -2945,8 +2985,9 @@ fn conversation_card(
 ) -> Stateful<Div> {
     div()
         .id(id)
-        .v_flex()
-        .gap_0p5()
+        .h_flex()
+        .items_center()
+        .gap_2()
         .w_full()
         .p_2()
         .rounded(cx.theme().radius)
@@ -2959,12 +3000,19 @@ fn conversation_card(
         // whose whole purpose is picking one row out of several -- but that was
         // the palette's fault, not the fill's, and the ramp answers it.
         .hover(|row| row.bg(cx.theme().list_hover))
-        .child(div().truncate().child(title))
         .child(
             div()
-                .text_xs()
-                .text_color(cx.theme().muted_foreground)
-                .child(subtitle),
+                .v_flex()
+                .gap_0p5()
+                .flex_1()
+                .min_w_0()
+                .child(div().truncate().child(title))
+                .child(
+                    div()
+                        .text_xs()
+                        .text_color(cx.theme().muted_foreground)
+                        .child(subtitle),
+                ),
         )
 }
 
@@ -3158,28 +3206,13 @@ fn status_badge(
         .child(div().min_w_0().truncate().child(text))
 }
 
-/// Whether deleting `dir` still needs its confirming press.
-///
-/// Unlike a restart there is no condition that makes this safe to do in one
-/// press: a restart is only guarded while a turn is in flight, because that is
-/// the only time it throws anything away. A delete always does, and it is the
-/// one thing here that doing again does not undo.
-///
-/// What is armed is the conversation, not the page. Arming on one row and
-/// pressing the row below it must ask again -- otherwise the second press
-/// deletes something the first one never named.
-fn delete_needs_arming(armed: Option<&std::path::Path>, dir: &std::path::Path) -> bool {
-    armed != Some(dir)
-}
-
 #[cfg(test)]
 mod tests {
     use super::{
         BLOCK_GAP, COMPACT_GAP, RunKind, SessionSignal, TURN_GAP, TranscriptItemId, away_from_tail,
-        delete_needs_arming, lead_gap, restart_needs_arming, switching_away, viewport, waits_alone,
+        lead_gap, restart_needs_arming, switching_away, viewport, waits_alone,
     };
     use onehand_core::chat::Link;
-    use std::path::Path;
 
     /// The two sides of a prompt are one space, so they are one number —
     /// whatever sits above the prompt and whatever follows it.
@@ -3386,27 +3419,6 @@ mod tests {
     #[test]
     fn arming_one_session_never_confirms_another() {
         assert!(restart_needs_arming(true, Some(1), 2));
-    }
-
-    /// Deleting is guarded unconditionally, and the guard names the row.
-    ///
-    /// There is no state that makes a delete safe to do in one press, the way
-    /// an idle session makes a restart safe: everything else this app offers can
-    /// be done again, and a deleted conversation cannot. And arming one row must
-    /// never confirm the row below it — the second press would then delete
-    /// something the first one never named.
-    #[test]
-    fn deleting_always_asks_first_and_asks_about_one_row() {
-        let (one, two) = (Path::new("/store/a"), Path::new("/store/b"));
-        assert!(delete_needs_arming(None, one), "first press arms");
-        assert!(
-            !delete_needs_arming(Some(one), one),
-            "the second press on the same conversation goes through"
-        );
-        assert!(
-            delete_needs_arming(Some(one), two),
-            "a press aimed at one conversation says nothing about another"
-        );
     }
 
     /// A healthy, idle, already-read session draws **nothing**. This is the

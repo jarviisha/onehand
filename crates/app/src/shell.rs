@@ -12,6 +12,8 @@ use gpui::{
     App, AppContext, BorrowAppContext, Context, Entity, Focusable as _, InteractiveElement,
     IntoElement, ParentElement, Render, SharedString, Styled, Window, WindowAppearance, div, px,
 };
+use gpui_component::button::ButtonVariants as _;
+use gpui_component::dialog::{DialogClose, DialogFooter};
 use gpui_component::dock::{DockArea, DockEvent, DockItem, DockPlacement, PanelStyle};
 use gpui_component::input::{InputEvent, InputState};
 use gpui_component::notification::Notification;
@@ -412,13 +414,6 @@ pub struct Shell {
     /// index -- and with it its confirmation -- to whichever session slides
     /// into that place.
     pending_close: Option<u64>,
-    /// The conversation a delete has been armed on.
-    ///
-    /// By directory rather than by uid, unlike every other arming here: what is
-    /// being deleted is the thing on disk, and the session that happens to be
-    /// showing it is only the reason it has to be closed first. Arming on one
-    /// conversation and choosing another must ask again.
-    pending_delete: Option<std::path::PathBuf>,
     /// The panel currently filling the whole frame, rail included.
     ///
     /// Only the *app* direction is tracked here, because only that direction
@@ -557,7 +552,7 @@ impl Shell {
                     E::CloseSession => shell.close_active_session(window, cx),
                     E::Rename => shell.rename_active_session(window, cx),
                     E::DeleteConversation(dir) => {
-                        shell.delete_conversation(dir.clone(), window, cx)
+                        shell.confirm_delete_conversation(dir.clone(), window, cx)
                     }
                     E::StartSession { agent, resume } => {
                         shell.start_session(agent.clone(), resume.clone(), window, cx)
@@ -729,7 +724,6 @@ impl Shell {
             tab_cycle: None,
             pending_remove: None,
             pending_close: None,
-            pending_delete: None,
             app_maximized: None,
         }
     }
@@ -1470,34 +1464,79 @@ impl Shell {
     /// disk, so the next turn would write the file back holding only what came
     /// after — the delete would not stay deleted, and what came back would be a
     /// fragment. Dropping the session is also what ends its agent. The mid-turn
-    /// question `close_session` normally asks is skipped deliberately: this is
-    /// already the second press of a guarded control, and a second question
+    /// question `close_session` normally asks is skipped deliberately: the
+    /// stronger question has already been asked and answered, and a second one
     /// about a decision already confirmed teaches the user to click through
     /// both.
     ///
-    /// **Guarded by a second press**, because it is the one thing the app offers
-    /// that doing again does not undo. The guard is here rather than in the pane
-    /// so the warning and the act are one rule: the pane would have to arm, say
-    /// so through the window it does not have, and then disarm.
-    pub fn delete_conversation(
+    /// **Asked about in a modal first**, because it is the one thing the app
+    /// offers that doing again does not undo — the same question the project
+    /// page asks, so the conversation open in front of the user is not the one
+    /// deleted on a lighter guard than the ones filed away behind it.
+    pub fn confirm_delete_conversation(
         &mut self,
         dir: std::path::PathBuf,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        if self.pending_delete.as_deref() != Some(dir.as_path()) {
-            self.pending_delete = Some(dir);
-            window.push_notification(
-                Notification::warning(
-                    "Deleting this conversation cannot be undone. Choose it again to delete it",
-                ),
-                cx,
-            );
-            cx.notify();
-            return;
-        }
-        self.pending_delete = None;
+        let shell = cx.entity();
+        // The name of what is being deleted, read now while the session that
+        // holds it is still on screen. An unnamed conversation is one nothing
+        // has been asked in, so the question names it by what it is instead.
+        let name = self
+            .active_session_uid()
+            .and_then(|uid| self.chat.read(cx).title_for(uid, cx));
+        window.open_alert_dialog(cx, move |alert, _, _| {
+            // Cloned per build: a dialog's builder runs again on every frame it
+            // is on screen, so nothing captured here can be consumed by one.
+            let (shell, dir, name) = (shell.clone(), dir.clone(), name.clone());
+            alert
+                .title("Delete this conversation?")
+                .description(match &name {
+                    Some(name) => format!(
+                        "“{name}” will be removed from disk, with every message \
+                         and image in it, and the agent running it will stop. \
+                         This cannot be undone."
+                    ),
+                    None => "This conversation will be removed from disk, and the \
+                             agent running it will stop. This cannot be undone."
+                        .to_string(),
+                })
+                // Ours rather than the library's default pair, for the reason
+                // every button in this app is ours: the library draws its own
+                // with the arrow cursor.
+                .footer(
+                    DialogFooter::new()
+                        .child(
+                            DialogClose::new().child(
+                                crate::controls::action("keep-open-conversation")
+                                    .ghost()
+                                    .label("Keep"),
+                            ),
+                        )
+                        .child(
+                            crate::controls::action("confirm-delete-open-conversation")
+                                .danger()
+                                .label("Delete")
+                                .on_click(move |_, window: &mut Window, cx: &mut App| {
+                                    window.close_dialog(cx);
+                                    let dir = dir.clone();
+                                    shell.update(cx, |shell: &mut Self, cx| {
+                                        shell.delete_conversation(dir, window, cx);
+                                    });
+                                }),
+                        ),
+                )
+        });
+    }
 
+    /// Delete the conversation showing, the question already answered.
+    fn delete_conversation(
+        &mut self,
+        dir: std::path::PathBuf,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         if let Some(uid) = self.active_session_uid() {
             // What lets the close through its own mid-turn guard: the question
             // it would ask has already been asked, in stronger terms.

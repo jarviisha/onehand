@@ -498,20 +498,34 @@ fails if a binding is added without a row — a shortcut nobody can find is a sh
   immediately after they chose not to resume one. It is reached from a live session's header menu
   (*Resume another conversation…*), and the choice still happens *before* anything reconnects:
   connecting first would start a fresh conversation and archive it.
-- **Deleting is offered in two places, and each carries its own guard.** A live conversation deleted
-  underneath its own session would not even stay deleted — the next turn writes the file again holding
-  only what came after, because the session's mark says the rest is already on disk. That one fact is
-  what both guards are about.
-  On the **project page** the placement *is* the guard: that page shows when the selected project has
+- **Deleting is offered in two places, and both ask the same way: a modal naming the conversation.**
+  A live conversation deleted underneath its own session would not even stay deleted — the next turn
+  writes the file again holding only what came after, because the session's mark says the rest is
+  already on disk. That one fact is what the placement rules below are about.
+  On the **project page** the placement *is* a guard: that page shows when the selected project has
   no session on it, so every row on it names a conversation nothing is writing to. A session in another
   window is the case the page's shape does not cover, so `ChatPane::delete_conversation` checks for one
-  and refuses. The control is a **word, not a glyph**, and arms on the first press.
+  and refuses. The control is a **word, not a glyph**, and it lives **inside the card** — a control
+  that acts on one conversation belongs in the card naming it, which is why `conversation_card` is a
+  row with the text as one column and whatever the caller hangs on afterwards at its end. That puts one
+  clickable inside another, so the delete's handler calls `cx.stop_propagation()`: without it the press
+  that asks to delete a conversation also opens it.
   From the **conversation's own title menu** there *is* a session, so `Shell::delete_conversation`
   closes it first and unconditionally — dropping the session ends the agent and settles the mark, and
-  the mid-turn question `close_session` would normally ask is skipped because the delete has already
-  been confirmed once and a second question about a settled decision teaches the user to click through
-  both. The arming lives in the shell (`Shell::pending_delete`, keyed by directory, unlike every other
-  arming there) because the warning it raises is a notification and the pane has no window.
+  the mid-turn question `close_session` would normally ask is skipped because the stronger question has
+  already been answered and a second one about a settled decision teaches the user to click through
+  both.
+  **Both ask in `window.open_alert_dialog`** (`ChatPane::confirm_delete`, `Shell::confirm_delete_conversation`),
+  not by arming a control and waiting for a second press: an armed control looks like one that did
+  nothing, and the warning it raised is gone by the time the next press lands. Two things these dialogs
+  do that the library's defaults would not. The name of the conversation is read *before* the dialog
+  opens and carried into it, since the page or the session it came from can be replaced while the
+  question is on screen. And the footer is the app's own pair — *Keep* through `DialogClose`, *Delete*
+  in the danger tint — because the library builds its default OK/Cancel out of plain library buttons,
+  which draw the arrow cursor, and the one dialog that asks before destroying something is the last
+  place for a control to say "this does nothing" with the pointer. Unlike a dialog opened from a
+  `Dialog::trigger`, everything here survives: the builder handed to `open_alert_dialog` is what the
+  window keeps, so title, description and footer are rebuilt with it on every frame.
   Both exist because everything else the app offers can be done again and this cannot.
   `store::delete` removes the whole directory, so a conversation's images go with it.
   **Nothing is ever deleted automatically** — there is no retention sweep, by decision, because that

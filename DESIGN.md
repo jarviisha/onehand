@@ -93,9 +93,18 @@ One window hosts exactly one workspace. The frame is a navigation **rail** plus 
   Each row also carries the one way to **delete** a conversation, and it is a
   word in the danger tint rather than an icon: everything else this app offers
   can be done again, this cannot, and a destructive control should be read
-  rather than recognized. It arms on the first press and says so, and it is
-  offered here and nowhere else — this page is what shows when a project has no
-  session on it, so every row on it is a conversation nothing is writing to.
+  rather than recognized. It sits **inside the card**, at the end of the row the
+  name is on, so what it acts on is the thing beside it rather than whatever the
+  press happened to land nearest. Pressing it opens a **modal that names the
+  conversation** and has to be answered — *Keep* plain, *Delete* in the danger
+  tint — rather than arming the word and waiting for a second press: an armed
+  control looks like one that did nothing, and a user who has looked away comes
+  back to a row one accidental press from gone with no warning left on screen.
+  The same modal is what the conversation's own title menu opens, so the one
+  open in front of the user is not deleted on a lighter guard than the ones
+  filed away behind it. The row's own delete is offered here and nowhere else —
+  this page is what shows when a project has no session on it, so every row on
+  it is a conversation nothing is writing to.
 - The **rail** is app chrome, not a panel: it lives outside the dock, so the dock
   cannot swallow it and a layout restore cannot lose it. `Ctrl+Shift+B` **hides
   it entirely** — it is never narrowed to an icon column, because at that width
