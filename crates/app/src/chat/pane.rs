@@ -1019,6 +1019,52 @@ impl ChatPane {
         Some(handled)
     }
 
+    /// The pickers `uid`'s agent offers, as a message and its buttons.
+    ///
+    /// `None` means this pane has no such session. An agent that offers nothing
+    /// gets a sentence saying so rather than an empty message — not every
+    /// adapter advertises modes or config groups, and a blank reply reads as a
+    /// command that failed.
+    pub fn remote_options(&self, uid: u64, cx: &App) -> Option<(String, Vec<Vec<Button>>)> {
+        let selectors = self.session_of(uid)?.read(cx).chat.selectors();
+        if selectors.is_empty() {
+            return Some((
+                format!("{uid}'s agent doesn't offer anything to change."),
+                Vec::new(),
+            ));
+        }
+        let mut text = String::new();
+        let mut buttons = Vec::new();
+        for selector in &selectors {
+            let (rows, dropped) = press::option_buttons(uid, selector);
+            let here = selector
+                .current
+                .as_ref()
+                .and_then(|current| {
+                    selector
+                        .choices
+                        .iter()
+                        .find(|choice| choice.value == *current)
+                })
+                .map(|choice| choice.label.clone())
+                // A picker the agent has not settled yet, which is a different
+                // thing from one whose value this build failed to recognise --
+                // but the same sentence either way, since neither has a name to
+                // print.
+                .unwrap_or_else(|| "not set".to_string());
+            text.push_str(&format!("{} · {here}\n", selector.name));
+            // Said rather than silently dropped: a picker missing two of its
+            // choices reads as a picker that only has the rest.
+            if dropped > 0 {
+                text.push_str(&format!(
+                    "    {dropped} of its choices can't be offered here — use the app.\n"
+                ));
+            }
+            buttons.extend(rows);
+        }
+        Some((text.trim_end().to_string(), buttons))
+    }
+
     /// Cancel the turn running on `uid`, from outside the app.
     ///
     /// `None` means this pane has no such session, the same handshake the other
@@ -1411,7 +1457,9 @@ impl ChatPane {
     /// the window, or by an earlier press — has to be reported as settled rather
     /// than have the press slide onto the next unanswered one.
     fn apply_press(chat: &mut Chat, press: Press) -> String {
-        let item = press.item();
+        // Every press that names a card names one; the picker is the one that
+        // does not, and it is the arm that never reads this.
+        let item = press.item().unwrap_or_default();
         match press {
             Press::Permission { option, .. } => {
                 let Some(ChatItem::Permission(perm)) = chat.items.get(item) else {
@@ -1462,6 +1510,14 @@ impl ChatPane {
                 }
                 chat.answer_ask(item, true);
                 "Skipped — the agent carries on without an answer.".to_string()
+            }
+            // Not a card, so none of the transcript bookkeeping above applies:
+            // what the agent offers is live, and the model refuses a group or a
+            // choice that has moved rather than settling for the nearest.
+            Press::Option { group, choice, .. } => {
+                chat.choose(&group, choice).unwrap_or_else(|| {
+                    "That isn't offered any more — ask for /options again.".to_string()
+                })
             }
         }
     }

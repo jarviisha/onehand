@@ -18,8 +18,8 @@ pub use activity::{
 pub use find::{compute_matches, export_markdown, item_search_text, TranscriptMatch};
 pub use model::{
     ApplyOutcome, AskItem, Away, Chat, ChatItem, Link, Md, MdId, NoticeLevel, PermItem, PlanItem,
-    QueuedPrompt, SubmitBlock, TermView, Thought, ToolItem, TranscriptItemId, TurnAnswer, UserAsk,
-    UserMsg, MAX_TERM_BYTES,
+    QueuedPrompt, Selector, SelectorChoice, SubmitBlock, TermView, Thought, ToolItem,
+    TranscriptItemId, TurnAnswer, UserAsk, UserMsg, MAX_TERM_BYTES, MODE_SELECTOR,
 };
 pub use store::{
     commit, conv_dir, conversations_dir, delete, list_conversations, load, now_secs, ConfigPick,

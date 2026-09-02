@@ -33,6 +33,11 @@ pub enum RemoteCommand {
     Open(usize),
     /// `/open` with nothing to act on — no number, or a word that is not one.
     OpenWhich,
+    /// `/options` — what the bound session's agent lets you change, and to what.
+    ///
+    /// Mode, model, effort — the pickers the composer draws above the input, and
+    /// the last thing about a session that could only be reached at the keyboard.
+    Options,
     /// `/stop` — cancel the turn running on the session this chat is pointed at.
     ///
     /// The other half of being able to start one. Everything else here sets work
@@ -122,6 +127,10 @@ pub fn parse(line: &str) -> RemoteCommand {
         },
         "archive" => RemoteCommand::Archive,
         "stop" => RemoteCommand::Stop,
+        // `options` and not `settings`: these belong to the agent and change
+        // with it, while the app's own settings are a dialog in a window and
+        // nothing here can reach them.
+        "options" => RemoteCommand::Options,
         // Counted from one, because that is how the listing is printed. Zero is
         // not a row anybody was offered, so it is the same mistake as a word.
         "open" => match words.next().and_then(|n| n.parse::<usize>().ok()) {
@@ -153,6 +162,7 @@ mod tests {
         assert_eq!(parse("/archive"), RemoteCommand::Archive);
         assert_eq!(parse("/open 2"), RemoteCommand::Open(2));
         assert_eq!(parse("/stop"), RemoteCommand::Stop);
+        assert_eq!(parse("/options"), RemoteCommand::Options);
     }
 
     /// `/stop` is the one command whose misreading costs work rather than a

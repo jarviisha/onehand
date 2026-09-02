@@ -2565,6 +2565,18 @@ impl Shell {
             .update(cx, |pane, cx| pane.remote_prompt(uid, text, cx))
     }
 
+    /// The pickers `uid`'s agent offers, for a chat that wants to change one.
+    ///
+    /// `None` for a session this window does not hold, the same handshake the
+    /// other remote paths use.
+    pub fn remote_options(
+        &self,
+        uid: u64,
+        cx: &App,
+    ) -> Option<(String, Vec<Vec<onehand_core::remote::types::Button>>)> {
+        self.chat.read(cx).remote_options(uid, cx)
+    }
+
     /// Cancel the turn running on `uid`, from outside the app.
     ///
     /// `None` for a session this window does not hold, the same handshake the

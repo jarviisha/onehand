@@ -269,6 +269,18 @@ plus `sendMessage` and `answerCallbackQuery`. Everything that is not the wire is
   since the queued prompt is on screen as a chip; from a chat there is nothing to see. The words are
   quoted back rather than dropped, and the emptying happens *before* the cancel goes out so no ordering
   of the adapter's replies can flush it on the way past.
+- **Selectors.** `/options` draws the agent's own pickers — mode, model, effort — with a button per
+  value and a dot on the one in force, which is what stops somebody pressing to find out what is
+  running and changing it by accident. `Chat::selectors` flattens the two shapes the protocol keeps
+  apart (mode is a field of `session/new`, the rest a config group) because from outside the app they
+  are one question, and `Chat::choose` is the single place that routes a pick back to the right
+  request. **A picker press carries its group by name and its value by position** — the opposite way
+  round from a card, and for a stated reason: a card is frozen once raised so a place in it cannot
+  move, while what the agent offers is live and its groups come and go. A group or a choice that has
+  since moved is refused rather than settled for the nearest, which is affordable here in a way it is
+  not for a permission: a picker set wrongly is one more press, a grant is not. `Press::fits` is what
+  keeps a group name the agent chose from silently overrunning the payload cap and making the far side
+  refuse the whole message; a choice that cannot be carried is dropped, counted, and said.
 - **Every remote path finds its window the same way**, through `remote::ask_windows`: each window is
   asked in turn and the one holding the session answers. A map of session to window kept on the bridge
   would need correcting on every open, close and restart and would be wrong in between; a window cannot

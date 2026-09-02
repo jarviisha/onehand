@@ -887,6 +887,37 @@ impl UserAsk {
     }
 }
 
+/// The id [`Chat::selectors`] gives the session mode.
+///
+/// A name and not an index, so a caller can hold it across a change in what the
+/// agent offers — the config groups come and go, and a position among them is
+/// not a thing worth writing down anywhere.
+pub const MODE_SELECTOR: &str = "mode";
+
+/// One picker the agent offers, mode and config options alike.
+///
+/// Flattened out of the two shapes the protocol keeps apart, for callers that
+/// have to describe the pickers rather than draw them. See [`Chat::selectors`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Selector {
+    /// `mode`, or the config group's own id.
+    pub id: String,
+    /// What to call it to a human.
+    pub name: String,
+    /// The value in force, matching one of `choices`.
+    pub current: Option<String>,
+    pub choices: Vec<SelectorChoice>,
+}
+
+/// One value a [`Selector`] can take.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SelectorChoice {
+    /// What goes on the wire.
+    pub value: String,
+    /// What to call it to a human.
+    pub label: String,
+}
+
 /// Something about a conversation worth saying somewhere the conversation is
 /// not.
 ///
@@ -1392,6 +1423,78 @@ impl Chat {
     pub fn reset_title(&mut self) {
         self.custom_title = None;
     }
+    /// Every picker the agent offers, mode and config options alike, as one
+    /// list.
+    ///
+    /// The two are separate in the protocol and separate on the composer, which
+    /// is right there — mode is a first-class field of `session/new` while the
+    /// rest arrive as a config-option group, and the composer draws them as the
+    /// distinct controls they are. **Anything that has to name one from outside
+    /// the app wants them flattened**, because from there they are one question:
+    /// what can I change, and to what. Written once here rather than at each
+    /// such caller, so a second one cannot come to a different answer about
+    /// which pickers exist.
+    ///
+    /// Mode leads, and takes the id `mode`. That cannot collide with a config
+    /// group of the same name because the parser drops the agent's `mode` group
+    /// on the way in — the session's own `modes` field is the one that is
+    /// honoured.
+    pub fn selectors(&self) -> Vec<Selector> {
+        let mode = (!self.modes.is_empty()).then(|| Selector {
+            id: MODE_SELECTOR.to_string(),
+            name: "Mode".to_string(),
+            current: self.current_mode.clone(),
+            choices: self
+                .modes
+                .iter()
+                .map(|mode| SelectorChoice {
+                    value: mode.id.clone(),
+                    label: mode.name.clone(),
+                })
+                .collect(),
+        });
+        mode.into_iter()
+            .chain(self.config_options.iter().map(|option| {
+                Selector {
+                    id: option.id.clone(),
+                    name: option.name.clone(),
+                    current: option.current.clone(),
+                    choices: option
+                        .choices
+                        .iter()
+                        .map(|choice| SelectorChoice {
+                            value: choice.value.clone(),
+                            label: choice.name.clone(),
+                        })
+                        .collect(),
+                }
+            }))
+            .collect()
+    }
+
+    /// Pick the `choice`-th value of the picker `group`, and say what was set.
+    ///
+    /// `None` for a group or a choice that is not there. **Which is a real
+    /// answer and not a slip to paper over**: what the agent offers is live and
+    /// can be re-advertised mid-session, so a caller holding a place in a list —
+    /// a button in a chat, a number somebody typed — can be pointing at
+    /// something that has moved. Guessing at the nearest one would change a
+    /// model or a mode nobody asked for, quietly.
+    ///
+    /// The sentence it returns is read from the picker itself rather than from
+    /// what the caller thought it was choosing, so a reply built from it is
+    /// always true about what actually happened.
+    pub fn choose(&mut self, group: &str, choice: usize) -> Option<String> {
+        let selector = self.selectors().into_iter().find(|s| s.id == group)?;
+        let picked = selector.choices.get(choice)?.clone();
+        if group == MODE_SELECTOR {
+            self.set_mode(&picked.value);
+        } else {
+            self.set_config_option(group, &picked.value);
+        }
+        Some(format!("{} → {}", selector.name, picked.label))
+    }
+
     /// Switch the session mode: tell the adapter, then reflect it locally.
     ///
     /// Optimistic on purpose — the adapter confirms a mode change in its reply
@@ -2519,6 +2622,7 @@ impl Drop for Chat {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::acp::ConfigChoice;
 
     #[test]
     fn title_uses_first_nonblank_line_collapsed() {
@@ -3535,6 +3639,106 @@ mod tests {
         let tail = chat_with(vec![agent(source)]).answer_tail(10).unwrap();
         assert!(tail.ends_with("nhé"), "got {tail:?}");
         assert!(source.ends_with(tail.trim_start_matches('…')));
+    }
+
+    /// Mode and config options are two shapes in the protocol and two controls
+    /// on the composer; to anything describing them from outside they are one
+    /// question. Mode leads, and takes the reserved id.
+    #[test]
+    fn selectors_flatten_the_mode_and_the_config_groups() {
+        let mut chat = Chat::default();
+        chat.modes = vec![
+            Mode {
+                id: "default".into(),
+                name: "Default".into(),
+            },
+            Mode {
+                id: "plan".into(),
+                name: "Plan".into(),
+            },
+        ];
+        chat.current_mode = Some("plan".into());
+        chat.config_options = vec![ConfigOption {
+            id: "effort".into(),
+            name: "Effort".into(),
+            current: None,
+            choices: vec![ConfigChoice {
+                value: "high".into(),
+                name: "High".into(),
+            }],
+        }];
+
+        let found = chat.selectors();
+        assert_eq!(found.len(), 2);
+        assert_eq!(found[0].id, MODE_SELECTOR);
+        assert_eq!(found[0].name, "Mode");
+        assert_eq!(found[0].current.as_deref(), Some("plan"));
+        assert_eq!(found[1].id, "effort");
+
+        // A session that offers no modes shows no mode picker, rather than an
+        // empty one.
+        chat.modes.clear();
+        assert_eq!(chat.selectors().len(), 1);
+    }
+
+    /// The two halves go down different paths -- mode is a first-class field of
+    /// the protocol and the rest are a config group -- and picking the wrong one
+    /// sends a request the adapter has no reading for.
+    #[test]
+    fn choosing_sends_the_request_the_picker_belongs_to() {
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+        let mut chat = Chat::default();
+        chat.tx = Some(tx);
+        chat.modes = vec![Mode {
+            id: "plan".into(),
+            name: "Plan".into(),
+        }];
+        chat.config_options = vec![ConfigOption {
+            id: "effort".into(),
+            name: "Effort".into(),
+            current: None,
+            choices: vec![ConfigChoice {
+                value: "high".into(),
+                name: "High".into(),
+            }],
+        }];
+
+        assert_eq!(
+            chat.choose(MODE_SELECTOR, 0).as_deref(),
+            Some("Mode → Plan")
+        );
+        assert!(matches!(rx.try_recv(), Ok(AcpRequest::SetMode(m)) if m == "plan"));
+        assert_eq!(chat.current_mode.as_deref(), Some("plan"));
+
+        assert_eq!(
+            chat.choose("effort", 0).as_deref(),
+            Some("Effort → High"),
+            "the sentence is read from the picker, not from what the caller thought it chose"
+        );
+        assert!(matches!(
+            rx.try_recv(),
+            Ok(AcpRequest::SetConfigOption { config_id, value }) if config_id == "effort" && value == "high"
+        ));
+        assert_eq!(chat.config_options[0].current.as_deref(), Some("high"));
+    }
+
+    /// What the agent offers is live, so a button sitting in a chat can point at
+    /// something that has moved. Guessing at the nearest one would change a
+    /// model nobody asked for, quietly -- and send nothing to say it had.
+    #[test]
+    fn choosing_something_that_is_not_there_changes_nothing() {
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+        let mut chat = Chat::default();
+        chat.tx = Some(tx);
+        chat.modes = vec![Mode {
+            id: "plan".into(),
+            name: "Plan".into(),
+        }];
+
+        assert_eq!(chat.choose(MODE_SELECTOR, 9), None, "no such choice");
+        assert_eq!(chat.choose("model", 0), None, "no such group");
+        assert_eq!(chat.current_mode, None);
+        assert!(rx.try_recv().is_err(), "nothing may reach the adapter");
     }
 
     /// Until the handshake lands there is no agent to be doing anything, so

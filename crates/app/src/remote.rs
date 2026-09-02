@@ -381,12 +381,13 @@ fn receive(event: RemoteEvent, cx: &mut App) {
 
 /// Carry out a press, wherever the session it names lives.
 fn act_on(press: Press, cx: &mut App) -> String {
-    ask_windows(cx, |shell, cx| shell.remote_answer(press, cx))
+    let uid = press.uid();
+    ask_windows(cx, |shell, cx| shell.remote_answer(press.clone(), cx))
         // Not `no_longer_there`: a press carries its own session and never went
         // through a binding, so there is nothing to unpoint and no listing that
         // would help — the message it was pressed on is simply older than the
         // session it was about.
-        .unwrap_or_else(|| format!("Session {} is gone.", press.uid()))
+        .unwrap_or_else(|| format!("Session {uid} is gone."))
 }
 
 /// Whether this chat may reach the app at all.
@@ -696,6 +697,23 @@ fn no_longer_there(uid: u64, chat: &str, cx: &mut App) -> String {
     format!("Session {uid} is gone.\n\n{}", listing(chat, cx))
 }
 
+/// Answer `/options`: what the bound session's agent lets you change, with a
+/// button per value.
+fn send_options(chat: &str, cx: &mut App) {
+    let out = match bound(chat, cx) {
+        None => Outbound::text(chat.to_string(), not_pointed("change options on", chat, cx)),
+        Some(uid) => match ask_windows(cx, |shell, cx| shell.remote_options(uid, cx)) {
+            Some((text, buttons)) => Outbound {
+                chat: chat.to_string(),
+                text,
+                buttons,
+            },
+            None => Outbound::text(chat.to_string(), no_longer_there(uid, chat, cx)),
+        },
+    };
+    Shared::global(cx).remote.send(out);
+}
+
 /// Answer `/stop`.
 fn stop_session(chat: &str, cx: &mut App) -> String {
     let Some(uid) = bound(chat, cx) else {
@@ -741,6 +759,13 @@ fn answer(chat: &str, text: &str, cx: &mut App) -> Option<String> {
         }
         RemoteCommand::Open(place) => Some(open_archive(chat, place, cx)),
         RemoteCommand::Stop => Some(stop_session(chat, cx)),
+        // Sends its own message, like `/archive` and for a different reason:
+        // this one carries buttons, and a reply that is only ever a string has
+        // nowhere to put them.
+        RemoteCommand::Options => {
+            send_options(chat, cx);
+            None
+        }
         RemoteCommand::OpenWhich => {
             Some("Which one? /archive lists them, then /open <number>.".to_string())
         }
@@ -755,6 +780,7 @@ const HELP: &str = "\
 /sessions — every session onehand is running, and what each is doing
 /use <number> — point this chat at one of them
 /stop — cancel the turn running on the one this chat is pointed at
+/options — the agent's own pickers: mode, model, effort
 /archive — conversations saved on disk, newest first
 /open <number> — put one of them back and point this chat at it
 /away — you've left the machine; announce everything here

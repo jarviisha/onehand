@@ -6,11 +6,15 @@
 //! nothing more, and the app has no idea which of its windows the press is
 //! about until it reads this. That data is small — a channel is free to cap it,
 //! and Telegram caps it at 64 bytes — so what goes in it is a letter, a session
-//! id and an index, and never an identifier the agent chose.
+//! id and a position, and never a value the agent chose. The one exception is a
+//! picker's *group*, which travels by name because the alternative is a place in
+//! a list that is rebuilt while the message sits in somebody's chat; it is short
+//! in practice and [`Press::fits`] is what refuses to draw a button when it is
+//! not.
 
 use super::types::Button;
 use crate::acp::{ElicitField, ElicitKind, PermissionOption, PermissionWeight};
-use crate::chat::first_line_trunc;
+use crate::chat::{first_line_trunc, Selector};
 
 /// The longest a button's label may be before it is clipped.
 ///
@@ -29,7 +33,10 @@ const LABEL_MAX: usize = 32;
 /// silently grant one thing while the reader believed they had granted another.
 /// A card is named by where it sits in its transcript, which is a position a
 /// live transcript only ever appends to.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+///
+/// Not `Copy`: the picker variant carries a group's name, and a name is the one
+/// thing here that is not a number.
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Press {
     /// Answer the permission at `item` on session `uid` with the option at
     /// `option` in that card's own list.
@@ -46,25 +53,45 @@ pub enum Press {
     },
     /// Let the question at `item` go unanswered and let the turn carry on.
     Skip { uid: u64, item: usize },
+    /// Set the picker `group` on session `uid` to its `choice`-th value.
+    ///
+    /// The group travels by **name** while everything else here travels by
+    /// position, and the difference is what each one is. A card is frozen once
+    /// it is raised, so a place in it cannot move; what the agent offers is live
+    /// and its groups come and go, so a place among *them* is worth nothing by
+    /// the time it comes back. A name survives that. The choice inside a group
+    /// is still a place, because the alternative is an agent-chosen value of any
+    /// length in a payload with a hard cap — and unlike a permission, a picker
+    /// set to the wrong thing is one more press rather than something granted.
+    Option {
+        uid: u64,
+        group: String,
+        choice: usize,
+    },
 }
 
 impl Press {
     /// The session this press is about. Every variant names one — a press that
     /// did not would have nowhere to land.
-    pub fn uid(self) -> u64 {
+    pub fn uid(&self) -> u64 {
         match self {
-            Self::Permission { uid, .. } | Self::Question { uid, .. } | Self::Skip { uid, .. } => {
-                uid
-            }
+            Self::Permission { uid, .. }
+            | Self::Question { uid, .. }
+            | Self::Skip { uid, .. }
+            | Self::Option { uid, .. } => *uid,
         }
     }
 
-    /// Which card in that session's transcript.
-    pub fn item(self) -> usize {
+    /// Which card in that session's transcript, for the presses that name one.
+    pub fn item(&self) -> Option<usize> {
         match self {
             Self::Permission { item, .. }
             | Self::Question { item, .. }
-            | Self::Skip { item, .. } => item,
+            | Self::Skip { item, .. } => Some(*item),
+            // A picker is not a card. It is not in the transcript at all, and
+            // asking a live list what sits at a frozen position is exactly the
+            // confusion this keeps apart.
+            Self::Option { .. } => None,
         }
     }
 
@@ -76,12 +103,31 @@ impl Press {
     /// is safe for exactly the reason a parked card is worth answering at all:
     /// it is frozen from the moment it is raised until the moment it is
     /// answered, so the list cannot have been rebuilt underneath the button.
-    pub fn encode(self) -> String {
+    pub fn encode(&self) -> String {
         match self {
             Self::Permission { uid, item, option } => format!("p:{uid}:{item}:{option}"),
             Self::Question { uid, item, choice } => format!("q:{uid}:{item}:{choice}"),
             Self::Skip { uid, item } => format!("s:{uid}:{item}"),
+            Self::Option { uid, group, choice } => format!("o:{uid}:{group}:{choice}"),
         }
+    }
+
+    /// Whether a channel will carry this at all.
+    ///
+    /// **The only press whose size is not known in advance** is the one carrying
+    /// a group name the agent chose, and a payload over the cap is not truncated
+    /// by the far side — the whole message is refused, so a notification that
+    /// grew one button too long simply never arrives. Asked before a button is
+    /// built rather than discovered when nothing shows up.
+    pub fn fits(&self) -> bool {
+        // What Telegram allows, and the smallest cap of anything likely to
+        // follow. One number for every channel: a payload sized to the most
+        // generous one is a payload the next channel silently drops.
+        const CALLBACK_DATA_MAX: usize = 64;
+        // A separator inside the group would come back as a field boundary and
+        // decode as something else, or as nothing.
+        let clean = !matches!(self, Self::Option { group, .. } if group.contains(':'));
+        clean && self.encode().len() <= CALLBACK_DATA_MAX
     }
 
     /// Read one back. `None` for anything this build does not recognise, which
@@ -91,7 +137,9 @@ impl Press {
         let mut parts = data.split(':');
         let kind = parts.next()?;
         let uid: u64 = parts.next()?.parse().ok()?;
-        let item: usize = parts.next()?.parse().ok()?;
+        // The third field is a number for every press but the picker's, whose
+        // is the group's own name.
+        let third = parts.next()?;
         let last = parts.next();
         // Anything after the fourth field means this was not written by this
         // build, and guessing at the rest is how a press lands on the wrong
@@ -102,15 +150,23 @@ impl Press {
         match (kind, last) {
             ("p", Some(i)) => Some(Self::Permission {
                 uid,
-                item,
+                item: third.parse().ok()?,
                 option: i.parse().ok()?,
             }),
             ("q", Some(i)) => Some(Self::Question {
                 uid,
-                item,
+                item: third.parse().ok()?,
                 choice: i.parse().ok()?,
             }),
-            ("s", None) => Some(Self::Skip { uid, item }),
+            ("s", None) => Some(Self::Skip {
+                uid,
+                item: third.parse().ok()?,
+            }),
+            ("o", Some(i)) if !third.is_empty() => Some(Self::Option {
+                uid,
+                group: third.to_string(),
+                choice: i.parse().ok()?,
+            }),
             _ => None,
         }
     }
@@ -206,10 +262,54 @@ pub fn question_buttons(uid: u64, item: usize, fields: &[ElicitField]) -> Vec<Ve
     rows
 }
 
+/// The buttons one picker offers, and a mark on the value in force.
+///
+/// **The current value is marked rather than left out.** A row of models with
+/// nothing saying which one is running is a row that has to be pressed to be
+/// read, and pressing to find out is how somebody away from the machine changes
+/// a setting they only meant to check. It stays pressable, because re-setting
+/// what is already set costs nothing and removing it would leave a gap where the
+/// eye expects an option.
+///
+/// A choice whose press would not survive the trip is dropped rather than drawn:
+/// a payload over a channel's cap is not truncated, it makes the far side refuse
+/// the whole message, so one over-long group would cost the entire listing. What
+/// went missing is the caller's to report — this returns the rows and the count
+/// it could not offer.
+pub fn option_buttons(uid: u64, selector: &Selector) -> (Vec<Vec<Button>>, usize) {
+    let mut rows = Vec::new();
+    let mut dropped = 0;
+    for (choice, value) in selector.choices.iter().enumerate() {
+        let press = Press::Option {
+            uid,
+            group: selector.id.clone(),
+            choice,
+        };
+        if !press.fits() {
+            dropped += 1;
+            continue;
+        }
+        let here = selector.current.as_deref() == Some(value.value.as_str());
+        rows.push(vec![Button {
+            label: first_line_trunc(
+                &if here {
+                    format!("• {}", value.label)
+                } else {
+                    value.label.clone()
+                },
+                LABEL_MAX,
+            ),
+            data: press.encode(),
+        }]);
+    }
+    (rows, dropped)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::acp::ElicitChoice;
+    use crate::chat::SelectorChoice;
 
     /// The cap a channel puts on what it will carry back. Anything longer is
     /// simply refused when the message is sent, so a button that outgrew it
@@ -257,11 +357,56 @@ mod tests {
                 choice: 7,
             },
             Press::Skip { uid: 3, item: 12 },
+            Press::Option {
+                uid: 5,
+                group: "model".into(),
+                choice: 2,
+            },
         ] {
-            assert_eq!(Press::decode(&press.encode()), Some(press));
-            assert_eq!(Press::decode(&press.encode()).unwrap().uid(), press.uid());
-            assert_eq!(Press::decode(&press.encode()).unwrap().item(), press.item());
+            let back = Press::decode(&press.encode());
+            assert_eq!(back.as_ref(), Some(&press));
+            assert_eq!(back.as_ref().unwrap().uid(), press.uid());
+            assert_eq!(back.as_ref().unwrap().item(), press.item());
         }
+    }
+
+    /// A picker's group is the one thing here that travels by name, so it is the
+    /// one press whose size is not known in advance -- and a payload over the cap
+    /// makes the far side refuse the *whole* message, so one over-long group
+    /// would cost the entire listing rather than one button.
+    #[test]
+    fn a_press_that_would_not_survive_the_trip_says_so() {
+        let ok = Press::Option {
+            uid: 1,
+            group: "model".into(),
+            choice: 0,
+        };
+        assert!(ok.fits());
+
+        let long = Press::Option {
+            uid: u64::MAX,
+            group: "g".repeat(64),
+            choice: usize::MAX,
+        };
+        assert!(!long.fits());
+        // And it must not merely be refused at the cap: a separator inside the
+        // name comes back as a field boundary and decodes as something else.
+        let split = Press::Option {
+            uid: 1,
+            group: "mo:del".into(),
+            choice: 0,
+        };
+        assert!(!split.fits());
+        assert_eq!(Press::decode(&split.encode()), None);
+
+        // Every other press is bounded by its own types, so `fits` is a
+        // formality for them and must stay true at the extremes.
+        assert!(Press::Permission {
+            uid: u64::MAX,
+            item: usize::MAX,
+            option: usize::MAX
+        }
+        .fits());
     }
 
     /// The payload has to fit in what the channel will carry, at the largest
@@ -448,6 +593,62 @@ mod tests {
             Press::decode(&question_buttons(2, 3, &[])[0][0].data),
             Some(Press::Skip { uid: 2, item: 3 })
         );
+    }
+
+    fn selector(current: Option<&str>, labels: &[&str]) -> Selector {
+        Selector {
+            id: "model".into(),
+            name: "Model".into(),
+            current: current.map(str::to_string),
+            choices: labels
+                .iter()
+                .map(|l| SelectorChoice {
+                    value: l.to_lowercase(),
+                    label: l.to_string(),
+                })
+                .collect(),
+        }
+    }
+
+    /// A row of models with nothing saying which is running has to be pressed
+    /// to be read -- and pressing to find out is how somebody away from the
+    /// machine changes a setting they only meant to check.
+    #[test]
+    fn the_value_in_force_is_marked_and_still_pressable() {
+        let (rows, dropped) = option_buttons(7, &selector(Some("sonnet"), &["Opus", "Sonnet"]));
+        assert_eq!(dropped, 0);
+        assert_eq!(rows.len(), 2);
+        assert_eq!(rows[0][0].label, "Opus");
+        assert_eq!(rows[1][0].label, "• Sonnet");
+        // Marked, not removed: a gap where the eye expects an option reads as a
+        // missing choice, and re-setting what is set costs nothing.
+        assert_eq!(
+            Press::decode(&rows[1][0].data),
+            Some(Press::Option {
+                uid: 7,
+                group: "model".into(),
+                choice: 1,
+            })
+        );
+    }
+
+    /// Nothing in force yet marks nothing, rather than marking the first.
+    #[test]
+    fn an_unset_picker_marks_none_of_its_choices() {
+        let (rows, _) = option_buttons(7, &selector(None, &["Opus", "Sonnet"]));
+        assert!(rows.iter().all(|row| !row[0].label.starts_with('•')));
+    }
+
+    /// One over-long group would make the far side refuse the whole message, so
+    /// what cannot be carried is dropped here and counted for the caller to
+    /// report -- silence would read as a picker with fewer choices than it has.
+    #[test]
+    fn a_choice_that_cannot_be_carried_is_dropped_and_counted() {
+        let mut wide = selector(None, &["Opus", "Sonnet"]);
+        wide.id = "g".repeat(64);
+        let (rows, dropped) = option_buttons(7, &wide);
+        assert!(rows.is_empty());
+        assert_eq!(dropped, 2);
     }
 
     /// A choice is a sentence, and a channel handed one lays out a button the
