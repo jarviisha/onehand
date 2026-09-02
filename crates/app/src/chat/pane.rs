@@ -85,6 +85,13 @@ const LIST_HEAD: Rems = rems(1.);
 /// and the one chosen for how it reads.
 const ANSWER_TAIL_MAX: usize = 700;
 
+/// How much of a taken-back prompt is quoted back at whoever wrote it.
+///
+/// Enough to recognise it by, not enough to make a stop confirmation into a wall
+/// of text — it is there so the words are not simply gone, and the words
+/// themselves are in the sender's own chat history a few messages up.
+const QUOTED_PROMPT_MAX: usize = 120;
+
 /// What a press on a card that is no longer open is told.
 ///
 /// One sentence for every way it can happen — answered in the window, answered
@@ -1010,6 +1017,47 @@ impl ChatPane {
         });
         cx.notify();
         Some(handled)
+    }
+
+    /// Cancel the turn running on `uid`, from outside the app.
+    ///
+    /// `None` means this pane has no such session, the same handshake the other
+    /// remote paths use to find the window that does.
+    ///
+    /// **Anything queued is taken back rather than left to fire.** Cancelling
+    /// ends the turn, and the end of a turn is precisely what sends whatever was
+    /// waiting behind it — so a plain cancel would stop the work and start the
+    /// next piece in the same breath. At the keyboard that is survivable,
+    /// because the queued prompt is on screen as a chip and the person pressing
+    /// Stop can see it; from a chat there is nothing to see, and a stop that
+    /// quietly launches something else is the opposite of what was asked for.
+    /// Taken back and quoted, not dropped: the words were typed by somebody and
+    /// they can decide whether to send them again.
+    ///
+    /// The order is the whole of it — the queue is emptied *before* the cancel
+    /// goes out, so there is no arrangement of replies from the adapter that can
+    /// flush it on the way past.
+    pub fn remote_stop(&mut self, uid: u64, cx: &mut Context<Self>) -> Option<String> {
+        let session = self.session_of(uid)?.clone();
+        let said = session.update(cx, |session, cx| {
+            if !session.chat.busy {
+                // Not "stopped": nothing was running, and saying otherwise would
+                // have the reader believe they had just cut something short.
+                return format!("Nothing is running on {uid}.");
+            }
+            let dropped = session.chat.unqueue();
+            session.chat.cancel_turn();
+            cx.notify();
+            match dropped {
+                None => format!("Stopped {uid}."),
+                Some(pending) => format!(
+                    "Stopped {uid}. The prompt waiting behind it was taken back, not sent:\n\n{}",
+                    onehand_core::chat::first_line_trunc(&pending.text, QUOTED_PROMPT_MAX)
+                ),
+            }
+        });
+        cx.notify();
+        Some(said)
     }
 
     /// Every session in this pane, as somebody reading about them from outside

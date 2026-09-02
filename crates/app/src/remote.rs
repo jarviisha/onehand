@@ -381,17 +381,12 @@ fn receive(event: RemoteEvent, cx: &mut App) {
 
 /// Carry out a press, wherever the session it names lives.
 fn act_on(press: Press, cx: &mut App) -> String {
-    let uid = press.uid();
-    let shells: Vec<_> = Shared::global(cx)
-        .windows
-        .iter()
-        .map(|w| w.shell.clone())
-        .collect();
-    shells
-        .into_iter()
-        .filter_map(|shell| shell.upgrade())
-        .find_map(|shell| shell.update(cx, |shell, cx| shell.remote_answer(press, cx)))
-        .unwrap_or_else(|| format!("Session {uid} is gone."))
+    ask_windows(cx, |shell, cx| shell.remote_answer(press, cx))
+        // Not `no_longer_there`: a press carries its own session and never went
+        // through a binding, so there is nothing to unpoint and no listing that
+        // would help — the message it was pressed on is simply older than the
+        // session it was about.
+        .unwrap_or_else(|| format!("Session {} is gone.", press.uid()))
 }
 
 /// Whether this chat may reach the app at all.
@@ -660,6 +655,58 @@ fn open_archive(chat: &str, place: usize, cx: &mut App) -> String {
     }
 }
 
+/// Put a question to every window until one answers it.
+///
+/// **The windows are asked rather than indexed.** A map of session to window
+/// kept on the bridge would need correcting on every open, close and restart and
+/// would be wrong in between; a window cannot be wrong about which sessions it
+/// holds. `None` from all of them means the session is gone, which is a real
+/// answer and the one every caller here turns into a sentence.
+fn ask_windows<R>(
+    cx: &mut App,
+    mut act: impl FnMut(&mut crate::shell::Shell, &mut gpui::Context<crate::shell::Shell>) -> Option<R>,
+) -> Option<R> {
+    let shells: Vec<_> = Shared::global(cx)
+        .windows
+        .iter()
+        .map(|w| w.shell.clone())
+        .collect();
+    shells
+        .into_iter()
+        // A window closed between the registry's prune and this walk is not an
+        // error, it is one fewer window.
+        .filter_map(|shell| shell.upgrade())
+        .find_map(|shell| shell.update(cx, |shell, cx| act(shell, cx)))
+}
+
+/// What to say when a chat asked for something and is pointed at nothing.
+fn not_pointed(what: &str, chat: &str, cx: &App) -> String {
+    format!(
+        "This chat isn't pointed at a session, so there is nothing to {what}.\n\n{}",
+        listing(chat, cx)
+    )
+}
+
+/// What to say when the session a chat was pointed at has since closed.
+///
+/// The binding goes with it rather than being left to fail again on the next
+/// message, and the list comes back so the next one can land somewhere.
+fn no_longer_there(uid: u64, chat: &str, cx: &mut App) -> String {
+    bind(chat, None, cx);
+    format!("Session {uid} is gone.\n\n{}", listing(chat, cx))
+}
+
+/// Answer `/stop`.
+fn stop_session(chat: &str, cx: &mut App) -> String {
+    let Some(uid) = bound(chat, cx) else {
+        return not_pointed("stop", chat, cx);
+    };
+    match ask_windows(cx, |shell, cx| shell.remote_stop(uid, cx)) {
+        Some(said) => said,
+        None => no_longer_there(uid, chat, cx),
+    }
+}
+
 /// What one prompt did, wherever it landed.
 pub enum Handled {
     /// It went in and a turn started.
@@ -693,6 +740,7 @@ fn answer(chat: &str, text: &str, cx: &mut App) -> Option<String> {
             None
         }
         RemoteCommand::Open(place) => Some(open_archive(chat, place, cx)),
+        RemoteCommand::Stop => Some(stop_session(chat, cx)),
         RemoteCommand::OpenWhich => {
             Some("Which one? /archive lists them, then /open <number>.".to_string())
         }
@@ -706,6 +754,7 @@ fn answer(chat: &str, text: &str, cx: &mut App) -> Option<String> {
 const HELP: &str = "\
 /sessions — every session onehand is running, and what each is doing
 /use <number> — point this chat at one of them
+/stop — cancel the turn running on the one this chat is pointed at
 /archive — conversations saved on disk, newest first
 /open <number> — put one of them back and point this chat at it
 /away — you've left the machine; announce everything here
@@ -760,39 +809,15 @@ fn point_at(chat: &str, uid: u64, cx: &mut App) -> String {
 /// Send a prompt to whatever this chat is pointed at.
 fn send_prompt(chat: &str, prompt: &str, cx: &mut App) -> String {
     let Some(uid) = bound(chat, cx) else {
-        return format!(
-            "This chat isn't pointed at a session, so there is nowhere to send that.\n\n{}",
-            listing(chat, cx)
-        );
+        return not_pointed("send that to", chat, cx);
     };
-
-    // Every window is asked, and the one holding that session answers. A map of
-    // uid to window kept here would have to be corrected on every open, close
-    // and restart, and would be wrong in between -- while the windows themselves
-    // cannot be wrong about which sessions they hold.
-    let shells: Vec<_> = Shared::global(cx)
-        .windows
-        .iter()
-        .map(|w| w.shell.clone())
-        .collect();
-    let handled = shells
-        .into_iter()
-        .filter_map(|shell| shell.upgrade())
-        .find_map(|shell| shell.update(cx, |shell, cx| shell.remote_prompt(uid, prompt, cx)));
-
-    match handled {
+    match ask_windows(cx, |shell, cx| shell.remote_prompt(uid, prompt, cx)) {
         Some(Handled::Sent) => format!("Sent to {uid}."),
         Some(Handled::Queued) => {
             format!("{uid} is mid-turn — this goes in the moment that one ends.")
         }
         Some(Handled::Refused(why)) => format!("{uid} didn't take it: {why}"),
-        // The session was closed since this chat was pointed at it. The binding
-        // goes with it rather than being left to fail again on the next message,
-        // and the list comes back so the next one can land somewhere.
-        None => {
-            bind(chat, None, cx);
-            format!("Session {uid} is gone.\n\n{}", listing(chat, cx))
-        }
+        None => no_longer_there(uid, chat, cx),
     }
 }
 

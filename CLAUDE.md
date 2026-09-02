@@ -261,7 +261,18 @@ plus `sendMessage` and `answerCallbackQuery`. Everything that is not the wire is
   recovered. **`//x` sends `/x` on to the agent**, which is the only way its own slash commands are
   reachable at all — every one of them collides with this language. A single slash is never forwarded:
   guessing that an unrecognised word was meant for the agent would turn each mistyped bridge command
-  into a prompt nobody sent.
+  into a prompt nobody sent. `/stop` cancels the bound session's turn, and is the other half of being
+  able to start one — everything else here sets work going, and an agent heading the wrong way is what
+  somebody away from the machine can do least about. **It takes back anything queued first**, because
+  cancelling ends the turn and the end of a turn is exactly what flushes the queue: a plain cancel
+  would stop the work and launch the next piece in the same breath. At the keyboard that is survivable
+  since the queued prompt is on screen as a chip; from a chat there is nothing to see. The words are
+  quoted back rather than dropped, and the emptying happens *before* the cancel goes out so no ordering
+  of the adapter's replies can flush it on the way past.
+- **Every remote path finds its window the same way**, through `remote::ask_windows`: each window is
+  asked in turn and the one holding the session answers. A map of session to window kept on the bridge
+  would need correcting on every open, close and restart and would be wrong in between; a window cannot
+  be wrong about what it holds.
 - **A message that cannot be read is answered, not dropped.** A photo or a voice note comes back as
   `RemoteEvent::Unreadable` and earns a sentence saying so. Silence is the answer reserved for a chat
   that is not on the list, and giving the same answer to somebody who *is* makes a working bridge

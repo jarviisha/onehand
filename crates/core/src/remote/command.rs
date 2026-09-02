@@ -33,6 +33,13 @@ pub enum RemoteCommand {
     Open(usize),
     /// `/open` with nothing to act on — no number, or a word that is not one.
     OpenWhich,
+    /// `/stop` — cancel the turn running on the session this chat is pointed at.
+    ///
+    /// The other half of being able to start one. Everything else here sets work
+    /// going — a prompt, a granted permission, a reopened conversation — and an
+    /// agent heading the wrong way is exactly the thing somebody who is not at
+    /// the machine can do least about.
+    Stop,
     /// `/away` — stop assuming the window can be seen.
     ///
     /// The app decides what a notification is worth by asking whether the user
@@ -114,6 +121,7 @@ pub fn parse(line: &str) -> RemoteCommand {
             None => RemoteCommand::UseWhich,
         },
         "archive" => RemoteCommand::Archive,
+        "stop" => RemoteCommand::Stop,
         // Counted from one, because that is how the listing is printed. Zero is
         // not a row anybody was offered, so it is the same mistake as a word.
         "open" => match words.next().and_then(|n| n.parse::<usize>().ok()) {
@@ -144,6 +152,21 @@ mod tests {
         assert_eq!(parse("/here"), RemoteCommand::Here);
         assert_eq!(parse("/archive"), RemoteCommand::Archive);
         assert_eq!(parse("/open 2"), RemoteCommand::Open(2));
+        assert_eq!(parse("/stop"), RemoteCommand::Stop);
+    }
+
+    /// `/stop` is the one command whose misreading costs work rather than a
+    /// puzzled reply, so it is worth pinning that it is not reachable by
+    /// accident — a sentence about stopping is a prompt like any other.
+    #[test]
+    fn stop_is_a_command_and_a_sentence_about_it_is_not() {
+        assert_eq!(parse("/STOP@onehand_bot"), RemoteCommand::Stop);
+        assert_eq!(
+            parse("stop when the tests pass"),
+            RemoteCommand::Prompt("stop when the tests pass".into())
+        );
+        // And the escape sends the agent's own, if it has one.
+        assert_eq!(parse("//stop"), RemoteCommand::Prompt("/stop".into()));
     }
 
     /// `/open` counts into the listing as printed, which starts at one. A zero

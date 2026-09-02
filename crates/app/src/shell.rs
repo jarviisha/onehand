@@ -2565,6 +2565,14 @@ impl Shell {
             .update(cx, |pane, cx| pane.remote_prompt(uid, text, cx))
     }
 
+    /// Cancel the turn running on `uid`, from outside the app.
+    ///
+    /// `None` for a session this window does not hold, the same handshake the
+    /// other remote paths use.
+    pub fn remote_stop(&mut self, uid: u64, cx: &mut Context<Self>) -> Option<String> {
+        self.chat.update(cx, |pane, cx| pane.remote_stop(uid, cx))
+    }
+
     /// Answer a permission or a question from outside the app.
     ///
     /// `None` for a session this window does not hold, the same handshake the
