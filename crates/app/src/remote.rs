@@ -451,9 +451,19 @@ pub fn set_away(away: bool, cx: &mut App) -> String {
             .filter(|w| cx.active_window() == Some(w.handle))
             .map(|w| w.shell.clone())
             .collect();
-        for shell in active.into_iter().filter_map(|shell| shell.upgrade()) {
-            shell.update(cx, |shell, cx| shell.mark_active_seen(cx));
-        }
+        // **Deferred, and that is load-bearing.** One of the two ways in here is
+        // a click on the status bar, and a click handler is already holding the
+        // shell it was called on — the same shell this is about to reach into,
+        // since the switch that was clicked is drawn in the active window.
+        // Updating an entity that is already being updated is a panic, not a
+        // borrow error, so it takes the whole app down on the second press of a
+        // control whose entire job is to be pressed twice. Deferring runs this
+        // once that handler has let go, and costs a frame nobody can see.
+        cx.defer(move |cx| {
+            for shell in active.into_iter().filter_map(|shell| shell.upgrade()) {
+                shell.update(cx, |shell, cx| shell.mark_active_seen(cx));
+            }
+        });
     }
     if away {
         "Away. Everything gets announced here now, whatever is on screen."

@@ -244,7 +244,11 @@ plus `sendMessage` and `answerCallbackQuery`. Everything that is not the wire is
   died, so leaving it set is a mode with no exit short of a restart. And **coming back clears the badge
   on what is on screen**, on the active window only — every turn is unwatched while away, including
   one that ended in the conversation being read, and `unseen` is otherwise cleared when a window
-  *becomes* active, which never happens to one that was focused the whole time. The switch is
+  *becomes* active, which never happens to one that was focused the whole time. That clearing is
+  **deferred**, and has to be: one of the two ways in is a click on the status bar, whose handler is
+  already holding the very shell it reaches into, and updating an entity that is already being updated
+  is a panic rather than an error — it would take the app down on the second press of a control whose
+  whole job is to be pressed twice. The switch is
   drawn only where a channel is live, is an eye and its absence because that is literally the question
   it answers, and is silent when off and named in the standing-condition colour when on.
 - **In.** `/away` and `/here` set the presence fact above from wherever the user actually is —
@@ -325,7 +329,16 @@ plus `sendMessage` and `answerCallbackQuery`. Everything that is not the wire is
   same bot, and a token has one queue, so two pollers split the messages rather than each receiving
   them. Left as transient the two retry against each other for as long as both run and which one hears
   any message is a coin toss. The far side ends the *older* poll, so treating it as terminal means the
-  instance already running stands down and the one just launched keeps the bot.
+  instance already running stands down and the one just launched keeps the bot. **The handshake waits
+  the same way the poll does** — the app runs it once at startup, so a machine whose wifi is not up
+  yet, or that is behind a VPN still connecting, would otherwise have no bridge until somebody noticed
+  and restarted the app.
+- **Nothing the channel says about a failure carries the token.** The Bot API puts it in the URL
+  *path* and an HTTP client names the URL in its own error text, so a dropped connection — the most
+  ordinary thing that happens to a long poll — would print a working credential to stderr and undo
+  everything `remote::secret` is for. `Telegram::redact` stands between the two, and `call` takes the
+  bot and a method name rather than a finished URL precisely so the one place holding the credential is
+  also the one place that turns a failure into words.
 
 ### The chat pane
 

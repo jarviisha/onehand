@@ -10,9 +10,19 @@
 //! every sleeping laptop, every changed network and every restart on the far
 //! side. Those are retried here with a widening gap, and nothing is reported
 //! upward — a bridge that surfaced each of them would spend its life announcing
-//! that it is still working. Only a refusal that retrying cannot fix, which in
-//! practice means a token the far side will not accept, ends the stream with
-//! [`RemoteEvent::Disconnected`].
+//! that it is still working. **The handshake waits the same way**, because the
+//! app runs it once at startup and a machine whose wifi is not up yet would
+//! otherwise have no bridge until somebody restarted the app. Only a refusal
+//! that retrying cannot fix ends the stream with [`RemoteEvent::Disconnected`]:
+//! a token the far side will not accept, or another process already polling this
+//! same bot.
+//!
+//! **Nothing this module says about a failure carries the token.** The Bot API
+//! puts it in the URL path and an HTTP client names the URL in its own error
+//! text, so a dropped connection — the most ordinary thing that happens to a
+//! long poll — would print a working credential to stderr. [`Telegram::redact`]
+//! is what stands between those two facts, and every failure is worded through
+//! the one function that holds the token.
 
 use super::types::{Button, Outbound, RemoteChannel, RemoteEvent, RemoteRequest, ReqRx};
 use futures::channel::mpsc::Sender as EventTx;
@@ -89,8 +99,33 @@ impl Telegram {
     }
 
     /// The URL one method is called at.
+    ///
+    /// **The token is in the path**, which is the whole reason [`Self::redact`]
+    /// exists: this string must never reach a log, a message or an event.
     fn url(&self, method: &str) -> String {
         format!("{}/bot{}/{method}", self.root, self.token)
+    }
+
+    /// `text` with the credential taken out of it.
+    ///
+    /// **Every word this module says about a failure goes through here**, and it
+    /// is not belt-and-braces. This API puts the bot token in the *path*, and an
+    /// HTTP client's own error text names the URL it was talking to — so an
+    /// ordinary dropped connection, the most routine thing that happens to a
+    /// long poll, prints a working bearer credential to stderr. It would defeat
+    /// the whole point of keeping that credential out of the config file, and it
+    /// would do it on the first bad minute of wifi.
+    ///
+    /// A blank token is left alone rather than replaced: substituting the empty
+    /// string matches between every character and would turn a one-line message
+    /// into a wall of markers. Nothing gets that far — a blank token is refused
+    /// before a channel is built — but the guard costs one comparison and the
+    /// failure it prevents is silent.
+    fn redact(&self, text: String) -> String {
+        if self.token.is_empty() {
+            return text;
+        }
+        text.replace(&self.token, "<token>")
     }
 }
 
@@ -166,25 +201,43 @@ async fn run(bot: Telegram, requests: ReqRx, out: &mut EventTx<RemoteEvent>) -> 
 }
 
 /// `getMe`, for the bot's own name and to find out whether the token works.
+///
+/// **It waits rather than gives up**, with the same widening gap the poll uses,
+/// and only a refusal about the credential ends it. The handshake is the first
+/// thing this module does and the app runs it once, at startup — so treating a
+/// dead network as terminal means an app launched before wifi is up, or behind a
+/// VPN that has not connected, or on a captive portal, has no bridge at all
+/// until somebody notices and restarts it. That is the machine deciding it is
+/// offline for the day because of the second it was asked.
 async fn greet(client: &reqwest::Client, bot: &Telegram) -> Result<String, String> {
-    let reply: ApiReply<Me> = match call(client, &bot.url("getMe"), &json!({})).await {
-        Ok(reply) => reply,
-        Err(Trouble::Fatal(why)) => return Err(why),
-        // Anything else on the way up is still the network rather than the
-        // credential, and the poll loop is the half that knows how to wait --
-        // so the handshake reports what it saw and lets the caller decide,
-        // rather than starting a second retry policy here.
-        Err(Trouble::Transient(why) | Trouble::SlowDown(why, _)) => {
-            return Err(format!("could not reach Telegram: {why}"))
+    let mut backoff = BACKOFF_MIN;
+    loop {
+        match call::<Me>(client, bot, "getMe", &json!({}))
+            .await
+            .and_then(ApiReply::into_result)
+        {
+            Ok(me) => {
+                return Ok(me
+                    .username
+                    .map(|name| format!("@{name}"))
+                    .unwrap_or(me.first_name));
+            }
+            // The one answer worth ending on: a token the far side rejects is
+            // rejected identically every time, so retrying it is a loop that
+            // never terminates and never says why.
+            Err(Trouble::Fatal(why)) => {
+                return Err(format!("Telegram refused the token: {why}"));
+            }
+            Err(trouble) => {
+                eprintln!(
+                    "onehand: cannot reach Telegram yet ({}); retrying in {backoff:?}",
+                    trouble.reason()
+                );
+                tokio::time::sleep(backoff).await;
+                backoff = (backoff * 2).min(BACKOFF_MAX);
+            }
         }
-    };
-    let me = reply
-        .into_result()
-        .map_err(|t| t.into_reason("Telegram refused the token"))?;
-    Ok(me
-        .username
-        .map(|name| format!("@{name}"))
-        .unwrap_or(me.first_name))
+    }
 }
 
 /// Poll until the token stops working, widening the gap after every failure.
@@ -193,7 +246,6 @@ async fn poll_forever(
     bot: &Telegram,
     out: &mut EventTx<RemoteEvent>,
 ) -> Result<(), String> {
-    let url = bot.url("getUpdates");
     // The far side replays an update until it is acknowledged, and the
     // acknowledgement is the offset of the *next* one. Advanced only after a
     // batch has been handed on, so a poll that is cancelled or fails re-delivers
@@ -222,7 +274,7 @@ async fn poll_forever(
             "allowed_updates": ["message", "callback_query"],
         });
 
-        let updates: Vec<Update> = match call::<Vec<Update>>(client, &url, &body)
+        let updates: Vec<Update> = match call::<Vec<Update>>(client, bot, "getUpdates", &body)
             .await
             .and_then(ApiReply::into_result)
         {
@@ -272,17 +324,17 @@ async fn poll_forever(
 /// Carry out what the app asks, until it stops asking.
 async fn send_forever(client: &reqwest::Client, bot: &Telegram, mut requests: ReqRx) {
     while let Some(request) = requests.recv().await {
-        let (url, body) = match request {
-            RemoteRequest::Send(out) => (bot.url("sendMessage"), send_body(&out)),
+        let (method, body) = match request {
+            RemoteRequest::Send(out) => ("sendMessage", send_body(&out)),
             RemoteRequest::Ack { press_id, text } => (
-                bot.url("answerCallbackQuery"),
+                "answerCallbackQuery",
                 json!({
                     "callback_query_id": press_id,
                     "text": text.map(|t| clip(&t, ACK_TEXT_MAX)),
                 }),
             ),
         };
-        deliver(client, &url, &body).await;
+        deliver(client, bot, method, &body).await;
     }
 }
 
@@ -293,9 +345,9 @@ async fn send_forever(client: &reqwest::Client, bot: &Telegram, mut requests: Re
 /// does not land costs a notification rather than the thing it was about — and
 /// there is nowhere better to report it to, since the channel that would carry
 /// the report is the one that just failed.
-async fn deliver(client: &reqwest::Client, url: &str, body: &Value) {
+async fn deliver(client: &reqwest::Client, bot: &Telegram, method: &str, body: &Value) {
     for attempt in 0..=RATE_LIMIT_RETRIES {
-        match call::<Value>(client, url, body)
+        match call::<Value>(client, bot, method, body)
             .await
             .and_then(ApiReply::into_result)
         {
@@ -397,11 +449,6 @@ impl Trouble {
             Self::Fatal(why) | Self::Transient(why) | Self::SlowDown(why, _) => why,
         }
     }
-
-    /// The sentence to end the bridge with, given what the caller was doing.
-    fn into_reason(self, doing: &str) -> String {
-        format!("{doing}: {}", self.reason())
-    }
 }
 
 /// Whether a refusal from the API is one that retrying could ever fix.
@@ -466,21 +513,26 @@ impl<T> ApiReply<T> {
 ///
 /// A transport failure is transient by definition here: it is a socket, not an
 /// answer, so there is nothing in it that says the token is wrong.
+///
+/// **It takes the bot and the method rather than a URL**, so that the one place
+/// that knows the credential is also the one place that turns a failure into
+/// words. Handed a finished URL it could not redact what it was about to
+/// report, and the caller would have to remember to — which is the kind of
+/// thing one of three callers eventually does not.
 async fn call<T: for<'de> Deserialize<'de>>(
     client: &reqwest::Client,
-    url: &str,
+    bot: &Telegram,
+    method: &str,
     body: &Value,
 ) -> Result<ApiReply<T>, Trouble> {
+    let spoiled = |e: reqwest::Error| Trouble::Transient(bot.redact(e.to_string()));
     let response = client
-        .post(url)
+        .post(bot.url(method))
         .json(body)
         .send()
         .await
-        .map_err(|e| Trouble::Transient(e.to_string()))?;
-    response
-        .json::<ApiReply<T>>()
-        .await
-        .map_err(|e| Trouble::Transient(e.to_string()))
+        .map_err(spoiled)?;
+    response.json::<ApiReply<T>>().await.map_err(spoiled)
 }
 
 // ── The wire shapes this build reads ────────────────────────────────────────
@@ -554,6 +606,32 @@ mod tests {
 
     fn parse_update(text: &str) -> Option<RemoteEvent> {
         serde_json::from_str::<Update>(text).unwrap().into_event()
+    }
+
+    /// The failure this exists to prevent is silent and routine: an HTTP
+    /// client names the URL it was talking to, and this API puts the token in
+    /// the path, so one dropped connection prints a working credential.
+    #[test]
+    fn nothing_said_about_a_failure_carries_the_token() {
+        let bot = Telegram::new("8729105146:AAHbQn".into()).with_root("https://example.test");
+        let leaked = format!(
+            "error sending request for url ({}): connection closed",
+            bot.url("getUpdates")
+        );
+        let said = bot.redact(leaked);
+        assert!(!said.contains("AAHbQn"), "got {said:?}");
+        assert!(said.contains("<token>"), "got {said:?}");
+        // What is left still says what went wrong and where.
+        assert!(said.contains("getUpdates") && said.contains("connection closed"));
+    }
+
+    /// Substituting the empty string matches between every character and would
+    /// turn one line into a wall of markers. Nothing gets this far, and the
+    /// guard costs one comparison.
+    #[test]
+    fn a_blank_token_redacts_nothing() {
+        let bot = Telegram::new(String::new());
+        assert_eq!(bot.redact("plain words".into()), "plain words");
     }
 
     #[test]
