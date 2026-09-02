@@ -17,6 +17,7 @@ pub mod diff;
 pub mod editor;
 pub mod gitstat;
 pub mod parse;
+pub mod remote;
 pub mod tree;
 pub mod workspace;
 pub mod worktree;

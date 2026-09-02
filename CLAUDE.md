@@ -60,7 +60,7 @@ Tests are inline `#[cfg(test)]` modules — there is no `tests/` directory.
 | Path | Crate | What |
 |---|---|---|
 | `crates/app` | `onehand` | the GPUI front end + the binary |
-| `crates/core` | `onehand-core` | GUI-free logic: config, the workspace tree, ACP, the chat model, editor rules, completion, git status, worktree rules, the directory flatten |
+| `crates/core` | `onehand-core` | GUI-free logic: config, the workspace tree, ACP, the chat model, the remote bridge, editor rules, completion, git status, worktree rules, the directory flatten |
 | `vendor/gpui-terminal` | `gpui-terminal` | a vendored terminal grid + the interaction layer upstream never had |
 
 The workspace root is a **virtual manifest** — it owns nothing but the member list and the release
@@ -77,7 +77,7 @@ profile.
   that awaited tokio I/O directly would panic inside the UI process.
 
 Shared rules live in core, not restated per call site: `GitStatus::label`, `AppConfig::update_in_place`,
-`gitstat::read_blocking`, `RootEditors::open`, `Chat::apply`.
+`gitstat::read_blocking`, `RootEditors::open`, `Chat::apply`, `Away::headline`, `remote::press::option_at`.
 
 ### Library + thin binary
 
@@ -175,6 +175,93 @@ polls it, and dropping the stream kills the child — but that loop is `tokio::p
 which needs a tokio reactor GPUI does not have. So the stream is driven on a tokio runtime this
 module owns, and events cross to GPUI on a plain `futures` channel belonging to neither executor. The
 *request* side needs no bridge: an unbounded tokio send never touches the reactor.
+
+### The remote bridge
+
+A second channel into the app, for the times nobody is at the machine. Same shape as the ACP bridge
+above, deliberately: [crates/core/src/remote/](crates/core/src/remote/) is GUI-free and exposes the
+channel as `impl Stream`, and [crates/app/src/remote.rs](crates/app/src/remote.rs) drives it on a
+tokio runtime of its own with events crossing on a `futures` channel.
+
+**The layer is general; Telegram is the first adapter.** `remote::types` is the neutral model — chat
+ids are strings, a message carries text and rows of `Button`s, and `RemoteChannel::connect` folds its
+serve loop into the stream it returns. `remote::telegram` is the only implementation, a long poll
+plus `sendMessage` and `answerCallbackQuery`. Everything that is not the wire is pure and tested:
+`access` (who may reach the app), `command` (the little language a chat drives it with), `press`
+(what a button means), `secret` (where the credential comes from).
+
+- **The token is read and never written, and it is not in `onehand.toml`.** That file is rewritten
+  whole by the settings dialog and the agent manager, it is what people paste into a bug report, and
+  it is world-readable because everything else in it is a preference — so a bearer credential in it
+  would be printed back out on a schedule nobody chose. Two sources instead: `$ONEHAND_TELEGRAM_TOKEN`
+  (or whatever `token_env` names), then `<config_dir>/onehand/telegram.token`, a file whose only
+  content is the secret. The second exists because a desktop app is launched by clicking an icon and
+  there is no shell in that path to have set a variable in; its permissions are checked and a
+  group-or-world-readable one is complained about on stderr rather than refused, since refusing means
+  a feature that silently does not work. It is still plaintext on disk, and this is not a keyring.
+- **A chat not on `allowed_chats` is answered with nothing at all** — not a refusal, because a refusal
+  confirms that the bot is real, that it is running right now, and that there is a list to get onto.
+  **The empty list allows nobody**, so forgetting to fill it in fails closed. That same list is the
+  audience for everything the app says out: a notification exists to reach somebody who has not asked
+  for anything yet, so narrowing it to whoever spoke last would silence the bridge exactly when it has
+  been quiet.
+- **One process, one bot**, so the bridge lives on `Shared` rather than on a window — a second poll
+  against one token is two clients splitting one queue. What follows is the routing problem: an
+  incoming message belongs to no window, so `OpenWindow` carries a weak `Entity<Shell>` and the bridge
+  asks every window in turn. The window holding the session answers; a map of uid to window kept on
+  the bridge would need correcting on every open, close and restart and would be wrong in between.
+- **Out.** The three moments a session stops being self-explanatory to somebody not looking at it, as
+  `onehand_core::chat::Away` — a turn that finished, an ask that parked, an adapter that stopped
+  answering. The sentences are core's so the desktop notification and the chat cannot drift, and
+  `UserAsk::headline` still names permission and question apart underneath. **A finished turn carries
+  the end of the answer** (`Chat::answer_tail`) and a parked ask carries the question, both through
+  `Announcement::detail` — the line a reader on the far side needs and a reader at the window does
+  not, since the desktop notification is one keystroke from the transcript and a phone is not. The end
+  and not the beginning: an answer opens by restating the problem and closes by saying what was done
+  about it. **The silence rules are the
+  desktop's, unchanged**: a finished turn says nothing while any part of its window is in front of the
+  user, while a parked ask and a lost adapter speak unless the user is looking at *that* conversation
+  — an agent standing still stands still until somebody notices, and reading one conversation is when
+  a dot on another row goes unseen. The moment an ask parks is still `ApplyOutcome::asked_user`, not
+  `Chat::awaiting_permission`, which stays true for as long as the card is up.
+- **`Shared.away` is the one thing those rules cannot work out.** All of them ask whether the user is
+  looking, and answer it from the focused window and the conversation on screen — both of which stay
+  true in front of an empty chair, so a window nobody is at reports every turn as read. The user says
+  otherwise, and while they have said so every announcement goes out as though nothing were on screen.
+  It is read in exactly one place, `ChatPane::here`, which `watching` is then built on, so the switch
+  cannot reach one rule and miss another. Global rather than per window, because walking away from one
+  window is walking away from all of them, and **not persisted** — a launch that came up believing the
+  user was elsewhere would message somebody sitting in front of it about every turn. Thrown from the
+  status bar (`Shell::toggle_away`) or from the chat (`/away`, `/here`), both through
+  `remote::set_away`, since a mode with two setters is a mode that means two things. The switch is
+  drawn only where a channel is live, is an eye and its absence because that is literally the question
+  it answers, and is silent when off and named in the standing-condition colour when on.
+- **In.** `/away` and `/here` set the presence fact above from wherever the user actually is —
+  the point of having them, since the switch at the keyboard is no use to somebody who has already
+  left. `/sessions` numbers every session across every window and says what each is doing, in the
+  rail's own `signal_word` so one condition keeps one name. `/use <n>` points a chat at one, and
+  **the number is the session's uid, not its place in the list** — a place shifts when a session
+  closes, so a number read and then typed back would land on a different conversation. Anything not
+  starting with `/` is a prompt for the bound session, submitted straight into it rather than through
+  the composer (one composer serves the pane and it holds what the person at the keyboard was typing),
+  and queued rather than refused mid-turn, since the sender cannot see that a turn is in flight.
+  **A chat is bound by being told to and never by being guessed at**: one root runs as many sessions as
+  it is asked to, so "the active one" moves every time somebody clicks a rail row, and a message sent
+  from a train would land wherever the window happened to be pointing.
+- **Answering.** A parked ask goes out with the question and inline buttons. A press carries `uid`,
+  the card's position in the transcript, and the option's position in that card — positions and never
+  identifiers, because the payload is capped (64 bytes) and an option id is the agent's to choose.
+  **It names the exact card**, so a second permission parked before the button is pressed cannot take
+  the answer, and a card already settled says so rather than sliding onto the next one. Which option a
+  press means is `press::option_at`, and an index that names nothing **falls to a refusal** found by
+  `PermissionOption::weight` — an answer nobody can read must not be able to grant something. The same
+  `weight` decides the layout: grants on one row, refusals on the next, because on a phone those two
+  are a thumb-width apart. Only a one-field single-select question becomes choice buttons; every other
+  form gets *Skip* alone, which is always safe and is what stops a session standing still.
+- **A dropped long poll is the normal condition, not the failure.** Cuts, timeouts and rate limits are
+  retried with a widening gap inside the channel and nothing is reported upward; only a refusal
+  retrying cannot fix — a token the far side rejects — ends the stream with `Disconnected`. Same
+  spirit as the ACP client racing `child.wait()`: what cannot recover surfaces, what can does not.
 
 ### The chat pane
 
@@ -417,7 +504,10 @@ status bar.
   docks the conversation sits between are one decision and the panel they take their space from is
   where both belong.
   **The pointer is the contract**: a cell lights on hover iff pressing it does something; the agent
-  cell is a reading and is drawn flat.
+  cell is a reading and is drawn flat. The **away switch** sits at the right-hand end and is the one
+  cell that is a control before it is a reading — it appears only while a remote channel is live,
+  draws its icon alone while off, and takes a word and the standing-condition colour when on, because
+  that is the state worth saying out loud and the other is a switch waiting to be thrown.
   Two things it must not do. **Zoom is read from the panels, not from focus** (`zoomed_panels`):
   focus moves without telling the window, so a focus-derived factor would sit on screen stale with
   nothing to admit it. And the two dock facts it draws (`PanelFacts`) reach it through observers
@@ -579,6 +669,12 @@ embedded terminal has its own ANSI palette and does not follow the mode. Declara
 `appearance` is a bare TOML key, so it must be declared before the sections or saving the config fails
 outright.
 
+`[remote.telegram]` is off unless asked for — a bridge that came up by default would put a process on
+the network on the strength of a file nobody edited. It carries `enabled`, `allowed_chats` and an
+optional `token_env`, and **it deliberately has no key for the token**; see the remote bridge above
+for where that is read from and why it is not here. Declaration order does not bite for this one,
+since it is a table like `[font]` and `[icons]` and only the bare `appearance` key has to lead.
+
 `AppConfig` still carries `[font]` and `[icons]` sections the front end **mostly does not read**:
 decision D1 makes gpui-component's theme the look. They parse (so existing config files keep working)
 and are the obvious hook if per-role icon tinting comes back. The one exception is
@@ -591,6 +687,16 @@ Listed because a missing feature nobody wrote down reads as a bug in the ones th
 
 - **No command palette** (`Ctrl+Shift+P`). It is a feature — a command registry plus a filtered
   popup — not a keymap entry.
+- **The remote bridge does not stream the transcript.** A finished turn carries the *end* of the
+  agent's last answer (`Chat::answer_tail`) and nothing else: no tool cards, no diffs, no reasoning,
+  nothing mid-turn. That excerpt is there because "finished a turn" alone is a notification whose only
+  content is that there is content — it costs a walk back to the machine to find out whether anything
+  needs doing — and the close of an answer is where it says what it did. Carrying the whole
+  conversation is a different feature with its own questions (what a tool card becomes there, what a
+  diff looks like, what happens to an answer longer than a message), and half of it would be worse
+  than none.
+- **Only Telegram.** The layer underneath is general and `RemoteChannel` is what a second one would
+  implement, but nothing else does. There is no Discord adapter and no HTTP endpoint.
 - **`path:line:col` tokens in agent prose are not clickable.** The transcript renders prose through
   `TextView::markdown` and does not scan it for path tokens. Only a tool card's path header opens a
   file, and it carries no line — ACP's diff payload has no hunk offsets. Core's

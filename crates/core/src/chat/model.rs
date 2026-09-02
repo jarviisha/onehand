@@ -887,6 +887,45 @@ impl UserAsk {
     }
 }
 
+/// Something about a conversation worth saying somewhere the conversation is
+/// not.
+///
+/// The three moments a session stops being self-explanatory to somebody who is
+/// not looking at it: a turn it finished, an answer it is waiting for, and an
+/// agent that went away. They are one type because the sentences are the same
+/// family of sentence and are needed by every surface that speaks for a session
+/// from outside — a desktop notification today, a chat on a phone as well now,
+/// and whatever comes after that.
+///
+/// The words live here rather than at each of those surfaces for the reason
+/// [`UserAsk::headline`] gives about its own two: split across call sites, one
+/// of them drifts, and the day it does the two surfaces disagree about what the
+/// same agent is doing.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Away {
+    /// A turn settled while nobody was watching.
+    TurnEnded,
+    /// The agent parked something only the user can clear.
+    Asked(UserAsk),
+    /// The adapter died. The transcript stays as read-only history.
+    LinkLost,
+}
+
+impl Away {
+    /// One line naming the agent and what happened to it.
+    ///
+    /// Present tense for the two that are still true, past for the one that is
+    /// over, so a column of these from several projects reads as a list of what
+    /// needs doing rather than of what has happened.
+    pub fn headline(self, agent: &str) -> String {
+        match self {
+            Self::TurnEnded => format!("{agent} finished a turn"),
+            Self::Asked(ask) => ask.headline(agent),
+            Self::LinkLost => format!("{agent} stopped answering"),
+        }
+    }
+}
+
 /// Why a composed prompt cannot be sent right now.
 ///
 /// Ordered by which answer is the most useful one to give: a turn already
@@ -2337,6 +2376,79 @@ impl Chat {
         })
     }
     /// What this conversation is doing right now, for the header's status line —
+    /// The end of the agent's last answer, for anything that has to say what a
+    /// turn came to somewhere the transcript is not.
+    ///
+    /// **The end and not the beginning**, which is the whole point. An answer
+    /// opens by restating the problem and closes by saying what was done about
+    /// it, so a notification carrying the first paragraph is a notification
+    /// telling the user something they already knew, and one carrying the last
+    /// is the answer.
+    ///
+    /// The cut is moved forward to the next paragraph, failing that the next
+    /// line, failing that the next space — so the excerpt starts on something
+    /// rather than halfway through a word. All three are looked for in the same
+    /// short window, because a boundary hunted far enough would throw away most
+    /// of what was asked for: one unbroken run of characters is a URL or a blob
+    /// rather than prose, and beginning in the middle of one costs nothing worth
+    /// the rest of the answer. What is left is marked with a leading ellipsis,
+    /// because an excerpt that does not say it is one reads as the whole reply.
+    ///
+    /// `None` when the turn produced no prose at all: a turn can end on a tool
+    /// call or be cancelled before the agent says anything, and inventing a
+    /// sentence for that would be worse than the headline alone.
+    pub fn answer_tail(&self, max: usize) -> Option<String> {
+        // The live transcript only. `history` is a resumed conversation's
+        // archive, so reaching into it would let a session that has just come
+        // back announce, as the result of its first turn, the end of a turn from
+        // last week.
+        let text = self
+            .items
+            .iter()
+            .rev()
+            .find_map(|item| match item {
+                ChatItem::Agent(md) => Some(md.source.trim()),
+                _ => None,
+            })
+            .filter(|text| !text.is_empty())?;
+
+        let total = text.chars().count();
+        if total <= max {
+            return Some(text.to_string());
+        }
+        let cut = text
+            .char_indices()
+            .nth(total - max)
+            .map_or(0, |(index, _)| index);
+        let tail = &text[cut..];
+
+        // How far a boundary may be hunted for. A quarter of the excerpt is
+        // enough to clear a broken word or a stray list marker and not enough to
+        // turn a paragraph's worth of answer into two lines.
+        let give_up = tail
+            .char_indices()
+            .nth(max / 4)
+            .map_or(tail.len(), |(index, _)| index);
+        let head = &tail[..give_up];
+        // A paragraph break beats a line break: inside a list or a fenced block
+        // every line ends in one, and stopping at the first would start the
+        // excerpt on the second half of an enumeration. A space is the last
+        // resort and the common one -- in ordinary prose it is a character or
+        // two away, and it is what keeps the excerpt from opening on the tail of
+        // a broken word.
+        let start = head
+            .find("\n\n")
+            .map(|index| index + 2)
+            .or_else(|| head.find('\n').map(|index| index + 1))
+            .or_else(|| {
+                head.char_indices()
+                    .find(|(_, c)| c.is_whitespace())
+                    .map(|(index, c)| index + c.len_utf8())
+            })
+            .unwrap_or(0);
+        Some(format!("…{}", tail[start..].trim_start()))
+    }
+
     /// `None` when there is nothing to say. Derived from the link and, once
     /// that is up, from the live transcript while a turn is in flight.
     pub fn activity_status(&self) -> Option<String> {
@@ -3297,6 +3409,104 @@ mod tests {
             "the later prompt is the one meant"
         );
         assert_eq!(chat.unqueue().map(|q| q.text).as_deref(), Some("second"));
+    }
+
+    fn chat_with(items: Vec<ChatItem>) -> Chat {
+        let mut chat = Chat::new(1, PathBuf::from("/tmp/p"), "Claude Code".to_string(), None);
+        chat.items = items;
+        chat
+    }
+
+    fn agent(source: &str) -> ChatItem {
+        ChatItem::Agent(Md::parse(source))
+    }
+
+    /// A short answer goes whole and unmarked: an ellipsis in front of a
+    /// complete reply is the notification claiming something was cut off.
+    #[test]
+    fn a_short_answer_is_carried_whole() {
+        let chat = chat_with(vec![agent("  Done — the test passes now.  ")]);
+        assert_eq!(
+            chat.answer_tail(200).as_deref(),
+            Some("Done — the test passes now.")
+        );
+    }
+
+    /// The point of the whole thing: an answer opens by restating the problem
+    /// and closes by saying what was done, so the end is the half worth sending.
+    #[test]
+    fn a_long_answer_is_carried_from_its_end() {
+        // The closing paragraph is most of what the excerpt can hold, so its
+        // break is inside the search window and the excerpt starts on it.
+        let last = "So the fix is one line in the parser, and a test now covers it.";
+        let source = format!("{}\n\n{last}", "x".repeat(400));
+        let tail = chat_with(vec![agent(&source)]).answer_tail(80).unwrap();
+        assert_eq!(tail, format!("…{last}"));
+    }
+
+    /// A boundary hunted far enough would throw away most of what was asked
+    /// for, so past a quarter of the excerpt the cut simply stands. One
+    /// unbroken run that long is a URL or a blob, and starting inside one costs
+    /// nothing worth the rest of the answer.
+    #[test]
+    fn a_distant_boundary_is_not_worth_the_text_it_would_cost() {
+        let source = format!("{}\n\nend", "y".repeat(300));
+        let tail = chat_with(vec![agent(&source)]).answer_tail(100).unwrap();
+        assert!(tail.starts_with("…y"), "got {tail:?}");
+        assert!(tail.ends_with("end"));
+        // Still about the length that was asked for, rather than three letters.
+        assert!(
+            tail.chars().count() > 90,
+            "got {} chars",
+            tail.chars().count()
+        );
+    }
+
+    /// In prose the cut almost always lands inside a word, and the space after
+    /// it is a character or two away — so the common case is an excerpt that
+    /// opens on a whole word for almost no cost.
+    #[test]
+    fn an_excerpt_does_not_open_in_the_middle_of_a_word() {
+        let source = "the quick brown fox jumps over the lazy dog and keeps on going";
+        // 20 characters back from the end lands on the "d" of "dog"; the space
+        // one character later is what the excerpt actually starts after.
+        let tail = chat_with(vec![agent(source)]).answer_tail(20).unwrap();
+        assert_eq!(tail, "…and keeps on going");
+        assert!(source.ends_with(tail.trim_start_matches('…')));
+    }
+
+    /// A turn can end on a tool call or be cancelled before the agent says
+    /// anything. Inventing a sentence for that is worse than the headline alone.
+    #[test]
+    fn a_turn_with_no_prose_has_no_tail() {
+        assert_eq!(chat_with(vec![]).answer_tail(100), None);
+        assert_eq!(chat_with(vec![agent("   \n  ")]).answer_tail(100), None);
+        assert_eq!(
+            chat_with(vec![ChatItem::User(UserMsg::text("hi"))]).answer_tail(100),
+            None
+        );
+    }
+
+    /// The *last* answer, not the first: a turn that spoke, ran a tool and
+    /// spoke again ends on the second one, and that is the summary.
+    #[test]
+    fn the_last_answer_is_the_one_that_is_carried() {
+        let chat = chat_with(vec![
+            agent("Let me look at the parser."),
+            ChatItem::User(UserMsg::text("ok")),
+            agent("Fixed it."),
+        ]);
+        assert_eq!(chat.answer_tail(200).as_deref(), Some("Fixed it."));
+    }
+
+    /// Cutting by bytes would split a multi-byte character and produce an
+    /// excerpt that is not text at all. Every boundary here is a character.
+    #[test]
+    fn a_tail_is_cut_by_characters_and_not_by_bytes() {
+        let source = "Đã sửa xong phần phân tích cú pháp của trình biên dịch nhé";
+        let tail = chat_with(vec![agent(source)]).answer_tail(10).unwrap();
+        assert!(tail.ends_with("nhé"), "got {tail:?}");
+        assert!(source.ends_with(tail.trim_start_matches('…')));
     }
 
     /// Until the handshake lands there is no agent to be doing anything, so

@@ -22,6 +22,7 @@ mod dialogs;
 mod guards;
 mod icons;
 mod rail;
+mod remote;
 pub mod shell;
 mod state;
 mod statusbar;

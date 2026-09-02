@@ -36,9 +36,13 @@ fn notify_desktop(summary: String, body: String, urgency: notify_rust::Urgency) 
 }
 
 /// Desktop notification for a turn that finished out of sight.
+///
+/// The sentence is core's, for the same reason the parked-ask one below is: two
+/// surfaces now speak for a session from outside it, and a wording written at
+/// each of them is a wording that drifts.
 pub fn notify_turn_ended(agent: String, root: String) {
     notify_desktop(
-        format!("{agent} finished a turn"),
+        onehand_core::chat::Away::TurnEnded.headline(&agent),
         format!("in {root}"),
         // Normal, so it follows the desktop's own timeout: a finished turn is
         // news, and news that has been read stops being worth space.

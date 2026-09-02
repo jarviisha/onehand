@@ -87,6 +87,8 @@ pub fn status_bar(
     let session = root.and_then(|root| root.active_session());
     let facts = shell.panel_facts(cx);
     let zoomed = shell.zoomed_panels(cx);
+    let remote_live = crate::state::Shared::global(cx).remote.is_live();
+    let away = crate::remote::is_away(cx);
 
     div()
         .h_flex()
@@ -173,6 +175,43 @@ pub fn status_bar(
         }))
         // Everything after this sits at the right end.
         .child(div().flex_1())
+        // The away switch, and only where there is somewhere for the
+        // announcements to go: a control whose entire effect is on a channel
+        // this machine has not been given is a control that does nothing.
+        //
+        // **An eye, because that is literally the question it answers.** Every
+        // rule about whether something is worth saying out loud asks whether the
+        // user is looking at it, and works the answer out from the focused
+        // window and the conversation on screen -- both of which stay true in
+        // front of an empty chair. This is where somebody says they are not
+        // looking, so the shape is the looking and its absence.
+        //
+        // Silent when off and named when on, for the reason the rail marks
+        // nothing on an idle session: a row where everything is labelled is a
+        // row where no label is read. Off it is a control and shows only its
+        // icon; on it is a standing condition and says so in the colour standing
+        // conditions get here.
+        .when(remote_live, |bar| {
+            bar.child(
+                pressable("away", cx)
+                    .when(away, |cell| cell.text_color(warning))
+                    .child(
+                        Icon::new(if away { IconName::EyeOff } else { IconName::Eye }).size_3(),
+                    )
+                    .when(away, |cell| cell.child("Away"))
+                    .on_click(cx.listener(|shell: &mut Shell, _: &ClickEvent, _, cx| {
+                        shell.toggle_away(cx);
+                    }))
+                    .tooltip(move |window, cx| {
+                        Tooltip::new(if away {
+                            "You're marked away — everything is being announced on the remote channel. Click when you're back."
+                        } else {
+                            "Click when you leave — announcements stop assuming you can see this window"
+                        })
+                        .build(window, cx)
+                    }),
+            )
+        })
         // Unsaved work is a standing condition, not news, so it is the one thing
         // here drawn in a colour: a toast would fade and leave the user believing
         // the buffer is on disk.

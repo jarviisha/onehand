@@ -17,7 +17,7 @@ pub use activity::{
 };
 pub use find::{compute_matches, export_markdown, item_search_text, TranscriptMatch};
 pub use model::{
-    ApplyOutcome, AskItem, Chat, ChatItem, Link, Md, MdId, NoticeLevel, PermItem, PlanItem,
+    ApplyOutcome, AskItem, Away, Chat, ChatItem, Link, Md, MdId, NoticeLevel, PermItem, PlanItem,
     QueuedPrompt, SubmitBlock, TermView, Thought, ToolItem, TranscriptItemId, TurnAnswer, UserAsk,
     UserMsg, MAX_TERM_BYTES,
 };
