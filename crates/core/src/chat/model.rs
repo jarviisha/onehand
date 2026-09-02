@@ -845,6 +845,46 @@ pub struct ApplyOutcome {
     /// A turn settled: time to archive, and to badge the session if nobody was
     /// watching.
     pub turn_ended: bool,
+    /// The agent parked something only the user can clear, and which of the two
+    /// it was. `None` on every other event.
+    ///
+    /// A third fact rather than a second reading of the transcript: whether a
+    /// conversation *is* waiting is [`Chat::awaiting_permission`], which scans
+    /// every item and answers the same for as long as the card is up. What a
+    /// notification needs is the *moment* it started waiting, and only the event
+    /// knows that.
+    pub asked_user: Option<UserAsk>,
+}
+
+/// What an agent parked in front of the user, and what to call it.
+///
+/// The two are one type because everything downstream treats them alike -- both
+/// stop the turn dead, both are cleared only by an answer, both draw the same
+/// mark on the rail -- and differ in exactly one thing, which is the sentence
+/// that names them. Splitting that sentence across the two call sites that need
+/// it is how one of them ends up saying "approval" about a question.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum UserAsk {
+    /// The agent wants to run something and is waiting to be allowed to.
+    Permission,
+    /// The agent asked the user a question and is waiting for the answer.
+    Question,
+}
+
+impl UserAsk {
+    /// One line naming the agent and what it is waiting for.
+    ///
+    /// Written here rather than at the notification, because it is a sentence
+    /// about the conversation and not about a platform: the same words belong in
+    /// anything else that ever has to say a session is blocked. Present tense
+    /// and about the agent, so a row of them from several projects reads as a
+    /// list of who is waiting rather than of what happened.
+    pub fn headline(self, agent: &str) -> String {
+        match self {
+            Self::Permission => format!("{agent} is waiting for your approval"),
+            Self::Question => format!("{agent} has a question for you"),
+        }
+    }
 }
 
 /// Why a composed prompt cannot be sent right now.
@@ -1491,6 +1531,16 @@ impl Chat {
         // an event that is conversation activity is an event that rewrote what
         // is on screen.
         let turn_ended = matches!(event, AcpEvent::TurnEnded { .. });
+        // Read off the event for the same reason `turn_ended` is: this is the
+        // one instant the answer is true, and asking the transcript instead
+        // would answer the same on every chunk that arrives while the card is
+        // up. An elicitation that cannot be drawn never reaches here -- the
+        // client declines those where they arrive rather than parking them.
+        let asked_user = match event {
+            AcpEvent::Permission(_) => Some(UserAsk::Permission),
+            AcpEvent::Elicitation(_) => Some(UserAsk::Question),
+            _ => None,
+        };
         if !metadata {
             self.touch();
         }
@@ -1653,6 +1703,7 @@ impl Chat {
         ApplyOutcome {
             transcript_changed: self.revision != before,
             turn_ended,
+            asked_user,
         }
     }
 
@@ -3598,5 +3649,49 @@ mod tests {
         assert!(outcome.turn_ended);
         assert!(outcome.transcript_changed, "the turn's card settles too");
         assert!(!chat.busy);
+    }
+
+    /// The reducer reports the *moment* a session starts waiting on the user,
+    /// which is not a question the transcript can answer.
+    ///
+    /// `awaiting_permission` stays true for as long as the card is unanswered,
+    /// so a caller reading it would say "waiting" again on every chunk that
+    /// arrived afterwards -- and something that says a session is blocked, out
+    /// loud and outside the window, must say it once per ask.
+    #[test]
+    fn an_ask_is_reported_once_and_says_which_kind_it_was() {
+        let (mut chat, _rx) = chat_with_tx();
+        assert!(chat
+            .apply(AcpEvent::AgentChunk("working".into()))
+            .asked_user
+            .is_none());
+
+        let parked = chat.apply(AcpEvent::Permission(permission("Run cargo test")));
+        assert_eq!(parked.asked_user, Some(UserAsk::Permission));
+
+        // The card is still up, so the transcript still reads as waiting --
+        // and the next event must not announce it a second time.
+        let after = chat.apply(AcpEvent::AgentChunk("still here".into()));
+        assert!(chat.awaiting_permission());
+        assert!(after.asked_user.is_none());
+
+        let asked = chat.apply(AcpEvent::Elicitation(ask_item().req));
+        assert_eq!(asked.asked_user, Some(UserAsk::Question));
+    }
+
+    /// The two asks are named apart. Both stop the turn dead and draw the same
+    /// mark, so the sentence is the only thing that says which one is waiting --
+    /// and telling someone an agent wants "approval" when it asked them a
+    /// question sends them looking for a button that is not there.
+    #[test]
+    fn each_ask_names_itself_and_the_agent() {
+        assert_eq!(
+            UserAsk::Permission.headline("Claude Code"),
+            "Claude Code is waiting for your approval"
+        );
+        assert_eq!(
+            UserAsk::Question.headline("Claude Code"),
+            "Claude Code has a question for you"
+        );
     }
 }

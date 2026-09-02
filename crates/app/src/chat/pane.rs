@@ -425,6 +425,9 @@ impl ChatPane {
                         pane.turn_ended_detached(uid, &agent, &root_label, cx);
                         cx.emit(ChatPaneEvent::WorkTreeTouched);
                     }
+                    ChatEvent::AwaitingUser(ask) => {
+                        pane.awaiting_user_detached(uid, *ask, &agent, &root_label, cx);
+                    }
                     // Re-emitted rather than acted on: the transcript says what
                     // was asked for, and where a file goes is the shell's call.
                     // Matched exhaustively so a new variant cannot be added and
@@ -1022,6 +1025,36 @@ impl ChatPane {
         // background session whose rail row the user can already see.
         if !here {
             super::session::notify_turn_ended(agent.to_string(), root.to_string());
+        }
+        cx.notify();
+    }
+
+    /// An agent stopped and is waiting on the user. Say so outside the window
+    /// unless they are already looking at the conversation that asked.
+    ///
+    /// **A wider rule than a finished turn's**, which says nothing while any
+    /// part of this window is in front of the user. The two are not the same
+    /// event: a turn that ended has done its work and the badge is a
+    /// convenience, while a parked question is an agent standing still, and it
+    /// stands still for as long as it takes the user to notice. Reading one
+    /// conversation is exactly when the dot on another one's rail row goes
+    /// unseen, so anything but the asking conversation being on screen here
+    /// earns the notification.
+    ///
+    /// No badge is set: `unseen` is about a turn nobody read, and the rail
+    /// already carries this the whole time it is true, from the transcript's own
+    /// unanswered card rather than from a flag that would have to be cleared.
+    fn awaiting_user_detached(
+        &mut self,
+        uid: u64,
+        ask: onehand_core::chat::UserAsk,
+        agent: &str,
+        root: &str,
+        cx: &mut Context<Self>,
+    ) {
+        let watching = self.active == Some(uid) && cx.active_window() == Some(self.window);
+        if !watching {
+            super::session::notify_awaiting_user(ask, agent.to_string(), root.to_string());
         }
         cx.notify();
     }

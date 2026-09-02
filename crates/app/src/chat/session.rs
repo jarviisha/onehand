@@ -18,18 +18,51 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 /// Emitted when the transcript changed in a way the hosting pane cares about.
-/// Desktop notification for a turn that finished out of sight.
+/// Say something on the desktop, outside the app's own window.
 ///
 /// Fire-and-forget on its own thread: `show()` blocks on the notification bus,
-/// and this must never be what the UI loop is waiting on.
-pub fn notify_turn_ended(agent: String, root: String) {
+/// and this must never be what the UI loop is waiting on. A bus that is absent
+/// or refusing is not worth reporting either — the thing being announced is
+/// already on screen inside the app, and the announcement is the copy.
+fn notify_desktop(summary: String, body: String, urgency: notify_rust::Urgency) {
     std::thread::spawn(move || {
         let _ = notify_rust::Notification::new()
             .appname("onehand")
-            .summary(&format!("{agent} finished a turn"))
-            .body(&format!("in {root}"))
+            .summary(&summary)
+            .body(&body)
+            .urgency(urgency)
             .show();
     });
+}
+
+/// Desktop notification for a turn that finished out of sight.
+pub fn notify_turn_ended(agent: String, root: String) {
+    notify_desktop(
+        format!("{agent} finished a turn"),
+        format!("in {root}"),
+        // Normal, so it follows the desktop's own timeout: a finished turn is
+        // news, and news that has been read stops being worth space.
+        notify_rust::Urgency::Normal,
+    );
+}
+
+/// Desktop notification for an agent that has stopped and is waiting on the
+/// user.
+///
+/// The sentence is core's, so the two things that can park a session are named
+/// the same way wherever either is announced.
+pub fn notify_awaiting_user(ask: onehand_core::chat::UserAsk, agent: String, root: String) {
+    notify_desktop(
+        ask.headline(&agent),
+        format!("in {root}"),
+        // Critical, which on most desktops means it does not fade on its own.
+        // A finished turn that is missed costs the time until it is noticed; a
+        // question that is missed costs the agent standing still until someone
+        // comes back to it, and a notification that expires while the agent is
+        // still blocked is the app quietly withdrawing the only thing that said
+        // so outside its own window.
+        notify_rust::Urgency::Critical,
+    );
 }
 
 /// Identify an image by its magic bytes.
@@ -74,6 +107,10 @@ pub enum ChatEvent {
     /// A turn settled. The pane decides whether that is worth a badge or a
     /// desktop notification -- it is the half that knows what is on screen.
     TurnEnded,
+    /// The agent parked a permission or a question and is waiting on the user.
+    /// The pane decides whether it needs saying outside the window, for the same
+    /// reason it decides that about a finished turn.
+    AwaitingUser(onehand_core::chat::UserAsk),
     /// The adapter went away. The session stays on screen as read-only history.
     Disconnected,
     /// A path in the transcript was clicked. The chat has no business opening
@@ -188,6 +225,9 @@ impl ChatSession {
                             cx.emit(ChatEvent::Appended);
                             if outcome.turn_ended {
                                 cx.emit(ChatEvent::TurnEnded);
+                            }
+                            if let Some(ask) = outcome.asked_user {
+                                cx.emit(ChatEvent::AwaitingUser(ask));
                             }
                             cx.notify();
                         });

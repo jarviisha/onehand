@@ -379,6 +379,19 @@ status bar.
 - **Transient status is a notification**, pushed with `window.push_notification`. The one exception is
   the Workbench's save-conflict line, which is a standing condition rather than news: a toast that
   fades leaves the user believing the save went through. It is cleared by whatever answers it.
+- **Two things are said on the *desktop*, outside the window** (`chat::session::notify_desktop`, over
+  `notify-rust`, fire-and-forget on its own thread because `show()` blocks on the bus): a turn that
+  finished, and an agent that has parked a permission or a question and stopped. Both are announced by
+  the *pane*, because it is the half that knows what is on screen — but under **different rules, and
+  that is the point**. A finished turn says nothing while any part of its window is in front of the
+  user, since the rail badge is already there and the work is done. A parked ask says something unless
+  the user is looking at *the conversation that asked*: an agent waiting is an agent standing still
+  for as long as it takes to notice, and reading one conversation is exactly when a dot on another
+  row goes unseen. It is sent at critical urgency so most desktops will not fade it while the agent is
+  still blocked. The *moment* an ask parks is `ApplyOutcome::asked_user` — the reducer's answer, not
+  `Chat::awaiting_permission`, which stays true for as long as the card is up and would re-announce a
+  blocked session on every chunk that followed. The sentence is `UserAsk::headline` in core, so
+  permission and question are named apart wherever either is announced.
 - **The panel arrangement persists** into the workspace's `onehand-workspace.toml` — Workbench width,
   terminal height, whether each is open, and the rail's width
   (`onehand_core::config::PanelLayout`). Five values, not gpui-component's whole `DockAreaState`:
