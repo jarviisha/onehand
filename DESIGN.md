@@ -90,6 +90,15 @@ One window hosts exactly one workspace. The frame is a navigation **rail** plus 
   conversations must not be told it has none for the half-second a directory
   read takes. One line of grey text saying *Start a session in X* was the first
   thing a new user saw and the one screen in the app with nothing to press.
+  **The list scrolls inside the page; the page never grows past the panel.** The
+  column is centred while it fits and bounded by the panel when it does not, and
+  only the conversations scroll — *New session* and the count of what was left
+  out stay where they are, the first because it is why most people are on this
+  page and the second because a page cannot say a bound bit from under the fold.
+  Centring an overflowing column spends the overflow at *both* ends, so the rows
+  that ran off did so with nothing to scroll them back. The same holds for the
+  resume picker, where *Start a new conversation* is the way out and must never
+  be the thing that scrolled away.
   Each row also carries the one way to **delete** a conversation, and it is a
   word in the danger tint rather than an icon: everything else this app offers
   can be done again, this cannot, and a destructive control should be read

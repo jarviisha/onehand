@@ -77,8 +77,9 @@ const LIST_HEAD: Rems = rems(1.);
 ///
 /// The page is an entrance, not an archive browser: the newest handful is what
 /// "where was I" needs, and a project worked in for months would otherwise draw
-/// an unbounded column into a container that does not scroll. What the cap cut
-/// off is said on screen rather than silently dropped.
+/// a column of hundreds for the sake of the two or three anybody came for. What
+/// the cap cut off is said on screen rather than silently dropped. The list
+/// scrolls as well, because this many rows already outgrows a short window.
 const HOME_ROWS: usize = 8;
 
 /// The project the pane is standing in while no conversation is showing.
@@ -1265,29 +1266,48 @@ impl ChatPane {
                     .gap_3()
                     .w_full()
                     .max_w(px(560.))
+                    // Bounded by the panel, for the same reason the project
+                    // page's column is: this list is every conversation the
+                    // agent has had in the project, and a column taller than
+                    // the panel is centred into rows nothing can reach.
+                    .max_h_full()
+                    .min_h_0()
                     .child(div().font_semibold().child("Resume a conversation"))
-                    .children(past.into_iter().enumerate().map(|(i, meta)| {
-                        // The agent is not named here: this picker belongs to a
-                        // session that already has one, and every row in it was
-                        // run by that same agent.
-                        let subtitle = format!(
-                            "{} · {} items",
-                            rel_time(now, meta.updated),
-                            meta.item_count
-                        );
-                        conversation_card(
-                            ("resume", i),
-                            meta.title.clone().into(),
-                            subtitle.into(),
-                            cx,
-                        )
-                        .on_click(cx.listener(
-                            move |pane: &mut Self, _, _, cx| {
-                                let meta = pane.choices_of(uid).get(i).cloned();
-                                pane.start(uid, meta, cx);
-                            },
-                        ))
-                    }))
+                    // The rows are what grows, so the rows are what scrolls. The
+                    // heading above and the way out below stay where they are --
+                    // a picker whose *Start a new conversation* scrolls off the
+                    // bottom is a screen with no way out of it.
+                    .child(
+                        div()
+                            .id("resume-choices")
+                            .v_flex()
+                            .gap_3()
+                            .w_full()
+                            .min_h_0()
+                            .overflow_y_scroll()
+                            .children(past.into_iter().enumerate().map(|(i, meta)| {
+                                // The agent is not named here: this picker belongs to a
+                                // session that already has one, and every row in it was
+                                // run by that same agent.
+                                let subtitle = format!(
+                                    "{} · {} items",
+                                    rel_time(now, meta.updated),
+                                    meta.item_count
+                                );
+                                conversation_card(
+                                    ("resume", i),
+                                    meta.title.clone().into(),
+                                    subtitle.into(),
+                                    cx,
+                                )
+                                .on_click(cx.listener(
+                                    move |pane: &mut Self, _, _, cx| {
+                                        let meta = pane.choices_of(uid).get(i).cloned();
+                                        pane.start(uid, meta, cx);
+                                    },
+                                ))
+                            })),
+                    )
                     .child(
                         crate::controls::action("resume-fresh")
                             .primary()
@@ -1379,6 +1399,17 @@ impl ChatPane {
                             .gap_3()
                             .w_full()
                             .max_w(px(560.))
+                            // Bounded by the panel it sits in, so the page is
+                            // centred while it fits and fills the space when it
+                            // does not. Without this the column takes its
+                            // content's height whatever that is, and a project
+                            // with a full list of archives on a short window
+                            // pushed its own rows out through the top and bottom
+                            // of the panel -- unreachable, because the centring
+                            // spends the overflow at both ends and there is
+                            // nothing to scroll.
+                            .max_h_full()
+                            .min_h_0()
                             // The project's name is *not* repeated here. The
                             // header above says it now, in the same place it
                             // says a conversation's name, and printing it again
@@ -1399,70 +1430,87 @@ impl ChatPane {
                             .children(
                                 note.map(|note| div().text_xs().text_color(muted).child(note)),
                             )
+                            // The archives are the one part of this page that
+                            // grows, so they are the part that scrolls. *New
+                            // session* above and the count of what was left out
+                            // below stay put: the first is why most people are
+                            // on this page, and the second is the page saying a
+                            // bound bit, which it cannot do from under the fold.
                             .children((!shown.is_empty()).then(|| {
                                 div()
-                                    .text_xs()
-                                    .text_color(muted)
-                                    .child("Past conversations")
-                            }))
-                            .children(shown.into_iter().enumerate().map(|(i, meta)| {
-                                // The agent *is* named here, unlike in a session's own
-                                // picker: this list crosses every agent that has worked
-                                // in the project, and resuming a row starts a session on
-                                // the one that held it.
-                                let subtitle = format!(
-                                    "{} · {} items · {}",
-                                    rel_time(now, meta.updated),
-                                    meta.item_count,
-                                    meta.agent
-                                );
-                                let (agent, archive) =
-                                    (SharedString::from(meta.agent.clone()), meta.dir.clone());
-                                let dir = meta.dir.clone();
-                                let name = SharedString::from(meta.title.clone());
-                                conversation_card(
-                                    ("home", i),
-                                    meta.title.clone().into(),
-                                    subtitle.into(),
-                                    cx,
-                                )
-                                .on_click(cx.listener(move |_: &mut Self, _, _, cx| {
-                                    cx.emit(ChatPaneEvent::StartSession {
-                                        agent: Some(agent.clone()),
-                                        resume: Some(archive.clone()),
-                                    });
-                                }))
-                                // A word rather than a glyph, and this is the one
-                                // control in the app that earns the distinction:
-                                // everything else it offers can be done again --
-                                // a closed session respawns, a removed project is
-                                // added back -- and a deleted conversation cannot.
-                                //
-                                // Inside the card, so it is plainly about the
-                                // conversation beside it rather than about the row
-                                // it happened to be nearest. That puts one clickable
-                                // inside another, which is what the stop below is
-                                // for: without it the press that asks to delete a
-                                // conversation also opens it.
-                                .child(
-                                    crate::controls::action(("home-delete", i))
-                                        .ghost()
-                                        .small()
-                                        .text_color(danger)
-                                        .label("Delete")
-                                        .tooltip("Delete this conversation")
-                                        .on_click(cx.listener(
-                                            move |pane: &mut Self, _, window, cx| {
-                                                cx.stop_propagation();
-                                                pane.confirm_delete(
-                                                    dir.clone(),
-                                                    name.clone(),
-                                                    window,
-                                                    cx,
-                                                );
-                                            },
-                                        )),
-                                )
+                                    .id("project-history")
+                                    .v_flex()
+                                    .gap_3()
+                                    .w_full()
+                                    .min_h_0()
+                                    .overflow_y_scroll()
+                                    .child(
+                                        div()
+                                            .text_xs()
+                                            .text_color(muted)
+                                            .child("Past conversations"),
+                                    )
+                                    .children(shown.into_iter().enumerate().map(|(i, meta)| {
+                                        // The agent *is* named here, unlike in a session's own
+                                        // picker: this list crosses every agent that has worked
+                                        // in the project, and resuming a row starts a session on
+                                        // the one that held it.
+                                        let subtitle = format!(
+                                            "{} · {} items · {}",
+                                            rel_time(now, meta.updated),
+                                            meta.item_count,
+                                            meta.agent
+                                        );
+                                        let (agent, archive) = (
+                                            SharedString::from(meta.agent.clone()),
+                                            meta.dir.clone(),
+                                        );
+                                        let dir = meta.dir.clone();
+                                        let name = SharedString::from(meta.title.clone());
+                                        conversation_card(
+                                            ("home", i),
+                                            meta.title.clone().into(),
+                                            subtitle.into(),
+                                            cx,
+                                        )
+                                        .on_click(cx.listener(move |_: &mut Self, _, _, cx| {
+                                            cx.emit(ChatPaneEvent::StartSession {
+                                                agent: Some(agent.clone()),
+                                                resume: Some(archive.clone()),
+                                            });
+                                        }))
+                                        // A word rather than a glyph, and this is the one
+                                        // control in the app that earns the distinction:
+                                        // everything else it offers can be done again --
+                                        // a closed session respawns, a removed project is
+                                        // added back -- and a deleted conversation cannot.
+                                        //
+                                        // Inside the card, so it is plainly about the
+                                        // conversation beside it rather than about the row
+                                        // it happened to be nearest. That puts one clickable
+                                        // inside another, which is what the stop below is
+                                        // for: without it the press that asks to delete a
+                                        // conversation also opens it.
+                                        .child(
+                                            crate::controls::action(("home-delete", i))
+                                                .ghost()
+                                                .small()
+                                                .text_color(danger)
+                                                .label("Delete")
+                                                .tooltip("Delete this conversation")
+                                                .on_click(cx.listener(
+                                                    move |pane: &mut Self, _, window, cx| {
+                                                        cx.stop_propagation();
+                                                        pane.confirm_delete(
+                                                            dir.clone(),
+                                                            name.clone(),
+                                                            window,
+                                                            cx,
+                                                        );
+                                                    },
+                                                )),
+                                        )
+                                    }))
                             }))
                             .children((hidden > 0).then(|| {
                                 div()
