@@ -555,7 +555,10 @@ impl Shell {
                         shell.confirm_delete_conversation(dir.clone(), window, cx)
                     }
                     E::StartSession { agent, resume } => {
-                        shell.start_session(agent.clone(), resume.clone(), window, cx)
+                        // The uid is only wanted where the caller has to name
+                        // what it just made; a click on the page has the new
+                        // session in front of it.
+                        let _ = shell.start_session(agent.clone(), resume.clone(), window, cx);
                     }
                     // Said the same way every other failed write is said, and
                     // for a stronger reason: a workspace that will not save can
@@ -1872,13 +1875,15 @@ impl Shell {
     /// been renamed or removed in the agent manager — a conversation the user
     /// can see listed must still be openable, and which agent replays it is the
     /// smaller loss.
+    /// Returns the new session's uid, for a caller that has to say which one it
+    /// just made.
     pub fn start_session(
         &mut self,
         agent: Option<SharedString>,
         resume: Option<PathBuf>,
         window: &mut Window,
         cx: &mut Context<Self>,
-    ) {
+    ) -> Option<u64> {
         let idx = agent
             .and_then(|name| {
                 Shared::global(cx)
@@ -1887,7 +1892,7 @@ impl Shell {
                     .position(|spec| spec.name == name.as_ref())
             })
             .unwrap_or(0);
-        self.spawn_session(idx, resume, window, cx);
+        self.spawn_session(idx, resume, window, cx)
     }
 
     /// Mint a session on the active root and show it, resuming `archive` if one
@@ -1903,21 +1908,21 @@ impl Shell {
         archive: Option<PathBuf>,
         window: &mut Window,
         cx: &mut Context<Self>,
-    ) {
+    ) -> Option<u64> {
         self.agent_menu_open = false;
         let Some(spec) = Shared::global(cx).agents.get(idx).cloned() else {
             window.push_notification(Notification::warning("No agents configured"), cx);
-            return;
+            return None;
         };
         let uid = cx.update_global::<Shared, _>(|shared, _| shared.next_uid());
-        if self.window.workspace.add_session(spec, uid).is_some() {
-            if let Some(archive) = archive {
-                self.chat
-                    .update(cx, |pane, _| pane.resume_next(uid, archive));
-            }
-            self.show_active_session(window, cx);
-            cx.notify();
+        self.window.workspace.add_session(spec, uid)?;
+        if let Some(archive) = archive {
+            self.chat
+                .update(cx, |pane, _| pane.resume_next(uid, archive));
         }
+        self.show_active_session(window, cx);
+        cx.notify();
+        Some(uid)
     }
 
     /// Show a Workbench mode, opening the dock if it is closed.
@@ -2470,6 +2475,129 @@ impl Shell {
 
     /// Open a recents row: read its config off the UI loop, then funnel into
     /// the single open path so dedup-focus applies here too.
+    /// Say whether the user is at the machine, from the switch in the status
+    /// bar.
+    ///
+    /// The rule itself is the bridge's, so the switch and the `/away` command
+    /// cannot come to different conclusions. What this adds is telling the
+    /// channel: the switch is thrown here and its whole effect is felt over
+    /// there, so the chat that is about to start speaking up — or stop — is owed
+    /// the sentence saying which.
+    pub fn toggle_away(&mut self, cx: &mut Context<Self>) {
+        let away = !crate::remote::is_away(cx);
+        let said = crate::remote::set_away(away, cx);
+        crate::remote::broadcast(said, cx);
+    }
+
+    /// Forget the badge on the conversation this window is showing.
+    ///
+    /// A pass-through, for the bridge: coming back from away has to clear it,
+    /// and the bridge is where both ways of coming back meet.
+    pub fn mark_active_seen(&mut self, cx: &mut Context<Self>) {
+        self.chat.update(cx, |pane, cx| pane.mark_active_seen(cx));
+    }
+
+    /// Every project root this window holds, as `(path, label)`.
+    ///
+    /// For the bridge, which has to know what there is before it can go looking
+    /// on disk for what was said in it.
+    pub fn remote_roots(&self) -> Vec<(PathBuf, String)> {
+        self.window
+            .workspace
+            .roots
+            .iter()
+            .map(|root| (root.path.clone(), root.label.clone()))
+            .collect()
+    }
+
+    /// Reopen a saved conversation on `root`, from outside the app.
+    ///
+    /// `None` for a root this window does not hold, which is the same handshake
+    /// the prompt and press paths use to find the window that does.
+    ///
+    /// **The project is named rather than assumed.** Minting a session goes to
+    /// the workspace's active root, which is whichever project somebody last
+    /// clicked — so without selecting it first, a conversation reopened from a
+    /// train would land on an unrelated checkout and run its first prompt there.
+    /// Returns the new session's number, so the reply can name what a later
+    /// `/use` would.
+    pub fn remote_open(
+        &mut self,
+        root: &Path,
+        archive: PathBuf,
+        agent: Option<SharedString>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> Option<u64> {
+        let idx = self
+            .window
+            .workspace
+            .roots
+            .iter()
+            .position(|candidate| candidate.path == root)?;
+        self.select_root(idx, window, cx);
+        self.start_session(agent, Some(archive), window, cx)
+    }
+
+    /// Every session this window is running, for the bridge that has to describe
+    /// them to somebody who is not looking at the window.
+    ///
+    /// A pass-through rather than a second walk of the workspace tree: the pane
+    /// is where a session's running state actually lives, and the tree's
+    /// `Session` is its description rather than its condition.
+    pub fn remote_sessions(&self, cx: &App) -> Vec<crate::remote::RemoteSession> {
+        self.chat.read(cx).remote_sessions(cx)
+    }
+
+    /// Send a prompt that arrived from outside the app to `uid`.
+    ///
+    /// `None` means this window does not hold that session, which is how the
+    /// bridge finds the window that does without keeping a map of its own — a
+    /// map that would have to be corrected every time a session is opened,
+    /// closed or restarted, and would be wrong in between.
+    pub fn remote_prompt(
+        &mut self,
+        uid: u64,
+        text: &str,
+        cx: &mut Context<Self>,
+    ) -> Option<crate::remote::Handled> {
+        self.chat
+            .update(cx, |pane, cx| pane.remote_prompt(uid, text, cx))
+    }
+
+    /// The pickers `uid`'s agent offers, for a chat that wants to change one.
+    ///
+    /// `None` for a session this window does not hold, the same handshake the
+    /// other remote paths use.
+    pub fn remote_options(
+        &self,
+        uid: u64,
+        cx: &App,
+    ) -> Option<(String, Vec<Vec<onehand_core::remote::types::Button>>)> {
+        self.chat.read(cx).remote_options(uid, cx)
+    }
+
+    /// Cancel the turn running on `uid`, from outside the app.
+    ///
+    /// `None` for a session this window does not hold, the same handshake the
+    /// other remote paths use.
+    pub fn remote_stop(&mut self, uid: u64, cx: &mut Context<Self>) -> Option<String> {
+        self.chat.update(cx, |pane, cx| pane.remote_stop(uid, cx))
+    }
+
+    /// Answer a permission or a question from outside the app.
+    ///
+    /// `None` for a session this window does not hold, the same handshake the
+    /// prompt path uses to find the right window.
+    pub fn remote_answer(
+        &mut self,
+        press: onehand_core::remote::Press,
+        cx: &mut Context<Self>,
+    ) -> Option<String> {
+        self.chat
+            .update(cx, |pane, cx| pane.remote_answer(press, cx))
+    }
+
     pub fn open_recent(&mut self, dir: std::path::PathBuf, cx: &mut Context<Self>) {
         cx.spawn(async move |shell, cx| {
             let loaded = cx
@@ -2853,6 +2981,9 @@ fn open_window(workspace: Workspace, cx: &mut App) {
             app_id: Some(APP_ID.into()),
             ..Default::default()
         };
+        // Filled in by the window builder below and read out after it, because
+        // the shell does not exist until then and the registry entry needs it.
+        let mut built: Option<gpui::WeakEntity<Shell>> = None;
         let handle = cx
             .open_window(options, |window, cx| {
                 let shell = cx.new(|cx| {
@@ -2866,15 +2997,22 @@ fn open_window(workspace: Workspace, cx: &mut App) {
                     shell.show_active_session(window, cx);
                     shell
                 });
+                built = Some(shell.downgrade());
                 cx.new(|cx| Root::new(shell, window, cx))
             })
             .expect("failed to open window");
 
         cx.update(|cx| {
+            // A window with no shell is not a thing this can build, so there is
+            // nothing to degrade to and nothing worth reporting -- but the
+            // registry is what deduplicates windows, so an entry is filed either
+            // way rather than the whole window being dropped from it.
+            let shell = built.expect("the window was built without a shell");
             cx.update_global::<Shared, _>(|shared, _| {
                 shared.windows.push(OpenWindow {
                     storage_dir,
                     handle: handle.into(),
+                    shell,
                 });
             });
         });
@@ -2887,8 +3025,13 @@ pub fn boot(cx: &mut App) {
     let (cfg, config_path) = AppConfig::load_resolved();
     let mono = cfg.font.monospace.clone();
     let appearance = cfg.appearance;
+    let remote = cfg.remote.clone();
     cx.set_global(Shared::from_config(cfg, config_path));
     init_keymap(cx);
+    // After the global exists, because that is where the bridge is filed, and
+    // before the first window, so a channel that takes a moment to answer has
+    // already been asked by the time there is anything to announce.
+    crate::remote::boot(&remote, cx);
     // Before a mode is chosen, because choosing one applies whichever of the
     // two configs this installs.
     crate::theme::install(cx);

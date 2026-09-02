@@ -21,6 +21,20 @@ pub struct OpenWindow {
     /// workspace, which can never be deduplicated because it has no identity.
     pub storage_dir: Option<PathBuf>,
     pub handle: gpui::AnyWindowHandle,
+    /// This window's shell.
+    ///
+    /// **The one way in from outside the window tree.** Everything the app does
+    /// to itself starts from a click and therefore already has a shell in hand;
+    /// a message arriving over the remote bridge starts from a global with no
+    /// window in it at all, and it still has to find the session it names. The
+    /// window handle alone cannot answer that — it opens onto the overlay root
+    /// rather than onto the shell underneath it.
+    ///
+    /// Weak, so this list can never be the reason a closed window's shell stays
+    /// alive. The prune on close removes the entry anyway; a strong handle would
+    /// make the moment between the close and the prune a leak, and the moment
+    /// after a bug that only shows up if the prune is ever missed.
+    pub shell: gpui::WeakEntity<crate::shell::Shell>,
 }
 
 /// Global, process-wide state. One per `App`.
@@ -51,6 +65,39 @@ pub struct Shared {
     pub recents: AppState,
     /// The tokio runtime every ACP adapter runs on (see [`crate::acp`]).
     pub acp: AcpRuntime,
+    /// The channel a device outside this machine reaches the app through.
+    ///
+    /// Global rather than per window because a bot token identifies one bot: a
+    /// second poll against the same token is two clients pulling from one
+    /// queue, each seeing half the messages. What follows is that an incoming
+    /// message belongs to no window in particular and has to find one, which is
+    /// what [`OpenWindow::shell`] is for.
+    pub remote: crate::remote::RemoteBridge,
+    /// The user has left the machine.
+    ///
+    /// **The one thing the app cannot work out for itself.** Every rule about
+    /// whether something is worth announcing asks the same question — is the
+    /// user looking at what this is about — and answers it from the focused
+    /// window and the conversation on screen. Both of those are still perfectly
+    /// true in front of an empty chair: the window is focused, the transcript is
+    /// showing, and the app concludes it has been read. This is where somebody
+    /// says otherwise, and while it is set every announcement goes out as though
+    /// nothing were on screen at all.
+    ///
+    /// Global, not per window, because it is a fact about the person rather than
+    /// about a window — walking away from one window is walking away from all of
+    /// them.
+    ///
+    /// **Not persisted, deliberately.** It describes right now, and a launch
+    /// that came up believing the user was elsewhere would send a message about
+    /// every turn to somebody sitting in front of it.
+    pub away: bool,
+    /// The task feeding [`Self::remote`]'s events into the app.
+    ///
+    /// Held rather than detached, for the reason every held task here is: it
+    /// owns the receiving end, and dropping that is what tells the channel
+    /// nobody is listening.
+    pub _remote_pump: Option<gpui::Task<()>>,
 }
 
 impl Global for Shared {}
@@ -68,6 +115,12 @@ impl Shared {
             // A runtime this process cannot start means no agent can ever run,
             // which is the whole app -- there is nothing useful to degrade to.
             acp: AcpRuntime::new().expect("failed to start the agent runtime"),
+            // Started separately, after the global exists: bringing a channel up
+            // means reading a credential and spawning a poll, and neither of
+            // those is something a constructor should be able to fail at.
+            remote: crate::remote::RemoteBridge::off(),
+            away: false,
+            _remote_pump: None,
         }
     }
 

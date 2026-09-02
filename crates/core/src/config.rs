@@ -305,6 +305,40 @@ pub struct IconConfig {
     pub discovery: Option<String>,
 }
 
+/// `[remote]` — the ways a device outside this machine can reach the app.
+///
+/// One table per channel rather than one flat set of keys, because the channels
+/// are meant to accumulate: a second one is a second table, and nothing about
+/// the first has to be renamed to make room for it.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct RemoteConfig {
+    pub telegram: TelegramConfig,
+}
+
+/// `[remote.telegram]` — everything about the Telegram bridge **except the
+/// token**, which deliberately has no key here at all. See [`token_sources`].
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct TelegramConfig {
+    /// Off unless asked for. A bridge that came up by default would put a
+    /// process on the network on the strength of a file the user never edited.
+    pub enabled: bool,
+    /// The chat ids allowed to reach the app, as Telegram numbers them.
+    ///
+    /// **The empty list allows nobody**, and that is the useful reading rather
+    /// than a degenerate one: an enabled bridge with no list is a bot anyone who
+    /// finds it can drive, so the failure of forgetting to fill this in has to
+    /// be "nothing works" and not "everything works for everyone".
+    ///
+    /// Strings rather than numbers because the whole bridge speaks ids as
+    /// strings — Telegram numbers its chats, the next channel will not.
+    pub allowed_chats: Vec<String>,
+    /// The environment variable the bot token is read from, when the default
+    /// name does not suit. See [`token_sources`].
+    pub token_env: Option<String>,
+}
+
 /// The whole `onehand.toml`. (A legacy `[profile]`
 /// section in an existing file is an unknown key now — serde ignores it.)
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -321,6 +355,7 @@ pub struct AppConfig {
     pub agents: Vec<AgentSpec>,
     pub font: FontConfig,
     pub icons: IconConfig,
+    pub remote: RemoteConfig,
 }
 
 impl Default for AppConfig {
@@ -330,6 +365,7 @@ impl Default for AppConfig {
             agents: default_agents(),
             font: FontConfig::default(),
             icons: IconConfig::default(),
+            remote: RemoteConfig::default(),
         }
     }
 }
@@ -859,6 +895,46 @@ mod tests {
         let cfg = AppConfig::parse(text).unwrap();
         assert_eq!(cfg.agents[0].name, "Old");
         assert_eq!(cfg.agents[0].command, "claude");
+    }
+
+    /// The bridge is off unless the file asks for it, and its list starts
+    /// empty — an enabled bridge with nobody on the list answers nobody, which
+    /// is the failure that has to be the safe one.
+    #[test]
+    fn the_remote_bridge_is_off_until_asked_for() {
+        let cfg = AppConfig::parse("").unwrap();
+        assert!(!cfg.remote.telegram.enabled);
+        assert!(cfg.remote.telegram.allowed_chats.is_empty());
+        assert_eq!(cfg.remote.telegram.token_env, None);
+    }
+
+    #[test]
+    fn a_remote_section_parses_and_keeps_everything_else() {
+        let cfg = AppConfig::parse(
+            "[remote.telegram]\n\
+             enabled = true\n\
+             allowed_chats = [\"123\", \"-100456\"]\n\
+             token_env = \"MY_BOT\"\n",
+        )
+        .unwrap();
+        assert!(cfg.remote.telegram.enabled);
+        assert_eq!(cfg.remote.telegram.allowed_chats, ["123", "-100456"]);
+        assert_eq!(cfg.remote.telegram.token_env.as_deref(), Some("MY_BOT"));
+        assert_eq!(cfg.agents, default_agents());
+    }
+
+    /// There is no key for the token, and there must not become one: the file
+    /// is rewritten whole by the settings dialog, so anything in it is printed
+    /// back out on a schedule nobody chose.
+    #[test]
+    fn a_token_in_the_config_file_is_not_a_key() {
+        let cfg = AppConfig::parse("[remote.telegram]\nenabled = true\ntoken = \"123:secret\"\n")
+            .expect("an unknown key must not fail the file");
+        let text = cfg.to_toml().unwrap();
+        assert!(
+            !text.contains("123:secret"),
+            "the config round-tripped a token back out: {text}"
+        );
     }
 
     #[test]
