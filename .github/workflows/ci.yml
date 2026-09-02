@@ -1,0 +1,156 @@
+# CI for onehand.
+#
+# The shape of this file is dictated by one number: the app's dependency graph
+# is 616 crates, and `[profile.dev.package."*"]` builds every one of them at
+# opt-level 3. On a 4-vCPU hosted runner a cold build of that is half an hour.
+# So the work is split by what it costs rather than by what it is:
+#
+#   fmt     — no compilation at all (cargo-fmt asks for metadata `--no-deps`),
+#             so it answers in seconds and catches the cheapest mistakes first.
+#   core    — `onehand-core` is framework-free by design: 120 crates instead of
+#             616. Most of the test suite lives there, so this job is where a
+#             real failure usually shows up, minutes before the heavy ones land.
+#   app     — the front end plus the vendored terminal. Pays the full gpui build.
+#   clippy  — a job of its own, not a step inside `app`, because cargo records
+#             RUSTC_WRAPPER in a unit's fingerprint: clippy re-compiles the whole
+#             dependency graph whatever it is placed next to. Since the second
+#             build is unavoidable, running it in parallel costs the same total
+#             and halves the wall clock.
+#
+# Every cargo invocation is `--locked`. `gpui` is a git dependency carrying no
+# rev on purpose, which makes Cargo.lock the only thing pinning it — a run that
+# silently re-resolved would not be testing the build anybody else gets.
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  # Incremental artifacts are only useful to a target directory that gets reused
+  # by the next edit; here they are megabytes written straight into the cache.
+  CARGO_INCREMENTAL: 0
+
+jobs:
+  fmt:
+    name: Format
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+      # Through the Makefile, never bare `cargo fmt`: `vendor/gpui-terminal` is
+      # a workspace member, and reformatting it would bury our patches under
+      # hundreds of lines of churn on upstream code.
+      - run: make fmt-check
+
+  core:
+    name: Core tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          # Only the default branch writes the cache. Branches read it, so a
+          # short-lived branch cannot evict the entry every other job depends on
+          # (the repo-wide cache limit is 10 GB and this graph is not small).
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      # No apt packages here, and that is the point: core links no window
+      # system. If this job ever needs them, the invariant below has been broken.
+      - run: cargo test --locked -p onehand-core
+
+      # The invariant that keeps core portable across front ends. `-i` and not a
+      # grep: the checkout directory is itself named onehand-gpui, so a grep for
+      # the string always "finds" something.
+      - name: Core stays framework-free
+        run: |
+          if cargo tree --locked -p onehand-core -i gpui > /dev/null 2>&1; then
+            echo "::error::onehand-core has picked up a gpui dependency"
+            cargo tree --locked -p onehand-core -i gpui
+            exit 1
+          fi
+
+  app:
+    name: App tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      # Debug info for test binaries is the largest thing this job writes, and
+      # nothing here is stepped through in a debugger. A panic still names the
+      # function; only file:line goes.
+      CARGO_PROFILE_TEST_DEBUG: 0
+    steps:
+      - uses: actions/checkout@v4
+
+      # Link-time dependencies of gpui_platform (x11 + wayland + font-kit) and
+      # of the clipboard. No test opens a window, so there is no display server
+      # and no Xvfb here.
+      - name: System libraries
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            pkg-config cmake clang \
+            libfontconfig-dev libfreetype-dev \
+            libwayland-dev libxkbcommon-dev libxkbcommon-x11-dev \
+            libx11-dev libxcb1-dev libasound2-dev
+
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+
+      # The dependency profile override exists so that `cargo run` produces an
+      # app whose frames are not built out of unoptimized layout, shaping and
+      # grid code. CI renders no frames, so it pays that cost for nothing —
+      # dropping it roughly halves a cold build.
+      #
+      # `-p gpui-terminal` is deliberate: the vendored terminal has real tests
+      # of its own, and it is already compiled here as a dependency.
+      - name: Tests
+        run: |
+          cargo test --locked -p onehand -p gpui-terminal \
+            --config 'profile.dev.package."*".opt-level=0'
+
+  clippy:
+    name: Clippy
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: System libraries
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            pkg-config cmake clang \
+            libfontconfig-dev libfreetype-dev \
+            libwayland-dev libxkbcommon-dev libxkbcommon-x11-dev \
+            libx11-dev libxcb1-dev libasound2-dev
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+
+      # Through the Makefile again: it scopes clippy to our two crates and adds
+      # `--no-deps`, without which the vendor's upstream warnings arrive on every
+      # run and a warning of ours has nine of them to hide behind.
+      - name: Clippy
+        run: make clippy CARGO="cargo --locked" CLIPPY_EXTRA="-- -D warnings"

@@ -10,6 +10,14 @@ CARGO ?= cargo
 ROOT  ?=
 T     ?=
 
+# Extra arguments for clippy — CI passes `-- -D warnings` through here.
+#
+# Not `RUSTFLAGS=-D warnings`, which is the usual spelling and is wrong for this
+# workspace: cargo applies RUSTFLAGS to every crate it compiles, dependencies
+# included, so a warning in somebody else's 600-crate graph would fail our lint
+# run. Passing the flag after `--` scopes it to the crates clippy is linting.
+CLIPPY_EXTRA ?=
+
 # Formatting and linting stop at onehand's own crates.
 #
 # `vendor/gpui-terminal` is a workspace member, so a bare `cargo fmt` reformats
@@ -55,7 +63,7 @@ clippy: ## Lint onehand's crates with clippy
 	# `--no-deps`: gpui-terminal is a path dependency *and* a workspace member,
 	# so without it clippy reports the vendor's upstream warnings on every run
 	# and a real one has nine to hide behind.
-	$(CARGO) clippy $(OURS) --all-targets --no-deps
+	$(CARGO) clippy $(OURS) --all-targets --no-deps $(CLIPPY_EXTRA)
 
 lint: fmt-check clippy ## Formatting check + clippy
 
