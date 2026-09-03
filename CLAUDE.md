@@ -954,9 +954,19 @@ Listed because a missing feature nobody wrote down reads as a bug in the ones th
   resolves** — check it against the enumeration. The terminal is the sharpest case: its grid is
   *measured* from a shaped glyph, so a family that does not resolve does not merely change the
   typeface — the cell is sized from one font while the row is drawn in another and every column lands
-  past its glyph. `terminal::spawn_shell` hands the grid the resolved family for exactly that reason;
+  past its glyph. `terminal::spawn_pty` hands the grid the resolved family for exactly that reason;
   the vendored default is the string `monospace`, which is a CSS generic and not a family anything
   enumerates.
+- **The measured cell has to reach the view, not only the paint.** `TerminalRenderer::measure_cell`
+  needs the window, and the window exists only inside the canvas paint — so it runs on a *clone* of
+  the renderer, and writing the result back to the view's own copy is a separate step. Skip it and
+  every pixel-to-cell conversion the view does divides by the constructor's guesses instead
+  (0.6 and 1.4 times the font size). **Nothing about the drawing looks wrong**, because the drawing
+  uses the measured clone; what is wrong is everything aimed *at* the drawing — the cell a click lands
+  on drifts further from the pointer the lower down the grid it is, and the height guess is out by
+  more than the width one, so the drift is mostly vertical. It reads as a context menu appearing in
+  the wrong place, or a drag selecting the wrong line, rather than as a measurement that never
+  arrived.
 - **`mx_auto` does nothing inside a `gpui::list` row.** The list lays every row out as its own
   *layout root*, and a root has no containing block for an auto margin to take its share of, so the
   margin resolves to zero — silently, with no warning and nothing wrong-looking in the row itself.

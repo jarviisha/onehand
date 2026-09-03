@@ -1600,6 +1600,28 @@ impl Render for TerminalView {
                         drop(term);
                         let _ = entity.update(cx, |view: &mut Self, _| {
                             view.preedit_bounds = area;
+                            // onehand patch: the measured cell has to reach the
+                            // view, not just the paint.
+                            //
+                            // `measure_cell` runs on a *clone* of the renderer,
+                            // because measuring needs the window and the window
+                            // is only here. Left at that, `self.renderer` keeps
+                            // the estimates its constructor guessed -- 0.6 and
+                            // 1.4 times the font size -- and every pixel-to-cell
+                            // conversion the view does divides by those instead
+                            // of by the real lattice.
+                            //
+                            // Nothing about the drawing looks wrong, because the
+                            // drawing uses the measured clone. What is wrong is
+                            // everything aimed *at* the drawing: the row a click
+                            // lands on drifts further from the pointer the lower
+                            // down the grid it is, and the height guess is out by
+                            // more than the width one, so the drift is mostly
+                            // vertical. That is a wrong selection, a wrong mouse
+                            // report, and a wrong number of lines per scroll
+                            // notch.
+                            view.renderer.cell_width = measured_renderer.cell_width;
+                            view.renderer.cell_height = measured_renderer.cell_height;
                         });
                         window.handle_input(
                             &focus_handle,
