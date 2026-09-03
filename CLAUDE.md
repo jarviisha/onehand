@@ -545,6 +545,25 @@ only when bytes arrive. **`OSC 52` is answered for writes and refused for reads*
 system clipboard is the point, and answering a read hands the clipboard to whatever is running in the
 terminal, including at the far end of an ssh session.
 
+**Focus is reported** (mode 1004, `view::focus_report`), and it is the app's own reason for existing:
+an editor asks for this so it can re-read a file that was written while the user was elsewhere, and
+here "elsewhere" is one click away with an agent writing those same files. The window's *activation*
+counts as well as the focus tree's — the caret being in the grid while the whole window sits behind
+another application is not having the keyboard. The first frame reports nothing, because it is not a
+change.
+
+**The attributes that colour a cell are honoured, through one function.**
+`render::cell_ink` applies `INVERSE` (how most colour schemes draw a status line, a visual selection
+and a search hit — unswapped they come out dark on dark, which reads as a broken theme), then `DIM`,
+then `HIDDEN`, in that order and for the background pass, the glyph pass and the cursor's repaint
+alike. **One function and three callers is the point**: three places working the same rule out
+separately is exactly how the cursor came to be drawn over the character underneath it.
+`render::underline_style` draws every underline the protocol has — curly for `UNDERCURL`, straight for
+the double, dotted and dashed forms GPUI cannot express — and takes the colour from
+`Cell::underline_color`, which is the half that carries the meaning: a language server marks an error
+and a warning with the same squiggle and a different colour. Strikethrough is drawn too; it had been
+hard-coded to `None`.
+
 ### Window shell
 
 [crates/app/src/shell.rs](crates/app/src/shell.rs) owns the window: the rail plus a `DockArea` whose
@@ -957,6 +976,13 @@ Listed because a missing feature nobody wrote down reads as a bug in the ones th
   past its glyph. `terminal::spawn_pty` hands the grid the resolved family for exactly that reason;
   the vendored default is the string `monospace`, which is a CSS generic and not a family anything
   enumerates.
+- **`use super::*` in a test module inside `vendor/gpui-terminal` breaks `#[test]`.** That file imports
+  gpui with a glob, and gpui exports an attribute macro of its own called `test`. Globbing it into a
+  test module shadows the built-in attribute, and `gpui::test` expands to code carrying `#[test]` —
+  which resolves to `gpui::test` again, until rustc gives up with *"recursion limit reached while
+  expanding `#[test]`"*. Nothing in the message points at the glob. Import the two or three items the
+  tests actually need by name. This is what upstream's note about "macro expansion issues with the
+  test attribute" was, and it is why `view.rs` had no tests at all.
 - **The measured cell has to reach the view, not only the paint.** `TerminalRenderer::measure_cell`
   needs the window, and the window exists only inside the canvas paint — so it runs on a *clone* of
   the renderer, and writing the result back to the view's own copy is a separate step. Skip it and

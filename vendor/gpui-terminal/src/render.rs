@@ -71,7 +71,8 @@ use alacritty_terminal::term::{Term, TermMode};
 use alacritty_terminal::vte::ansi::{Color, NamedColor};
 use gpui::{
     App, Bounds, Edges, Font, FontFeatures, FontStyle, FontWeight, Hsla, Pixels, Point,
-    SharedString, Size, TextRun, UnderlineStyle, Window, px, quad, transparent_black,
+    SharedString, Size, StrikethroughStyle, TextRun, UnderlineStyle, Window, px, quad,
+    transparent_black,
 };
 
 /// A batched run of text with consistent styling.
@@ -121,6 +122,95 @@ pub struct BackgroundRect {
 
     /// Background color
     pub color: Hsla,
+}
+
+/// onehand patch: the ink a cell is actually drawn with.
+///
+/// Three attributes change a cell's colours rather than its shape, and each one
+/// is a thing a program *says with colour* -- so ignoring them does not lose a
+/// flourish, it loses the meaning:
+///
+/// - **`INVERSE`** swaps foreground and background. It is how a great many
+///   colour schemes draw a status line, a visual selection and a search hit;
+///   left unswapped those come out as dark text on a dark background, which
+///   reads as a broken theme rather than a missing attribute.
+/// - **`DIM`** is the half-bright foreground old terminals had. Nothing else in
+///   the palette expresses it, so it is applied to the lightness here.
+/// - **`HIDDEN`** is text a program has drawn but does not want read -- a typed
+///   password being the whole reason it exists. Showing it is the one failure in
+///   this list that matters outside the screen.
+///
+/// Returned as a pair from **one** function on purpose. The colours are needed
+/// by the background pass, by the glyph pass and by the cursor repainting the
+/// character it sits on, and three places working the same rule out separately
+/// is exactly how the cursor came to be drawn over the character underneath it.
+///
+/// Order matters: invert first, then dim, then hide. Dimming an inverted cell
+/// has to dim what is now the foreground, and hiding is the last word whatever
+/// the other two decided.
+fn cell_ink(palette: &ColorPalette, cell: &Cell, colors: &Colors) -> (Hsla, Hsla) {
+    let mut fg = palette.resolve(cell.fg, colors);
+    let mut bg = palette.resolve(cell.bg, colors);
+
+    if cell.flags.contains(Flags::INVERSE) {
+        std::mem::swap(&mut fg, &mut bg);
+    }
+    if cell.flags.contains(Flags::DIM) {
+        fg.l *= 0.7;
+    }
+    if cell.flags.contains(Flags::HIDDEN) {
+        fg = bg;
+    }
+
+    (fg, bg)
+}
+
+/// onehand patch: how a cell's underline is drawn, if it has one.
+///
+/// **The colour is the half that carries information**, not the shape. A
+/// language server marks an error and a warning with the same squiggle in
+/// different colours, and it sets that colour per cell with its own escape
+/// (`SGR 58`) rather than through the foreground — so a renderer that reads the
+/// flag and not [`Cell::underline_color`] draws every diagnostic in the colour
+/// of the text it is under, which is to say all of them alike.
+///
+/// The shape is the half that is approximated. GPUI's underline is a thickness,
+/// a colour and a wavy flag, so a curly underline is exact and the double,
+/// dotted and dashed forms all come out straight. That is a deliberate trade
+/// against owning underline painting outright: a straight line where a dashed
+/// one was asked for still says *there is something marked here*, which is the
+/// whole job, while drawing nothing says the opposite.
+fn underline_style(
+    palette: &ColorPalette,
+    cell: &Cell,
+    colors: &Colors,
+    fg: Hsla,
+) -> Option<UnderlineStyle> {
+    if !cell.flags.intersects(Flags::ALL_UNDERLINES) {
+        return None;
+    }
+    Some(UnderlineStyle {
+        thickness: px(1.0),
+        color: Some(
+            cell.underline_color()
+                .map_or(fg, |color| palette.resolve(color, colors)),
+        ),
+        wavy: cell.flags.contains(Flags::UNDERCURL),
+    })
+}
+
+/// onehand patch: the strikethrough, if the cell carries one.
+///
+/// Kept beside [`underline_style`] because it is the same shape of omission:
+/// the flag was parsed and the renderer hard-coded `None` past it, so text a
+/// program had struck out came through indistinguishable from text it had not.
+fn strikethrough_style(cell: &Cell, fg: Hsla) -> Option<StrikethroughStyle> {
+    cell.flags
+        .contains(Flags::STRIKEOUT)
+        .then_some(StrikethroughStyle {
+            thickness: px(1.0),
+            color: Some(fg),
+        })
 }
 
 impl BackgroundRect {
@@ -325,12 +415,13 @@ impl TerminalRenderer {
                 continue;
             }
 
-            // Extract cell styling
-            let fg_color = self.palette.resolve(cell.fg, colors);
-            let bg_color = self.palette.resolve(cell.bg, colors);
+            // Extract cell styling. onehand patch: through `cell_ink`, so the
+            // background this pass paints and the foreground the glyph pass
+            // draws agree about which way round an inverted cell is.
+            let (fg_color, bg_color) = cell_ink(&self.palette, &cell, colors);
             let bold = cell.flags.contains(Flags::BOLD);
             let italic = cell.flags.contains(Flags::ITALIC);
-            let underline = cell.flags.contains(Flags::UNDERLINE);
+            let underline = cell.flags.intersects(Flags::ALL_UNDERLINES);
 
             // Get the character (or space if empty)
             let ch = if cell.c == ' ' || cell.c == '\0' {
@@ -730,16 +821,17 @@ impl TerminalRenderer {
                 }
 
                 let x = origin.x + self.cell_width * (*col_idx as f32);
-                let fg_color = self.palette.resolve(cell.fg, colors);
+                // onehand patch: the same rule the background pass used, so an
+                // inverted cell is drawn light-on-dark rather than twice dark.
+                let (fg_color, _) = cell_ink(&self.palette, cell, colors);
 
                 // For regular text, apply vertical offset for centering
                 let y = y_base + vertical_offset;
 
                 // Get cell flags for styling
                 let flags = cell.flags;
-                let bold = flags.contains(alacritty_terminal::term::cell::Flags::BOLD);
-                let italic = flags.contains(alacritty_terminal::term::cell::Flags::ITALIC);
-                let underline = flags.contains(alacritty_terminal::term::cell::Flags::UNDERLINE);
+                let bold = flags.contains(Flags::BOLD);
+                let italic = flags.contains(Flags::ITALIC);
 
                 // Create font with styling
                 let font = Font {
@@ -765,16 +857,11 @@ impl TerminalRenderer {
                     font,
                     color: fg_color,
                     background_color: None,
-                    underline: if underline {
-                        Some(UnderlineStyle {
-                            thickness: px(1.0),
-                            color: Some(fg_color),
-                            wavy: false,
-                        })
-                    } else {
-                        None
-                    },
-                    strikethrough: None,
+                    // onehand patch: every underline the protocol has, in the
+                    // colour the program chose for it, plus the strikethrough
+                    // that used to be hard-coded away.
+                    underline: underline_style(&self.palette, cell, colors, fg_color),
+                    strikethrough: strikethrough_style(cell, fg_color),
                 };
 
                 // Shape and paint the character
@@ -944,12 +1031,13 @@ impl TerminalRenderer {
             return;
         }
 
-        // Redrawn in the *cursor's* colour inverted -- the background -- rather
-        // than in the cell's own foreground, which would be invisible against a
-        // block painted in a colour derived from it.
-        let ink = self
-            .palette
-            .resolve(Color::Named(NamedColor::Background), colors);
+        // Drawn in the cell's own *background* rather than its foreground,
+        // which would be invisible against a block painted in a colour derived
+        // from that foreground. Asked of `cell_ink` and not of the palette
+        // directly, because on an inverted cell the effective background is the
+        // colour the text would otherwise have been -- and a cursor sitting on a
+        // status line or a search hit is exactly where that happens.
+        let (_, ink) = cell_ink(&self.palette, cell, colors);
         let base_height = self.cell_height / self.line_height_multiplier;
         let vertical_offset = (self.cell_height - base_height) / 2.0;
         let flags = cell.flags;
@@ -1181,5 +1269,121 @@ mod tests {
         assert_eq!(merged.len(), 1);
         assert_eq!(merged[0].start_col, 0);
         assert_eq!(merged[0].end_col, 10);
+    }
+
+    // ── onehand patch: the attributes that change a cell's colours ──────────
+    //
+    // Testable at all because they were pulled out of the paint into functions
+    // of (flags, palette): the drawing needs a window and cannot be reached
+    // from here, while the *rule* it follows can.
+
+    use alacritty_terminal::vte::ansi::NamedColor;
+
+    fn cell_with(flags: Flags) -> Cell {
+        let mut cell = Cell::default();
+        cell.c = 'x';
+        cell.fg = Color::Named(NamedColor::Red);
+        cell.bg = Color::Named(NamedColor::Blue);
+        cell.flags = flags;
+        cell
+    }
+
+    #[test]
+    fn inverse_swaps_the_two_colours() {
+        let palette = ColorPalette::default();
+        let colors = Colors::default();
+
+        let (fg, bg) = cell_ink(&palette, &cell_with(Flags::empty()), &colors);
+        let (inv_fg, inv_bg) = cell_ink(&palette, &cell_with(Flags::INVERSE), &colors);
+
+        assert_eq!(inv_fg, bg);
+        assert_eq!(inv_bg, fg);
+    }
+
+    /// Hiding is the last word: a cell that is both inverted and hidden must
+    /// still be unreadable, because what it is hiding is usually a password.
+    #[test]
+    fn hidden_wins_over_inverse() {
+        let palette = ColorPalette::default();
+        let colors = Colors::default();
+
+        let (fg, bg) = cell_ink(
+            &palette,
+            &cell_with(Flags::INVERSE | Flags::HIDDEN),
+            &colors,
+        );
+        assert_eq!(fg, bg);
+    }
+
+    /// And dimming an inverted cell dims what is now in front, not what used to
+    /// be.
+    #[test]
+    fn dim_applies_after_the_swap() {
+        let palette = ColorPalette::default();
+        let colors = Colors::default();
+
+        let (plain_fg, _) = cell_ink(&palette, &cell_with(Flags::INVERSE), &colors);
+        let (dim_fg, _) = cell_ink(&palette, &cell_with(Flags::INVERSE | Flags::DIM), &colors);
+
+        assert!(dim_fg.l < plain_fg.l);
+        assert_eq!(dim_fg.h, plain_fg.h);
+    }
+
+    #[test]
+    fn only_undercurl_is_wavy() {
+        let palette = ColorPalette::default();
+        let colors = Colors::default();
+        let ink = gpui::black();
+
+        assert!(underline_style(&palette, &cell_with(Flags::empty()), &colors, ink).is_none());
+
+        let curl = underline_style(&palette, &cell_with(Flags::UNDERCURL), &colors, ink).unwrap();
+        assert!(curl.wavy);
+
+        let straight =
+            underline_style(&palette, &cell_with(Flags::UNDERLINE), &colors, ink).unwrap();
+        assert!(!straight.wavy);
+
+        // The three shapes GPUI cannot draw are still drawn, as straight lines:
+        // saying "something is marked here" wrongly beats not saying it.
+        for flag in [
+            Flags::DOUBLE_UNDERLINE,
+            Flags::DOTTED_UNDERLINE,
+            Flags::DASHED_UNDERLINE,
+        ] {
+            let style = underline_style(&palette, &cell_with(flag), &colors, ink).unwrap();
+            assert!(!style.wavy, "{flag:?} should fall back to a straight line");
+        }
+    }
+
+    /// The half that carries the meaning. A language server marks an error and a
+    /// warning with the same squiggle and a different colour, set per cell with
+    /// its own escape rather than through the foreground.
+    #[test]
+    fn an_underline_keeps_the_colour_the_program_chose() {
+        let palette = ColorPalette::default();
+        let colors = Colors::default();
+        let ink = gpui::black();
+
+        let mut cell = cell_with(Flags::UNDERCURL);
+        cell.set_underline_color(Some(Color::Named(NamedColor::Green)));
+
+        let style = underline_style(&palette, &cell, &colors, ink).unwrap();
+        assert_eq!(
+            style.color,
+            Some(palette.resolve(Color::Named(NamedColor::Green), &colors))
+        );
+
+        // With none of its own it follows the text, which is what a terminal
+        // that never had `SGR 58` always did.
+        let plain = underline_style(&palette, &cell_with(Flags::UNDERLINE), &colors, ink).unwrap();
+        assert_eq!(plain.color, Some(ink));
+    }
+
+    #[test]
+    fn strikeout_is_no_longer_dropped() {
+        let ink = gpui::black();
+        assert!(strikethrough_style(&cell_with(Flags::empty()), ink).is_none());
+        assert!(strikethrough_style(&cell_with(Flags::STRIKEOUT), ink).is_some());
     }
 }

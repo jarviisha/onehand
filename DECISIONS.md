@@ -189,6 +189,24 @@ What that took, all of it in `vendor/gpui-terminal` and marked `onehand patch`:
   editor reaches anything outside the terminal. The **read** half is refused on purpose: answering it
   hands whatever the user last copied to whatever is running in the terminal, including something at
   the far end of an ssh session, which is why xterm ships it disabled.
+- **Focus reporting** (mode 1004). An editor asks for this so it can re-read a file written while the
+  user was elsewhere — and in an app whose point is an agent editing those same files, "elsewhere" is
+  one click away and constant. Without it Neovim shows a copy of a file that no longer exists and has
+  no reason to suspect it. The window's activation counts as well as the focus tree's: the caret being
+  in the grid while the window sits behind another application is not having the keyboard.
+- **The attributes that colour a cell**, through one function used by the background pass, the glyph
+  pass and the cursor alike. `INVERSE` is how most colour schemes draw a status line, a visual
+  selection and a search hit; unswapped they came out dark on dark, which reads as a broken theme
+  rather than a missing attribute. `DIM` and `HIDDEN` come with it — the second matters off the screen
+  as well as on it, since hiding typed input is what it exists for. **One function and three callers
+  is the substance here**: three places deriving the same colours separately is exactly how the cursor
+  came to be painted over the character underneath it.
+- **Every underline the protocol has, in the colour the program picked.** Only plain `UNDERLINE` was
+  read, and `UNDERCURL` is a *different bit* — so a language server's diagnostics drew no underline at
+  all. The colour comes from `Cell::underline_color`, which is the half that carries the meaning: an
+  error and a warning are the same squiggle in different colours. Curly is exact; double, dotted and
+  dashed fall back to straight, because GPUI's underline is a thickness, a colour and a wavy flag.
+  Strikethrough was hard-coded to `None` and is now drawn.
 - **Modified keys.** Every cursor, navigation and function key can be pressed with Shift, Alt or
   Control, and the plain sequence says nothing about that — so an editor told to move by word on
   `Ctrl+Right` received a plain `Right` and moved by one character, a binding that appears configured

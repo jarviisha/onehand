@@ -78,6 +78,33 @@ use std::thread;
 /// however much a runaway command can produce.
 const READ_QUEUE_CHUNKS: usize = 256;
 
+/// onehand patch: the bytes that tell the child the terminal came to the front,
+/// or went away — mode 1004, if it asked.
+///
+/// **What this buys is a program noticing the world changed under it.** An
+/// editor asks for this so it can re-read a file that was written while the user
+/// was somewhere else, and in an app whose whole point is an agent editing those
+/// same files, "somewhere else" is one click away and happens constantly. With
+/// no report the editor is showing a copy of a file that no longer exists and
+/// has no reason to suspect it.
+///
+/// `was` is an `Option` because the *first* frame is not a change. A grid that
+/// has only ever been focused would otherwise announce it on the frame it was
+/// created, and one never focused would announce a blur it never had.
+///
+/// Nothing is reported when the mode is off, and nothing is reported for
+/// enabling the mode either: a program that has just turned focus reporting on
+/// knows what it asked for and no terminal volunteers the current state.
+///
+/// Pulled out of the render pass so that the rule can be tested; what is left up
+/// there is reading the two facts and writing the answer.
+fn focus_report(was: Option<bool>, now: bool, mode: TermMode) -> Option<&'static [u8]> {
+    if !mode.contains(TermMode::FOCUS_IN_OUT) || was? == now {
+        return None;
+    }
+    Some(if now { b"\x1b[I" } else { b"\x1b[O" })
+}
+
 /// Configuration for terminal creation and runtime updates.
 ///
 /// This struct defines the terminal's appearance and behavior, including
@@ -457,6 +484,11 @@ pub struct TerminalView {
     /// selection. A press that started a selection leaves this `None` even
     /// though a button is down.
     reported_button: Option<MouseButton>,
+    /// Whether the child has been told the grid holds focus.
+    ///
+    /// `None` until the first frame has an answer, so that neither state is
+    /// announced as though it were a change — see [`focus_report`].
+    reported_focus: Option<bool>,
     /// The cell the last motion report named.
     ///
     /// Motion arrives per pixel and a report is per cell, so without this a
@@ -622,6 +654,7 @@ impl TerminalView {
             dragging: false,
             reported_button: None,
             reported_cell: None,
+            reported_focus: None,
             preedit: String::new(),
             preedit_bounds: Bounds::default(),
         }
@@ -1495,7 +1528,25 @@ impl Render for TerminalView {
         // onehand patch: read here rather than inside the paint closure, which
         // is handed the app context and not the window that owns focus. The
         // cursor is drawn hollow without it.
-        let focused = self.focus_handle.is_focused(window);
+        //
+        // The window's own activation counts as well as the focus tree's. Having
+        // the caret in this grid while the whole window is behind another
+        // application is not having the keyboard, and a terminal that reported
+        // otherwise would leave an editor believing it was still in front while
+        // the user worked somewhere else entirely -- which is precisely the
+        // moment its files are being changed underneath it.
+        let focused = self.focus_handle.is_focused(window) && window.is_window_active();
+
+        // onehand patch: tell the child, if it asked. Written from render
+        // because focus is a fact only the window holds, and this is where the
+        // window is; the decision itself is `focus_report`, which is testable.
+        // The state is recorded either way, so that turning the mode on later
+        // does not fire a report about a change that happened before anyone was
+        // listening.
+        if let Some(report) = focus_report(self.reported_focus, focused, self.state.mode()) {
+            self.write_report(report);
+        }
+        self.reported_focus = Some(focused);
 
         div()
             .size_full()
@@ -1635,5 +1686,55 @@ impl Render for TerminalView {
     }
 }
 
-// Tests are omitted due to macro expansion issues with the test attribute
-// in this configuration. Integration tests can be added separately.
+// The *view* is untestable here: everything it does needs a `Window`, and this
+// crate has no harness that can make one.
+//
+// onehand patch: which is the reason to keep the rules that can be stated
+// without one as free functions. What follows tests the whole of the focus
+// reporting decision; all that is left in the render pass is reading two facts
+// and writing the answer.
+#[cfg(test)]
+mod tests {
+    // Named imports and **not** `use super::*`, which is what upstream's note
+    // about "macro expansion issues with the test attribute" was really about.
+    //
+    // This module imports gpui with a glob, and gpui exports an attribute macro
+    // of its own called `test`. A glob re-export of that into a test module
+    // shadows the built-in `#[test]`, and `gpui::test` expands to code carrying
+    // `#[test]` -- which resolves to `gpui::test` again, until rustc gives up
+    // with "recursion limit reached while expanding `#[test]`". Naming the two
+    // items this module actually needs keeps the glob out and the attribute
+    // meaning what it says.
+    use super::focus_report;
+    use alacritty_terminal::term::TermMode;
+
+    #[test]
+    fn nothing_is_reported_unless_the_child_asked() {
+        assert!(focus_report(Some(false), true, TermMode::empty()).is_none());
+        assert!(focus_report(Some(true), false, TermMode::empty()).is_none());
+    }
+
+    #[test]
+    fn arriving_and_leaving_are_different_sequences() {
+        let mode = TermMode::FOCUS_IN_OUT;
+        assert_eq!(focus_report(Some(false), true, mode), Some(&b"\x1b[I"[..]));
+        assert_eq!(focus_report(Some(true), false, mode), Some(&b"\x1b[O"[..]));
+    }
+
+    #[test]
+    fn a_frame_that_changed_nothing_says_nothing() {
+        let mode = TermMode::FOCUS_IN_OUT;
+        assert!(focus_report(Some(true), true, mode).is_none());
+        assert!(focus_report(Some(false), false, mode).is_none());
+    }
+
+    /// The grid is drawn many times before anything happens to it, and the first
+    /// of those frames is not a change. Reporting it would announce a focus the
+    /// child never lost, or a blur it never had.
+    #[test]
+    fn the_first_frame_is_not_a_change() {
+        let mode = TermMode::FOCUS_IN_OUT;
+        assert!(focus_report(None, true, mode).is_none());
+        assert!(focus_report(None, false, mode).is_none());
+    }
+}
