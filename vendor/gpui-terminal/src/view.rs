@@ -56,11 +56,13 @@
 use crate::colors::ColorPalette;
 use crate::event::{GpuiEventProxy, TerminalEvent};
 use crate::input::keystroke_to_bytes;
+use crate::mouse::{button_report, encode_modifiers, motion_report, scroll_report};
 use crate::render::TerminalRenderer;
 use crate::terminal::TerminalState;
 use alacritty_terminal::grid::Scroll;
 use alacritty_terminal::index::{Column, Line, Point as AlacPoint, Side};
 use alacritty_terminal::selection::{Selection, SelectionType};
+use alacritty_terminal::term::TermMode;
 use gpui::{Edges, *};
 use std::io::{Read, Write};
 use std::sync::Arc;
@@ -75,6 +77,33 @@ use std::thread;
 /// or two, small enough that the queue is bounded memory (~1MB) rather than
 /// however much a runaway command can produce.
 const READ_QUEUE_CHUNKS: usize = 256;
+
+/// onehand patch: the bytes that tell the child the terminal came to the front,
+/// or went away — mode 1004, if it asked.
+///
+/// **What this buys is a program noticing the world changed under it.** An
+/// editor asks for this so it can re-read a file that was written while the user
+/// was somewhere else, and in an app whose whole point is an agent editing those
+/// same files, "somewhere else" is one click away and happens constantly. With
+/// no report the editor is showing a copy of a file that no longer exists and
+/// has no reason to suspect it.
+///
+/// `was` is an `Option` because the *first* frame is not a change. A grid that
+/// has only ever been focused would otherwise announce it on the frame it was
+/// created, and one never focused would announce a blur it never had.
+///
+/// Nothing is reported when the mode is off, and nothing is reported for
+/// enabling the mode either: a program that has just turned focus reporting on
+/// knows what it asked for and no terminal volunteers the current state.
+///
+/// Pulled out of the render pass so that the rule can be tested; what is left up
+/// there is reading the two facts and writing the answer.
+fn focus_report(was: Option<bool>, now: bool, mode: TermMode) -> Option<&'static [u8]> {
+    if !mode.contains(TermMode::FOCUS_IN_OUT) || was? == now {
+        return None;
+    }
+    Some(if now { b"\x1b[I" } else { b"\x1b[O" })
+}
 
 /// Configuration for terminal creation and runtime updates.
 ///
@@ -447,6 +476,25 @@ pub struct TerminalView {
     /// must keep extending the selection, so "is the pointer inside" is the
     /// wrong question once a drag has started.
     dragging: bool,
+    /// The button whose press was reported to the child, if any.
+    ///
+    /// Not read from the move event's own `pressed_button`, which answers a
+    /// different question: this one is "did *we* hand the press over", and it is
+    /// what decides whether the drag that follows is the child's gesture or a
+    /// selection. A press that started a selection leaves this `None` even
+    /// though a button is down.
+    reported_button: Option<MouseButton>,
+    /// Whether the child has been told the grid holds focus.
+    ///
+    /// `None` until the first frame has an answer, so that neither state is
+    /// announced as though it were a change — see [`focus_report`].
+    reported_focus: Option<bool>,
+    /// The cell the last motion report named.
+    ///
+    /// Motion arrives per pixel and a report is per cell, so without this a
+    /// pointer moved slowly across one character sends the same coordinates
+    /// dozens of times to a program that redraws on each.
+    reported_cell: Option<AlacPoint>,
     /// The input method's in-progress composition, if any.
     ///
     /// Held by the view rather than written into the grid because it is not
@@ -604,6 +652,9 @@ impl TerminalView {
             exit_callback: None,
             content_origin: Point::default(),
             dragging: false,
+            reported_button: None,
+            reported_cell: None,
+            reported_focus: None,
             preedit: String::new(),
             preedit_bounds: Bounds::default(),
         }
@@ -868,6 +919,21 @@ impl TerminalView {
         let _ = writer.flush();
     }
 
+    /// onehand patch: write bytes the *terminal* is saying on its own behalf.
+    ///
+    /// Two kinds go out this way -- an answer to something the child asked, and
+    /// a report of what the mouse did -- and neither is typing. That is the
+    /// whole difference from [`Self::write_typed`]: nobody touched the keyboard,
+    /// so the viewport should stay where the reader parked it and a selection
+    /// they made should survive. Snapping to the bottom on a device attributes
+    /// query would throw a reader out of the scrollback for something they had
+    /// no part in.
+    fn write_report(&mut self, bytes: &[u8]) {
+        let mut writer = self.stdin_writer.lock();
+        let _ = writer.write_all(bytes);
+        let _ = writer.flush();
+    }
+
     // ── onehand patch: mouse, scrolling and the clipboard ───────────────────
 
     /// Where the pointer is, in grid cells.
@@ -875,6 +941,31 @@ impl TerminalView {
     /// Clamped rather than rejected: a drag that runs past the last column
     /// should select to the end of the line, not stop tracking.
     fn cell_at(&self, position: Point<Pixels>) -> (AlacPoint, Side) {
+        let (row, col, side) = self.grid_position(position);
+        let display_offset = self.state.with_term(|term| term.grid().display_offset()) as i32;
+        (
+            AlacPoint::new(Line(row as i32 - display_offset), Column(col)),
+            side,
+        )
+    }
+
+    /// Where the pointer is, as a cell of the *viewport*.
+    ///
+    /// The other half of [`Self::cell_at`], and the difference is who is being
+    /// told. A selection is a range of the buffer, so it has to survive the
+    /// viewport moving underneath it; a mouse report is a coordinate on the
+    /// screen the child believes it is drawing, and the child knows nothing
+    /// about a scrollback it does not own.
+    fn viewport_cell(&self, position: Point<Pixels>) -> AlacPoint {
+        let (row, col, _) = self.grid_position(position);
+        AlacPoint::new(Line(row as i32), Column(col))
+    }
+
+    /// The row, column and half-cell the pointer is over.
+    ///
+    /// Clamped rather than rejected: a drag that runs past the last column
+    /// should select to the end of the line, not stop tracking.
+    fn grid_position(&self, position: Point<Pixels>) -> (usize, usize, Side) {
         let (cw, ch): (f32, f32) = (
             self.renderer.cell_width.into(),
             self.renderer.cell_height.into(),
@@ -895,14 +986,35 @@ impl TerminalView {
             Side::Right
         };
 
-        let display_offset = self.state.with_term(|term| term.grid().display_offset()) as i32;
-        (
-            AlacPoint::new(Line(row as i32 - display_offset), Column(col)),
-            side,
-        )
+        (row, col, side)
     }
 
-    /// Start a selection, or clear one.
+    /// onehand patch: the modifier bits a report carries.
+    ///
+    /// Shift is never among them, and that is not an omission. Shift is the key
+    /// that takes a gesture *back* from the child -- see
+    /// [`Self::child_tracks_mouse`] -- so a report can only be on its way at all
+    /// when shift was not held, and a bit saying otherwise would be a lie the
+    /// receiving program acts on.
+    fn report_modifiers(modifiers: &Modifiers) -> u8 {
+        encode_modifiers(false, modifiers.alt, modifiers.control)
+    }
+
+    /// onehand patch: whether this gesture belongs to the child rather than to
+    /// the terminal.
+    ///
+    /// **Shift is the way back.** A program that turns on mouse tracking takes
+    /// the pointer completely: click, drag and wheel all become its input, which
+    /// leaves no way to select a line of its output and copy it -- and needing
+    /// to do that is most of why someone is looking at the output. Holding shift
+    /// is the convention every terminal shares for saying "this one is mine",
+    /// and it costs the child nothing, because a program cannot see shift+click
+    /// in any terminal and so has never been written to want it.
+    fn child_tracks_mouse(&self, modifiers: &Modifiers) -> bool {
+        !modifiers.shift && self.state.mode().intersects(TermMode::MOUSE_MODE)
+    }
+
+    /// Hand a press to the child, or start a selection.
     fn on_mouse_down(
         &mut self,
         event: &MouseDownEvent,
@@ -911,6 +1023,36 @@ impl TerminalView {
     ) {
         // onehand patch: `Window::focus` now takes the app context too.
         window.focus(&self.focus_handle, cx);
+
+        // onehand patch: mouse reporting.
+        if self.child_tracks_mouse(&event.modifiers) {
+            let point = self.viewport_cell(event.position);
+            let bytes = button_report(
+                event.button,
+                true,
+                point,
+                Self::report_modifiers(&event.modifiers),
+                self.state.mode(),
+            );
+            if let Some(bytes) = bytes {
+                self.write_report(&bytes);
+                self.reported_button = Some(event.button);
+                self.reported_cell = Some(point);
+                // A selection left highlighted under a screen the child is
+                // about to redraw describes text that is no longer there.
+                self.state.with_term_mut(|term| term.selection = None);
+                cx.notify();
+                return;
+            }
+        }
+
+        // Selection is the left button's alone: the middle and right buttons
+        // have no meaning here once the child has declined the press, and a
+        // right-click that wiped the selection would take away the thing the
+        // user was about to copy.
+        if event.button != MouseButton::Left {
+            return;
+        }
 
         let (point, side) = self.cell_at(event.position);
         // Click count picks the granularity, the convention every terminal
@@ -927,8 +1069,29 @@ impl TerminalView {
         cx.notify();
     }
 
-    /// Finish a drag and copy what it selected.
-    fn on_mouse_up(&mut self, _event: &MouseUpEvent, _window: &mut Window, cx: &mut Context<Self>) {
+    /// Hand a release to the child, or finish a drag and copy what it selected.
+    fn on_mouse_up(&mut self, event: &MouseUpEvent, _window: &mut Window, cx: &mut Context<Self>) {
+        // onehand patch: the release is reported for whichever button's *press*
+        // was handed over, and not for the one the event names. They are the
+        // same button in every ordinary case, and where they are not -- a second
+        // button pressed and let go during a drag -- reporting the press without
+        // its release leaves the child believing a button is still down.
+        if let Some(button) = self.reported_button.take() {
+            let bytes = button_report(
+                button,
+                false,
+                self.viewport_cell(event.position),
+                Self::report_modifiers(&event.modifiers),
+                self.state.mode(),
+            );
+            if let Some(bytes) = bytes {
+                self.write_report(&bytes);
+            }
+            self.reported_cell = None;
+            cx.notify();
+            return;
+        }
+
         if !self.dragging {
             return;
         }
@@ -948,13 +1111,42 @@ impl TerminalView {
         cx.notify();
     }
 
-    /// Extend a live selection.
+    /// Report motion to the child, or extend a live selection.
     fn on_mouse_move(
         &mut self,
         event: &MouseMoveEvent,
         _window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        // onehand patch: two different gestures reach here. A drag whose press
+        // we handed over stays the child's for as long as the button is down --
+        // that is what a drag *is* to a program tracking the mouse. And under
+        // mode 1003 a pointer with no button down at all is still news, which is
+        // how a menu highlights the entry it is over.
+        let childs_gesture = self.reported_button.is_some()
+            || (!self.dragging
+                && !event.modifiers.shift
+                && self.state.mode().contains(TermMode::MOUSE_MOTION));
+
+        if childs_gesture {
+            let point = self.viewport_cell(event.position);
+            // Checked before the report is built, not after: this is the path a
+            // moving pointer takes on every frame.
+            if self.reported_cell != Some(point) {
+                let bytes = motion_report(
+                    self.reported_button,
+                    point,
+                    Self::report_modifiers(&event.modifiers),
+                    self.state.mode(),
+                );
+                if let Some(bytes) = bytes {
+                    self.reported_cell = Some(point);
+                    self.write_report(&bytes);
+                }
+            }
+            return;
+        }
+
         if !self.dragging {
             return;
         }
@@ -987,6 +1179,26 @@ impl TerminalView {
         if lines == 0 {
             return;
         }
+
+        // onehand patch: the wheel is the child's where it is tracking the
+        // mouse, and *also* where it is on the alternate screen and is not --
+        // there the terminal has no scrollback to move, so a wheel it kept for
+        // itself would do nothing at all. Which of the two, and what the bytes
+        // are, is decided in one place.
+        if !event.modifiers.shift {
+            let bytes = scroll_report(
+                lines,
+                self.viewport_cell(event.position),
+                Self::report_modifiers(&event.modifiers),
+                self.state.mode(),
+            );
+            if let Some(bytes) = bytes {
+                self.write_report(&bytes);
+                cx.notify();
+                return;
+            }
+        }
+
         self.state
             .with_term_mut(|term| term.scroll_display(Scroll::Delta(lines)));
         cx.notify();
@@ -1052,9 +1264,35 @@ impl TerminalView {
                         callback(window, cx, &text);
                     }
                 }
-                TerminalEvent::ClipboardLoad => {
-                    // Terminal wants to load data from clipboard
-                    // TODO: Implement clipboard integration
+                // onehand patch: reading the clipboard is deliberately not
+                // answered.
+                //
+                // The request is `OSC 52` with a `?` payload, and honouring it
+                // hands whatever the user last copied -- a password, a token, a
+                // paragraph from another window -- to whatever is running in
+                // this terminal, including something on the far end of an ssh
+                // session. That is why xterm ships it disabled and alacritty
+                // dropped it outright. The write half is answered
+                // (`ClipboardStore` above): a program can put text on the
+                // clipboard because a person asked it to, and cannot take text
+                // off one.
+                TerminalEvent::ClipboardLoad => {}
+                // onehand patch: an answer the child is blocked on. Written
+                // straight out rather than through `write_typed`, which snaps
+                // the viewport to the bottom and drops the selection -- correct
+                // for a keystroke, and wrong for a reply the user did not make:
+                // a program probing the terminal would yank the reader out of
+                // the scrollback they were sitting in.
+                TerminalEvent::PtyReply(text) => {
+                    self.write_report(text.as_bytes());
+                }
+                // onehand patch: resolved against the palette in force right
+                // now, which is why this is answered here and not in the proxy.
+                TerminalEvent::ColorQuery { index, reply } => {
+                    let rgb = self
+                        .state
+                        .with_term(|term| self.renderer.palette.rgb_at(index, term.colors()));
+                    self.write_report(reply(rgb).as_bytes());
                 }
                 TerminalEvent::Exit => {
                     if let Some(ref callback) = self.exit_callback {
@@ -1287,14 +1525,46 @@ impl Render for TerminalView {
         let entity = cx.entity();
         let focus_handle = self.focus_handle.clone();
         let preedit = self.preedit.clone();
+        // onehand patch: read here rather than inside the paint closure, which
+        // is handed the app context and not the window that owns focus. The
+        // cursor is drawn hollow without it.
+        //
+        // The window's own activation counts as well as the focus tree's. Having
+        // the caret in this grid while the whole window is behind another
+        // application is not having the keyboard, and a terminal that reported
+        // otherwise would leave an editor believing it was still in front while
+        // the user worked somewhere else entirely -- which is precisely the
+        // moment its files are being changed underneath it.
+        let focused = self.focus_handle.is_focused(window) && window.is_window_active();
+
+        // onehand patch: tell the child, if it asked. Written from render
+        // because focus is a fact only the window holds, and this is where the
+        // window is; the decision itself is `focus_report`, which is testable.
+        // The state is recorded either way, so that turning the mode on later
+        // does not fire a report about a change that happened before anyone was
+        // listening.
+        if let Some(report) = focus_report(self.reported_focus, focused, self.state.mode()) {
+            self.write_report(report);
+        }
+        self.reported_focus = Some(focused);
 
         div()
             .size_full()
             .bg(rgb(0x1e1e1e))
             .track_focus(&self.focus_handle)
             .on_key_down(cx.listener(Self::on_key_down))
+            // onehand patch: all three buttons, not just the left one. Only the
+            // left starts a selection, but a program tracking the mouse is
+            // entitled to hear about every button -- the right one opens a
+            // context menu in a file manager and the middle one closes a tab in
+            // a tabbed pager, and a terminal that swallows them makes those
+            // features look broken rather than absent.
             .on_mouse_down(MouseButton::Left, cx.listener(Self::on_mouse_down))
+            .on_mouse_down(MouseButton::Right, cx.listener(Self::on_mouse_down))
+            .on_mouse_down(MouseButton::Middle, cx.listener(Self::on_mouse_down))
             .on_mouse_up(MouseButton::Left, cx.listener(Self::on_mouse_up))
+            .on_mouse_up(MouseButton::Right, cx.listener(Self::on_mouse_up))
+            .on_mouse_up(MouseButton::Middle, cx.listener(Self::on_mouse_up))
             .on_mouse_move(cx.listener(Self::on_mouse_move))
             .on_scroll_wheel(cx.listener(Self::on_scroll))
             .child(
@@ -1312,9 +1582,17 @@ impl Render for TerminalView {
                     move |bounds, _, window, cx| {
                         use alacritty_terminal::grid::Dimensions;
 
-                        // Measure actual cell dimensions from the font
+                        // Measure actual cell dimensions from the font.
+                        //
+                        // onehand patch: only when the font changed. The clone
+                        // carries the previous frame's measurement, which is
+                        // still the right answer for as long as the family, the
+                        // size and the line-height multiplier all stand -- and
+                        // none of those move while somebody types. Measuring
+                        // means shaping a probe glyph, and this runs on every
+                        // frame, which for a modal editor is every keystroke.
                         let mut measured_renderer = renderer.clone();
-                        measured_renderer.measure_cell(window);
+                        measured_renderer.ensure_measured(window);
 
                         // Calculate available space after padding
                         let available_width: f32 =
@@ -1366,7 +1644,7 @@ impl Render for TerminalView {
                         }
 
                         // Paint the terminal with measured dimensions
-                        measured_renderer.paint(bounds, padding, &term, window, cx);
+                        measured_renderer.paint(bounds, padding, &term, focused, window, cx);
 
                         // onehand patch: the input method, drawn last so the
                         // composition sits over the grid, and registered here
@@ -1381,6 +1659,31 @@ impl Render for TerminalView {
                         drop(term);
                         let _ = entity.update(cx, |view: &mut Self, _| {
                             view.preedit_bounds = area;
+                            // onehand patch: the measured cell has to reach the
+                            // view, not just the paint.
+                            //
+                            // `measure_cell` runs on a *clone* of the renderer,
+                            // because measuring needs the window and the window
+                            // is only here. Left at that, `self.renderer` keeps
+                            // the estimates its constructor guessed -- 0.6 and
+                            // 1.4 times the font size -- and every pixel-to-cell
+                            // conversion the view does divides by those instead
+                            // of by the real lattice.
+                            //
+                            // Nothing about the drawing looks wrong, because the
+                            // drawing uses the measured clone. What is wrong is
+                            // everything aimed *at* the drawing: the row a click
+                            // lands on drifts further from the pointer the lower
+                            // down the grid it is, and the height guess is out by
+                            // more than the width one, so the drift is mostly
+                            // vertical. That is a wrong selection, a wrong mouse
+                            // report, and a wrong number of lines per scroll
+                            // notch.
+                            //
+                            // The staleness key travels with the numbers, so the
+                            // next frame's clone knows it has nothing to
+                            // re-measure.
+                            view.renderer.adopt_metrics(&measured_renderer);
                         });
                         window.handle_input(
                             &focus_handle,
@@ -1394,5 +1697,55 @@ impl Render for TerminalView {
     }
 }
 
-// Tests are omitted due to macro expansion issues with the test attribute
-// in this configuration. Integration tests can be added separately.
+// The *view* is untestable here: everything it does needs a `Window`, and this
+// crate has no harness that can make one.
+//
+// onehand patch: which is the reason to keep the rules that can be stated
+// without one as free functions. What follows tests the whole of the focus
+// reporting decision; all that is left in the render pass is reading two facts
+// and writing the answer.
+#[cfg(test)]
+mod tests {
+    // Named imports and **not** `use super::*`, which is what upstream's note
+    // about "macro expansion issues with the test attribute" was really about.
+    //
+    // This module imports gpui with a glob, and gpui exports an attribute macro
+    // of its own called `test`. A glob re-export of that into a test module
+    // shadows the built-in `#[test]`, and `gpui::test` expands to code carrying
+    // `#[test]` -- which resolves to `gpui::test` again, until rustc gives up
+    // with "recursion limit reached while expanding `#[test]`". Naming the two
+    // items this module actually needs keeps the glob out and the attribute
+    // meaning what it says.
+    use super::focus_report;
+    use alacritty_terminal::term::TermMode;
+
+    #[test]
+    fn nothing_is_reported_unless_the_child_asked() {
+        assert!(focus_report(Some(false), true, TermMode::empty()).is_none());
+        assert!(focus_report(Some(true), false, TermMode::empty()).is_none());
+    }
+
+    #[test]
+    fn arriving_and_leaving_are_different_sequences() {
+        let mode = TermMode::FOCUS_IN_OUT;
+        assert_eq!(focus_report(Some(false), true, mode), Some(&b"\x1b[I"[..]));
+        assert_eq!(focus_report(Some(true), false, mode), Some(&b"\x1b[O"[..]));
+    }
+
+    #[test]
+    fn a_frame_that_changed_nothing_says_nothing() {
+        let mode = TermMode::FOCUS_IN_OUT;
+        assert!(focus_report(Some(true), true, mode).is_none());
+        assert!(focus_report(Some(false), false, mode).is_none());
+    }
+
+    /// The grid is drawn many times before anything happens to it, and the first
+    /// of those frames is not a change. Reporting it would announce a focus the
+    /// child never lost, or a blur it never had.
+    #[test]
+    fn the_first_frame_is_not_a_change() {
+        let mode = TermMode::FOCUS_IN_OUT;
+        assert!(focus_report(None, true, mode).is_none());
+        assert!(focus_report(None, false, mode).is_none());
+    }
+}

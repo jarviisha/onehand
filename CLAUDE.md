@@ -452,7 +452,7 @@ renderer read `chat.items` / `chat.busy` without knowing where the model lives.
 
 ### Workbench
 
-[crates/app/src/workbench/](crates/app/src/workbench/) — one dock panel, two modes:
+[crates/app/src/workbench/](crates/app/src/workbench/) — one dock panel, three modes:
 
 - **Editor**: a quick editor, not an IDE. Buffers here, rules in core (`onehand_core::editor`): the
   size bound, the tab set, the **mtime guard**, labels, blocking read/save. Highlighting is
@@ -463,14 +463,60 @@ renderer read `chat.items` / `chat.busy` without knowing where the model lives.
   total, `.git` skipped. Rows carry git state as one-letter badges; a directory holding changes gets a
   dot. Indentation is padding by depth, not nested containers — hundreds of nested rows are hundreds
   of wasted elements.
+- **A tab whose child exits is dropped**, in both this panel and the terminal's (`Workbench::reap_neovim`,
+  `TerminalPanel::reap`, fed by `spawn_pty`'s exit callback). Nothing notices otherwise: the grid keeps
+  drawing the last screen the child painted, which after `:q` or `exit` is an empty one with a cursor
+  on it, and the tab takes keystrokes nothing will ever read. Three things this owes.
+  It is **deferred** through `Window::defer` — the callback fires from inside the grid's own render,
+  and the panel that owns the tab is the thing currently rendering that grid, so reaching into it
+  there is a panic rather than an error, at the exact moment somebody typed `:q`.
+  It is a **sweep** over every tab rather than a removal of the one that spoke, because `PtyTab::finished`
+  asks the process (`try_wait`) — so a child killed from somewhere else, or gone while its root was off
+  screen, is collected too, and reaped rather than left a zombie.
+  And it moves **focus only if focus was already inside that panel**: a grid dropped while holding the
+  caret leaves the window pointing at an element no frame contains, which takes the whole keymap with
+  it — while a background shell exiting must not steal the caret from what the user is doing.
+- **Neovim** (`Ctrl+Shift+N`): the real thing, in a PTY, on the project root. Here and not in the
+  terminal dock because this is the panel about files. One per root and never a second — several
+  shells is what somebody opens on purpose, while two editors on the same files are two views of one
+  buffer with no way to tell which holds the unsaved copy. It is spawned through
+  `terminal::spawn_pty`, so it inherits the terminal's rules about `TERM`, resize, clipboard and
+  reaping.
 
 State is per project root, so switching roots swaps the whole thing.
+
+Three things the Neovim mode owes that the other two do not, all because it is a live PTY rather than
+an element tree:
+
+- **Its zoom is a font size, not the rem scale** wrapped around the other bodies. The grid is
+  *measured* from a shaped glyph, so scaling the box around it stretches the container while the cell
+  stays put and every column lands past its own character. `Workbench::set_zoom` pushes the size into
+  the view instead, which is why the shell hands it the whole value rather than `&mut` to the field.
+- **The panel takes the key context `Terminal` while this mode shows**, and it must be that name and
+  not one of its own: `Ctrl+S` is bound `Shell && !Terminal` exactly so a program in a PTY keeps it,
+  and a grid mounted with no such context would have the quick editor's save fire over the top of
+  `:w`.
+- **Switching to the mode does not spawn.** `Ctrl+Shift+N` spawns and then switches, and the empty
+  state carries a *Start Neovim* button; a mode strip where one of three buttons launches a process
+  is one nobody can click to look around. The key is three-state like the other two Workbench keys —
+  closing the dock puts the editor aside rather than ending it, since the panel entity outlives the
+  dock and the PTY, the scrollback and the unsaved buffer are all still there on the next press.
+  `nvim` is looked up on `PATH` in the app rather than handed to the PTY to fail on, because a failed
+  spawn comes back as "No such file or directory" naming nothing; it is `nvim` and not `$EDITOR`,
+  since honouring that would open `vi` for somebody who set it years ago for `git commit`.
 
 ### Terminal panel
 
 [crates/app/src/terminal.rs](crates/app/src/terminal.rs) over `vendor/gpui-terminal`. A tab per root,
 spawned lazily; dropping a tab drops its PTY, so the child dies with it and there is no separate
 shutdown to forget.
+
+**Every tab here is a login shell; Neovim is not one of them** — it is a Workbench mode, because that
+is the panel about files and a tab called `nvim` between two called `zsh` says the editor is a kind of
+shell. What this module owns for it is the spawning: `terminal::spawn_pty` and `terminal::Program` are
+`pub(crate)`, so the Workbench starts its grid through the same rules about `TERM`, the resize
+callback, the clipboard hook and reaping the child. A second copy of those is a second copy to keep in
+step.
 
 **Whether the dock is open is per root too** (`Shell::terminal_open` / `terminal_root`), because
 everything below it already is: switching projects files the dock's live state under the project
@@ -496,8 +542,40 @@ fall through to the shell. Its counterpart is that `on_key_down` stops propagati
 encodes — the platform hands an unclaimed key's character to the input handler, so not stopping there
 types everything twice.
 
-**Neovim mode does not exist in this build** (decision D4; it is P8), and neither does
-`Ctrl+Shift+N`.
+The grid answers the questions a full-screen program asks. **Terminal replies go back to the PTY** —
+alacritty hands out Device Attributes, the cursor position report and colour queries as events because
+it has no idea where the PTY is, and upstream dropped them; a colour query is resolved against the
+palette in force, so an editor's light/dark detection follows the app's appearance. **Mouse reporting**
+picks its encoding from what the child enabled (SGR where it asked for 1006, the legacy byte form
+otherwise — sending SGR to a program that only asked for 1000 *types* the escape sequence into it),
+reports motion per cell rather than per pixel, and forwards all three buttons. **Holding `Shift` takes
+a gesture back from the child**, which is what keeps selection possible under a program that has
+grabbed the mouse. On the alternate screen with no tracking, the **wheel becomes arrow keys** — there
+is no scrollback there for it to move. **`DECSCUSR`** is drawn: shape, `DECTCEM` hiding, a hollow
+outline when unfocused, and the character repainted over a block cursor that would otherwise hide it;
+blinking is deliberately absent, since it needs a repaint on a timer in a view that otherwise draws
+only when bytes arrive. **`OSC 52` is answered for writes and refused for reads** — a yank reaching the
+system clipboard is the point, and answering a read hands the clipboard to whatever is running in the
+terminal, including at the far end of an ssh session.
+
+**Focus is reported** (mode 1004, `view::focus_report`), and it is the app's own reason for existing:
+an editor asks for this so it can re-read a file that was written while the user was elsewhere, and
+here "elsewhere" is one click away with an agent writing those same files. The window's *activation*
+counts as well as the focus tree's — the caret being in the grid while the whole window sits behind
+another application is not having the keyboard. The first frame reports nothing, because it is not a
+change.
+
+**The attributes that colour a cell are honoured, through one function.**
+`render::cell_ink` applies `INVERSE` (how most colour schemes draw a status line, a visual selection
+and a search hit — unswapped they come out dark on dark, which reads as a broken theme), then `DIM`,
+then `HIDDEN`, in that order and for the background pass, the glyph pass and the cursor's repaint
+alike. **One function and three callers is the point**: three places working the same rule out
+separately is exactly how the cursor came to be drawn over the character underneath it.
+`render::underline_style` draws every underline the protocol has — curly for `UNDERCURL`, straight for
+the double, dotted and dashed forms GPUI cannot express — and takes the colour from
+`Cell::underline_color`, which is the half that carries the meaning: a language server marks an error
+and a warning with the same squiggle and a different colour. Strikethrough is drawn too; it had been
+hard-coded to `None`.
 
 ### Window shell
 
@@ -652,7 +730,8 @@ status bar.
 ### Keyboard, zoom, maximize
 
 App commands occupy an exact `Ctrl+Shift` namespace so plain Ctrl keys stay usable inside a PTY:
-`B` rail · `E` Files · `O` Editor · `A` composer · `F` find · `R` guarded restart ·
+`B` rail · `E` Workbench Files · `O` Workbench Editor · `N` Workbench Neovim · `A` composer ·
+`F` find · `R` guarded restart ·
 `W` guarded close · `K` maximize. Plus `` Ctrl+` `` terminal, `Ctrl+S` save, `Ctrl+1…9` session by position, `Ctrl+Tab` session by recency,
 `Ctrl+=`/`Ctrl+-`/`Ctrl+0` zoom, and inside the composer `Up`/`Down` (its completion list) and
 `Ctrl+V` (an image or a file on the clipboard becomes an attachment; text is handed back to the input).
@@ -828,9 +907,11 @@ Listed because a missing feature nobody wrote down reads as a bug in the ones th
   `TextView::markdown` and does not scan it for path tokens. Only a tool card's path header opens a
   file, and it carries no line — ACP's diff payload has no hunk offsets. Core's
   `parse::parse_path_line` is the parser that feature needs and currently **has no caller**.
-- **No Neovim mode** (`Ctrl+Shift+N`) — decision D4, together with the hardest terminal
-  parity work (mouse reporting, `Shift` bypass, OSC 52, DECSCUSR). IME inside the PTY was on that
-  list and is now done.
+- **The terminal has no `APP_KEYPAD`.** The numeric keypad's application mode is unimplemented,
+  because gpui does not report a keypad key differently from the digit above it. The keys work; they
+  always send the ordinary form. Nothing else on decision D4's parity list is outstanding.
+- **The terminal's cursor does not blink**, by decision — it would mean a repaint on a timer for the
+  life of every tab, in a view that otherwise draws only when bytes arrive.
 - **`[font]` and `[icons]` config sections are parsed and ignored** (see Config).
 - Transcript blocks the design contract asks for that are not drawn are marked *(not rendered)* in
   DESIGN-ANSWER.md, each with the reason.
@@ -905,9 +986,34 @@ Listed because a missing feature nobody wrote down reads as a bug in the ones th
   resolves** — check it against the enumeration. The terminal is the sharpest case: its grid is
   *measured* from a shaped glyph, so a family that does not resolve does not merely change the
   typeface — the cell is sized from one font while the row is drawn in another and every column lands
-  past its glyph. `terminal::spawn_shell` hands the grid the resolved family for exactly that reason;
+  past its glyph. `terminal::spawn_pty` hands the grid the resolved family for exactly that reason;
   the vendored default is the string `monospace`, which is a CSS generic and not a family anything
   enumerates.
+- **`use super::*` in a test module inside `vendor/gpui-terminal` breaks `#[test]`.** That file imports
+  gpui with a glob, and gpui exports an attribute macro of its own called `test`. Globbing it into a
+  test module shadows the built-in attribute, and `gpui::test` expands to code carrying `#[test]` —
+  which resolves to `gpui::test` again, until rustc gives up with *"recursion limit reached while
+  expanding `#[test]`"*. Nothing in the message points at the glob. Import the two or three items the
+  tests actually need by name. This is what upstream's note about "macro expansion issues with the
+  test attribute" was, and it is why `view.rs` had no tests at all.
+- **The grid's paint runs once per visible character, so anything it allocates is multiplied by the
+  screen.** A modal editor redraws the whole grid on every keystroke, which is what turns a cost a
+  shell hides into typing latency. Three things were being built per glyph and are not any more: the
+  text (`ch.to_string()` then a `SharedString`), the `Font` (whose `family` is a `SharedString` built
+  from a `String`, and whose `FontFeatures::default()` is an `Arc<Vec<_>>`), and — per *row* — a
+  `Vec`, a `HashSet` and a discarded batching pass. `render::ascii_glyph` and
+  `TerminalRenderer::font_variants` are what keep the common case at zero allocations. **Measure
+  before assuming the shaping is the cost**; here the allocations around it were.
+- **The measured cell has to reach the view, not only the paint.** `TerminalRenderer::measure_cell`
+  needs the window, and the window exists only inside the canvas paint — so it runs on a *clone* of
+  the renderer, and writing the result back to the view's own copy is a separate step. Skip it and
+  every pixel-to-cell conversion the view does divides by the constructor's guesses instead
+  (0.6 and 1.4 times the font size). **Nothing about the drawing looks wrong**, because the drawing
+  uses the measured clone; what is wrong is everything aimed *at* the drawing — the cell a click lands
+  on drifts further from the pointer the lower down the grid it is, and the height guess is out by
+  more than the width one, so the drift is mostly vertical. It reads as a context menu appearing in
+  the wrong place, or a drag selecting the wrong line, rather than as a measurement that never
+  arrived.
 - **`mx_auto` does nothing inside a `gpui::list` row.** The list lays every row out as its own
   *layout root*, and a root has no containing block for an auto margin to take its share of, so the
   margin resolves to zero — silently, with no warning and nothing wrong-looking in the row itself.
@@ -937,7 +1043,9 @@ Listed because a missing feature nobody wrote down reads as a bug in the ones th
   so an unsnapped factor drifts and `Ctrl+0` becomes the only way back to 100%.
 - **`vendor/gpui-terminal` is a vendored render core plus the interaction layer upstream never had.**
   Scrollback, selection, copy/paste (`Ctrl+Shift+C/V` — plain Ctrl+C is SIGINT and Ctrl+V is
-  literal-next), bracketed paste, copy-on-select and typing-snaps-to-bottom are all onehand's, marked
+  literal-next), bracketed paste, copy-on-select, typing-snaps-to-bottom, mouse reporting and its
+  `Shift` bypass, terminal replies going back to the PTY, `DECSCUSR` cursor shapes and the modified
+  key sequences are all onehand's, marked
   `onehand patch`. Upstream is `zortax/gpui-terminal@51f0292`; the verbatim import is one commit and
   the patches the next, so the delta stays readable. `gpui` there is a **revless** git dependency:
   cargo keys a git source by URL plus rev, so any rev (or crates.io) yields a second `gpui` in the

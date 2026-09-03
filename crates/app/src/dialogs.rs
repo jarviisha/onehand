@@ -654,10 +654,9 @@ pub struct Shortcut {
 /// Only bindings that exist in this build are listed -- an aspirational table
 /// is worse than a short one.
 ///
-/// Two bindings are absent on purpose: `Ctrl+Shift+P` (the command palette is a
-/// feature — a command registry plus a filtered popup — not a keymap entry) and
-/// `Ctrl+Shift+N` (Neovim mode was cut from this build along with the hardest
-/// terminal parity work, so there is nothing for the key to open).
+/// One binding is absent on purpose: `Ctrl+Shift+P`, because the command
+/// palette is a feature — a command registry plus a filtered popup — and not a
+/// keymap entry.
 pub const SHORTCUTS: &[Shortcut] = &[
     Shortcut {
         label: "Ctrl+Shift+B",
@@ -673,6 +672,11 @@ pub const SHORTCUTS: &[Shortcut] = &[
         label: "Ctrl+Shift+E",
         what: "Workbench — Files",
         keys: &["ctrl-shift-e"],
+    },
+    Shortcut {
+        label: "Ctrl+Shift+N",
+        what: "Workbench — Neovim",
+        keys: &["ctrl-shift-n"],
     },
     Shortcut {
         label: "Ctrl+`",

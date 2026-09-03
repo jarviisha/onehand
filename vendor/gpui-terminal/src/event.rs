@@ -24,9 +24,15 @@
 //! | `Event::Exit` | `Exit` | Terminal exited |
 //! | `Event::ChildExit(_)` | `Exit` | Child process exited |
 //! | `Event::ResetTitle` | `Title("")` | Reset to empty title |
+//! | `Event::PtyWrite(_)` | `PtyReply(String)` | An answer owed to the child |
+//! | `Event::ColorRequest(_, _)` | `ColorQuery { .. }` | A colour the child asked for |
 //!
-//! Events like `MouseCursorDirty`, `PtyWrite`, and `CursorBlinkingChange` are
-//! ignored as they're handled internally or not needed for GPUI integration.
+//! *onehand patch*: the last two rows. Upstream dropped `PtyWrite` with a
+//! comment saying alacritty handled it internally, which is the opposite of
+//! what it means -- see [`TerminalEvent::PtyReply`].
+//!
+//! Events like `MouseCursorDirty` and `CursorBlinkingChange` are ignored as
+//! they're handled internally or not needed for GPUI integration.
 //!
 //! # Example
 //!
@@ -44,13 +50,25 @@
 //! [`EventListener`]: alacritty_terminal::event::EventListener
 
 use alacritty_terminal::event::{Event, EventListener};
+use alacritty_terminal::vte::ansi::Rgb;
+use std::fmt;
+use std::sync::Arc;
 use std::sync::mpsc::Sender;
+
+/// onehand patch: turns the colour a query asked about into the reply the child
+/// is waiting for.
+///
+/// Handed over by the parser rather than built here, because the escape
+/// sequence decides the shape of its own answer: `OSC 4` echoes the index back,
+/// `OSC 10`/`11` do not, and the terminator has to match the one the query
+/// arrived with (`BEL` or `ST`) or the child reads the reply as text.
+pub type ColorReply = Arc<dyn Fn(Rgb) -> String + Send + Sync>;
 
 /// Events emitted by the terminal that the GPUI application cares about.
 ///
 /// This enum represents a subset of alacritty's events that are relevant
 /// for the GPUI terminal emulator implementation.
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub enum TerminalEvent {
     /// The terminal has new content to display and needs a redraw.
     Wakeup,
@@ -67,8 +85,57 @@ pub enum TerminalEvent {
     /// The terminal wants to load data from the clipboard.
     ClipboardLoad,
 
+    /// onehand patch: bytes the terminal owes the child, to be written back to
+    /// the PTY verbatim.
+    ///
+    /// This is how a terminal answers a question. Device Attributes, the cursor
+    /// position report, the version string and the keyboard-mode queries are all
+    /// requests the child sends and then *waits* on, and alacritty composes each
+    /// answer and hands it out through this event because it has no idea where
+    /// the PTY is. Dropping it is not a missing nicety: full-screen programs
+    /// query the terminal at startup to find out what it can do, and one that
+    /// never answers is one they have to time out on and then assume the worst
+    /// about.
+    PtyReply(String),
+
+    /// onehand patch: the child asked what a colour actually is.
+    ///
+    /// `OSC 4` for a palette slot, `OSC 10`/`11`/`12` for foreground, background
+    /// and cursor. The background query is the one that earns this: a
+    /// full-screen program reads it to decide whether it is drawing on light or
+    /// dark, and with no reply it falls back to a guess -- which is how a dark
+    /// theme ends up with a colour scheme picked for a white background.
+    ///
+    /// Answered by the view rather than here, because the palette is the
+    /// renderer's and it changes when the app's appearance does; the proxy holds
+    /// no colours and a copy taken at construction would answer for the theme
+    /// that was in force when the tab was opened.
+    ColorQuery {
+        /// The index the escape sequence named.
+        index: usize,
+        /// Formats the resolved colour into the reply for that sequence.
+        reply: ColorReply,
+    },
+
     /// The terminal process has exited.
     Exit,
+}
+
+/// Written out rather than derived: [`TerminalEvent::ColorQuery`] carries a
+/// formatter, and a boxed closure has nothing to print.
+impl fmt::Debug for TerminalEvent {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Wakeup => write!(f, "Wakeup"),
+            Self::Bell => write!(f, "Bell"),
+            Self::Title(title) => write!(f, "Title({title:?})"),
+            Self::ClipboardStore(text) => write!(f, "ClipboardStore({text:?})"),
+            Self::ClipboardLoad => write!(f, "ClipboardLoad"),
+            Self::PtyReply(text) => write!(f, "PtyReply({text:?})"),
+            Self::ColorQuery { index, .. } => write!(f, "ColorQuery({index})"),
+            Self::Exit => write!(f, "Exit"),
+        }
+    }
 }
 
 /// An event proxy that implements alacritty's EventListener trait.
@@ -142,16 +209,26 @@ impl EventListener for GpuiEventProxy {
             Event::Exit => {
                 self.send(TerminalEvent::Exit);
             }
+            // onehand patch: an answer the child is waiting on, not something
+            // alacritty finished by itself -- it composed the text and has no
+            // way to reach the PTY, so this is the whole of the reply path.
+            Event::PtyWrite(data) => {
+                self.send(TerminalEvent::PtyReply(data));
+            }
+            // onehand patch: forwarded with the formatter intact so the view can
+            // answer from the palette it is currently painting with.
+            Event::ColorRequest(index, reply) => {
+                self.send(TerminalEvent::ColorQuery { index, reply });
+            }
             // Ignore events we don't care about
             Event::MouseCursorDirty => {}
-            Event::PtyWrite(ref _data) => {
-                // This is handled internally by alacritty
-            }
-            Event::ColorRequest(ref _index, ref _format) => {
-                // Color requests are not commonly used
-            }
             Event::TextAreaSizeRequest(ref _format) => {
-                // Text area size requests are handled internally
+                // The text area in pixels, asked for by `CSI 14 t` / `CSI 16 t`.
+                // Left unanswered: the grid is measured during paint and this
+                // event arrives from the parser thread, so the number would be
+                // whatever the last frame happened to leave behind. Nothing that
+                // runs in this terminal needs it, and a stale answer is worse
+                // than the silence a program already handles.
             }
             Event::CursorBlinkingChange => {
                 // Cursor blinking changes could be handled if needed

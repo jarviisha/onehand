@@ -36,6 +36,7 @@ gpui::actions!(
         ToggleWorkbench,
         SaveFile,
         ToggleTerminal,
+        OpenNeovim,
         FocusComposer,
         ToggleFind,
         RestartSession,
@@ -139,6 +140,11 @@ pub fn init_keymap(cx: &mut App) {
         // right trade: this is the key that *closes* the terminal too, so it
         // has to reach the app from inside it, and few shells read it.
         gpui::KeyBinding::new("ctrl-`", ToggleTerminal, None),
+        // Neovim, on the project root, in a tab of that same terminal. It sits
+        // beside the terminal key because it opens the same dock, and it is
+        // inside the namespace because -- unlike the backtick -- `n` is a letter
+        // and the shifted form is a keystroke that can be typed.
+        gpui::KeyBinding::new("ctrl-shift-n", OpenNeovim, None),
         gpui::KeyBinding::new("ctrl-shift-a", FocusComposer, None),
         gpui::KeyBinding::new("ctrl-shift-f", ToggleFind, None),
         gpui::KeyBinding::new("ctrl-shift-r", RestartSession, None),
@@ -1986,6 +1992,22 @@ impl Shell {
         cx.notify();
     }
 
+    /// Open Neovim on the active project, as the Workbench's third mode.
+    ///
+    /// Spawned here rather than by the mode switch, so that clicking the mode
+    /// strip stays a view change: the key is the request to *start* an editor,
+    /// and a tab that launched a process when clicked would be the one control
+    /// in the panel that does something irreversible-looking.
+    ///
+    /// Three-state after that, like the other two Workbench keys and for the
+    /// same reason: closing the dock puts the editor aside rather than ending
+    /// it — the panel entity outlives the dock, so the PTY, its scrollback and
+    /// whatever is unsaved in the buffer are all still there on the next press.
+    pub fn show_neovim(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.workbench.update(cx, |panel, cx| panel.open_neovim(cx));
+        self.show_workbench(WorkbenchMode::Neovim, window, cx);
+    }
+
     /// Put the terminal on screen, or take it off.
     ///
     /// **Mounted and unmounted, not opened and closed.** A *closed* bottom dock
@@ -2124,9 +2146,13 @@ impl Shell {
                 step.apply(pane.zoom_mut());
                 cx.notify();
             }),
+            // Handed the whole value, not a `&mut` to the field: the Workbench's
+            // Neovim mode is a measured grid, so a step there has to be pushed
+            // into the view as a font size as well as recorded.
             FocusedPanel::Workbench => self.workbench.update(cx, |panel, cx| {
-                step.apply(panel.zoom_mut());
-                cx.notify();
+                let mut zoom = panel.zoom();
+                step.apply(&mut zoom);
+                panel.set_zoom(zoom, cx);
             }),
             FocusedPanel::Terminal => self.terminal.update(cx, |panel, cx| {
                 let mut zoom = panel.zoom();
@@ -2820,6 +2846,9 @@ impl Render for Shell {
                     shell.show_terminal(window, cx);
                 }),
             )
+            .on_action(cx.listener(|shell: &mut Self, _: &OpenNeovim, window, cx| {
+                shell.show_neovim(window, cx);
+            }))
             .on_action(
                 cx.listener(|shell: &mut Self, _: &FocusComposer, window, cx| {
                     shell.last_panel = FocusedPanel::Chat;
