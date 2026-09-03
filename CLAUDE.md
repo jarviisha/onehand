@@ -463,6 +463,19 @@ renderer read `chat.items` / `chat.busy` without knowing where the model lives.
   total, `.git` skipped. Rows carry git state as one-letter badges; a directory holding changes gets a
   dot. Indentation is padding by depth, not nested containers — hundreds of nested rows are hundreds
   of wasted elements.
+- **A tab whose child exits is dropped**, in both this panel and the terminal's (`Workbench::reap_neovim`,
+  `TerminalPanel::reap`, fed by `spawn_pty`'s exit callback). Nothing notices otherwise: the grid keeps
+  drawing the last screen the child painted, which after `:q` or `exit` is an empty one with a cursor
+  on it, and the tab takes keystrokes nothing will ever read. Three things this owes.
+  It is **deferred** through `Window::defer` — the callback fires from inside the grid's own render,
+  and the panel that owns the tab is the thing currently rendering that grid, so reaching into it
+  there is a panic rather than an error, at the exact moment somebody typed `:q`.
+  It is a **sweep** over every tab rather than a removal of the one that spoke, because `PtyTab::finished`
+  asks the process (`try_wait`) — so a child killed from somewhere else, or gone while its root was off
+  screen, is collected too, and reaped rather than left a zombie.
+  And it moves **focus only if focus was already inside that panel**: a grid dropped while holding the
+  caret leaves the window pointing at an element no frame contains, which takes the whole keymap with
+  it — while a background shell exiting must not steal the caret from what the user is doing.
 - **Neovim** (`Ctrl+Shift+N`): the real thing, in a PTY, on the project root. Here and not in the
   terminal dock because this is the panel about files. One per root and never a second — several
   shells is what somebody opens on purpose, while two editors on the same files are two views of one

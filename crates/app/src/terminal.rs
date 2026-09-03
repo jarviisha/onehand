@@ -75,6 +75,20 @@ impl PtyTab {
         &self.view
     }
 
+    /// Whether the child has exited.
+    ///
+    /// Asked rather than remembered, and asked of the process rather than of the
+    /// event that announced it: `try_wait` is the only thing that actually
+    /// knows, so a tab holding a dead child is caught however it died — `:q`,
+    /// `exit`, a crash, or a `kill` from somewhere else entirely.
+    ///
+    /// Also reaps it, which is the second half of why this is worth calling:
+    /// a child that exited but was never waited on stays a zombie until the
+    /// whole app ends.
+    pub(crate) fn finished(&mut self) -> bool {
+        matches!(self.child.try_wait(), Ok(Some(_)))
+    }
+
     /// Re-apply a font size to this grid.
     ///
     /// The grid is a *measured* glyph lattice, so its zoom is a font size rather
@@ -209,7 +223,11 @@ impl TerminalPanel {
             return;
         };
 
-        match spawn_pty(&root, Program::Shell, self.zoom, cx) {
+        let panel = cx.entity().downgrade();
+        let spawned = spawn_pty(&root, Program::Shell, self.zoom, cx, move |window, cx| {
+            let _ = panel.update(cx, |panel: &mut Self, cx| panel.reap(window, cx));
+        });
+        match spawned {
             Ok(shell) => {
                 let set = self.shells.entry(root).or_default();
                 set.tabs.push(shell);
@@ -217,6 +235,41 @@ impl TerminalPanel {
                 self.status = None;
             }
             Err(e) => self.status = Some(e),
+        }
+        cx.notify();
+    }
+
+    /// Drop every tab whose shell has exited.
+    ///
+    /// Reached from a tab announcing its own death, but written as a sweep over
+    /// all of them rather than a removal of the one that spoke: `finished` asks
+    /// the process, so a child that died without anything noticing — killed from
+    /// another terminal, or gone while its root was off screen — is collected
+    /// on the next sweep rather than left as a grid nobody can type into.
+    ///
+    /// The caret is the other half. A grid dropped while it holds focus leaves
+    /// the window pointing at an element no frame contains, and GPUI resolves a
+    /// key along the path down to the *focused* node — so every shortcut,
+    /// including the one that would reopen this panel, stops working. Focus is
+    /// only moved when it was inside this panel to begin with: a shell exiting
+    /// in the background must not take the caret away from whatever the user is
+    /// actually doing.
+    pub fn reap(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let held_focus = self.focus_handle.contains_focused(window, cx);
+        let mut removed = false;
+        for set in self.shells.values_mut() {
+            let before = set.tabs.len();
+            set.tabs.retain_mut(|tab| !tab.finished());
+            if set.tabs.len() != before {
+                set.active = set.active.min(set.tabs.len().saturating_sub(1));
+                removed = true;
+            }
+        }
+        if !removed {
+            return;
+        }
+        if held_focus {
+            self.focus_active(window, cx);
         }
         cx.notify();
     }
@@ -367,11 +420,17 @@ fn program_command(program: Program) -> Result<(CommandBuilder, SharedString), S
 /// install for itself, the clipboard hook, the child that has to be reaped —
 /// belongs to *running a program in a PTY* rather than to this panel, and a
 /// second copy of them is a second copy to keep in step.
+///
+/// `on_exit` is how the owner learns the child is gone. **It has to be told**:
+/// nothing else notices. The grid keeps rendering the last screen the child
+/// drew, which after `:q` or `exit` is an empty one with a cursor on it, and
+/// the tab sits there taking keystrokes nothing will ever read.
 pub(crate) fn spawn_pty(
     cwd: &PathBuf,
     program: Program,
     zoom: crate::zoom::Zoom,
     cx: &mut App,
+    on_exit: impl Fn(&mut Window, &mut App) + 'static,
 ) -> Result<PtyTab, String> {
     let config = TerminalConfig {
         scrollback: SCROLLBACK,
@@ -460,6 +519,26 @@ pub(crate) fn spawn_pty(
             .with_clipboard_store_callback(|_, _, text| {
                 if let Ok(mut clipboard) = gpui_terminal::Clipboard::new() {
                     let _ = clipboard.copy(text);
+                }
+            })
+            // The child is gone; tell whoever is holding this tab.
+            //
+            // **Deferred, and it has to be.** This fires from inside the grid's
+            // own render, and the panel that owns the tab is the thing currently
+            // rendering that grid -- so it is already being updated, and
+            // reaching into it here is a panic rather than an error. Which is
+            // the worst possible shape for this particular bug: the app would go
+            // down at the moment somebody typed `:q`.
+            //
+            // `Window::defer` rather than the app's, because putting the caret
+            // somewhere it can still be reached needs the window, and a grid
+            // that has just been dropped while holding focus takes the whole
+            // keymap with it.
+            .with_exit_callback({
+                let on_exit = std::rc::Rc::new(on_exit);
+                move |window, cx| {
+                    let on_exit = on_exit.clone();
+                    window.defer(cx, move |window, cx| on_exit(window, cx));
                 }
             })
     });

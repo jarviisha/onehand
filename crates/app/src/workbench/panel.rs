@@ -170,12 +170,44 @@ impl Workbench {
         if self.neovim.contains_key(&root) {
             return;
         }
-        match crate::terminal::spawn_pty(&root, Program::Editor, self.zoom, cx) {
+        let panel = cx.entity().downgrade();
+        let spawned =
+            crate::terminal::spawn_pty(&root, Program::Editor, self.zoom, cx, move |window, cx| {
+                let _ = panel.update(cx, |panel: &mut Self, cx| panel.reap_neovim(window, cx));
+            });
+        match spawned {
             Ok(tab) => {
                 self.neovim.insert(root, tab);
                 self.status = None;
             }
             Err(e) => self.status = Some(e),
+        }
+        cx.notify();
+    }
+
+    /// Drop a Neovim that has exited.
+    ///
+    /// Without this, `:q` leaves the grid drawing the last screen Neovim
+    /// painted — which after quitting is an empty one with a cursor on it — and
+    /// the mode becomes a panel that takes keystrokes nothing will ever read.
+    /// The mode is *not* switched away from: the empty state offers to start
+    /// another, and moving the user somewhere they did not ask to go is a worse
+    /// answer than showing them what happened.
+    ///
+    /// Focus is only moved when it was inside this panel already. A grid dropped
+    /// while holding the caret leaves the window pointing at an element no frame
+    /// contains, and GPUI resolves a key along the path down to the focused
+    /// node, so every shortcut stops working — including the ones that would get
+    /// out of here.
+    pub fn reap_neovim(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let held_focus = self.focus_handle.contains_focused(window, cx);
+        let before = self.neovim.len();
+        self.neovim.retain(|_, tab| !tab.finished());
+        if self.neovim.len() == before {
+            return;
+        }
+        if held_focus {
+            self.focus_active(window, cx);
         }
         cx.notify();
     }
