@@ -77,13 +77,14 @@ const SAVE_DEBOUNCE: std::time::Duration = std::time::Duration::from_millis(600)
 /// reverse-DNS-free plain name because that is what the installed entry is
 /// named, and the two are compared literally.
 ///
-/// **Deliberately not the binary's name.** The front end this one replaced is
-/// still a checkout of its own and still installs an entry called `onehand`,
-/// and a desktop identity is first-come-first-served: two apps announcing one
-/// name share an entry, an icon and a slot in the dock, and whichever installs
-/// last overwrites the other's entry. So the identity is the checkout's name
-/// while the binary, the icon file and the config directory keep the project's.
-const APP_ID: &str = "onehand-gpui";
+/// It is the project's own name, the same string as the binary, the icon file
+/// and the per-user config directory. A desktop identity is
+/// first-come-first-served — two apps announcing one name share an entry, an
+/// icon and a slot in the dock, and whichever installs last overwrites the
+/// other's — so this name being the project's means nothing else may install an
+/// entry under it. The front end this one replaced held it for a while, which is
+/// why the string is worth a comment at all.
+const APP_ID: &str = "onehand";
 
 /// How long a project must stay selected before its agent is started ahead of
 /// the session that would run it.

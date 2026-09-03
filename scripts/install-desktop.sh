@@ -15,19 +15,18 @@ set -euo pipefail
 # this checkout is moved or renamed. An absolute path is how the previous entry
 # came to reference a directory that no longer holds this project.
 
-# The desktop identity is the checkout's name, not the project's, and the two
-# are kept apart on purpose. The front end this one replaced is still a checkout
-# beside it and still installs an entry called `onehand`; a desktop identity is
-# first-come-first-served, so sharing that string would give the two apps one
-# entry, one icon and one slot in the dock, with whichever was installed last
-# overwriting the other. `app_id` here must stay in step with the constant the
-# window announces (`crates/app/src/shell.rs`) -- they are compared literally.
+# One name for everything: the entry, the icon lookup, the `StartupWMClass`, the
+# binary cargo builds, the icon checked in beside it and the per-user config
+# directory. `app_id` here must stay in step with the constant the window
+# announces (`crates/app/src/shell.rs`) -- they are compared literally.
 #
-# Everything else keeps the project's own name: the binary cargo builds, the
-# icon checked in beside it, and the per-user config directory both front ends
-# share.
-app_id="onehand-gpui"
-app_name="Onehand GPUI"
+# A desktop identity is first-come-first-served: two apps announcing one name
+# share an entry, an icon and a slot in the dock, and whichever installed last
+# overwrote the other. So nothing else may install an entry under this name --
+# the front end this one replaced did, and had to be taken off the machine
+# before this one could have it.
+app_id="onehand"
+app_name="Onehand"
 project="onehand"
 
 script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
