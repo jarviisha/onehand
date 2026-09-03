@@ -1582,9 +1582,17 @@ impl Render for TerminalView {
                     move |bounds, _, window, cx| {
                         use alacritty_terminal::grid::Dimensions;
 
-                        // Measure actual cell dimensions from the font
+                        // Measure actual cell dimensions from the font.
+                        //
+                        // onehand patch: only when the font changed. The clone
+                        // carries the previous frame's measurement, which is
+                        // still the right answer for as long as the family, the
+                        // size and the line-height multiplier all stand -- and
+                        // none of those move while somebody types. Measuring
+                        // means shaping a probe glyph, and this runs on every
+                        // frame, which for a modal editor is every keystroke.
                         let mut measured_renderer = renderer.clone();
-                        measured_renderer.measure_cell(window);
+                        measured_renderer.ensure_measured(window);
 
                         // Calculate available space after padding
                         let available_width: f32 =
@@ -1671,8 +1679,11 @@ impl Render for TerminalView {
                             // vertical. That is a wrong selection, a wrong mouse
                             // report, and a wrong number of lines per scroll
                             // notch.
-                            view.renderer.cell_width = measured_renderer.cell_width;
-                            view.renderer.cell_height = measured_renderer.cell_height;
+                            //
+                            // The staleness key travels with the numbers, so the
+                            // next frame's clone knows it has nothing to
+                            // re-measure.
+                            view.renderer.adopt_metrics(&measured_renderer);
                         });
                         window.handle_input(
                             &focus_handle,

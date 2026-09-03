@@ -983,6 +983,14 @@ Listed because a missing feature nobody wrote down reads as a bug in the ones th
   expanding `#[test]`"*. Nothing in the message points at the glob. Import the two or three items the
   tests actually need by name. This is what upstream's note about "macro expansion issues with the
   test attribute" was, and it is why `view.rs` had no tests at all.
+- **The grid's paint runs once per visible character, so anything it allocates is multiplied by the
+  screen.** A modal editor redraws the whole grid on every keystroke, which is what turns a cost a
+  shell hides into typing latency. Three things were being built per glyph and are not any more: the
+  text (`ch.to_string()` then a `SharedString`), the `Font` (whose `family` is a `SharedString` built
+  from a `String`, and whose `FontFeatures::default()` is an `Arc<Vec<_>>`), and — per *row* — a
+  `Vec`, a `HashSet` and a discarded batching pass. `render::ascii_glyph` and
+  `TerminalRenderer::font_variants` are what keep the common case at zero allocations. **Measure
+  before assuming the shaping is the cost**; here the allocations around it were.
 - **The measured cell has to reach the view, not only the paint.** `TerminalRenderer::measure_cell`
   needs the window, and the window exists only inside the canvas paint — so it runs on a *clone* of
   the renderer, and writing the result back to the view's own copy is a separate step. Skip it and

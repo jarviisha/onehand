@@ -10,13 +10,12 @@
 //! ```text
 //! Terminal Grid → Layout Phase → Paint Phase
 //!                      │              │
-//!                      ├─ Collect backgrounds
-//!                      ├─ Batch text runs
-//!                      │              │
-//!                      │              ├─ Paint default background
-//!                      │              ├─ Paint non-default backgrounds
-//!                      │              ├─ Paint text characters
-//!                      │              └─ Paint cursor
+//!                      └─ Collect backgrounds
+//!                                     │
+//!                                     ├─ Paint default background
+//!                                     ├─ Paint non-default backgrounds
+//!                                     ├─ Paint text characters
+//!                                     └─ Paint cursor
 //! ```
 //!
 //! # Optimizations
@@ -26,14 +25,27 @@
 //! 1. **Background Merging**: Adjacent cells with the same background color are
 //!    merged into single rectangles, reducing the number of quads to paint.
 //!
-//! 2. **Text Batching**: Adjacent cells with identical styling (color, bold, italic)
-//!    are grouped into [`BatchedTextRun`]s for efficient text shaping.
-//!
-//! 3. **Default Background Skip**: Cells with the default background color don't
+//! 2. **Default Background Skip**: Cells with the default background color don't
 //!    generate separate background rectangles.
 //!
-//! 4. **Cell Measurement**: Font metrics are measured once using the '│' (BOX DRAWINGS
-//!    LIGHT VERTICAL) character and cached for consistent cell dimensions.
+//! 3. **Cell Measurement**: Font metrics are measured using the 'M' character and
+//!    reused until the font changes.
+//!
+//! *onehand patch*: this list used to claim a fourth, "text batching" — adjacent
+//! cells with identical styling grouped into one shaped run. The grouping was
+//! computed for every row of every frame and then **discarded by the only
+//! caller**, which painted one glyph at a time regardless, so the cost was paid
+//! and the benefit was not. The structure it produced is gone rather than wired
+//! up, because it could not express what the glyph pass now draws — an
+//! underline's own colour, a strikethrough, or which way round an inverted cell
+//! is — so it was not a head start on batching, it was a stale one.
+//!
+//! Batching is still the right answer and is deliberately **not** done here yet:
+//! a terminal has to place every glyph on its own cell, and shaping several
+//! characters as one run hands the advances to the font, where a ligature, a
+//! wide character or one glyph falling through to a fallback face shifts
+//! everything after it. What this pass does instead is make the per-glyph path
+//! allocate nothing — see [`TerminalRenderer::font_variants`] and [`ascii_glyph`].
 //!
 //! # Cell Dimensions
 //!
@@ -75,35 +87,32 @@ use gpui::{
     transparent_black,
 };
 
-/// A batched run of text with consistent styling.
+/// onehand patch: one `SharedString` per printable ASCII character, made once.
 ///
-/// This struct groups adjacent terminal cells with identical visual attributes
-/// to reduce the number of text rendering calls.
-#[derive(Debug, Clone)]
-pub struct BatchedTextRun {
-    /// The text content to render
-    pub text: String,
+/// The glyph pass shapes a character at a time, and every call needs the text as
+/// a [`SharedString`]. Built from the `char` each time — which is what this
+/// replaces — that is a `String` allocation and then an `Arc` allocation, for
+/// every visible character of every frame. On a full screen of code redrawn on
+/// each keystroke, which is what a modal editor does, it is the largest single
+/// source of allocation in the renderer.
+///
+/// Cloning out of this table is an `Arc` increment instead. Printable ASCII only:
+/// everything else falls back to building one, since a table over the rest of
+/// Unicode is not a table.
+fn ascii_glyph(ch: char) -> SharedString {
+    static PRINTABLE: std::sync::OnceLock<Vec<SharedString>> = std::sync::OnceLock::new();
 
-    /// Starting column position
-    pub start_col: usize,
-
-    /// Row position
-    pub row: usize,
-
-    /// Foreground color
-    pub fg_color: Hsla,
-
-    /// Background color
-    pub bg_color: Hsla,
-
-    /// Bold flag
-    pub bold: bool,
-
-    /// Italic flag
-    pub italic: bool,
-
-    /// Underline flag
-    pub underline: bool,
+    if ch.is_ascii_graphic() {
+        let table = PRINTABLE.get_or_init(|| {
+            ('!'..='~')
+                .map(|c| SharedString::from(c.to_string()))
+                .collect()
+        });
+        // `is_ascii_graphic` is exactly the range built above, so this indexes
+        // rather than searches, and cannot miss.
+        return table[ch as usize - '!' as usize].clone();
+    }
+    SharedString::from(ch.to_string())
 }
 
 /// Background rectangle to paint.
@@ -275,6 +284,21 @@ pub struct TerminalRenderer {
 
     /// Color palette for resolving terminal colors
     pub palette: ColorPalette,
+
+    /// onehand patch: the font [`Self::cell_width`] and [`Self::cell_height`]
+    /// were last measured for, or `None` if they are still the constructor's
+    /// guesses.
+    ///
+    /// Measuring means shaping a glyph through the text system, and the answer
+    /// only changes when the family, the size or the line-height multiplier
+    /// does — none of which happens while somebody is typing. Without this the
+    /// measurement ran on **every frame**, which for a modal editor is every
+    /// keystroke.
+    ///
+    /// Private, unlike everything above it, because it is a claim about two
+    /// other fields rather than a setting: anything that could set it out of
+    /// step with them would make the grid lay out at a size it never measured.
+    measured_for: Option<(String, Pixels, f32)>,
 }
 
 impl TerminalRenderer {
@@ -318,7 +342,84 @@ impl TerminalRenderer {
             cell_height,
             line_height_multiplier,
             palette,
+            measured_for: None,
         }
+    }
+
+    /// onehand patch: measure the cell, but only when the font it describes has
+    /// changed.
+    ///
+    /// The gate rather than [`Self::measure_cell`] is what the paint should
+    /// call. Shaping a probe glyph is not free, and the answer is the same on
+    /// every frame between one font change and the next.
+    pub fn ensure_measured(&mut self, window: &mut Window) {
+        if !self.needs_measure() {
+            return;
+        }
+        self.measure_cell(window);
+        self.measured_for = Some((
+            self.font_family.clone(),
+            self.font_size,
+            self.line_height_multiplier,
+        ));
+    }
+
+    /// Whether [`Self::cell_width`] and [`Self::cell_height`] still describe the
+    /// font this renderer is set to draw with.
+    ///
+    /// Split from [`Self::ensure_measured`] so the rule can be tested: measuring
+    /// itself needs a window, and deciding whether to does not.
+    fn needs_measure(&self) -> bool {
+        !self
+            .measured_for
+            .as_ref()
+            .is_some_and(|(family, size, mult)| {
+                family == &self.font_family
+                    && *size == self.font_size
+                    && *mult == self.line_height_multiplier
+            })
+    }
+
+    /// onehand patch: take another renderer's measurements as this one's.
+    ///
+    /// The measuring happens on a clone inside the paint, because it needs the
+    /// window and the window is only there; this is how the answer gets back to
+    /// the renderer the *view* holds, which is what every pixel-to-cell
+    /// conversion divides by. The staleness key travels with the numbers it
+    /// describes, so the next frame knows it has nothing to re-measure.
+    pub fn adopt_metrics(&mut self, measured: &Self) {
+        self.cell_width = measured.cell_width;
+        self.cell_height = measured.cell_height;
+        self.measured_for = measured.measured_for.clone();
+    }
+
+    /// onehand patch: the four faces a cell can ask for, built once per paint.
+    ///
+    /// Indexed by [`Self::font_index`]. This exists because a [`Font`] is not
+    /// cheap to make: its `family` is a [`SharedString`] built here from a
+    /// `String`, and `FontFeatures::default()` is an `Arc<Vec<_>>` — so
+    /// constructing one per glyph, which is what the glyph pass used to do, is
+    /// three heap allocations for every visible character of every frame.
+    /// Cloning one of these four is a pair of `Arc` increments instead.
+    fn font_variants(&self) -> [Font; 4] {
+        let face = |weight, style| Font {
+            family: self.font_family.clone().into(),
+            features: FontFeatures::default(),
+            fallbacks: None,
+            weight,
+            style,
+        };
+        [
+            face(FontWeight::NORMAL, FontStyle::Normal),
+            face(FontWeight::NORMAL, FontStyle::Italic),
+            face(FontWeight::BOLD, FontStyle::Normal),
+            face(FontWeight::BOLD, FontStyle::Italic),
+        ]
+    }
+
+    /// Which of [`Self::font_variants`] a cell wants.
+    fn font_index(flags: Flags) -> usize {
+        usize::from(flags.contains(Flags::BOLD)) << 1 | usize::from(flags.contains(Flags::ITALIC))
     }
 
     /// Measure cell dimensions based on actual font metrics.
@@ -380,55 +481,43 @@ impl TerminalRenderer {
         }
     }
 
-    /// Layout cells into batched text runs and background rects for a single row.
+    /// Lay a row's cells out into merged background rectangles.
     ///
-    /// This method processes a row of terminal cells and groups adjacent cells
-    /// with identical styling into batched runs. It also collects background
-    /// rectangles that need to be painted.
+    /// onehand patch: **backgrounds only.** This used to return batched text
+    /// runs as well, and its one caller discarded them — so every row of every
+    /// frame grouped the row's characters into runs, allocated a `String` for
+    /// each, and threw the lot away before painting one glyph at a time anyway.
     ///
     /// # Arguments
     ///
     /// * `row` - The row number
-    /// * `cells` - Iterator over (column, Cell) pairs
+    /// * `cells` - The row's cells, as (column, cell) pairs
     /// * `colors` - Terminal color configuration
     ///
     /// # Returns
     ///
-    /// A tuple of `(backgrounds, text_runs)` where:
-    /// - `backgrounds` is a vector of merged background rectangles
-    /// - `text_runs` is a vector of batched text runs
-    pub fn layout_row(
+    /// The row's background rectangles, with horizontally adjacent runs of the
+    /// same colour merged into one.
+    pub fn layout_backgrounds(
         &self,
         row: usize,
-        cells: impl Iterator<Item = (usize, Cell)>,
+        cells: &[(usize, Cell)],
         colors: &Colors,
-    ) -> (Vec<BackgroundRect>, Vec<BatchedTextRun>) {
+    ) -> Vec<BackgroundRect> {
         let mut backgrounds = Vec::new();
-        let mut text_runs = Vec::new();
-
-        let mut current_run: Option<BatchedTextRun> = None;
         let mut current_bg: Option<BackgroundRect> = None;
 
         for (col, cell) in cells {
+            let col = *col;
             // Skip wide character spacers
             if cell.flags.contains(Flags::WIDE_CHAR_SPACER) {
                 continue;
             }
 
-            // Extract cell styling. onehand patch: through `cell_ink`, so the
-            // background this pass paints and the foreground the glyph pass
-            // draws agree about which way round an inverted cell is.
-            let (fg_color, bg_color) = cell_ink(&self.palette, &cell, colors);
-            let bold = cell.flags.contains(Flags::BOLD);
-            let italic = cell.flags.contains(Flags::ITALIC);
-            let underline = cell.flags.intersects(Flags::ALL_UNDERLINES);
-
-            // Get the character (or space if empty)
-            let ch = if cell.c == ' ' || cell.c == '\0' {
-                ' '
-            } else {
-                cell.c
-            };
+            // onehand patch: through `cell_ink`, so the background this pass
+            // paints and the foreground the glyph pass draws agree about which
+            // way round an inverted cell is.
+            let (_, bg_color) = cell_ink(&self.palette, cell, colors);
 
             // Handle background rectangles
             if let Some(ref mut bg_rect) = current_bg {
@@ -454,58 +543,14 @@ impl TerminalRenderer {
                     color: bg_color,
                 });
             }
-
-            // Handle text runs
-            if let Some(ref mut run) = current_run {
-                if run.fg_color == fg_color
-                    && run.bg_color == bg_color
-                    && run.bold == bold
-                    && run.italic == italic
-                    && run.underline == underline
-                {
-                    // Extend current run
-                    run.text.push(ch);
-                } else {
-                    // Save current run and start new one
-                    text_runs.push(run.clone());
-                    current_run = Some(BatchedTextRun {
-                        text: ch.to_string(),
-                        start_col: col,
-                        row,
-                        fg_color,
-                        bg_color,
-                        bold,
-                        italic,
-                        underline,
-                    });
-                }
-            } else {
-                // Start new run
-                current_run = Some(BatchedTextRun {
-                    text: ch.to_string(),
-                    start_col: col,
-                    row,
-                    fg_color,
-                    bg_color,
-                    bold,
-                    italic,
-                    underline,
-                });
-            }
         }
 
-        // Push final run and background
-        if let Some(run) = current_run {
-            text_runs.push(run);
-        }
         if let Some(bg) = current_bg {
             backgrounds.push(bg);
         }
 
         // Merge adjacent backgrounds with same color
-        let merged_backgrounds = self.merge_backgrounds(backgrounds);
-
-        (merged_backgrounds, text_runs)
+        self.merge_backgrounds(backgrounds)
     }
 
     /// Merge adjacent background rects with same color.
@@ -605,22 +650,35 @@ impl TerminalRenderer {
         let display_offset = grid.display_offset() as i32;
         let selection = term.selection.as_ref().and_then(|s| s.to_range(term));
 
+        // onehand patch: three buffers hoisted out of the row loop.
+        //
+        // Each was allocated fresh per row per frame, so a forty-row grid paid
+        // a hundred and twenty allocations a frame before drawing anything —
+        // and a modal editor redraws the whole grid on every keystroke.
+        // `clear` keeps the capacity, so after the first row they are free.
+        let mut cells: Vec<(usize, Cell)> = Vec::with_capacity(num_cols);
+        let mut processed_horizontal: std::collections::HashSet<usize> =
+            std::collections::HashSet::with_capacity(num_cols);
+        // The four faces, made once for the whole grid rather than once per
+        // character -- see `font_variants`.
+        let fonts = self.font_variants();
+
         // Iterate over visible lines
         for line_idx in 0..num_lines {
             let line = Line(line_idx as i32 - display_offset);
 
             // Collect cells for this line
-            let cells: Vec<(usize, Cell)> = (0..num_cols)
-                .map(|col_idx| {
-                    let col = Column(col_idx);
-                    let point = AlacPoint::new(line, col);
-                    let cell = grid[point].clone();
-                    (col_idx, cell)
-                })
-                .collect();
+            cells.clear();
+            cells.extend((0..num_cols).map(|col_idx| {
+                let col = Column(col_idx);
+                let point = AlacPoint::new(line, col);
+                let cell = grid[point].clone();
+                (col_idx, cell)
+            }));
 
-            // Layout the row for backgrounds
-            let (backgrounds, _) = self.layout_row(line_idx, cells.iter().cloned(), colors);
+            // Layout the row for backgrounds. onehand patch: by reference. The
+            // whole row used to be cloned a second time to be handed over.
+            let backgrounds = self.layout_backgrounds(line_idx, &cells, colors);
 
             // Paint backgrounds
             for bg_rect in backgrounds {
@@ -708,8 +766,7 @@ impl TerminalRenderer {
 
             // First pass: find and draw horizontal spans of box-drawing characters
             // This draws continuous lines across multiple cells to avoid gaps
-            let mut processed_horizontal: std::collections::HashSet<usize> =
-                std::collections::HashSet::new();
+            processed_horizontal.clear();
 
             let mut i = 0;
             while i < cells_vec.len() {
@@ -828,33 +885,15 @@ impl TerminalRenderer {
                 // For regular text, apply vertical offset for centering
                 let y = y_base + vertical_offset;
 
-                // Get cell flags for styling
-                let flags = cell.flags;
-                let bold = flags.contains(Flags::BOLD);
-                let italic = flags.contains(Flags::ITALIC);
-
-                // Create font with styling
-                let font = Font {
-                    family: self.font_family.clone().into(),
-                    features: FontFeatures::default(),
-                    fallbacks: None,
-                    weight: if bold {
-                        FontWeight::BOLD
-                    } else {
-                        FontWeight::NORMAL
-                    },
-                    style: if italic {
-                        FontStyle::Italic
-                    } else {
-                        FontStyle::Normal
-                    },
-                };
-
-                // Create text run for this single character
-                let char_str = ch.to_string();
+                // Create text run for this single character. onehand patch: the
+                // face is cloned out of the four made for the whole grid and the
+                // text out of the ASCII table, so the common case allocates
+                // nothing at all -- this loop runs once per visible character of
+                // every frame.
+                let text: SharedString = ascii_glyph(ch);
                 let text_run = TextRun {
-                    len: char_str.len(),
-                    font,
+                    len: text.len(),
+                    font: fonts[Self::font_index(cell.flags)].clone(),
                     color: fg_color,
                     background_color: None,
                     // onehand patch: every underline the protocol has, in the
@@ -865,7 +904,6 @@ impl TerminalRenderer {
                 };
 
                 // Shape and paint the character
-                let text: SharedString = char_str.into();
                 let shaped_line =
                     window
                         .text_system()
@@ -1385,5 +1423,111 @@ mod tests {
         let ink = gpui::black();
         assert!(strikethrough_style(&cell_with(Flags::empty()), ink).is_none());
         assert!(strikethrough_style(&cell_with(Flags::STRIKEOUT), ink).is_some());
+    }
+
+    // ── onehand patch: the per-glyph path allocating nothing ────────────────
+
+    /// Cloning out of the table has to give the same text as building one, or
+    /// the fast path draws a different character from the slow one.
+    #[test]
+    fn the_ascii_table_agrees_with_building_a_string() {
+        for ch in '!'..='~' {
+            assert_eq!(ascii_glyph(ch).as_ref(), ch.to_string());
+        }
+        // Outside it, and still correct.
+        for ch in ['é', '→', '中', '\u{1f600}'] {
+            assert_eq!(ascii_glyph(ch).as_ref(), ch.to_string());
+        }
+    }
+
+    /// Four faces, and each combination of bold and italic picks a different
+    /// one. An index that collided would draw bold text upright, or italics
+    /// heavy, with nothing to show for it but a font that looks wrong.
+    #[test]
+    fn each_weight_and_slant_gets_its_own_face() {
+        let renderer = TerminalRenderer::new(
+            "Fira Code".to_string(),
+            px(14.0),
+            1.0,
+            ColorPalette::default(),
+        );
+        let fonts = renderer.font_variants();
+
+        let plain = &fonts[TerminalRenderer::font_index(Flags::empty())];
+        let bold = &fonts[TerminalRenderer::font_index(Flags::BOLD)];
+        let italic = &fonts[TerminalRenderer::font_index(Flags::ITALIC)];
+        let both = &fonts[TerminalRenderer::font_index(Flags::BOLD | Flags::ITALIC)];
+
+        assert_eq!(plain.weight, FontWeight::NORMAL);
+        assert_eq!(plain.style, FontStyle::Normal);
+        assert_eq!(bold.weight, FontWeight::BOLD);
+        assert_eq!(bold.style, FontStyle::Normal);
+        assert_eq!(italic.weight, FontWeight::NORMAL);
+        assert_eq!(italic.style, FontStyle::Italic);
+        assert_eq!(both.weight, FontWeight::BOLD);
+        assert_eq!(both.style, FontStyle::Italic);
+
+        // All four indices are distinct, which is the property the table needs.
+        let indices = [
+            TerminalRenderer::font_index(Flags::empty()),
+            TerminalRenderer::font_index(Flags::BOLD),
+            TerminalRenderer::font_index(Flags::ITALIC),
+            TerminalRenderer::font_index(Flags::BOLD | Flags::ITALIC),
+        ];
+        let mut seen = indices;
+        seen.sort_unstable();
+        assert_eq!(seen, [0, 1, 2, 3]);
+    }
+
+    /// The whole point of the measurement key: a renderer that has measured
+    /// nothing is stale, and one whose font has since changed is stale again.
+    /// Getting this wrong either re-measures every frame, which is the cost this
+    /// removes, or never re-measures, which lays the grid out at the wrong size.
+    #[test]
+    fn the_measurement_is_stale_only_when_the_font_moved() {
+        let mut renderer = TerminalRenderer::new(
+            "Fira Code".to_string(),
+            px(14.0),
+            1.0,
+            ColorPalette::default(),
+        );
+        assert!(renderer.needs_measure(), "nothing has been measured yet");
+
+        // Standing in for `measure_cell`, which needs a window.
+        renderer.measured_for = Some((
+            renderer.font_family.clone(),
+            renderer.font_size,
+            renderer.line_height_multiplier,
+        ));
+        assert!(!renderer.needs_measure());
+
+        renderer.font_size = px(15.0);
+        assert!(renderer.needs_measure(), "a new size is a new cell");
+
+        renderer.measured_for = Some((renderer.font_family.clone(), px(15.0), 1.0));
+        renderer.font_family = "JetBrains Mono".to_string();
+        assert!(renderer.needs_measure(), "a new family is a new cell");
+    }
+
+    /// And the answer has to reach the renderer the view holds, key included —
+    /// carrying the numbers without it would re-measure on every frame anyway.
+    #[test]
+    fn adopting_metrics_carries_the_key_with_them() {
+        let mut view_side = TerminalRenderer::new(
+            "Fira Code".to_string(),
+            px(14.0),
+            1.0,
+            ColorPalette::default(),
+        );
+        let mut painted = view_side.clone();
+        painted.cell_width = px(8.0);
+        painted.cell_height = px(17.0);
+        painted.measured_for = Some(("Fira Code".to_string(), px(14.0), 1.0));
+
+        view_side.adopt_metrics(&painted);
+
+        assert_eq!(view_side.cell_width, px(8.0));
+        assert_eq!(view_side.cell_height, px(17.0));
+        assert!(!view_side.needs_measure());
     }
 }
