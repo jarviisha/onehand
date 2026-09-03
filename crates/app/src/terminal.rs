@@ -5,11 +5,21 @@
 //! is the one the user types into.
 //!
 //! Scope is **per project root**: each root owns its tab set, and switching
-//! roots swaps the whole thing — a shell belongs to a project, not to a
-//! window. Neovim mode is *not* here: it was cut from this build along with the
-//! hardest terminal parity work — mouse reporting, the `Shift` bypass, OSC 52,
-//! DECSCUSR — because a Neovim that mishandles any of those is worse than no
-//! Neovim at all.
+//! roots swaps the whole thing — a shell belongs to a project, not to a window.
+//!
+//! A tab runs one of two things. The user's login shell, which is what the `+`
+//! and the terminal key open — and Neovim, on the project root, which is what
+//! `Ctrl+Shift+N` opens. There is no third kind of panel for the editor: it is a
+//! program in a PTY like any other, and the grid underneath now carries what
+//! such a program needs of a terminal — mouse reporting with the `Shift` bypass
+//! that takes selection back, the cursor shapes `DECSCUSR` asks for, `OSC 52` so
+//! a yank reaches the system clipboard, and answers to the queries it sends at
+//! startup.
+//!
+//! Neovim gets its own tab rather than a second one every press: the point of
+//! the key is to reach the editor, and a key that opened another editor each
+//! time it was pressed would be a key nobody could use to come back to their
+//! work.
 
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
@@ -30,10 +40,25 @@ use std::sync::{Arc, Mutex};
 /// scrolls back further than this without reaching for the shell's own pager.
 const SCROLLBACK: usize = 2000;
 
+/// What a tab was started to run.
+///
+/// Not cosmetic: it is how the panel finds an editor tab that is already open,
+/// which is what stops `Ctrl+Shift+N` opening a second Neovim on top of the
+/// first. Matching on the label would work until somebody's shell was called
+/// `nvim`, or until a program set the tab's title.
+#[derive(Clone, Copy, PartialEq)]
+enum Program {
+    /// The user's login shell.
+    Shell,
+    /// Neovim, opened on the project root.
+    Editor,
+}
+
 /// One shell tab.
 struct Shell {
     view: Entity<TerminalView>,
     label: SharedString,
+    program: Program,
     /// Kept alive for the tab's life. Dropping the PTY pair hangs up the
     /// terminal, which is what gets a well-behaved shell to leave; [`Drop`]
     /// below is what handles the rest.
@@ -142,14 +167,44 @@ impl TerminalPanel {
 
     /// Open a shell on the active root.
     ///
+    /// Always a new one, unlike [`Self::open_editor`]: shells are what somebody
+    /// opens several of on purpose, one per thing they are watching.
+    pub fn open_shell(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.open_tab(Program::Shell, window, cx);
+    }
+
+    /// Show the project's Neovim, opening it if it is not already running.
+    ///
+    /// Reaching for the editor and reaching for *another* editor are different
+    /// requests, and only the first has a key: pressing this twice has to land
+    /// back in the work, not beside it. A second one is still available the way
+    /// every other tab is, through the `+`.
+    ///
+    /// Per project root, like everything else in this panel, because the editor
+    /// is opened on that root and an editor rooted somewhere else is not the one
+    /// the key was pressed for.
+    pub fn open_editor(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let existing = self.active_set().and_then(|set| {
+            set.tabs
+                .iter()
+                .position(|tab| tab.program == Program::Editor)
+        });
+        match existing {
+            Some(idx) => self.select_tab(idx, cx),
+            None => self.open_tab(Program::Editor, window, cx),
+        }
+    }
+
+    /// Spawn a tab on the active root and make it the one on screen.
+    ///
     /// Spawned lazily and never at boot: a workspace with a dozen roots must
     /// not start a dozen shells nobody asked for.
-    pub fn open_shell(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+    fn open_tab(&mut self, program: Program, window: &mut Window, cx: &mut Context<Self>) {
         let Some(root) = self.root.clone() else {
             return;
         };
 
-        match spawn_shell(&root, self.zoom, window, cx) {
+        match spawn_shell(&root, program, self.zoom, window, cx) {
             Ok(shell) => {
                 let set = self.shells.entry(root).or_default();
                 set.tabs.push(shell);
@@ -280,9 +335,42 @@ fn mono_family(cx: &App) -> String {
     cx.theme().mono_font_family.to_string()
 }
 
-/// Start a shell in `cwd`.
+/// The program a tab runs, and the name its tab carries.
+///
+/// Neovim is looked up on `PATH` here rather than handed to the PTY to fail on,
+/// because the two failures do not read alike: a spawn that fails comes back as
+/// "No such file or directory" with no subject, and the one thing the user needs
+/// told is *which* file. It is a plain `nvim` and not `$EDITOR` -- this is the
+/// Neovim key, and honouring `$EDITOR` would make it open `vi` or `nano` for
+/// someone who set that variable years ago for `git commit`.
+fn program_command(program: Program) -> Result<(CommandBuilder, SharedString), String> {
+    match program {
+        Program::Shell => {
+            let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/sh".to_string());
+            let label = SharedString::from(
+                std::path::Path::new(&shell)
+                    .file_name()
+                    .map(|n| n.to_string_lossy().into_owned())
+                    .unwrap_or_else(|| shell.clone()),
+            );
+            Ok((CommandBuilder::new(&shell), label))
+        }
+        Program::Editor => {
+            let found = std::env::var_os("PATH")
+                .into_iter()
+                .flat_map(|path| std::env::split_paths(&path).collect::<Vec<_>>())
+                .map(|dir| dir.join("nvim"))
+                .find(|candidate| candidate.is_file())
+                .ok_or_else(|| "Neovim is not installed, or `nvim` is not on PATH".to_string())?;
+            Ok((CommandBuilder::new(found), SharedString::from("nvim")))
+        }
+    }
+}
+
+/// Start `program` in `cwd`.
 fn spawn_shell(
     cwd: &PathBuf,
+    program: Program,
     zoom: crate::zoom::Zoom,
     window: &mut Window,
     cx: &mut App,
@@ -309,8 +397,7 @@ fn spawn_shell(
         })
         .map_err(|e| e.to_string())?;
 
-    let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/sh".to_string());
-    let mut command = CommandBuilder::new(&shell);
+    let (mut command, label) = program_command(program)?;
     command.cwd(cwd);
     // `alacritty_terminal` ships a `tty::setup_env` it never calls, and an
     // inherited foreign `TERM` breaks key and colour detection in anything
@@ -324,13 +411,6 @@ fn spawn_shell(
         .map_err(|e| e.to_string())?;
     let writer = pty.master.take_writer().map_err(|e| e.to_string())?;
     let reader = pty.master.try_clone_reader().map_err(|e| e.to_string())?;
-
-    let label = SharedString::from(
-        std::path::Path::new(&shell)
-            .file_name()
-            .map(|n| n.to_string_lossy().into_owned())
-            .unwrap_or(shell.clone()),
-    );
 
     // The one thing the vendored view cannot do for itself.
     //
@@ -347,28 +427,50 @@ fn spawn_shell(
     // which changes the cell count, which comes back through here.
     let master = Arc::new(Mutex::new(pty.master));
     let view = cx.new(|cx| {
-        TerminalView::new(writer, reader, config, cx).with_resize_callback({
-            let master = master.clone();
-            move |cols, rows| {
-                if let Ok(master) = master.lock() {
-                    // A failed resize is not worth tearing the tab down for:
-                    // the grid has already resized, so the panel stays usable
-                    // and only the child's idea of its size is stale.
-                    let _ = master.resize(PtySize {
-                        rows: rows as u16,
-                        cols: cols as u16,
-                        pixel_width: 0,
-                        pixel_height: 0,
-                    });
+        TerminalView::new(writer, reader, config, cx)
+            .with_resize_callback({
+                let master = master.clone();
+                move |cols, rows| {
+                    if let Ok(master) = master.lock() {
+                        // A failed resize is not worth tearing the tab down for:
+                        // the grid has already resized, so the panel stays usable
+                        // and only the child's idea of its size is stale.
+                        let _ = master.resize(PtySize {
+                            rows: rows as u16,
+                            cols: cols as u16,
+                            pixel_width: 0,
+                            pixel_height: 0,
+                        });
+                    }
                 }
-            }
-        })
+            })
+            // The other thing the grid cannot do for itself, and the app is the
+            // right half to do it: the clipboard belongs to the desktop session,
+            // not to one tab.
+            //
+            // This is a program in the shell asking for text to be copied. It is
+            // the only way a copy inside a full-screen editor reaches anything
+            // outside the terminal -- the editor owns the whole screen, so the
+            // selection it is copying is its own idea and there is nothing on
+            // the grid for a mouse drag to take. Without this, yanking to the
+            // system clipboard silently does nothing at all, which reads as the
+            // editor being misconfigured.
+            //
+            // Failures are dropped: the clipboard can be held by another
+            // process, and a tab that started printing errors because a copy did
+            // not land would be worse than the copy not landing.
+            .with_clipboard_store_callback(|_, _, text| {
+                if let Ok(mut clipboard) = gpui_terminal::Clipboard::new() {
+                    let _ = clipboard.copy(text);
+                }
+            })
     });
     let _ = window;
 
     Ok(Shell {
         view,
         label,
+        program,
         _pty: master,
         child,
     })

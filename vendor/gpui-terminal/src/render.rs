@@ -65,10 +65,10 @@ use crate::colors::ColorPalette;
 use crate::event::GpuiEventProxy;
 use alacritty_terminal::grid::Dimensions;
 use alacritty_terminal::index::{Column, Line, Point as AlacPoint};
-use alacritty_terminal::term::Term;
 use alacritty_terminal::term::cell::{Cell, Flags};
 use alacritty_terminal::term::color::Colors;
-use alacritty_terminal::vte::ansi::Color;
+use alacritty_terminal::term::{Term, TermMode};
+use alacritty_terminal::vte::ansi::{Color, NamedColor};
 use gpui::{
     App, Bounds, Edges, Font, FontFeatures, FontStyle, FontWeight, Hsla, Pixels, Point,
     SharedString, Size, TextRun, UnderlineStyle, Window, px, quad, transparent_black,
@@ -157,7 +157,7 @@ impl BackgroundRect {
 /// renderer.measure_cell(window);
 ///
 /// // Paint the terminal grid
-/// renderer.paint(bounds, padding, &term, window, cx);
+/// renderer.paint(bounds, padding, &term, true, window, cx);
 /// ```
 ///
 /// # Performance
@@ -460,13 +460,19 @@ impl TerminalRenderer {
     /// * `bounds` - The bounding box to render within
     /// * `padding` - Padding around the terminal content
     /// * `term` - The terminal state
+    /// * `focused` - Whether the grid currently holds keyboard focus
     /// * `window` - The GPUI window
     /// * `cx` - The application context
+    ///
+    /// onehand patch: `focused` is ours. Only the view knows the answer, and the
+    /// cursor is drawn differently without the keyboard -- see
+    /// [`Self::paint_cursor`].
     pub fn paint(
         &self,
         bounds: Bounds<Pixels>,
         padding: Edges<Pixels>,
         term: &Term<GpuiEventProxy>,
+        focused: bool,
         window: &mut Window,
         _cx: &mut App,
     ) {
@@ -794,35 +800,196 @@ impl TerminalRenderer {
             }
         }
 
-        // Paint cursor
-        let cursor_point = grid.cursor.point;
-        let cursor_x = origin.x + self.cell_width * (cursor_point.column.0 as f32);
-        let cursor_y = origin.y + self.cell_height * (cursor_point.line.0 as f32);
+        self.paint_cursor(origin, term, focused, window, _cx);
+    }
 
-        let cursor_color = self.palette.resolve(
-            Color::Named(alacritty_terminal::vte::ansi::NamedColor::Cursor),
-            colors,
-        );
+    /// onehand patch: draw the cursor the child asked for, where the viewport
+    /// actually is.
+    ///
+    /// Four things upstream did not do, and all four show up the moment a
+    /// full-screen editor is running.
+    ///
+    /// The **shape** is the child's to choose. `DECSCUSR` is already parsed --
+    /// `Term::cursor_style` answers with a shape and a blink flag -- and drawing
+    /// a block regardless throws that away, which in a modal editor erases the
+    /// one signal that says which mode it is in: insert asks for a beam,
+    /// replace for an underline, and normal for the block.
+    ///
+    /// The **character underneath** has to survive. A filled quad painted after
+    /// the glyph pass covers the glyph, so the cursor does not sit *on* a
+    /// character, it hides one -- and what it hides is the character the person
+    /// is about to act on. Repainting that one cell in the background colour on
+    /// top of the block is the inversion every other terminal draws.
+    ///
+    /// **Hiding** has to be honoured. `DECTCEM` off means the child is drawing
+    /// its own cursor or wants none, and a program that hides the cursor to
+    /// redraw a frame will otherwise flicker a block through every repaint.
+    ///
+    /// And the **viewport** has to be taken into account: `grid.cursor.point` is
+    /// a live-screen coordinate, so drawn without the scroll offset the cursor
+    /// stays pinned where it would have been while the reader scrolls the text
+    /// out from under it, and is drawn over unrelated scrollback.
+    ///
+    /// Blinking is deliberately not implemented: it would need a repaint on a
+    /// timer for the life of every tab, in a view that otherwise only draws when
+    /// bytes arrive. A steady cursor is a setting people choose on purpose;
+    /// a terminal that repaints twice a second while idle is not.
+    fn paint_cursor(
+        &self,
+        origin: Point<Pixels>,
+        term: &Term<GpuiEventProxy>,
+        focused: bool,
+        window: &mut Window,
+        cx: &mut App,
+    ) {
+        use alacritty_terminal::vte::ansi::CursorShape;
 
-        let cursor_bounds = Bounds {
-            origin: Point {
-                x: cursor_x,
-                y: cursor_y,
-            },
-            size: Size {
-                width: self.cell_width,
-                height: self.cell_height,
-            },
+        if !term.mode().contains(TermMode::SHOW_CURSOR) {
+            return;
+        }
+
+        let grid = term.grid();
+        let colors = term.colors();
+        let point = grid.cursor.point;
+
+        // Same conversion the glyph pass uses, in the other direction: the grid
+        // is addressed from the live screen and rows are drawn from the top of
+        // the viewport.
+        let row = point.line.0 + grid.display_offset() as i32;
+        if row < 0 || row >= grid.screen_lines() as i32 {
+            return;
+        }
+
+        let shape = match term.cursor_style().shape {
+            CursorShape::Hidden => return,
+            // A grid that does not hold focus draws an outline whatever the
+            // child asked for. Two terminals side by side both drawing a solid
+            // cursor is two claims on the keyboard, and only one of them is
+            // true.
+            _ if !focused => CursorShape::HollowBlock,
+            shape => shape,
         };
 
+        let cell_origin = Point {
+            x: origin.x + self.cell_width * (point.column.0 as f32),
+            y: origin.y + self.cell_height * (row as f32),
+        };
+        let color = self
+            .palette
+            .resolve(Color::Named(NamedColor::Cursor), colors);
+
+        // Thickness for the two thin shapes. Derived from the cell rather than
+        // fixed, so a beam stays visible when the grid is zoomed out and does
+        // not become a second block when it is zoomed in.
+        let stroke = (self.cell_width * 0.15).max(px(1.0));
+
+        let bounds = match shape {
+            CursorShape::Block | CursorShape::HollowBlock => Bounds {
+                origin: cell_origin,
+                size: Size {
+                    width: self.cell_width,
+                    height: self.cell_height,
+                },
+            },
+            CursorShape::Beam => Bounds {
+                origin: cell_origin,
+                size: Size {
+                    width: stroke,
+                    height: self.cell_height,
+                },
+            },
+            CursorShape::Underline => Bounds {
+                origin: Point {
+                    x: cell_origin.x,
+                    y: cell_origin.y + self.cell_height - stroke,
+                },
+                size: Size {
+                    width: self.cell_width,
+                    height: stroke,
+                },
+            },
+            CursorShape::Hidden => return,
+        };
+
+        if shape == CursorShape::HollowBlock {
+            window.paint_quad(quad(
+                bounds,
+                px(0.0),
+                transparent_black(),
+                Edges::all(px(1.0)),
+                color,
+                Default::default(),
+            ));
+            return;
+        }
+
         window.paint_quad(quad(
-            cursor_bounds,
+            bounds,
             px(0.0),
-            cursor_color,
+            color,
             Edges::<Pixels>::default(),
             transparent_black(),
             Default::default(),
         ));
+
+        // Only the block covers its cell; a beam and an underline leave the
+        // glyph where it was drawn.
+        if shape != CursorShape::Block {
+            return;
+        }
+
+        let cell = &grid[point];
+        let ch = cell.c;
+        if ch == ' ' || ch == '\0' {
+            return;
+        }
+
+        // Redrawn in the *cursor's* colour inverted -- the background -- rather
+        // than in the cell's own foreground, which would be invisible against a
+        // block painted in a colour derived from it.
+        let ink = self
+            .palette
+            .resolve(Color::Named(NamedColor::Background), colors);
+        let base_height = self.cell_height / self.line_height_multiplier;
+        let vertical_offset = (self.cell_height - base_height) / 2.0;
+        let flags = cell.flags;
+        let text: SharedString = ch.to_string().into();
+        let run = TextRun {
+            len: text.len(),
+            font: Font {
+                family: self.font_family.clone().into(),
+                features: FontFeatures::default(),
+                fallbacks: None,
+                weight: if flags.contains(alacritty_terminal::term::cell::Flags::BOLD) {
+                    FontWeight::BOLD
+                } else {
+                    FontWeight::NORMAL
+                },
+                style: if flags.contains(alacritty_terminal::term::cell::Flags::ITALIC) {
+                    FontStyle::Italic
+                } else {
+                    FontStyle::Normal
+                },
+            },
+            color: ink,
+            background_color: None,
+            underline: None,
+            strikethrough: None,
+        };
+        let shaped = window
+            .text_system()
+            .shape_line(text, self.font_size, &[run], None);
+        let _ = shaped.paint(
+            Point {
+                x: cell_origin.x,
+                y: cell_origin.y + vertical_offset,
+            },
+            self.cell_height,
+            gpui::TextAlign::Left,
+            None,
+            window,
+            cx,
+        );
     }
 
     /// onehand patch: draw the input method's in-progress composition.

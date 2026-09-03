@@ -36,6 +36,7 @@ gpui::actions!(
         ToggleWorkbench,
         SaveFile,
         ToggleTerminal,
+        OpenNeovim,
         FocusComposer,
         ToggleFind,
         RestartSession,
@@ -139,6 +140,11 @@ pub fn init_keymap(cx: &mut App) {
         // right trade: this is the key that *closes* the terminal too, so it
         // has to reach the app from inside it, and few shells read it.
         gpui::KeyBinding::new("ctrl-`", ToggleTerminal, None),
+        // Neovim, on the project root, in a tab of that same terminal. It sits
+        // beside the terminal key because it opens the same dock, and it is
+        // inside the namespace because -- unlike the backtick -- `n` is a letter
+        // and the shifted form is a keystroke that can be typed.
+        gpui::KeyBinding::new("ctrl-shift-n", OpenNeovim, None),
         gpui::KeyBinding::new("ctrl-shift-a", FocusComposer, None),
         gpui::KeyBinding::new("ctrl-shift-f", ToggleFind, None),
         gpui::KeyBinding::new("ctrl-shift-r", RestartSession, None),
@@ -1986,6 +1992,25 @@ impl Shell {
         cx.notify();
     }
 
+    /// Open Neovim on the active project, in the terminal dock.
+    ///
+    /// **Not three-state, unlike every panel key.** The other shortcuts toggle a
+    /// panel, and a panel is a container the user is deciding whether to look
+    /// at; this one reaches a *program*, and hiding it is not the counterpart of
+    /// opening it — closing the dock leaves the editor running with whatever is
+    /// unsaved in it, which is exactly what the terminal key is for. So this
+    /// only ever brings it forward, and the way back out is the key that owns
+    /// the dock.
+    pub fn show_neovim(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.last_panel = FocusedPanel::Terminal;
+        self.set_terminal_visible(true, window, cx);
+        self.terminal.update(cx, |panel, cx| {
+            panel.open_editor(window, cx);
+            panel.focus_active(window, cx);
+        });
+        cx.notify();
+    }
+
     /// Put the terminal on screen, or take it off.
     ///
     /// **Mounted and unmounted, not opened and closed.** A *closed* bottom dock
@@ -2820,6 +2845,9 @@ impl Render for Shell {
                     shell.show_terminal(window, cx);
                 }),
             )
+            .on_action(cx.listener(|shell: &mut Self, _: &OpenNeovim, window, cx| {
+                shell.show_neovim(window, cx);
+            }))
             .on_action(
                 cx.listener(|shell: &mut Self, _: &FocusComposer, window, cx| {
                     shell.last_panel = FocusedPanel::Chat;

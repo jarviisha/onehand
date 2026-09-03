@@ -97,7 +97,11 @@ Revisions in use: gpui-component `9e3a29d` · zed `e0931d5`.
 gpui-component has **no** terminal component. The base is `zortax/gpui-terminal@51f0292`
 (MIT/Apache-2.0) — a good render core (PTY + `alacritty_terminal` + grid drawing + box-drawing) with
 **no interaction layer at all**: `on_mouse_up` / `on_mouse_move` / `on_scroll` / clipboard were all
-empty TODOs, and `mouse.rs` (711 lines) was never imported by `view.rs`.
+empty TODOs, and `mouse.rs` (711 lines) was never imported by `view.rs`. That module is now the wire
+format of mouse reporting and nothing else — the selection type, the pixel-to-cell conversion and the
+scroll-delta helper it also held were deleted, since the view had grown its own of each against
+alacritty's `Selection` rather than the one declared there, so the crate carried two types of the same
+name meaning different things.
 
 Everything onehand added is marked `onehand patch`: scrollback, selection, copy/paste
 (`Ctrl+Shift+C/V` — Ctrl+C is SIGINT and Ctrl+V is literal-next, and taking either breaks the shell),
@@ -128,13 +132,55 @@ is why `make fmt` / `make lint` are scoped to `-p onehand -p onehand-core`: a ba
 reformat the vendor and destroy that property. The clippy warnings left in the vendor are upstream's;
 leave them.
 
-### D4 · No Neovim mode yet
+### D4 · Neovim runs in the terminal, and is not a panel of its own
 
-Cut from the first build because the interaction layer had to be written from scratch. This is the
-harshest parity work — mouse reporting 64/65, Shift bypass, OSC 52, DECSCUSR cursor shapes. IME inside
-the PTY was on this list and is now **done** (see section 3): it could not wait for Neovim, because a
-terminal you cannot type Vietnamese into is broken at the command line already. The rest is estimated
-at ~700–900 lines. `Ctrl+Shift+N` is not bound.
+Cut from the first build because the interaction layer had to be written from scratch. It is written
+now, and `Ctrl+Shift+N` opens Neovim on the active project **as a tab of the terminal dock** — there is
+no separate editor surface and no msgpack-RPC embedding. Neovim is a program in a PTY, so what it
+needed was for the PTY to be a real terminal; giving it its own widget would have meant a second
+renderer, a second input path and a second set of the same bugs.
+
+What that took, all of it in `vendor/gpui-terminal` and marked `onehand patch`:
+
+- **Answers to the questions a program asks on startup.** Upstream dropped alacritty's
+  `Event::PtyWrite` with a comment saying it was handled internally, which is the opposite of what it
+  means: that event *is* the answer to Device Attributes, the cursor position report and the version
+  query, handed out because alacritty has no idea where the PTY is. `Event::ColorRequest` went the
+  same way, and that one is how a program reads the background colour to decide whether it is drawing
+  on light or dark. Both are now routed back, the colour resolved against the palette in force rather
+  than one copied at construction — so the editor's colour scheme follows the app's appearance.
+- **Mouse reporting**, with the encoding chosen by what the child asked for. SGR (1006) where it
+  enabled it, the legacy byte form otherwise — not a detail: sending SGR to a program that only asked
+  for 1000 delivers an escape sequence it cannot parse, so a click *types* `[<0;40;12M` into it.
+  Motion is reported per cell rather than per pixel, and all three buttons are forwarded.
+- **The `Shift` bypass**, which is what keeps the terminal usable underneath. A program tracking the
+  mouse takes click, drag and wheel completely, leaving no way to select a line of its output and copy
+  it — and wanting to do that is most of why anyone is looking at the output. Holding shift takes the
+  gesture back. It costs the child nothing: no terminal delivers shift+click, so nothing is written to
+  want it.
+- **Wheel on the alternate screen becomes arrow keys** when the program is not tracking the mouse.
+  There is no scrollback there, so a wheel the terminal kept for itself did nothing at all.
+- **`DECSCUSR`.** Already parsed by alacritty and thrown away by the renderer, which drew a filled
+  block always — and drew it *after* the glyph pass, so the cursor did not sit on a character, it hid
+  one. Shape, `DECTCEM` hiding, a hollow outline when the grid does not hold focus, and the character
+  repainted over the block. Blinking is deliberately left out: it needs a repaint on a timer for the
+  life of every tab, in a view that otherwise draws only when bytes arrive.
+- **`OSC 52`, write only.** A yank to the system clipboard is the only way a copy inside a full-screen
+  editor reaches anything outside the terminal. The **read** half is refused on purpose: answering it
+  hands whatever the user last copied to whatever is running in the terminal, including something at
+  the far end of an ssh session, which is why xterm ships it disabled.
+- **Modified keys.** Every cursor, navigation and function key can be pressed with Shift, Alt or
+  Control, and the plain sequence says nothing about that — so an editor told to move by word on
+  `Ctrl+Right` received a plain `Right` and moved by one character, a binding that appears configured
+  and quietly does the wrong thing. Also `Ctrl+Alt+key`, which used to arrive as the plain `Ctrl`
+  press, and Alt on a non-ASCII layout, which used to be dropped entirely.
+
+IME inside the PTY was on this list and landed first (see section 3): it could not wait for Neovim,
+because a terminal you cannot type Vietnamese into is broken at the command line already.
+
+**Still not done: `APP_KEYPAD`.** The numeric keypad's application mode is unimplemented, because gpui
+does not distinguish a keypad key from the digit above it — the fix is upstream of this crate, and the
+keys still work, they simply always send the ordinary form.
 
 ---
 
@@ -202,7 +248,6 @@ notice has to travel with the binary either way. All permissive, no conflict.
 
 Listed because a missing feature nobody wrote down reads as a bug in the ones that exist.
 
-- **Neovim mode** (`Ctrl+Shift+N`) — see D4.
 - **Command palette** (`Ctrl+Shift+P`) — a *feature* (a command registry plus a filtered popup), not a
   line in the keymap.
 - **Keyboard navigation for the completion popup.** gpui-component's completion menu lives *inside*

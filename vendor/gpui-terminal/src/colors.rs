@@ -55,7 +55,7 @@
 //!     .build();
 //! ```
 
-use alacritty_terminal::term::color::Colors;
+use alacritty_terminal::term::color::{COUNT as COLOR_SLOTS, Colors};
 use alacritty_terminal::vte::ansi::{Color, NamedColor, Rgb};
 use gpui::Hsla;
 
@@ -389,6 +389,59 @@ impl ColorPalette {
     /// Gets the default cursor color.
     pub fn cursor(&self) -> Hsla {
         self.cursor
+    }
+
+    /// onehand patch: answer a colour query by the index the escape sequence
+    /// used, as 8-bit RGB.
+    ///
+    /// `OSC 4` addresses the 256-colour table directly and `OSC 10`/`11`/`12`
+    /// arrive as the three indices past its end -- 256 foreground, 257
+    /// background, 258 cursor -- which is the same numbering
+    /// [`alacritty_terminal::vte::ansi::NamedColor`] is declared in, so a query
+    /// carries no other clue about which of the two tables it means.
+    ///
+    /// RGB and not [`Hsla`] because the caller is a formatter handed over by the
+    /// parser: the reply is text on the wire in the units the wire uses, and
+    /// converting at the boundary is what keeps the rounding in one place.
+    ///
+    /// An index past the table is answered with the foreground rather than
+    /// refused. A query is a question a program is waiting on, and a terminal
+    /// that stays silent leaves it waiting; the indices above 258 are the dim
+    /// and bright variants, which no program queries and none would act on.
+    pub fn rgb_at(&self, index: usize, colors: &Colors) -> Rgb {
+        // A colour the child set itself with `OSC 4` wins over the palette,
+        // whichever table the index falls in -- it is the more recent word about
+        // that slot, and the palette is only the default underneath it. The
+        // bound is checked here because the override table is indexed, not
+        // fetched: a query naming a slot past its end would panic rather than
+        // fall through to the default below.
+        let override_rgb = (index < COLOR_SLOTS).then(|| colors[index]).flatten();
+        let hsla = match override_rgb {
+            Some(rgb) => return rgb,
+            None if index < 256 => self.extended_colors[index],
+            None => match index {
+                256 => self.foreground,
+                257 => self.background,
+                258 => self.cursor,
+                _ => self.foreground,
+            },
+        };
+        hsla_to_rgb(hsla)
+    }
+}
+
+/// onehand patch: convert back to the 8-bit RGB the wire speaks.
+///
+/// The inverse of [`rgb_to_hsla`], and it exists for one caller: a colour query
+/// arrives with a formatter that takes [`Rgb`], while everything this crate
+/// stores is [`Hsla`] because that is what GPUI paints with.
+fn hsla_to_rgb(hsla: Hsla) -> Rgb {
+    let rgba = hsla.to_rgb();
+    let channel = |value: f32| (value.clamp(0.0, 1.0) * 255.0).round() as u8;
+    Rgb {
+        r: channel(rgba.r),
+        g: channel(rgba.g),
+        b: channel(rgba.b),
     }
 }
 

@@ -472,6 +472,19 @@ State is per project root, so switching roots swaps the whole thing.
 spawned lazily; dropping a tab drops its PTY, so the child dies with it and there is no separate
 shutdown to forget.
 
+**A tab runs one of two programs**, and which one is a field on the tab rather than a guess from its
+label: the user's login shell, or **Neovim on the project root** (`Ctrl+Shift+N`). The editor is not a
+panel of its own — it is a program in a PTY, and what it needed was for the PTY to be a real terminal
+(see decision D4 for the parity work that took). `Ctrl+Shift+N` **is not three-state** like every
+other panel key: the other keys toggle a container the user is deciding whether to look at, while this
+one reaches a program, and closing the dock on an editor holding unsaved work is not the counterpart
+of opening it. So it only ever brings the editor forward, and it **finds the tab already running**
+rather than opening a second — a key that opened another editor each press is a key nobody can use to
+get back to their work. `nvim` is looked up on `PATH` in the app, not handed to the PTY to fail on,
+because a failed spawn comes back as "No such file or directory" naming nothing. It is `nvim` and not
+`$EDITOR`: this is the Neovim key, and honouring that variable would open `vi` for somebody who set it
+years ago for `git commit`.
+
 **Whether the dock is open is per root too** (`Shell::terminal_open` / `terminal_root`), because
 everything below it already is: switching projects files the dock's live state under the project
 being left and restores whatever the arriving one was left in, and a project it has never been opened
@@ -496,8 +509,21 @@ fall through to the shell. Its counterpart is that `on_key_down` stops propagati
 encodes — the platform hands an unclaimed key's character to the input handler, so not stopping there
 types everything twice.
 
-**Neovim mode does not exist in this build** (decision D4; it is P8), and neither does
-`Ctrl+Shift+N`.
+The grid answers the questions a full-screen program asks. **Terminal replies go back to the PTY** —
+alacritty hands out Device Attributes, the cursor position report and colour queries as events because
+it has no idea where the PTY is, and upstream dropped them; a colour query is resolved against the
+palette in force, so an editor's light/dark detection follows the app's appearance. **Mouse reporting**
+picks its encoding from what the child enabled (SGR where it asked for 1006, the legacy byte form
+otherwise — sending SGR to a program that only asked for 1000 *types* the escape sequence into it),
+reports motion per cell rather than per pixel, and forwards all three buttons. **Holding `Shift` takes
+a gesture back from the child**, which is what keeps selection possible under a program that has
+grabbed the mouse. On the alternate screen with no tracking, the **wheel becomes arrow keys** — there
+is no scrollback there for it to move. **`DECSCUSR`** is drawn: shape, `DECTCEM` hiding, a hollow
+outline when unfocused, and the character repainted over a block cursor that would otherwise hide it;
+blinking is deliberately absent, since it needs a repaint on a timer in a view that otherwise draws
+only when bytes arrive. **`OSC 52` is answered for writes and refused for reads** — a yank reaching the
+system clipboard is the point, and answering a read hands the clipboard to whatever is running in the
+terminal, including at the far end of an ssh session.
 
 ### Window shell
 
@@ -652,7 +678,7 @@ status bar.
 ### Keyboard, zoom, maximize
 
 App commands occupy an exact `Ctrl+Shift` namespace so plain Ctrl keys stay usable inside a PTY:
-`B` rail · `E` Files · `O` Editor · `A` composer · `F` find · `R` guarded restart ·
+`B` rail · `E` Files · `O` Editor · `N` Neovim · `A` composer · `F` find · `R` guarded restart ·
 `W` guarded close · `K` maximize. Plus `` Ctrl+` `` terminal, `Ctrl+S` save, `Ctrl+1…9` session by position, `Ctrl+Tab` session by recency,
 `Ctrl+=`/`Ctrl+-`/`Ctrl+0` zoom, and inside the composer `Up`/`Down` (its completion list) and
 `Ctrl+V` (an image or a file on the clipboard becomes an attachment; text is handed back to the input).
@@ -828,9 +854,11 @@ Listed because a missing feature nobody wrote down reads as a bug in the ones th
   `TextView::markdown` and does not scan it for path tokens. Only a tool card's path header opens a
   file, and it carries no line — ACP's diff payload has no hunk offsets. Core's
   `parse::parse_path_line` is the parser that feature needs and currently **has no caller**.
-- **No Neovim mode** (`Ctrl+Shift+N`) — decision D4, together with the hardest terminal
-  parity work (mouse reporting, `Shift` bypass, OSC 52, DECSCUSR). IME inside the PTY was on that
-  list and is now done.
+- **The terminal has no `APP_KEYPAD`.** The numeric keypad's application mode is unimplemented,
+  because gpui does not report a keypad key differently from the digit above it. The keys work; they
+  always send the ordinary form. Nothing else on decision D4's parity list is outstanding.
+- **The terminal's cursor does not blink**, by decision — it would mean a repaint on a timer for the
+  life of every tab, in a view that otherwise draws only when bytes arrive.
 - **`[font]` and `[icons]` config sections are parsed and ignored** (see Config).
 - Transcript blocks the design contract asks for that are not drawn are marked *(not rendered)* in
   DESIGN-ANSWER.md, each with the reason.
@@ -937,7 +965,9 @@ Listed because a missing feature nobody wrote down reads as a bug in the ones th
   so an unsnapped factor drifts and `Ctrl+0` becomes the only way back to 100%.
 - **`vendor/gpui-terminal` is a vendored render core plus the interaction layer upstream never had.**
   Scrollback, selection, copy/paste (`Ctrl+Shift+C/V` — plain Ctrl+C is SIGINT and Ctrl+V is
-  literal-next), bracketed paste, copy-on-select and typing-snaps-to-bottom are all onehand's, marked
+  literal-next), bracketed paste, copy-on-select, typing-snaps-to-bottom, mouse reporting and its
+  `Shift` bypass, terminal replies going back to the PTY, `DECSCUSR` cursor shapes and the modified
+  key sequences are all onehand's, marked
   `onehand patch`. Upstream is `zortax/gpui-terminal@51f0292`; the verbatim import is one commit and
   the patches the next, so the delta stays readable. `gpui` there is a **revless** git dependency:
   cargo keys a git source by URL plus rev, so any rev (or crates.io) yields a second `gpui` in the

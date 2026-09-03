@@ -1,409 +1,64 @@
-//! Mouse event handling for the terminal emulator.
+//! Mouse reporting: the bytes a full-screen program expects when the pointer
+//! moves over it.
 //!
-//! This module provides utilities for mouse interaction with the terminal:
+//! *onehand patch*: this module used to hold a selection type, a pixel-to-cell
+//! conversion and a scroll-delta helper as well, none of which had a caller --
+//! the view had grown its own of each, against alacritty's `Selection` rather
+//! than the one declared here, so the crate carried two types of the same name
+//! meaning different things. What is left is the one thing the view genuinely
+//! cannot do for itself: the wire format.
 //!
-//! - [`pixel_to_cell`]: Convert pixel coordinates to grid coordinates
-//! - [`mouse_button_report`]: Generate SGR mouse report sequences
-//! - [`scroll_report`]: Handle scroll wheel events
-//! - [`Selection`]: Text selection data structure
+//! # Who asks for this
 //!
-//! # Mouse Reporting (SGR 1006)
+//! Nothing is reported unless the child turned reporting on. It does that with
+//! a private mode, and there are three that decide *what* is worth reporting:
 //!
-//! When mouse tracking is enabled, the terminal sends escape sequences to
-//! the application. This module uses the SGR (1006) format:
+//! | Mode | Flag | Reports |
+//! |------|------|---------|
+//! | 1000 | `MOUSE_REPORT_CLICK` | presses and releases |
+//! | 1002 | `MOUSE_DRAG` | the above, plus motion while a button is held |
+//! | 1003 | `MOUSE_MOTION` | the above, plus motion with no button at all |
 //!
-//! ```text
-//! ESC [ < button ; column ; row M   (button press)
-//! ESC [ < button ; column ; row m   (button release)
-//! ```
+//! and two more that decide how the report is *spelled*:
 //!
-//! ## Button Encoding
+//! | Mode | Flag | Encoding |
+//! |------|------|----------|
+//! | 1006 | `SGR_MOUSE` | `ESC [ < b ; col ; row M` / `m` |
+//! | 1005 | `UTF8_MOUSE` | the legacy form with the three fields as UTF-8 |
+//! | — | neither | `ESC [ M` and three bytes, each offset by 32 |
 //!
-//! | Button | Code | With Modifiers |
-//! |--------|------|----------------|
-//! | Left | 0 | + modifier bits |
-//! | Middle | 1 | + modifier bits |
-//! | Right | 2 | + modifier bits |
-//! | Wheel Up | 64 | + modifier bits |
-//! | Wheel Down | 65 | + modifier bits |
+//! **Both halves have to be honoured, not just the first.** The legacy encoding
+//! is the one a program gets if it asked for 1000 and nothing else, and sending
+//! it SGR instead does not degrade quietly: the escape sequence it cannot parse
+//! is delivered as text, so a click types `[<0;40;12M` into whatever is running.
+//! That is the whole reason this is a table rather than one format.
 //!
-//! ## Modifier Bits
+//! # Button encoding
 //!
-//! | Modifier | Bit | Value |
-//! |----------|-----|-------|
-//! | Shift | 2 | 4 |
-//! | Alt/Meta | 3 | 8 |
-//! | Control | 4 | 16 |
+//! One number carries the button, the modifiers and what kind of event it is.
 //!
-//! # Terminal Modes
+//! | Field | Value |
+//! |-------|-------|
+//! | Left / Middle / Right | 0 / 1 / 2 |
+//! | Shift / Alt / Control | +4 / +8 / +16 |
+//! | Motion | +32 |
+//! | Wheel up / down | 64 / 65 |
 //!
-//! Mouse reporting depends on terminal mode flags:
-//!
-//! | Mode | Description |
-//! |------|-------------|
-//! | `MOUSE_REPORT_CLICK` | Report button press/release |
-//! | `MOUSE_MOTION` | Report motion while buttons held |
-//! | `MOUSE_DRAG` | Report motion during drag |
-//! | `ALT_SCREEN` | Alternate screen (vim, less, etc.) |
-//!
-//! # Scroll Behavior
-//!
-//! Scroll handling depends on the terminal mode:
-//!
-//! 1. **Mouse mode enabled**: Send wheel events (codes 64/65)
-//! 2. **Alternate screen, no mouse**: Convert to arrow keys
-//! 3. **Normal screen, no mouse**: Return None (handle as scrollback)
-//!
-//! # Example
-//!
-//! ```
-//! use gpui::{point, px, MouseButton};
-//! use alacritty_terminal::term::TermMode;
-//! use alacritty_terminal::index::{Point, Line, Column};
-//! use gpui_terminal::mouse::{pixel_to_cell, mouse_button_report};
-//!
-//! // Convert pixel position to cell
-//! let position = point(px(100.0), px(50.0));
-//! let origin = point(px(10.0), px(10.0));
-//! let cell = pixel_to_cell(position, origin, px(10.0), px(20.0));
-//!
-//! // Generate mouse report for left click
-//! let point = Point::new(Line(5), Column(10));
-//! let mode = TermMode::MOUSE_REPORT_CLICK;
-//! let bytes = mouse_button_report(MouseButton::Left, true, point, 0, mode);
-//! ```
+//! The legacy encoding has no room for *which* button was let go, so a release
+//! there is the low two bits set (3) with everything else intact; SGR says it
+//! with the terminating `m` and keeps the button.
 
-use alacritty_terminal::index::{Column, Line, Point as AlacPoint};
+use alacritty_terminal::index::Point as AlacPoint;
 use alacritty_terminal::term::TermMode;
-use gpui::{MouseButton, Pixels, Point};
+use gpui::MouseButton;
 
-/// Type of text selection in the terminal.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum SelectionType {
-    /// Character-by-character selection (single click).
-    Simple,
-    /// Word-based selection (double click).
-    Word,
-    /// Line-based selection (triple click).
-    Line,
-}
-
-/// Represents a text selection in the terminal.
+/// How many wheel reports one scroll gesture may turn into.
 ///
-/// A selection has a start and end point in the terminal grid.
-/// The selection is inclusive of both endpoints.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Selection {
-    /// The starting point of the selection.
-    pub start: AlacPoint,
-    /// The ending point of the selection.
-    pub end: AlacPoint,
-    /// The type of selection (character, word, or line).
-    pub selection_type: SelectionType,
-}
-
-impl Selection {
-    /// Create a new selection.
-    ///
-    /// # Arguments
-    ///
-    /// * `start` - The starting point of the selection
-    /// * `end` - The ending point of the selection
-    /// * `selection_type` - The type of selection
-    ///
-    /// # Returns
-    ///
-    /// A new `Selection` instance.
-    pub fn new(start: AlacPoint, end: AlacPoint, selection_type: SelectionType) -> Self {
-        Self {
-            start,
-            end,
-            selection_type,
-        }
-    }
-
-    /// Check if a point is within the selection.
-    ///
-    /// # Arguments
-    ///
-    /// * `point` - The point to check
-    ///
-    /// # Returns
-    ///
-    /// `true` if the point is within the selection, `false` otherwise.
-    pub fn contains(&self, point: AlacPoint) -> bool {
-        let (start, end) = if self.start < self.end {
-            (self.start, self.end)
-        } else {
-            (self.end, self.start)
-        };
-
-        point >= start && point <= end
-    }
-}
-
-/// Convert pixel position to terminal grid coordinates.
-///
-/// This function transforms a pixel coordinate (e.g., from a mouse event) into
-/// the corresponding cell position in the terminal grid.
-///
-/// # Arguments
-///
-/// * `position` - The pixel position to convert
-/// * `origin` - The top-left origin of the terminal grid in pixels
-/// * `cell_width` - The width of a single character cell in pixels
-/// * `cell_height` - The height of a single character cell in pixels
-///
-/// # Returns
-///
-/// The terminal grid coordinates corresponding to the pixel position.
-///
-/// # Examples
-///
-/// ```
-/// use gpui::{Point, Pixels, point, px};
-/// use gpui_terminal::mouse::pixel_to_cell;
-///
-/// let position = point(px(100.0), px(50.0));
-/// let origin = point(px(10.0), px(10.0));
-/// let cell_width = px(10.0);
-/// let cell_height = px(20.0);
-///
-/// let point = pixel_to_cell(position, origin, cell_width, cell_height);
-/// // Point will be at column 9, line 2
-/// ```
-pub fn pixel_to_cell(
-    position: Point<Pixels>,
-    origin: Point<Pixels>,
-    cell_width: Pixels,
-    cell_height: Pixels,
-) -> AlacPoint {
-    // Calculate the column (x-coordinate)
-    let col = ((position.x - origin.x) / cell_width).floor();
-    let col = col.max(0.0) as usize;
-
-    // Calculate the row (y-coordinate)
-    let row = ((position.y - origin.y) / cell_height).floor();
-    let row = row.max(0.0) as i32;
-
-    AlacPoint::new(Line(row), Column(col))
-}
-
-/// Determine the selection type based on the number of clicks.
-///
-/// # Arguments
-///
-/// * `click_count` - The number of consecutive clicks
-///
-/// # Returns
-///
-/// The corresponding `SelectionType`:
-/// - 1 click: `SelectionType::Simple`
-/// - 2 clicks: `SelectionType::Word`
-/// - 3 or more clicks: `SelectionType::Line`
-///
-/// # Examples
-///
-/// ```
-/// use gpui_terminal::mouse::{selection_type_from_clicks, SelectionType};
-///
-/// assert_eq!(selection_type_from_clicks(1), SelectionType::Simple);
-/// assert_eq!(selection_type_from_clicks(2), SelectionType::Word);
-/// assert_eq!(selection_type_from_clicks(3), SelectionType::Line);
-/// assert_eq!(selection_type_from_clicks(4), SelectionType::Line);
-/// ```
-pub fn selection_type_from_clicks(click_count: usize) -> SelectionType {
-    match click_count {
-        1 => SelectionType::Simple,
-        2 => SelectionType::Word,
-        _ => SelectionType::Line,
-    }
-}
-
-/// Generate mouse button report escape sequence for SGR mode.
-///
-/// This function generates the escape sequence that should be sent to the
-/// terminal application when mouse reporting is enabled. The sequence follows
-/// the SGR (1006) mouse tracking format.
-///
-/// # Arguments
-///
-/// * `button` - The mouse button that was pressed/released
-/// * `pressed` - `true` if the button was pressed, `false` if released
-/// * `point` - The terminal grid coordinates where the event occurred
-/// * `modifiers` - Modifier keys held during the event (shift, alt, ctrl)
-/// * `mode` - The current terminal mode flags
-///
-/// # Returns
-///
-/// An optional vector of bytes representing the mouse report escape sequence.
-/// Returns `None` if mouse reporting is not enabled in the terminal mode.
-///
-/// # Mouse Report Format
-///
-/// The SGR format is: `ESC [ < button ; col ; row M` (pressed) or `m` (released)
-/// where:
-/// - button is a number encoding the button and modifiers
-/// - col is the column number (1-based)
-/// - row is the row number (1-based)
-///
-/// # Examples
-///
-/// ```
-/// use gpui::MouseButton;
-/// use alacritty_terminal::term::TermMode;
-/// use alacritty_terminal::index::{Point, Line, Column};
-/// use gpui_terminal::mouse::mouse_button_report;
-///
-/// let point = Point::new(Line(5), Column(10));
-/// let mode = TermMode::MOUSE_REPORT_CLICK;
-///
-/// let bytes = mouse_button_report(MouseButton::Left, true, point, 0, mode);
-/// assert!(bytes.is_some());
-/// ```
-pub fn mouse_button_report(
-    button: MouseButton,
-    pressed: bool,
-    point: AlacPoint,
-    modifiers: u8,
-    mode: TermMode,
-) -> Option<Vec<u8>> {
-    // Check if mouse reporting is enabled
-    if !mode
-        .intersects(TermMode::MOUSE_REPORT_CLICK | TermMode::MOUSE_MOTION | TermMode::MOUSE_DRAG)
-    {
-        return None;
-    }
-
-    // Encode button number
-    let button_code = match button {
-        MouseButton::Left => 0,
-        MouseButton::Middle => 1,
-        MouseButton::Right => 2,
-        _ => return None, // Ignore other buttons
-    };
-
-    // Add modifier bits
-    // Bit 2: Shift, Bit 3: Alt, Bit 4: Control
-    let button_value = button_code | modifiers;
-
-    // SGR format uses 1-based indexing
-    let col = point.column.0 + 1;
-    let row = point.line.0 + 1;
-
-    // SGR format: ESC [ < button ; col ; row M/m
-    // M for press, m for release
-    let action = if pressed { b'M' } else { b'm' };
-
-    let sequence = format!("\x1b[<{};{};{}{}", button_value, col, row, action as char);
-    Some(sequence.into_bytes())
-}
-
-/// Generate scroll wheel report escape sequence.
-///
-/// This function generates the escape sequence for scroll wheel events.
-/// The behavior depends on the terminal mode:
-/// - In mouse mode: sends a mouse wheel report
-/// - In alternate screen without mouse mode: sends arrow key sequences
-/// - In normal screen: returns None (let the terminal handle scrollback)
-///
-/// # Arguments
-///
-/// * `delta` - The scroll delta (positive = up, negative = down)
-/// * `point` - The terminal grid coordinates where the scroll occurred
-/// * `modifiers` - Modifier keys held during the scroll
-/// * `mode` - The current terminal mode flags
-///
-/// # Returns
-///
-/// An optional vector of bytes representing the scroll report.
-/// Returns `None` if scrolling should be handled locally (scrollback).
-///
-/// # Examples
-///
-/// ```
-/// use alacritty_terminal::term::TermMode;
-/// use alacritty_terminal::index::{Point, Line, Column};
-/// use gpui_terminal::mouse::scroll_report;
-///
-/// let point = Point::new(Line(5), Column(10));
-/// let mode = TermMode::MOUSE_REPORT_CLICK;
-///
-/// let bytes = scroll_report(3, point, 0, mode);
-/// assert!(bytes.is_some());
-/// ```
-pub fn scroll_report(
-    delta: i32,
-    point: AlacPoint,
-    modifiers: u8,
-    mode: TermMode,
-) -> Option<Vec<u8>> {
-    // If mouse reporting is enabled, send mouse wheel events
-    if mode.intersects(TermMode::MOUSE_REPORT_CLICK | TermMode::MOUSE_MOTION | TermMode::MOUSE_DRAG)
-    {
-        // Button codes for scroll: 64 = wheel up, 65 = wheel down
-        let button_code = if delta > 0 { 64 } else { 65 };
-        let button_value = button_code | modifiers;
-
-        // SGR format uses 1-based indexing
-        let col = point.column.0 + 1;
-        let row = point.line.0 + 1;
-
-        // Mouse wheel events are always "pressed" (M), never released
-        let sequence = format!("\x1b[<{};{};{}M", button_value, col, row);
-        return Some(sequence.into_bytes());
-    }
-
-    // If in alternate screen mode but no mouse reporting, send arrow keys
-    if mode.contains(TermMode::ALT_SCREEN) {
-        return Some(scroll_to_arrow_keys(delta, mode));
-    }
-
-    // In normal screen mode without mouse reporting, let the terminal handle scrollback
-    None
-}
-
-/// Convert scroll delta to arrow key sequences.
-///
-/// This is used when an application is in alternate screen mode (like vim or less)
-/// but doesn't have mouse reporting enabled. The scroll wheel is translated to
-/// arrow key presses to allow navigation.
-///
-/// # Arguments
-///
-/// * `delta` - The scroll delta (positive = up, negative = down)
-/// * `mode` - The current terminal mode (affects arrow key format)
-///
-/// # Returns
-///
-/// A byte sequence containing the appropriate arrow key escape sequences.
-fn scroll_to_arrow_keys(delta: i32, mode: TermMode) -> Vec<u8> {
-    let count = delta.abs().min(5) as usize; // Limit to 5 lines per scroll
-
-    // Determine arrow key sequence based on mode
-    let arrow_seq = if delta > 0 {
-        // Scroll up = arrow up
-        if mode.contains(TermMode::APP_CURSOR) {
-            b"\x1bOA"
-        } else {
-            b"\x1b[A"
-        }
-    } else {
-        // Scroll down = arrow down
-        if mode.contains(TermMode::APP_CURSOR) {
-            b"\x1bOB"
-        } else {
-            b"\x1b[B"
-        }
-    };
-
-    // Repeat the arrow key sequence
-    let mut result = Vec::with_capacity(arrow_seq.len() * count);
-    for _ in 0..count {
-        result.extend_from_slice(arrow_seq);
-    }
-    result
-}
+/// A trackpad reports pixels and a flick can add up to a great many rows; every
+/// one of them would be a separate escape sequence, and a program that redraws
+/// per event spends the whole gesture catching up. Five is roughly a screenful
+/// in a pager and is what the wheel of a real mouse produces anyway.
+const SCROLL_REPORT_MAX: u32 = 5;
 
 /// Encode modifier keys as a bitmask for mouse reporting.
 ///
@@ -445,267 +100,345 @@ pub fn encode_modifiers(shift: bool, alt: bool, control: bool) -> u8 {
     modifiers
 }
 
-/// Calculate the number of lines to scroll based on pixel delta.
-///
-/// This converts a pixel-based scroll delta (from a scroll wheel or trackpad)
-/// into a number of terminal lines to scroll.
+/// The report for a button going down or coming back up.
 ///
 /// # Arguments
 ///
-/// * `pixel_delta` - The scroll delta in pixels (positive = up)
-/// * `cell_height` - The height of a character cell in pixels
+/// * `button` - The mouse button that was pressed or released
+/// * `pressed` - `true` for a press, `false` for a release
+/// * `point` - Where the pointer is, as a **viewport** cell, zero-based
+/// * `modifiers` - The bitmask from [`encode_modifiers`]
+/// * `mode` - The terminal's current mode flags
 ///
 /// # Returns
 ///
-/// The number of lines to scroll (positive = up, negative = down).
-/// The result is clamped to a reasonable range.
+/// The bytes to write to the PTY, or `None` if the child has not asked to hear
+/// about the mouse at all -- which is also the caller's signal that the press
+/// belongs to the terminal itself, to start a selection with.
 ///
 /// # Examples
 ///
 /// ```
-/// use gpui::px;
-/// use gpui_terminal::mouse::pixels_to_scroll_lines;
+/// use gpui::MouseButton;
+/// use alacritty_terminal::term::TermMode;
+/// use alacritty_terminal::index::{Point, Line, Column};
+/// use gpui_terminal::mouse::button_report;
 ///
-/// let cell_height = px(20.0);
-/// assert_eq!(pixels_to_scroll_lines(px(60.0), cell_height), 3);
-/// assert_eq!(pixels_to_scroll_lines(px(-40.0), cell_height), -2);
+/// let at = Point::new(Line(5), Column(10));
+/// let mode = TermMode::MOUSE_REPORT_CLICK | TermMode::SGR_MOUSE;
+///
+/// assert_eq!(button_report(MouseButton::Left, true, at, 0, mode).unwrap(), b"\x1b[<0;11;6M");
+/// assert!(button_report(MouseButton::Left, true, at, 0, TermMode::empty()).is_none());
 /// ```
-pub fn pixels_to_scroll_lines(pixel_delta: Pixels, cell_height: Pixels) -> i32 {
-    let lines = (pixel_delta / cell_height).round();
-    // Clamp to reasonable range (-10 to 10 lines per scroll event)
-    lines.clamp(-10.0, 10.0) as i32
+pub fn button_report(
+    button: MouseButton,
+    pressed: bool,
+    point: AlacPoint,
+    modifiers: u8,
+    mode: TermMode,
+) -> Option<Vec<u8>> {
+    if !mode.intersects(TermMode::MOUSE_MODE) {
+        return None;
+    }
+    encode(button_code(button)? | modifiers, point, pressed, mode)
+}
+
+/// The report for the pointer moving.
+///
+/// # Arguments
+///
+/// * `held` - The button being held, or `None` if the pointer is moving free
+/// * `point` - Where the pointer now is, as a **viewport** cell, zero-based
+/// * `modifiers` - The bitmask from [`encode_modifiers`]
+/// * `mode` - The terminal's current mode flags
+///
+/// # Returns
+///
+/// The bytes to write, or `None` when this motion is not one the child asked
+/// about: 1002 wants motion only while a button is down, and plain 1000 wants
+/// none of it.
+///
+/// The caller owes one thing this cannot check for itself -- **only call it when
+/// the pointer has changed cell**. Motion arrives per pixel and a report is per
+/// cell, so reporting every event sends the same coordinates over and over, at
+/// the rate the mouse is sampled, to a program that redraws on each one.
+pub fn motion_report(
+    held: Option<MouseButton>,
+    point: AlacPoint,
+    modifiers: u8,
+    mode: TermMode,
+) -> Option<Vec<u8>> {
+    let wanted = mode.contains(TermMode::MOUSE_MOTION)
+        || (mode.contains(TermMode::MOUSE_DRAG) && held.is_some());
+    if !wanted {
+        return None;
+    }
+    // With no button down there is nothing to name, and the legacy encoding's
+    // "no button" value is the same 3 it uses for a release.
+    let code = match held {
+        Some(button) => button_code(button)?,
+        None => 3,
+    };
+    encode((code + 32) | modifiers, point, true, mode)
+}
+
+/// The report for a scroll gesture, or the keys that stand in for one.
+///
+/// # Arguments
+///
+/// * `delta` - Rows to scroll; positive is up, negative is down
+/// * `point` - Where the pointer is, as a **viewport** cell, zero-based
+/// * `modifiers` - The bitmask from [`encode_modifiers`]
+/// * `mode` - The terminal's current mode flags
+///
+/// # Returns
+///
+/// Wheel reports where the child is tracking the mouse; **arrow keys** where it
+/// is on the alternate screen and is not. That second case is not a convenience:
+/// the alternate screen has no scrollback to move through, so a wheel the
+/// terminal keeps for itself there does nothing at all, and a pager or an editor
+/// that never enabled mouse tracking is exactly the program someone expects to
+/// be able to scroll. `None` means the gesture is the terminal's own, to move
+/// the scrollback with.
+///
+/// # Examples
+///
+/// ```
+/// use alacritty_terminal::term::TermMode;
+/// use alacritty_terminal::index::{Point, Line, Column};
+/// use gpui_terminal::mouse::scroll_report;
+///
+/// let at = Point::new(Line(5), Column(10));
+///
+/// // Tracking the mouse: one wheel report per row.
+/// let mode = TermMode::MOUSE_REPORT_CLICK | TermMode::SGR_MOUSE;
+/// assert_eq!(scroll_report(2, at, 0, mode).unwrap(), b"\x1b[<64;11;6M\x1b[<64;11;6M");
+///
+/// // On the alternate screen without it: arrow keys.
+/// assert_eq!(scroll_report(2, at, 0, TermMode::ALT_SCREEN).unwrap(), b"\x1b[A\x1b[A");
+///
+/// // Otherwise the terminal keeps it.
+/// assert!(scroll_report(2, at, 0, TermMode::empty()).is_none());
+/// ```
+pub fn scroll_report(
+    delta: i32,
+    point: AlacPoint,
+    modifiers: u8,
+    mode: TermMode,
+) -> Option<Vec<u8>> {
+    if delta == 0 {
+        return None;
+    }
+    let count = delta.unsigned_abs().min(SCROLL_REPORT_MAX);
+
+    if mode.intersects(TermMode::MOUSE_MODE) {
+        let code = if delta > 0 { 64 } else { 65 } | modifiers;
+        // A wheel has nothing to release, so every notch is a press.
+        let report = encode(code, point, true, mode)?;
+        return Some(report.repeat(count as usize));
+    }
+
+    if mode.contains(TermMode::ALT_SCREEN) {
+        let arrow: &[u8] = match (delta > 0, mode.contains(TermMode::APP_CURSOR)) {
+            (true, true) => b"\x1bOA",
+            (true, false) => b"\x1b[A",
+            (false, true) => b"\x1bOB",
+            (false, false) => b"\x1b[B",
+        };
+        return Some(arrow.repeat(count as usize));
+    }
+
+    None
+}
+
+/// The number a button is spelled with, or `None` for one the protocol has no
+/// room for.
+///
+/// The navigation buttons are the ones with nowhere to go: their codes were
+/// taken by the wheel long before a mouse had thumb buttons, and a program that
+/// received one would read it as a scroll.
+fn button_code(button: MouseButton) -> Option<u8> {
+    match button {
+        MouseButton::Left => Some(0),
+        MouseButton::Middle => Some(1),
+        MouseButton::Right => Some(2),
+        MouseButton::Navigate(_) => None,
+    }
+}
+
+/// Spell one report in whichever encoding the child asked for.
+fn encode(code: u8, point: AlacPoint, pressed: bool, mode: TermMode) -> Option<Vec<u8>> {
+    // Both encodings count from one, and a report is about the viewport, so a
+    // caller that handed us a scrolled-back coordinate would name a row the
+    // child cannot see. Clamped rather than dropped: a drag that runs off the
+    // top should report the first row, which is what it is over.
+    let col = point.column.0 + 1;
+    let row = point.line.0.max(0) as usize + 1;
+
+    if mode.contains(TermMode::SGR_MOUSE) {
+        let action = if pressed { 'M' } else { 'm' };
+        return Some(format!("\x1b[<{code};{col};{row}{action}").into_bytes());
+    }
+
+    // The legacy form cannot say which button was released, so it says only that
+    // one was. The upper bits -- modifiers, motion -- are kept.
+    let code = if pressed { code } else { (code & !0b11) | 0b11 };
+
+    let mut out = b"\x1b[M".to_vec();
+    push_field(&mut out, code as usize + 32, mode)?;
+    push_field(&mut out, col + 32, mode)?;
+    push_field(&mut out, row + 32, mode)?;
+    Some(out)
+}
+
+/// Append one field of a legacy report.
+///
+/// `None` where the value will not fit, which is the whole point of mode 1005:
+/// a single byte offset by 32 runs out at column 223, and a terminal wider than
+/// that would otherwise report a wrapped-around column with perfect confidence.
+/// Saying nothing is the honest answer -- the click is lost, rather than
+/// delivered somewhere the user did not click.
+fn push_field(out: &mut Vec<u8>, value: usize, mode: TermMode) -> Option<()> {
+    if mode.contains(TermMode::UTF8_MOUSE) {
+        let mut buf = [0u8; 4];
+        let encoded = char::from_u32(value as u32)?.encode_utf8(&mut buf);
+        out.extend_from_slice(encoded.as_bytes());
+        return Some(());
+    }
+    if value > u8::MAX as usize {
+        return None;
+    }
+    out.push(value as u8);
+    Some(())
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use gpui::{point, px};
+    use alacritty_terminal::index::{Column, Line};
 
-    #[test]
-    fn test_pixel_to_cell() {
-        let position = point(px(100.0), px(50.0));
-        let origin = point(px(10.0), px(10.0));
-        let cell_width = px(10.0);
-        let cell_height = px(20.0);
-
-        let point = pixel_to_cell(position, origin, cell_width, cell_height);
-        assert_eq!(point.column.0, 9);
-        assert_eq!(point.line.0, 2);
+    /// The cell a report is about, one row and one column in from the corner.
+    fn at() -> AlacPoint {
+        AlacPoint::new(Line(1), Column(2))
     }
 
     #[test]
-    fn test_pixel_to_cell_at_origin() {
-        let position = point(px(10.0), px(10.0));
-        let origin = point(px(10.0), px(10.0));
-        let cell_width = px(10.0);
-        let cell_height = px(20.0);
-
-        let point = pixel_to_cell(position, origin, cell_width, cell_height);
-        assert_eq!(point.column.0, 0);
-        assert_eq!(point.line.0, 0);
+    fn silent_until_the_child_asks() {
+        assert!(button_report(MouseButton::Left, true, at(), 0, TermMode::empty()).is_none());
+        assert!(motion_report(Some(MouseButton::Left), at(), 0, TermMode::empty()).is_none());
     }
 
     #[test]
-    fn test_pixel_to_cell_negative_coordinates() {
-        // Coordinates before origin should clamp to 0
-        let position = point(px(5.0), px(5.0));
-        let origin = point(px(10.0), px(10.0));
-        let cell_width = px(10.0);
-        let cell_height = px(20.0);
+    fn sgr_press_and_release_name_the_button() {
+        let mode = TermMode::MOUSE_REPORT_CLICK | TermMode::SGR_MOUSE;
+        assert_eq!(
+            button_report(MouseButton::Right, true, at(), 0, mode).unwrap(),
+            b"\x1b[<2;3;2M"
+        );
+        assert_eq!(
+            button_report(MouseButton::Right, false, at(), 0, mode).unwrap(),
+            b"\x1b[<2;3;2m"
+        );
+    }
 
-        let point = pixel_to_cell(position, origin, cell_width, cell_height);
-        assert_eq!(point.column.0, 0);
-        assert_eq!(point.line.0, 0);
+    /// The legacy form has one release for every button, and the difference is
+    /// what makes sending SGR to a client that did not ask for it unsafe.
+    #[test]
+    fn legacy_release_forgets_which_button() {
+        let mode = TermMode::MOUSE_REPORT_CLICK;
+        assert_eq!(
+            button_report(MouseButton::Left, true, at(), 0, mode).unwrap(),
+            b"\x1b[M\x20\x23\x22"
+        );
+        assert_eq!(
+            button_report(MouseButton::Right, false, at(), 0, mode).unwrap(),
+            b"\x1b[M\x23\x23\x22"
+        );
     }
 
     #[test]
-    fn test_selection_type_from_clicks() {
-        assert_eq!(selection_type_from_clicks(1), SelectionType::Simple);
-        assert_eq!(selection_type_from_clicks(2), SelectionType::Word);
-        assert_eq!(selection_type_from_clicks(3), SelectionType::Line);
-        assert_eq!(selection_type_from_clicks(4), SelectionType::Line);
-        assert_eq!(selection_type_from_clicks(10), SelectionType::Line);
+    fn modifiers_ride_in_the_button_field() {
+        let mode = TermMode::MOUSE_REPORT_CLICK | TermMode::SGR_MOUSE;
+        let modifiers = encode_modifiers(true, false, true);
+        assert_eq!(
+            button_report(MouseButton::Left, true, at(), modifiers, mode).unwrap(),
+            b"\x1b[<20;3;2M"
+        );
     }
 
     #[test]
-    fn test_selection_contains() {
-        let selection = Selection::new(
-            AlacPoint::new(Line(5), Column(10)),
-            AlacPoint::new(Line(7), Column(20)),
-            SelectionType::Simple,
+    fn motion_needs_a_mode_that_wants_it() {
+        let held = Some(MouseButton::Left);
+        // 1000 reports clicks and nothing else.
+        let click_only = TermMode::MOUSE_REPORT_CLICK | TermMode::SGR_MOUSE;
+        assert!(motion_report(held, at(), 0, click_only).is_none());
+
+        // 1002 reports a drag but not a free-moving pointer.
+        let drag = TermMode::MOUSE_DRAG | TermMode::SGR_MOUSE;
+        assert_eq!(
+            motion_report(held, at(), 0, drag).unwrap(),
+            b"\x1b[<32;3;2M"
+        );
+        assert!(motion_report(None, at(), 0, drag).is_none());
+
+        // 1003 reports both, and a pointer with no button held is a 3.
+        let any = TermMode::MOUSE_MOTION | TermMode::SGR_MOUSE;
+        assert_eq!(motion_report(None, at(), 0, any).unwrap(), b"\x1b[<35;3;2M");
+    }
+
+    #[test]
+    fn scroll_is_one_report_per_row_and_capped() {
+        let mode = TermMode::MOUSE_REPORT_CLICK | TermMode::SGR_MOUSE;
+        assert_eq!(
+            scroll_report(-2, at(), 0, mode).unwrap(),
+            b"\x1b[<65;3;2M\x1b[<65;3;2M"
+        );
+        let flick = scroll_report(40, at(), 0, mode).unwrap();
+        assert_eq!(
+            flick.len(),
+            b"\x1b[<64;3;2M".len() * SCROLL_REPORT_MAX as usize
+        );
+    }
+
+    /// The alternate screen has no scrollback, so a wheel there has to become
+    /// something the program can act on.
+    #[test]
+    fn alt_screen_scrolls_with_arrow_keys() {
+        assert_eq!(
+            scroll_report(2, at(), 0, TermMode::ALT_SCREEN).unwrap(),
+            b"\x1b[A\x1b[A"
+        );
+        assert_eq!(
+            scroll_report(-1, at(), 0, TermMode::ALT_SCREEN | TermMode::APP_CURSOR).unwrap(),
+            b"\x1bOB"
+        );
+        // On the normal screen it stays the terminal's own gesture.
+        assert!(scroll_report(2, at(), 0, TermMode::empty()).is_none());
+    }
+
+    #[test]
+    fn a_column_the_legacy_form_cannot_hold_is_not_guessed_at() {
+        let wide = AlacPoint::new(Line(0), Column(300));
+        assert!(
+            button_report(
+                MouseButton::Left,
+                true,
+                wide,
+                0,
+                TermMode::MOUSE_REPORT_CLICK
+            )
+            .is_none()
         );
 
-        // Point within selection
-        assert!(selection.contains(AlacPoint::new(Line(6), Column(15))));
-
-        // Start and end points
-        assert!(selection.contains(AlacPoint::new(Line(5), Column(10))));
-        assert!(selection.contains(AlacPoint::new(Line(7), Column(20))));
-
-        // Points outside selection
-        assert!(!selection.contains(AlacPoint::new(Line(4), Column(15))));
-        assert!(!selection.contains(AlacPoint::new(Line(8), Column(15))));
+        // Mode 1005 is what a program enables to lift that ceiling.
+        let utf8 = TermMode::MOUSE_REPORT_CLICK | TermMode::UTF8_MOUSE;
+        assert!(button_report(MouseButton::Left, true, wide, 0, utf8).is_some());
     }
 
     #[test]
-    fn test_selection_contains_reverse() {
-        // Test with end < start (reversed selection)
-        let selection = Selection::new(
-            AlacPoint::new(Line(7), Column(20)),
-            AlacPoint::new(Line(5), Column(10)),
-            SelectionType::Simple,
-        );
-
-        // Should still work correctly
-        assert!(selection.contains(AlacPoint::new(Line(6), Column(15))));
-        assert!(selection.contains(AlacPoint::new(Line(5), Column(10))));
-        assert!(selection.contains(AlacPoint::new(Line(7), Column(20))));
-    }
-
-    #[test]
-    fn test_mouse_button_report_left_click() {
-        let point = AlacPoint::new(Line(5), Column(10));
-        let mode = TermMode::MOUSE_REPORT_CLICK;
-
-        let bytes = mouse_button_report(MouseButton::Left, true, point, 0, mode);
-        assert!(bytes.is_some());
-
-        let sequence = String::from_utf8(bytes.unwrap()).unwrap();
-        // SGR format: ESC[<button;col;row M
-        // Line 5 (0-indexed) = row 6 (1-indexed)
-        // Column 10 (0-indexed) = col 11 (1-indexed)
-        assert_eq!(sequence, "\x1b[<0;11;6M");
-    }
-
-    #[test]
-    fn test_mouse_button_report_right_release() {
-        let point = AlacPoint::new(Line(0), Column(0));
-        let mode = TermMode::MOUSE_REPORT_CLICK;
-
-        let bytes = mouse_button_report(MouseButton::Right, false, point, 0, mode);
-        assert!(bytes.is_some());
-
-        let sequence = String::from_utf8(bytes.unwrap()).unwrap();
-        // Right button = 2, released = 'm'
-        assert_eq!(sequence, "\x1b[<2;1;1m");
-    }
-
-    #[test]
-    fn test_mouse_button_report_with_modifiers() {
-        let point = AlacPoint::new(Line(0), Column(0));
-        let mode = TermMode::MOUSE_REPORT_CLICK;
-        let modifiers = encode_modifiers(true, true, true); // Shift + Alt + Ctrl = 28
-
-        let bytes = mouse_button_report(MouseButton::Left, true, point, modifiers, mode);
-        assert!(bytes.is_some());
-
-        let sequence = String::from_utf8(bytes.unwrap()).unwrap();
-        // Button 0 + modifiers 28 = 28
-        assert_eq!(sequence, "\x1b[<28;1;1M");
-    }
-
-    #[test]
-    fn test_mouse_button_report_disabled() {
-        let point = AlacPoint::new(Line(0), Column(0));
-        let mode = TermMode::empty();
-
-        let bytes = mouse_button_report(MouseButton::Left, true, point, 0, mode);
-        assert!(bytes.is_none());
-    }
-
-    #[test]
-    fn test_scroll_report_mouse_mode() {
-        let point = AlacPoint::new(Line(5), Column(10));
-        let mode = TermMode::MOUSE_REPORT_CLICK;
-
-        // Scroll up
-        let bytes = scroll_report(3, point, 0, mode);
-        assert!(bytes.is_some());
-        let sequence = String::from_utf8(bytes.unwrap()).unwrap();
-        // Wheel up = button 64
-        assert_eq!(sequence, "\x1b[<64;11;6M");
-
-        // Scroll down
-        let bytes = scroll_report(-2, point, 0, mode);
-        assert!(bytes.is_some());
-        let sequence = String::from_utf8(bytes.unwrap()).unwrap();
-        // Wheel down = button 65
-        assert_eq!(sequence, "\x1b[<65;11;6M");
-    }
-
-    #[test]
-    fn test_scroll_report_alternate_screen() {
-        let point = AlacPoint::new(Line(0), Column(0));
-        let mode = TermMode::ALT_SCREEN;
-
-        // Scroll up in alternate screen = arrow up keys
-        let bytes = scroll_report(3, point, 0, mode);
-        assert!(bytes.is_some());
-        let sequence = bytes.unwrap();
-        // Should be 3 arrow up sequences
-        assert_eq!(sequence, b"\x1b[A\x1b[A\x1b[A");
-    }
-
-    #[test]
-    fn test_scroll_report_alternate_screen_app_cursor() {
-        let point = AlacPoint::new(Line(0), Column(0));
-        let mode = TermMode::ALT_SCREEN | TermMode::APP_CURSOR;
-
-        // Scroll down with app cursor mode
-        let bytes = scroll_report(-2, point, 0, mode);
-        assert!(bytes.is_some());
-        let sequence = bytes.unwrap();
-        // Should be 2 arrow down sequences in app cursor format
-        assert_eq!(sequence, b"\x1bOB\x1bOB");
-    }
-
-    #[test]
-    fn test_scroll_report_normal_screen() {
-        let point = AlacPoint::new(Line(0), Column(0));
-        let mode = TermMode::empty();
-
-        // In normal screen mode, scrolling should be handled locally
-        let bytes = scroll_report(3, point, 0, mode);
-        assert!(bytes.is_none());
-    }
-
-    #[test]
-    fn test_encode_modifiers() {
-        assert_eq!(encode_modifiers(false, false, false), 0);
-        assert_eq!(encode_modifiers(true, false, false), 4);
-        assert_eq!(encode_modifiers(false, true, false), 8);
-        assert_eq!(encode_modifiers(false, false, true), 16);
-        assert_eq!(encode_modifiers(true, true, false), 12);
-        assert_eq!(encode_modifiers(true, false, true), 20);
-        assert_eq!(encode_modifiers(false, true, true), 24);
-        assert_eq!(encode_modifiers(true, true, true), 28);
-    }
-
-    #[test]
-    fn test_pixels_to_scroll_lines() {
-        let cell_height = px(20.0);
-
-        assert_eq!(pixels_to_scroll_lines(px(60.0), cell_height), 3);
-        assert_eq!(pixels_to_scroll_lines(px(-40.0), cell_height), -2);
-        assert_eq!(pixels_to_scroll_lines(px(10.0), cell_height), 1);
-        assert_eq!(pixels_to_scroll_lines(px(-10.0), cell_height), -1);
-
-        // Test clamping
-        assert_eq!(pixels_to_scroll_lines(px(300.0), cell_height), 10);
-        assert_eq!(pixels_to_scroll_lines(px(-300.0), cell_height), -10);
-    }
-
-    #[test]
-    fn test_scroll_to_arrow_keys_limit() {
-        let mode = TermMode::empty();
-
-        // Very large scroll should be limited to 5 lines
-        let bytes = scroll_to_arrow_keys(100, mode);
-        let expected = b"\x1b[A\x1b[A\x1b[A\x1b[A\x1b[A";
-        assert_eq!(bytes, expected);
-
-        let bytes = scroll_to_arrow_keys(-100, mode);
-        let expected = b"\x1b[B\x1b[B\x1b[B\x1b[B\x1b[B";
-        assert_eq!(bytes, expected);
+    fn navigation_buttons_have_nowhere_to_go() {
+        let mode = TermMode::MOUSE_REPORT_CLICK | TermMode::SGR_MOUSE;
+        let back = MouseButton::Navigate(gpui::NavigationDirection::Back);
+        assert!(button_report(back, true, at(), 0, mode).is_none());
     }
 }
