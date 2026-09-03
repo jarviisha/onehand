@@ -128,6 +128,26 @@ fn documents() -> Vec<(String, String)> {
 mod tests {
     use super::{documents, sources, workspace_sources};
 
+    #[test]
+    fn core_manifest_has_no_gui_or_telegram_transport_dependencies() {
+        let manifest = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .expect("crates/")
+            .join("core")
+            .join("Cargo.toml");
+        let source = std::fs::read_to_string(&manifest).unwrap();
+        for dependency in ["gpui", "reqwest", "rustls"] {
+            assert!(
+                !source.lines().any(|line| {
+                    let line = line.trim_start();
+                    line.starts_with(&format!("{dependency} ="))
+                }),
+                "{} must stay free of `{dependency}`",
+                manifest.display()
+            );
+        }
+    }
+
     /// Glyphs that have an `IconName` equivalent and must never be typed as
     /// text. The rule: *every icon is an SVG.*
     ///

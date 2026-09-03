@@ -1,0 +1,15 @@
+[package]
+name = "onehand-workbench-neovim"
+version = "0.1.0"
+edition = "2024"
+
+[lib]
+name = "onehand_workbench_neovim"
+path = "src/lib.rs"
+
+[dependencies]
+onehand-plugin-api = { path = "../../../crates/plugin-api" }
+onehand-plugin-host = { path = "../../../crates/plugin-host" }
+onehand-terminal-ui = { path = "../../../crates/terminal-ui" }
+gpui = { git = "https://github.com/zed-industries/zed", features = ["profiler"] }
+gpui-terminal = { path = "../../../vendor/gpui-terminal" }

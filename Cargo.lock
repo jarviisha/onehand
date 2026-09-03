@@ -4724,11 +4724,16 @@ dependencies = [
  "gpui",
  "gpui-component",
  "gpui-component-assets",
- "gpui-terminal",
  "gpui_platform",
  "notify-rust",
  "onehand-core",
- "portable-pty",
+ "onehand-plugin-api",
+ "onehand-plugin-host",
+ "onehand-remote-telegram",
+ "onehand-terminal-ui",
+ "onehand-workbench-editor",
+ "onehand-workbench-files",
+ "onehand-workbench-neovim",
  "rfd",
  "tokio",
  "toml 0.8.23",
@@ -4741,12 +4746,81 @@ dependencies = [
  "dirs 5.0.1",
  "futures",
  "portable-pty",
+ "serde",
+ "serde_json",
+ "tokio",
+ "toml 0.8.23",
+]
+
+[[package]]
+name = "onehand-plugin-api"
+version = "0.1.0"
+
+[[package]]
+name = "onehand-plugin-host"
+version = "0.1.0"
+dependencies = [
+ "gpui",
+ "onehand-core",
+ "onehand-plugin-api",
+]
+
+[[package]]
+name = "onehand-remote-telegram"
+version = "0.1.0"
+dependencies = [
+ "futures",
+ "onehand-core",
+ "onehand-plugin-api",
+ "onehand-plugin-host",
  "reqwest",
  "rustls",
  "serde",
  "serde_json",
  "tokio",
- "toml 0.8.23",
+]
+
+[[package]]
+name = "onehand-terminal-ui"
+version = "0.1.0"
+dependencies = [
+ "gpui",
+ "gpui-component",
+ "gpui-terminal",
+ "portable-pty",
+]
+
+[[package]]
+name = "onehand-workbench-editor"
+version = "0.1.0"
+dependencies = [
+ "gpui",
+ "gpui-component",
+ "onehand-core",
+ "onehand-plugin-api",
+ "onehand-plugin-host",
+]
+
+[[package]]
+name = "onehand-workbench-files"
+version = "0.1.0"
+dependencies = [
+ "gpui",
+ "gpui-component",
+ "onehand-core",
+ "onehand-plugin-api",
+ "onehand-plugin-host",
+]
+
+[[package]]
+name = "onehand-workbench-neovim"
+version = "0.1.0"
+dependencies = [
+ "gpui",
+ "gpui-terminal",
+ "onehand-plugin-api",
+ "onehand-plugin-host",
+ "onehand-terminal-ui",
 ]
 
 [[package]]

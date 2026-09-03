@@ -19,6 +19,13 @@ path = "src/main.rs"
 
 [dependencies]
 onehand-core = { path = "../core" }
+onehand-plugin-api = { path = "../plugin-api" }
+onehand-plugin-host = { path = "../plugin-host" }
+onehand-terminal-ui = { path = "../terminal-ui" }
+onehand-remote-telegram = { path = "../../plugins/builtin/remote-telegram" }
+onehand-workbench-editor = { path = "../../plugins/builtin/workbench-editor" }
+onehand-workbench-files = { path = "../../plugins/builtin/workbench-files" }
+onehand-workbench-neovim = { path = "../../plugins/builtin/workbench-neovim" }
 
 # gpui-component IS pinned by rev (DECISIONS.md §2).
 # The `tree-sitter-*` set is deliberately a *subset*, not `tree-sitter-languages`
@@ -56,8 +63,6 @@ anyhow = "1"
 
 # Vendored: upstream is a render core with no interaction layer at all
 # (DECISIONS.md §3). See vendor/gpui-terminal/Cargo.toml.
-gpui-terminal = { path = "../../vendor/gpui-terminal" }
-portable-pty = "0.9"
 
 # The ACP adapter's serve loop is tokio-based, so it needs a tokio reactor to be
 # polled on; GPUI runs on smol. `crate::acp` owns the runtime that bridges them.

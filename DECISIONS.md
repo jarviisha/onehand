@@ -63,6 +63,26 @@ surplus grammar is build time and binary size for a language nobody has opened.
 ⚠️ **Precondition:** turning `tree-sitter` off entirely makes `input_highlighter_factory` return
 `Rc::new(|_| None)` — the editor becomes plain text. This feature is the floor, not an option.
 
+### D7 · Plugins are built in and registered once
+
+The first plugin milestone is an in-process composition boundary, not an
+extension marketplace. Editor, Files, Neovim and Telegram are separate built-in
+plugin crates linked into the Onehand binary. `crates/app/src/plugins.rs`
+registers them before the first window and seals the registry; registration is
+not available after boot.
+
+`onehand-plugin-api` stays GUI-free and contains stable IDs, descriptors,
+capabilities and the API version. Contribution-specific factories and lifecycle
+hooks live in `onehand-plugin-host`; there is no general event bus. The Rust API
+is version `0.x` and makes no third-party stability promise. External plugins,
+when added, use a process protocol rather than dynamic Rust libraries.
+
+This split must not change observable behavior or configuration. In particular,
+`onehand.toml`, Workbench labels/order, key bindings, per-root state and
+`[remote.telegram]` remain unchanged. Telegram's HTTP/TLS and secret-loading
+dependencies belong to its plugin; `onehand-core` owns only the neutral remote
+model, access and routing rules.
+
 ---
 
 ## 2. Version pins
@@ -128,7 +148,7 @@ reporting it*:
 
 **The convention that keeps the vendor readable:** the verbatim import is **one commit** and the
 patches are the commit **after it** — so a diff against upstream is exactly what onehand wrote. That
-is why `make fmt` / `make lint` are scoped to `-p onehand -p onehand-core`: a bare `cargo fmt` would
+is why `make fmt` / `make lint` are scoped to first-party crates only: a bare `cargo fmt` would
 reformat the vendor and destroy that property. The clippy warnings left in the vendor are upstream's;
 leave them.
 
@@ -140,10 +160,10 @@ Editor and Files. No msgpack-RPC embedding: Neovim is a program in a PTY, so wha
 the PTY to be a real terminal, and giving it its own widget would have meant a second renderer, a
 second input path and a second set of the same bugs.
 
-**The Workbench and not the terminal dock**, though the terminal is where the PTY machinery lives.
+**The Workbench and not the terminal dock**, though `onehand-terminal-ui` owns the shared PTY machinery.
 The terminal dock is where you run commands and the Workbench is where you work on files; a tab called
-`nvim` sitting between two called `zsh` says the editor is a kind of shell. The spawning is still the
-terminal's — `terminal::spawn_pty` and `terminal::Program` are `pub(crate)` — so both grids inherit
+`nvim` sitting between two called `zsh` says the editor is a kind of shell. Spawning goes through
+`onehand_terminal_ui::spawn_pty` and `Program`, so both grids inherit
 one set of rules about `TERM`, the resize callback, the clipboard hook and reaping the child.
 
 The bottom dock is wider, which is the one real argument the other way, and it loses on a detail:

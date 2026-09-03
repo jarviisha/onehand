@@ -24,8 +24,9 @@ use crate::state::Shared;
 use gpui::{App, BorrowAppContext as _};
 use onehand_core::chat::Away;
 use onehand_core::config::RemoteConfig;
-use onehand_core::remote::types::{Button, Outbound, RemoteChannel as _, RemoteEvent, ReqTx};
-use onehand_core::remote::{Aim, Press, RemoteCommand, Telegram, is_silently_ignored, secret};
+use onehand_core::remote::types::{Button, Outbound, RemoteEvent, ReqTx};
+use onehand_core::remote::{Aim, Press, RemoteCommand, is_silently_ignored};
+use onehand_remote_telegram::secret;
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 
@@ -289,6 +290,13 @@ pub fn boot(cfg: &RemoteConfig, cx: &mut App) {
         );
         return;
     };
+    let factory = Shared::global(cx)
+        .plugins
+        .remote_channels()
+        .iter()
+        .find(|item| item.id == onehand_remote_telegram::CHANNEL_ID)
+        .and_then(|item| item.factory)
+        .expect("the sealed Telegram contribution has no channel factory");
 
     let rt = match tokio::runtime::Builder::new_multi_thread()
         .worker_threads(1)
@@ -307,7 +315,7 @@ pub fn boot(cfg: &RemoteConfig, cx: &mut App) {
     let (mut events, event_rx) = futures::channel::mpsc::channel(EVENT_BUFFER);
     rt.spawn(async move {
         use futures::{SinkExt as _, StreamExt as _};
-        let stream = Telegram::new(token).connect(request_rx);
+        let stream = factory(token).connect(request_rx);
         futures::pin_mut!(stream);
         while let Some(event) = stream.next().await {
             if events.send(event).await.is_err() {

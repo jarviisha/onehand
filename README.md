@@ -74,10 +74,18 @@ that exist:
 |---|---|
 | `crates/app` | the GPUI front end and the binary |
 | `crates/core` | GUI-free logic: config, the workspace tree, ACP, the chat model |
+| `crates/plugin-api` | GUI-free plugin IDs, descriptors and capabilities |
+| `crates/plugin-host` | startup registry and typed contribution contracts |
+| `crates/terminal-ui` | shared PTY/grid ownership for Terminal and Neovim |
+| `plugins/builtin` | compile-time Editor, Files, Neovim and Telegram plugins |
 | `vendor/gpui-terminal` | a vendored terminal grid plus the interaction layer upstream never had |
 
 `crates/core` has no dependency on any UI framework, deliberately: it is the
 half that survived one front-end rewrite.
+
+Plugins in this milestone are built into the same binary. Registration happens
+once before the first window is created; there is no plugin process, dynamic
+loading, IPC, marketplace or plugin-management screen.
 
 Deeper notes live beside the code — `CLAUDE.md` for how the app is put together,
 `DECISIONS.md` for the choices reading the code will not explain, and `DESIGN.md`

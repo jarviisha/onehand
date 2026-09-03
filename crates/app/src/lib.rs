@@ -21,6 +21,7 @@ mod dialogs;
 #[cfg(test)]
 mod guards;
 mod icons;
+mod plugins;
 mod rail;
 mod remote;
 pub mod shell;

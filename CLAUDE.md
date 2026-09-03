@@ -49,7 +49,7 @@ ACP_CMD="node crates/core/examples/mock_ask_agent.js" cargo run -p onehand-core 
 There is no CI. **Use the Makefile targets for `fmt` and `clippy`**, not bare cargo: `vendor/`
 is a workspace member, so `cargo fmt` reformats it and `clippy --fix` rewrites it — hundreds of lines
 of churn on upstream code, destroying the one property that vendor has (its diff against upstream is
-exactly our patches). `make fmt` / `make lint` scope to `-p onehand -p onehand-core`.
+exactly our patches). `make fmt` / `make lint` scope to first-party crates and exclude `vendor/`.
 
 Tests are inline `#[cfg(test)]` modules — there is no `tests/` directory.
 
@@ -61,6 +61,10 @@ Tests are inline `#[cfg(test)]` modules — there is no `tests/` directory.
 |---|---|---|
 | `crates/app` | `onehand` | the GPUI front end + the binary |
 | `crates/core` | `onehand-core` | GUI-free logic: config, the workspace tree, ACP, the chat model, the remote bridge, editor rules, completion, git status, worktree rules, the directory flatten |
+| `crates/plugin-api` | `onehand-plugin-api` | GUI-free plugin IDs, descriptors, capabilities and registration contract |
+| `crates/plugin-host` | `onehand-plugin-host` | startup registry and typed contribution factories/lifecycle hooks |
+| `crates/terminal-ui` | `onehand-terminal-ui` | shared PTY/grid ownership used by the terminal dock and Neovim |
+| `plugins/builtin/*` | built-in plugins | Editor, Files, Neovim and Telegram contributions compiled into the binary |
 | `vendor/gpui-terminal` | `gpui-terminal` | a vendored terminal grid + the interaction layer upstream never had |
 
 The workspace root is a **virtual manifest** — it owns nothing but the member list and the release
@@ -176,19 +180,33 @@ which needs a tokio reactor GPUI does not have. So the stream is driven on a tok
 module owns, and events cross to GPUI on a plain `futures` channel belonging to neither executor. The
 *request* side needs no bridge: an unbounded tokio send never touches the reactor.
 
+### Built-in plugins
+
+`crates/app/src/plugins.rs` is the composition root. It registers every plugin,
+attaches its typed factory, and seals the registry before `Shared` exists and
+before a window is opened. Workbench order is declared there as Editor, Files,
+Neovim. Registration is deliberately not dynamic in API v1: duplicate plugin
+or contribution IDs, an unsupported API version, a capability mismatch, or a
+missing factory abort startup with the plugin/contribution ID in the error.
+
+The Rust traits are versioned `0.x` and are an internal composition seam, not a
+stable third-party ABI. A future external-plugin system is expected to use a
+process protocol rather than Rust dynamic libraries.
+
 ### The remote bridge
 
 A second channel into the app, for the times nobody is at the machine. Same shape as the ACP bridge
-above, deliberately: [crates/core/src/remote/](crates/core/src/remote/) is GUI-free and exposes the
-channel as `impl Stream`, and [crates/app/src/remote.rs](crates/app/src/remote.rs) drives it on a
+above, deliberately: [crates/core/src/remote/](crates/core/src/remote/) owns the GUI-free neutral
+model and channel contract, while the Telegram wire implementation and secret loading live in
+`plugins/builtin/remote-telegram`. [crates/app/src/remote.rs](crates/app/src/remote.rs) drives it on a
 tokio runtime of its own with events crossing on a `futures` channel.
 
 **The layer is general; Telegram is the first adapter.** `remote::types` is the neutral model — chat
 ids are strings, a message carries text and rows of `Button`s, and `RemoteChannel::connect` folds its
-serve loop into the stream it returns. `remote::telegram` is the only implementation, a long poll
+serve loop into the stream it returns. The built-in Telegram plugin is the only implementation, a long poll
 plus `sendMessage` and `answerCallbackQuery`. Everything that is not the wire is pure and tested:
 `access` (who may reach the app), `command` (the little language a chat drives it with), `press`
-(what a button means), `secret` (where the credential comes from).
+(what a button means). Telegram's plugin owns `secret` (where its credential comes from).
 
 - **The token is read and never written, and it is not in `onehand.toml`.** That file is rewritten
   whole by the settings dialog and the agent manager, it is what people paste into a bug report, and
@@ -386,7 +404,7 @@ plus `sendMessage` and `answerCallbackQuery`. Everything that is not the wire is
 - **Nothing the channel says about a failure carries the token.** The Bot API puts it in the URL
   *path* and an HTTP client names the URL in its own error text, so a dropped connection — the most
   ordinary thing that happens to a long poll — would print a working credential to stderr and undo
-  everything `remote::secret` is for. `Telegram::redact` stands between the two, and `call` takes the
+  everything the Telegram plugin's `secret` module is for. `Telegram::redact` stands between the two, and `call` takes the
   bot and a method name rather than a finished URL precisely so the one place holding the credential is
   also the one place that turns a failure into words.
 
@@ -480,7 +498,7 @@ renderer read `chat.items` / `chat.busy` without knowing where the model lives.
   terminal dock because this is the panel about files. One per root and never a second — several
   shells is what somebody opens on purpose, while two editors on the same files are two views of one
   buffer with no way to tell which holds the unsaved copy. It is spawned through
-  `terminal::spawn_pty`, so it inherits the terminal's rules about `TERM`, resize, clipboard and
+  `onehand_terminal_ui::spawn_pty`, so it inherits the shared rules about `TERM`, resize, clipboard and
   reaping.
 
 State is per project root, so switching roots swaps the whole thing.
@@ -513,8 +531,8 @@ shutdown to forget.
 
 **Every tab here is a login shell; Neovim is not one of them** — it is a Workbench mode, because that
 is the panel about files and a tab called `nvim` between two called `zsh` says the editor is a kind of
-shell. What this module owns for it is the spawning: `terminal::spawn_pty` and `terminal::Program` are
-`pub(crate)`, so the Workbench starts its grid through the same rules about `TERM`, the resize
+shell. The `onehand-terminal-ui` crate owns spawning and `Program`, so the Workbench starts its grid
+through the same rules about `TERM`, the resize
 callback, the clipboard hook and reaping the child. A second copy of those is a second copy to keep in
 step.
 
@@ -986,7 +1004,7 @@ Listed because a missing feature nobody wrote down reads as a bug in the ones th
   resolves** — check it against the enumeration. The terminal is the sharpest case: its grid is
   *measured* from a shaped glyph, so a family that does not resolve does not merely change the
   typeface — the cell is sized from one font while the row is drawn in another and every column lands
-  past its glyph. `terminal::spawn_pty` hands the grid the resolved family for exactly that reason;
+  past its glyph. `onehand_terminal_ui::spawn_pty` hands the grid the resolved family for exactly that reason;
   the vendored default is the string `monospace`, which is a CSS generic and not a family anything
   enumerates.
 - **`use super::*` in a test module inside `vendor/gpui-terminal` breaks `#[test]`.** That file imports

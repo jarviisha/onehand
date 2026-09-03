@@ -1,0 +1,15 @@
+[package]
+name = "onehand-terminal-ui"
+version = "0.1.0"
+edition = "2024"
+description = "Shared in-process PTY and terminal-grid primitives for Onehand"
+
+[lib]
+name = "onehand_terminal_ui"
+path = "src/lib.rs"
+
+[dependencies]
+gpui = { git = "https://github.com/zed-industries/zed", features = ["profiler"] }
+gpui-component = { git = "https://github.com/longbridge/gpui-component", rev = "9e3a29dcbdebc318632bf68203f26c33e9f0e902" }
+gpui-terminal = { path = "../../vendor/gpui-terminal" }
+portable-pty = "0.9"

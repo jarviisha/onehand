@@ -1,0 +1,14 @@
+[package]
+name = "onehand-plugin-host"
+version = "0.1.0"
+edition = "2024"
+description = "Onehand built-in plugin registry and contribution host"
+
+[lib]
+name = "onehand_plugin_host"
+path = "src/lib.rs"
+
+[dependencies]
+onehand-plugin-api = { path = "../plugin-api" }
+onehand-core = { path = "../core" }
+gpui = { git = "https://github.com/zed-industries/zed", features = ["profiler"] }

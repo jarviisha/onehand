@@ -10,6 +10,7 @@
 //! be that channel's model wearing a neutral name.
 
 use futures::stream::Stream;
+use std::pin::Pin;
 use tokio::sync::mpsc;
 
 /// A conversation on the far side of a channel, as that channel names it.
@@ -130,5 +131,6 @@ pub trait RemoteChannel: Send + 'static {
     fn name(&self) -> &'static str;
 
     /// Run the channel, taking requests from `requests` and emitting events.
-    fn connect(self, requests: ReqRx) -> impl Stream<Item = RemoteEvent> + Send;
+    fn connect(self: Box<Self>, requests: ReqRx)
+        -> Pin<Box<dyn Stream<Item = RemoteEvent> + Send>>;
 }

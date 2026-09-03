@@ -31,7 +31,7 @@
 //! secret, and the app reads it without ever being in a position to copy it
 //! somewhere else.
 
-use crate::config::{config_dir, TelegramConfig};
+use onehand_core::config::{TelegramConfig, config_dir};
 use std::path::{Path, PathBuf};
 
 /// The environment variable a Telegram token is read from unless the config

@@ -26,7 +26,9 @@ CLIPPY_EXTRA ?=
 # that its diff against `zortax/gpui-terminal@51f0292` is exactly the patches we
 # wrote and nothing else (CLAUDE.md "Gotchas"). Its own lint warnings are
 # upstream's and stay put.
-OURS := -p onehand -p onehand-core
+OURS := -p onehand -p onehand-core -p onehand-plugin-api -p onehand-plugin-host \
+	-p onehand-terminal-ui -p onehand-remote-telegram -p onehand-workbench-editor \
+	-p onehand-workbench-files -p onehand-workbench-neovim
 
 .DEFAULT_GOAL := help
 

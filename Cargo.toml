@@ -4,7 +4,18 @@
 # says which crate is "the" one -- `cargo run` answers that, because there is
 # only one binary in the workspace.
 [workspace]
-members = ["crates/app", "crates/core", "vendor/gpui-terminal"]
+members = [
+    "crates/app",
+    "crates/core",
+    "crates/plugin-api",
+    "crates/plugin-host",
+    "crates/terminal-ui",
+    "plugins/builtin/remote-telegram",
+    "plugins/builtin/workbench-editor",
+    "plugins/builtin/workbench-files",
+    "plugins/builtin/workbench-neovim",
+    "vendor/gpui-terminal",
+]
 resolver = "2"
 
 # No `default-members`: bare `cargo run` / `cargo check` / `cargo test` should

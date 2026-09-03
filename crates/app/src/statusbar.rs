@@ -25,7 +25,7 @@
 
 use crate::shell::Shell;
 use crate::state::WorkspaceWindow;
-use crate::workbench::WorkbenchMode;
+use crate::workbench::EDITOR_MODE;
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
     App, ClickEvent, Context, Div, ElementId, InteractiveElement, IntoElement, ParentElement,
@@ -227,7 +227,7 @@ pub fn status_bar(
                     ))
                     .on_click(
                         cx.listener(|shell: &mut Shell, _: &ClickEvent, window, cx| {
-                            shell.show_workbench(WorkbenchMode::Editor, window, cx);
+                            shell.show_workbench(EDITOR_MODE, window, cx);
                         }),
                     )
                     .tooltip(|window, cx| {

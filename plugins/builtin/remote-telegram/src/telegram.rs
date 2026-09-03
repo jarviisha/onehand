@@ -24,12 +24,14 @@
 //! is what stands between those two facts, and every failure is worded through
 //! the one function that holds the token.
 
-use super::types::{Button, Outbound, RemoteChannel, RemoteEvent, RemoteRequest, ReqRx};
 use futures::channel::mpsc::Sender as EventTx;
 use futures::stream::{self, Stream};
 use futures::{SinkExt as _, StreamExt as _};
+use onehand_core::remote::types::{
+    Button, Outbound, RemoteChannel, RemoteEvent, RemoteRequest, ReqRx,
+};
 use serde::Deserialize;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use std::time::Duration;
 
 /// The Bot API's root. A field on [`Telegram`] rather than a constant reached
@@ -134,7 +136,10 @@ impl RemoteChannel for Telegram {
         "Telegram"
     }
 
-    fn connect(self, requests: ReqRx) -> impl Stream<Item = RemoteEvent> + Send {
+    fn connect(
+        self: Box<Self>,
+        requests: ReqRx,
+    ) -> std::pin::Pin<Box<dyn Stream<Item = RemoteEvent> + Send>> {
         let (sender, receiver) = futures::channel::mpsc::channel(EVENT_BUFFER);
 
         // The loop is the stream, not a task beside it: the channel only
@@ -145,13 +150,13 @@ impl RemoteChannel for Telegram {
         // remember to pump.
         let runner = stream::once(async move {
             let mut out = sender;
-            if let Err(reason) = run(self, requests, &mut out).await {
+            if let Err(reason) = run(*self, requests, &mut out).await {
                 let _ = out.send(RemoteEvent::Disconnected(reason)).await;
             }
         })
         .filter_map(|()| async { None });
 
-        stream::select(receiver, runner)
+        Box::pin(stream::select(receiver, runner))
     }
 }
 
