@@ -25,9 +25,9 @@ use gpui::{App, BorrowAppContext as _};
 use onehand_core::chat::Away;
 use onehand_core::config::RemoteConfig;
 use onehand_core::remote::types::{Button, Outbound, RemoteChannel as _, RemoteEvent, ReqTx};
-use onehand_core::remote::{Press, RemoteCommand, Telegram, is_silently_ignored, secret};
+use onehand_core::remote::{Aim, Press, RemoteCommand, Telegram, is_silently_ignored, secret};
 use std::cell::RefCell;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 /// Events buffered between the channel and the app before the forwarder waits.
 /// The same buffer core's own stream uses.
@@ -55,14 +55,18 @@ struct Live {
     tx: ReqTx,
     /// The chats allowed to reach the app.
     ///
-    /// **This is also the audience for everything the app says out**, and the
-    /// two being one list is deliberate rather than a shortcut. A notification
-    /// exists to reach somebody who is not at the machine, including on a chat
-    /// that has not asked this bridge for anything yet — so narrowing the
-    /// audience to whoever spoke last would silence the bridge exactly when it
-    /// has been quiet, which is when it matters. Everything a message says is
-    /// something the reader is already trusted with, because that is what being
-    /// on this list means.
+    /// **Permission, not audience, and the two are different lists.** Being here
+    /// is what makes a chat able to say anything and able to be told anything —
+    /// everything a message says is something the reader is already trusted
+    /// with, because that is what being on this list means. What a chat actually
+    /// hears about a *session* is `followed`, which is narrower and is the
+    /// reader's own choice.
+    ///
+    /// This list is still the whole audience for what is about the bridge rather
+    /// than about a session — the away switch thrown at the keyboard, today the
+    /// only one. That has no session to be subscribed to, and a reader who has
+    /// asked for nothing yet is exactly who needs telling that the machine has
+    /// been left.
     allowed: Vec<String>,
     /// Which session each chat has pointed itself at.
     ///
@@ -97,6 +101,40 @@ struct Live {
     /// Replaced whole by the next `/archive`, so it is one listing per chat and
     /// not a history of them.
     archives: RefCell<HashMap<String, Vec<ArchivePick>>>,
+    /// Which sessions each chat has asked to hear about.
+    ///
+    /// **This is the whole audience rule for a session's own news.** `allowed` is
+    /// who may reach the app and who may be told anything at all; this is who
+    /// asked about what, and a session absent from a chat's set is a session that
+    /// chat hears nothing about — not a finished turn, not a parked question, not
+    /// an adapter that died.
+    ///
+    /// **Silence is the default, and that is the change this encodes.** The
+    /// arrangement it replaced spoke about everything and was quietened one
+    /// session at a time, which makes a chat's contents a consequence of whatever
+    /// happens to be open at the far end — something its reader neither chose nor
+    /// can see. A machine running eight agents had to be told about seven of them
+    /// before it was bearable, and every session opened afterwards reopened the
+    /// argument. Asking first inverts that: what arrives is exactly what was
+    /// asked for, and the cost is that a chat which asked for nothing gets
+    /// nothing, which `/status` exists to say out loud.
+    ///
+    /// **Per chat, like `bindings` and `archives` and unlike anything global.**
+    /// A subscription is by construction a fact about a reader rather than about
+    /// a conversation: two people can want different things from one machine, and
+    /// `/use` — which subscribes — is already per chat, so a shared set would
+    /// have one phone's pointing decide another phone's notifications.
+    ///
+    /// **The channel only.** Nothing here reaches the desktop notification or the
+    /// rail's badge: those obey what is on screen, which the app can see for
+    /// itself, and somebody choosing what to hear about on a phone has said
+    /// nothing about the machine they are not at.
+    ///
+    /// A uid is never reused — the salt only counts up — so an entry left behind
+    /// by a closed session cannot start announcing a different conversation
+    /// later. It is dropped anyway wherever one is found to be gone, so that the
+    /// set stays something `/status` can print in full.
+    followed: RefCell<HashMap<String, HashSet<u64>>>,
 }
 
 /// One row of an archive listing, and everything reopening it needs.
@@ -186,6 +224,11 @@ pub struct RemoteSession {
 
 impl RemoteSession {
     /// The two lines this session takes in a listing.
+    ///
+    /// Says nothing about whether the chat reading it follows this session:
+    /// that is a fact about the reader rather than about the session, so it is
+    /// carried by the mark in the margin that `listing` puts there and not by
+    /// this, which is printed in places where there is no margin.
     fn line(&self) -> String {
         let name = self.conversation.as_deref().unwrap_or("no name yet");
         let state = self.state.unwrap_or("Idle");
@@ -280,6 +323,7 @@ pub fn boot(cfg: &RemoteConfig, cx: &mut App) {
             allowed: tg.allowed_chats.clone(),
             bindings: RefCell::new(HashMap::new()),
             archives: RefCell::new(HashMap::new()),
+            followed: RefCell::new(HashMap::new()),
         });
     });
 
@@ -408,15 +452,94 @@ fn bound(chat: &str, cx: &App) -> Option<u64> {
 }
 
 /// Point `chat` at `uid`, replacing whatever it was pointed at.
+///
+/// **Pointing at a session subscribes to it**, and that is what keeps a channel
+/// that says nothing by default from being a channel that appears broken.
+/// Pointing a chat somewhere is the gesture that says "this is the one I am
+/// attending to" — it is what somebody does before walking away from the
+/// machine — so requiring a second command afterwards would mean the ordinary
+/// path ends in silence, and silence is the one outcome a reader cannot tell
+/// apart from a crash. Unpointing does not unsubscribe: a chat can follow more
+/// than one session and only types into one, so dropping the subscription on the
+/// way past would take away something that was asked for separately.
+///
+/// The one exception is a session that has gone, where the caller passes `None`
+/// after finding it closed and prunes the subscription itself.
 fn bind(chat: &str, uid: Option<u64>, cx: &App) {
     let Some(live) = Shared::global(cx).remote.live.as_ref() else {
         return;
     };
-    let mut bindings = live.bindings.borrow_mut();
     match uid {
-        Some(uid) => bindings.insert(chat.to_string(), uid),
-        None => bindings.remove(chat),
+        Some(uid) => {
+            live.bindings.borrow_mut().insert(chat.to_string(), uid);
+            live.followed
+                .borrow_mut()
+                .entry(chat.to_string())
+                .or_default()
+                .insert(uid);
+        }
+        None => {
+            live.bindings.borrow_mut().remove(chat);
+        }
+    }
+}
+
+/// Whether `chat` has asked to hear about `uid`.
+fn is_followed(chat: &str, uid: u64, cx: &App) -> bool {
+    let Some(live) = Shared::global(cx).remote.live.as_ref() else {
+        return false;
     };
+    live.followed
+        .borrow()
+        .get(chat)
+        .is_some_and(|set| set.contains(&uid))
+}
+
+/// Start or stop `chat` hearing about `uid`.
+///
+/// Hands back whether this changed anything, so the reply can tell "now
+/// following" from "already were" — a command that answers the same way whether
+/// or not it did something teaches the user to distrust it.
+fn set_followed(chat: &str, uid: u64, on: bool, cx: &App) -> bool {
+    let Some(live) = Shared::global(cx).remote.live.as_ref() else {
+        return false;
+    };
+    let mut followed = live.followed.borrow_mut();
+    if on {
+        followed.entry(chat.to_string()).or_default().insert(uid)
+    } else {
+        // The chat's own set and not every chat's: one reader losing interest
+        // says nothing about what anybody else asked for.
+        followed.get_mut(chat).is_some_and(|set| set.remove(&uid))
+    }
+}
+
+/// Every session `chat` follows that is still open, in the listing's order.
+///
+/// **Filtered against what is running rather than returned raw**, because a
+/// subscription outlives the session it names: uids only count up, so a stale
+/// entry can never start announcing something else, but it can be printed, and a
+/// list of things you are following that includes conversations that ended is a
+/// list nobody can act on.
+fn followed_open(chat: &str, sessions: &[RemoteSession], cx: &App) -> Vec<u64> {
+    sessions
+        .iter()
+        .map(|s| s.uid)
+        .filter(|uid| is_followed(chat, *uid, cx))
+        .collect()
+}
+
+/// Drop `uid` from `chat`'s subscription and binding both.
+///
+/// For the moment a command finds that a session has closed. Left in place the
+/// entry is harmless — the uid will not come round again — but it is unprintable
+/// and so unremovable, and `/status` promising a full list has to be able to
+/// keep the promise.
+fn forget(chat: &str, uid: u64, cx: &App) {
+    if bound(chat, cx) == Some(uid) {
+        bind(chat, None, cx);
+    }
+    set_followed(chat, uid, false, cx);
 }
 
 /// Say whether the user is at the machine, and hand back the sentence that
@@ -724,6 +847,124 @@ fn send_options(chat: &str, cx: &mut App) {
     Shared::global(cx).remote.send(out);
 }
 
+/// Answer `/status`: what reaches this chat, and what does not.
+///
+/// **The command silence makes necessary.** Nothing announces itself unless a
+/// chat asked for it, so a bridge working perfectly and a bridge whose process
+/// died last night look the same from a phone — as does one whose subscriptions
+/// were forgotten in a restart. This is the question that separates them, which
+/// is why it names what it follows rather than counting it: the whole point is
+/// to be able to check the list against what you believe you asked for.
+///
+/// **Not a second `/sessions`.** That one answers what onehand is running and
+/// marks these rows in passing; this one answers what will reach you, and leads
+/// with the two facts no session carries — whether the user has said they are
+/// away, and where this chat is pointed.
+///
+/// The one thing it changes rather than reads: a binding or a subscription onto
+/// a session that has since closed is dropped as it is reported. Saying "pointed
+/// at 7" about a session that is gone is the exact confusion this command exists
+/// to end, and an entry naming a closed session cannot be printed, so it could
+/// never afterwards be removed.
+fn status(chat: &str, cx: &mut App) -> String {
+    let sessions = sessions(cx);
+    let mut out = String::from(if is_away(cx) {
+        "Away is on — everything you follow gets announced here, whatever is on screen.\n"
+    } else {
+        "Away is off — while you're at the keyboard, what you could already see is held back.\n"
+    });
+
+    match bound(chat, cx) {
+        None => out.push_str("This chat isn't pointed at a session — /use <number> picks one.\n"),
+        Some(uid) => match sessions.iter().find(|s| s.uid == uid) {
+            Some(session) => out.push_str(&format!("Pointed at {}\n", session.line().trim_start())),
+            None => {
+                forget(chat, uid, cx);
+                out.push_str(&format!(
+                    "Session {uid} closed, so this chat is pointed at nothing — /use <number> picks another.\n"
+                ));
+            }
+        },
+    }
+
+    if sessions.is_empty() {
+        out.push_str("\nNo sessions are open.");
+        return out;
+    }
+    let following = followed_open(chat, &sessions, cx);
+    if following.is_empty() {
+        out.push_str(&format!(
+            "\nYou're following nothing, so nothing will reach this chat.\n\
+             {} session{} open — /use <number> points at one and follows it, or \
+             /follow <number> follows one without pointing at it.",
+            sessions.len(),
+            if sessions.len() == 1 { " is" } else { "s are" }
+        ));
+        return out;
+    }
+    out.push_str(&format!(
+        "\nYou'll hear about {} of {} open session{}:\n",
+        following.len(),
+        sessions.len(),
+        if sessions.len() == 1 { "" } else { "s" }
+    ));
+    for session in sessions.iter().filter(|s| following.contains(&s.uid)) {
+        out.push_str("  ");
+        out.push_str(&session.line());
+        out.push('\n');
+    }
+    out.push_str("\n/unfollow <number> drops one. /sessions lists them all.");
+    out
+}
+
+/// Answer `/follow` and `/unfollow`.
+///
+/// **The session has to still be open.** Subscribing to one that has closed is a
+/// message saying it worked about something that does not exist, and the entry
+/// would then sit in the set unprintable — `/sessions` and `/status` only show
+/// sessions that are running, so a subscription neither can name is one nobody
+/// can find to drop.
+fn follow(chat: &str, aim: Aim, on: bool, cx: &mut App) -> String {
+    let word = if on { "follow" } else { "unfollow" };
+    let uid = match aim {
+        // Not read as the bound session: the user named something, it just was
+        // not a number. On `/unfollow` that would silence a conversation nobody
+        // typed, which is the mistake whose symptom is nothing happening.
+        Aim::Unreadable => {
+            return format!(
+                "Which session? /{word} <number>, or /{word} on its own for the one this chat is pointed at.\n\n{}",
+                listing(chat, cx)
+            );
+        }
+        Aim::Bound => match bound(chat, cx) {
+            Some(uid) => uid,
+            None => return not_pointed(word, chat, cx),
+        },
+        Aim::Session(uid) => uid,
+    };
+    if !sessions(cx).iter().any(|s| s.uid == uid) {
+        forget(chat, uid, cx);
+        return format!("There's no session {uid}.\n\n{}", listing(chat, cx));
+    }
+    let changed = set_followed(chat, uid, on, cx);
+    match (on, changed) {
+        (true, true) => format!(
+            "Following {uid}. You'll hear here when it finishes a turn, when it stops to \
+             ask you something, and if the agent dies. /unfollow {uid} to stop."
+        ),
+        (true, false) => format!("You were already following {uid}."),
+        // Named rather than left to be inferred: this is a command whose whole
+        // effect is that nothing happens afterwards, so the reply is the only
+        // evidence it did anything at all.
+        (false, true) => format!(
+            "Stopped following {uid}. Nothing about it reaches this chat now — not a \
+             finished turn, not a question it stops on, not the agent dying. It keeps \
+             running, and /sessions still shows it."
+        ),
+        (false, false) => format!("You weren't following {uid}, so nothing changed."),
+    }
+}
+
 /// Answer `/stop`.
 fn stop_session(chat: &str, cx: &mut App) -> String {
     let Some(uid) = bound(chat, cx) else {
@@ -781,6 +1022,9 @@ fn answer(chat: &str, text: &str, cx: &mut App) -> Option<String> {
         }
         RemoteCommand::Away => Some(set_away(true, cx)),
         RemoteCommand::Here => Some(set_away(false, cx)),
+        RemoteCommand::Follow(aim) => Some(follow(chat, aim, true, cx)),
+        RemoteCommand::Unfollow(aim) => Some(follow(chat, aim, false, cx)),
+        RemoteCommand::Status => Some(status(chat, cx)),
         RemoteCommand::Prompt(prompt) => Some(send_prompt(chat, &prompt, cx)),
     }
 }
@@ -788,23 +1032,39 @@ fn answer(chat: &str, text: &str, cx: &mut App) -> Option<String> {
 /// What this chat can do, in the order somebody arriving would need it.
 const HELP: &str = "\
 /sessions — every session onehand is running, and what each is doing
-/use <number> — point this chat at one of them
+/use <number> — point this chat at one of them, and follow it
+/follow [number] — hear about a session without pointing at it
+/unfollow [number] — stop hearing about one
+/status — what reaches this chat right now
 /stop — cancel the turn running on the one this chat is pointed at
 /options — the agent's own pickers: mode, model, effort
 /archive — conversations saved on disk, newest first
 /open <number> — put one of them back and point this chat at it
-/away — you've left the machine; announce everything here
+/away — you've left the machine; announce everything you follow
 /here — you're back; go quiet again while you're looking
 /help — this
 
 Anything else is sent as a prompt to the session this chat is pointed at.
 //<command> sends the agent's own slash command — //compact, //clear.
 
-Notifications arrive here on their own: a turn that finished, an agent waiting \
-on you, an agent that stopped answering. While you're at the keyboard the ones \
-you can already see are held back — /away is how you say you can't.";
+Nothing reaches you here until you ask for it. A session you follow announces \
+three things on its own: a turn that finished, an agent waiting on you, an \
+agent that stopped answering — everything else stays quiet, and a session you \
+don't follow says nothing at all while still running normally. /use follows \
+what it points at, so the short way in is /sessions then /use <number>. While \
+you're at the keyboard what you could already see is held back; /away is how \
+you say you can't see it. If it seems too quiet, /status says why.";
 
-/// The `/sessions` reply, marking the one this chat is pointed at.
+/// The `/sessions` reply, marking the one this chat is pointed at and the ones
+/// it will hear about.
+///
+/// **Two marks and one column**, because they are two different questions asked
+/// while reading the same row — where does what I type go, and which of these
+/// will tell me anything — and answering the second in a sentence underneath
+/// would mean counting rows to use it. The pointed-at session is always followed
+/// too, so its arrow stands for both; what the dot is really for is the rows that
+/// are followed without being pointed at, which are otherwise indistinguishable
+/// from the silent ones.
 fn listing(chat: &str, cx: &App) -> String {
     let sessions = sessions(cx);
     if sessions.is_empty() {
@@ -815,18 +1075,20 @@ fn listing(chat: &str, cx: &App) -> String {
     let here = bound(chat, cx);
     let mut out = String::from("Sessions\n\n");
     for session in &sessions {
-        // The mark is on the line rather than in a sentence underneath, because
-        // the question it answers -- where does what I type go -- is asked while
-        // reading the list, not after it.
         out.push_str(if here == Some(session.uid) {
             "→ "
+        } else if is_followed(chat, session.uid, cx) {
+            "• "
         } else {
             "  "
         });
         out.push_str(&session.line());
         out.push('\n');
     }
-    out.push_str("\n/use <number> points this chat at one.");
+    out.push_str(
+        "\n→ is where what you type goes · is one you'll hear about\n\
+         /use <number> points this chat at one and follows it.",
+    );
     out
 }
 
@@ -835,10 +1097,20 @@ fn point_at(chat: &str, uid: u64, cx: &mut App) -> String {
     let Some(session) = sessions(cx).into_iter().find(|s| s.uid == uid) else {
         return format!("There's no session {uid}.\n\n{}", listing(chat, cx));
     };
+    let already = is_followed(chat, uid, cx);
     bind(chat, Some(uid), cx);
+    // The subscription is said out loud rather than left to be discovered,
+    // because it is the half of this command nobody asked for: `/use` reads as
+    // "send my typing here", and a chat that then starts announcing turns
+    // without having said it would would be the bridge doing something unasked.
     format!(
-        "Pointed at {}.\nAnything you type here now goes to it as a prompt.",
-        session.line().trim_start()
+        "Pointed at {}.\nAnything you type here now goes to it as a prompt{}",
+        session.line().trim_start(),
+        if already {
+            ", and you were already following it."
+        } else {
+            ", and you'll hear about it here — /unfollow if you'd rather not."
+        }
     )
 }
 
@@ -917,15 +1189,44 @@ impl Announcement {
 /// Say something about a session outside the app, to everyone allowed to hear
 /// it.
 ///
-/// Silence is the caller's decision, not this function's. Whether a finished
-/// turn or a parked question is worth announcing depends on what is on screen,
-/// and the pane is the only thing that knows — the same split that already
-/// decides whether the desktop hears about it.
+/// Silence is the caller's decision, not this function's — with one exception,
+/// below. Whether a finished turn or a parked question is worth announcing
+/// depends on what is on screen, and the pane is the only thing that knows — the
+/// same split that already decides whether the desktop hears about it.
+///
+/// **Who hears it is decided here and not there, because it is about this
+/// channel and nothing else.** The pane's rules are about the screen and hold
+/// for the desktop notification as much as for the chat; which sessions a chat
+/// subscribed to is a fact only the bridge has, and pushing it up into the pane
+/// would quieten the desktop over instructions that never mentioned it. It is
+/// also the one gate that has to catch all three moments at once, and this is
+/// where all three arrive.
+///
+/// **The audience is the chats that asked, which is narrower than `allowed`.**
+/// That list is who may be told anything; a session's own news goes only to the
+/// chats following it, so a bridge nobody has subscribed from is a bridge that
+/// says nothing. What that costs is a channel which can look dead while working
+/// perfectly, and `/status` is what answers for it.
 pub fn announce(origin: &Origin, what: Announcement, cx: &App) {
     let bridge = &Shared::global(cx).remote;
     let Some(live) = &bridge.live else {
         return;
     };
+    let audience: Vec<String> = {
+        let followed = live.followed.borrow();
+        live.allowed
+            .iter()
+            .filter(|chat| {
+                followed
+                    .get(*chat)
+                    .is_some_and(|set| set.contains(&origin.uid))
+            })
+            .cloned()
+            .collect()
+    };
+    if audience.is_empty() {
+        return;
+    }
     let mut text = format!(
         "{}\n{}",
         what.away.headline(&origin.agent),
@@ -935,11 +1236,71 @@ pub fn announce(origin: &Origin, what: Announcement, cx: &App) {
         text.push_str("\n\n");
         text.push_str(detail);
     }
-    for chat in &live.allowed {
+    for chat in audience {
         bridge.send(Outbound {
-            chat: chat.clone(),
+            chat,
             text: text.clone(),
             buttons: what.buttons.clone(),
         });
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Every command word [`HELP`] offers, as the reader would type it.
+    ///
+    /// Lines beginning with a doubled slash are skipped: that entry is the
+    /// escape for the agent's own commands, and `<command>` there is a
+    /// placeholder rather than a word this build knows.
+    fn words_help_offers() -> Vec<&'static str> {
+        HELP.lines()
+            .filter(|line| line.starts_with('/') && !line.starts_with("//"))
+            .filter_map(|line| line.split_whitespace().next())
+            .collect()
+    }
+
+    /// A command named in the help and not in the parser answers "I don't know
+    /// that" while pointing at itself, which is the worst reply the bridge has.
+    /// It is the failure a rename produces and the one nobody would go looking
+    /// for, since the help is the last place anybody suspects.
+    #[test]
+    fn help_offers_nothing_the_parser_cannot_read() {
+        for word in words_help_offers() {
+            let read = onehand_core::remote::command::parse(word);
+            assert!(
+                !matches!(read, RemoteCommand::Unknown(_)),
+                "{word} is offered in the help and the parser does not know it"
+            );
+        }
+    }
+
+    /// The other direction, for the three the subscription model turns on. A
+    /// bridge that says nothing until asked is only usable if the asking is
+    /// findable, and `/status` is what a reader reaches for when it seems
+    /// broken — every one of them has to be in the first thing a new chat is
+    /// sent.
+    #[test]
+    fn subscribing_is_offered_in_the_help() {
+        let offered = words_help_offers();
+        assert!(offered.contains(&"/follow"), "{HELP}");
+        assert!(offered.contains(&"/unfollow"), "{HELP}");
+        assert!(offered.contains(&"/status"), "{HELP}");
+    }
+
+    /// Silence being the default is the one thing a new chat cannot work out by
+    /// waiting, so the help has to say it rather than only listing the commands
+    /// that change it. Pinned by the words a reader would scan for: without them
+    /// the first symptom is a bridge that looks dead.
+    #[test]
+    fn the_help_says_that_nothing_arrives_unasked() {
+        assert!(
+            HELP.contains("Nothing reaches you here until you ask for it"),
+            "{HELP}"
+        );
+        // And the short way past it, since the listing alone does not say that
+        // pointing a chat at a session is also subscribing to it.
+        assert!(HELP.contains("/use follows what it points at"), "{HELP}");
     }
 }

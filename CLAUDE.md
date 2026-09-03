@@ -201,10 +201,12 @@ plus `sendMessage` and `answerCallbackQuery`. Everything that is not the wire is
   a feature that silently does not work. It is still plaintext on disk, and this is not a keyring.
 - **A chat not on `allowed_chats` is answered with nothing at all** — not a refusal, because a refusal
   confirms that the bot is real, that it is running right now, and that there is a list to get onto.
-  **The empty list allows nobody**, so forgetting to fill it in fails closed. That same list is the
-  audience for everything the app says out: a notification exists to reach somebody who has not asked
-  for anything yet, so narrowing it to whoever spoke last would silence the bridge exactly when it has
-  been quiet.
+  **The empty list allows nobody**, so forgetting to fill it in fails closed. It is **permission and
+  not audience**: being on it is what lets a chat say anything and be told anything, while what a chat
+  actually hears about a *session* is the narrower list it subscribed to itself (see **Following**
+  below). The two coincide only for what is about the bridge rather than about a session — the away
+  switch thrown at the keyboard — which has no session to be subscribed to and needs to reach somebody
+  who has asked for nothing yet.
 - **One process, one bot**, so the bridge lives on `Shared` rather than on a window — a second poll
   against one token is two clients splitting one queue. What follows is the routing problem: an
   incoming message belongs to no window, so `OpenWindow` carries a weak `Entity<Shell>` and the bridge
@@ -212,7 +214,9 @@ plus `sendMessage` and `answerCallbackQuery`. Everything that is not the wire is
   the bridge would need correcting on every open, close and restart and would be wrong in between.
 - **Out.** The three moments a session stops being self-explanatory to somebody not looking at it, as
   `onehand_core::chat::Away` — a turn that finished, an ask that parked, an adapter that stopped
-  answering. The sentences are core's so the desktop notification and the chat cannot drift, and
+  answering. All three reach a chat only if it follows that session (see **Following** below); what
+  follows here is about *whether* they are worth saying at all, which is a separate question decided
+  by what is on screen. The sentences are core's so the desktop notification and the chat cannot drift, and
   `UserAsk::headline` still names permission and question apart underneath. **A finished turn carries
   the end of the answer** (`Chat::answer_tail`) and a parked ask carries the question, both through
   `Announcement::detail` — the line a reader on the far side needs and a reader at the window does
@@ -254,9 +258,10 @@ plus `sendMessage` and `answerCallbackQuery`. Everything that is not the wire is
 - **In.** `/away` and `/here` set the presence fact above from wherever the user actually is —
   the point of having them, since the switch at the keyboard is no use to somebody who has already
   left. `/sessions` numbers every session across every window and says what each is doing, in the
-  rail's own `signal_word` so one condition keeps one name. `/use <n>` points a chat at one, and
-  **the number is the session's uid, not its place in the list** — a place shifts when a session
-  closes, so a number read and then typed back would land on a different conversation. Anything not
+  rail's own `signal_word` so one condition keeps one name. `/use <n>` points a chat at one *and
+  follows it*, and **the number is the session's uid, not its place in the list** — a place shifts
+  when a session closes, so a number read and then typed back would land on a different
+  conversation. Anything not
   starting with `/` is a prompt for the bound session, submitted straight into it rather than through
   the composer (one composer serves the pane and it holds what the person at the keyboard was typing),
   and queued rather than refused mid-turn, since the sender cannot see that a turn is in flight — but
@@ -273,6 +278,51 @@ plus `sendMessage` and `answerCallbackQuery`. Everything that is not the wire is
   since the queued prompt is on screen as a chip; from a chat there is nothing to see. The words are
   quoted back rather than dropped, and the emptying happens *before* the cancel goes out so no ordering
   of the adapter's replies can flush it on the way past.
+- **Following, and the silence underneath it.** **Nothing about a session reaches a chat that did not
+  ask for it.** `Live.followed` is a set of uids *per chat*, and `announce` sends only to the chats
+  holding the uid it is about — so the audience for a session's news is narrower than `allowed_chats`,
+  and a bridge nobody has subscribed from says nothing at all. The arrangement this replaced spoke
+  about everything and was quietened one session at a time, which makes a chat's contents a
+  consequence of whatever happens to be open at the far end: something its reader neither chose nor
+  can see, where a machine running eight agents had to be told about seven of them before it was
+  bearable and every session opened afterwards reopened the argument. **Per chat and not global**,
+  unlike anything else about announcing, because a subscription is by construction a fact about a
+  reader — and because `/use` subscribes, so a shared set would let one phone's pointing decide
+  another phone's notifications.
+  **`/use` follows what it points at**, and that is what keeps a channel silent by default from being
+  a channel that looks broken: pointing a chat somewhere is the gesture that says "this is the one I
+  am attending to", it is what somebody does before walking away, and requiring a second command
+  after it would end the ordinary path in silence — the one outcome a reader cannot tell from a
+  crash. It is said in the reply rather than left to be discovered, since `/use` reads as "send my
+  typing here" and a chat that then started announcing turns unasked would be the bridge acting on
+  its own. Unpointing does **not** unsubscribe (a chat follows many and types into one), but
+  `remote::forget` drops both wherever a session is found closed — an entry naming a session neither
+  `/sessions` nor `/status` can print is one nobody could afterwards remove.
+  `/follow [n]` and `/unfollow [n]` are the explicit pair, bare meaning the pointed-at session. Both
+  move **all three moments together**, the parked ask included, which is the honest reading of being
+  told to say nothing: half a subscription is a mode whose rule nobody can state. A word where a
+  number was meant (`Aim::Unreadable`) is refused rather than read as the bound one — on `/unfollow`
+  that would silence a conversation nobody named, and what it costs is every message that session
+  would have sent, until somebody thinks to wonder why it went quiet. `/sessions` marks both facts in
+  one margin column: `→` where typing goes, `•` for followed-but-not-pointed-at, which is the row
+  that is otherwise indistinguishable from a silent one.
+  **The whole thing is decided in `announce` and never by the pane**, because it is a fact about the
+  channel alone — the pane's rules are about what is on screen and hold for the desktop notification
+  too, so pushing a subscription up there would quiet the desktop over instructions that never
+  mentioned it.
+- **`/status` is the answer to "why is it quiet", and silence being the default is what makes it
+  necessary.** Every fact that decides whether anything arrives is invisible from the far side by
+  construction: following nothing shows itself as messages that do not come, and so does being at the
+  keyboard, and so does a bot whose process died an hour ago. So it prints the two facts no session
+  carries — away on or off, where this chat is pointed — and then **names** what it follows rather
+  than counting it, since the point is to check the list against what you believe you asked for.
+  **Not a second `/sessions`**, which answers what onehand is running and marks these rows in passing.
+  The word is `status` and not `watching` although that is the question being asked:
+  `ChatPane::watching` already names the user's eyes being on a conversation, which is what decides
+  whether a turn is announced at all, and one word answering two questions inside one feature is how
+  the two answers end up swapped. It is the one reading command that writes: a binding or a
+  subscription onto a session that has since closed is dropped as it is reported, since "pointed at 7"
+  about a session that is gone is the confusion the command exists to end.
 - **Selectors.** `/options` draws the agent's own pickers — mode, model, effort — with a button per
   value and a dot on the one in force, which is what stops somebody pressing to find out what is
   running and changing it by accident. `Chat::selectors` flattens the two shapes the protocol keeps

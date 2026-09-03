@@ -55,12 +55,73 @@ pub enum RemoteCommand {
     Away,
     /// `/here` — back at the machine, and the ordinary rules apply again.
     Here,
+    /// `/follow` or `/follow <n>` — start hearing about this session.
+    ///
+    /// **The channel says nothing about a session nobody asked to hear about.**
+    /// The opposite arrangement — everything speaks, and the noisy ones are
+    /// silenced one at a time — makes the chat's contents a consequence of what
+    /// happens to be open at the far end, which is a thing the reader neither
+    /// chose nor can see. A machine running eight agents would have to be told
+    /// about seven of them before it was quiet, and every session opened after
+    /// that starts the argument again.
+    ///
+    /// The companion to [`Self::Away`] and its opposite in reach. Away is about
+    /// the *user* and moves every followed session at once; this is about one
+    /// conversation and says nothing about where anybody is.
+    Follow(Aim),
+    /// `/unfollow` or `/unfollow <n>` — go back to hearing nothing about it.
+    Unfollow(Aim),
+    /// `/status` — what will reach this chat, and what will not.
+    ///
+    /// **Not [`Self::List`] with different words.** That one answers "what is
+    /// onehand running", which is about the app; this answers "what am I going
+    /// to hear about", which is about the channel — and the two diverge on every
+    /// fact that decides the second: whether the user has said they are away,
+    /// which session this chat is pointed at, which sessions it follows. None of
+    /// those is a property of a session, so none of them has a column in a
+    /// listing of sessions.
+    ///
+    /// Worth a command of its own, and more so now that silence is the default.
+    /// Every fact that decides whether anything arrives is invisible from the far
+    /// side by construction: following nothing shows itself as messages that do
+    /// not come, and so does being at the keyboard, and so does a bot whose
+    /// process died an hour ago. This is the question that tells them apart, and
+    /// it is the first thing to reach for when the channel seems broken.
+    Status,
     /// Words with no slash in front of them: something for a session to answer.
     Prompt(String),
     /// A slash word this build has no reading for, without its slash.
     Unknown(String),
     /// Nothing but space. Some clients send one; nothing is asked.
     Nothing,
+}
+
+/// Which session a command that can take a number is about.
+///
+/// Its own type rather than an `Option<u64>` because there are three answers and
+/// not two: a number, no number at all, and a word where a number was meant. The
+/// last has to stay distinguishable from the middle one — falling back to "the
+/// session this chat is pointed at" would quietly silence a conversation nobody
+/// named, and the whole point of a mute is that it is invisible afterwards.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Aim {
+    /// No number: whatever this chat is already pointed at.
+    Bound,
+    /// A session named outright, so a chat can act on one it is not pointed at.
+    Session(u64),
+    /// A word where a number was expected.
+    Unreadable,
+}
+
+/// Read the word after a command that takes an optional session number.
+fn aim(word: Option<&str>) -> Aim {
+    match word {
+        None => Aim::Bound,
+        Some(word) => match word.parse::<u64>() {
+            Ok(uid) => Aim::Session(uid),
+            Err(_) => Aim::Unreadable,
+        },
+    }
 }
 
 /// Read one incoming line.
@@ -118,6 +179,18 @@ pub fn parse(line: &str) -> RemoteCommand {
         "sessions" => RemoteCommand::List,
         "away" => RemoteCommand::Away,
         "here" => RemoteCommand::Here,
+        // The number is optional here and required by `use`, and the difference
+        // is what each one is for: `use` exists to say where, so a missing
+        // number leaves it with nothing at all, while these two have an obvious
+        // subject already — the session this chat is reading about.
+        "follow" => RemoteCommand::Follow(aim(words.next())),
+        "unfollow" => RemoteCommand::Unfollow(aim(words.next())),
+        // `status` and not `watching`, though that is the question being asked.
+        // The app already uses that word for the user's eyes being on a
+        // conversation, which is what decides whether a turn is announced at
+        // all — one word answering two questions in one feature is how the two
+        // answers end up being given to the wrong one.
+        "status" => RemoteCommand::Status,
         // A number that is not one, and a number that is missing, are the same
         // mistake to whoever made it: they meant to point this chat somewhere
         // and did not say where.
@@ -163,6 +236,86 @@ mod tests {
         assert_eq!(parse("/open 2"), RemoteCommand::Open(2));
         assert_eq!(parse("/stop"), RemoteCommand::Stop);
         assert_eq!(parse("/options"), RemoteCommand::Options);
+        assert_eq!(parse("/follow"), RemoteCommand::Follow(Aim::Bound));
+        assert_eq!(parse("/unfollow"), RemoteCommand::Unfollow(Aim::Bound));
+        assert_eq!(parse("/status"), RemoteCommand::Status);
+    }
+
+    /// The channel used to speak about everything and be silenced one session at
+    /// a time. It no longer does, and the old words must not still work: a
+    /// `/mute` that quietly did nothing would leave somebody believing a session
+    /// had been silenced, which is the one mistake whose symptom is more
+    /// messages rather than fewer.
+    #[test]
+    fn the_silencing_this_replaced_is_gone_rather_than_aliased() {
+        assert_eq!(parse("/mute"), RemoteCommand::Unknown("mute".into()));
+        assert_eq!(parse("/unmute"), RemoteCommand::Unknown("unmute".into()));
+    }
+
+    /// `/status` asks about the channel and `/sessions` about the app, so they
+    /// must not collapse into each other — and a sentence about status is a
+    /// prompt like any other sentence.
+    #[test]
+    fn status_is_its_own_question() {
+        assert_ne!(parse("/status"), parse("/sessions"));
+        assert_eq!(parse("/STATUS@onehand_bot"), RemoteCommand::Status);
+        // It takes no argument, so trailing words are the phone's, not a target.
+        assert_eq!(parse("/status of the build"), RemoteCommand::Status);
+        assert_eq!(
+            parse("status on the migration please"),
+            RemoteCommand::Prompt("status on the migration please".into())
+        );
+    }
+
+    /// The number is optional, and a session can be followed without this chat
+    /// being pointed at it — what you want telling about is not always what you
+    /// are typing into.
+    #[test]
+    fn follow_takes_a_session_or_the_one_this_chat_is_on() {
+        assert_eq!(parse("/follow 7"), RemoteCommand::Follow(Aim::Session(7)));
+        assert_eq!(
+            parse("/unfollow 7"),
+            RemoteCommand::Unfollow(Aim::Session(7))
+        );
+        assert_eq!(
+            parse("/FOLLOW@onehand_bot 7"),
+            RemoteCommand::Follow(Aim::Session(7))
+        );
+        // Trailing words are the phone's, not the user's, same as `/use`.
+        assert_eq!(
+            parse("/follow 7 please"),
+            RemoteCommand::Follow(Aim::Session(7))
+        );
+    }
+
+    /// A word where a number was meant is not "the one this chat is on". On
+    /// `/unfollow` reading it that way would silence a conversation nobody
+    /// named, and that is the mistake you do not notice: what it costs is every
+    /// message the session would have sent, up until somebody wonders why it
+    /// went quiet.
+    #[test]
+    fn a_word_where_a_session_number_was_meant_is_not_a_default() {
+        assert_eq!(
+            parse("/follow this one"),
+            RemoteCommand::Follow(Aim::Unreadable)
+        );
+        assert_eq!(parse("/follow all"), RemoteCommand::Follow(Aim::Unreadable));
+        assert_eq!(
+            parse("/unfollow -1"),
+            RemoteCommand::Unfollow(Aim::Unreadable)
+        );
+        assert_ne!(parse("/unfollow everything"), parse("/unfollow"));
+    }
+
+    /// `/follow` and `/unfollow` are opposites and one is the other's prefix,
+    /// which is exactly the pair a sloppy first-word match collapses.
+    #[test]
+    fn follow_and_unfollow_are_not_confused_for_each_other() {
+        assert_ne!(parse("/follow"), parse("/unfollow"));
+        assert_eq!(
+            parse("follow the stack trace up"),
+            RemoteCommand::Prompt("follow the stack trace up".into())
+        );
     }
 
     /// `/stop` is the one command whose misreading costs work rather than a
