@@ -41,6 +41,45 @@ fn sources() -> Vec<(String, String)> {
     out
 }
 
+/// UI source owned by the app and its built-in plugins.
+///
+/// UI code moved into a plugin must not move out of the app's load-bearing
+/// source guards at the same time. This deliberately excludes `vendor/`.
+#[cfg(test)]
+fn ui_sources() -> Vec<(String, String)> {
+    fn walk(dir: &std::path::Path, out: &mut Vec<(String, String)>) {
+        let Ok(entries) = std::fs::read_dir(dir) else {
+            return;
+        };
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.is_dir() {
+                walk(&path, out);
+            } else if path.extension().is_some_and(|extension| extension == "rs")
+                && let Ok(text) = std::fs::read_to_string(&path)
+            {
+                out.push((path.display().to_string(), text));
+            }
+        }
+    }
+
+    let mut out = sources();
+    let plugins = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .expect("crates/")
+        .parent()
+        .expect("workspace root")
+        .join("plugins")
+        .join("builtin");
+    walk(&plugins, &mut out);
+    assert!(
+        out.iter().any(|(path, _)| path.contains("plugins/builtin")),
+        "found no built-in plugin sources under {}",
+        plugins.display()
+    );
+    out
+}
+
 /// Every `.rs` file in **both** first-party crates.
 ///
 /// [`sources`] is deliberately this crate only, because the rules it feeds are
@@ -126,7 +165,7 @@ fn documents() -> Vec<(String, String)> {
 
 #[cfg(test)]
 mod tests {
-    use super::{documents, sources, workspace_sources};
+    use super::{documents, sources, ui_sources, workspace_sources};
 
     #[test]
     fn core_manifest_has_no_gui_or_telegram_transport_dependencies() {
@@ -175,7 +214,7 @@ mod tests {
 
     #[test]
     fn no_glyph_is_used_as_an_icon() {
-        for (path, source) in sources() {
+        for (path, source) in ui_sources() {
             for (glyph, instead) in GLYPHS {
                 // Quoted, so prose in a doc comment can still name the glyph it
                 // is explaining -- which these very comments do.
@@ -444,7 +483,7 @@ mod tests {
         // Assembled at run time so the wrapper's own source, and this test,
         // are not matches for it.
         let bare = format!("Button{}new(", "::");
-        for (path, source) in sources() {
+        for (path, source) in ui_sources() {
             // The one file allowed to name it: the wrapper is where the
             // library's control is reached.
             if path.ends_with("controls.rs") {
@@ -454,7 +493,7 @@ mod tests {
                 assert!(
                     !line.contains(&bare),
                     "{path}:{}: builds a button straight from the library, which \
-                     draws it with the arrow cursor. Use the app's action \
+                     draws it with the arrow cursor. Use Onehand's action \
                      wrapper so it answers the pointer like every other control.\n    {}",
                     n + 1,
                     line.trim()

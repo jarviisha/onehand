@@ -1,6 +1,8 @@
 //! Startup-only registry for built-in plugins.
 
 use gpui::{App, FocusHandle};
+use gpui::{ElementId, Styled as _};
+use gpui_component::button::Button;
 use onehand_plugin_api::{
     BuiltinPlugin, Capability, PLUGIN_API_VERSION, PluginDescriptor, PluginId, PluginRegistrar,
 };
@@ -21,6 +23,11 @@ pub trait WorkbenchModeView {
 
 pub type WorkbenchModeFactory = fn() -> Box<dyn WorkbenchModeView>;
 pub type RemoteChannelFactory = fn(String) -> Box<dyn onehand_core::remote::types::RemoteChannel>;
+
+/// Build a plugin-owned button with Onehand's pointer affordance.
+pub fn action(id: impl Into<ElementId>) -> Button {
+    Button::new(id).cursor_pointer()
+}
 
 /// Per-window Workbench host. It owns the open contribution instances and
 /// fans lifecycle changes only to those instances; UI rendering remains in
@@ -209,10 +216,13 @@ impl PluginRegistry {
         }
 
         let mut pending = Pending::new(descriptor);
-        if let Err(message) = plugin.register(&mut pending) {
-            if let Some(error) = pending.capability_error.take() {
-                return Err(error);
-            }
+        let registration = plugin.register(&mut pending);
+        // A registrar error is sticky. A plugin cannot turn a rejected
+        // contribution into a successful registration by ignoring its Result.
+        if let Some(error) = pending.capability_error.take() {
+            return Err(error);
+        }
+        if let Err(message) = registration {
             return Err(RegistryError::Registration {
                 plugin: descriptor.id,
                 message,
@@ -458,6 +468,35 @@ mod tests {
             PluginRegistry::new().register(&missing),
             Err(RegistryError::MissingCapability { .. })
         ));
+    }
+
+    #[test]
+    fn capability_mismatch_stays_rejected_when_the_plugin_ignores_it() {
+        struct SwallowsRegistrarError;
+        impl BuiltinPlugin for SwallowsRegistrarError {
+            fn descriptor(&self) -> PluginDescriptor {
+                PluginDescriptor {
+                    id: PluginId::new("swallows-error"),
+                    name: "Swallows error",
+                    version: "0.1.0",
+                    api_version: PLUGIN_API_VERSION,
+                    capabilities: &[],
+                }
+            }
+
+            fn register(&self, registrar: &mut dyn PluginRegistrar) -> Result<(), String> {
+                let _ = registrar.register_workbench_mode(PluginId::new("forbidden"), "Bad");
+                Ok(())
+            }
+        }
+
+        let mut registry = PluginRegistry::new();
+        assert!(matches!(
+            registry.register(&SwallowsRegistrarError),
+            Err(RegistryError::MissingCapability { .. })
+        ));
+        assert!(registry.plugins().is_empty());
+        assert!(registry.workbench_modes().is_empty());
     }
 
     #[test]

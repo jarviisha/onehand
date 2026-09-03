@@ -4761,6 +4761,7 @@ name = "onehand-plugin-host"
 version = "0.1.0"
 dependencies = [
  "gpui",
+ "gpui-component",
  "onehand-core",
  "onehand-plugin-api",
 ]

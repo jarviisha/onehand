@@ -11,7 +11,6 @@ use gpui::{
     App, AppContext, Entity, InteractiveElement, IntoElement, ParentElement,
     StatefulInteractiveElement, Styled, Window, div, px,
 };
-use gpui_component::button::Button;
 use gpui_component::button::ButtonVariants as _;
 use gpui_component::input::{Editor, EditorState};
 use gpui_component::{ActiveTheme, Icon, IconName, Sizable as _, StyledExt};
@@ -156,8 +155,7 @@ pub fn tab_strip(
         }))
         .child(div().flex_1())
         .child(
-            Button::new("close-all-files")
-                .cursor_pointer()
+            onehand_plugin_host::action("close-all-files")
                 .ghost()
                 .xsmall()
                 .icon(Icon::new(IconName::Close))
