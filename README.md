@@ -61,8 +61,8 @@ that exist:
 
 - No command palette.
 - The terminal has no `APP_KEYPAD` mode and its cursor does not blink. Neovim
-  itself runs — `Ctrl+Shift+N` opens it on the active project, as a tab of the
-  terminal.
+  itself runs — `Ctrl+Shift+N` opens it on the active project, as the
+  Workbench's third mode beside Editor and Files.
 - `path:line:col` in agent prose is not clickable; only a tool card's path
   header opens a file.
 - The bundled icon set covers less than the app wants, so some glyphs are

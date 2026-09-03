@@ -1992,23 +1992,20 @@ impl Shell {
         cx.notify();
     }
 
-    /// Open Neovim on the active project, in the terminal dock.
+    /// Open Neovim on the active project, as the Workbench's third mode.
     ///
-    /// **Not three-state, unlike every panel key.** The other shortcuts toggle a
-    /// panel, and a panel is a container the user is deciding whether to look
-    /// at; this one reaches a *program*, and hiding it is not the counterpart of
-    /// opening it — closing the dock leaves the editor running with whatever is
-    /// unsaved in it, which is exactly what the terminal key is for. So this
-    /// only ever brings it forward, and the way back out is the key that owns
-    /// the dock.
+    /// Spawned here rather than by the mode switch, so that clicking the mode
+    /// strip stays a view change: the key is the request to *start* an editor,
+    /// and a tab that launched a process when clicked would be the one control
+    /// in the panel that does something irreversible-looking.
+    ///
+    /// Three-state after that, like the other two Workbench keys and for the
+    /// same reason: closing the dock puts the editor aside rather than ending
+    /// it — the panel entity outlives the dock, so the PTY, its scrollback and
+    /// whatever is unsaved in the buffer are all still there on the next press.
     pub fn show_neovim(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        self.last_panel = FocusedPanel::Terminal;
-        self.set_terminal_visible(true, window, cx);
-        self.terminal.update(cx, |panel, cx| {
-            panel.open_editor(window, cx);
-            panel.focus_active(window, cx);
-        });
-        cx.notify();
+        self.workbench.update(cx, |panel, cx| panel.open_neovim(cx));
+        self.show_workbench(WorkbenchMode::Neovim, window, cx);
     }
 
     /// Put the terminal on screen, or take it off.
@@ -2149,9 +2146,13 @@ impl Shell {
                 step.apply(pane.zoom_mut());
                 cx.notify();
             }),
+            // Handed the whole value, not a `&mut` to the field: the Workbench's
+            // Neovim mode is a measured grid, so a step there has to be pushed
+            // into the view as a font size as well as recorded.
             FocusedPanel::Workbench => self.workbench.update(cx, |panel, cx| {
-                step.apply(panel.zoom_mut());
-                cx.notify();
+                let mut zoom = panel.zoom();
+                step.apply(&mut zoom);
+                panel.set_zoom(zoom, cx);
             }),
             FocusedPanel::Terminal => self.terminal.update(cx, |panel, cx| {
                 let mut zoom = panel.zoom();

@@ -7,19 +7,13 @@
 //! Scope is **per project root**: each root owns its tab set, and switching
 //! roots swaps the whole thing — a shell belongs to a project, not to a window.
 //!
-//! A tab runs one of two things. The user's login shell, which is what the `+`
-//! and the terminal key open — and Neovim, on the project root, which is what
-//! `Ctrl+Shift+N` opens. There is no third kind of panel for the editor: it is a
-//! program in a PTY like any other, and the grid underneath now carries what
-//! such a program needs of a terminal — mouse reporting with the `Shift` bypass
-//! that takes selection back, the cursor shapes `DECSCUSR` asks for, `OSC 52` so
-//! a yank reaches the system clipboard, and answers to the queries it sends at
-//! startup.
-//!
-//! Neovim gets its own tab rather than a second one every press: the point of
-//! the key is to reach the editor, and a key that opened another editor each
-//! time it was pressed would be a key nobody could use to come back to their
-//! work.
+//! Every tab here is a login shell. **Neovim is not one of them** — it is a mode
+//! of the Workbench, because that is the panel about files, and a tab named
+//! `nvim` sitting between two called `zsh` says the editor is a kind of shell.
+//! What this module owns for it is the spawning: [`spawn_pty`] and [`Program`]
+//! are `pub(crate)` so the Workbench starts its grid the same way this panel
+//! starts a shell, with one set of rules about `TERM`, the resize callback, the
+//! clipboard and reaping the child.
 
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
@@ -40,35 +34,74 @@ use std::sync::{Arc, Mutex};
 /// scrolls back further than this without reaching for the shell's own pager.
 const SCROLLBACK: usize = 2000;
 
-/// What a tab was started to run.
+/// What a PTY was started to run.
 ///
-/// Not cosmetic: it is how the panel finds an editor tab that is already open,
-/// which is what stops `Ctrl+Shift+N` opening a second Neovim on top of the
-/// first. Matching on the label would work until somebody's shell was called
-/// `nvim`, or until a program set the tab's title.
+/// The two live in one enum because everything around them is shared -- the
+/// `TERM` the child inherits, the resize callback, the clipboard hook and the
+/// reaping below are the same question whichever program it is, and answering
+/// them twice is how the two answers start to differ.
 #[derive(Clone, Copy, PartialEq)]
-enum Program {
+pub(crate) enum Program {
     /// The user's login shell.
     Shell,
     /// Neovim, opened on the project root.
     Editor,
 }
 
-/// One shell tab.
-struct Shell {
+/// One live PTY: its grid, the child, and the handle that resizes it.
+///
+/// `pub(crate)` because the Workbench holds one of these too. Its fields are
+/// not: what an owner needs is [`Self::view`] to render and the value itself to
+/// keep alive, and a `child` reachable from outside is one somebody can kill
+/// without the grid ever learning about it.
+pub(crate) struct PtyTab {
     view: Entity<TerminalView>,
     label: SharedString,
-    program: Program,
     /// Kept alive for the tab's life. Dropping the PTY pair hangs up the
     /// terminal, which is what gets a well-behaved shell to leave; [`Drop`]
     /// below is what handles the rest.
     ///
     /// Shared with the view's resize callback, which is why it is behind an
-    /// `Arc<Mutex<_>>` rather than owned outright -- see [`spawn_shell`]. The
+    /// `Arc<Mutex<_>>` rather than owned outright -- see [`spawn_pty`]. The
     /// callback is `Send + Sync`, and a `Mutex` is what makes a `MasterPty`
     /// that is only `Send` usable from one.
     _pty: Arc<Mutex<Box<dyn portable_pty::MasterPty + Send>>>,
     child: Box<dyn portable_pty::Child + Send + Sync>,
+}
+
+impl PtyTab {
+    /// The grid, to mount.
+    pub(crate) fn view(&self) -> &Entity<TerminalView> {
+        &self.view
+    }
+
+    /// Re-apply a font size to this grid.
+    ///
+    /// The grid is a *measured* glyph lattice, so its zoom is a font size rather
+    /// than the rem scale every other panel uses: changing it re-measures the
+    /// cell, which changes the cell count, which resizes the PTY. Wrapping a
+    /// grid in a rem scale instead would stretch the box around it and leave
+    /// every column landing past its glyph.
+    pub(crate) fn set_font_size(&self, size: gpui::Pixels, cx: &mut App) {
+        self.view.update(cx, |view, cx| {
+            let config = TerminalConfig {
+                font_size: size,
+                ..view.config().clone()
+            };
+            view.update_config(config, cx);
+        });
+    }
+
+    /// Re-apply a palette to this grid, after an appearance change.
+    pub(crate) fn set_palette(&self, colors: ColorPalette, cx: &mut App) {
+        self.view.update(cx, |view, cx| {
+            let config = TerminalConfig {
+                colors,
+                ..view.config().clone()
+            };
+            view.update_config(config, cx);
+        });
+    }
 }
 
 /// Close the tab's child for real.
@@ -82,7 +115,7 @@ struct Shell {
 /// already-dead child is a no-op, and `wait` is what actually collects it. The
 /// ACP side (`onehand_core::acp::terminal`) has always done both; this is the
 /// user-facing terminal catching up.
-impl Drop for Shell {
+impl Drop for PtyTab {
     fn drop(&mut self) {
         let _ = self.child.kill();
         let _ = self.child.wait();
@@ -92,7 +125,7 @@ impl Drop for Shell {
 /// The tab set one project root has open.
 #[derive(Default)]
 struct RootShells {
-    tabs: Vec<Shell>,
+    tabs: Vec<PtyTab>,
     active: usize,
 }
 
@@ -102,13 +135,13 @@ struct RootShells {
 /// Comparing these lets render update live terminals once per appearance
 /// change instead of rewriting their config on every frame.
 #[derive(Clone, Copy, PartialEq)]
-struct TerminalThemeKey {
+pub(crate) struct TerminalThemeKey {
     dark: bool,
     colors: [gpui::Hsla; 17],
 }
 
 impl TerminalThemeKey {
-    fn current(cx: &App) -> Self {
+    pub(crate) fn current(cx: &App) -> Self {
         let theme = cx.theme();
         Self {
             dark: theme.mode.is_dark(),
@@ -167,44 +200,16 @@ impl TerminalPanel {
 
     /// Open a shell on the active root.
     ///
-    /// Always a new one, unlike [`Self::open_editor`]: shells are what somebody
-    /// opens several of on purpose, one per thing they are watching.
-    pub fn open_shell(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        self.open_tab(Program::Shell, window, cx);
-    }
-
-    /// Show the project's Neovim, opening it if it is not already running.
-    ///
-    /// Reaching for the editor and reaching for *another* editor are different
-    /// requests, and only the first has a key: pressing this twice has to land
-    /// back in the work, not beside it. A second one is still available the way
-    /// every other tab is, through the `+`.
-    ///
-    /// Per project root, like everything else in this panel, because the editor
-    /// is opened on that root and an editor rooted somewhere else is not the one
-    /// the key was pressed for.
-    pub fn open_editor(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let existing = self.active_set().and_then(|set| {
-            set.tabs
-                .iter()
-                .position(|tab| tab.program == Program::Editor)
-        });
-        match existing {
-            Some(idx) => self.select_tab(idx, cx),
-            None => self.open_tab(Program::Editor, window, cx),
-        }
-    }
-
-    /// Spawn a tab on the active root and make it the one on screen.
-    ///
     /// Spawned lazily and never at boot: a workspace with a dozen roots must
-    /// not start a dozen shells nobody asked for.
-    fn open_tab(&mut self, program: Program, window: &mut Window, cx: &mut Context<Self>) {
+    /// not start a dozen shells nobody asked for. Always a new one — shells are
+    /// what somebody opens several of on purpose, one per thing they are
+    /// watching.
+    pub fn open_shell(&mut self, _window: &mut Window, cx: &mut Context<Self>) {
         let Some(root) = self.root.clone() else {
             return;
         };
 
-        match spawn_shell(&root, program, self.zoom, window, cx) {
+        match spawn_pty(&root, Program::Shell, self.zoom, cx) {
             Ok(shell) => {
                 let set = self.shells.entry(root).or_default();
                 set.tabs.push(shell);
@@ -259,13 +264,7 @@ impl TerminalPanel {
         let size = crate::zoom::term_font_size(zoom);
         for set in self.shells.values() {
             for tab in &set.tabs {
-                tab.view.update(cx, |view, cx| {
-                    let config = TerminalConfig {
-                        font_size: size,
-                        ..view.config().clone()
-                    };
-                    view.update_config(config, cx);
-                });
+                tab.set_font_size(size, cx);
             }
         }
         cx.notify();
@@ -285,13 +284,7 @@ impl TerminalPanel {
         let colors = terminal_palette(cx);
         for set in self.shells.values() {
             for tab in &set.tabs {
-                tab.view.update(cx, |view, cx| {
-                    let config = TerminalConfig {
-                        colors: colors.clone(),
-                        ..view.config().clone()
-                    };
-                    view.update_config(config, cx);
-                });
+                tab.set_palette(colors.clone(), cx);
             }
         }
     }
@@ -368,13 +361,18 @@ fn program_command(program: Program) -> Result<(CommandBuilder, SharedString), S
 }
 
 /// Start `program` in `cwd`.
-fn spawn_shell(
+///
+/// `pub(crate)` because the Workbench spawns Neovim through it: every rule
+/// below — the inherited `TERM`, the resize callback the vendored view cannot
+/// install for itself, the clipboard hook, the child that has to be reaped —
+/// belongs to *running a program in a PTY* rather than to this panel, and a
+/// second copy of them is a second copy to keep in step.
+pub(crate) fn spawn_pty(
     cwd: &PathBuf,
     program: Program,
     zoom: crate::zoom::Zoom,
-    window: &mut Window,
     cx: &mut App,
-) -> Result<Shell, String> {
+) -> Result<PtyTab, String> {
     let config = TerminalConfig {
         scrollback: SCROLLBACK,
         font_size: crate::zoom::term_font_size(zoom),
@@ -465,12 +463,9 @@ fn spawn_shell(
                 }
             })
     });
-    let _ = window;
-
-    Ok(Shell {
+    Ok(PtyTab {
         view,
         label,
-        program,
         _pty: master,
         child,
     })
@@ -647,7 +642,7 @@ impl TerminalPanel {
 /// from the theme's adaptive base scales. Default text, background, and cursor
 /// use their exact semantic roles, removing the vendored terminal's fixed
 /// light-on-charcoal palette from light mode.
-fn terminal_palette(cx: &App) -> ColorPalette {
+pub(crate) fn terminal_palette(cx: &App) -> ColorPalette {
     fn rgb(color: gpui::Hsla) -> (u8, u8, u8) {
         let color = color.to_rgb();
         let channel = |value: f32| (value.clamp(0., 1.) * 255.).round() as u8;

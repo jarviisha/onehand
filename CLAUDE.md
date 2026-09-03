@@ -452,7 +452,7 @@ renderer read `chat.items` / `chat.busy` without knowing where the model lives.
 
 ### Workbench
 
-[crates/app/src/workbench/](crates/app/src/workbench/) — one dock panel, two modes:
+[crates/app/src/workbench/](crates/app/src/workbench/) — one dock panel, three modes:
 
 - **Editor**: a quick editor, not an IDE. Buffers here, rules in core (`onehand_core::editor`): the
   size bound, the tab set, the **mtime guard**, labels, blocking read/save. Highlighting is
@@ -463,8 +463,34 @@ renderer read `chat.items` / `chat.busy` without knowing where the model lives.
   total, `.git` skipped. Rows carry git state as one-letter badges; a directory holding changes gets a
   dot. Indentation is padding by depth, not nested containers — hundreds of nested rows are hundreds
   of wasted elements.
+- **Neovim** (`Ctrl+Shift+N`): the real thing, in a PTY, on the project root. Here and not in the
+  terminal dock because this is the panel about files. One per root and never a second — several
+  shells is what somebody opens on purpose, while two editors on the same files are two views of one
+  buffer with no way to tell which holds the unsaved copy. It is spawned through
+  `terminal::spawn_pty`, so it inherits the terminal's rules about `TERM`, resize, clipboard and
+  reaping.
 
 State is per project root, so switching roots swaps the whole thing.
+
+Three things the Neovim mode owes that the other two do not, all because it is a live PTY rather than
+an element tree:
+
+- **Its zoom is a font size, not the rem scale** wrapped around the other bodies. The grid is
+  *measured* from a shaped glyph, so scaling the box around it stretches the container while the cell
+  stays put and every column lands past its own character. `Workbench::set_zoom` pushes the size into
+  the view instead, which is why the shell hands it the whole value rather than `&mut` to the field.
+- **The panel takes the key context `Terminal` while this mode shows**, and it must be that name and
+  not one of its own: `Ctrl+S` is bound `Shell && !Terminal` exactly so a program in a PTY keeps it,
+  and a grid mounted with no such context would have the quick editor's save fire over the top of
+  `:w`.
+- **Switching to the mode does not spawn.** `Ctrl+Shift+N` spawns and then switches, and the empty
+  state carries a *Start Neovim* button; a mode strip where one of three buttons launches a process
+  is one nobody can click to look around. The key is three-state like the other two Workbench keys —
+  closing the dock puts the editor aside rather than ending it, since the panel entity outlives the
+  dock and the PTY, the scrollback and the unsaved buffer are all still there on the next press.
+  `nvim` is looked up on `PATH` in the app rather than handed to the PTY to fail on, because a failed
+  spawn comes back as "No such file or directory" naming nothing; it is `nvim` and not `$EDITOR`,
+  since honouring that would open `vi` for somebody who set it years ago for `git commit`.
 
 ### Terminal panel
 
@@ -472,18 +498,12 @@ State is per project root, so switching roots swaps the whole thing.
 spawned lazily; dropping a tab drops its PTY, so the child dies with it and there is no separate
 shutdown to forget.
 
-**A tab runs one of two programs**, and which one is a field on the tab rather than a guess from its
-label: the user's login shell, or **Neovim on the project root** (`Ctrl+Shift+N`). The editor is not a
-panel of its own — it is a program in a PTY, and what it needed was for the PTY to be a real terminal
-(see decision D4 for the parity work that took). `Ctrl+Shift+N` **is not three-state** like every
-other panel key: the other keys toggle a container the user is deciding whether to look at, while this
-one reaches a program, and closing the dock on an editor holding unsaved work is not the counterpart
-of opening it. So it only ever brings the editor forward, and it **finds the tab already running**
-rather than opening a second — a key that opened another editor each press is a key nobody can use to
-get back to their work. `nvim` is looked up on `PATH` in the app, not handed to the PTY to fail on,
-because a failed spawn comes back as "No such file or directory" naming nothing. It is `nvim` and not
-`$EDITOR`: this is the Neovim key, and honouring that variable would open `vi` for somebody who set it
-years ago for `git commit`.
+**Every tab here is a login shell; Neovim is not one of them** — it is a Workbench mode, because that
+is the panel about files and a tab called `nvim` between two called `zsh` says the editor is a kind of
+shell. What this module owns for it is the spawning: `terminal::spawn_pty` and `terminal::Program` are
+`pub(crate)`, so the Workbench starts its grid through the same rules about `TERM`, the resize
+callback, the clipboard hook and reaping the child. A second copy of those is a second copy to keep in
+step.
 
 **Whether the dock is open is per root too** (`Shell::terminal_open` / `terminal_root`), because
 everything below it already is: switching projects files the dock's live state under the project
@@ -678,7 +698,8 @@ status bar.
 ### Keyboard, zoom, maximize
 
 App commands occupy an exact `Ctrl+Shift` namespace so plain Ctrl keys stay usable inside a PTY:
-`B` rail · `E` Files · `O` Editor · `N` Neovim · `A` composer · `F` find · `R` guarded restart ·
+`B` rail · `E` Workbench Files · `O` Workbench Editor · `N` Workbench Neovim · `A` composer ·
+`F` find · `R` guarded restart ·
 `W` guarded close · `K` maximize. Plus `` Ctrl+` `` terminal, `Ctrl+S` save, `Ctrl+1…9` session by position, `Ctrl+Tab` session by recency,
 `Ctrl+=`/`Ctrl+-`/`Ctrl+0` zoom, and inside the composer `Up`/`Down` (its completion list) and
 `Ctrl+V` (an image or a file on the clipboard becomes an attachment; text is handed back to the input).

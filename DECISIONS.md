@@ -132,13 +132,33 @@ is why `make fmt` / `make lint` are scoped to `-p onehand -p onehand-core`: a ba
 reformat the vendor and destroy that property. The clippy warnings left in the vendor are upstream's;
 leave them.
 
-### D4 · Neovim runs in the terminal, and is not a panel of its own
+### D4 · Neovim is a Workbench mode, running in a PTY
 
 Cut from the first build because the interaction layer had to be written from scratch. It is written
-now, and `Ctrl+Shift+N` opens Neovim on the active project **as a tab of the terminal dock** — there is
-no separate editor surface and no msgpack-RPC embedding. Neovim is a program in a PTY, so what it
-needed was for the PTY to be a real terminal; giving it its own widget would have meant a second
-renderer, a second input path and a second set of the same bugs.
+now, and `Ctrl+Shift+N` opens Neovim on the active project **as the Workbench's third mode**, beside
+Editor and Files. No msgpack-RPC embedding: Neovim is a program in a PTY, so what it needed was for
+the PTY to be a real terminal, and giving it its own widget would have meant a second renderer, a
+second input path and a second set of the same bugs.
+
+**The Workbench and not the terminal dock**, though the terminal is where the PTY machinery lives.
+The terminal dock is where you run commands and the Workbench is where you work on files; a tab called
+`nvim` sitting between two called `zsh` says the editor is a kind of shell. The spawning is still the
+terminal's — `terminal::spawn_pty` and `terminal::Program` are `pub(crate)` — so both grids inherit
+one set of rules about `TERM`, the resize callback, the clipboard hook and reaping the child.
+
+The bottom dock is wider, which is the one real argument the other way, and it loses on a detail:
+the Workbench keeps its tab group, so `zoomable` returns `PanelControl::Toolbar` and the mode has a
+maximize button of its own. The terminal is mounted bare, has no tab bar to put one on, and can only
+be enlarged with `Ctrl+Shift+K`, which hides the rail as well.
+
+Three things that mode owes because it is a live PTY rather than an element tree. Its **zoom is a font
+size**, not the rem scale the other two bodies are wrapped in — the grid is measured from a shaped
+glyph, so scaling its container leaves every column landing past its own character. It takes the key
+context **`Terminal`** while showing, which is what gives `Ctrl+S` back to `:w`: that binding is
+`Shell && !Terminal` precisely so a program in a PTY keeps it. And **switching to the mode does not
+spawn** — the key spawns and then switches, and the empty state carries a *Start Neovim* button, so
+the mode strip stays three buttons that change a view rather than two that change a view and one that
+launches a process.
 
 What that took, all of it in `vendor/gpui-terminal` and marked `onehand patch`:
 

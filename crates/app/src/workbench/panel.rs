@@ -1,11 +1,24 @@
-//! The Workbench dock panel: Editor and Files, one at a time.
+//! The Workbench dock panel: Editor, Files and Neovim, one at a time.
 //!
-//! State is **per project root** — `RootBuffers` and `FileTree` are both keyed
-//! by root path, so switching roots swaps the whole panel rather than mixing
-//! one project's tabs with another's tree.
+//! State is **per project root** — `RootBuffers`, `FileTree` and the Neovim PTY
+//! are all keyed by root path, so switching roots swaps the whole panel rather
+//! than mixing one project's tabs with another's tree.
+//!
+//! **Neovim is a mode here rather than a tab of the terminal**, because this is
+//! the panel about files: a tab called `nvim` sitting between two called `zsh`
+//! says the editor is a kind of shell. Two consequences the other two modes do
+//! not have, both because this one is a live PTY rather than an element tree.
+//! Its zoom is a font size and not the rem scale wrapped around the body below,
+//! since the grid is *measured* from a shaped glyph — scaling the box around it
+//! leaves every column landing past its own character. And the panel takes the
+//! terminal's key context while it is showing, which is what gives `Ctrl+S` back
+//! to `:w`: that binding is `Shell && !Terminal` precisely so a program in a PTY
+//! keeps it, and a grid mounted somewhere with no such context would have the
+//! save of the quick editor fire over the top of it.
 
 use super::editor::{self, RootBuffers};
 use super::files;
+use crate::terminal::{Program, PtyTab, TerminalThemeKey};
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
     App, AppContext, Context, Entity, EventEmitter, FocusHandle, Focusable, InteractiveElement,
@@ -25,6 +38,7 @@ use std::path::{Path, PathBuf};
 pub enum WorkbenchMode {
     Editor,
     Files,
+    Neovim,
 }
 
 pub struct Workbench {
@@ -35,7 +49,23 @@ pub struct Workbench {
     editors: HashMap<PathBuf, RootBuffers>,
     trees: HashMap<PathBuf, FileTree>,
     git: HashMap<PathBuf, GitStatus>,
-    /// A save conflict or a read failure, shown as a line under the body.
+    /// The Neovim running on each root, at most one apiece.
+    ///
+    /// One and not a set, unlike the terminal's shells: several shells is what
+    /// somebody opens on purpose, one per thing they are watching, while a
+    /// second editor on the same files is two views of one buffer with no way to
+    /// tell which holds the unsaved copy.
+    ///
+    /// Kept across a mode change and across the dock closing, the same way the
+    /// quick editor's buffers are — closing this panel is putting work aside,
+    /// not discarding it. It ends when the project root leaves the workspace, or
+    /// when the window does.
+    neovim: HashMap<PathBuf, PtyTab>,
+    /// What the terminal palette was last built from, so a live grid is
+    /// recoloured once per appearance change instead of on every frame.
+    terminal_theme: TerminalThemeKey,
+    /// A save conflict, a read failure, or a Neovim that would not start, shown
+    /// as a line under the body.
     ///
     /// **Deliberately not a notification**, unlike the rest of the app's
     /// transient status. "Changed on disk — nothing was written" is not news
@@ -84,6 +114,8 @@ impl Workbench {
             editors: HashMap::new(),
             trees: HashMap::new(),
             git: HashMap::new(),
+            neovim: HashMap::new(),
+            terminal_theme: TerminalThemeKey::current(cx),
             status: None,
             saving: HashMap::new(),
             pending_close: None,
@@ -115,15 +147,52 @@ impl Workbench {
         self.editors.remove(root);
         self.trees.remove(root);
         self.git.remove(root);
+        // Dropping the entry ends the child, the way dropping a terminal tab
+        // does: a project removed from the workspace must not leave an editor
+        // running on it with nothing on screen pointing at it.
+        self.neovim.remove(root);
         if self.root.as_deref() == Some(root) {
             self.root = None;
         }
         cx.notify();
     }
 
-    /// This panel's zoom, for the shell to step.
-    pub fn zoom_mut(&mut self) -> &mut crate::zoom::Zoom {
-        &mut self.zoom
+    /// Start Neovim on the active root, if it is not already running.
+    ///
+    /// Separate from [`Self::set_mode`] on purpose: switching to this mode is a
+    /// view change and must not launch a process, or the mode strip becomes
+    /// three buttons of which one spawns something. The key does this first and
+    /// then switches; the empty state's own button is the other way in.
+    pub fn open_neovim(&mut self, cx: &mut Context<Self>) {
+        let Some(root) = self.root.clone() else {
+            return;
+        };
+        if self.neovim.contains_key(&root) {
+            return;
+        }
+        match crate::terminal::spawn_pty(&root, Program::Editor, self.zoom, cx) {
+            Ok(tab) => {
+                self.neovim.insert(root, tab);
+                self.status = None;
+            }
+            Err(e) => self.status = Some(e),
+        }
+        cx.notify();
+    }
+
+    /// Step this panel's zoom.
+    ///
+    /// Handed the whole value rather than a `&mut` to the field, because a step
+    /// here is not only a number: a live grid has to be re-measured at the new
+    /// font size, and a caller holding the field directly would set it and leave
+    /// Neovim drawn at the old one.
+    pub fn set_zoom(&mut self, zoom: crate::zoom::Zoom, cx: &mut Context<Self>) {
+        self.zoom = zoom;
+        let size = crate::zoom::term_font_size(zoom);
+        for tab in self.neovim.values() {
+            tab.set_font_size(size, cx);
+        }
+        cx.notify();
     }
 
     /// This panel's zoom, for the status bar to report.
@@ -132,10 +201,19 @@ impl Workbench {
     }
 
     /// Put focus where this mode's work happens: the open buffer in Editor
-    /// mode, the panel itself in Files, which is clicked rather than typed
-    /// into. A panel shortcut that opens a dock without moving focus makes the
-    /// user reach for the mouse to use what they just opened.
+    /// mode, the grid in Neovim, the panel itself in Files, which is clicked
+    /// rather than typed into. A panel shortcut that opens a dock without moving
+    /// focus makes the user reach for the mouse to use what they just opened.
     pub fn focus_active(&self, window: &mut Window, cx: &mut App) {
+        if self.mode == WorkbenchMode::Neovim {
+            // Nothing else in this panel needs the caret as badly: a grid that
+            // is drawn but unfocused looks exactly like one that is running,
+            // and every keystroke aimed at it goes somewhere else.
+            if let Some(tab) = self.root.as_ref().and_then(|root| self.neovim.get(root)) {
+                tab.view().read(cx).focus_handle().clone().focus(window, cx);
+                return;
+            }
+        }
         if self.mode == WorkbenchMode::Editor {
             let buffer = self
                 .root
@@ -534,6 +612,7 @@ impl Focusable for Workbench {
 
 impl Render for Workbench {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        self.sync_terminal_theme(cx);
         let mode = self.mode;
         let modes = div()
             .h_flex()
@@ -545,7 +624,8 @@ impl Render for Workbench {
             .border_b_1()
             .border_color(cx.theme().border)
             .child(mode_tab("Editor", WorkbenchMode::Editor, mode, cx))
-            .child(mode_tab("Files", WorkbenchMode::Files, mode, cx));
+            .child(mode_tab("Files", WorkbenchMode::Files, mode, cx))
+            .child(mode_tab("Neovim", WorkbenchMode::Neovim, mode, cx));
 
         // The mode strip is chrome and keeps its size; only the work below it
         // scales. A zoomed-in editor whose own tab bar grew with it wastes the
@@ -554,13 +634,32 @@ impl Render for Workbench {
         let body = match mode {
             WorkbenchMode::Editor => self.editor_body(cx),
             WorkbenchMode::Files => self.files_body(cx),
+            WorkbenchMode::Neovim => self.neovim_body(cx),
+        };
+        // A grid is *measured* from a shaped glyph, so it is sized by the font
+        // it was configured with and not by the rem base around it. Wrapping it
+        // in the scale would stretch the box while the cell stayed put, which
+        // leaves every column landing past its own character; the size is
+        // pushed into the view by `set_zoom` instead.
+        let body = match mode {
+            WorkbenchMode::Neovim => body,
+            _ => zoom.scale(window, body).into_any_element(),
         };
         div()
             .size_full()
             .v_flex()
-            .key_context("Workbench")
+            // Neovim takes the *terminal's* context while it is showing, and it
+            // has to be this name and not one of its own: `Ctrl+S` is bound
+            // `Shell && !Terminal` so that a program in a PTY keeps it, and a
+            // predicate that had to learn a second name for the same fact is one
+            // that gets updated in one place and not the other. Under any other
+            // mode this is the Workbench, which is what the save is *for*.
+            .key_context(match mode {
+                WorkbenchMode::Neovim => "Terminal",
+                _ => "Workbench",
+            })
             .child(modes)
-            .child(zoom.scale(window, body))
+            .child(body)
             .when_some(self.status.clone(), |panel, status| {
                 panel.child(
                     div()
@@ -575,6 +674,65 @@ impl Render for Workbench {
 }
 
 impl Workbench {
+    /// Recolour a live grid after an app appearance change.
+    ///
+    /// Guarded by comparison rather than run every frame: rebuilding the palette
+    /// and pushing a whole config into the view is work, and this is called from
+    /// render.
+    fn sync_terminal_theme(&mut self, cx: &mut Context<Self>) {
+        let current = TerminalThemeKey::current(cx);
+        if self.terminal_theme == current {
+            return;
+        }
+        self.terminal_theme = current;
+        let colors = crate::terminal::terminal_palette(cx);
+        for tab in self.neovim.values() {
+            tab.set_palette(colors.clone(), cx);
+        }
+    }
+
+    fn neovim_body(&mut self, cx: &mut Context<Self>) -> gpui::AnyElement {
+        let Some(root) = self.root.clone() else {
+            return hint("No project root", cx);
+        };
+
+        let Some(tab) = self.neovim.get(&root) else {
+            // The button and not an automatic spawn, for the same reason
+            // switching to this mode does not spawn: arriving at a tab should
+            // not start a process. It also gives the failure somewhere to be
+            // read — a Neovim that would not start leaves its reason in
+            // `status`, one line below this.
+            return div()
+                .flex_1()
+                .v_flex()
+                .items_center()
+                .justify_center()
+                .gap_2()
+                .child(
+                    crate::controls::action("start-neovim")
+                        .primary()
+                        .label("Start Neovim")
+                        .on_click(cx.listener(|panel: &mut Self, _, window, cx| {
+                            panel.open_neovim(cx);
+                            panel.focus_active(window, cx);
+                        })),
+                )
+                .into_any_element();
+        };
+
+        div()
+            .flex_1()
+            .min_h_0()
+            // The grid draws from its own top-left corner outward, so without
+            // this the first column sits against the panel edge. Costs a column
+            // rather than being painted over: the view measures its own bounds
+            // and reports the cell count back through the PTY resize, so what it
+            // lays out and what the child believes stay in step.
+            .p_2()
+            .child(tab.view().clone())
+            .into_any_element()
+    }
+
     fn editor_body(&mut self, cx: &mut Context<Self>) -> gpui::AnyElement {
         let Some(buffers) = self.root.as_ref().and_then(|r| self.editors.get(r)) else {
             return hint("Open a file from a tool card or the Files tab", cx);

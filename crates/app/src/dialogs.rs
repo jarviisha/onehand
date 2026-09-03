@@ -674,14 +674,14 @@ pub const SHORTCUTS: &[Shortcut] = &[
         keys: &["ctrl-shift-e"],
     },
     Shortcut {
+        label: "Ctrl+Shift+N",
+        what: "Workbench — Neovim",
+        keys: &["ctrl-shift-n"],
+    },
+    Shortcut {
         label: "Ctrl+`",
         what: "Toggle the terminal",
         keys: &["ctrl-`"],
-    },
-    Shortcut {
-        label: "Ctrl+Shift+N",
-        what: "Neovim on this project (in the terminal)",
-        keys: &["ctrl-shift-n"],
     },
     Shortcut {
         label: "Ctrl+Shift+A",
