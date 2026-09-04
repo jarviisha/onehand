@@ -278,8 +278,8 @@ plus `sendMessage` and `answerCallbackQuery`. Everything that is not the wire is
   looking, and answer it from the focused window and the conversation on screen — both of which stay
   true in front of an empty chair, so a window nobody is at reports every turn as read. The user says
   otherwise, and while they have said so every announcement goes out as though nothing were on screen.
-  It is read in exactly one place, `ChatPane::here`, which `watching` is then built on, so the switch
-  cannot reach one rule and miss another. Global rather than per window, because walking away from one
+  It is one field of `chat::Presence`, which is the only input the three rules take, so the switch
+  cannot reach one of them and miss another. Global rather than per window, because walking away from one
   window is walking away from all of them, and **not persisted** — a launch that came up believing the
   user was elsewhere would message somebody sitting in front of it about every turn. Thrown from the
   status bar (`Shell::toggle_away`) or from the chat (`/away`, `/here`), both through
@@ -360,7 +360,7 @@ plus `sendMessage` and `answerCallbackQuery`. Everything that is not the wire is
   than counting it, since the point is to check the list against what you believe you asked for.
   **Not a second `/sessions`**, which answers what onehand is running and marks these rows in passing.
   The word is `status` and not `watching` although that is the question being asked:
-  `ChatPane::watching` already names the user's eyes being on a conversation, which is what decides
+  `Attention::Reading` already names the user's eyes being on a conversation, which is what decides
   whether a turn is announced at all, and one word answering two questions inside one feature is how
   the two answers end up swapped. It reads and never writes, which it can only do because
   **every message reconciles first**: `answer` walks the open sessions once and hands them to
@@ -742,13 +742,17 @@ status bar.
   fades leaves the user believing the save went through. It is cleared by whatever answers it.
 - **Two things are said on the *desktop*, outside the window** (`chat::session::notify_desktop`, over
   `notify-rust`, fire-and-forget on its own thread because `show()` blocks on the bus): a turn that
-  finished, and an agent that has parked a permission or a question and stopped. Both are announced by
-  the *pane*, because it is the half that knows what is on screen — but under **different rules, and
-  that is the point**. A finished turn says nothing while any part of its window is in front of the
-  user, since the rail badge is already there and the work is done. A parked ask says something unless
-  the user is looking at *the conversation that asked*: an agent waiting is an agent standing still
-  for as long as it takes to notice, and reading one conversation is exactly when a dot on another
-  row goes unseen. It is sent at critical urgency so most desktops will not fade it while the agent is
+  finished, and an agent that has parked a permission or a question and stopped. The pane gathers what
+  it can see into `chat::Presence`, because it is the half that knows what is on screen, and
+  `Attention::telling` decides — for the badge, the desktop and the chat at once — under **different
+  rules per kind of news, and that is the point**. A finished turn says nothing while any part of its
+  window is in front of the user, since the rail badge is already there and the work is done. A parked
+  ask says something unless the user is looking at *the conversation that asked*: an agent waiting is
+  an agent standing still for as long as it takes to notice, and reading one conversation is exactly
+  when a dot on another row goes unseen. A lost adapter is on that same wider rule and is deliberately
+  never put on the desktop at all, since the rail's mark and the conversation header both carry it for
+  as long as it is true. The table has no wildcard arm, so a fourth kind of news cannot be added
+  without deciding what each place does with it. It is sent at critical urgency so most desktops will not fade it while the agent is
   still blocked. The *moment* an ask parks is `ApplyOutcome::asked_user` — the reducer's answer, not
   `Chat::awaiting_permission`, which stays true for as long as the card is up and would re-announce a
   blocked session on every chunk that followed. The sentence is `UserAsk::headline` in core, so

@@ -27,7 +27,9 @@ use gpui_component::input::{Input, InputEvent, InputState};
 use gpui_component::menu::{DropdownMenu as _, PopupMenuItem};
 use gpui_component::spinner::Spinner;
 use gpui_component::{ActiveTheme, Icon, IconName, Sizable as _, StyledExt, WindowExt as _};
-use onehand_core::chat::{Away, Chat, ChatItem, ConvMeta, Link, TranscriptItemId};
+use onehand_core::chat::{
+    Away, Chat, ChatItem, ConvMeta, Link, Presence, Telling, TranscriptItemId,
+};
 use onehand_core::config::AgentSpec;
 use onehand_core::remote::types::Button;
 use onehand_core::remote::{Press, press};
@@ -1225,26 +1227,27 @@ impl ChatPane {
         self.active_conversation()?.session().cloned()
     }
 
-    /// A turn settled. Badge it, and say so out loud if the window is not even
-    /// on screen.
+    /// A turn settled. Badge it, and say so out loud wherever
+    /// [`Attention::telling`] sends it.
+    ///
+    /// [`Attention::telling`]: onehand_core::chat::Attention::telling
     fn turn_ended_detached(&mut self, uid: u64, agent: &str, root: &str, cx: &mut Context<Self>) {
-        // "Is *this* window in front of somebody" -- not "is any onehand window
-        // active", which is what a bare `active_window().is_some()` asks and
-        // which marks a background window's turn as already seen.
-        let here = self.here(cx);
-        if self.active == Some(uid) && here {
+        let say = self.telling(uid, Away::TurnEnded, cx);
+        // Before any of the three payloads, each of which reads the transcript
+        // to build itself -- and before the repaint, which the reader of this
+        // conversation is already getting from the turn itself.
+        if say.silent() {
             return;
         }
-        if let Some(conv) = self.conversations.get_mut(&uid) {
+        if say.badge
+            && let Some(conv) = self.conversations.get_mut(&uid)
+        {
             conv.unseen = true;
         }
-        // Only when the window itself is away: a badge is enough for a
-        // background session whose rail row the user can already see. The
-        // channel outside the machine follows the same rule and not a wider one
-        // -- somebody sitting in front of this window does not need a message on
-        // their phone about a turn whose badge is already in their eye line.
-        if !here {
+        if say.desktop {
             super::session::notify_turn_ended(agent.to_string(), root.to_string());
+        }
+        if say.chat {
             let origin = self.origin(uid, agent, root, cx);
             crate::remote::announce(
                 &origin,
@@ -1278,24 +1281,26 @@ impl ChatPane {
             .answer_tail(ANSWER_TAIL_MAX)
     }
 
-    /// Whether this window is in front of the user at all.
+    /// The three facts about where the user is that the silence rules are
+    /// decided from.
     ///
-    /// Two questions, and the second is the one the app cannot answer by
-    /// looking: the window has to be the active one, *and* somebody has to be
-    /// there to look at it. A focused window in front of an empty chair reports
-    /// itself as read, which is how every notification the app has is lost at
-    /// precisely the moment it was needed — so the user gets to say they have
-    /// gone, and while they have said so nothing here counts as seen.
-    fn here(&self, cx: &App) -> bool {
-        !crate::state::Shared::global(cx).away && cx.active_window() == Some(self.window)
+    /// Gathered here and handed over, because only this side can see them and
+    /// only the other side should weigh them. The away flag goes through the
+    /// bridge's own reader rather than straight to the global: it has one
+    /// setter for the same reason, and a second way of reading it is a second
+    /// place for the two to disagree.
+    fn presence(&self, cx: &App) -> Presence {
+        Presence {
+            away: crate::remote::is_away(cx),
+            window_active: cx.active_window() == Some(self.window),
+            shown: self.active,
+        }
     }
 
-    /// Whether the user is looking at exactly this conversation right now.
-    ///
-    /// The window being in front is not enough on its own: a conversation in the
-    /// background is a session the user cannot see even while its window is.
-    fn watching(&self, uid: u64, cx: &App) -> bool {
-        self.active == Some(uid) && self.here(cx)
+    /// What is said about one piece of news on `uid`, in the three places it
+    /// could go.
+    fn telling(&self, uid: u64, what: Away, cx: &App) -> Telling {
+        self.presence(cx).seeing(uid).telling(what)
     }
 
     /// Who an announcement about `uid` is from, in the words somebody who is not
@@ -1309,22 +1314,12 @@ impl ChatPane {
         }
     }
 
-    /// The adapter went away. Say so outside the window under the same rule a
-    /// parked question gets.
+    /// The adapter went away. Say so outside the window, if
+    /// [`Attention::telling`] says anyone should hear it.
     ///
-    /// **Not the finished turn's rule**, even though this is also news about
-    /// something that is over. A turn that ended did its work, so the badge
-    /// waiting on the rail loses nothing by being read late; an agent that
-    /// stopped answering has left a session that looks alive and is not, and
-    /// every minute of that is a minute the user believes work is happening.
-    ///
-    /// Nothing is said on the desktop here, and that is unchanged: the rail's
-    /// mark and the conversation header both already carry it for as long as it
-    /// is true, and both are visible without leaving the app. What the outside
-    /// channel adds is the case neither covers, which is nobody being at the
-    /// machine at all.
+    /// [`Attention::telling`]: onehand_core::chat::Attention::telling
     fn link_lost_detached(&mut self, uid: u64, agent: &str, root: &str, cx: &mut Context<Self>) {
-        if self.watching(uid, cx) {
+        if !self.telling(uid, Away::LinkLost, cx).chat {
             return;
         }
         let origin = self.origin(uid, agent, root, cx);
@@ -1335,21 +1330,14 @@ impl ChatPane {
         );
     }
 
-    /// An agent stopped and is waiting on the user. Say so outside the window
-    /// unless they are already looking at the conversation that asked.
+    /// An agent stopped and is waiting on the user. Say so wherever
+    /// [`Attention::telling`] sends it.
     ///
-    /// **A wider rule than a finished turn's**, which says nothing while any
-    /// part of this window is in front of the user. The two are not the same
-    /// event: a turn that ended has done its work and the badge is a
-    /// convenience, while a parked question is an agent standing still, and it
-    /// stands still for as long as it takes the user to notice. Reading one
-    /// conversation is exactly when the dot on another one's rail row goes
-    /// unseen, so anything but the asking conversation being on screen here
-    /// earns the notification.
+    /// The repaint happens either way, unlike a finished turn's: the card the
+    /// agent parked is in the transcript now, and the reader of that
+    /// conversation is exactly who has to see it appear.
     ///
-    /// No badge is set: `unseen` is about a turn nobody read, and the rail
-    /// already carries this the whole time it is true, from the transcript's own
-    /// unanswered card rather than from a flag that would have to be cleared.
+    /// [`Attention::telling`]: onehand_core::chat::Attention::telling
     fn awaiting_user_detached(
         &mut self,
         uid: u64,
@@ -1358,8 +1346,11 @@ impl ChatPane {
         root: &str,
         cx: &mut Context<Self>,
     ) {
-        if !self.watching(uid, cx) {
+        let say = self.telling(uid, Away::Asked(ask), cx);
+        if say.desktop {
             super::session::notify_awaiting_user(ask, agent.to_string(), root.to_string());
+        }
+        if say.chat {
             let origin = self.origin(uid, agent, root, cx);
             // The one announcement that carries the question itself and the
             // buttons to answer it. A desktop notification cannot do better than
