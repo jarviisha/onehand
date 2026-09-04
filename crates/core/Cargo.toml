@@ -35,3 +35,9 @@ futures = "0.3"
 # panel: two majors here means two copies of a PTY implementation compiled into
 # one binary, and a `MasterPty` from one that cannot be handed to the other.
 portable-pty = "0.9"
+
+[dev-dependencies]
+# `start_paused` for the tests that wait on the ACP handshake deadline. Ninety
+# seconds is the right timeout and the wrong test duration; paused time spends
+# none of it. Features are additive, so this only adds to the dependency above.
+tokio = { version = "1", features = ["test-util"] }

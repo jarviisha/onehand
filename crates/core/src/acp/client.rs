@@ -16,9 +16,17 @@
 //!
 //! What the loop talks to is a [`Transport`] — two pipes and the news of an
 //! ending — rather than a child process. A child is the only thing that
-//! satisfies it in production; the split is what lets the loop itself be
-//! driven by a test, which is where the handshake deadline, the readiness gate
-//! and the parked permission round trip are checked.
+//! satisfies it in production; the split is what lets the loop itself be driven
+//! by a test, which is where the handshake deadline, an adapter that goes away,
+//! the parked permission round trip and the declined form are checked.
+//!
+//! Two things it still does not reach. The `biased` ordering — terminal output
+//! must never starve the adapter's stdout — would need a race staged on
+//! purpose, and a test that stages a race is a test that reports one at random.
+//! And the readiness gate cannot be tripped from outside: the request channel is
+//! handed to the caller by [`AcpEvent::Connected`], which is sent from the same
+//! few statements that set the flag, so reaching the window means winning a race
+//! rather than asking for it.
 
 use super::parse;
 use super::terminal::{self, TermStream, TerminalRegistry};
@@ -69,10 +77,9 @@ pub fn connect(
 ///
 /// **The seam is the byte stream, not the process.** A child is one thing that
 /// satisfies it and the only one in production; what the split buys is that the
-/// loop above it — the handshake deadline, the readiness gate, the parked
-/// permission round trip — can be driven by a test at all. Boxed rather than
-/// generic so the four functions that write into it keep their signatures free
-/// of a type parameter that says nothing about what they do.
+/// loop above it can be driven by a test at all. Boxed rather than generic so
+/// the functions that write into it keep their signatures free of a type
+/// parameter that says nothing about what they do.
 struct Transport {
     /// Lines the far end sends.
     incoming: Pin<Box<dyn tokio::io::AsyncBufRead + Send>>,
@@ -1027,20 +1034,16 @@ mod tests {
     use super::{
         base64_encode, connect_over, elicit_result, file_uri, parse_elicitation, Transport,
     };
-    use crate::acp::{AcpEvent, ElicitKind, ElicitOutcome, ElicitValue};
+    use crate::acp::{AcpEvent, AcpRequest, ElicitKind, ElicitOutcome, ElicitValue};
     use futures::StreamExt as _;
     use serde_json::{json, Value};
     use std::path::PathBuf;
-    use tokio::io::{AsyncBufReadExt as _, BufReader};
+    use tokio::io::{AsyncBufReadExt as _, AsyncWriteExt as _, BufReader};
 
     /// The agent's side of a scripted transport: read what the client wrote,
     /// write back what an adapter would have said.
     struct Agent {
         lines: tokio::io::Lines<BufReader<tokio::io::ReadHalf<tokio::io::DuplexStream>>>,
-        /// Held rather than read: dropping this half closes the pipe the client
-        /// is reading, which ends its loop with "adapter closed stdout" before a
-        /// test has said anything.
-        #[allow(dead_code)]
         out: tokio::io::WriteHalf<tokio::io::DuplexStream>,
     }
 
@@ -1055,6 +1058,39 @@ mod tests {
                 .expect("the client wrote a line");
             serde_json::from_str(&line).expect("the client writes JSON")
         }
+
+        /// Say one message to the client.
+        async fn say(&mut self, msg: Value) {
+            let mut line = serde_json::to_string(&msg).unwrap();
+            line.push('\n');
+            self.out.write_all(line.as_bytes()).await.unwrap();
+        }
+
+        /// Answer the handshake the way an adapter would, and hand back the
+        /// session id it minted.
+        ///
+        /// Every test past the first one starts here, because nothing the client
+        /// does is reachable until it is ready.
+        async fn handshake(&mut self) -> String {
+            let hello = self.heard().await;
+            assert_eq!(hello["method"], "initialize");
+            self.say(json!({
+                "jsonrpc": "2.0",
+                "id": hello["id"],
+                "result": { "protocolVersion": 1, "agentCapabilities": {} }
+            }))
+            .await;
+
+            let new = self.heard().await;
+            assert_eq!(new["method"], "session/new");
+            self.say(json!({
+                "jsonrpc": "2.0",
+                "id": new["id"],
+                "result": { "sessionId": "s-test" }
+            }))
+            .await;
+            "s-test".to_string()
+        }
     }
 
     /// Run the client over a scripted transport, with its events collected on a
@@ -1063,17 +1099,18 @@ mod tests {
     /// The serve loop is folded into the stream, so something has to poll it for
     /// the client to make any progress at all — driving it here is what lets the
     /// test body read and write the agent's side as a conversation.
-    fn client() -> (Agent, tokio::task::JoinHandle<Vec<AcpEvent>>) {
+    fn client() -> (Agent, tokio::sync::mpsc::UnboundedReceiver<AcpEvent>) {
         let (transport, agent) = Transport::scripted();
         let (read, out) = tokio::io::split(agent);
-        let events = tokio::spawn(async move {
+        let (tx, events) = tokio::sync::mpsc::unbounded_channel();
+        tokio::spawn(async move {
             let stream = connect_over(transport, PathBuf::from("/tmp"), None);
             futures::pin_mut!(stream);
-            let mut seen = Vec::new();
             while let Some(event) = stream.next().await {
-                seen.push(event);
+                if tx.send(event).is_err() {
+                    break;
+                }
             }
-            seen
         });
         (
             Agent {
@@ -1102,6 +1139,155 @@ mod tests {
         assert!(
             !hello["params"]["clientCapabilities"]["elicitation"]["form"].is_null(),
             "{hello:#}"
+        );
+    }
+
+    /// Wait until the client reports itself connected, and take the request
+    /// channel it hands over.
+    ///
+    /// Waited *for* rather than counted to: the events before it are whatever
+    /// the adapter's answer happened to carry — a session id always, modes and
+    /// config options if it offered any — and a test that counted would break on
+    /// a reply that mentioned one more of them.
+    async fn connected(
+        events: &mut tokio::sync::mpsc::UnboundedReceiver<AcpEvent>,
+    ) -> crate::acp::types::ReqTx {
+        while let Some(event) = events.recv().await {
+            if let AcpEvent::Connected { tx, .. } = event {
+                return tx;
+            }
+        }
+        panic!("the client never reported itself connected");
+    }
+
+    /// Wait for the next permission the client parks.
+    async fn parked(
+        events: &mut tokio::sync::mpsc::UnboundedReceiver<AcpEvent>,
+    ) -> crate::acp::PermissionRequest {
+        while let Some(event) = events.recv().await {
+            if let AcpEvent::Permission(request) = event {
+                return request;
+            }
+        }
+        panic!("the permission never reached the caller");
+    }
+
+    /// **A parked permission is the one reverse request the client answers late,
+    /// and nothing has ever checked that the answer arrives.** No response is
+    /// written when it comes in — the agent's tool call blocks on the user — so
+    /// dropping the round trip does not fail anything, it hangs the turn.
+    ///
+    /// The response has to name the *same* rpc id it was asked under: an answer
+    /// carrying the wrong one settles some other request, or none.
+    #[tokio::test]
+    async fn a_parked_permission_is_answered_under_the_id_it_was_asked_on() {
+        let (mut agent, mut events) = client();
+        agent.handshake().await;
+        let tx = connected(&mut events).await;
+
+        agent
+            .say(json!({
+                "jsonrpc": "2.0",
+                "id": 77,
+                "method": "session/request_permission",
+                "params": {
+                    "sessionId": "s-test",
+                    "toolCall": { "toolCallId": "tc1", "title": "Run cargo test" },
+                    "options": [
+                        { "optionId": "allow", "name": "Allow", "kind": "allow_once" },
+                        { "optionId": "deny", "name": "Deny", "kind": "reject_once" }
+                    ]
+                }
+            }))
+            .await;
+
+        let request = parked(&mut events).await;
+        assert_eq!(request.title, "Run cargo test");
+        assert_eq!(request.options.len(), 2);
+
+        tx.send(AcpRequest::PermissionResponse {
+            rpc_id: request.rpc_id.clone(),
+            option_id: Some("allow".to_string()),
+        })
+        .expect("the client is still serving");
+
+        let answer = agent.heard().await;
+        assert_eq!(answer["id"], json!(77), "{answer:#}");
+        assert_eq!(answer["result"]["outcome"]["outcome"], "selected");
+        assert_eq!(answer["result"]["outcome"]["optionId"], "allow");
+    }
+
+    /// An adapter that goes away has to surface, or the session sits there
+    /// looking alive while nothing is behind it.
+    ///
+    /// The sentence is deliberately not pinned. Which side notices first — a
+    /// write that finds nobody, or a read that ends — is a fact about pipes and
+    /// scheduling rather than about this loop, and asserting one of them would
+    /// be asserting the operating system. What the caller is owed is that the
+    /// stream ends, and ends by saying so.
+    #[tokio::test]
+    async fn an_adapter_that_goes_away_ends_the_stream_rather_than_hanging() {
+        let (agent, mut events) = client();
+        drop(agent);
+
+        let mut last = None;
+        while let Some(event) = events.recv().await {
+            last = Some(event);
+        }
+
+        assert!(matches!(&last, Some(AcpEvent::Disconnected(_))), "{last:?}");
+    }
+
+    /// **An adapter that accepts the connection and then says nothing is the
+    /// worst of the failures**, because every other one ends a stream somebody
+    /// is reading: this one leaves a session that looks like it is starting up,
+    /// for as long as anybody is willing to wait.
+    ///
+    /// Time is paused, so the ninety seconds this waits are not spent. Left
+    /// running, this single test costs more than the rest of the suite together
+    /// — which is how it was found.
+    #[tokio::test(start_paused = true)]
+    async fn an_adapter_that_never_answers_the_handshake_gives_up_on_its_own() {
+        let (mut agent, mut events) = client();
+        let hello = agent.heard().await;
+        assert_eq!(hello["method"], "initialize", "{hello:#}");
+
+        let mut last = None;
+        while let Some(event) = events.recv().await {
+            last = Some(event);
+        }
+
+        assert!(
+            matches!(&last, Some(AcpEvent::Disconnected(why)) if why == "handshake timed out"),
+            "{last:?}"
+        );
+    }
+
+    /// **A form the client cannot draw is declined where it arrives.** Parking
+    /// it would block the agent's tool call on a card nobody can ever fill in,
+    /// and the turn would stand still with nothing on screen to say why. The
+    /// caller is told nothing, because there is nothing it could do.
+    #[tokio::test]
+    async fn a_form_that_cannot_be_drawn_is_declined_instead_of_parked() {
+        let (mut agent, mut events) = client();
+        agent.handshake().await;
+        connected(&mut events).await;
+
+        agent
+            .say(json!({
+                "jsonrpc": "2.0",
+                "id": 31,
+                "method": "elicitation/create",
+                "params": { "mode": "url", "sessionId": "s-test", "url": "https://example.invalid" }
+            }))
+            .await;
+
+        let answer = agent.heard().await;
+        assert_eq!(answer["id"], json!(31), "{answer:#}");
+        assert_eq!(answer["result"]["action"], "decline");
+        assert!(
+            !matches!(events.try_recv(), Ok(AcpEvent::Elicitation(_))),
+            "a card nobody can fill in was put in front of the user"
         );
     }
 
