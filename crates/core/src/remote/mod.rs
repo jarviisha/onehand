@@ -28,7 +28,7 @@ pub mod press;
 pub mod types;
 
 pub use access::{is_allowed, is_silently_ignored};
-pub use chats::{Announcement, Chats, Origin, RemoteSession};
+pub use chats::{Announcement, ArchiveRow, Chats, Origin, RemoteSession};
 pub use command::{Aim, RemoteCommand};
 pub use press::Press;
 pub use types::{

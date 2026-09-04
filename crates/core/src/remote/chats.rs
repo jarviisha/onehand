@@ -4,6 +4,7 @@ use super::command::Aim;
 use super::types::{Button, ChatId, Outbound};
 use crate::chat::Away;
 use std::collections::{HashMap, HashSet};
+use std::path::PathBuf;
 
 /// One session, as somebody reading about it from a phone would need it.
 ///
@@ -38,6 +39,24 @@ impl RemoteSession {
             self.uid, self.project, name, self.agent, state
         )
     }
+}
+
+/// One row of an archive listing, and everything reopening it needs.
+///
+/// Carries the project as well as the conversation, because minting a session
+/// goes to whichever project was last clicked — a conversation reopened from a
+/// train would otherwise land on an unrelated checkout.
+#[derive(Clone)]
+pub struct ArchiveRow {
+    /// The project root this conversation was had in.
+    pub root: PathBuf,
+    pub project: String,
+    /// The conversation's directory, which is what a resume is given.
+    pub dir: PathBuf,
+    pub agent: String,
+    pub title: String,
+    /// When it was last written, for the listing's own "when".
+    pub updated: u64,
 }
 
 /// Which session an announcement is about, in the words a reader who is not
@@ -126,6 +145,16 @@ pub struct Chats {
     /// session that chat hears nothing about — not a finished turn, not a parked
     /// question, not an agent that died.
     followed: HashMap<ChatId, HashSet<u64>>,
+    /// The archive listing each chat was last sent.
+    ///
+    /// **Kept exactly as it went out, and never read off disk again.** A saved
+    /// conversation has no small stable name to put in a message — on disk it is
+    /// an agent-chosen session id, too long to type and too long for a button to
+    /// carry — so a chat holds a place in a list, and a place is only safe while
+    /// the list it counts into cannot move underneath it. Re-scanning when a
+    /// number comes back would reintroduce exactly the drift that made session
+    /// numbers uids.
+    archives: HashMap<ChatId, Vec<ArchiveRow>>,
 }
 
 impl Chats {
@@ -135,7 +164,28 @@ impl Chats {
             allowed,
             pointed: HashMap::new(),
             followed: HashMap::new(),
+            archives: HashMap::new(),
         }
+    }
+
+    /// Keep the archive listing `chat` is about to be sent.
+    ///
+    /// Replaced whole rather than added to, so it is one page per chat and not a
+    /// history of them: the number typed back counts into the page that went
+    /// out, and a page that grew would move every row under it.
+    pub fn remember_archive(&mut self, chat: &str, rows: Vec<ArchiveRow>) {
+        self.archives.insert(chat.to_string(), rows);
+    }
+
+    /// The row `chat` means by `place`, counted from one as the listing prints
+    /// it.
+    ///
+    /// `None` covers both ways of missing: a chat that has not asked for a
+    /// listing yet, and a number past the end of the one it has. Both are
+    /// answered the same way, by asking for the listing again.
+    pub fn archive_at(&self, chat: &str, place: usize) -> Option<ArchiveRow> {
+        let page = self.archives.get(chat)?;
+        page.get(place.checked_sub(1)?).cloned()
     }
 
     /// Whether `chat` may reach the app at all.
@@ -762,6 +812,63 @@ mod tests {
             out[0].text
         );
         assert_eq!(out[0].buttons, buttons);
+    }
+
+    fn row(place: u64) -> ArchiveRow {
+        ArchiveRow {
+            root: format!("/tmp/project-{place}").into(),
+            project: format!("project-{place}"),
+            dir: format!("/tmp/store/{place}").into(),
+            agent: "Claude Code".to_string(),
+            title: format!("saved {place}"),
+            updated: place,
+        }
+    }
+
+    /// A saved conversation has no small stable name to put in a message, so a
+    /// chat holds a *place* in the listing it was sent. The listing counts from
+    /// one because that is how it prints, and the number typed back is read
+    /// against exactly the listing that went out.
+    #[test]
+    fn an_archive_place_counts_from_one_as_the_listing_prints_it() {
+        let mut chats = allowing(&["7"]);
+
+        chats.remember_archive("7", vec![row(1), row(2)]);
+
+        assert_eq!(
+            chats.archive_at("7", 1).map(|row| row.title),
+            Some("saved 1".to_string())
+        );
+        assert_eq!(
+            chats.archive_at("7", 2).map(|row| row.title),
+            Some("saved 2".to_string())
+        );
+        assert!(chats.archive_at("7", 0).is_none(), "there is no zeroth row");
+        assert!(
+            chats.archive_at("7", 3).is_none(),
+            "past the end of the page"
+        );
+        assert!(
+            chats.archive_at("8", 1).is_none(),
+            "one chat's listing is not another's"
+        );
+    }
+
+    /// Replaced whole rather than added to, so it is one listing per chat and
+    /// not a history of them: a number typed back has to count into the page
+    /// that was last sent, and a page that grew would move every row under it.
+    #[test]
+    fn asking_for_the_archive_again_replaces_the_page_it_counts_into() {
+        let mut chats = allowing(&["7"]);
+        chats.remember_archive("7", vec![row(1), row(2)]);
+
+        chats.remember_archive("7", vec![row(9)]);
+
+        assert_eq!(
+            chats.archive_at("7", 1).map(|row| row.title),
+            Some("saved 9".to_string())
+        );
+        assert!(chats.archive_at("7", 2).is_none(), "the old page is gone");
     }
 
     /// The gate the whole bridge rests on, asked through this type so the one

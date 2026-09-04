@@ -24,10 +24,9 @@ use crate::state::Shared;
 use gpui::{App, BorrowAppContext as _};
 use onehand_core::config::RemoteConfig;
 use onehand_core::remote::types::{Outbound, RemoteEvent, ReqTx};
-use onehand_core::remote::{Chats, Press, RemoteCommand};
+use onehand_core::remote::{ArchiveRow, Chats, Press, RemoteCommand};
 use onehand_remote_telegram::secret;
 use std::cell::RefCell;
-use std::collections::HashMap;
 
 /// What the bridge remembers about each chat, and every reply that reports or
 /// changes it, is `onehand_core::remote::chats`. Re-exported so the front end
@@ -84,36 +83,6 @@ struct Live {
     /// ever held across a call — and never across a window walk, which is what
     /// would deadlock a reply that has to ask the shells something first.
     chats: RefCell<Chats>,
-    /// The archive listing each chat was last sent.
-    ///
-    /// **Kept exactly as it went out, and never read off disk again.** A saved
-    /// conversation has no small stable name to put in a message — on disk it is
-    /// an agent-chosen session id, too long to type and too long for a button to
-    /// carry — so a chat holds a place in a list, and a place is only safe while
-    /// the list it counts into cannot move underneath it. Re-scanning on `/open`
-    /// would reintroduce exactly the drift that made session numbers uids.
-    ///
-    /// Replaced whole by the next `/archive`, so it is one listing per chat and
-    /// not a history of them.
-    archives: RefCell<HashMap<String, Vec<ArchivePick>>>,
-}
-
-/// One row of an archive listing, and everything reopening it needs.
-///
-/// Carries the project as well as the conversation, because minting a session
-/// goes to whichever project was last clicked — a conversation reopened from a
-/// train would otherwise land on an unrelated checkout.
-#[derive(Clone)]
-pub struct ArchivePick {
-    /// The project root this conversation was had in.
-    root: std::path::PathBuf,
-    project: String,
-    /// The conversation's directory, which is what a resume is given.
-    dir: std::path::PathBuf,
-    agent: String,
-    title: String,
-    /// When it was last written, for the listing's own "when".
-    updated: u64,
 }
 
 impl RemoteBridge {
@@ -266,7 +235,6 @@ pub fn boot(cfg: &RemoteConfig, cx: &mut App) {
             rt,
             tx: requests,
             chats: RefCell::new(Chats::new(tg.allowed_chats.clone())),
-            archives: RefCell::new(HashMap::new()),
         });
     });
 
@@ -514,14 +482,14 @@ fn roots(cx: &App) -> Vec<(std::path::PathBuf, String)> {
 /// hundreds of reads on a machine that has been used for a while — on the UI
 /// thread that is a visible stall, in the middle of a frame, for a message
 /// nobody is watching the screen for.
-fn scan_archives(roots: Vec<(std::path::PathBuf, String)>) -> (Vec<ArchivePick>, usize) {
+fn scan_archives(roots: Vec<(std::path::PathBuf, String)>) -> (Vec<ArchiveRow>, usize) {
     let store = onehand_core::chat::conversations_dir();
-    let mut found: Vec<ArchivePick> = Vec::new();
+    let mut found: Vec<ArchiveRow> = Vec::new();
     for (root, project) in roots {
         // Every agent, not one: the listing is about what was said, and which
         // adapter said it is a detail below that.
         for meta in onehand_core::chat::list_conversations(&store, &root, None) {
-            found.push(ArchivePick {
+            found.push(ArchiveRow {
                 root: root.clone(),
                 project: project.clone(),
                 dir: meta.dir,
@@ -556,11 +524,7 @@ fn list_archive(chat: &str, cx: &mut App) {
             .await;
         cx.update(|cx| {
             let text = archive_listing(&found, total);
-            if let Some(live) = Shared::global(cx).remote.live.as_ref() {
-                live.archives
-                    .borrow_mut()
-                    .insert(chat.clone(), found.clone());
-            }
+            with_chats(cx, |chats| chats.remember_archive(&chat, found));
             Shared::global(cx).remote.send(Outbound::text(chat, text));
         });
     })
@@ -568,7 +532,7 @@ fn list_archive(chat: &str, cx: &mut App) {
 }
 
 /// The `/archive` reply.
-fn archive_listing(found: &[ArchivePick], total: usize) -> String {
+fn archive_listing(found: &[ArchiveRow], total: usize) -> String {
     if found.is_empty() {
         return "Nothing saved yet — a conversation is written at the end of its first turn."
             .to_string();
@@ -599,13 +563,7 @@ fn archive_listing(found: &[ArchivePick], total: usize) -> String {
 
 /// Answer `/open`.
 fn open_archive(chat: &str, place: usize, cx: &mut App) -> String {
-    let pick = Shared::global(cx).remote.live.as_ref().and_then(|live| {
-        live.archives.borrow().get(chat).and_then(|list| {
-            // Counted from one, as the listing prints it.
-            list.get(place - 1).cloned()
-        })
-    });
-    let Some(pick) = pick else {
+    let Some(pick) = with_chats(cx, |chats| chats.archive_at(chat, place)).flatten() else {
         return "Ask for /archive first — the numbers count into that listing.".to_string();
     };
 
