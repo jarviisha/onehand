@@ -7,7 +7,9 @@ use crate::chat::ChatPane;
 use crate::dialogs::AgentDraft;
 use crate::state::{OpenWindow, Shared, WorkspaceWindow};
 use crate::terminal::TerminalPanel;
-use crate::workbench::{EDITOR_MODE, FILES_MODE, NEOVIM_MODE, Workbench, WorkbenchMode};
+use crate::workbench::{
+    EDITOR_MODE, FILES_MODE, MARKDOWN_MODE, NEOVIM_MODE, Workbench, WorkbenchMode,
+};
 use gpui::{
     App, AppContext, BorrowAppContext, Context, Entity, Focusable as _, InteractiveElement,
     IntoElement, ParentElement, Render, SharedString, Styled, Window, WindowAppearance, div, px,
@@ -33,6 +35,7 @@ gpui::actions!(
     [
         ToggleRail,
         ToggleFiles,
+        ToggleMarkdown,
         ToggleWorkbench,
         SaveFile,
         ToggleTerminal,
@@ -121,6 +124,8 @@ pub fn init_keymap(cx: &mut App) {
     cx.bind_keys([
         gpui::KeyBinding::new("ctrl-shift-b", ToggleRail, None),
         gpui::KeyBinding::new("ctrl-shift-e", ToggleFiles, None),
+        // The document view, beside the file tree it is the reading half of.
+        gpui::KeyBinding::new("ctrl-shift-m", ToggleMarkdown, None),
         gpui::KeyBinding::new("ctrl-shift-o", ToggleWorkbench, None),
         // The outer terminal, and the one app command outside the `Ctrl+Shift`
         // namespace by necessity rather than by preference.
@@ -2829,6 +2834,11 @@ impl Render for Shell {
             .on_action(
                 cx.listener(|shell: &mut Self, _: &ToggleFiles, window, cx| {
                     shell.show_workbench(FILES_MODE, window, cx);
+                }),
+            )
+            .on_action(
+                cx.listener(|shell: &mut Self, _: &ToggleMarkdown, window, cx| {
+                    shell.show_workbench(MARKDOWN_MODE, window, cx);
                 }),
             )
             .on_action(

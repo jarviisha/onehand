@@ -4733,6 +4733,7 @@ dependencies = [
  "onehand-terminal-ui",
  "onehand-workbench-editor",
  "onehand-workbench-files",
+ "onehand-workbench-markdown",
  "onehand-workbench-neovim",
  "rfd",
  "tokio",
@@ -4810,6 +4811,16 @@ dependencies = [
  "gpui",
  "gpui-component",
  "onehand-core",
+ "onehand-plugin-api",
+ "onehand-plugin-host",
+]
+
+[[package]]
+name = "onehand-workbench-markdown"
+version = "0.1.0"
+dependencies = [
+ "gpui",
+ "gpui-component",
  "onehand-plugin-api",
  "onehand-plugin-host",
 ]

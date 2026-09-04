@@ -674,6 +674,11 @@ pub const SHORTCUTS: &[Shortcut] = &[
         keys: &["ctrl-shift-e"],
     },
     Shortcut {
+        label: "Ctrl+Shift+M",
+        what: "Workbench — Markdown",
+        keys: &["ctrl-shift-m"],
+    },
+    Shortcut {
         label: "Ctrl+Shift+N",
         what: "Workbench — Neovim",
         keys: &["ctrl-shift-n"],
