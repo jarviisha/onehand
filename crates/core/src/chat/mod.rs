@@ -8,6 +8,7 @@
 //! texture handle is front-end state and lives with the front end.
 
 pub mod activity;
+pub mod attention;
 pub mod find;
 pub mod model;
 pub mod store;
@@ -15,6 +16,7 @@ pub mod store;
 pub use activity::{
     first_line_trunc, group, presentation, ActivityGroup, ActivityKind, Presentation,
 };
+pub use attention::{Attention, Presence, Telling};
 pub use find::{compute_matches, export_markdown, item_search_text, TranscriptMatch};
 pub use model::{
     ApplyOutcome, AskItem, Away, Chat, ChatItem, Link, Md, MdId, NoticeLevel, PermItem, PlanItem,
