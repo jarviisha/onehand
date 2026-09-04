@@ -1,0 +1,14 @@
+[package]
+name = "onehand-workbench-markdown"
+version = "0.1.0"
+edition = "2024"
+
+[lib]
+name = "onehand_workbench_markdown"
+path = "src/lib.rs"
+
+[dependencies]
+onehand-plugin-api = { path = "../../../crates/plugin-api" }
+onehand-plugin-host = { path = "../../../crates/plugin-host" }
+gpui = { git = "https://github.com/zed-industries/zed", features = ["profiler"] }
+gpui-component = { git = "https://github.com/longbridge/gpui-component", rev = "9e3a29dcbdebc318632bf68203f26c33e9f0e902" }

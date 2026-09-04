@@ -13,6 +13,7 @@ members = [
     "plugins/builtin/remote-telegram",
     "plugins/builtin/workbench-editor",
     "plugins/builtin/workbench-files",
+    "plugins/builtin/workbench-markdown",
     "plugins/builtin/workbench-neovim",
     "vendor/gpui-terminal",
 ]

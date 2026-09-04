@@ -28,7 +28,7 @@ CLIPPY_EXTRA ?=
 # upstream's and stay put.
 OURS := -p onehand -p onehand-core -p onehand-plugin-api -p onehand-plugin-host \
 	-p onehand-terminal-ui -p onehand-remote-telegram -p onehand-workbench-editor \
-	-p onehand-workbench-files -p onehand-workbench-neovim
+	-p onehand-workbench-files -p onehand-workbench-markdown -p onehand-workbench-neovim
 
 .DEFAULT_GOAL := help
 

@@ -1,11 +1,10 @@
-//! The right-hand Workbench: the Editor and Files modes.
+//! The right-hand Workbench: Editor, Files, Markdown and Neovim.
 //!
-//! One dock panel with mutually exclusive modes: the two are ways of reaching
-//! the same files, so they share a dock rather than competing for width. Neovim
-//! is a third mode and is deliberately absent: it needs the terminal parity
-//! work this build stopped short of, and a half-working one would be worse than
-//! an honest gap.
+//! One dock panel with mutually exclusive modes. They are four ways of reaching
+//! the same files — editing one, browsing them all, reading the documents among
+//! them, and a real editor in a PTY — so they share a dock rather than competing
+//! for width.
 
 pub mod panel;
 
-pub use panel::{EDITOR_MODE, FILES_MODE, NEOVIM_MODE, Workbench, WorkbenchMode};
+pub use panel::{EDITOR_MODE, FILES_MODE, MARKDOWN_MODE, NEOVIM_MODE, Workbench, WorkbenchMode};

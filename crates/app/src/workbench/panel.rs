@@ -1,4 +1,4 @@
-//! The Workbench dock panel: Editor, Files and Neovim, one at a time.
+//! The Workbench dock panel: Editor, Files, Markdown and Neovim, one at a time.
 //!
 //! State is **per project root** — `RootBuffers`, `FileTree` and the Neovim PTY
 //! are all keyed by root path, so switching roots swaps the whole panel rather
@@ -6,8 +6,8 @@
 //!
 //! **Neovim is a mode here rather than a tab of the terminal**, because this is
 //! the panel about files: a tab called `nvim` sitting between two called `zsh`
-//! says the editor is a kind of shell. Two consequences the other two modes do
-//! not have, both because this one is a live PTY rather than an element tree.
+//! says the editor is a kind of shell. Two consequences the other modes do not
+//! have, both because this one is a live PTY rather than an element tree.
 //! Its zoom is a font size and not the rem scale wrapped around the body below,
 //! since the grid is *measured* from a shaped glyph — scaling the box around it
 //! leaves every column landing past its own character. And the panel takes the
@@ -24,7 +24,7 @@ use gpui::{
 use gpui_component::button::ButtonVariants as _;
 use gpui_component::dock::{Panel, PanelControl, PanelEvent};
 use gpui_component::input::InputEvent;
-use gpui_component::{ActiveTheme, Sizable as _, StyledExt};
+use gpui_component::{ActiveTheme, Sizable as _, StyledExt, h_resizable, resizable_panel};
 use onehand_core::editor::SaveOutcome;
 use onehand_core::gitstat::GitStatus;
 use onehand_core::tree::{self, FileTree};
@@ -33,14 +33,37 @@ use onehand_plugin_host::WorkbenchHost;
 use onehand_terminal_ui::{Program, TerminalThemeKey, spawn_pty, terminal_palette};
 use onehand_workbench_editor::{self as editor, RootBuffers};
 use onehand_workbench_files as files;
+use onehand_workbench_markdown::{self as markdown, RootDocs};
 use onehand_workbench_neovim::NeovimSessions;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
+use std::time::Duration;
 
 pub type WorkbenchMode = PluginId;
 pub const EDITOR_MODE: WorkbenchMode = onehand_workbench_editor::MODE_ID;
 pub const FILES_MODE: WorkbenchMode = onehand_workbench_files::MODE_ID;
+pub const MARKDOWN_MODE: WorkbenchMode = onehand_workbench_markdown::MODE_ID;
 pub const NEOVIM_MODE: WorkbenchMode = onehand_workbench_neovim::MODE_ID;
+
+/// How often the open document's file is asked whether it has changed.
+///
+/// One `stat` at this rate, and only while a document is actually open — the
+/// re-read and the re-parse happen on the ticks where the answer moved, which
+/// for a file nobody is writing is none of them. Fast enough that a document
+/// the agent is editing reads as live rather than as stale.
+const DOC_POLL: Duration = Duration::from_millis(750);
+
+/// The document list's width before anybody drags it, and the range a drag may
+/// take it through.
+///
+/// Pixels rather than rems because that is the only thing the split accepts,
+/// the same as the rail's own range. Its own numbers and not the rail's: this
+/// column holds file names inside a dock the user has already sized, so the
+/// floor is what a name needs to be readable at and the ceiling is the point
+/// past which the list is taking the room the document was opened for.
+const DOC_LIST_W: f32 = 220.;
+const DOC_LIST_MIN: f32 = 140.;
+const DOC_LIST_MAX: f32 = 420.;
 
 pub struct Workbench {
     host: WorkbenchHost,
@@ -48,6 +71,32 @@ pub struct Workbench {
     root: Option<PathBuf>,
     editors: HashMap<PathBuf, RootBuffers>,
     trees: HashMap<PathBuf, FileTree>,
+    /// The markdown index and the document being read, per root.
+    docs: HashMap<PathBuf, RootDocs>,
+    /// Whether the document view draws its list beside the document.
+    ///
+    /// Per panel rather than per root, like the zoom and unlike everything else
+    /// here: how much room the reading gets is a preference about this panel,
+    /// and one that reset itself on every project switch would be the odd one
+    /// out. Not persisted either, for the reason the rail's own visibility is
+    /// not: a panel that came back with its list gone reads as one that lost it.
+    doc_list_shown: bool,
+    /// Where the drag between the list and the document sits.
+    ///
+    /// The shell's, not the element's, for the reason the rail's split is the
+    /// shell's: a width has to outlive the frames its panel is not drawn in,
+    /// and this one is not drawn whenever the list is hidden or another mode is
+    /// showing. Kept out of the split entirely while the list is hidden, so the
+    /// group never renders holding one panel — that truncates the state to one
+    /// size and loses the width the user chose.
+    doc_split: Entity<gpui_component::ResizableState>,
+    /// The `stat` loop behind the document view's live reload.
+    ///
+    /// Held rather than detached, and that is what stops it: the task ends when
+    /// this is cleared, which is how a document being closed or a root being
+    /// removed takes its polling with it. One for the panel and not one per
+    /// document, because only the active root's document is on screen.
+    doc_watch: Option<gpui::Task<()>>,
     git: HashMap<PathBuf, GitStatus>,
     /// The Neovim running on each root, at most one apiece.
     ///
@@ -117,6 +166,10 @@ impl Workbench {
             root: None,
             editors: HashMap::new(),
             trees: HashMap::new(),
+            docs: HashMap::new(),
+            doc_list_shown: true,
+            doc_split: cx.new(|_| gpui_component::ResizableState::default()),
+            doc_watch: None,
             git: HashMap::new(),
             neovim: NeovimSessions::default(),
             terminal_theme: TerminalThemeKey::current(cx),
@@ -150,6 +203,13 @@ impl Workbench {
     pub fn forget_root(&mut self, root: &Path, cx: &mut Context<Self>) {
         self.editors.remove(root);
         self.trees.remove(root);
+        self.docs.remove(root);
+        if self.root.as_deref() == Some(root) {
+            // The document that was being watched belonged to this root, and
+            // the poll would otherwise go on asking about a file in a project
+            // no longer in the workspace.
+            self.doc_watch = None;
+        }
         self.git.remove(root);
         // Dropping the entry ends the child, the way dropping a terminal tab
         // does: a project removed from the workspace must not leave an editor
@@ -270,6 +330,14 @@ impl Workbench {
 
     pub fn set_mode(&mut self, mode: WorkbenchMode, cx: &mut Context<Self>) {
         if self.host.select(mode) {
+            // The document index is walked when somebody arrives at the mode
+            // that draws it, never at boot and never on a project switch that
+            // happens while another mode is showing: it is a recursive walk of
+            // the whole project, and a workspace with a dozen roots must not
+            // run a dozen of them for a mode nobody has opened.
+            if mode == MARKDOWN_MODE {
+                self.index_docs(cx);
+            }
             cx.notify();
         }
     }
@@ -280,6 +348,14 @@ impl Workbench {
             return;
         }
         self.root = Some(root.clone());
+        // The document being watched belonged to the root being left. Whether
+        // the arriving one has one of its own is decided below, once its state
+        // is in hand.
+        self.doc_watch = None;
+        if self.mode() == MARKDOWN_MODE {
+            self.index_docs(cx);
+        }
+        self.watch_doc(cx);
         if self.trees.contains_key(&root) {
             // A root seen before: its cached listings are as old as the last
             // time it was on screen, and the agent has been working since.
@@ -343,6 +419,197 @@ impl Workbench {
         for dir in dirs {
             self.scan(dir, cx);
         }
+        // A document *list* goes stale the same way the tree does, and for the
+        // same reason: the agent has been writing since it was walked, and a
+        // file it just wrote is exactly what somebody switches to this mode to
+        // read. Only while the mode is showing, since the walk is the whole
+        // project rather than one directory. The document already open re-reads
+        // itself on its own clock.
+        if self.mode() == MARKDOWN_MODE {
+            self.index_docs(cx);
+        }
+    }
+
+    /// Walk the active root for markdown documents.
+    ///
+    /// Re-walked rather than merged into what is there: a document deleted
+    /// since the last walk has to leave the list, and a walk that only ever
+    /// added would keep a row that opens nothing.
+    fn index_docs(&mut self, cx: &mut Context<Self>) {
+        let Some(root) = self.root.clone() else {
+            return;
+        };
+        cx.spawn(async move |panel, cx| {
+            let index = cx
+                .background_executor()
+                .spawn({
+                    let root = root.clone();
+                    async move { markdown::scan_blocking(&root) }
+                })
+                .await;
+            let _ = panel.update(cx, |panel: &mut Self, cx| {
+                panel.docs.entry(root).or_default().index = Some(index);
+                cx.notify();
+            });
+        })
+        .detach();
+    }
+
+    /// Show or hide the document list beside the document.
+    fn toggle_doc_list(&mut self, cx: &mut Context<Self>) {
+        self.doc_list_shown = !self.doc_list_shown;
+        cx.notify();
+    }
+
+    /// Fold or unfold a directory in the document list.
+    fn toggle_doc_dir(&mut self, dir: &Path, cx: &mut Context<Self>) {
+        if let Some(root) = self.root.clone()
+            && let Some(docs) = self.docs.get_mut(&root)
+        {
+            docs.toggle(dir);
+            cx.notify();
+        }
+    }
+
+    /// Read a document and put it on screen.
+    ///
+    /// Through core's editor read, so this obeys the same size bound the quick
+    /// editor does and comes back with the same mtime — which is what the live
+    /// reload then compares against.
+    fn open_doc(&mut self, path: PathBuf, cx: &mut Context<Self>) {
+        let Some(root) = self.root.clone() else {
+            return;
+        };
+        let label = path
+            .strip_prefix(&root)
+            .unwrap_or(&path)
+            .display()
+            .to_string();
+
+        cx.spawn(async move |panel, cx| {
+            let read = cx
+                .background_executor()
+                .spawn({
+                    let path = path.clone();
+                    async move { onehand_core::editor::read_blocking(&path) }
+                })
+                .await;
+
+            let _ = panel.update(cx, |panel: &mut Self, cx| {
+                match read {
+                    Ok((text, mtime)) => {
+                        // A read that worked answers whatever the last failure
+                        // said, the same way opening a file in the editor does.
+                        panel.status = None;
+                        panel
+                            .docs
+                            .entry(root)
+                            .or_default()
+                            .show(path, label, &text, mtime, cx);
+                        panel.watch_doc(cx);
+                    }
+                    Err(e) => panel.status = Some(format!("{} — {e}", path.display())),
+                }
+                cx.notify();
+            });
+        })
+        .detach();
+    }
+
+    /// Keep one poll running for as long as a document is open, and no longer.
+    ///
+    /// Dropping the task is what stops it, so this is called from both ends —
+    /// after a document opens, and after the active root changes to one that
+    /// may have none.
+    fn watch_doc(&mut self, cx: &mut Context<Self>) {
+        let open = self
+            .root
+            .as_ref()
+            .and_then(|root| self.docs.get(root))
+            .is_some_and(|docs| docs.open.is_some());
+        if !open {
+            self.doc_watch = None;
+            return;
+        }
+        if self.doc_watch.is_some() {
+            return;
+        }
+
+        self.doc_watch = Some(cx.spawn(async move |panel, cx| {
+            loop {
+                cx.background_executor().timer(DOC_POLL).await;
+                // The panel is asked afresh every tick rather than closing over
+                // a path: the reader can have moved to another document, or to
+                // another project, since the last one.
+                let Ok(open) = panel.update(cx, |panel: &mut Self, _| {
+                    panel
+                        .root
+                        .as_ref()
+                        .and_then(|root| panel.docs.get(root))
+                        .and_then(|docs| docs.open.as_ref())
+                        .map(|doc| (doc.path.clone(), doc.mtime))
+                }) else {
+                    // The panel is gone, and with it the window.
+                    return;
+                };
+                let Some((path, seen)) = open else {
+                    continue;
+                };
+
+                let fresh = cx
+                    .background_executor()
+                    .spawn({
+                        let path = path.clone();
+                        async move {
+                            std::fs::metadata(&path)
+                                .ok()
+                                .and_then(|meta| meta.modified().ok())
+                        }
+                    })
+                    .await;
+                if fresh == seen {
+                    continue;
+                }
+
+                let read = cx
+                    .background_executor()
+                    .spawn({
+                        let path = path.clone();
+                        async move { onehand_core::editor::read_blocking(&path) }
+                    })
+                    .await;
+
+                let updated = panel.update(cx, |panel: &mut Self, cx| {
+                    let Some(root) = panel.root.clone() else {
+                        return;
+                    };
+                    let Some(docs) = panel.docs.get_mut(&root) else {
+                        return;
+                    };
+                    let failed = match read {
+                        Ok((text, mtime)) => {
+                            docs.refresh(&path, &text, mtime, cx);
+                            None
+                        }
+                        // A file that grew past the size bound, or that was
+                        // deleted out from under the reader. The new stamp is
+                        // recorded anyway, or this same failure would be
+                        // reported again on every tick from here on.
+                        Err(e) => {
+                            docs.stamp(&path, fresh);
+                            Some(format!("{} — {e}", path.display()))
+                        }
+                    };
+                    if let Some(message) = failed {
+                        panel.status = Some(message);
+                    }
+                    cx.notify();
+                });
+                if updated.is_err() {
+                    return;
+                }
+            }
+        }));
     }
 
     /// Fold or unfold a directory. Expanding rescans — a cached listing can be
@@ -686,6 +953,8 @@ impl Render for Workbench {
             self.editor_body(cx)
         } else if mode == FILES_MODE {
             self.files_body(cx)
+        } else if mode == MARKDOWN_MODE {
+            self.markdown_body(window, cx)
         } else if mode == NEOVIM_MODE {
             self.neovim_body(cx)
         } else {
@@ -813,6 +1082,96 @@ impl Workbench {
                     .child(editor::body(&state))
                     .into_any_element()
             }))
+            .into_any_element()
+    }
+
+    /// The document list beside the document, which is the whole mode.
+    ///
+    /// The list keeps a third of the panel and the document the rest: the rows
+    /// are file names and the document is prose, so the two do not want the
+    /// same share of a dock the user has already sized for reading.
+    fn markdown_body(&mut self, window: &Window, cx: &mut Context<Self>) -> gpui::AnyElement {
+        let Some(root) = self.root.clone() else {
+            return hint("No project root", cx);
+        };
+        let Some(docs) = self.docs.get(&root) else {
+            // The walk was asked for and has not landed; the list says so for
+            // itself once there is one.
+            return hint("Looking for documents…", cx);
+        };
+
+        let reader = {
+            let path = docs.open.as_ref().map(|doc| doc.path.clone());
+            markdown::reader(
+                docs.open.as_ref(),
+                self.doc_list_shown,
+                cx.listener(|panel: &mut Self, _, _, cx| panel.toggle_doc_list(cx)),
+                cx.listener(move |panel: &mut Self, _, window, cx| {
+                    // Handing it to the editor switches the mode, which is the
+                    // honest answer: this one does not edit.
+                    if let Some(path) = path.clone() {
+                        panel.open_file(path, window, cx);
+                    }
+                }),
+                window,
+                cx,
+            )
+        };
+
+        if !self.doc_list_shown {
+            // No list, so no split: a group holding one panel draws a handle
+            // against the panel's own edge that resizes nothing. The same
+            // reason the window's rail split is skipped while the rail is
+            // hidden.
+            return div()
+                .flex_1()
+                .min_h_0()
+                // A row, but deliberately not the shared `h_flex`: that one
+                // centres its children, which leaves each column as tall as its
+                // own content instead of as tall as the panel. The document's
+                // body is sized by what is left over, so centred it is given
+                // nothing and the header floats in the middle of an empty panel.
+                .flex()
+                .flex_row()
+                .child(reader)
+                .into_any_element();
+        }
+
+        let list = div()
+            .size_full()
+            .border_r_1()
+            .border_color(cx.theme().border)
+            .child(markdown::list(
+                &root,
+                docs,
+                cx.listener(|panel: &mut Self, dir: &PathBuf, _, cx| panel.toggle_doc_dir(dir, cx)),
+                cx.listener(|panel: &mut Self, path: &PathBuf, _, cx| {
+                    panel.open_doc(path.clone(), cx)
+                }),
+                cx,
+            ));
+
+        div()
+            .flex_1()
+            .min_h_0()
+            .child(
+                h_resizable("markdown-split")
+                    .with_state(&self.doc_split)
+                    .child(
+                        // `flex_none`, as the rail's own panel is: the group
+                        // sets `flex_grow: 1` on a panel, and a list that grows
+                        // takes whatever the document is not using — which is
+                        // most of the panel. The width here is only the one it
+                        // starts at; once dragged, the split's own state is
+                        // what answers.
+                        resizable_panel()
+                            .size(gpui::px(DOC_LIST_W))
+                            .size_range(gpui::px(DOC_LIST_MIN)..gpui::px(DOC_LIST_MAX))
+                            .flex_none()
+                            .child(list),
+                    )
+                    .child(resizable_panel().child(reader)),
+            )
             .into_any_element()
     }
 

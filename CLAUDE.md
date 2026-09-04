@@ -65,7 +65,7 @@ Tests are inline `#[cfg(test)]` modules — there is no `tests/` directory.
 | `crates/plugin-api` | `onehand-plugin-api` | GUI-free plugin IDs, descriptors, capabilities and registration contract |
 | `crates/plugin-host` | `onehand-plugin-host` | startup registry, the Workbench host, the channel factory, and the one button wrapper |
 | `crates/terminal-ui` | `onehand-terminal-ui` | shared PTY/grid ownership used by the terminal dock and Neovim |
-| `plugins/builtin/*` | built-in plugins | Editor, Files, Neovim and Telegram contributions compiled into the binary |
+| `plugins/builtin/*` | built-in plugins | Editor, Files, Markdown, Neovim and Telegram contributions compiled into the binary |
 | `vendor/gpui-terminal` | `gpui-terminal` | a vendored terminal grid + the interaction layer upstream never had |
 
 The workspace root is a **virtual manifest** — it owns nothing but the member list and the release
@@ -186,7 +186,7 @@ module owns, and events cross to GPUI on a plain `futures` channel belonging to 
 `crates/app/src/plugins.rs` is the composition root. It registers every plugin,
 attaches the channel factory, and seals the registry before `Shared` exists and
 before a window is opened. Workbench order is declared there as Editor, Files,
-Neovim. Registration is deliberately not dynamic in API v1: duplicate plugin
+Markdown, Neovim. Registration is deliberately not dynamic in API v1: duplicate plugin
 or contribution IDs, an unsupported API version, a capability mismatch, a
 factory offered for an ID nothing registered, and a registered contribution
 left without one all abort startup, each naming the plugin and the contribution.
@@ -492,7 +492,7 @@ renderer read `chat.items` / `chat.busy` without knowing where the model lives.
 
 ### Workbench
 
-[crates/app/src/workbench/](crates/app/src/workbench/) — one dock panel, three modes:
+[crates/app/src/workbench/](crates/app/src/workbench/) — one dock panel, four modes:
 
 - **Editor**: a quick editor, not an IDE. Buffers here, rules in core (`onehand_core::editor`): the
   size bound, the tab set, the **mtime guard**, labels, blocking read/save. Highlighting is
@@ -503,6 +503,27 @@ renderer read `chat.items` / `chat.busy` without knowing where the model lives.
   total, `.git` skipped. Rows carry git state as one-letter badges; a directory holding changes gets a
   dot. Indentation is padding by depth, not nested containers — hundreds of nested rows are hundreds
   of wasted elements.
+- **Markdown** (`Ctrl+Shift+M`): the project's `.md` files on the left, the one being read rendered on
+  the right. The index is the plugin's own (`onehand_workbench_markdown::index`) rather than core's,
+  because nothing outside this mode wants a list of a project's documents — and it is a **walk of the
+  root**, not a filter over the Files tree: that tree is lazy, so filtering it draws a project as a
+  column of empty folders with every document still one unfold away. A directory appears iff a
+  document was found under it. The walk is breadth-first and capped at 400 documents and 2 000
+  directories, so a cut lands on the deepest level reached rather than on an arbitrary subtree, and
+  the list says when one did; dependency and build directories are skipped by name, since one
+  introductory document per package is hundreds of documents nobody here wrote. The folded set is
+  what is *closed*, the opposite of the file tree's, because the whole index is known by the time it
+  is drawn and a document list that opened folded would be hiding the one thing it is for.
+  **It is live**: the open document's mtime is checked every 750 ms — one `stat`, and only while a
+  document is open — and a change re-reads the file and re-sets the *same* `TextViewState`, so a file
+  the agent is writing does not throw the reader back to the top on every touch. The read is core's
+  `editor::read_blocking`, so the size bound and the mtime are the editor's. A file that vanishes or
+  outgrows the bound is complained about **once**, because the failed check still records the new
+  stamp. The mode is **read-only** — a second buffer here would be a second copy of the editor's tab
+  set, mtime guard and unsaved-edit rules, so the header's *Edit source* hands the file to the editor
+  instead. The walk runs when somebody arrives at this mode and when a turn ends while it is showing,
+  never at boot: a workspace with a dozen roots must not walk a dozen projects for a mode nobody
+  opened.
 - **A tab whose child exits is dropped**, in both this panel and the terminal's (`Workbench::reap_neovim`,
   `TerminalPanel::reap`, fed by `spawn_pty`'s exit callback). Nothing notices otherwise: the grid keeps
   drawing the last screen the child painted, which after `:q` or `exit` is an empty one with a cursor
@@ -770,7 +791,8 @@ status bar.
 ### Keyboard, zoom, maximize
 
 App commands occupy an exact `Ctrl+Shift` namespace so plain Ctrl keys stay usable inside a PTY:
-`B` rail · `E` Workbench Files · `O` Workbench Editor · `N` Workbench Neovim · `A` composer ·
+`B` rail · `E` Workbench Files · `O` Workbench Editor · `M` Workbench Markdown ·
+`N` Workbench Neovim · `A` composer ·
 `F` find · `R` guarded restart ·
 `W` guarded close · `K` maximize. Plus `` Ctrl+` `` terminal, `Ctrl+S` save, `Ctrl+1…9` session by position, `Ctrl+Tab` session by recency,
 `Ctrl+=`/`Ctrl+-`/`Ctrl+0` zoom, and inside the composer `Up`/`Down` (its completion list) and
