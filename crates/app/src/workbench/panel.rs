@@ -148,7 +148,6 @@ impl Workbench {
     }
 
     pub fn forget_root(&mut self, root: &Path, cx: &mut Context<Self>) {
-        self.host.forget_root(root);
         self.editors.remove(root);
         self.trees.remove(root);
         self.git.remove(root);
@@ -228,7 +227,6 @@ impl Workbench {
     /// Neovim drawn at the old one.
     pub fn set_zoom(&mut self, zoom: crate::zoom::Zoom, cx: &mut Context<Self>) {
         self.zoom = zoom;
-        self.host.set_zoom(zoom.factor());
         let size = crate::zoom::term_font_size(zoom);
         self.neovim.set_font_size(size, cx);
         cx.notify();
@@ -244,7 +242,6 @@ impl Workbench {
     /// rather than typed into. A panel shortcut that opens a dock without moving
     /// focus makes the user reach for the mouse to use what they just opened.
     pub fn focus_active(&self, window: &mut Window, cx: &mut App) {
-        self.host.focus_active();
         if self.mode() == NEOVIM_MODE {
             // Nothing else in this panel needs the caret as badly: a grid that
             // is drawn but unfocused looks exactly like one that is running,
@@ -283,7 +280,6 @@ impl Workbench {
             return;
         }
         self.root = Some(root.clone());
-        self.host.set_root(Some(root.clone()));
         if self.trees.contains_key(&root) {
             // A root seen before: its cached listings are as old as the last
             // time it was on screen, and the agent has been working since.
@@ -672,6 +668,16 @@ impl Render for Workbench {
                     .map(|item| mode_tab(item.label, item.id, mode, cx)),
             );
 
+        // The two facts below are read off the showing mode's own declaration
+        // rather than worked out from its ID. A mode nothing registered has
+        // neither, and falls back to the panel's own context and scale so the
+        // strip that would switch away from it still answers the keyboard.
+        let showing = self.host.active_contribution().copied();
+        let key_context = showing
+            .map(|item| item.key_context)
+            .unwrap_or(onehand_plugin_api::WORKBENCH_KEY_CONTEXT);
+        let rem_zoom = showing.is_none_or(|item| item.rem_zoom);
+
         // The mode strip is chrome and keeps its size; only the work below it
         // scales. A zoomed-in editor whose own tab bar grew with it wastes the
         // room the zoom was asking for.
@@ -685,30 +691,27 @@ impl Render for Workbench {
         } else {
             hint("This Workbench contribution is unavailable", cx)
         };
-        // A grid is *measured* from a shaped glyph, so it is sized by the font
-        // it was configured with and not by the rem base around it. Wrapping it
-        // in the scale would stretch the box while the cell stayed put, which
-        // leaves every column landing past its own character; the size is
-        // pushed into the view by `set_zoom` instead.
-        let body = if mode == NEOVIM_MODE {
-            body
-        } else {
+        // A measured glyph grid is sized by the font it was configured with and
+        // not by the rem base around it, so a mode that says so is left alone:
+        // wrapping it in the scale would stretch the box while the cell stayed
+        // put, leaving every column landing past its own character. Such a mode
+        // takes its reading size as a font size instead, through `set_zoom`.
+        let body = if rem_zoom {
             zoom.scale(window, body).into_any_element()
+        } else {
+            body
         };
         div()
             .size_full()
             .v_flex()
-            // Neovim takes the *terminal's* context while it is showing, and it
-            // has to be this name and not one of its own: `Ctrl+S` is bound
-            // `Shell && !Terminal` so that a program in a PTY keeps it, and a
-            // predicate that had to learn a second name for the same fact is one
-            // that gets updated in one place and not the other. Under any other
-            // mode this is the Workbench, which is what the save is *for*.
-            .key_context(if mode == NEOVIM_MODE {
-                "Terminal"
-            } else {
-                "Workbench"
-            })
+            // A mode hosting a PTY takes the *terminal's* context while it is
+            // showing, and it has to be that name and not one of its own:
+            // `Ctrl+S` is bound `Shell && !Terminal` so that a program in a PTY
+            // keeps it, and a predicate that had to learn a second name for the
+            // same fact is one that gets updated in one place and not the other.
+            // Under any other mode this is the Workbench, which is what the save
+            // is *for*.
+            .key_context(key_context)
             .child(modes)
             .child(body)
             .when_some(self.status.clone(), |panel, status| {

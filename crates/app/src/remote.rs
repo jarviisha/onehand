@@ -290,13 +290,25 @@ pub fn boot(cfg: &RemoteConfig, cx: &mut App) {
         );
         return;
     };
-    let factory = Shared::global(cx)
+    // Said and returned rather than asserted. Every other way this function
+    // gives up prints a line and leaves the app running, and a bridge that
+    // cannot start is not worth taking the window down for -- the registry is
+    // sealed before `Shared` exists, so a contribution missing here means the
+    // composition root changed and the app is still perfectly usable without a
+    // phone attached to it.
+    let Some(factory) = Shared::global(cx)
         .plugins
         .remote_channels()
         .iter()
         .find(|item| item.id == onehand_remote_telegram::CHANNEL_ID)
         .and_then(|item| item.factory)
-        .expect("the sealed Telegram contribution has no channel factory");
+    else {
+        eprintln!(
+            "onehand: the Telegram bridge is enabled but no channel is registered under `{}`.",
+            onehand_remote_telegram::CHANNEL_ID
+        );
+        return;
+    };
 
     let rt = match tokio::runtime::Builder::new_multi_thread()
         .worker_threads(1)

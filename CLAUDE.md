@@ -62,7 +62,7 @@ Tests are inline `#[cfg(test)]` modules — there is no `tests/` directory.
 | `crates/app` | `onehand` | the GPUI front end + the binary |
 | `crates/core` | `onehand-core` | GUI-free logic: config, the workspace tree, ACP, the chat model, the remote bridge, editor rules, completion, git status, worktree rules, the directory flatten |
 | `crates/plugin-api` | `onehand-plugin-api` | GUI-free plugin IDs, descriptors, capabilities and registration contract |
-| `crates/plugin-host` | `onehand-plugin-host` | startup registry and typed contribution factories/lifecycle hooks |
+| `crates/plugin-host` | `onehand-plugin-host` | startup registry, the Workbench host, the channel factory, and the one button wrapper |
 | `crates/terminal-ui` | `onehand-terminal-ui` | shared PTY/grid ownership used by the terminal dock and Neovim |
 | `plugins/builtin/*` | built-in plugins | Editor, Files, Neovim and Telegram contributions compiled into the binary |
 | `vendor/gpui-terminal` | `gpui-terminal` | a vendored terminal grid + the interaction layer upstream never had |
@@ -183,15 +183,36 @@ module owns, and events cross to GPUI on a plain `futures` channel belonging to 
 ### Built-in plugins
 
 `crates/app/src/plugins.rs` is the composition root. It registers every plugin,
-attaches its typed factory, and seals the registry before `Shared` exists and
+attaches the channel factory, and seals the registry before `Shared` exists and
 before a window is opened. Workbench order is declared there as Editor, Files,
 Neovim. Registration is deliberately not dynamic in API v1: duplicate plugin
-or contribution IDs, an unsupported API version, a capability mismatch, or a
-missing factory abort startup with the plugin/contribution ID in the error.
+or contribution IDs, an unsupported API version, a capability mismatch, a
+factory offered for an ID nothing registered, and a registered contribution
+left without one all abort startup, each naming the plugin and the contribution.
+The last two are separate errors on purpose — they are opposite mistakes with
+opposite fixes, and one variant for both is unreadable in the panic that is the
+only place either is seen.
+
+**A contribution is data, not an object.** A Workbench mode declares its ID, its
+label, the key context the panel takes while it shows, and whether its body is
+scaled by the panel's rem base; the panel reads those instead of matching the
+mode's ID against a list it has to know by heart. What a mode *works on* — open
+buffers, the file tree, a live PTY — stays with the panel that renders it,
+because drawing it needs the window and the panel's own entity context. There is
+deliberately no per-mode lifecycle object beside that: it would be a second copy
+of facts the panel already holds, kept in step by hand and read by nobody, which
+is what the first attempt at this was.
 
 The Rust traits are versioned `0.x` and are an internal composition seam, not a
 stable third-party ABI. A future external-plugin system is expected to use a
 process protocol rather than Rust dynamic libraries.
+
+**The button wrapper lives here, not in the app.** A built-in plugin draws
+buttons and cannot reach into the binary hosting it, so a copy in each half is
+two places for the component library's arrow-cursor default to be let through.
+`onehand_plugin_host::action` is the one definition and `crate::controls::action`
+is the app's name for it; the guard that counts call sites exempts exactly one
+file for that reason.
 
 ### The remote bridge
 

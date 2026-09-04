@@ -12,13 +12,24 @@
 //! recurring. [`tests::no_field_is_written_and_never_read`] covers as much of
 //! that as a source scan honestly can; its own doc says where it stops.
 
-/// Every `.rs` file under this crate's `src/`, as (path, source).
+/// The workspace root, which every collector below is anchored to.
+#[cfg(test)]
+fn workspace_root() -> std::path::PathBuf {
+    std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .expect("crates/")
+        .parent()
+        .expect("workspace root")
+        .to_path_buf()
+}
+
+/// Every `.rs` file under the given workspace-relative directories.
 ///
 /// Read at run time rather than `include_str!`: the point is to catch a rule
 /// broken in a file nobody thought to list, and a hard-coded list is a list
 /// that goes stale the first time someone adds a module.
 #[cfg(test)]
-fn sources() -> Vec<(String, String)> {
+fn sources_under(dirs: &[&str]) -> Vec<(String, String)> {
     fn walk(dir: &std::path::Path, out: &mut Vec<(String, String)>) {
         let Ok(entries) = std::fs::read_dir(dir) else {
             return;
@@ -34,88 +45,140 @@ fn sources() -> Vec<(String, String)> {
             }
         }
     }
-    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
+    let root = workspace_root();
     let mut out = Vec::new();
-    walk(&root, &mut out);
-    assert!(!out.is_empty(), "found no sources under {}", root.display());
+    for dir in dirs {
+        let dir = root.join(dir);
+        let before = out.len();
+        walk(&dir, &mut out);
+        assert!(
+            out.len() > before,
+            "found no sources under {} -- this collector has stopped collecting",
+            dir.display()
+        );
+    }
     out
 }
 
-/// UI source owned by the app and its built-in plugins.
+/// Every `.rs` file under this crate's `src/`.
 ///
-/// UI code moved into a plugin must not move out of the app's load-bearing
-/// source guards at the same time. This deliberately excludes `vendor/`.
+/// Only for rules that really are this crate's own. Anything about how the app
+/// *looks* or about a field being dead belongs in [`ui_sources`] or
+/// [`workspace_sources`], which reach the code that moved out of here.
+#[cfg(test)]
+fn sources() -> Vec<(String, String)> {
+    sources_under(&["crates/app/src"])
+}
+
+/// Every first-party file that draws, or that hosts something drawing.
+///
+/// The app, its built-in plugins, the plugin host and the shared terminal
+/// primitives. Moving UI code into a plugin or a support crate must not move it
+/// out of the app's load-bearing source guards at the same time — that is
+/// exactly what happened when the built-in plugins were split out, and it left
+/// a button wrapper, a status colour and a dead field in crates nothing was
+/// looking at. `vendor/` is deliberately excluded: it is upstream code carrying
+/// our patches, and holding it to the app's own drawing rules would bury those
+/// patches in churn.
 #[cfg(test)]
 fn ui_sources() -> Vec<(String, String)> {
-    fn walk(dir: &std::path::Path, out: &mut Vec<(String, String)>) {
-        let Ok(entries) = std::fs::read_dir(dir) else {
-            return;
-        };
-        for entry in entries.flatten() {
-            let path = entry.path();
-            if path.is_dir() {
-                walk(&path, out);
-            } else if path.extension().is_some_and(|extension| extension == "rs")
-                && let Ok(text) = std::fs::read_to_string(&path)
-            {
-                out.push((path.display().to_string(), text));
-            }
-        }
-    }
-
-    let mut out = sources();
-    let plugins = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-        .parent()
-        .expect("crates/")
-        .parent()
-        .expect("workspace root")
-        .join("plugins")
-        .join("builtin");
-    walk(&plugins, &mut out);
-    assert!(
-        out.iter().any(|(path, _)| path.contains("plugins/builtin")),
-        "found no built-in plugin sources under {}",
-        plugins.display()
-    );
-    out
+    sources_under(&[
+        "crates/app/src",
+        "crates/plugin-host/src",
+        "crates/terminal-ui/src",
+        "plugins/builtin",
+    ])
 }
 
-/// Every `.rs` file in **both** first-party crates.
+/// Every `.rs` file in every first-party crate.
 ///
-/// [`sources`] is deliberately this crate only, because the rules it feeds are
-/// this crate's. The flag guard below needs a wider net: a field can be
-/// declared in `onehand-core` and only ever assigned from `onehand`, which is
-/// exactly how `EditorFile::dirty` hid — a scan of either crate alone sees half
-/// the story and concludes nothing is wrong.
+/// The widest net, for the rules that cannot be answered from one crate: a
+/// field can be declared in `onehand-core` and only ever assigned from
+/// `onehand`, which is exactly how `EditorFile::dirty` hid — a scan of either
+/// crate alone sees half the story and concludes nothing is wrong.
 #[cfg(test)]
 fn workspace_sources() -> Vec<(String, String)> {
-    let mut out = sources();
-    let core = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-        .parent()
-        .expect("crates/")
-        .join("core")
-        .join("src");
-    fn walk(dir: &std::path::Path, out: &mut Vec<(String, String)>) {
-        let Ok(entries) = std::fs::read_dir(dir) else {
-            return;
+    sources_under(&[
+        "crates/app/src",
+        "crates/core/src",
+        "crates/plugin-api/src",
+        "crates/plugin-host/src",
+        "crates/terminal-ui/src",
+        "plugins/builtin",
+    ])
+}
+
+/// Every dependency reachable from the crate at `dir`, as
+/// (manifest, table name, dependency name).
+///
+/// Follows `path = "…"` dependencies across manifests, which is the half a scan
+/// of one file cannot do: a crate's forbidden dependency is just as present
+/// when it arrives through a first-party crate in between. Registry
+/// dependencies are named but not followed — a third-party crate's own tree is
+/// not ours to hold to anything, and nothing there pulls in a GUI framework by
+/// accident.
+///
+/// `dev-dependencies` count for the starting crate only. A dependent never
+/// inherits them, so a crate testing against something says nothing about what
+/// its users link.
+///
+/// The `package` key is read as well as the table's own key, because a renamed
+/// dependency (`shim = { package = "gpui" }`) is the same crate wearing a name
+/// the reader chose.
+#[cfg(test)]
+fn reachable_dependencies(dir: &std::path::Path) -> Vec<(std::path::PathBuf, String, String)> {
+    use std::path::PathBuf;
+
+    fn declared(table: Option<&toml::Value>) -> Vec<(String, Option<PathBuf>)> {
+        let Some(table) = table.and_then(toml::Value::as_table) else {
+            return Vec::new();
         };
-        for entry in entries.flatten() {
-            let path = entry.path();
-            if path.is_dir() {
-                walk(&path, out);
-            } else if path.extension().is_some_and(|e| e == "rs")
-                && let Ok(text) = std::fs::read_to_string(&path)
-            {
-                out.push((path.display().to_string(), text));
+        table
+            .iter()
+            .map(|(name, spec)| {
+                let package = spec
+                    .get("package")
+                    .and_then(toml::Value::as_str)
+                    .map(str::to_string);
+                let path = spec
+                    .get("path")
+                    .and_then(toml::Value::as_str)
+                    .map(PathBuf::from);
+                (package.unwrap_or_else(|| name.clone()), path)
+            })
+            .collect()
+    }
+
+    let mut queue = vec![(dir.join("Cargo.toml"), true)];
+    let mut seen: Vec<PathBuf> = Vec::new();
+    let mut out = Vec::new();
+
+    while let Some((manifest, is_root)) = queue.pop() {
+        let manifest = manifest.canonicalize().unwrap_or(manifest);
+        if seen.contains(&manifest) {
+            continue;
+        }
+        seen.push(manifest.clone());
+        let text = std::fs::read_to_string(&manifest)
+            .unwrap_or_else(|e| panic!("{}: {e}", manifest.display()));
+        let parsed: toml::Value = text
+            .parse()
+            .unwrap_or_else(|e| panic!("{}: {e}", manifest.display()));
+        let base = manifest.parent().expect("a manifest has a directory");
+
+        let mut kinds = vec!["dependencies", "build-dependencies"];
+        if is_root {
+            kinds.push("dev-dependencies");
+        }
+        for kind in kinds {
+            for (name, path) in declared(parsed.get(kind)) {
+                out.push((manifest.clone(), kind.to_string(), name));
+                if let Some(path) = path {
+                    queue.push((base.join(path).join("Cargo.toml"), false));
+                }
             }
         }
     }
-    walk(&core, &mut out);
-    assert!(
-        out.iter().any(|(p, _)| p.contains("core")),
-        "found no sources under {}",
-        core.display()
-    );
     out
 }
 
@@ -148,13 +211,9 @@ fn documents() -> Vec<(String, String)> {
             }
         }
     }
-    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-        .parent()
-        .expect("crates/")
-        .parent()
-        .expect("workspace root");
+    let root = workspace_root();
     let mut out = Vec::new();
-    walk(root, &mut out);
+    walk(&root, &mut out);
     assert!(
         out.iter().any(|(p, _)| p.ends_with("CLAUDE.md")),
         "found no documents under {}",
@@ -165,26 +224,67 @@ fn documents() -> Vec<(String, String)> {
 
 #[cfg(test)]
 mod tests {
-    use super::{documents, sources, ui_sources, workspace_sources};
+    use super::{documents, sources, ui_sources, workspace_root, workspace_sources};
 
+    /// Core reaches no GUI framework and no HTTP stack, transitively.
+    ///
+    /// Core is the half that survived one front-end rewrite, and keeping it
+    /// framework-free is what would let it survive another. It must also not
+    /// dictate an async runtime or drag in a TLS stack: GPUI runs on smol, so a
+    /// core that awaited tokio I/O directly would panic inside the UI process,
+    /// and the Telegram wire belongs to the plugin that speaks it.
+    ///
+    /// **Transitive, and it has to be.** The check used to read core's own
+    /// manifest for lines starting with the forbidden name, which a path
+    /// dependency walks straight past: adding `onehand-plugin-host` to core
+    /// pulls `gpui` and `gpui-component` back in with the guard still green.
+    /// Renamed dependencies (`foo = { package = "gpui" }`) go the same way,
+    /// which is why the `package` key is read as well as the table's name.
+    ///
+    /// Dev-dependencies are checked for core itself but not followed through
+    /// path deps: a dependent never inherits them, so a first-party crate
+    /// testing against gpui says nothing about what core links.
     #[test]
-    fn core_manifest_has_no_gui_or_telegram_transport_dependencies() {
-        let manifest = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-            .parent()
-            .expect("crates/")
-            .join("core")
-            .join("Cargo.toml");
-        let source = std::fs::read_to_string(&manifest).unwrap();
-        for dependency in ["gpui", "reqwest", "rustls"] {
+    fn core_and_what_it_depends_on_stay_free_of_gui_and_transport() {
+        const FORBIDDEN: &[&str] = &[
+            "gpui",
+            "gpui_platform",
+            "gpui-component",
+            "gpui-component-assets",
+            "gpui-terminal",
+            "reqwest",
+            "rustls",
+        ];
+
+        let root = workspace_root();
+        for (manifest, kind, name) in super::reachable_dependencies(&root.join("crates/core")) {
             assert!(
-                !source.lines().any(|line| {
-                    let line = line.trim_start();
-                    line.starts_with(&format!("{dependency} ="))
-                }),
-                "{} must stay free of `{dependency}`",
+                !FORBIDDEN.contains(&name.as_str()),
+                "{} declares `{name}` under [{kind}]. Core is framework- and \
+                 transport-free, and so is everything it depends on -- this one \
+                 is reachable from onehand-core.",
                 manifest.display()
             );
         }
+
+        // The walk's own self-check. Reading core's manifest alone would pass
+        // this test for as long as core has no first-party dependency at all,
+        // and go on passing on the day it gains one that drags gpui back in.
+        // The plugin host depends on core by path, so following it is proof the
+        // walk crosses a manifest boundary.
+        let through_host = super::reachable_dependencies(&root.join("crates/plugin-host"));
+        assert!(
+            through_host
+                .iter()
+                .any(|(manifest, _, _)| manifest.ends_with("core/Cargo.toml")),
+            "the manifest walk did not follow a path dependency, so the \
+             transitive half of this guard is checking nothing"
+        );
+        assert!(
+            through_host.iter().any(|(_, _, name)| name == "gpui"),
+            "the manifest walk did not see `gpui` where it is declared outright, \
+             so it would not see it anywhere"
+        );
     }
 
     /// Glyphs that have an `IconName` equivalent and must never be typed as
@@ -290,7 +390,7 @@ mod tests {
     #[test]
     fn status_backgrounds_are_not_used_as_direct_text_colors() {
         let forbidden = ["danger", "warning", "success", "info"];
-        for (path, source) in sources() {
+        for (path, source) in ui_sources() {
             for role in forbidden {
                 for receiver in ["cx.theme()", "theme"] {
                     let expression = format!(".text_color({receiver}.{role})");
@@ -330,7 +430,7 @@ mod tests {
     /// this codebase already uses for `_pump`, `_pty`, `_child`.
     #[test]
     fn no_field_is_written_and_never_read() {
-        let sources = sources();
+        let sources = ui_sources();
         // Comment lines are dropped before the scan. Prose naming a field --
         // `ChatPane.unseen`, say -- reads as `.unseen` to a source scan, so a
         // doc comment explaining that a field went unread was itself enough to
@@ -485,8 +585,11 @@ mod tests {
         let bare = format!("Button{}new(", "::");
         for (path, source) in ui_sources() {
             // The one file allowed to name it: the wrapper is where the
-            // library's control is reached.
-            if path.ends_with("controls.rs") {
+            // library's control is reached. It lives in the plugin host rather
+            // than the app because a built-in plugin draws buttons too and
+            // cannot reach into the binary hosting it -- and one wrapper is the
+            // whole point, so there is exactly one file to exempt.
+            if path.ends_with("plugin-host/src/lib.rs") {
                 continue;
             }
             for (n, line) in source.lines().enumerate() {
@@ -757,7 +860,7 @@ mod tests {
     /// break the build on every dependency bump for no safety at all.
     #[test]
     fn our_event_enums_are_matched_exhaustively() {
-        let sources = sources();
+        let sources = ui_sources();
 
         let mut ours: Vec<String> = Vec::new();
         for (_, source) in &sources {

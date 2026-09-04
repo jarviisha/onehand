@@ -10,18 +10,6 @@ pub fn builtins() -> Result<PluginRegistry, onehand_plugin_host::RegistryError> 
     registry.register(&onehand_workbench_files::FilesPlugin)?;
     registry.register(&onehand_workbench_neovim::NeovimPlugin)?;
     registry.register(&onehand_remote_telegram::TelegramPlugin)?;
-    registry.set_workbench_factory(
-        onehand_workbench_editor::MODE_ID,
-        onehand_workbench_editor::create_view,
-    )?;
-    registry.set_workbench_factory(
-        onehand_workbench_files::MODE_ID,
-        onehand_workbench_files::create_view,
-    )?;
-    registry.set_workbench_factory(
-        onehand_workbench_neovim::MODE_ID,
-        onehand_workbench_neovim::create_view,
-    )?;
     registry.set_remote_factory(
         onehand_remote_telegram::CHANNEL_ID,
         onehand_remote_telegram::create_channel,
@@ -42,6 +30,21 @@ mod tests {
                 .map(|mode| mode.label)
                 .collect::<Vec<_>>(),
             ["Editor", "Files", "Neovim"]
+        );
+        // Neovim is the one mode that hosts a live PTY, so it is the one that
+        // takes the terminal's key context and refuses the rem scale. Asserted
+        // here rather than left to the panel, which no longer knows.
+        assert_eq!(
+            registry
+                .workbench_modes()
+                .iter()
+                .map(|mode| (mode.key_context, mode.rem_zoom))
+                .collect::<Vec<_>>(),
+            [
+                (onehand_plugin_api::WORKBENCH_KEY_CONTEXT, true),
+                (onehand_plugin_api::WORKBENCH_KEY_CONTEXT, true),
+                (onehand_plugin_api::TERMINAL_KEY_CONTEXT, false),
+            ]
         );
         assert_eq!(registry.remote_channels().len(), 1);
         assert_eq!(
