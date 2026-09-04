@@ -6,12 +6,19 @@
 //! it from `cx.spawn` on a tokio runtime it owns.
 //!
 //! Everything runs in **one** async task (no per-frame pump): a `tokio::select!`
-//! loop multiplexes (a) the adapter's stdout, (b) UI requests, and (c) the
-//! child's exit. Because reverse requests (permission, fs) arrive as ordinary
-//! stdout lines, they are served *during* a prompt turn without extra plumbing —
-//! the turn's `session/prompt` response is just another line. Liveness: the loop
-//! races `child.wait()` and a handshake deadline, so a dead/stuck adapter
-//! surfaces as [`AcpEvent::Disconnected`] instead of hanging.
+//! loop multiplexes (a) the adapter's stdout, (b) UI requests, and (c) the news
+//! that the adapter has ended. Because reverse requests (permission, fs) arrive
+//! as ordinary stdout lines, they are served *during* a prompt turn without
+//! extra plumbing — the turn's `session/prompt` response is just another line.
+//! Liveness: the loop races that ending against a handshake deadline, so a
+//! dead or stuck adapter surfaces as [`AcpEvent::Disconnected`] instead of
+//! hanging.
+//!
+//! What the loop talks to is a [`Transport`] — two pipes and the news of an
+//! ending — rather than a child process. A child is the only thing that
+//! satisfies it in production; the split is what lets the loop itself be
+//! driven by a test, which is where the handshake deadline, the readiness gate
+//! and the parked permission round trip are checked.
 
 use super::parse;
 use super::terminal::{self, TermStream, TerminalRegistry};
@@ -26,6 +33,7 @@ use futures::SinkExt;
 use serde_json::{json, Value};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
+use std::pin::Pin;
 use std::process::Stdio;
 use std::time::Duration;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
@@ -49,6 +57,120 @@ pub fn connect(
     cwd: PathBuf,
     resume: Option<String>,
 ) -> impl Stream<Item = AcpEvent> {
+    // Spawning is deferred into the stream rather than done here, so a command
+    // that does not exist surfaces as `Disconnected` on the stream the caller is
+    // already reading instead of as a second failure mode at the call site.
+    let spawned = Transport::spawn(command, args, cwd.clone());
+    connect_over_result(spawned, cwd, resume)
+}
+
+/// Anything the serve loop needs from the far end: the two pipes, and the news
+/// that it will not be answering again.
+///
+/// **The seam is the byte stream, not the process.** A child is one thing that
+/// satisfies it and the only one in production; what the split buys is that the
+/// loop above it — the handshake deadline, the readiness gate, the parked
+/// permission round trip — can be driven by a test at all. Boxed rather than
+/// generic so the four functions that write into it keep their signatures free
+/// of a type parameter that says nothing about what they do.
+struct Transport {
+    /// Lines the far end sends.
+    incoming: Pin<Box<dyn tokio::io::AsyncBufRead + Send>>,
+    /// Where messages to the far end go.
+    outgoing: Outgoing,
+    /// Resolves, with a sentence, once the far end can no longer answer.
+    ///
+    /// **Owns whatever it is waiting on**, which for a child process is the
+    /// child itself — so dropping this future is what kills the adapter, and the
+    /// stream owning it is what ties the agent's life to the subscription.
+    ended: Pin<Box<dyn std::future::Future<Output = String> + Send>>,
+}
+
+/// The write half of a [`Transport`], as every message-writing function takes
+/// it.
+type Outgoing = Pin<Box<dyn tokio::io::AsyncWrite + Send>>;
+
+impl Transport {
+    /// Run `command` as a child process and talk to it over its stdio.
+    fn spawn(command: String, args: Vec<String>, cwd: PathBuf) -> Result<Self, String> {
+        let mut child = Command::new(&command)
+            .args(&args)
+            .current_dir(&cwd)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .kill_on_drop(true)
+            .spawn()
+            .map_err(|e| format!("spawn {command}: {e}"))?;
+
+        let stdin = child.stdin.take().ok_or("no stdin")?;
+        let stdout = child.stdout.take().ok_or("no stdout")?;
+        let stderr = child.stderr.take().ok_or("no stderr")?;
+
+        // Drain stderr so the adapter never blocks on a full pipe; echo for debug.
+        tokio::spawn(async move {
+            let mut lines = BufReader::new(stderr).lines();
+            while let Ok(Some(line)) = lines.next_line().await {
+                eprintln!("[acp:stderr] {line}");
+            }
+        });
+
+        Ok(Self {
+            incoming: Box::pin(BufReader::new(stdout)),
+            outgoing: Box::pin(stdin),
+            // The child moves in here, which is what keeps `kill_on_drop`
+            // meaning what it says: this future is dropped with the transport,
+            // the transport with the stream, and the stream with the caller's
+            // interest in the agent.
+            ended: Box::pin(async move {
+                match child.wait().await {
+                    Ok(status) => format!("adapter exited ({status})"),
+                    Err(e) => format!("adapter wait failed: {e}"),
+                }
+            }),
+        })
+    }
+
+    /// A transport with a test on the other end of it.
+    ///
+    /// Bidirectional like a socket pair: what the client writes is what the
+    /// returned half reads, and the other way round. Nothing ends it, so a test
+    /// that wants a dead adapter closes its half.
+    #[cfg(test)]
+    fn scripted() -> (Self, tokio::io::DuplexStream) {
+        let (ours, theirs) = tokio::io::duplex(64 * 1024);
+        let (read, write) = tokio::io::split(ours);
+        (
+            Self {
+                incoming: Box::pin(BufReader::new(read)),
+                outgoing: Box::pin(write),
+                ended: Box::pin(std::future::pending()),
+            },
+            theirs,
+        )
+    }
+}
+
+/// Serve an already-connected transport, as a stream of its events.
+///
+/// The seam a test drives the loop through. In production a transport is always
+/// a child process, so [`connect`] opens one and there is nothing else to hand
+/// this.
+#[cfg(test)]
+fn connect_over(
+    transport: Transport,
+    cwd: PathBuf,
+    resume: Option<String>,
+) -> impl Stream<Item = AcpEvent> {
+    connect_over_result(Ok(transport), cwd, resume)
+}
+
+/// The body of [`connect`], for a transport that may have failed to open.
+fn connect_over_result(
+    transport: Result<Transport, String>,
+    cwd: PathBuf,
+    resume: Option<String>,
+) -> impl Stream<Item = AcpEvent> {
     let (sender, receiver) = futures::channel::mpsc::channel(EVENT_BUFFER);
 
     // The serve loop is folded into the stream itself rather than spawned, so
@@ -59,7 +181,11 @@ pub fn connect(
     // has to remember to pump.
     let runner = stream::once(async move {
         let mut output = sender;
-        if let Err(err) = run(&command, &args, &cwd, resume, &mut output).await {
+        let served = match transport {
+            Ok(transport) => run(transport, &cwd, resume, &mut output).await,
+            Err(why) => Err(why),
+        };
+        if let Err(err) = served {
             let _ = output.send(AcpEvent::Disconnected(err)).await;
         }
     })
@@ -77,35 +203,19 @@ enum Pending {
 }
 
 async fn run(
-    command: &str,
-    args: &[String],
+    transport: Transport,
     cwd: &PathBuf,
     resume: Option<String>,
     output: &mut EventTx<AcpEvent>,
 ) -> Result<(), String> {
-    let mut child = Command::new(command)
-        .args(args)
-        .current_dir(cwd)
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .kill_on_drop(true)
-        .spawn()
-        .map_err(|e| format!("spawn {command}: {e}"))?;
-
-    let mut stdin = child.stdin.take().ok_or("no stdin")?;
-    let stdout = child.stdout.take().ok_or("no stdout")?;
-    let stderr = child.stderr.take().ok_or("no stderr")?;
-
-    // Drain stderr so the adapter never blocks on a full pipe; echo for debug.
-    tokio::spawn(async move {
-        let mut lines = BufReader::new(stderr).lines();
-        while let Ok(Some(line)) = lines.next_line().await {
-            eprintln!("[acp:stderr] {line}");
-        }
-    });
-
-    let mut reader = BufReader::new(stdout).lines();
+    let Transport {
+        incoming,
+        mut outgoing,
+        ended,
+    } = transport;
+    let stdin = &mut outgoing;
+    let mut reader = incoming.lines();
+    tokio::pin!(ended);
     let (req_tx, mut req_rx) = mpsc::unbounded_channel::<AcpRequest>();
 
     let mut next_id: u64 = 1;
@@ -126,7 +236,7 @@ async fn run(
     // Kick off the handshake.
     let init_id = alloc(&mut next_id);
     pending.insert(init_id, Pending::Init);
-    write_msg(&mut stdin, &request(init_id, "initialize", init_params())).await?;
+    write_msg(stdin, &request(init_id, "initialize", init_params())).await?;
 
     let deadline = tokio::time::sleep(HANDSHAKE_TIMEOUT);
     tokio::pin!(deadline);
@@ -135,11 +245,8 @@ async fn run(
         tokio::select! {
             biased;
 
-            status = child.wait() => {
-                return Err(match status {
-                    Ok(s) => format!("adapter exited ({s})"),
-                    Err(e) => format!("adapter wait failed: {e}"),
-                });
+            why = &mut ended => {
+                return Err(why);
             }
 
             _ = &mut deadline, if !ready => {
@@ -148,7 +255,7 @@ async fn run(
 
             // A parked terminal/wait_for_exit settled → write its response.
             Some((rpc_id, result)) = resp_rx.recv() => {
-                write_msg(&mut stdin, &response_ok(rpc_id, result)).await?;
+                write_msg(stdin, &response_ok(rpc_id, result)).await?;
             }
 
             // Adapter stdout comes BEFORE the terminal stream: this select is
@@ -168,7 +275,7 @@ async fn run(
                     continue; // ignore non-JSON noise
                 };
                 handle_message(
-                    msg, &mut stdin, &mut pending, &mut next_id, cwd, resume.as_deref(),
+                    msg, stdin, &mut pending, &mut next_id, cwd, resume.as_deref(),
                     &mut ready, &mut session_id, &req_tx, output, &mut registry, &resp_tx,
                 )
                 .await?;
@@ -197,13 +304,13 @@ async fn run(
                         let sid = session_id.clone().unwrap_or_default();
                         let blocks = build_prompt_blocks(&text, &attachments).await;
                         let params = json!({ "sessionId": sid, "prompt": blocks });
-                        write_msg(&mut stdin, &request(id, "session/prompt", params)).await?;
+                        write_msg(stdin, &request(id, "session/prompt", params)).await?;
                     }
                     Some(AcpRequest::SetMode(mode_id)) => {
                         if let Some(sid) = &session_id {
                             let id = alloc(&mut next_id);
                             let params = json!({ "sessionId": sid, "modeId": mode_id });
-                            write_msg(&mut stdin, &request(id, "session/set_mode", params)).await?;
+                            write_msg(stdin, &request(id, "session/set_mode", params)).await?;
                         }
                     }
                     Some(AcpRequest::SetConfigOption { config_id, value }) => {
@@ -211,14 +318,14 @@ async fn run(
                             let id = alloc(&mut next_id);
                             let params =
                                 json!({ "sessionId": sid, "configId": config_id, "value": value });
-                            write_msg(&mut stdin, &request(id, "session/set_config_option", params))
+                            write_msg(stdin, &request(id, "session/set_config_option", params))
                                 .await?;
                         }
                     }
                     Some(AcpRequest::Cancel) => {
                         if let Some(sid) = &session_id {
                             let params = json!({ "sessionId": sid });
-                            write_msg(&mut stdin, &notification("session/cancel", params)).await?;
+                            write_msg(stdin, &notification("session/cancel", params)).await?;
                         }
                     }
                     Some(AcpRequest::PermissionResponse { rpc_id, option_id }) => {
@@ -227,10 +334,10 @@ async fn run(
                             Some(id) => json!({ "outcome": { "outcome": "selected", "optionId": id } }),
                             None => json!({ "outcome": { "outcome": "cancelled" } }),
                         };
-                        write_msg(&mut stdin, &response_ok(rpc_id, outcome)).await?;
+                        write_msg(stdin, &response_ok(rpc_id, outcome)).await?;
                     }
                     Some(AcpRequest::ElicitationResponse { rpc_id, outcome }) => {
-                        write_msg(&mut stdin, &response_ok(rpc_id, elicit_result(outcome))).await?;
+                        write_msg(stdin, &response_ok(rpc_id, elicit_result(outcome))).await?;
                     }
                     None => {} // all UI senders dropped; keep serving until child exits
                 }
@@ -244,7 +351,7 @@ async fn run(
 #[allow(clippy::too_many_arguments)]
 async fn handle_message(
     msg: Value,
-    stdin: &mut tokio::process::ChildStdin,
+    stdin: &mut Outgoing,
     pending: &mut HashMap<u64, Pending>,
     next_id: &mut u64,
     cwd: &PathBuf,
@@ -484,7 +591,7 @@ async fn handle_terminal(
     params: &Value,
     cwd: &Path,
     registry: &mut TerminalRegistry,
-    stdin: &mut tokio::process::ChildStdin,
+    stdin: &mut Outgoing,
     resp_tx: &mpsc::UnboundedSender<(Value, Value)>,
 ) -> Result<(), String> {
     let term_id = params.get("terminalId").and_then(Value::as_str);
@@ -791,7 +898,7 @@ fn response_err(id: Value, message: &str) -> Value {
     json!({ "jsonrpc": "2.0", "id": id, "error": { "code": -32603, "message": message } })
 }
 
-async fn write_msg(stdin: &mut tokio::process::ChildStdin, msg: &Value) -> Result<(), String> {
+async fn write_msg(stdin: &mut Outgoing, msg: &Value) -> Result<(), String> {
     let mut line = serde_json::to_string(msg).map_err(|e| e.to_string())?;
     line.push('\n');
     stdin
@@ -917,9 +1024,86 @@ pub fn base64_encode(bytes: &[u8]) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{base64_encode, elicit_result, file_uri, parse_elicitation};
-    use crate::acp::{ElicitKind, ElicitOutcome, ElicitValue};
-    use serde_json::json;
+    use super::{
+        base64_encode, connect_over, elicit_result, file_uri, parse_elicitation, Transport,
+    };
+    use crate::acp::{AcpEvent, ElicitKind, ElicitOutcome, ElicitValue};
+    use futures::StreamExt as _;
+    use serde_json::{json, Value};
+    use std::path::PathBuf;
+    use tokio::io::{AsyncBufReadExt as _, BufReader};
+
+    /// The agent's side of a scripted transport: read what the client wrote,
+    /// write back what an adapter would have said.
+    struct Agent {
+        lines: tokio::io::Lines<BufReader<tokio::io::ReadHalf<tokio::io::DuplexStream>>>,
+        /// Held rather than read: dropping this half closes the pipe the client
+        /// is reading, which ends its loop with "adapter closed stdout" before a
+        /// test has said anything.
+        #[allow(dead_code)]
+        out: tokio::io::WriteHalf<tokio::io::DuplexStream>,
+    }
+
+    impl Agent {
+        /// The next JSON-RPC message the client sent.
+        async fn heard(&mut self) -> Value {
+            let line = self
+                .lines
+                .next_line()
+                .await
+                .expect("read the client's pipe")
+                .expect("the client wrote a line");
+            serde_json::from_str(&line).expect("the client writes JSON")
+        }
+    }
+
+    /// Run the client over a scripted transport, with its events collected on a
+    /// task of their own.
+    ///
+    /// The serve loop is folded into the stream, so something has to poll it for
+    /// the client to make any progress at all — driving it here is what lets the
+    /// test body read and write the agent's side as a conversation.
+    fn client() -> (Agent, tokio::task::JoinHandle<Vec<AcpEvent>>) {
+        let (transport, agent) = Transport::scripted();
+        let (read, out) = tokio::io::split(agent);
+        let events = tokio::spawn(async move {
+            let stream = connect_over(transport, PathBuf::from("/tmp"), None);
+            futures::pin_mut!(stream);
+            let mut seen = Vec::new();
+            while let Some(event) = stream.next().await {
+                seen.push(event);
+            }
+            seen
+        });
+        (
+            Agent {
+                lines: BufReader::new(read).lines(),
+                out,
+            },
+            events,
+        )
+    }
+
+    /// **The capability that makes multiple-choice prompts appear at all.** The
+    /// adapter puts `AskUserQuestion` in `disallowedTools` unless the client
+    /// advertises it, so dropping it does not break anything visibly — the model
+    /// simply stops asking and starts guessing, which is a wrong answer wearing
+    /// the shape of a right one.
+    #[tokio::test]
+    async fn the_handshake_advertises_the_form_capability_questions_need() {
+        let (mut agent, _events) = client();
+
+        let hello = agent.heard().await;
+
+        assert_eq!(hello["method"], "initialize");
+        // Present, whatever it holds. The capability *is* the key: the value is
+        // an empty object today, and an adapter reads this the same way — the
+        // question it asks is whether the client claimed it can render a form.
+        assert!(
+            !hello["params"]["clientCapabilities"]["elicitation"]["form"].is_null(),
+            "{hello:#}"
+        );
+    }
 
     /// The shape Claude's adapter sends for a two-question `AskUserQuestion`:
     /// indexed fields, each with its own `_custom` "Other" box.
