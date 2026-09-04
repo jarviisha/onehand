@@ -3,7 +3,7 @@
 # Why vendored rather than depended on: upstream is a good render core with no
 # interaction layer at all -- selection, scrolling and clipboard are
 # empty TODOs upstream, and that layer is where every one of onehand's terminal
-# patches lives (DECISIONS.md §3). Everything onehand adds is marked
+# patches lives (decision D8). Everything onehand adds is marked
 # with an "onehand patch" comment, so the delta against upstream stays readable
 # without a diff.
 [package]

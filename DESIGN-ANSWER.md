@@ -5,8 +5,9 @@ block type the chat renders, how it folds, and how it behaves mid-stream.
 
 > **Structure lives here; values do not.** This file used to carry the
 > transcript's palette, its px sizes and its radius ladder, mirrored by hand into
-> `theme.rs`. Decision **D1** (DECISIONS.md §1) ended that — gpui-component's
-> theme is the look. So what follows describes **anatomy and behaviour**: which
+> `theme.rs`. Decision **D1** (DECISIONS.md) ended that — gpui-component's theme
+> plus one surface-ramp override is the look. So what follows describes
+> **anatomy and behaviour**: which
 > blocks exist, what each is made of, what folds, what is bounded. Every colour,
 > radius and size is read from `cx.theme()` at the call site
 > ([DESIGN.md](DESIGN.md) §3–§4), and the numeric caps live as named constants

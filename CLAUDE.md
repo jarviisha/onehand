@@ -18,9 +18,10 @@ no terminal-session kind — the chat is the pane's content well. Agents can sti
 those come back over ACP's terminal extension and render inline in the transcript.
 
 > **[DECISIONS.md](DECISIONS.md)** holds the choices that reading the code will not explain: the
-> locked decisions (D1–D6), the pinned revisions and *why* `gpui` must carry no `rev`, what the
-> vendored terminal is and what onehand added to it, the icon rules, and what is deliberately not
-> built yet. Read it before changing anything it covers.
+> architectural decisions (D1–D8) whose reasons cannot be recovered reliably from code: theme,
+> appearance, editor and Neovim scope, icons, plugins, GPUI source identity and the vendored-terminal
+> strategy. Read it before changing anything it covers; implementation details and known gaps live
+> in this file.
 
 > **UI contracts.** [DESIGN.md](DESIGN.md) is the whole-app visual contract and
 > [DESIGN-ANSWER.md](DESIGN-ANSWER.md) the transcript's design language. Neither carries a palette
@@ -932,6 +933,11 @@ Listed because a missing feature nobody wrote down reads as a bug in the ones th
 
 - **No command palette** (`Ctrl+Shift+P`). It is a feature — a command registry plus a filtered
   popup — not a keymap entry.
+- **Keyboard navigation in the completion popup is incomplete.** gpui-component owns the menu
+  inside `Input`; its editor-only `CompletionProvider` is not reachable from an ordinary input, and
+  action dispatch reaches the focused input before the composer's wrapper. Today the popup is
+  click-to-pick, with Enter accepting the highlighted row. Fixing this needs an upstream hook or a
+  move to `EditorState`, not another outer key binding.
 - **The remote bridge does not stream the transcript.** A finished turn carries the *end* of the
   agent's last answer (`Chat::answer_tail`) and nothing else: no tool cards, no diffs, no reasoning,
   nothing mid-turn. That excerpt is there because "finished a turn" alone is a notification whose only
@@ -946,9 +952,12 @@ Listed because a missing feature nobody wrote down reads as a bug in the ones th
   `TextView::markdown` and does not scan it for path tokens. Only a tool card's path header opens a
   file, and it carries no line — ACP's diff payload has no hunk offsets. Core's
   `parse::parse_path_line` is the parser that feature needs and currently **has no caller**.
+- **A fenced code block inside prose cannot fold independently.** `TextViewStyle::code_block` is
+  shared by every block and has nowhere to keep per-block fold state. Supporting it means owning a
+  custom Markdown code-block renderer; the current compromise is a height cap and Copy button.
 - **The terminal has no `APP_KEYPAD`.** The numeric keypad's application mode is unimplemented,
   because gpui does not report a keypad key differently from the digit above it. The keys work; they
-  always send the ordinary form. Nothing else on decision D4's parity list is outstanding.
+  always send the ordinary form. The rest of the required full-screen terminal behaviour is present.
 - **The terminal's cursor does not blink**, by decision — it would mean a repaint on a timer for the
   life of every tab, in a view that otherwise draws only when bytes arrive.
 - **`[font]` and `[icons]` config sections are parsed and ignored** (see Config).

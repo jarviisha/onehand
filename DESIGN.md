@@ -8,8 +8,9 @@ here, and a test enforces it. The transcript's own design language is
 
 > **This file no longer carries a palette.** Until the GPUI migration it mirrored
 > a hand-built token set into `theme.rs`, and the two had to be kept in sync by
-> hand. Decision **D1** (DECISIONS.md §1) ended that: onehand uses
-> gpui-component's theme as-is. So the rule here is not "these are the values"
+> hand. Decision **D1** (DECISIONS.md) ended that: onehand uses
+> gpui-component's theme with one surface-ramp override. So the rule here is not
+> "these are the values"
 > but **"never write a value"** — every color, radius and font size is read from
 > `cx.theme()` at the call site. A hex literal in the render layer is a bug even
 > when it looks right, because it is the one thing a theme switch cannot reach.
@@ -335,8 +336,8 @@ typography inside a code block (`❯`, `$`) is text, not an icon, and is exempt.
   disagree. The two live in separate namespaces and the asset source serves
   both.
 - The bundled set covers less than the app once carried, so a number of glyphs
-  are approximations rather than the icon the design would pick. DECISIONS.md
-  §6 lists which, and what each gave up.
+  are approximations rather than the icon the design would pick. That tradeoff
+  is accepted by decision D5.
 - Tint by meaning: `muted_foreground` at rest, a semantic token when the icon is
   carrying state. An icon that tracks adjacent text (a rail row's folder, a
   selector's chevron) shares that text's color instead.

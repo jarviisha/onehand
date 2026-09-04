@@ -27,7 +27,7 @@ onehand-workbench-editor = { path = "../../plugins/builtin/workbench-editor" }
 onehand-workbench-files = { path = "../../plugins/builtin/workbench-files" }
 onehand-workbench-neovim = { path = "../../plugins/builtin/workbench-neovim" }
 
-# gpui-component IS pinned by rev (DECISIONS.md §2).
+# gpui-component IS pinned by rev (decision D7).
 # The `tree-sitter-*` set is deliberately a *subset*, not `tree-sitter-languages`
 # (all ~35). Decision D3: the Workbench stays a quick editor -- highlighting
 # for the languages this codebase is edited in, and no LSP. Each grammar is
@@ -62,7 +62,7 @@ gpui_platform = { git = "https://github.com/zed-industries/zed", features = ["fo
 anyhow = "1"
 
 # Vendored: upstream is a render core with no interaction layer at all
-# (DECISIONS.md §3). See vendor/gpui-terminal/Cargo.toml.
+# (decision D8). See vendor/gpui-terminal/Cargo.toml.
 
 # The ACP adapter's serve loop is tokio-based, so it needs a tokio reactor to be
 # polled on; GPUI runs on smol. `crate::acp` owns the runtime that bridges them.
