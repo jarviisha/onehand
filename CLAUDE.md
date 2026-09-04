@@ -82,7 +82,8 @@ profile.
   that awaited tokio I/O directly would panic inside the UI process.
 
 Shared rules live in core, not restated per call site: `GitStatus::label`, `AppConfig::update_in_place`,
-`gitstat::read_blocking`, `RootEditors::open`, `Chat::apply`, `Away::headline`, `remote::press::option_at`.
+`gitstat::read_blocking`, `RootEditors::open`, `Chat::apply`, `Away::headline`, `remote::press::option_at`,
+`Chats::reconcile`.
 
 ### Library + thin binary
 
@@ -336,7 +337,7 @@ plus `sendMessage` and `answerCallbackQuery`. Everything that is not the wire is
   crash. It is said in the reply rather than left to be discovered, since `/use` reads as "send my
   typing here" and a chat that then started announcing turns unasked would be the bridge acting on
   its own. Unpointing does **not** unsubscribe (a chat follows many and types into one), but
-  `remote::forget` drops both wherever a session is found closed — an entry naming a session neither
+  `Chats::reconcile` drops both wherever a session has closed — an entry naming a session neither
   `/sessions` nor `/status` can print is one nobody could afterwards remove.
   `/follow [n]` and `/unfollow [n]` are the explicit pair, bare meaning the pointed-at session. Both
   move **all three moments together**, the parked ask included, which is the honest reading of being
@@ -346,10 +347,11 @@ plus `sendMessage` and `answerCallbackQuery`. Everything that is not the wire is
   would have sent, until somebody thinks to wonder why it went quiet. `/sessions` marks both facts in
   one margin column: `→` where typing goes, `•` for followed-but-not-pointed-at, which is the row
   that is otherwise indistinguishable from a silent one.
-  **The whole thing is decided in `announce` and never by the pane**, because it is a fact about the
-  channel alone — the pane's rules are about what is on screen and hold for the desktop notification
-  too, so pushing a subscription up there would quiet the desktop over instructions that never
-  mentioned it.
+  **The whole thing is decided in `Chats::announcement` and never by the pane**, because it is a fact
+  about the channel alone — the pane's rules are about what is on screen and hold for the desktop
+  notification too, so pushing a subscription up there would quiet the desktop over instructions that
+  never mentioned it. `announce` is what is left in the app once that moves: read the messages, send
+  them.
 - **`/status` is the answer to "why is it quiet", and silence being the default is what makes it
   necessary.** Every fact that decides whether anything arrives is invisible from the far side by
   construction: following nothing shows itself as messages that do not come, and so does being at the
@@ -360,9 +362,15 @@ plus `sendMessage` and `answerCallbackQuery`. Everything that is not the wire is
   The word is `status` and not `watching` although that is the question being asked:
   `ChatPane::watching` already names the user's eyes being on a conversation, which is what decides
   whether a turn is announced at all, and one word answering two questions inside one feature is how
-  the two answers end up swapped. It is the one reading command that writes: a binding or a
-  subscription onto a session that has since closed is dropped as it is reported, since "pointed at 7"
-  about a session that is gone is the confusion the command exists to end.
+  the two answers end up swapped. It reads and never writes, which it can only do because
+  **every message reconciles first**: `answer` walks the open sessions once and hands them to
+  `Chats::reconcile` before it dispatches, so a binding or a subscription onto a session that has
+  since closed is already gone by the time anything reports it. That is one policy in one place, and
+  it replaced four — `/status` and `/follow` dropped both facts, a prompt dropped only the binding,
+  and `/use` dropped neither, so which one a chat got depended on what it happened to type. A press
+  is the deliberate exception and does not come through `answer` at all: it carries its own session,
+  never went through a binding, and the message it was pressed on is simply older than the session it
+  was about.
 - **Selectors.** `/options` draws the agent's own pickers — mode, model, effort — with a button per
   value and a dot on the one in force, which is what stops somebody pressing to find out what is
   running and changing it by accident. `Chat::selectors` flattens the two shapes the protocol keeps

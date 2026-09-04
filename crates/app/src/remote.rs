@@ -22,13 +22,17 @@
 
 use crate::state::Shared;
 use gpui::{App, BorrowAppContext as _};
-use onehand_core::chat::Away;
 use onehand_core::config::RemoteConfig;
-use onehand_core::remote::types::{Button, Outbound, RemoteEvent, ReqTx};
-use onehand_core::remote::{Aim, Press, RemoteCommand, is_silently_ignored};
+use onehand_core::remote::types::{Outbound, RemoteEvent, ReqTx};
+use onehand_core::remote::{Chats, Press, RemoteCommand};
 use onehand_remote_telegram::secret;
 use std::cell::RefCell;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
+
+/// What the bridge remembers about each chat, and every reply that reports or
+/// changes it, is `onehand_core::remote::chats`. Re-exported so the front end
+/// keeps naming these where it always did.
+pub use onehand_core::remote::{Announcement, Origin, RemoteSession};
 
 /// Events buffered between the channel and the app before the forwarder waits.
 /// The same buffer core's own stream uses.
@@ -54,31 +58,20 @@ struct Live {
     /// asleep almost all the time.
     rt: tokio::runtime::Runtime,
     tx: ReqTx,
-    /// The chats allowed to reach the app.
+    /// Where each chat types and what each chat has asked to hear about, plus
+    /// the list of who may reach the app at all.
     ///
-    /// **Permission, not audience, and the two are different lists.** Being here
-    /// is what makes a chat able to say anything and able to be told anything —
-    /// everything a message says is something the reader is already trusted
-    /// with, because that is what being on this list means. What a chat actually
-    /// hears about a *session* is `followed`, which is narrower and is the
-    /// reader's own choice.
-    ///
-    /// This list is still the whole audience for what is about the bridge rather
-    /// than about a session — the away switch thrown at the keyboard, today the
-    /// only one. That has no session to be subscribed to, and a reader who has
-    /// asked for nothing yet is exactly who needs telling that the machine has
-    /// been left.
-    allowed: Vec<String>,
-    /// Which session each chat has pointed itself at.
+    /// **Every rule over these is decided in core**, which is what makes them
+    /// testable: they were never GUI-shaped, only unreachable, and while they
+    /// sat here "this session has closed" grew four different answers depending
+    /// on which command happened to notice.
     ///
     /// **A chat is bound by being told to, and never by being guessed at.** One
     /// project root runs as many sessions as it is asked to, so "the active
     /// one" is a moving answer that changes every time somebody at the keyboard
     /// clicks a rail row — a message sent from a train would land wherever the
     /// window happened to be pointing, which is the one failure a prompt cannot
-    /// recover from. `/sessions` numbers them and `/use` picks one, and until
-    /// that has happened a prompt is answered with how to point it rather than
-    /// with a guess.
+    /// recover from.
     ///
     /// In memory only, so a restart forgets it. That is the honest lifetime:
     /// sessions are not persisted either, so a binding that outlived the process
@@ -88,8 +81,9 @@ struct Live {
     /// callers read immutably; the alternative is threading mutable access to
     /// that global through everything that merely wants to send a message.
     /// Borrows are taken and released inside single functions here, so none is
-    /// ever held across a call.
-    bindings: RefCell<HashMap<String, u64>>,
+    /// ever held across a call — and never across a window walk, which is what
+    /// would deadlock a reply that has to ask the shells something first.
+    chats: RefCell<Chats>,
     /// The archive listing each chat was last sent.
     ///
     /// **Kept exactly as it went out, and never read off disk again.** A saved
@@ -102,40 +96,6 @@ struct Live {
     /// Replaced whole by the next `/archive`, so it is one listing per chat and
     /// not a history of them.
     archives: RefCell<HashMap<String, Vec<ArchivePick>>>,
-    /// Which sessions each chat has asked to hear about.
-    ///
-    /// **This is the whole audience rule for a session's own news.** `allowed` is
-    /// who may reach the app and who may be told anything at all; this is who
-    /// asked about what, and a session absent from a chat's set is a session that
-    /// chat hears nothing about — not a finished turn, not a parked question, not
-    /// an adapter that died.
-    ///
-    /// **Silence is the default, and that is the change this encodes.** The
-    /// arrangement it replaced spoke about everything and was quietened one
-    /// session at a time, which makes a chat's contents a consequence of whatever
-    /// happens to be open at the far end — something its reader neither chose nor
-    /// can see. A machine running eight agents had to be told about seven of them
-    /// before it was bearable, and every session opened afterwards reopened the
-    /// argument. Asking first inverts that: what arrives is exactly what was
-    /// asked for, and the cost is that a chat which asked for nothing gets
-    /// nothing, which `/status` exists to say out loud.
-    ///
-    /// **Per chat, like `bindings` and `archives` and unlike anything global.**
-    /// A subscription is by construction a fact about a reader rather than about
-    /// a conversation: two people can want different things from one machine, and
-    /// `/use` — which subscribes — is already per chat, so a shared set would
-    /// have one phone's pointing decide another phone's notifications.
-    ///
-    /// **The channel only.** Nothing here reaches the desktop notification or the
-    /// rail's badge: those obey what is on screen, which the app can see for
-    /// itself, and somebody choosing what to hear about on a phone has said
-    /// nothing about the machine they are not at.
-    ///
-    /// A uid is never reused — the salt only counts up — so an entry left behind
-    /// by a closed session cannot start announcing a different conversation
-    /// later. It is dropped anyway wherever one is found to be gone, so that the
-    /// set stays something `/status` can print in full.
-    followed: RefCell<HashMap<String, HashSet<u64>>>,
 }
 
 /// One row of an archive listing, and everything reopening it needs.
@@ -202,41 +162,6 @@ impl RemoteBridge {
                 text: Some(text),
             });
         }
-    }
-}
-
-/// One session, as somebody reading about it from a phone would need it.
-///
-/// `uid` is both the session's identity and the number it is listed under. A
-/// position in a list would be the wrong thing to print: the list is read, a
-/// message is typed, and a session closed in between would slide every number
-/// below it onto a different conversation.
-pub struct RemoteSession {
-    pub uid: u64,
-    pub project: String,
-    /// `None` until the conversation has earned a name, which is its first
-    /// prompt — the same rule the rail falls back from.
-    pub conversation: Option<String>,
-    pub agent: String,
-    /// What the session is doing, in the rail's own words for it. `None` is the
-    /// case the rail draws nothing for: connected, idle and already read.
-    pub state: Option<&'static str>,
-}
-
-impl RemoteSession {
-    /// The two lines this session takes in a listing.
-    ///
-    /// Says nothing about whether the chat reading it follows this session:
-    /// that is a fact about the reader rather than about the session, so it is
-    /// carried by the mark in the margin that `listing` puts there and not by
-    /// this, which is printed in places where there is no margin.
-    fn line(&self) -> String {
-        let name = self.conversation.as_deref().unwrap_or("no name yet");
-        let state = self.state.unwrap_or("Idle");
-        format!(
-            "{} · {} — {}\n    {} · {}",
-            self.uid, self.project, name, self.agent, state
-        )
     }
 }
 
@@ -340,10 +265,8 @@ pub fn boot(cfg: &RemoteConfig, cx: &mut App) {
         shared.remote.live = Some(Live {
             rt,
             tx: requests,
-            allowed: tg.allowed_chats.clone(),
-            bindings: RefCell::new(HashMap::new()),
+            chats: RefCell::new(Chats::new(tg.allowed_chats.clone())),
             archives: RefCell::new(HashMap::new()),
-            followed: RefCell::new(HashMap::new()),
         });
     });
 
@@ -454,112 +377,29 @@ fn act_on(press: Press, cx: &mut App) -> String {
         .unwrap_or_else(|| format!("Session {uid} is gone."))
 }
 
+/// Reach what the bridge remembers about its chats, if there is a bridge.
+///
+/// **The borrow is taken and dropped inside `act`**, which is why every caller
+/// gathers what it needs — the open sessions, whether the user is away — before
+/// calling rather than inside: a window walk from in here would be a second
+/// borrow of the same cell and a panic rather than an error.
+///
+/// `None` is a bridge that is off, which is the ordinary state and never an
+/// error: the caller has nobody to answer anyway.
+fn with_chats<R>(cx: &App, act: impl FnOnce(&mut Chats) -> R) -> Option<R> {
+    let live = Shared::global(cx).remote.live.as_ref()?;
+    let mut chats = live.chats.borrow_mut();
+    Some(act(&mut chats))
+}
+
 /// Whether this chat may reach the app at all.
 fn allowed(chat: &str, cx: &App) -> bool {
-    Shared::global(cx)
-        .remote
-        .live
-        .as_ref()
-        .is_some_and(|live| !is_silently_ignored(&live.allowed, &chat.to_string()))
+    with_chats(cx, |chats| chats.allows(chat)).unwrap_or(false)
 }
 
 /// The session `chat` has pointed itself at, if it has.
-fn bound(chat: &str, cx: &App) -> Option<u64> {
-    let live = Shared::global(cx).remote.live.as_ref()?;
-    // Copied out, so the borrow ends with this expression rather than travelling
-    // back to a caller that is about to reach for the same map.
-    live.bindings.borrow().get(chat).copied()
-}
-
-/// Point `chat` at `uid`, replacing whatever it was pointed at.
-///
-/// **Pointing at a session subscribes to it**, and that is what keeps a channel
-/// that says nothing by default from being a channel that appears broken.
-/// Pointing a chat somewhere is the gesture that says "this is the one I am
-/// attending to" — it is what somebody does before walking away from the
-/// machine — so requiring a second command afterwards would mean the ordinary
-/// path ends in silence, and silence is the one outcome a reader cannot tell
-/// apart from a crash. Unpointing does not unsubscribe: a chat can follow more
-/// than one session and only types into one, so dropping the subscription on the
-/// way past would take away something that was asked for separately.
-///
-/// The one exception is a session that has gone, where the caller passes `None`
-/// after finding it closed and prunes the subscription itself.
-fn bind(chat: &str, uid: Option<u64>, cx: &App) {
-    let Some(live) = Shared::global(cx).remote.live.as_ref() else {
-        return;
-    };
-    match uid {
-        Some(uid) => {
-            live.bindings.borrow_mut().insert(chat.to_string(), uid);
-            live.followed
-                .borrow_mut()
-                .entry(chat.to_string())
-                .or_default()
-                .insert(uid);
-        }
-        None => {
-            live.bindings.borrow_mut().remove(chat);
-        }
-    }
-}
-
-/// Whether `chat` has asked to hear about `uid`.
-fn is_followed(chat: &str, uid: u64, cx: &App) -> bool {
-    let Some(live) = Shared::global(cx).remote.live.as_ref() else {
-        return false;
-    };
-    live.followed
-        .borrow()
-        .get(chat)
-        .is_some_and(|set| set.contains(&uid))
-}
-
-/// Start or stop `chat` hearing about `uid`.
-///
-/// Hands back whether this changed anything, so the reply can tell "now
-/// following" from "already were" — a command that answers the same way whether
-/// or not it did something teaches the user to distrust it.
-fn set_followed(chat: &str, uid: u64, on: bool, cx: &App) -> bool {
-    let Some(live) = Shared::global(cx).remote.live.as_ref() else {
-        return false;
-    };
-    let mut followed = live.followed.borrow_mut();
-    if on {
-        followed.entry(chat.to_string()).or_default().insert(uid)
-    } else {
-        // The chat's own set and not every chat's: one reader losing interest
-        // says nothing about what anybody else asked for.
-        followed.get_mut(chat).is_some_and(|set| set.remove(&uid))
-    }
-}
-
-/// Every session `chat` follows that is still open, in the listing's order.
-///
-/// **Filtered against what is running rather than returned raw**, because a
-/// subscription outlives the session it names: uids only count up, so a stale
-/// entry can never start announcing something else, but it can be printed, and a
-/// list of things you are following that includes conversations that ended is a
-/// list nobody can act on.
-fn followed_open(chat: &str, sessions: &[RemoteSession], cx: &App) -> Vec<u64> {
-    sessions
-        .iter()
-        .map(|s| s.uid)
-        .filter(|uid| is_followed(chat, *uid, cx))
-        .collect()
-}
-
-/// Drop `uid` from `chat`'s subscription and binding both.
-///
-/// For the moment a command finds that a session has closed. Left in place the
-/// entry is harmless — the uid will not come round again — but it is unprintable
-/// and so unremovable, and `/status` promising a full list has to be able to
-/// keep the promise.
-fn forget(chat: &str, uid: u64, cx: &App) {
-    if bound(chat, cx) == Some(uid) {
-        bind(chat, None, cx);
-    }
-    set_followed(chat, uid, false, cx);
+fn pointed_at(chat: &str, cx: &App) -> Option<u64> {
+    with_chats(cx, |chats| chats.bound(chat)).flatten()
 }
 
 /// Say whether the user is at the machine, and hand back the sentence that
@@ -627,12 +467,12 @@ pub fn is_away(cx: &App) -> bool {
 /// being thrown at the keyboard is the only thing so far. A session's own news
 /// goes through [`announce`], which names which session it is about.
 pub fn broadcast(text: String, cx: &App) {
-    let bridge = &Shared::global(cx).remote;
-    let Some(live) = &bridge.live else {
+    let Some(everyone) = with_chats(cx, |chats| chats.everyone().to_vec()) else {
         return;
     };
-    for chat in &live.allowed {
-        bridge.send(Outbound::text(chat.clone(), text.clone()));
+    let bridge = &Shared::global(cx).remote;
+    for chat in everyone {
+        bridge.send(Outbound::text(chat, text.clone()));
     }
 }
 
@@ -797,7 +637,12 @@ fn open_archive(chat: &str, place: usize, cx: &mut App) -> String {
             // conversation to reopen is naming where the next prompt goes, and
             // making them say it twice would be the bridge pretending not to
             // have understood.
-            bind(chat, Some(uid), cx);
+            //
+            // Walked again rather than reusing the list this message arrived
+            // with: the session being pointed at is the one just minted, so it
+            // is in this walk and was in no earlier one.
+            let open = sessions(cx);
+            with_chats(cx, |chats| chats.point_at(chat, uid, &open));
             format!(
                 "Opened {} — {} as session {uid}, and pointed this chat at it.",
                 pick.project, pick.title
@@ -834,168 +679,55 @@ fn ask_windows<R>(
 }
 
 /// What to say when a chat asked for something and is pointed at nothing.
-fn not_pointed(what: &str, chat: &str, cx: &App) -> String {
-    format!(
-        "This chat isn't pointed at a session, so there is nothing to {what}.\n\n{}",
-        listing(chat, cx)
-    )
+fn not_pointed(what: &str, chat: &str, open: &[RemoteSession], cx: &App) -> String {
+    with_chats(cx, |chats| chats.not_pointed(chat, what, open)).unwrap_or_default()
 }
 
-/// What to say when the session a chat was pointed at has since closed.
+/// What to say when the session a chat was pointed at answered from no window.
 ///
-/// The binding goes with it rather than being left to fail again on the next
-/// message, and the list comes back so the next one can land somewhere.
-fn no_longer_there(uid: u64, chat: &str, cx: &mut App) -> String {
-    bind(chat, None, cx);
-    format!("Session {uid} is gone.\n\n{}", listing(chat, cx))
+/// **It says so and changes nothing.** The binding is dropped by the reconcile
+/// at the top of the next message, which is the one place that decides this:
+/// answering it a second way here is how the four separate cleanups this
+/// replaced came about. The window is a race — the session was open when the
+/// message arrived and had closed by the time a shell was asked — so the entry
+/// cannot outlive the next thing this chat says.
+fn gone(uid: u64, chat: &str, open: &[RemoteSession], cx: &App) -> String {
+    format!(
+        "Session {uid} is gone.\n\n{}",
+        with_chats(cx, |chats| chats.listing(chat, open)).unwrap_or_default()
+    )
 }
 
 /// Answer `/options`: what the bound session's agent lets you change, with a
 /// button per value.
-fn send_options(chat: &str, cx: &mut App) {
-    let out = match bound(chat, cx) {
-        None => Outbound::text(chat.to_string(), not_pointed("change options on", chat, cx)),
+fn send_options(chat: &str, open: &[RemoteSession], cx: &mut App) {
+    let out = match pointed_at(chat, cx) {
+        None => Outbound::text(
+            chat.to_string(),
+            not_pointed("change options on", chat, open, cx),
+        ),
         Some(uid) => match ask_windows(cx, |shell, cx| shell.remote_options(uid, cx)) {
             Some((text, buttons)) => Outbound {
                 chat: chat.to_string(),
                 text,
                 buttons,
             },
-            None => Outbound::text(chat.to_string(), no_longer_there(uid, chat, cx)),
+            None => Outbound::text(chat.to_string(), gone(uid, chat, open, cx)),
         },
     };
     Shared::global(cx).remote.send(out);
 }
 
-/// Answer `/status`: what reaches this chat, and what does not.
-///
-/// **The command silence makes necessary.** Nothing announces itself unless a
-/// chat asked for it, so a bridge working perfectly and a bridge whose process
-/// died last night look the same from a phone — as does one whose subscriptions
-/// were forgotten in a restart. This is the question that separates them, which
-/// is why it names what it follows rather than counting it: the whole point is
-/// to be able to check the list against what you believe you asked for.
-///
-/// **Not a second `/sessions`.** That one answers what onehand is running and
-/// marks these rows in passing; this one answers what will reach you, and leads
-/// with the two facts no session carries — whether the user has said they are
-/// away, and where this chat is pointed.
-///
-/// The one thing it changes rather than reads: a binding or a subscription onto
-/// a session that has since closed is dropped as it is reported. Saying "pointed
-/// at 7" about a session that is gone is the exact confusion this command exists
-/// to end, and an entry naming a closed session cannot be printed, so it could
-/// never afterwards be removed.
-fn status(chat: &str, cx: &mut App) -> String {
-    let sessions = sessions(cx);
-    let mut out = String::from(if is_away(cx) {
-        "Away is on — everything you follow gets announced here, whatever is on screen.\n"
-    } else {
-        "Away is off — while you're at the keyboard, what you could already see is held back.\n"
-    });
-
-    match bound(chat, cx) {
-        None => out.push_str("This chat isn't pointed at a session — /use <number> picks one.\n"),
-        Some(uid) => match sessions.iter().find(|s| s.uid == uid) {
-            Some(session) => out.push_str(&format!("Pointed at {}\n", session.line().trim_start())),
-            None => {
-                forget(chat, uid, cx);
-                out.push_str(&format!(
-                    "Session {uid} closed, so this chat is pointed at nothing — /use <number> picks another.\n"
-                ));
-            }
-        },
-    }
-
-    if sessions.is_empty() {
-        out.push_str("\nNo sessions are open.");
-        return out;
-    }
-    let following = followed_open(chat, &sessions, cx);
-    if following.is_empty() {
-        out.push_str(&format!(
-            "\nYou're following nothing, so nothing will reach this chat.\n\
-             {} session{} open — /use <number> points at one and follows it, or \
-             /follow <number> follows one without pointing at it.",
-            sessions.len(),
-            if sessions.len() == 1 { " is" } else { "s are" }
-        ));
-        return out;
-    }
-    out.push_str(&format!(
-        "\nYou'll hear about {} of {} open session{}:\n",
-        following.len(),
-        sessions.len(),
-        if sessions.len() == 1 { "" } else { "s" }
-    ));
-    for session in sessions.iter().filter(|s| following.contains(&s.uid)) {
-        out.push_str("  ");
-        out.push_str(&session.line());
-        out.push('\n');
-    }
-    out.push_str("\n/unfollow <number> drops one. /sessions lists them all.");
-    out
-}
-
-/// Answer `/follow` and `/unfollow`.
-///
-/// **The session has to still be open.** Subscribing to one that has closed is a
-/// message saying it worked about something that does not exist, and the entry
-/// would then sit in the set unprintable — `/sessions` and `/status` only show
-/// sessions that are running, so a subscription neither can name is one nobody
-/// can find to drop.
-fn follow(chat: &str, aim: Aim, on: bool, cx: &mut App) -> String {
-    let word = if on { "follow" } else { "unfollow" };
-    let uid = match aim {
-        // Not read as the bound session: the user named something, it just was
-        // not a number. On `/unfollow` that would silence a conversation nobody
-        // typed, which is the mistake whose symptom is nothing happening.
-        Aim::Unreadable => {
-            return format!(
-                "Which session? /{word} <number>, or /{word} on its own for the one this chat is pointed at.\n\n{}",
-                listing(chat, cx)
-            );
-        }
-        Aim::Bound => match bound(chat, cx) {
-            Some(uid) => uid,
-            None => return not_pointed(word, chat, cx),
-        },
-        Aim::Session(uid) => uid,
-    };
-    if !sessions(cx).iter().any(|s| s.uid == uid) {
-        forget(chat, uid, cx);
-        return format!("There's no session {uid}.\n\n{}", listing(chat, cx));
-    }
-    let changed = set_followed(chat, uid, on, cx);
-    match (on, changed) {
-        (true, true) => format!(
-            "Following {uid}. You'll hear here when it finishes a turn, when it stops to \
-             ask you something, and if the agent dies. /unfollow {uid} to stop."
-        ),
-        (true, false) => format!("You were already following {uid}."),
-        // Named rather than left to be inferred: this is a command whose whole
-        // effect is that nothing happens afterwards, so the reply is the only
-        // evidence it did anything at all.
-        (false, true) => format!(
-            "Stopped following {uid}. Nothing about it reaches this chat now — not a \
-             finished turn, not a question it stops on, not the agent dying. It keeps \
-             running, and /sessions still shows it."
-        ),
-        (false, false) => format!("You weren't following {uid}, so nothing changed."),
-    }
-}
-
 /// Answer `/stop`.
-fn stop_session(chat: &str, cx: &mut App) -> String {
-    let Some(uid) = bound(chat, cx) else {
-        return not_pointed("stop", chat, cx);
+fn stop_session(chat: &str, open: &[RemoteSession], cx: &mut App) -> String {
+    let Some(uid) = pointed_at(chat, cx) else {
+        return not_pointed("stop", chat, open, cx);
     };
     match ask_windows(cx, |shell, cx| shell.remote_stop(uid, cx)) {
         Some(said) => said,
-        None => no_longer_there(uid, chat, cx),
+        None => gone(uid, chat, open, cx),
     }
 }
-
 /// What one prompt did, wherever it landed.
 pub enum Handled {
     /// It went in and a turn started.
@@ -1007,9 +739,27 @@ pub enum Handled {
 }
 
 /// What to say back to a line from an allowed chat, if anything.
+///
+/// **Every binding and subscription is reconciled against the open sessions
+/// first, once, here.** That is the whole of the rule: wherever the live list is
+/// in hand, anything naming a session that has closed goes. Deciding it per
+/// command is how this came to have four different answers — one dropped the
+/// binding and the subscription, one dropped only the binding, one dropped
+/// neither — and which one a chat got depended on what it happened to type.
+///
+/// A button press deliberately does not come through here. It carries its own
+/// session and never went through a binding, so there is nothing to reconcile
+/// and no listing that would help: the message it was pressed on is simply older
+/// than the session it was about.
 fn answer(chat: &str, text: &str, cx: &mut App) -> Option<String> {
-    match onehand_core::remote::command::parse(text) {
-        RemoteCommand::List => Some(listing(chat, cx)),
+    let command = onehand_core::remote::command::parse(text);
+    // Walked once and threaded through, rather than asked for again inside each
+    // reply: every window is visited to build it, and the borrow of the chat
+    // state below must not be held across that walk.
+    let open = sessions(cx);
+    with_chats(cx, |chats| chats.reconcile(&open));
+    match command {
+        RemoteCommand::List => Some(with_chats(cx, |chats| chats.listing(chat, &open))?),
         RemoteCommand::Help => Some(HELP.to_string()),
         // Nothing was asked, so nothing is said. A client that sends an empty
         // message is not owed an answer, and answering one is how a bridge
@@ -1018,9 +768,9 @@ fn answer(chat: &str, text: &str, cx: &mut App) -> Option<String> {
         RemoteCommand::Unknown(word) => Some(format!("I don't know /{word}.\n\n{HELP}")),
         RemoteCommand::UseWhich => Some(format!(
             "Which one? /sessions lists them, then /use <number>.\n\n{}",
-            listing(chat, cx)
+            with_chats(cx, |chats| chats.listing(chat, &open))?
         )),
-        RemoteCommand::Use(uid) => Some(point_at(chat, uid, cx)),
+        RemoteCommand::Use(uid) => Some(with_chats(cx, |chats| chats.point_at(chat, uid, &open))?),
         // The one command with nothing to say yet: reading the store is a file
         // per conversation, so it goes to the background and sends its own reply
         // when it lands.
@@ -1029,12 +779,12 @@ fn answer(chat: &str, text: &str, cx: &mut App) -> Option<String> {
             None
         }
         RemoteCommand::Open(place) => Some(open_archive(chat, place, cx)),
-        RemoteCommand::Stop => Some(stop_session(chat, cx)),
+        RemoteCommand::Stop => Some(stop_session(chat, &open, cx)),
         // Sends its own message, like `/archive` and for a different reason:
         // this one carries buttons, and a reply that is only ever a string has
         // nowhere to put them.
         RemoteCommand::Options => {
-            send_options(chat, cx);
+            send_options(chat, &open, cx);
             None
         }
         RemoteCommand::OpenWhich => {
@@ -1042,13 +792,19 @@ fn answer(chat: &str, text: &str, cx: &mut App) -> Option<String> {
         }
         RemoteCommand::Away => Some(set_away(true, cx)),
         RemoteCommand::Here => Some(set_away(false, cx)),
-        RemoteCommand::Follow(aim) => Some(follow(chat, aim, true, cx)),
-        RemoteCommand::Unfollow(aim) => Some(follow(chat, aim, false, cx)),
-        RemoteCommand::Status => Some(status(chat, cx)),
-        RemoteCommand::Prompt(prompt) => Some(send_prompt(chat, &prompt, cx)),
+        RemoteCommand::Follow(aim) => Some(with_chats(cx, |chats| {
+            chats.follow(chat, aim, true, &open)
+        })?),
+        RemoteCommand::Unfollow(aim) => Some(with_chats(cx, |chats| {
+            chats.follow(chat, aim, false, &open)
+        })?),
+        RemoteCommand::Status => {
+            let away = is_away(cx);
+            Some(with_chats(cx, |chats| chats.status(chat, away, &open))?)
+        }
+        RemoteCommand::Prompt(prompt) => Some(send_prompt(chat, &prompt, &open, cx)),
     }
 }
-
 /// What this chat can do, in the order somebody arriving would need it.
 const HELP: &str = "\
 /sessions — every session onehand is running, and what each is doing
@@ -1075,69 +831,10 @@ what it points at, so the short way in is /sessions then /use <number>. While \
 you're at the keyboard what you could already see is held back; /away is how \
 you say you can't see it. If it seems too quiet, /status says why.";
 
-/// The `/sessions` reply, marking the one this chat is pointed at and the ones
-/// it will hear about.
-///
-/// **Two marks and one column**, because they are two different questions asked
-/// while reading the same row — where does what I type go, and which of these
-/// will tell me anything — and answering the second in a sentence underneath
-/// would mean counting rows to use it. The pointed-at session is always followed
-/// too, so its arrow stands for both; what the dot is really for is the rows that
-/// are followed without being pointed at, which are otherwise indistinguishable
-/// from the silent ones.
-fn listing(chat: &str, cx: &App) -> String {
-    let sessions = sessions(cx);
-    if sessions.is_empty() {
-        // Not an error and not an empty list: onehand is running and has nothing
-        // open, which is a different thing from onehand not being there.
-        return "No sessions are open.".to_string();
-    }
-    let here = bound(chat, cx);
-    let mut out = String::from("Sessions\n\n");
-    for session in &sessions {
-        out.push_str(if here == Some(session.uid) {
-            "→ "
-        } else if is_followed(chat, session.uid, cx) {
-            "• "
-        } else {
-            "  "
-        });
-        out.push_str(&session.line());
-        out.push('\n');
-    }
-    out.push_str(
-        "\n→ is where what you type goes · is one you'll hear about\n\
-         /use <number> points this chat at one and follows it.",
-    );
-    out
-}
-
-/// Answer `/use`.
-fn point_at(chat: &str, uid: u64, cx: &mut App) -> String {
-    let Some(session) = sessions(cx).into_iter().find(|s| s.uid == uid) else {
-        return format!("There's no session {uid}.\n\n{}", listing(chat, cx));
-    };
-    let already = is_followed(chat, uid, cx);
-    bind(chat, Some(uid), cx);
-    // The subscription is said out loud rather than left to be discovered,
-    // because it is the half of this command nobody asked for: `/use` reads as
-    // "send my typing here", and a chat that then starts announcing turns
-    // without having said it would would be the bridge doing something unasked.
-    format!(
-        "Pointed at {}.\nAnything you type here now goes to it as a prompt{}",
-        session.line().trim_start(),
-        if already {
-            ", and you were already following it."
-        } else {
-            ", and you'll hear about it here — /unfollow if you'd rather not."
-        }
-    )
-}
-
 /// Send a prompt to whatever this chat is pointed at.
-fn send_prompt(chat: &str, prompt: &str, cx: &mut App) -> String {
-    let Some(uid) = bound(chat, cx) else {
-        return not_pointed("send that to", chat, cx);
+fn send_prompt(chat: &str, prompt: &str, open: &[RemoteSession], cx: &mut App) -> String {
+    let Some(uid) = pointed_at(chat, cx) else {
+        return not_pointed("send that to", chat, open, cx);
     };
     match ask_windows(cx, |shell, cx| shell.remote_prompt(uid, prompt, cx)) {
         Some(Handled::Sent) => format!("Sent to {uid}."),
@@ -1145,123 +842,30 @@ fn send_prompt(chat: &str, prompt: &str, cx: &mut App) -> String {
             format!("{uid} is mid-turn — this goes in the moment that one ends.")
         }
         Some(Handled::Refused(why)) => format!("{uid} didn't take it: {why}"),
-        None => no_longer_there(uid, chat, cx),
+        None => gone(uid, chat, open, cx),
     }
 }
 
-/// Which session an announcement is about, in the words a reader who is not
-/// looking at the app would need.
+/// Say something about a session outside the app, to every chat that asked.
 ///
-/// A desktop notification can afford to be vague, because the window it is about
-/// is one keystroke away. A message on a phone is the only thing its reader has,
-/// so it names the project and the conversation as well as the agent — and it
-/// carries the uid, which is what a button pressed on it has to come back with.
-pub struct Origin {
-    pub uid: u64,
-    pub agent: String,
-    pub project: String,
-    /// The conversation's name, or `None` while it has not earned one.
-    pub conversation: Option<String>,
-}
-
-impl Origin {
-    /// The line under the headline: which session this is, where, and which
-    /// conversation.
-    ///
-    /// The number leads, spelled the same way the listing spells it, because it
-    /// is what a reply is typed against. Without it a notification about a
-    /// waiting agent means opening `/sessions` and matching a name to a row
-    /// before anything can be said back to it.
-    fn context(&self) -> String {
-        match &self.conversation {
-            Some(title) => format!("{} · {} — {title}", self.uid, self.project),
-            None => format!("{} · {}", self.uid, self.project),
-        }
-    }
-}
-
-/// One thing to say about one session, outside the app.
-pub struct Announcement {
-    /// Which of the three moments this is.
-    pub away: Away,
-    /// The line a reader on the far side needs and a reader at the window does
-    /// not: what the agent is asking permission for, what the question was.
-    ///
-    /// `None` where the headline is the whole of it. Somebody looking at the
-    /// window can read the card; somebody holding a phone has only this.
-    pub detail: Option<String>,
-    /// What can be answered from the message itself.
-    pub buttons: Vec<Vec<Button>>,
-}
-
-impl Announcement {
-    /// News with nothing to add and nothing to press: the headline and where it
-    /// happened are the whole of it.
-    pub fn plain(away: Away) -> Self {
-        Self {
-            away,
-            detail: None,
-            buttons: Vec::new(),
-        }
-    }
-}
-
-/// Say something about a session outside the app, to everyone allowed to hear
-/// it.
+/// Silence is the caller's decision, not this function's. Whether a finished
+/// turn or a parked question is worth announcing depends on what is on screen,
+/// and the pane is the only thing that knows — the same split that already
+/// decides whether the desktop hears about it.
 ///
-/// Silence is the caller's decision, not this function's — with one exception,
-/// below. Whether a finished turn or a parked question is worth announcing
-/// depends on what is on screen, and the pane is the only thing that knows — the
-/// same split that already decides whether the desktop hears about it.
-///
-/// **Who hears it is decided here and not there, because it is about this
-/// channel and nothing else.** The pane's rules are about the screen and hold
-/// for the desktop notification as much as for the chat; which sessions a chat
-/// subscribed to is a fact only the bridge has, and pushing it up into the pane
-/// would quieten the desktop over instructions that never mentioned it. It is
-/// also the one gate that has to catch all three moments at once, and this is
-/// where all three arrive.
-///
-/// **The audience is the chats that asked, which is narrower than `allowed`.**
-/// That list is who may be told anything; a session's own news goes only to the
-/// chats following it, so a bridge nobody has subscribed from is a bridge that
-/// says nothing. What that costs is a channel which can look dead while working
-/// perfectly, and `/status` is what answers for it.
+/// **Who hears it is decided in core and not here**, because it is a fact about
+/// this channel and nothing else: the pane's rules are about the screen and hold
+/// for the desktop notification as much as for the chat, so pushing a
+/// subscription up into the pane would quieten the desktop over instructions
+/// that never mentioned it. An empty audience is the ordinary case, and it is
+/// the whole of the silence rule.
 pub fn announce(origin: &Origin, what: Announcement, cx: &App) {
+    let Some(messages) = with_chats(cx, |chats| chats.announcement(origin, &what)) else {
+        return;
+    };
     let bridge = &Shared::global(cx).remote;
-    let Some(live) = &bridge.live else {
-        return;
-    };
-    let audience: Vec<String> = {
-        let followed = live.followed.borrow();
-        live.allowed
-            .iter()
-            .filter(|chat| {
-                followed
-                    .get(*chat)
-                    .is_some_and(|set| set.contains(&origin.uid))
-            })
-            .cloned()
-            .collect()
-    };
-    if audience.is_empty() {
-        return;
-    }
-    let mut text = format!(
-        "{}\n{}",
-        what.away.headline(&origin.agent),
-        origin.context()
-    );
-    if let Some(detail) = &what.detail {
-        text.push_str("\n\n");
-        text.push_str(detail);
-    }
-    for chat in audience {
-        bridge.send(Outbound {
-            chat,
-            text: text.clone(),
-            buttons: what.buttons.clone(),
-        });
+    for out in messages {
+        bridge.send(out);
     }
 }
 
