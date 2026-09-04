@@ -9,19 +9,26 @@
 //!   is answered with silence.
 //! - [`command`] — the little language a chat drives the app with.
 //! - [`press`] — what a button means, packed small enough to survive the trip.
+//! - [`chats`] — where each chat types and what each has asked to hear about,
+//!   and every reply that reports or changes either.
 //!
 //! Wire implementations and their secret loading live in built-in plugins.
 //!
-//! Everything except the channel itself is pure and tested. The channel is the
+//! Everything except the channel itself is decided here rather than in a front
+//! end, and tested. [`chats::Chats`] is the one piece that carries state; it is
+//! still plain data with no interior mutability, so a front end decides how it
+//! is reached and a test can drive it directly. The channel is the
 //! ACP client's shape: a serve loop folded into the stream it returns, so a
 //! front end drives it however it likes and dropping the stream ends it.
 
 pub mod access;
+pub mod chats;
 pub mod command;
 pub mod press;
 pub mod types;
 
 pub use access::{is_allowed, is_silently_ignored};
+pub use chats::{Announcement, Chats, Origin, RemoteSession};
 pub use command::{Aim, RemoteCommand};
 pub use press::Press;
 pub use types::{
