@@ -90,6 +90,11 @@ pub struct Workbench {
     /// group never renders holding one panel — that truncates the state to one
     /// size and loses the width the user chose.
     doc_split: Entity<gpui_component::ResizableState>,
+    /// The document walk in flight, held only so that starting another drops it.
+    ///
+    /// Underscored because nothing reads it and nothing should: what it is for
+    /// is its `Drop`, which cancels a walk whose answer is already out of date.
+    _doc_scan: Option<gpui::Task<()>>,
     /// The `stat` loop behind the document view's live reload.
     ///
     /// Held rather than detached, and that is what stops it: the task ends when
@@ -169,6 +174,7 @@ impl Workbench {
             docs: HashMap::new(),
             doc_list_shown: true,
             doc_split: cx.new(|_| gpui_component::ResizableState::default()),
+            _doc_scan: None,
             doc_watch: None,
             git: HashMap::new(),
             neovim: NeovimSessions::default(),
@@ -352,17 +358,20 @@ impl Workbench {
         // the arriving one has one of its own is decided below, once its state
         // is in hand.
         self.doc_watch = None;
-        if self.mode() == MARKDOWN_MODE {
-            self.index_docs(cx);
-        }
         self.watch_doc(cx);
         if self.trees.contains_key(&root) {
             // A root seen before: its cached listings are as old as the last
-            // time it was on screen, and the agent has been working since.
+            // time it was on screen, and the agent has been working since. The
+            // document index is stale for the same reason, and `rescan` walks
+            // it — so this branch must not walk it again, or every switch to a
+            // familiar project costs two recursive walks of the whole thing.
             self.rescan(cx);
         } else {
             self.trees.insert(root.clone(), FileTree::default());
             self.scan(root, cx);
+            if self.mode() == MARKDOWN_MODE {
+                self.index_docs(cx);
+            }
         }
         cx.notify();
     }
@@ -435,11 +444,22 @@ impl Workbench {
     /// Re-walked rather than merged into what is there: a document deleted
     /// since the last walk has to leave the list, and a walk that only ever
     /// added would keep a row that opens nothing.
+    ///
+    /// The state is made **here**, while the root is known to be active, and the
+    /// walk that lands later only fills it in. An entry created on the way back
+    /// would resurrect a root the workspace had removed in the meantime, and
+    /// leave its index and its parsed document alive for as long as the window
+    /// is — the same shape the directory scan avoids by taking `get_mut`.
+    ///
+    /// The task is **held**, so starting a walk drops whichever was still
+    /// running. Two walks of one project cost twice for one answer, and the
+    /// slower of them can land last and put a staler index on screen.
     fn index_docs(&mut self, cx: &mut Context<Self>) {
         let Some(root) = self.root.clone() else {
             return;
         };
-        cx.spawn(async move |panel, cx| {
+        self.docs.entry(root.clone()).or_default();
+        self._doc_scan = Some(cx.spawn(async move |panel, cx| {
             let index = cx
                 .background_executor()
                 .spawn({
@@ -448,11 +468,13 @@ impl Workbench {
                 })
                 .await;
             let _ = panel.update(cx, |panel: &mut Self, cx| {
-                panel.docs.entry(root).or_default().index = Some(index);
+                let Some(docs) = panel.docs.get_mut(&root) else {
+                    return;
+                };
+                docs.index = Some(index);
                 cx.notify();
             });
-        })
-        .detach();
+        }));
     }
 
     /// Show or hide the document list beside the document.
@@ -496,16 +518,20 @@ impl Workbench {
                 .await;
 
             let _ = panel.update(cx, |panel: &mut Self, cx| {
+                // The root can have left the workspace while the read was in
+                // flight, and putting the entry back would leave a parsed
+                // document alive under a project nothing can reach.
+                if !panel.docs.contains_key(&root) {
+                    return;
+                }
                 match read {
                     Ok((text, mtime)) => {
                         // A read that worked answers whatever the last failure
                         // said, the same way opening a file in the editor does.
                         panel.status = None;
-                        panel
-                            .docs
-                            .entry(root)
-                            .or_default()
-                            .show(path, label, &text, mtime, cx);
+                        if let Some(docs) = panel.docs.get_mut(&root) {
+                            docs.show(path, label, &text, mtime, cx);
+                        }
                         panel.watch_doc(cx);
                     }
                     Err(e) => panel.status = Some(format!("{} — {e}", path.display())),
@@ -594,11 +620,13 @@ impl Workbench {
                         // A file that grew past the size bound, or that was
                         // deleted out from under the reader. The new stamp is
                         // recorded anyway, or this same failure would be
-                        // reported again on every tick from here on.
-                        Err(e) => {
-                            docs.stamp(&path, fresh);
-                            Some(format!("{} — {e}", path.display()))
-                        }
+                        // reported again on every tick from here on — and it is
+                        // said only while the stamp landed, since a failure
+                        // about a document the reader has already moved off is a
+                        // standing warning naming a file that is not on screen.
+                        Err(e) => docs
+                            .stamp(&path, fresh)
+                            .then(|| format!("{} — {e}", path.display())),
                     };
                     if let Some(message) = failed {
                         panel.status = Some(message);
@@ -1105,6 +1133,13 @@ impl Workbench {
             markdown::reader(
                 docs.open.as_ref(),
                 self.doc_list_shown,
+                // The zoomed base, not the window's. The renderer sizes its
+                // headings from an absolute pixel value, which is the one thing
+                // the rem override wrapped around this body cannot reach — and
+                // this is built before that wrapper, so the window is still
+                // answering with the unzoomed base. Left as read, a zoomed-in
+                // panel draws every heading at or below its own body text.
+                self.zoom.rem_size(window),
                 cx.listener(|panel: &mut Self, _, _, cx| panel.toggle_doc_list(cx)),
                 cx.listener(move |panel: &mut Self, _, window, cx| {
                     // Handing it to the editor switches the mode, which is the
@@ -1113,7 +1148,6 @@ impl Workbench {
                         panel.open_file(path, window, cx);
                     }
                 }),
-                window,
                 cx,
             )
         };

@@ -99,17 +99,25 @@ impl RootDocs {
         doc.state.update(cx, |state, cx| state.set_text(text, cx));
     }
 
-    /// Record that the file moved without its new contents being readable.
+    /// Record that the file moved without its new contents being readable, and
+    /// say whether it is still the document being read.
     ///
-    /// What this buys is that a document deleted or grown past the read's size
-    /// bound is complained about once. Without it the mtime on record stays the
-    /// one that was read, so every check afterwards sees a change and reports
-    /// the same failure again for as long as the document is open.
-    pub fn stamp(&mut self, path: &Path, mtime: Option<SystemTime>) {
-        if let Some(doc) = self.open.as_mut()
-            && doc.path == path
-        {
-            doc.mtime = mtime;
+    /// What the stamp buys is that a document deleted or grown past the read's
+    /// size bound is complained about once. Without it the mtime on record stays
+    /// the one that was read, so every check afterwards sees a change and
+    /// reports the same failure again for as long as the document is open.
+    ///
+    /// The answer matters as much as the stamp: a failed read that landed after
+    /// the reader moved on belongs to a document nobody is looking at, and a
+    /// caller that complained about it anyway would leave a standing warning
+    /// naming a file that is no longer on screen.
+    pub fn stamp(&mut self, path: &Path, mtime: Option<SystemTime>) -> bool {
+        match self.open.as_mut() {
+            Some(doc) if doc.path == path => {
+                doc.mtime = mtime;
+                true
+            }
+            _ => false,
         }
     }
 
@@ -247,12 +255,17 @@ fn doc_row(
 /// that brings the list back lives in this header, so a header that appeared
 /// only once a document was open would let somebody hide the list with nothing
 /// open and be left facing a panel with no way back to either.
+///
+/// `rem` is the base the headings are scaled off, and it is asked for rather
+/// than read from the window because the two are not the same number here: this
+/// is built *before* the panel wraps it in its zoom, so the window still holds
+/// the unzoomed base. Handed one, the caller has to say which it means.
 pub fn reader(
     doc: Option<&OpenDoc>,
     list_shown: bool,
+    rem: gpui::Pixels,
     on_toggle_list: impl Fn(&gpui::ClickEvent, &mut Window, &mut App) + 'static,
     on_edit: impl Fn(&gpui::ClickEvent, &mut Window, &mut App) + 'static,
-    window: &Window,
     cx: &App,
 ) -> gpui::AnyElement {
     div()
@@ -330,7 +343,7 @@ pub fn reader(
                         // Virtualized: a long document draws the rows on screen
                         // rather than all of it.
                         .scrollable(true)
-                        .style(doc_style(window, cx)),
+                        .style(doc_style(rem)),
                 )
                 .into_any_element(),
             None => div()
@@ -347,17 +360,18 @@ pub fn reader(
 /// The renderer's own defaults are a document's, which is what is wanted here —
 /// unlike in the transcript, where the same renderer is drawing one message and
 /// its headings have to be pulled back down. Two things still have to be said.
-/// The heading base is taken from the *current* rem size, so the panel's zoom
-/// reaches the headings; left alone it is an absolute pixel value, which is
-/// exactly what a rem-base override cannot move. And the code block's text size
-/// is written in rems for the same reason.
-fn doc_style(window: &Window, _cx: &App) -> TextViewStyle {
+/// The heading base is an absolute pixel value in the renderer, which is exactly
+/// what a rem-base override cannot reach, so the panel's zoom has to be written
+/// into it by hand — that is what `rem` is, and why it is a parameter rather
+/// than a reading off the window. And the code block's text size is in rems,
+/// which the override *does* reach.
+fn doc_style(rem: gpui::Pixels) -> TextViewStyle {
     let mut style = TextViewStyle::default().code_block(
         gpui::StyleRefinement::default()
             .p(gpui::rems(0.75))
             .text_size(gpui::rems(0.8125)),
     );
-    style.heading_base_font_size = window.rem_size();
+    style.heading_base_font_size = rem;
     style
 }
 
