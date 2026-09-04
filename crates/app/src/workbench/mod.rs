@@ -6,8 +6,6 @@
 //! work this build stopped short of, and a half-working one would be worse than
 //! an honest gap.
 
-pub mod editor;
-pub mod files;
 pub mod panel;
 
-pub use panel::{Workbench, WorkbenchMode};
+pub use panel::{EDITOR_MODE, FILES_MODE, NEOVIM_MODE, Workbench, WorkbenchMode};

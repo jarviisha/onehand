@@ -155,7 +155,7 @@ pub fn tab_strip(
         }))
         .child(div().flex_1())
         .child(
-            crate::controls::action("close-all-files")
+            onehand_plugin_host::action("close-all-files")
                 .ghost()
                 .xsmall()
                 .icon(Icon::new(IconName::Close))

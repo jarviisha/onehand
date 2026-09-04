@@ -9,9 +9,8 @@
 //!   is answered with silence.
 //! - [`command`] — the little language a chat drives the app with.
 //! - [`press`] — what a button means, packed small enough to survive the trip.
-//! - [`secret`] — where a channel's credential is read from, and why it is never
-//!   in the config file.
-//! - [`telegram`] — the first channel, the Bot API over a long poll.
+//!
+//! Wire implementations and their secret loading live in built-in plugins.
 //!
 //! Everything except the channel itself is pure and tested. The channel is the
 //! ACP client's shape: a serve loop folded into the stream it returns, so a
@@ -20,14 +19,11 @@
 pub mod access;
 pub mod command;
 pub mod press;
-pub mod secret;
-pub mod telegram;
 pub mod types;
 
 pub use access::{is_allowed, is_silently_ignored};
 pub use command::{Aim, RemoteCommand};
 pub use press::Press;
-pub use telegram::Telegram;
 pub use types::{
     Button, ChatId, Outbound, RemoteChannel, RemoteEvent, RemoteRequest, ReqRx, ReqTx,
 };

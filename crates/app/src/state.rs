@@ -13,6 +13,7 @@ use onehand_core::gitstat::GitStatus;
 use onehand_core::workspace::Workspace;
 use std::collections::HashMap;
 use std::path::PathBuf;
+use std::sync::Arc;
 
 /// A window this process has open, tracked so that opening a workspace that is
 /// already on screen focuses it instead of making a duplicate.
@@ -39,6 +40,9 @@ pub struct OpenWindow {
 
 /// Global, process-wide state. One per `App`.
 pub struct Shared {
+    /// Built-in contributions, registered once and sealed before any window is
+    /// created. Keeping this global makes every window see the same order.
+    pub plugins: Arc<onehand_plugin_host::PluginRegistry>,
     /// The menu a new session spawns from. Agent definitions are global; each
     /// session keeps a clone of the spec it was spawned with.
     pub agents: Vec<AgentSpec>,
@@ -103,8 +107,13 @@ pub struct Shared {
 impl Global for Shared {}
 
 impl Shared {
-    pub fn from_config(cfg: AppConfig, config_path: PathBuf) -> Self {
+    pub fn from_config(
+        cfg: AppConfig,
+        config_path: PathBuf,
+        plugins: onehand_plugin_host::PluginRegistry,
+    ) -> Self {
         Self {
+            plugins: Arc::new(plugins),
             appearance: cfg.appearance,
             agents: cfg.agents,
             config_path,

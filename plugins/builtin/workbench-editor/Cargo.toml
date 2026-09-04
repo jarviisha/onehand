@@ -1,0 +1,20 @@
+[package]
+name = "onehand-workbench-editor"
+version = "0.1.0"
+edition = "2024"
+
+[lib]
+name = "onehand_workbench_editor"
+path = "src/lib.rs"
+
+[dependencies]
+onehand-plugin-api = { path = "../../../crates/plugin-api" }
+onehand-plugin-host = { path = "../../../crates/plugin-host" }
+onehand-core = { path = "../../../crates/core" }
+gpui = { git = "https://github.com/zed-industries/zed", features = ["profiler"] }
+gpui-component = { git = "https://github.com/longbridge/gpui-component", rev = "9e3a29dcbdebc318632bf68203f26c33e9f0e902", features = [
+    "tree-sitter", "tree-sitter-rust", "tree-sitter-typescript", "tree-sitter-tsx",
+    "tree-sitter-javascript", "tree-sitter-python", "tree-sitter-go",
+    "tree-sitter-markdown", "tree-sitter-toml", "tree-sitter-yaml",
+    "tree-sitter-bash", "tree-sitter-css", "tree-sitter-html",
+] }

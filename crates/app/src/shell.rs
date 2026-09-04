@@ -7,7 +7,7 @@ use crate::chat::ChatPane;
 use crate::dialogs::AgentDraft;
 use crate::state::{OpenWindow, Shared, WorkspaceWindow};
 use crate::terminal::TerminalPanel;
-use crate::workbench::{Workbench, WorkbenchMode};
+use crate::workbench::{EDITOR_MODE, FILES_MODE, NEOVIM_MODE, Workbench, WorkbenchMode};
 use gpui::{
     App, AppContext, BorrowAppContext, Context, Entity, Focusable as _, InteractiveElement,
     IntoElement, ParentElement, Render, SharedString, Styled, Window, WindowAppearance, div, px,
@@ -2005,7 +2005,7 @@ impl Shell {
     /// whatever is unsaved in the buffer are all still there on the next press.
     pub fn show_neovim(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.workbench.update(cx, |panel, cx| panel.open_neovim(cx));
-        self.show_workbench(WorkbenchMode::Neovim, window, cx);
+        self.show_workbench(NEOVIM_MODE, window, cx);
     }
 
     /// Put the terminal on screen, or take it off.
@@ -2828,12 +2828,12 @@ impl Render for Shell {
             }))
             .on_action(
                 cx.listener(|shell: &mut Self, _: &ToggleFiles, window, cx| {
-                    shell.show_workbench(WorkbenchMode::Files, window, cx);
+                    shell.show_workbench(FILES_MODE, window, cx);
                 }),
             )
             .on_action(
                 cx.listener(|shell: &mut Self, _: &ToggleWorkbench, window, cx| {
-                    shell.show_workbench(WorkbenchMode::Editor, window, cx);
+                    shell.show_workbench(EDITOR_MODE, window, cx);
                 }),
             )
             .on_action(cx.listener(|shell: &mut Self, _: &SaveFile, _, cx| {
@@ -3053,10 +3053,12 @@ fn open_window(workspace: Workspace, cx: &mut App) {
 /// Install global state and open the first window.
 pub fn boot(cx: &mut App) {
     let (cfg, config_path) = AppConfig::load_resolved();
+    let plugins = crate::plugins::builtins()
+        .unwrap_or_else(|error| panic!("built-in plugin registration failed: {error}"));
     let mono = cfg.font.monospace.clone();
     let appearance = cfg.appearance;
     let remote = cfg.remote.clone();
-    cx.set_global(Shared::from_config(cfg, config_path));
+    cx.set_global(Shared::from_config(cfg, config_path, plugins));
     init_keymap(cx);
     // After the global exists, because that is where the bridge is filed, and
     // before the first window, so a channel that takes a moment to answer has

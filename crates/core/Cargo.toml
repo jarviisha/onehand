@@ -29,28 +29,6 @@ tokio = { version = "1", features = [
 # crate GUI-free.
 futures = "0.3"
 
-# HTTPS for the remote bridge. The Telegram Bot API is HTTPS-only, so reaching
-# it needs a TLS stack, and the choice is which one gets compiled in.
-#
-# `rustls-no-provider` plus a direct `rustls/ring` is deliberate and is not the
-# obvious spelling. reqwest's plain `rustls` feature selects aws-lc-rs, which
-# builds a C and assembly cryptography library through cmake -- a second crypto
-# backend in a binary that already links one, and a build that now needs a C
-# toolchain to produce a chat notification. The graph already carries rustls
-# 0.23 over ring, pulled in under the window layer, so naming ring here means
-# the same crate that was already being compiled is the one that answers, and
-# the bridge adds a client rather than a cryptography library.
-#
-# What is ruled out either way is OpenSSL: linking the system's copy makes the
-# build depend on which one a machine happens to ship and breaks the moment a
-# distribution moves a major version, and vendoring it is the C-toolchain
-# problem again with a larger surface.
-#
-# The crypto provider has to be installed into rustls' process-wide slot before
-# the first client is built; `remote::telegram` does that once, on the way up.
-reqwest = { version = "0.13", default-features = false, features = ["rustls-no-provider", "json"] }
-rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }
-
 # Real PTYs for the ACP terminal extension (agent-run commands).
 #
 # Kept in step with `crates/app`, which needs the same crate for the shell

@@ -17,8 +17,14 @@ use std::path::{Path, PathBuf};
 /// The tint a change badge carries. Severity, not category: red is something
 /// that lost content, amber is something that changed, green is something that
 /// arrived.
-fn change_color(change: FileChange, cx: &App) -> gpui::Hsla {
-    let status = crate::theme::status_ink(cx);
+#[derive(Clone, Copy)]
+pub struct ChangeColors {
+    pub warning: gpui::Hsla,
+    pub success: gpui::Hsla,
+    pub danger: gpui::Hsla,
+}
+
+fn change_color(change: FileChange, status: ChangeColors) -> gpui::Hsla {
     match change {
         FileChange::Modified => status.warning,
         FileChange::Added | FileChange::Untracked | FileChange::Renamed => status.success,
@@ -36,6 +42,7 @@ pub fn tree(
     git: Option<&GitStatus>,
     on_toggle: impl Fn(&PathBuf, &mut Window, &mut App) + 'static,
     on_open: impl Fn(&PathBuf, &mut Window, &mut App) + 'static,
+    status: ChangeColors,
     cx: &App,
 ) -> gpui::AnyElement {
     let (rows, truncated) = tree.visible_rows(root);
@@ -98,12 +105,12 @@ pub fn tree(
                         .min_w_0()
                         .truncate()
                         .when_some(change, |name, change| {
-                            name.text_color(change_color(change, cx))
+                            name.text_color(change_color(change, status))
                         })
                         .child(entry.name.clone()),
                 )
                 .when_some(change, |row, change| {
-                    let color = change_color(change, cx);
+                    let color = change_color(change, status);
                     // A directory carries a dot for "something under here
                     // changed"; only a file names *how*. The dot is drawn, not
                     // typed: a bullet character is an icon wearing text's

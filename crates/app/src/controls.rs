@@ -26,17 +26,17 @@ use gpui_component::menu::DropdownMenu;
 
 /// A button that answers the pointer, which is every button this app draws.
 ///
-/// The library re-applies the caller's own style refinement last, after its
-/// `cursor_default`, so setting the cursor here wins — which is the whole
-/// reason this can be a wrapper rather than a fork of the control.
+/// The rule and its reasoning live with the definition in
+/// [`onehand_plugin_host::action`], which is where a built-in plugin can reach
+/// them too — a plugin draws buttons and cannot reach into the binary hosting
+/// it, and two copies of this is two places for the library's default to be let
+/// through. This is the name the app's own call sites already use.
 ///
 /// **Pair it with [`resting`] on anything that can be disabled.** A pointer
 /// over a control that refuses is the same lie as a Send that stays lit over a
 /// prompt it will discard: it promises a press will do something.
 pub(crate) fn action(id: impl Into<ElementId>) -> Button {
-    use gpui::Styled as _;
-
-    Button::new(id).cursor_pointer()
+    onehand_plugin_host::action(id)
 }
 
 /// A hand-made row used whole as the trigger for a dropdown menu.

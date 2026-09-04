@@ -1,0 +1,19 @@
+[package]
+name = "onehand-plugin-host"
+version = "0.1.0"
+edition = "2024"
+description = "Onehand built-in plugin registry and contribution host"
+
+[lib]
+name = "onehand_plugin_host"
+path = "src/lib.rs"
+
+[dependencies]
+onehand-plugin-api = { path = "../plugin-api" }
+onehand-core = { path = "../core" }
+gpui = { git = "https://github.com/zed-industries/zed", features = ["profiler"] }
+gpui-component = { git = "https://github.com/longbridge/gpui-component", rev = "9e3a29dcbdebc318632bf68203f26c33e9f0e902" }
+
+[dev-dependencies]
+# A test channel has to hand back a `Stream`, which is the trait's own currency.
+futures = "0.3"
