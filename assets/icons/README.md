@@ -30,8 +30,9 @@ network; every SVG is committed.
 > rasterized small vectors badly. The second was a checked-in Lucide set of 48
 > UI glyphs, kept so that app icons did not depend on gpui-component's own
 > naming; the app now takes that dependency deliberately, and the trade is
-> written up in the icon decision. Exactly one of those 48 has since come back,
-> because the bundled set turned out to have no drawing of it at all.
+> written up in the icon decision. A handful of those 48 have since come back,
+> one at a time and each because the bundled set turned out to have no drawing
+> of that shape at all — `manifest.toml` carries the reason for every one.
 
 ## Sources and licenses
 

@@ -25,3 +25,20 @@ square-pen = "lucide:square-pen"
 # drawing is the GitHub brand mark, which names a website rather than the
 # operation.
 git-branch = "lucide:git-branch"
+# Staging a file onto the prompt being written. The bundled set holds no clip,
+# pin or paperclip of any kind; the nearest thing it draws is `inbox`, a tray
+# that says mail has arrived — the opposite direction from handing a file to the
+# agent.
+paperclip = "lucide:paperclip"
+# The composer's mention button, which inserts an `@`. The bundled set has no
+# at-sign; the nearest mark it draws is `asterisk`, which is a different
+# character, and a button whose whole job is to say which character it types
+# cannot draw another one. This button is also the only route to a mention for
+# anyone whose input method swallows the typed character, so guessing at it is
+# not an option the user has.
+at-sign = "lucide:at-sign"
+# The composer's slash-command button, which inserts a `/`. The bundled set has
+# no slash; its `dash` is a minus sign. Lucide's `command` is not this either —
+# that is the ⌘ modifier key, which names a keystroke rather than the character
+# being typed, and on this app's platform it names one that does not exist.
+slash = "lucide:slash"

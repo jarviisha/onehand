@@ -289,7 +289,13 @@ impl Composer {
                 // candidate or an option, only send. Shift+Enter still writes
                 // the newline.
                 .submit_on_enter(true)
-                .placeholder("Ask the agent…  @ for files, / for commands")
+                // What the two trigger buttons under the field already say, in
+                // the character each of them draws and the tooltip each of them
+                // carries. Spelled out here as well it was the longest string
+                // in the pane, and on a narrow panel it truncated into half a
+                // sentence of instructions -- so the field spent its one line
+                // saying something incompletely that the row below says whole.
+                .placeholder("Ask the agent…")
         });
 
         let subscription = cx.subscribe(
@@ -729,7 +735,7 @@ impl Composer {
                     .w_full()
                     .child(action(
                         "attach",
-                        IconName::Inbox,
+                        Icon::new(crate::icons::Icon::Paperclip),
                         "Attach a file",
                         cx,
                         |composer, _, cx| composer.attach(cx),
@@ -738,16 +744,22 @@ impl Composer {
                     // Vietnamese IME a typed `/` can never reach the composer,
                     // which makes the slash-command popup unreachable by
                     // keyboard -- these are the way in.
+                    //
+                    // Which is also why each has to draw the character it types
+                    // and not a stand-in for it: for the user who cannot type
+                    // the character, the button is the only thing on screen
+                    // naming it, and nothing else here says what a mention or a
+                    // slash command is.
                     .child(action(
                         "mention",
-                        IconName::Asterisk,
+                        Icon::new(crate::icons::Icon::AtSign),
                         "Mention a file",
                         cx,
                         |composer, window, cx| composer.insert_trigger('@', window, cx),
                     ))
                     .child(action(
                         "command",
-                        IconName::Dash,
+                        Icon::new(crate::icons::Icon::Slash),
                         "Run a slash command",
                         cx,
                         |composer, window, cx| composer.insert_trigger('/', window, cx),
@@ -1245,9 +1257,14 @@ fn chip(id: impl Into<gpui::ElementId>, open: bool, cx: &App) -> Button {
 }
 
 /// One of the composer's own actions — attach, `@`, `/` — as an icon chip.
+///
+/// Takes a built [`Icon`] rather than an `IconName`, because two of the three
+/// are drawn from the app's own registry: the bundled set has no at-sign and no
+/// slash, and these are the two buttons whose entire job is to say which
+/// character they type.
 fn action<F>(
     id: &'static str,
-    icon: IconName,
+    icon: Icon,
     hint: &'static str,
     cx: &mut Context<Composer>,
     on_click: F,
@@ -1256,7 +1273,7 @@ where
     F: Fn(&mut Composer, &mut Window, &mut Context<Composer>) + 'static,
 {
     chip(id, false, cx)
-        .child(Icon::new(icon).size_3())
+        .child(icon.size_3())
         .tooltip(hint)
         .on_click(cx.listener(move |composer: &mut Composer, _, window, cx| {
             on_click(composer, window, cx);

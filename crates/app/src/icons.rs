@@ -86,9 +86,12 @@ impl IconNamed for Icon {
 }
 
 icons! {
+    AtSign => "at-sign",
     ClaudeCode => "claude-code",
     GitBranch => "git-branch",
+    Paperclip => "paperclip",
     SquarePen => "square-pen",
+    Slash => "slash",
 }
 
 #[cfg(test)]
