@@ -3,6 +3,8 @@ name = "onehand"
 version = "0.1.0"
 edition = "2024"
 description = "A desktop GUI host for AI coding agents"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/jarviisha/onehand"
 
 # Edition 2024 matches gpui-component upstream, so its macros and async
 # closures behave the same here as they do in its own workspace.

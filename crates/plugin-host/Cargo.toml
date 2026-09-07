@@ -3,6 +3,7 @@ name = "onehand-plugin-host"
 version = "0.1.0"
 edition = "2024"
 description = "Onehand built-in plugin registry and contribution host"
+license = "MIT OR Apache-2.0"
 
 [lib]
 name = "onehand_plugin_host"

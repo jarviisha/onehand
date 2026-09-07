@@ -3,6 +3,7 @@ name = "onehand-core"
 version = "0.1.0"
 edition = "2021"
 description = "GUI-free core of onehand: config, the workspace tree, ACP, and pure text logic"
+license = "MIT OR Apache-2.0"
 
 # This crate must never depend on a GUI framework. It is the part of onehand
 # that outlives any one front end, and the part that stays unit-testable

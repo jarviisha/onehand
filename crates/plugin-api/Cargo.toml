@@ -3,6 +3,7 @@ name = "onehand-plugin-api"
 version = "0.1.0"
 edition = "2024"
 description = "GUI-free identity and registration contract for built-in Onehand plugins"
+license = "MIT OR Apache-2.0"
 
 [lib]
 name = "onehand_plugin_api"

@@ -3,6 +3,7 @@ name = "onehand-terminal-ui"
 version = "0.1.0"
 edition = "2024"
 description = "Shared in-process PTY and terminal-grid primitives for Onehand"
+license = "MIT OR Apache-2.0"
 
 [lib]
 name = "onehand_terminal_ui"
