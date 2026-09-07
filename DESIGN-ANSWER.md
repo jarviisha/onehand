@@ -122,8 +122,10 @@ of `Mode:` / `Model:` / `Effort:` prefixes. Their stable order, choice popup and
 tooltip retain the setting name while leaving the prompt controls room to fit.
 
 **Send refuses out loud.** Whether a prompt may be sent is the conversation’s
-answer, not the view’s (`Chat::submit_blocker`), and the button carries it: Stop
-while a turn is in flight, and otherwise disabled with the reason on it — an
+answer, not the view’s (`Chat::submit_blocker`), and the controls carry it.
+While a turn is in flight an empty composer offers **Stop**; once a draft exists
+it offers **Queue** as the primary action and keeps **Stop** as a distinct danger
+action. Otherwise Send is disabled with the reason on it — an
 empty buffer, a staged file that could not be read (named), an agent not
 connected. A Send that stays enabled over a prompt the model will discard is a
 control that does nothing when pressed and says nothing about why, which reads
@@ -147,6 +149,12 @@ belong to the list only while a list is open; the rest of the time they move the
 caret in the prompt. A selector opens **on its current value**, not at the top:
 the list is a setting's state, and arrowing away from where you are is the
 movement the user means.
+
+**Anything clickable is keyboard reachable.** Conversation-title menus,
+composer selectors, completion candidates, question tabs and transcript
+disclosures use the shared button primitive rather than a clickable `div`, so
+Tab traversal, Enter/Space activation, focus presentation and accessibility
+roles stay one behaviour across the pane.
 
 **The prompt field keeps the caret through all of it.** Opening a selector,
 taking a row, inserting a trigger from the toolbar — each is a click on a plain
@@ -193,7 +201,7 @@ hover and focus states that say which of the two the pointer is on. The tray is
 **bounded** — a dropped folder is however many files it held — and what is over
 the bound is counted, not silently dropped.
 
-**A prompt written mid-turn is queued, not swallowed.** `Enter` while the agent
+**A prompt written mid-turn is queued, not swallowed.** `Enter` or **Queue** while the agent
 is working holds the prompt and clears the composer; it goes out the moment the
 turn ends, opening its own turn. A **strip above the composer** says so and
 carries what was written, because a prompt that has left the composer and is not
@@ -201,9 +209,8 @@ in the transcript is one nothing on screen accounts for — indistinguishable fr
 one the app dropped. Cancelling it puts the words *back in the composer* rather
 than throwing them away, in front of anything typed since. Only a running turn
 queues: nothing about the end of a turn fixes an unreadable attachment or an
-adapter that is gone, so those still refuse and still say why. The button
-remains **Stop** throughout — it is the dangerous one and is aimed at
-deliberately; that the other gesture queues is on its tooltip.
+adapter that is gone, so those still refuse and still say why. Stop remains
+visible as the explicit danger action; Queue is never disguised as it.
 
 **Everything in the control row is one rank of control, so it is one shape.**
 Attach, `@`, `/` and the selector chips share a single shell — the same
@@ -221,7 +228,9 @@ it back first. A row of four chips on a narrow panel must not push Send off its
 own edge. What `Enter` does rides in Send’s **tooltip** rather than in a line of
 its own: it is the one convention here nothing else admits to, but it never
 changes, and a fixed label would spend a narrow panel’s last inch saying so
-while the chips — which do change — are the ones squeezed out.
+while the chips — which do change — are the ones squeezed out. The selector
+region scrolls horizontally inside the width left to it, so a narrow panel never
+clips a setting into an unreachable control.
 
 At the top, the transcript disappears at the header's rule. At the bottom it
 continues behind the transparent overlay wrapper and is covered only where an
@@ -419,7 +428,7 @@ by meaning:
 | The one item selected among several | `accent` / `accent_foreground` |
 | Hover on a row that is there to be picked | `list_hover` |
 | The single primary action of a blocking card | `primary` |
-| Marking a find hit | *(not rendered)* — find scrolls to each hit and counts them, but draws nothing on the hit itself |
+| Marking a find hit | `list_hover` on every matching item; a stronger accent wash on the current item |
 
 **Prose ink is not white on a dark surface.** There the ink is the bright thing
 in the room, and near-white on near-black runs about four times the contrast a

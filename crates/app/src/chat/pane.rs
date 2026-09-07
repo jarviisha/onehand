@@ -254,20 +254,17 @@ impl ChatPane {
             )
             .detach();
 
-            // Send and Stop are one button, and which of the two it was is a
-            // question about the turn rather than about the press: a click
-            // landing a frame after the turn ended must not cancel the next
-            // one. So the composer reports the press and the pane, which can
-            // still see the conversation, decides.
+            // Queue and Stop are distinct gestures while a turn is live. The
+            // pane still validates the live state at activation time so a
+            // delayed click cannot cancel the following turn.
             cx.subscribe_in(
                 &composer,
                 window,
                 |pane: &mut Self, _, event: &ComposerEvent, window, cx| match event {
-                    ComposerEvent::SendPressed => {
+                    ComposerEvent::SendPressed => pane.submit(window, cx),
+                    ComposerEvent::StopPressed => {
                         if pane.busy(cx) {
                             pane.stop(cx);
-                        } else {
-                            pane.submit(window, cx);
                         }
                     }
                 },
@@ -2424,45 +2421,34 @@ impl ChatPane {
             .truncate()
             .text_color(cx.theme().foreground)
             .font_semibold()
-            .child(title);
+            .child(title.clone());
         if !live && project.is_none() {
             return div().flex_none().min_w_0().child(name).into_any_element();
         }
         let project = project.map(|project| (project.pinned, project.is_repo));
 
-        let (muted, radius) = (cx.theme().muted_foreground, cx.theme().radius);
-        // One colour for hover and for the open menu: while the menu is up the
-        // row it came from has to keep saying so, or the pointer moving down
-        // into the menu leaves nothing on screen pointing back at what it acts
-        // on.
-        let lit = cx.theme().secondary;
+        let radius = cx.theme().radius;
         let this = cx.entity();
 
-        let row = div()
-            .id("conversation-title")
-            .group("conversation-title")
+        let row = crate::controls::action("conversation-title")
+            .ghost()
             .h_flex()
             .items_center()
             .gap_1()
-            .flex_none()
+            .flex_initial()
             .min_w_0()
+            .overflow_hidden()
             .px_1p5()
             .py_0p5()
             .rounded(radius)
-            .cursor_pointer()
-            .hover(move |row| row.bg(lit))
-            .child(name)
-            .child(
-                div()
-                    .flex_none()
-                    .invisible()
-                    .group_hover("conversation-title", |chevron| chevron.visible())
-                    .child(Icon::new(IconName::ChevronDown).size_3().text_color(muted)),
-            );
+            .label(title)
+            .dropdown_caret(true)
+            .text_color(cx.theme().foreground)
+            .font_semibold();
 
         if let Some((pinned, is_repo)) = project {
             let target = this.clone();
-            return crate::controls::MenuTrigger::new(row, lit)
+            return row
                 .dropdown_menu_with_anchor(
                     gpui::Anchor::TopLeft,
                     project_menu(pinned, is_repo, target),
@@ -2470,80 +2456,79 @@ impl ChatPane {
                 .into_any_element();
         }
 
-        crate::controls::MenuTrigger::new(row, lit)
-            .dropdown_menu_with_anchor(gpui::Anchor::TopLeft, move |menu, _, cx| {
-                let danger = crate::theme::status_ink(cx).danger;
-                let (rename, export, history) = (this.clone(), this.clone(), this.clone());
-                let (restart, remove) = (this.clone(), this.clone());
-                let archive = archive.clone();
-                menu.item(
-                    PopupMenuItem::new("Rename…")
-                        .icon(Icon::new(crate::icons::Icon::SquarePen))
-                        .on_click(move |_, _, cx: &mut App| {
-                            rename.update(cx, |_: &mut Self, cx| cx.emit(ChatPaneEvent::Rename));
-                        }),
-                )
-                .item(
-                    PopupMenuItem::new("Export as Markdown…")
-                        .icon(Icon::new(IconName::ExternalLink))
-                        .on_click(move |_, _, cx: &mut App| {
-                            export.update(cx, |pane: &mut Self, cx| pane.export(cx));
-                        }),
-                )
-                // Named and refusing rather than absent. The transcript is held
-                // in a shape JSON can carry and this is the format another tool
-                // reads; leaving it out entirely would say the opposite.
-                .item(
-                    PopupMenuItem::new("Export as JSON… (not yet)")
-                        .icon(Icon::new(IconName::File))
-                        .disabled(true),
-                )
-                .separator()
-                .item(
-                    // Disabled mid-turn rather than guarded by a second click:
-                    // going back to the picker throws the running turn away
-                    // exactly as a restart does, and a menu that has to be
-                    // opened twice to be believed is a worse warning than an
-                    // item that will not go.
-                    PopupMenuItem::new("Resume another conversation…")
-                        .icon(Icon::new(IconName::Undo))
-                        .disabled(busy)
-                        .on_click(move |_, _, cx: &mut App| {
-                            history.update(cx, |pane: &mut Self, cx| pane.show_history(cx));
-                        }),
-                )
-                .item(
-                    PopupMenuItem::new("Restart the agent")
-                        .icon(Icon::new(IconName::Redo))
-                        .on_click(move |_, _, cx: &mut App| {
-                            restart.update(cx, |_: &mut Self, cx| cx.emit(ChatPaneEvent::Restart));
-                        }),
-                )
-                .separator()
-                .item(
-                    // The only entry here that ends something for good.
-                    // Closing the session -- which keeps every word of this on
-                    // disk -- is a control of its own at the other end of the
-                    // header, so the two are never one press apart.
-                    PopupMenuItem::element(move |_, _| {
-                        div().text_color(danger).child("Delete conversation")
-                    })
-                    .icon(Icon::new(IconName::Delete).text_color(danger))
-                    // Nothing on disk to remove until the first turn has ended,
-                    // and an entry that can only report that is one the eye has
-                    // to learn to skip.
-                    .disabled(archive.is_none())
+        row.dropdown_menu_with_anchor(gpui::Anchor::TopLeft, move |menu, _, cx| {
+            let danger = crate::theme::status_ink(cx).danger;
+            let (rename, export, history) = (this.clone(), this.clone(), this.clone());
+            let (restart, remove) = (this.clone(), this.clone());
+            let archive = archive.clone();
+            menu.item(
+                PopupMenuItem::new("Rename…")
+                    .icon(Icon::new(crate::icons::Icon::SquarePen))
                     .on_click(move |_, _, cx: &mut App| {
-                        let Some(dir) = archive.clone() else {
-                            return;
-                        };
-                        remove.update(cx, |_: &mut Self, cx| {
-                            cx.emit(ChatPaneEvent::DeleteConversation(dir))
-                        });
+                        rename.update(cx, |_: &mut Self, cx| cx.emit(ChatPaneEvent::Rename));
                     }),
-                )
-            })
-            .into_any_element()
+            )
+            .item(
+                PopupMenuItem::new("Export as Markdown…")
+                    .icon(Icon::new(IconName::ExternalLink))
+                    .on_click(move |_, _, cx: &mut App| {
+                        export.update(cx, |pane: &mut Self, cx| pane.export(cx));
+                    }),
+            )
+            // Named and refusing rather than absent. The transcript is held
+            // in a shape JSON can carry and this is the format another tool
+            // reads; leaving it out entirely would say the opposite.
+            .item(
+                PopupMenuItem::new("Export as JSON… (not yet)")
+                    .icon(Icon::new(IconName::File))
+                    .disabled(true),
+            )
+            .separator()
+            .item(
+                // Disabled mid-turn rather than guarded by a second click:
+                // going back to the picker throws the running turn away
+                // exactly as a restart does, and a menu that has to be
+                // opened twice to be believed is a worse warning than an
+                // item that will not go.
+                PopupMenuItem::new("Resume another conversation…")
+                    .icon(Icon::new(IconName::Undo))
+                    .disabled(busy)
+                    .on_click(move |_, _, cx: &mut App| {
+                        history.update(cx, |pane: &mut Self, cx| pane.show_history(cx));
+                    }),
+            )
+            .item(
+                PopupMenuItem::new("Restart the agent")
+                    .icon(Icon::new(IconName::Redo))
+                    .on_click(move |_, _, cx: &mut App| {
+                        restart.update(cx, |_: &mut Self, cx| cx.emit(ChatPaneEvent::Restart));
+                    }),
+            )
+            .separator()
+            .item(
+                // The only entry here that ends something for good.
+                // Closing the session -- which keeps every word of this on
+                // disk -- is a control of its own at the other end of the
+                // header, so the two are never one press apart.
+                PopupMenuItem::element(move |_, _| {
+                    div().text_color(danger).child("Delete conversation")
+                })
+                .icon(Icon::new(IconName::Delete).text_color(danger))
+                // Nothing on disk to remove until the first turn has ended,
+                // and an entry that can only report that is one the eye has
+                // to learn to skip.
+                .disabled(archive.is_none())
+                .on_click(move |_, _, cx: &mut App| {
+                    let Some(dir) = archive.clone() else {
+                        return;
+                    };
+                    remove.update(cx, |_: &mut Self, cx| {
+                        cx.emit(ChatPaneEvent::DeleteConversation(dir))
+                    });
+                }),
+            )
+        })
+        .into_any_element()
     }
 
     /// The find bar, when it is open.
@@ -2682,7 +2667,10 @@ impl ChatPane {
                 .iter()
                 .filter_map(|&target| {
                     viewport::item(chat, target).map(|item| {
-                        transcript::item(session, item, target, window, cx).into_any_element()
+                        let find_emphasis =
+                            self.find.as_ref().and_then(|find| find.emphasis(target));
+                        transcript::item(session, item, target, find_emphasis, window, cx)
+                            .into_any_element()
                     })
                 })
                 .collect()
@@ -3724,7 +3712,7 @@ fn status_badge(
     cx: &App,
 ) -> impl IntoElement + use<> {
     div()
-        .flex_none()
+        .flex_initial()
         .h_flex()
         .items_center()
         .gap_1p5()

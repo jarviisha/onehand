@@ -22,7 +22,7 @@ use gpui_component::Disableable as _;
 use gpui_component::button::{Button, ButtonVariants as _};
 use gpui_component::scroll::{ScrollableMask, Scrollbar, ScrollbarMode};
 use gpui_component::text::{TextView, TextViewStyle};
-use gpui_component::{ActiveTheme, Icon, IconName, Sizable as _, StyledExt};
+use gpui_component::{ActiveTheme, Icon, IconName, Selectable as _, Sizable as _, StyledExt};
 use onehand_core::acp::{
     ElicitKind, PermissionWeight, PlanStatus, ToolContent, ToolKind, ToolStatus,
 };
@@ -202,6 +202,7 @@ pub fn item(
     session: &Entity<ChatSession>,
     it: &ChatItem,
     target: TranscriptItemId,
+    find_emphasis: Option<bool>,
     window: &Window,
     cx: &App,
 ) -> impl IntoElement + use<> {
@@ -223,7 +224,22 @@ pub fn item(
 
     // Width is owned by the pane's run so an activity summary drawn by the
     // pane and the steps rendered here always share the same two edges.
-    div().w_full().min_w_0().child(body)
+    div()
+        .w_full()
+        .min_w_0()
+        // Search used to move to a matching item without marking what in the
+        // viewport had changed. Keep the marker on the row's existing box so
+        // opening or closing Find never changes transcript geometry. Every hit
+        // gets the quiet list fill; the current hit gets the stronger selected
+        // fill used by the find controls themselves.
+        .when_some(find_emphasis, |row, current| {
+            row.rounded(cx.theme().radius).bg(if current {
+                cx.theme().accent.opacity(0.35)
+            } else {
+                cx.theme().list_hover
+            })
+        })
+        .child(body)
 }
 
 // ── user prompt — filled, shrink-to-fit, against the right edge ─────────────
@@ -694,6 +710,59 @@ fn tool(
             .into_any_element();
     }
 
+    // A live tool with detail is a disclosure too. Use the shared Button
+    // primitive so the same header that opens with a pointer also opens with
+    // Tab + Enter/Space and exposes a button role to accessibility clients.
+    let header_content = div()
+        .h_flex()
+        .items_center()
+        .gap_2()
+        .w_full()
+        .text_size(WORK_TEXT)
+        .child(Icon::new(tool_icon(t.call.kind)).size_4())
+        .children(show_kind.then(|| {
+            div()
+                .font_semibold()
+                .flex_none()
+                .child(tool_label(t.call.kind))
+        }))
+        .child(
+            div()
+                .flex_1()
+                .min_w_0()
+                .truncate()
+                .text_color(cx.theme().muted_foreground)
+                .when(verbatim, |d| {
+                    d.font_family(cx.theme().mono_font_family.clone())
+                })
+                .child(descriptor),
+        )
+        .children(completed_mark(t.call.status, cx))
+        .children(status_note(t.call.status, cx))
+        .children(has_detail.then(|| {
+            Icon::new(if open {
+                IconName::ChevronDown
+            } else {
+                IconName::ChevronRight
+            })
+            .size_4()
+        }));
+    let header = if has_detail {
+        crate::controls::action(("tool", fold_key(target)))
+            .ghost()
+            .w_full()
+            .min_w_0()
+            .p_0()
+            .child(header_content)
+            .on_click(toggle)
+            .into_any_element()
+    } else {
+        div()
+            .id(("tool", fold_key(target)))
+            .child(header_content)
+            .into_any_element()
+    };
+
     div()
         .v_flex()
         .gap_2()
@@ -702,52 +771,7 @@ fn tool(
         .rounded(cx.theme().radius)
         .border_1()
         .border_color(cx.theme().border)
-        .child(
-            div()
-                .h_flex()
-                .items_center()
-                .gap_2()
-                .w_full()
-                // The same size the quiet shape of this step is drawn at. A
-                // tool card is *how* the answer got made, not part of it, and
-                // at the prose size it competed with the answer beside it --
-                // while the very same step, drawn as a row inside a strip, sat
-                // a step below. One step, two sizes, decided by nothing but
-                // where it landed.
-                .text_size(WORK_TEXT)
-                .id(("tool", fold_key(target)))
-                .when(has_detail, |header| {
-                    header.cursor_pointer().on_click(toggle)
-                })
-                .child(Icon::new(tool_icon(t.call.kind)).size_4())
-                .children(show_kind.then(|| {
-                    div()
-                        .font_semibold()
-                        .flex_none()
-                        .child(tool_label(t.call.kind))
-                }))
-                .child(
-                    div()
-                        .flex_1()
-                        .min_w_0()
-                        .truncate()
-                        .text_color(cx.theme().muted_foreground)
-                        .when(verbatim, |d| {
-                            d.font_family(cx.theme().mono_font_family.clone())
-                        })
-                        .child(descriptor),
-                )
-                .children(completed_mark(t.call.status, cx))
-                .children(status_note(t.call.status, cx))
-                .children(has_detail.then(|| {
-                    Icon::new(if open {
-                        IconName::ChevronDown
-                    } else {
-                        IconName::ChevronRight
-                    })
-                    .size_4()
-                })),
-        )
+        .child(header)
         .children(sections)
         .into_any_element()
 }
@@ -1104,15 +1128,14 @@ fn diff(
         .child(
             // The path header is the way into the editor: reviewing a diff and
             // wanting to touch it up is one motion, not two.
-            div()
+            crate::controls::action(("diff-path", key))
+                .link()
+                .compact()
                 // Keyed by the section's position in the card, not by the
                 // path's *length* -- two diffs whose paths happened to be the
                 // same number of characters shared one id.
-                .id(("diff-path", key))
-                .cursor_pointer()
                 .text_color(context)
-                .hover(|header| header.text_color(cx.theme().foreground))
-                .child(display_path)
+                .label(display_path)
                 .on_click({
                     // Resolved here, where the session -- and so the project
                     // root -- is known. The Workbench opens whatever path it is
@@ -1245,13 +1268,10 @@ fn plan(
         // wall between two paragraphs.
         .text_size(WORK_TEXT)
         .child(
-            div()
-                .h_flex()
-                .gap_2()
-                .items_center()
+            crate::controls::action(("plan", fold_key(target)))
+                .ghost()
                 .w_full()
-                .id(("plan", fold_key(target)))
-                .cursor_pointer()
+                .p_0()
                 .on_click({
                     let session = session.clone();
                     move |_, _, cx: &mut App| {
@@ -1261,8 +1281,8 @@ fn plan(
                         });
                     }
                 })
-                .child(Icon::new(IconName::CircleCheck).size_4())
-                .child(div().font_semibold().flex_none().child("Plan"))
+                .icon(Icon::new(IconName::CircleCheck))
+                .label("Plan")
                 // Collapsed, the header is the whole card, so it has to say
                 // what the list said: how much of it is done.
                 .child(
@@ -1441,8 +1461,9 @@ fn ask_form(
                     .clone()
                     .or_else(|| field.description.clone())
                     .unwrap_or_else(|| format!("Question {}", f + 1));
-                div()
-                    .id(("ask-tab", f))
+                crate::controls::action(("ask-tab", f))
+                    .ghost()
+                    .selected(f == active)
                     .h_flex()
                     .gap_1()
                     .flex_none()
@@ -1450,7 +1471,6 @@ fn ask_form(
                     .py_1()
                     .rounded(cx.theme().radius)
                     .text_xs()
-                    .cursor_pointer()
                     // The tick beside a label marks a question as *answered*,
                     // which is a different thing from the one on screen — so
                     // the fill is all that says which tab is open. It is the
@@ -1462,10 +1482,13 @@ fn ask_form(
                             .font_semibold()
                     })
                     // Only a *tab* label is elided; a choice never is.
-                    .child(div().max_w(ASK_TAB_W).truncate().child(label))
-                    .when(a.field_answered(f), |tab| {
-                        tab.child(Icon::new(IconName::Check).size_3())
-                    })
+                    .max_w(ASK_TAB_W)
+                    .overflow_hidden()
+                    .label(label)
+                    .children(
+                        a.field_answered(f)
+                            .then(|| Icon::new(IconName::Check).size_3()),
+                    )
                     .on_click(move |_, _, cx: &mut App| {
                         session.update(cx, |s, cx| {
                             if let Some(item) = s.chat.ask_at_mut(idx) {
@@ -1494,12 +1517,24 @@ fn ask_form(
         .map(|(o, choice)| {
             let session = session.clone();
             let on = picked.contains(&o);
-            div()
-                .id(("ask-choice", o))
+            let mut choice_content = div()
                 .v_flex()
                 .gap_0p5()
                 .w_full()
+                .child(div().child(choice.label.clone()));
+            if let Some(description) = choice.description.clone() {
+                choice_content = choice_content.child(
+                    div()
+                        .text_size(WORK_TEXT)
+                        .text_color(cx.theme().muted_foreground)
+                        .child(description),
+                );
+            }
+            crate::controls::action(("ask-choice", o))
+                .ghost()
+                .selected(on)
                 .p_2()
+                .w_full()
                 .rounded(cx.theme().radius)
                 .border_1()
                 .border_color(if on {
@@ -1507,27 +1542,14 @@ fn ask_form(
                 } else {
                     cx.theme().border
                 })
-                .cursor_pointer()
                 // The one thing on this card that has to be *read* before
                 // anything can happen, so it is set at the size everything
                 // else meant to be read is. It had been a step below the
                 // question it answers and a step above its own explanation --
                 // three sizes inside one decision.
-                .child(div().child(choice.label.clone()))
-                // Descriptions are never elided either: an option the user
-                // cannot read whole is one they cannot choose.
-                .when_some(choice.description.clone(), |row, description| {
-                    row.child(
-                        div()
-                            // A step under the label it explains. The card
-                            // itself speaks at the conversation's size, because
-                            // nothing proceeds until it is answered -- but the
-                            // sentence explaining an option is not the option.
-                            .text_size(WORK_TEXT)
-                            .text_color(cx.theme().muted_foreground)
-                            .child(description),
-                    )
-                })
+                // Descriptions stay below their choice inside one child, even
+                // though Button's own content row is horizontal.
+                .child(choice_content)
                 .on_click(move |_, _, cx: &mut App| {
                     session.update(cx, |s, cx| {
                         if let Some(item) = s.chat.ask_at_mut(idx) {
@@ -1870,15 +1892,14 @@ fn ghost_row(
     cx: &App,
 ) -> gpui::AnyElement {
     let interactive = fold.is_some();
-    div()
-        .id(id)
-        .when(interactive, |row| row.group("ghost-disclosure"))
+    let content = div()
         .h_flex()
         .items_center()
         .gap_2()
+        .w_full()
+        .min_w_0()
         .text_xs()
         .text_color(cx.theme().muted_foreground)
-        .when(interactive, |row| row.cursor_pointer().on_click(on_click))
         // Every non-text affordance occupies the same row slot. Their actual
         // drawings may be smaller, but their centres no longer depend on the
         // SVG's or font's own bounding box.
@@ -1917,8 +1938,21 @@ fn ghost_row(
                 .size_3(),
             )
         }))
-        .child(div().flex_1())
-        .into_any_element()
+        .child(div().flex_1());
+
+    if interactive {
+        crate::controls::action(id)
+            .ghost()
+            .group("ghost-disclosure")
+            .w_full()
+            .min_w_0()
+            .p_0()
+            .child(content)
+            .on_click(on_click)
+            .into_any_element()
+    } else {
+        div().id(id).w_full().child(content).into_any_element()
+    }
 }
 
 /// Completed work is the common case: a compact check next to its descriptor

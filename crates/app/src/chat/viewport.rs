@@ -726,6 +726,18 @@ impl FindState {
         });
         hits
     }
+
+    /// How `target` participates in the current result set.
+    ///
+    /// The list renderer runs after the pane's main render has populated the
+    /// cache, so it can decorate visible rows without rescanning the entire
+    /// transcript once per row. `None` also covers an empty query and a cache
+    /// invalidated by a transcript update; the next pane render refreshes it.
+    pub fn emphasis(&self, target: TranscriptItemId) -> Option<bool> {
+        let cached = self.cache.as_ref()?;
+        let position = cached.hits.iter().position(|hit| hit.target == target)?;
+        Some(position == self.current)
+    }
 }
 
 #[cfg(test)]

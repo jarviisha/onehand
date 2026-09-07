@@ -32,8 +32,9 @@ use gpui::{
 };
 use gpui_component::button::{Button, ButtonVariants as _};
 use gpui_component::input::{InputEvent, Textarea, TextareaState};
-use gpui_component::tooltip::Tooltip;
-use gpui_component::{ActiveTheme, Disableable as _, Icon, IconName, Sizable as _, StyledExt};
+use gpui_component::{
+    ActiveTheme, Disableable as _, Icon, IconName, Selectable as _, Sizable as _, StyledExt,
+};
 use onehand_core::attachment::{AttachmentDelivery, AttachmentSource, StagedAttachment};
 use onehand_core::completion::{self, ActiveTrigger, TriggerKind};
 
@@ -50,9 +51,6 @@ const MAX_COMPLETION_ROWS: usize = 50;
 /// giving the rows more room does not quietly cost the list two of them: it is
 /// about seven rows at their current height, and it moved when they did.
 const POPUP_MAX_H: Rems = rems(17.5);
-/// The popup's tick column, held whether or not a row is ticked so the labels
-/// stay on one column.
-const CHECK_GUTTER: Rems = rems(0.875);
 /// How much of a selector's current value is shown before it truncates.
 const CHIP_MAX_W: Rems = rems(8.125);
 /// How much of an attachment's name is shown before it truncates.
@@ -250,6 +248,10 @@ mod tests {
 /// frame after it ended, the button that said Stop must not cancel anything.
 pub enum ComposerEvent {
     SendPressed,
+    /// Stop is deliberately separate from Send/Queue. While a turn is live,
+    /// clicking the primary action queues the draft; only this explicit danger
+    /// action cancels work already in flight.
+    StopPressed,
 }
 
 impl gpui::EventEmitter<ComposerEvent> for Composer {}
@@ -748,25 +750,31 @@ impl Composer {
                         cx,
                         |composer, window, cx| composer.insert_trigger('/', window, cx),
                     ))
-                    // The chips take whatever is left and give it back first.
-                    // A row of four selectors on a narrow panel used to push
-                    // Send off its own edge, because the only flexible thing in
-                    // the row was the gap before it.
+                    // The chips take whatever is left and scroll inside that
+                    // allotment. Clipping them made agent settings disappear on
+                    // a narrow panel with no visible route back to them; the
+                    // actions on either side remain fixed and the middle stays
+                    // reachable instead.
                     .child(
                         div()
+                            .id("composer-settings")
                             .h_flex()
                             .items_center()
                             .gap_2()
                             .flex_1()
                             .min_w_0()
-                            .overflow_hidden()
+                            .overflow_x_scroll()
                             .children(chips),
                     )
                     .child(
-                        send_button(
+                        send_controls(
                             blocked,
+                            !self.text(cx).trim().is_empty() || !self.attachments.is_empty(),
                             cx.listener(|_: &mut Self, _, _, cx| {
                                 cx.emit(ComposerEvent::SendPressed);
+                            }),
+                            cx.listener(|_: &mut Self, _, _, cx| {
+                                cx.emit(ComposerEvent::StopPressed);
                             }),
                         )
                         .flex_none(),
@@ -1076,7 +1084,7 @@ impl Composer {
             return None;
         }
         let selected = highlight(self.selected, rows.len());
-        let (muted, hover_fill) = (cx.theme().muted_foreground, cx.theme().list_hover);
+        let muted = cx.theme().muted_foreground;
 
         Some(
             // The surface and the scrolling list are two boxes, and the inset
@@ -1114,14 +1122,17 @@ impl Composer {
                         .children(rows.into_iter().enumerate().map(|(i, row)| {
                             let session = session.clone();
                             let pick = row.pick.clone();
-                            div()
-                                .id(("candidate", i))
+                            crate::controls::action(("candidate", i))
+                                .ghost()
+                                .selected(Some(i) == selected)
                                 .h_flex()
                                 .gap_2()
+                                .w_full()
+                                .min_w_0()
+                                .overflow_hidden()
                                 .px_2()
                                 .py_2()
                                 .text_sm()
-                                .cursor_pointer()
                                 .rounded(cx.theme().radius)
                                 // This list is walked with the arrow keys and committed
                                 // with Enter, so the highlight is the only thing saying
@@ -1133,23 +1144,8 @@ impl Composer {
                                     el.bg(cx.theme().accent)
                                         .text_color(cx.theme().accent_foreground)
                                 })
-                                // The fainter of the two fills, and only on rows
-                                // that are not the selected one -- a hover step
-                                // painted over the selected step would take the
-                                // highlight *off* the row the pointer is on,
-                                // which is the opposite of what it is for.
-                                .when(Some(i) != selected, |el| el.hover(|row| row.bg(hover_fill)))
-                                // A fixed-width gutter whether or not the tick is there,
-                                // so the labels of a list stay on one column.
-                                .child(
-                                    div()
-                                        .w(CHECK_GUTTER)
-                                        .flex_none()
-                                        .when(row.checked, |gutter| {
-                                            gutter.child(Icon::new(IconName::Check).size_3())
-                                        }),
-                                )
-                                .child(div().min_w_0().truncate().child(row.label))
+                                .children(row.checked.then(|| Icon::new(IconName::Check).size_3()))
+                                .label(row.label)
                                 .children(row.detail.map(|detail| {
                                     div()
                                         .flex_1()
@@ -1223,15 +1219,15 @@ impl Render for Composer {
 /// here" and "this is the control you are editing" -- and it costs the row no
 /// width, where a border would have had to be carried by every control at rest
 /// to keep the row from shifting.
-fn chip(id: impl Into<gpui::ElementId>, open: bool, cx: &App) -> gpui::Stateful<gpui::Div> {
-    let (open_fill, hover_fill, fg, radius) = (
+fn chip(id: impl Into<gpui::ElementId>, open: bool, cx: &App) -> Button {
+    let (open_fill, fg, radius) = (
         cx.theme().accent,
-        cx.theme().list_hover,
         cx.theme().muted_foreground,
         cx.theme().radius,
     );
-    div()
-        .id(id)
+    crate::controls::action(id)
+        .ghost()
+        .selected(open)
         .h_flex()
         .items_center()
         .gap_1()
@@ -1239,10 +1235,8 @@ fn chip(id: impl Into<gpui::ElementId>, open: bool, cx: &App) -> gpui::Stateful<
         .h(CHIP_H)
         .px_2()
         .rounded(radius)
-        .cursor_pointer()
         .text_xs()
         .text_color(fg)
-        .hover(|chip| chip.bg(hover_fill))
         .when(open, |chip| chip.bg(open_fill))
 }
 
@@ -1259,7 +1253,7 @@ where
 {
     chip(id, false, cx)
         .child(Icon::new(icon).size_3())
-        .tooltip(move |window, cx| Tooltip::new(hint).build(window, cx))
+        .tooltip(hint)
         .on_click(cx.listener(move |composer: &mut Composer, _, window, cx| {
             on_click(composer, window, cx);
         }))
@@ -1284,9 +1278,11 @@ fn selector(
         // The popup groups and the tooltip carry the setting's name. Repeating
         // `Mode:`, `Model:`, `Effort:` on every chip spends half the composer's
         // control row naming controls that are already in a stable order.
-        .child(div().max_w(CHIP_MAX_W).truncate().child(visible))
-        .child(Icon::new(IconName::ChevronDown).size_3())
-        .tooltip(move |window, cx| Tooltip::new(hint.clone()).build(window, cx))
+        .max_w(CHIP_MAX_W)
+        .overflow_hidden()
+        .label(visible)
+        .dropdown_caret(true)
+        .tooltip(hint)
         .on_click(cx.listener(move |composer: &mut Composer, _, window, cx| {
             composer.toggle_selector(which, &session, window, cx);
         }))
@@ -1357,22 +1353,34 @@ fn selector_rows(session: &Entity<ChatSession>, which: Option<usize>, cx: &App) 
 /// rather than of a rule — so a refusal disables the control and puts the reason
 /// on it. One argument and not two, because "a turn is running" and "Send would
 /// refuse" are the same fact, and two of them can be made to disagree.
-fn send_button(
+fn send_controls(
     blocked: Option<onehand_core::chat::SubmitBlock>,
-    on_click: impl Fn(&gpui::ClickEvent, &mut Window, &mut App) + 'static,
-) -> Button {
+    has_draft: bool,
+    on_send: impl Fn(&gpui::ClickEvent, &mut Window, &mut App) + 'static,
+    on_stop: impl Fn(&gpui::ClickEvent, &mut Window, &mut App) + 'static,
+) -> gpui::Div {
     use onehand_core::chat::SubmitBlock;
 
     if blocked == Some(SubmitBlock::Busy) {
-        return crate::controls::action("stop")
-            .danger()
-            .icon(Icon::new(IconName::Pause))
-            .label("Stop")
-            // The button cancels; Enter queues. Said here because this is the
-            // one moment the two gestures do different things, and the label
-            // can only name one of them.
-            .tooltip("Stop this turn · Enter queues what you write next")
-            .on_click(on_click);
+        return div()
+            .h_flex()
+            .gap_2()
+            .children(has_draft.then(|| {
+                crate::controls::action("queue")
+                    .primary()
+                    .icon(Icon::new(IconName::ArrowUp))
+                    .label("Queue")
+                    .tooltip("Send this prompt when the current turn finishes")
+                    .on_click(on_send)
+            }))
+            .child(
+                crate::controls::action("stop")
+                    .danger()
+                    .icon(Icon::new(IconName::Pause))
+                    .label("Stop")
+                    .tooltip("Stop the current turn")
+                    .on_click(on_stop),
+            );
     }
     let send = crate::controls::action("send")
         .primary()
@@ -1381,15 +1389,18 @@ fn send_button(
     match blocked {
         // No pointer over a button that refuses: the cursor is a promise a
         // press will do something, and this one is here to say it will not.
-        Some(reason) => crate::controls::resting(send)
-            .disabled(true)
-            .tooltip(SharedString::from(reason.hint())),
+        Some(reason) => div().child(
+            crate::controls::resting(send)
+                .disabled(true)
+                .tooltip(SharedString::from(reason.hint())),
+        ),
         // What Enter does, on the control it does it to. Standing in the row as
         // its own line instead, it was a fixed width competing with the
         // selector chips for a narrow panel's last inch -- and the chips say
         // something that changes, where this says the same thing forever.
-        None => send
-            .tooltip("Enter sends · Shift+Enter for a newline")
-            .on_click(on_click),
+        None => div().child(
+            send.tooltip("Enter sends · Shift+Enter for a newline")
+                .on_click(on_send),
+        ),
     }
 }
