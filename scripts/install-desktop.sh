@@ -30,10 +30,31 @@ app_name="Onehand"
 project="onehand"
 
 script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
-repo_dir="$(cd -- "$script_dir/.." && pwd)"
 
-icon_src="$repo_dir/assets/$project.svg"
-binary="$repo_dir/target/release/$project"
+# Two layouts, one script. In a checkout this sits in `scripts/` with the icon
+# under `assets/` and the binary under `target/release/`; in an unpacked release
+# tarball all three are in one directory. The rules below -- the entry's name,
+# the `StartupWMClass`, the icon's name in the hicolor theme -- are compared
+# literally against what the window announces, so a second copy of this script
+# for the second layout would be a second place for them to drift out of step.
+#
+# The workspace manifest one level up is what tells the two apart, and it is
+# chosen because it is a fact about the layout rather than about its contents. A
+# discriminator that asked whether the binary is there would answer "tarball" or
+# "checkout" depending on whether anything had been built yet, and then report a
+# missing file from the wrong half of the tree.
+if [[ -f "$script_dir/../Cargo.toml" ]]; then
+    layout="checkout"
+    repo_dir="$(cd -- "$script_dir/.." && pwd)"
+    binary="$repo_dir/target/release/$project"
+    icon_src="$repo_dir/assets/$project.svg"
+    build_hint="run \`cargo build --release\` first"
+else
+    layout="release tarball"
+    binary="$script_dir/$project"
+    icon_src="$script_dir/$project.svg"
+    build_hint="unpack the release tarball again -- it is missing a file"
+fi
 
 data_dir="${XDG_DATA_HOME:-$HOME/.local/share}"
 icon_dir="$data_dir/icons/hicolor/scalable/apps"
@@ -47,8 +68,8 @@ fi
 # Checked rather than built: this script installs, and a desktop entry pointing
 # at a binary that is not there is the failure it exists to avoid.
 if [[ ! -x "$binary" ]]; then
-    echo "no release binary at $binary" >&2
-    echo "run \`cargo build --release\` first" >&2
+    echo "no release binary at $binary ($layout layout)" >&2
+    echo "$build_hint" >&2
     exit 1
 fi
 

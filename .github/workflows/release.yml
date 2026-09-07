@@ -1,0 +1,125 @@
+# Cuts a release from a tag.
+#
+# Separate from the CI workflow rather than a job inside it, for two reasons.
+# It needs `contents: write` to create a release, and CI is deliberately
+# read-only — a lint job does not get to write to the repository. And it builds
+# a different thing: the release profile is LTO with one codegen unit, which is
+# far slower than the profile CI tests under and shares no artifacts with it.
+#
+# Nothing here is cached. A cache is a claim that an input has not changed, and
+# for the one build people actually download that claim is not worth making.
+#
+# There is no crates.io step and there cannot be: `gpui` is a git dependency
+# carrying no rev on purpose, and crates.io refuses a package with a git
+# dependency at all. A tagged tarball is the whole distribution channel.
+
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+  # Re-runnable by hand against a tag that already exists, which is what a
+  # failed packaging step leaves behind.
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Existing tag to build and release, e.g. v0.1.0'
+        required: true
+
+permissions:
+  contents: write
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: 0
+  # `github.event.inputs` rather than the `inputs` context: on a tag push the
+  # first is an empty string and falls through to the ref, which is the tag.
+  TAG: ${{ github.event.inputs.tag || github.ref_name }}
+
+jobs:
+  linux:
+    name: Linux x86_64
+    # Deliberately not `ubuntu-latest`. A binary links against the glibc it was
+    # built on and refuses to start on anything older, so the oldest supported
+    # image is the one that reaches the most distributions. If this label is
+    # ever retired, move to the next-oldest available image and say the new
+    # glibc floor in the release notes -- a binary that will not start says
+    # nothing about why.
+    runs-on: ubuntu-22.04
+    # The release profile is `lto = true` with `codegen-units = 1` over a
+    # 616-crate graph. It is slow, and slow is the point of it.
+    timeout-minutes: 120
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.tag || github.ref_name }}
+
+      # Link-time dependencies of gpui_platform (x11 + wayland + font-kit) and
+      # of the clipboard, same list the CI app job installs.
+      - name: System libraries
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            pkg-config cmake clang \
+            libfontconfig-dev libfreetype-dev \
+            libwayland-dev libxkbcommon-dev libxkbcommon-x11-dev \
+            libx11-dev libxcb1-dev libasound2-dev
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      # `--locked` for the same reason every CI invocation carries it: `gpui` is
+      # a revless git dependency, so the lockfile is the only thing pinning it
+      # and a run that silently re-resolved would not be shipping the build this
+      # tag was tested as.
+      - name: Build
+        run: cargo build --release --locked
+
+      # Not stripped. The release profile emits no debug info to begin with, and
+      # what a strip would remove is the symbol table -- the thing that puts
+      # function names in a panic backtrace, which is the most useful thing a
+      # first release can send home.
+      - name: Package
+        run: |
+          name="onehand-${TAG}-linux-x86_64"
+          mkdir "$name"
+          cp target/release/onehand "$name"/
+          cp assets/onehand.svg "$name"/
+          cp scripts/install-desktop.sh "$name"/
+          cp README.md CHANGELOG.md LICENSE-MIT LICENSE-APACHE "$name"/
+          tar czf "$name.tar.gz" "$name"
+          sha256sum "$name.tar.gz" > "$name.tar.gz.sha256"
+          echo "ARCHIVE=$name.tar.gz" >> "$GITHUB_ENV"
+
+      # The notes say what a tarball cannot: which libraries have to already be
+      # on the machine, and that this is a pre-release. The changelog carries
+      # the contents, so this does not restate them.
+      - name: Notes
+        run: |
+          cat > notes.md <<'EOF'
+          Pre-release. The config file, the on-disk transcript format, the window
+          layout and the keymap are all still changing without migration.
+
+          Linux x86_64 only, built on Ubuntu 22.04. Unpack, then:
+
+          ```bash
+          ./install-desktop.sh          # desktop entry + icon
+          ./onehand /path/to/project
+          ```
+
+          Needs fontconfig, freetype, libxkbcommon and X11 or Wayland already
+          installed, and Node for the default agent, which launches through
+          `npx`. Point the config at another command and that requirement goes.
+
+          See `CHANGELOG.md` in the archive for what is in this build.
+          EOF
+
+      - name: Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$TAG" \
+            --prerelease \
+            --title "onehand $TAG" \
+            --notes-file notes.md \
+            "$ARCHIVE" "$ARCHIVE.sha256"

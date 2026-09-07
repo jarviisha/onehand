@@ -627,6 +627,7 @@ mod tests {
             "REFACTOR-CHAT-PANE",
             "UI-UX-PROPOSAL",
             "README",
+            "CHANGELOG",
         ];
         const SECTION_MARK: char = '\u{a7}';
 

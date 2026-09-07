@@ -47,10 +47,22 @@ ACP_CMD="node crates/core/examples/mock_terminal_agent.js" cargo run -p onehand-
 ACP_CMD="node crates/core/examples/mock_ask_agent.js" cargo run -p onehand-core --example acp_smoke go
 ```
 
-There is no CI. **Use the Makefile targets for `fmt` and `clippy`**, not bare cargo: `vendor/`
+**Use the Makefile targets for `fmt` and `clippy`**, not bare cargo: `vendor/`
 is a workspace member, so `cargo fmt` reformats it and `clippy --fix` rewrites it — hundreds of lines
 of churn on upstream code, destroying the one property that vendor has (its diff against upstream is
 exactly our patches). `make fmt` / `make lint` scope to first-party crates and exclude `vendor/`.
+
+CI runs on every push to `main` and every pull request, split into four jobs by what each costs —
+formatting (no compilation at all), core tests (120 crates, where a real failure usually shows first),
+app tests, and clippy with warnings denied. Every cargo invocation is `--locked`, because `gpui` is a
+git dependency carrying no rev and the lockfile is the only thing pinning it. The two heavy jobs go
+through the Makefile for the reason above.
+
+A release is cut by pushing a `v*` tag: that builds `--locked` on an older runner image, so the binary's
+glibc requirement is one more distributions meet, and packages the binary with the icon, the desktop
+installer and the licences into a tarball attached to a GitHub pre-release. Nothing publishes to
+crates.io and nothing can — a git dependency with no rev is not publishable there, so tagged tarballs
+are the only channel. `onehand --version` and the Help dialog both name the build.
 
 Tests are inline `#[cfg(test)]` modules — there is no `tests/` directory.
 

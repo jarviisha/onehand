@@ -7,11 +7,10 @@ many concurrent sessions per project root, with a quick editor and terminal buil
 > [!WARNING]
 > **Early and unstable. Not ready to depend on.**
 >
-> This is under active development. There has been no release, no version is
-> published, and nothing here is covered by a stability promise — window layout,
-> the config file format, the on-disk transcript format and the keymap have all
-> changed without migration and will again. Expect rough edges and breakage on
-> update. No CI runs on it, and it has only been exercised on Linux.
+> `v0.1.0` is a pre-release, and nothing here is covered by a stability promise —
+> window layout, the config file format, the on-disk transcript format and the
+> keymap have all changed without migration and will again. Expect rough edges
+> and breakage on update. It has only been exercised on Linux.
 
 ## What it is
 
@@ -29,13 +28,40 @@ is the default; anything that implements the protocol should work. Commands the
 agent runs come back over ACP's terminal extension and render inline in the
 transcript.
 
+## Install
+
+Prebuilt Linux x86_64 tarballs are on the
+[releases page](https://github.com/jarviisha/onehand/releases). Unpack one and
+run the installer beside the binary — it registers the desktop entry and the
+icon, which is what gives the window a name and a picture:
+
+```bash
+tar xf onehand-v0.1.0-linux-x86_64.tar.gz
+cd onehand-v0.1.0-linux-x86_64
+./install-desktop.sh          # desktop entry + icon, into ~/.local/share
+./onehand /path/to/project
+```
+
+The entry points at wherever the folder was unpacked, so unpack it somewhere it
+can stay and re-run the installer if it moves.
+
 ## Requirements
 
-- A recent Rust toolchain — the app crate is edition 2024.
+To run a release build:
+
 - Linux, X11 or Wayland. Nothing here is Linux-only by design, but the platform
   features are built for it and no other platform has been tried.
+- The shared libraries a desktop app links: fontconfig, freetype, libxkbcommon,
+  and X11 or Wayland. On Debian and Ubuntu those are `libfontconfig1`,
+  `libfreetype6`, `libxkbcommon0`, `libxkbcommon-x11-0`, `libasound2`.
 - Node, for the default agent: it launches through `npx`. Point the config at a
   different command and this goes away.
+
+To build it, additionally:
+
+- A recent Rust toolchain — the app crate is edition 2024.
+- The `-dev` half of the libraries above, plus `pkg-config`, `cmake` and
+  `clang`. The CI workflow's package list is the tested one.
 
 ## Build and run
 
@@ -61,10 +87,15 @@ that exist:
 
 - No command palette.
 - The terminal has no `APP_KEYPAD` mode and its cursor does not blink. Neovim
-  itself runs — `Ctrl+Shift+N` opens it on the active project, as the
-  Workbench's third mode beside Editor and Files.
+  itself runs — `Ctrl+Shift+N` opens it on the active project, as one of the
+  Workbench's modes beside Editor, Files and Markdown.
 - `path:line:col` in agent prose is not clickable; only a tool card's path
   header opens a file.
+- The remote bridge does not stream the transcript. A finished turn carries the
+  end of the agent's last answer and nothing else — no tool cards, no diffs,
+  nothing mid-turn.
+- Telegram is the only remote channel. The layer underneath it is general, but
+  nothing else implements it.
 - The bundled icon set covers less than the app wants, so some glyphs are
   approximations.
 
@@ -77,7 +108,7 @@ that exist:
 | `crates/plugin-api` | GUI-free plugin IDs, descriptors and capabilities |
 | `crates/plugin-host` | startup registry and typed contribution contracts |
 | `crates/terminal-ui` | shared PTY/grid ownership for Terminal and Neovim |
-| `plugins/builtin` | compile-time Editor, Files, Neovim and Telegram plugins |
+| `plugins/builtin` | compile-time Editor, Files, Markdown, Neovim and Telegram plugins |
 | `vendor/gpui-terminal` | a vendored terminal grid plus the interaction layer upstream never had |
 
 `crates/core` has no dependency on any UI framework, deliberately: it is the
@@ -93,9 +124,16 @@ with `DESIGN-ANSWER.md` for the UI contracts.
 
 ## Licence
 
-Not yet chosen, which means default copyright applies and you do not have
-permission to use this. If you want to, open an issue and ask — the intent is to
-land on something permissive.
+Dual licensed under either
+
+- Apache License, Version 2.0 ([LICENSE-APACHE](LICENSE-APACHE))
+- MIT License ([LICENSE-MIT](LICENSE-MIT))
+
+at your option. This is the Rust ecosystem's usual pair, and it is what the
+vendored terminal already carried.
+
+Unless you state otherwise, any contribution you deliberately submit for
+inclusion in this work is licensed the same way, with no additional terms.
 
 The vendored terminal keeps its upstream licences in `vendor/gpui-terminal/`,
-and the checked-in icon carries its own notice in `assets/icons/licenses/`.
+and the checked-in icons carry their own notices in `assets/icons/licenses/`.

@@ -771,26 +771,37 @@ pub fn help(cx: &mut Context<Shell>) -> Dialog {
         ))
         .close_button(false)
         .content(|content, _, cx: &mut App| {
-            content.child(title_row("Keyboard shortcuts")).child(
-                div().v_flex().gap_2().w_full().children(
-                    SHORTCUTS
-                        .iter()
-                        .map(|shortcut| {
-                            div()
-                                .h_flex()
-                                .w_full()
-                                .justify_between()
-                                .gap_4()
-                                .child(div().child(shortcut.what))
-                                .child(
-                                    div()
-                                        .text_color(cx.theme().muted_foreground)
-                                        .child(shortcut.label),
-                                )
-                        })
-                        .collect::<Vec<_>>(),
-                ),
-            )
+            content
+                .child(title_row("Keyboard shortcuts"))
+                .child(
+                    div().v_flex().gap_2().w_full().children(
+                        SHORTCUTS
+                            .iter()
+                            .map(|shortcut| {
+                                div()
+                                    .h_flex()
+                                    .w_full()
+                                    .justify_between()
+                                    .gap_4()
+                                    .child(div().child(shortcut.what))
+                                    .child(
+                                        div()
+                                            .text_color(cx.theme().muted_foreground)
+                                            .child(shortcut.label),
+                                    )
+                            })
+                            .collect::<Vec<_>>(),
+                    ),
+                )
+                // The build, where somebody who never opens a terminal can read it.
+                // `onehand --version` answers the same question for everybody else.
+                .child(
+                    div()
+                        .pt_2()
+                        .text_xs()
+                        .text_color(cx.theme().muted_foreground)
+                        .child(format!("onehand {}", env!("CARGO_PKG_VERSION"))),
+                )
         })
 }
 
