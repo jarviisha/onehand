@@ -55,6 +55,15 @@ const MAX_COMPLETION_ROWS: usize = 50;
 const POPUP_MAX_H: Rems = rems(17.5);
 /// How much of a selector's current value is shown before it truncates.
 const CHIP_MAX_W: Rems = rems(8.125);
+/// How narrow a selector's list of choices may get.
+///
+/// A selector's popup is sized by its own rows rather than stretched across the
+/// reading column, and three words like *Ask*, *Code* and *Plan* would size it
+/// to about an inch — narrower than the chip that opened it, which reads as a
+/// second, smaller control rather than as that chip's choices. This is a step
+/// clear of [`CHIP_MAX_W`] for that reason, and it is a floor and not a width:
+/// a longer choice still widens the list up to the column it sits in.
+const SELECTOR_MIN_W: Rems = rems(12.);
 /// How much of an attachment's name is shown before it truncates.
 const ATTACHMENT_MAX_W: Rems = rems(10.);
 /// Attachment chips drawn before the tray starts counting instead.
@@ -254,6 +263,11 @@ pub enum ComposerEvent {
     /// clicking the primary action queues the draft; only this explicit danger
     /// action cancels work already in flight.
     StopPressed,
+    /// Show a staged file, so the one of three files called `main.rs` that is
+    /// actually attached can be checked before the prompt goes. Asked for
+    /// rather than done here: which dock the Workbench lives in and whether it
+    /// has to be opened first are the shell's business, not the composer's.
+    OpenFile(std::path::PathBuf),
 }
 
 impl gpui::EventEmitter<ComposerEvent> for Composer {}
@@ -948,58 +962,79 @@ impl Composer {
                             // to look wrong here rather than fail silently at
                             // the moment the user hits Enter.
                             let unavailable = a.delivery == AttachmentDelivery::Unavailable;
-                            div()
-                                .h_flex()
-                                .items_center()
-                                .gap_1()
-                                .flex_none()
-                                .pl_2()
-                                .pr_1()
-                                .py_1()
-                                .rounded(radius)
-                                .border_1()
-                                .border_color(if unavailable { danger_border } else { border })
-                                .text_xs()
-                                .child(
-                                    Icon::new(match a.kind {
-                                        AttachmentKind::Image => IconName::Frame,
-                                        AttachmentKind::File => IconName::File,
-                                    })
-                                    .size_3(),
-                                )
-                                .child(
-                                    div()
-                                        .max_w(ATTACHMENT_MAX_W)
-                                        .truncate()
-                                        .when(unavailable, |el| el.text_color(danger_text))
-                                        .child(a.name.clone()),
-                                )
-                                // The size, because two screenshots taken a
-                                // minute apart have interchangeable names, and
-                                // because it is the only warning that a large
-                                // image will go as a link instead of inline.
-                                .children(a.bytes.map(|bytes| {
-                                    div()
-                                        .flex_none()
-                                        .text_color(muted)
-                                        .child(onehand_core::attachment::size_label(bytes))
+                            let parts = [
+                                Icon::new(match a.kind {
+                                    AttachmentKind::Image => IconName::Frame,
+                                    AttachmentKind::File => IconName::File,
+                                })
+                                .size_3()
+                                .into_any_element(),
+                                div()
+                                    .max_w(ATTACHMENT_MAX_W)
+                                    .truncate()
+                                    .when(unavailable, |el| el.text_color(danger_text))
+                                    .child(a.name.clone())
+                                    .into_any_element(),
+                            ];
+                            // The size, because two screenshots taken a minute
+                            // apart have interchangeable names, and because it
+                            // is the only warning that a large image will go as
+                            // a link instead of inline.
+                            let size = a.bytes.map(|bytes| {
+                                div()
+                                    .flex_none()
+                                    .text_color(muted)
+                                    .child(onehand_core::attachment::size_label(bytes))
+                                    .into_any_element()
+                            });
+                            // A real button, not a bare glyph: this one is
+                            // small, sits beside the name it destroys, and
+                            // needs the hover and the focus ring that say which
+                            // of the two the pointer is on.
+                            //
+                            // It is one clickable inside another wherever the
+                            // chip itself opens, which is what the stop is for:
+                            // without it the press that unstages a file also
+                            // asks the Workbench to open the file just removed.
+                            let unstage = crate::controls::action(("unstage", i))
+                                .ghost()
+                                .xsmall()
+                                .icon(Icon::new(IconName::Close))
+                                .tooltip("Remove this attachment")
+                                .on_click(cx.listener(move |composer: &mut Self, _, _, cx| {
+                                    cx.stop_propagation();
+                                    composer.unstage(id, cx);
                                 }))
-                                // A real button, not a bare glyph: this one is
-                                // small, sits beside the name it destroys, and
-                                // needs the hover and the focus ring that say
-                                // which of the two the pointer is on.
-                                .child(
-                                    crate::controls::action(("unstage", i))
-                                        .ghost()
-                                        .xsmall()
-                                        .icon(Icon::new(IconName::Close))
-                                        .tooltip("Remove this attachment")
-                                        .on_click(cx.listener(
-                                            move |composer: &mut Self, _, _, cx| {
-                                                composer.unstage(id, cx);
-                                            },
-                                        )),
+                                .into_any_element();
+
+                            match openable(a) {
+                                Some(path) => attachment_shape(
+                                    crate::controls::action(("attachment", i)).ghost(),
+                                    unavailable,
+                                    border,
+                                    danger_border,
+                                    radius,
                                 )
+                                .children(parts)
+                                .children(size)
+                                .child(unstage)
+                                .tooltip("Open this file in the Workbench")
+                                .on_click(cx.listener(move |_: &mut Self, _, _, cx| {
+                                    cx.emit(ComposerEvent::OpenFile(path.clone()));
+                                }))
+                                .into_any_element(),
+                                None => attachment_shape(
+                                    div(),
+                                    unavailable,
+                                    border,
+                                    danger_border,
+                                    radius,
+                                )
+                                .children(parts)
+                                .children(size)
+                                .child(unstage)
+                                .into_any_element(),
+                            }
                         }),
                 )
                 .when(over > 0, |tray| {
@@ -1114,7 +1149,22 @@ impl Composer {
             // list does to its own offset can consume it.
             div()
                 .v_flex()
-                .w_full()
+                // **The completion list takes the column; a selector takes its
+                // own rows.** A file candidate is a path and needs every inch
+                // of the width the reading column allows, so that list is the
+                // full one. A mode list is three short words, and stretched to
+                // the same 52rem it read as a panel that had opened over the
+                // conversation rather than as the choices behind the chip a
+                // finger-width below it.
+                //
+                // Sized here and not capped, because the box it is dropped into
+                // is already the reading column: a flex child shrinks to its
+                // parent before it overflows, so the column remains the maximum
+                // without this having to name it.
+                .map(|popup| match overlay {
+                    Overlay::Completion => popup.w_full(),
+                    Overlay::Selector(_) => popup.min_w(SELECTOR_MIN_W),
+                })
                 .rounded(cx.theme().radius)
                 .border_1()
                 .border_color(cx.theme().border)
@@ -1218,6 +1268,52 @@ impl Render for Composer {
         // The composer is drawn by the pane, which owns the layout it sits in.
         div()
     }
+}
+
+/// Where a staged attachment leads, if it leads anywhere.
+///
+/// **Only a text file, and only one that could be read.** Three files named
+/// `main.rs` are three chips that say `main.rs`, and the only way to tell which
+/// one is staged is to look at it — so the chip carries the way to. But the
+/// Workbench's editor reads a file as text, so an image handed to it comes back
+/// as a decoding error naming a file the user can see is right there, and a
+/// file already marked unreadable would fail for the reason the chip is already
+/// showing in the danger tint. Neither is worth a second telling, so neither
+/// chip offers the press: the pointer appears over the ones that open and
+/// nowhere else, which is the only warning a control of this size can carry.
+fn openable(attachment: &StagedAttachment) -> Option<std::path::PathBuf> {
+    let openable = attachment.kind == AttachmentKind::File
+        && attachment.delivery != AttachmentDelivery::Unavailable;
+    openable.then(|| attachment.path.clone())
+}
+
+/// The chip an attachment is drawn as, applied to whichever container carries
+/// it.
+///
+/// Two containers, because only some of these do something when pressed. The
+/// shape is shared rather than written twice so that being pressable stays the
+/// *only* difference between them: the two things this tray has to say — the
+/// file's name, and whether it can be read — are said the same way whether or
+/// not there is anywhere to go, and a chip that changed size or inset on
+/// becoming clickable would be saying a third thing nobody meant.
+fn attachment_shape<E: Styled>(
+    el: E,
+    unavailable: bool,
+    border: gpui::Hsla,
+    danger: gpui::Hsla,
+    radius: gpui::Pixels,
+) -> E {
+    el.h_flex()
+        .items_center()
+        .gap_1()
+        .flex_none()
+        .pl_2()
+        .pr_1()
+        .py_1()
+        .rounded(radius)
+        .border_1()
+        .border_color(if unavailable { danger } else { border })
+        .text_xs()
 }
 
 /// The shell every control in the composer's row is built from.

@@ -267,6 +267,11 @@ impl ChatPane {
                             pane.stop(cx);
                         }
                     }
+                    // Straight on to the shell, which is the half that knows
+                    // the Workbench is a dock and whether it is open. The path
+                    // is already absolute -- everything staged here arrives
+                    // from the picker, the clipboard or a drop.
+                    ComposerEvent::OpenFile(path) => cx.emit(ChatPaneEvent::OpenFile(path.clone())),
                 },
             )
             .detach();

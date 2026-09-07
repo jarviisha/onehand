@@ -141,6 +141,15 @@ capped list says what it is holding back: cut with nothing admitting it, a query
 that matched four hundred files reads as one that matched fifty, and the file
 the user is looking for is missing for no visible reason.
 
+**A popup is as wide as what it holds.** The completion list takes the whole
+reading column, because a file candidate is a path and wants every inch of it.
+A selector's list is sized by its own rows instead: three words like *Ask*,
+*Code* and *Plan* stretched across the same 52rem read as a panel that had
+opened over the conversation rather than as the choices behind the chip a
+finger-width below them. Its floor is a step clear of the chip's own maximum
+width, so it can never come out narrower than the control it belongs to, and the
+shared column remains its maximum.
+
 **The list is walked, not just pointed at.** `Up`/`Down` move the highlight and
 wrap at both ends, the list **scrolls to keep the highlight on screen**, `Enter`
 takes it, and a click takes the row it landed on — a click is a choice already
@@ -200,6 +209,16 @@ button**, not a bare glyph: it sits beside the name it destroys and needs the
 hover and focus states that say which of the two the pointer is on. The tray is
 **bounded** — a dropped folder is however many files it held — and what is over
 the bound is counted, not silently dropped.
+
+**A chip is also the way to the file it names**, where there is one to go to.
+Three files called `main.rs` are three chips reading `main.rs`, and checking
+which of them is staged means looking at it — so pressing the chip opens it in
+the Workbench. An image and a file that could not be read offer no such press:
+the editor reads a file as text, so both would answer with an error naming a
+file the user can see is right there, and the second is already saying it cannot
+be read. The pointer therefore appears over the chips that open and nowhere
+else, which is the only warning a control this size can carry. Removing stays
+the chip's own button, and the press that removes never also opens.
 
 **A prompt written mid-turn is queued, not swallowed.** `Enter` or **Queue** while the agent
 is working holds the prompt and clears the composer; it goes out the moment the
