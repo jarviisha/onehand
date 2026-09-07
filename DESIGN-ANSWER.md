@@ -120,6 +120,13 @@ the same place.
 The composer’s selector chips show the **current values**, not a repeated row
 of `Mode:` / `Model:` / `Effort:` prefixes. Their stable order, choice popup and
 tooltip retain the setting name while leaving the prompt controls room to fit.
+Each keeps its **dropdown caret**, which is not redundant with either of the two
+things that look like they cover it: a tooltip has to be hovered for and a press
+has to be risked, while the caret is the only thing that says *there are choices
+behind this* to a reader who has done neither. These are ghost controls with no
+border, no resting fill and muted ink, so without it they are four words in a
+row — read as a fragment of a sentence rather than as four settings, and running
+into one another with nothing else in the row separating them.
 
 **Send refuses out loud.** Whether a prompt may be sent is the conversation’s
 answer, not the view’s (`Chat::submit_blocker`), and the controls carry it.
@@ -241,15 +248,33 @@ also came out at two sizes and two inks, with the icons — which carry the
 smaller job — reading as the louder half. Send is the exception and looks it: it
 is the row’s one primary action.
 
+**A popup’s rows stand at that same height**, so the choices behind a chip are
+as tall as the chip. They are library buttons, and a button given no size takes
+the library’s own default — a step above everything in the row that opened it,
+chosen by nobody, and invisible for as long as those lists were as wide as the
+reading column. The rows that are a sentence *about* the list rather than a
+choice in it — that it matched nothing, that it is holding some back — take it
+too: one of them standing taller than its neighbours reads as a row that can be
+taken.
+
 **The composer’s control row gives way from the middle.** The three trigger
 buttons and Send hold their size; the selector chips take what is left and give
 it back first. A row of four chips on a narrow panel must not push Send off its
 own edge. What `Enter` does rides in Send’s **tooltip** rather than in a line of
 its own: it is the one convention here nothing else admits to, but it never
 changes, and a fixed label would spend a narrow panel’s last inch saying so
-while the chips — which do change — are the ones squeezed out. The selector
-region scrolls horizontally inside the width left to it, so a narrow panel never
-clips a setting into an unreachable control.
+while the chips — which do change — are the ones squeezed out.
+
+**The selector region wraps rather than scrolling.** A strip that scrolls with
+no scrollbar, no fade and no count is indistinguishable from one that was cut,
+so a setting pushed off its end is still a setting nothing on screen admits to —
+which is the fault scrolling was supposed to fix, moved one step along. Wrapped,
+there is no end to be pushed off, and the row grows by a line instead. The chips
+also **shrink**, for the last inch where even one of them is wider than the room
+left: an icon button squeezed to nothing is a target nobody can hit, but a chip
+carrying a word can lose the end of that word and still be read and still be
+pressed. The row’s height is measured like everything else in the card, so the
+transcript clears whatever it comes to.
 
 At the top, the transcript disappears at the header's rule. At the bottom it
 continues behind the transparent overlay wrapper and is covered only where an

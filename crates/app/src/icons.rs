@@ -91,7 +91,7 @@ icons! {
     GitBranch => "git-branch",
     Paperclip => "paperclip",
     SquarePen => "square-pen",
-    Slash => "slash",
+    SquareSlash => "square-slash",
 }
 
 #[cfg(test)]

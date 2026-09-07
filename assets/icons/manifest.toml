@@ -41,4 +41,9 @@ at-sign = "lucide:at-sign"
 # no slash; its `dash` is a minus sign. Lucide's `command` is not this either —
 # that is the ⌘ modifier key, which names a keystroke rather than the character
 # being typed, and on this app's platform it names one that does not exist.
-slash = "lucide:slash"
+#
+# The enclosed form and not the bare `slash`: at the 0.75rem these buttons draw
+# at, a lone diagonal stroke has no weight beside the paperclip and the at-sign
+# either side of it and reads as a separator between them rather than as a
+# glyph of its own.
+square-slash = "lucide:square-slash"

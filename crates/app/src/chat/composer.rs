@@ -51,8 +51,8 @@ const MAX_COMPLETION_ROWS: usize = 50;
 ///
 /// Sized by *how many candidates are visible* rather than by a round number, so
 /// giving the rows more room does not quietly cost the list two of them: it is
-/// about seven rows at their current height, and it moved when they did.
-const POPUP_MAX_H: Rems = rems(17.5);
+/// exactly ten rows at [`CHIP_H`], and it moves when they do.
+const POPUP_MAX_H: Rems = rems(15.);
 /// How much of a selector's current value is shown before it truncates.
 const CHIP_MAX_W: Rems = rems(8.125);
 /// How narrow a selector's list of choices may get.
@@ -68,16 +68,39 @@ const SELECTOR_MIN_W: Rems = rems(12.);
 const ATTACHMENT_MAX_W: Rems = rems(10.);
 /// Attachment chips drawn before the tray starts counting instead.
 const MAX_TRAY_CHIPS: usize = 12;
-/// How tall every control in the composer's row stands.
+/// The size the composer's own controls are lettered at.
+///
+/// A step under the smallest named size, which is as small as anything in this
+/// app is set and is meant to be: these controls are read once when a setting
+/// is being changed and ignored the rest of the time, and they sit an inch
+/// under the message being written, where anything at reading size competes
+/// with it. It is a value rather than `text_xs` because the ladder has no rung
+/// here — and it is still a rem, so a panel's zoom carries it like everything
+/// else.
+const CHIP_TEXT: Rems = rems(0.6875);
+/// How tall every control in the composer's row stands, and every row of the
+/// list a control opens.
 ///
 /// Fixed, because otherwise the *content* decides it and the content is not the
 /// same shape: a chip with a word in it is as tall as that word's line box
 /// (`text_xs` times gpui's default leading, about 1.21rem), while a chip
 /// holding only an icon is as tall as the icon (0.75rem). Left to themselves
-/// they came out about seven pixels apart on the same row. This is that line
-/// box plus the padding the chips already had, so the ones with words in them
-/// stand exactly where they did.
-const CHIP_H: Rems = rems(1.75);
+/// they came out about seven pixels apart on the same row.
+///
+/// The value is that line box and little else — a shade over a tenth of a rem
+/// of air above and below it. These are the quietest controls in the pane and
+/// they sit under the message being written, so what they owe is to be legible
+/// and hittable and then to get out of the way; a step more padding on each of
+/// six of them is a band of empty card across the bottom of every conversation.
+///
+/// **The popup's rows take it too**, so the choices behind a chip stand as tall
+/// as the chip. They are library buttons, and a button nobody gives a size to
+/// takes the library's default of 2rem — which is a step above everything in
+/// the row that opened it, chosen by nobody and noticed only once a selector's
+/// list stopped being as wide as the reading column. The two notice rows in
+/// that list are plain text and take it as well, or a list saying it has
+/// nothing stands taller than the same list saying anything.
+const CHIP_H: Rems = rems(1.5);
 
 /// What is showing above the composer. Mutually exclusive **by construction**:
 /// one `Option` makes that structural, where a flag per overlay needs a
@@ -745,53 +768,73 @@ impl Composer {
                 div()
                     .h_flex()
                     .items_center()
-                    .gap_2()
+                    // **The row is two groups and a primary action, and the gap
+                    // is what says so.** The three triggers are things done to
+                    // the message being written; the chips are what it will be
+                    // sent as. At one gap throughout they read as seven loose
+                    // things in a line, which is the state the caret on each
+                    // chip was left doing all the separating in.
+                    .gap_4()
                     .w_full()
-                    .child(action(
-                        "attach",
-                        Icon::new(crate::icons::Icon::Paperclip),
-                        "Attach a file",
-                        cx,
-                        |composer, _, cx| composer.attach(cx),
-                    ))
-                    // The two triggers, insertable from code. On Linux with a
-                    // Vietnamese IME a typed `/` can never reach the composer,
-                    // which makes the slash-command popup unreachable by
-                    // keyboard -- these are the way in.
-                    //
-                    // Which is also why each has to draw the character it types
-                    // and not a stand-in for it: for the user who cannot type
-                    // the character, the button is the only thing on screen
-                    // naming it, and nothing else here says what a mention or a
-                    // slash command is.
-                    .child(action(
-                        "mention",
-                        Icon::new(crate::icons::Icon::AtSign),
-                        "Mention a file",
-                        cx,
-                        |composer, window, cx| composer.insert_trigger('@', window, cx),
-                    ))
-                    .child(action(
-                        "command",
-                        Icon::new(crate::icons::Icon::Slash),
-                        "Run a slash command",
-                        cx,
-                        |composer, window, cx| composer.insert_trigger('/', window, cx),
-                    ))
-                    // The chips take whatever is left and scroll inside that
-                    // allotment. Clipping them made agent settings disappear on
-                    // a narrow panel with no visible route back to them; the
-                    // actions on either side remain fixed and the middle stays
-                    // reachable instead.
                     .child(
                         div()
-                            .id("composer-settings")
                             .h_flex()
                             .items_center()
                             .gap_2()
+                            .flex_none()
+                            .child(action(
+                                "attach",
+                                Icon::new(crate::icons::Icon::Paperclip),
+                                "Attach a file",
+                                cx,
+                                |composer, _, cx| composer.attach(cx),
+                            ))
+                            // The two triggers, insertable from code. On Linux
+                            // with a Vietnamese IME a typed `/` can never reach
+                            // the composer, which makes the slash-command popup
+                            // unreachable by keyboard -- these are the way in.
+                            //
+                            // Which is also why each has to draw the character
+                            // it types and not a stand-in for it: for the user
+                            // who cannot type the character, the button is the
+                            // only thing on screen naming it, and nothing else
+                            // here says what a mention or a slash command is.
+                            .child(action(
+                                "mention",
+                                Icon::new(crate::icons::Icon::AtSign),
+                                "Mention a file",
+                                cx,
+                                |composer, window, cx| composer.insert_trigger('@', window, cx),
+                            ))
+                            .child(action(
+                                "command",
+                                Icon::new(crate::icons::Icon::SquareSlash),
+                                "Run a slash command",
+                                cx,
+                                |composer, window, cx| composer.insert_trigger('/', window, cx),
+                            )),
+                    )
+                    // The chips take whatever is left and **wrap** inside that
+                    // allotment. Clipping them made agent settings disappear on
+                    // a narrow panel with no visible route back to them, and
+                    // scrolling them instead only moved the problem one step:
+                    // a strip that scrolls with no scrollbar, no fade and no
+                    // count looks exactly like one that was cut, so a setting
+                    // pushed off the end is still a setting nothing on screen
+                    // admits to. Wrapped, there is no end to be pushed off.
+                    //
+                    // The chips shrink as well, for the last inch where even
+                    // one of them is wider than the room left: a chip that
+                    // truncates its value still says which setting it is and
+                    // still opens, where a clipped one is gone.
+                    .child(
+                        div()
+                            .h_flex()
+                            .items_center()
+                            .flex_wrap()
+                            .gap_2()
                             .flex_1()
                             .min_w_0()
-                            .overflow_x_scroll()
                             .children(chips),
                     )
                     .child(
@@ -1197,7 +1240,7 @@ impl Composer {
                                 .min_w_0()
                                 .overflow_hidden()
                                 .px_2()
-                                .py_2()
+                                .h(CHIP_H)
                                 .text_sm()
                                 .rounded(cx.theme().radius)
                                 // This list is walked with the arrow keys and committed
@@ -1239,22 +1282,12 @@ impl Composer {
                                 }))
                         }))
                         .when(selected.is_none(), |list| {
-                            list.child(
-                                div()
-                                    .px_2()
-                                    .py_2()
-                                    .text_sm()
-                                    .text_color(muted)
-                                    .child("No matches"),
-                            )
+                            list.child(notice(cx).text_sm().child("No matches"))
                         })
                         .when(capped > 0, |list| {
                             list.child(
-                                div()
-                                    .px_2()
-                                    .py_2()
+                                notice(cx)
                                     .text_xs()
-                                    .text_color(muted)
                                     .child(format!("{capped} more — keep typing to narrow them")),
                             )
                         }),
@@ -1268,6 +1301,21 @@ impl Render for Composer {
         // The composer is drawn by the pane, which owns the layout it sits in.
         div()
     }
+}
+
+/// A row of the popup that is a sentence about the list rather than a choice
+/// in it — that it matched nothing, or that it is holding some back.
+///
+/// It stands at the rows' own height for the same reason they stand at one
+/// another's: these two appear at the top and bottom of a list of choices, and
+/// one of them taller than its neighbours reads as a row that can be taken.
+fn notice(cx: &App) -> gpui::Div {
+    div()
+        .h_flex()
+        .items_center()
+        .px_2()
+        .h(CHIP_H)
+        .text_color(cx.theme().muted_foreground)
 }
 
 /// Where a staged attachment leads, if it leads anywhere.
@@ -1339,15 +1387,22 @@ fn chip(id: impl Into<gpui::ElementId>, open: bool, cx: &App) -> Button {
     );
     crate::controls::action(id)
         .ghost()
+        // Not for the geometry -- the height and padding below are set outright
+        // and land after the library's own, so they win either way. This is for
+        // the **caret**, which takes its size from the button's size rather than
+        // from the text beside it: left at the default it is a chevron a third
+        // taller than the word it belongs to, on a control whose whole job is to
+        // be quiet.
+        .xsmall()
         .selected(open)
         .h_flex()
         .items_center()
         .gap_1()
         .flex_none()
         .h(CHIP_H)
-        .px_2()
+        .px_1p5()
         .rounded(radius)
-        .text_xs()
+        .text_size(CHIP_TEXT)
         .text_color(fg)
         .when(open, |chip| chip.bg(open_fill))
 }
@@ -1396,8 +1451,24 @@ fn selector(
         // `Mode:`, `Model:`, `Effort:` on every chip spends half the composer's
         // control row naming controls that are already in a stable order.
         .max_w(CHIP_MAX_W)
+        // The one control in this row that gives way. `chip` builds every one of
+        // them rigid, which is right for the three fixed actions -- an icon
+        // button squeezed to nothing is a target nobody can hit -- but a
+        // selector carries a word and can lose the end of it and still be read
+        // and still be pressed. So on the last inch it truncates rather than
+        // pushing the row wider than the card.
+        .flex_shrink_1()
+        .min_w_0()
         .overflow_hidden()
         .label(visible)
+        // The caret is what makes a chip a control, and it is not redundant
+        // with the two things that look like they cover it: a tooltip has to be
+        // hovered for and a press has to be risked, while this is the only
+        // thing that says "there are choices behind this" to somebody who has
+        // done neither. Without it these are ghost buttons with no border, no
+        // fill and muted ink -- four words in a row, reading as a fragment of a
+        // sentence rather than as four settings. It also separates them from
+        // each other, which is the second job nothing else in the row was doing.
         .dropdown_caret(true)
         .tooltip(hint)
         .on_click(cx.listener(move |composer: &mut Composer, _, window, cx| {
