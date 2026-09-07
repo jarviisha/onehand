@@ -40,6 +40,11 @@ use onehand_core::attachment::{
 };
 use onehand_core::completion::{self, ActiveTrigger, TriggerKind};
 
+mod presentation;
+use presentation::{
+    Pick, Row, composer_status, mode_action, mode_rows, options_action, options_rows,
+};
+
 /// Rows drawn in the completion popup. The list scrolls past this; the cap is
 /// what keeps a 10 000-file repo from building 10 000 elements (bounded rendering).
 const MAX_COMPLETION_ROWS: usize = 50;
@@ -49,35 +54,33 @@ const MAX_COMPLETION_ROWS: usize = 50;
 /// its whole subtree, so a popup measured in pixels is the one thing on screen
 /// that does not grow with the text it is completing.
 ///
-/// Sized by *how many candidates are visible* rather than by a round number, so
-/// giving the rows more room does not quietly cost the list two of them: it is
-/// exactly ten rows at [`CHIP_H`], and it moves when they do.
+/// Sized to keep roughly eight choices visible at the composer's control scale.
 const POPUP_MAX_H: Rems = rems(15.);
-/// How much of a selector's current value is shown before it truncates.
-const CHIP_MAX_W: Rems = rems(8.125);
+/// How much room either option action may take before its current value truncates.
+const OPTION_MAX_W: Rems = rems(9.);
 /// How narrow a selector's list of choices may get.
 ///
 /// A selector's popup is sized by its own rows rather than stretched across the
 /// reading column, and three words like *Ask*, *Code* and *Plan* would size it
 /// to about an inch — narrower than the chip that opened it, which reads as a
 /// second, smaller control rather than as that chip's choices. This is a step
-/// clear of [`CHIP_MAX_W`] for that reason, and it is a floor and not a width:
+/// clear of the compact control for that reason, and it is a floor and not a width:
 /// a longer choice still widens the list up to the column it sits in.
 const SELECTOR_MIN_W: Rems = rems(12.);
 /// How much of an attachment's name is shown before it truncates.
 const ATTACHMENT_MAX_W: Rems = rems(10.);
 /// Attachment chips drawn before the tray starts counting instead.
 const MAX_TRAY_CHIPS: usize = 12;
+/// Rows built at once in the expanded attachment manager. Removing a visible
+/// row reveals the next one, so every item remains manageable without laying
+/// out a dropped directory's entire contents on each frame.
+const MAX_ATTACHMENT_MANAGER_ROWS: usize = 100;
 /// The size the composer's own controls are lettered at.
 ///
-/// A step under the smallest named size, which is as small as anything in this
-/// app is set and is meant to be: these controls are read once when a setting
-/// is being changed and ignored the rest of the time, and they sit an inch
-/// under the message being written, where anything at reading size competes
-/// with it. It is a value rather than `text_xs` because the ladder has no rung
-/// here — and it is still a rem, so a panel's zoom carries it like everything
-/// else.
-const CHIP_TEXT: Rems = rems(0.6875);
+/// The smallest named reading size. These controls should remain quieter than
+/// the prompt without falling below the rest of the app's type ladder. It is
+/// still a rem, so panel zoom carries it like everything else.
+const CHIP_TEXT: Rems = rems(0.75);
 /// How tall every control in the composer's row stands, and every row of the
 /// list a control opens.
 ///
@@ -87,11 +90,8 @@ const CHIP_TEXT: Rems = rems(0.6875);
 /// holding only an icon is as tall as the icon (0.75rem). Left to themselves
 /// they came out about seven pixels apart on the same row.
 ///
-/// The value is that line box and little else — a shade over a tenth of a rem
-/// of air above and below it. These are the quietest controls in the pane and
-/// they sit under the message being written, so what they owe is to be legible
-/// and hittable and then to get out of the way; a step more padding on each of
-/// six of them is a band of empty card across the bottom of every conversation.
+/// The value gives the icon-only actions a deliberate desktop target while
+/// keeping the metadata row subordinate to the prompt.
 ///
 /// **The popup's rows take it too**, so the choices behind a chip stand as tall
 /// as the chip. They are library buttons, and a button nobody gives a size to
@@ -100,18 +100,23 @@ const CHIP_TEXT: Rems = rems(0.6875);
 /// list stopped being as wide as the reading column. The two notice rows in
 /// that list are plain text and take it as well, or a list saying it has
 /// nothing stands taller than the same list saying anything.
-const CHIP_H: Rems = rems(1.5);
+const CHIP_H: Rems = rems(1.75);
 
 /// What is showing above the composer. Mutually exclusive **by construction**:
 /// one `Option` makes that structural, where a flag per overlay needs a
 /// "close the others" call on every path that opens one.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Overlay {
     /// The `@`/`/` candidate list.
     Completion,
-    /// A selector's choices. `None` is the session mode; `Some(i)` is
-    /// `config_options[i]`.
-    Selector(Option<usize>),
+    /// The session mode's choices.
+    Mode,
+    /// Model, effort, and every other agent-advertised config choice in one
+    /// directly selectable list.
+    Options,
+    /// All staged attachments, including the entries hidden by the compact
+    /// tray's rendering bound.
+    Attachments,
 }
 
 /// Everything the user has composed and not sent: the prompt text and whatever
@@ -197,82 +202,6 @@ fn trigger_spot(ch: char, text: &str, caret: usize) -> TriggerSpot {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::{Draft, TriggerSpot, highlight, split_path, trigger_spot};
-    use onehand_core::attachment::{AttachmentSource, StagedAttachment};
-    use std::path::PathBuf;
-
-    /// The slash has one place it can mean anything, and the button has to put
-    /// it there. Left at the caret it produced a stray character in the middle
-    /// of a sentence and no popup, which reads as a dead button.
-    #[test]
-    fn the_command_trigger_goes_to_the_front_and_the_mention_stays_put() {
-        assert_eq!(trigger_spot('/', "", 0), TriggerSpot::Insert(0));
-        assert_eq!(
-            trigger_spot('/', "review this for me", 18),
-            TriggerSpot::Insert(0),
-            "what was written becomes the command's argument"
-        );
-        assert_eq!(
-            trigger_spot('/', "/compact", 8),
-            TriggerSpot::Reuse(1),
-            "one slash is enough"
-        );
-
-        // A mention names a file where it is written.
-        assert_eq!(trigger_spot('@', "look at ", 8), TriggerSpot::Insert(8));
-        assert_eq!(trigger_spot('@', "look at ", 99), TriggerSpot::Insert(8));
-    }
-
-    /// A selection made against a longer list must land on a row that exists.
-    /// The way this failed was silent and expensive: with the highlight past
-    /// the end, Enter accepted nothing and sent the prompt instead, trigger
-    /// and all.
-    #[test]
-    fn a_selection_past_the_end_falls_back_to_the_last_row() {
-        assert_eq!(highlight(0, 3), Some(0));
-        assert_eq!(highlight(2, 3), Some(2));
-        assert_eq!(highlight(7, 3), Some(2));
-        assert_eq!(
-            highlight(0, 0),
-            None,
-            "nothing to highlight, nothing to accept"
-        );
-    }
-
-    /// The filename leads and the folder follows, so the part that gets cut on
-    /// a narrow panel is the part the user was not reading.
-    #[test]
-    fn a_candidate_path_leads_with_its_filename() {
-        assert_eq!(
-            split_path("crates/app/src/chat/composer.rs"),
-            ("composer.rs", Some("crates/app/src/chat"))
-        );
-        assert_eq!(split_path("README.md"), ("README.md", None));
-        // A trailing slash names a directory, and there is no name after it to
-        // lead with -- so it stays whole rather than becoming an empty row.
-        assert_eq!(split_path("crates/app/"), ("crates/app/", None));
-    }
-
-    /// A staged file with no prompt beside it is still something the user put
-    /// there. Reading emptiness off the text alone would drop it on a session
-    /// switch and hand it to whichever agent was next -- the quieter half of
-    /// the same mistake, since nothing on screen says the attachment moved.
-    #[test]
-    fn an_attachment_alone_is_not_an_empty_draft() {
-        let draft = Draft {
-            text: String::new(),
-            attachments: vec![StagedAttachment::inspect(
-                PathBuf::from("/tmp/notes.md"),
-                AttachmentSource::Picker,
-            )],
-        };
-        assert!(!draft.is_empty());
-        assert!(Draft::default().is_empty());
-    }
-}
-
 /// What the composer asks its owner for, because it has no business doing it
 /// itself: the pane knows which conversation is on screen and whether a turn is
 /// running, and the composer only knows the button was pressed.
@@ -308,6 +237,9 @@ pub struct Composer {
     pub attachments: Vec<StagedAttachment>,
     /// The popup's scroll, so the highlight can be kept on screen.
     rows_scroll: gpui::ScrollHandle,
+    /// A recoverable composer-side failure that has no chat-model blocker of
+    /// its own, such as failing to persist an image from the clipboard.
+    feedback: Option<SharedString>,
     _subscriptions: Vec<Subscription>,
 }
 
@@ -353,6 +285,7 @@ impl Composer {
             selected: 0,
             attachments: Vec::new(),
             rows_scroll: gpui::ScrollHandle::new(),
+            feedback: None,
             _subscriptions: vec![subscription],
         }
     }
@@ -368,6 +301,7 @@ impl Composer {
         self.overlay = None;
         self.selected = 0;
         self.attachments.clear();
+        self.feedback = None;
     }
 
     /// Lift out what is unsent and leave the composer empty.
@@ -429,17 +363,32 @@ impl Composer {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> bool {
-        match self.overlay {
+        match self.overlay.clone() {
             None => false,
             Some(Overlay::Completion) => self.accept(session, window, cx),
-            Some(Overlay::Selector(which)) => {
-                let rows = selector_rows(session, which, cx);
+            Some(Overlay::Mode) => {
+                let rows = mode_rows(session, cx);
                 let Some(row) =
                     highlight(self.selected, rows.len()).and_then(|row| rows.into_iter().nth(row))
                 else {
-                    return false;
+                    self.close_overlay(cx);
+                    return true;
                 };
                 self.apply_pick(&row.pick, session, window, cx)
+            }
+            Some(Overlay::Options) => {
+                let rows = options_rows(session, cx);
+                let Some(row) =
+                    highlight(self.selected, rows.len()).and_then(|row| rows.into_iter().nth(row))
+                else {
+                    self.close_overlay(cx);
+                    return true;
+                };
+                self.apply_pick(&row.pick, session, window, cx)
+            }
+            Some(Overlay::Attachments) => {
+                self.close_overlay(cx);
+                true
             }
         }
     }
@@ -479,8 +428,7 @@ impl Composer {
         }
     }
 
-    /// Open a selector's choices, or close it if it is the one already open.
-    /// Open a selector's choices, or close it if it is the one already open.
+    /// Open one of the two option lists, or close it if it is already open.
     ///
     /// **Focus goes to the prompt field, not to the chip.** The chip is a plain
     /// div, so the click that opened the list travels up to the pane, which
@@ -489,23 +437,31 @@ impl Composer {
     /// at all on a list opened with the mouse, which is every list of the
     /// agent's own options.
     ///
-    /// It opens **on the current value** rather than at the top: the list is a
-    /// setting's state, and arrowing away from where you are is the movement
-    /// the user means.
-    fn toggle_selector(
+    /// The list opens on the first value already in force. The Options popup is
+    /// intentionally flat: model, effort and remaining agent options are all
+    /// visible and directly selectable without entering another screen.
+    fn toggle_picker(
         &mut self,
-        which: Option<usize>,
+        target: Overlay,
         session: &Entity<ChatSession>,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let target = Overlay::Selector(which);
-        self.overlay = (self.overlay != Some(target)).then_some(target);
-        self.selected = selector_rows(session, which, cx)
-            .iter()
-            .position(|row| row.checked)
-            .unwrap_or(0);
+        let rows = match &target {
+            Overlay::Mode => mode_rows(session, cx),
+            Overlay::Options => options_rows(session, cx),
+            _ => return,
+        };
+        self.selected = rows.iter().position(|row| row.checked).unwrap_or(0);
+        self.overlay = (self.overlay.as_ref() != Some(&target)).then_some(target);
         self.reveal_selected();
+        self.state.update(cx, |state, cx| state.focus(window, cx));
+        cx.notify();
+    }
+
+    fn toggle_attachments(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.overlay = (self.overlay != Some(Overlay::Attachments)).then_some(Overlay::Attachments);
+        self.selected = 0;
         self.state.update(cx, |state, cx| state.focus(window, cx));
         cx.notify();
     }
@@ -573,10 +529,12 @@ impl Composer {
 
     /// How many rows the open list has, which is what walking it is bounded by.
     fn row_count(&self, session: &Entity<ChatSession>, cx: &App) -> usize {
-        match self.overlay {
+        match &self.overlay {
             None => 0,
             Some(Overlay::Completion) => self.candidates(session, cx).len(),
-            Some(Overlay::Selector(which)) => selector_rows(session, which, cx).len(),
+            Some(Overlay::Mode) => mode_rows(session, cx).len(),
+            Some(Overlay::Options) => options_rows(session, cx).len(),
+            Some(Overlay::Attachments) => 0,
         }
     }
 
@@ -686,19 +644,47 @@ impl Composer {
         &mut self,
         session: &Entity<ChatSession>,
         blocked: Option<onehand_core::chat::SubmitBlock>,
-        specs: &[(Option<usize>, String, Option<String>)],
         typing_here: bool,
         cx: &mut Context<Self>,
     ) -> impl IntoElement + use<> {
         let (step_down, step_up) = (session.clone(), session.clone());
         let tray = self.tray(cx).map(IntoElement::into_any_element);
-        let chips: Vec<_> = specs
-            .iter()
-            .map(|(which, label, current)| {
-                let open = self.selector_open(*which);
-                selector(*which, label, current.as_deref(), open, session, cx).into_any_element()
-            })
-            .collect();
+        let mode = mode_action(session, cx);
+        let options = options_action(session, cx);
+        let mode_open = self.overlay == Some(Overlay::Mode);
+        let options_open = self.overlay == Some(Overlay::Options);
+        let mode_popup = mode_open.then(|| self.popup(session, cx)).flatten();
+        let options_popup = options_open.then(|| self.popup(session, cx)).flatten();
+        let mode_control = mode.map(|label| {
+            option_anchor(
+                option_action(
+                    "mode-selector",
+                    label,
+                    Overlay::Mode,
+                    mode_open,
+                    session,
+                    cx,
+                ),
+                mode_popup,
+                false,
+            )
+            .into_any_element()
+        });
+        let options_control = options.map(|label| {
+            option_anchor(
+                option_action(
+                    "model-selector",
+                    label,
+                    Overlay::Options,
+                    options_open,
+                    session,
+                    cx,
+                ),
+                options_popup,
+                true,
+            )
+            .into_any_element()
+        });
 
         div()
             .v_flex()
@@ -768,13 +754,7 @@ impl Composer {
                 div()
                     .h_flex()
                     .items_center()
-                    // **The row is two groups and a primary action, and the gap
-                    // is what says so.** The three triggers are things done to
-                    // the message being written; the chips are what it will be
-                    // sent as. At one gap throughout they read as seven loose
-                    // things in a line, which is the state the caret on each
-                    // chip was left doing all the separating in.
-                    .gap_4()
+                    .gap_2()
                     .w_full()
                     .child(
                         div()
@@ -814,32 +794,19 @@ impl Composer {
                                 |composer, window, cx| composer.insert_trigger('/', window, cx),
                             )),
                     )
-                    // The chips take whatever is left and **wrap** inside that
-                    // allotment. Clipping them made agent settings disappear on
-                    // a narrow panel with no visible route back to them, and
-                    // scrolling them instead only moved the problem one step:
-                    // a strip that scrolls with no scrollbar, no fade and no
-                    // count looks exactly like one that was cut, so a setting
-                    // pushed off the end is still a setting nothing on screen
-                    // admits to. Wrapped, there is no end to be pushed off.
-                    //
-                    // The chips shrink as well, for the last inch where even
-                    // one of them is wider than the room left: a chip that
-                    // truncates its value still says which setting it is and
-                    // still opens, where a clipped one is gone.
                     .child(
                         div()
                             .h_flex()
                             .items_center()
-                            .flex_wrap()
                             .gap_2()
                             .flex_1()
                             .min_w_0()
-                            .children(chips),
+                            .children(mode_control)
+                            .children(options_control),
                     )
                     .child(
                         send_controls(
-                            blocked,
+                            blocked.clone(),
                             !self.text(cx).trim().is_empty() || !self.attachments.is_empty(),
                             cx.listener(|_: &mut Self, _, _, cx| {
                                 cx.emit(ComposerEvent::SendPressed);
@@ -851,6 +818,17 @@ impl Composer {
                         .flex_none(),
                     ),
             )
+            .children(composer_status(blocked, cx).map(IntoElement::into_any_element))
+            .children(self.feedback.clone().map(|message| {
+                div()
+                    .h_flex()
+                    .gap_1()
+                    .text_xs()
+                    .text_color(crate::theme::status_ink(cx).danger)
+                    .child(Icon::new(IconName::Info).size_3())
+                    .child(message)
+                    .into_any_element()
+            }))
     }
 
     /// Stage paths that arrived from somewhere other than the picker.
@@ -863,6 +841,7 @@ impl Composer {
         if paths.is_empty() {
             return;
         }
+        self.feedback = None;
         self.attachments.extend(
             paths
                 .into_iter()
@@ -923,6 +902,10 @@ impl Composer {
                 })
                 .await;
             let Ok(path) = written else {
+                let _ = composer.update(cx, |composer: &mut Self, cx| {
+                    composer.feedback = Some("Could not attach the pasted image".into());
+                    cx.notify();
+                });
                 return;
             };
             let _ = composer.update(cx, |composer: &mut Self, cx| {
@@ -946,6 +929,7 @@ impl Composer {
                 return;
             };
             let _ = composer.update(cx, |composer: &mut Self, cx| {
+                composer.feedback = None;
                 composer.attachments.extend(
                     paths
                         .into_iter()
@@ -959,6 +943,9 @@ impl Composer {
 
     fn unstage(&mut self, id: onehand_core::attachment::AttachmentId, cx: &mut Context<Self>) {
         self.attachments.retain(|a| a.id != id);
+        if self.attachments.is_empty() && self.overlay == Some(Overlay::Attachments) {
+            self.overlay = None;
+        }
         cx.notify();
     }
 
@@ -1082,25 +1069,41 @@ impl Composer {
                 )
                 .when(over > 0, |tray| {
                     tray.child(
-                        div()
+                        crate::controls::action("all-attachments")
+                            .ghost()
+                            .xsmall()
                             .flex_none()
-                            .py_1()
-                            .text_xs()
-                            .text_color(muted)
-                            .child(format!("+{over} more")),
+                            .label(format!("View all {}", self.attachments.len()))
+                            .tooltip("Review or remove staged attachments")
+                            .on_click(cx.listener(|composer: &mut Self, _, window, cx| {
+                                composer.toggle_attachments(window, cx);
+                            })),
                     )
                 }),
         )
-    }
-
-    fn selector_open(&self, which: Option<usize>) -> bool {
-        self.overlay == Some(Overlay::Selector(which))
     }
 
     /// Whether a popup is on screen, so Esc and a click elsewhere have
     /// something to dismiss.
     pub fn overlay_open(&self) -> bool {
         self.overlay.is_some()
+    }
+
+    pub fn completion_open(&self) -> bool {
+        self.overlay == Some(Overlay::Completion)
+    }
+
+    /// Popups that belong above the whole card. Option pickers are anchored by
+    /// their own buttons inside [`Self::card`] instead.
+    pub fn detached_popup(
+        &self,
+        session: &Entity<ChatSession>,
+        cx: &mut Context<Self>,
+    ) -> Option<gpui::Div> {
+        match self.overlay {
+            Some(Overlay::Mode | Overlay::Options) => None,
+            _ => self.popup(session, cx),
+        }
     }
 
     pub fn close_overlay(&mut self, cx: &mut Context<Self>) {
@@ -1113,20 +1116,16 @@ impl Composer {
         cx.notify();
     }
 
-    /// The open picker's rows, or nothing when none is open.
-    ///
-    /// One popup for both jobs: an `@` list and a model list are the same
-    /// affordance in the same place, and only one can be open at a time.
-    pub fn popup(
-        &self,
-        session: &Entity<ChatSession>,
-        cx: &mut Context<Self>,
-    ) -> Option<impl IntoElement + use<>> {
-        let overlay = self.overlay?;
+    /// The open completion, settings, or attachment surface.
+    fn popup(&self, session: &Entity<ChatSession>, cx: &mut Context<Self>) -> Option<gpui::Div> {
+        let overlay = self.overlay.clone()?;
+        if overlay == Overlay::Attachments {
+            return Some(self.attachments_popup(cx));
+        }
         // Set while the rows are built, because that is the only place both
         // halves of the count are in hand.
         let mut capped = 0usize;
-        let rows: Vec<Row> = match overlay {
+        let rows: Vec<Row> = match &overlay {
             Overlay::Completion => {
                 let kind = self.trigger.as_ref().map(|trigger| trigger.kind);
                 let (values, total) = self.matches(session, cx);
@@ -1167,7 +1166,9 @@ impl Composer {
                     })
                     .collect()
             }
-            Overlay::Selector(which) => selector_rows(session, which, cx),
+            Overlay::Mode => mode_rows(session, cx),
+            Overlay::Options => options_rows(session, cx),
+            Overlay::Attachments => unreachable!("handled above"),
         };
         // A trigger that matches nothing still has to say so. Vanishing reads
         // as completion being broken, which is the opposite of the truth: the
@@ -1204,13 +1205,24 @@ impl Composer {
                 // is already the reading column: a flex child shrinks to its
                 // parent before it overflows, so the column remains the maximum
                 // without this having to name it.
-                .map(|popup| match overlay {
+                .map(|popup| match &overlay {
                     Overlay::Completion => popup.w_full(),
-                    Overlay::Selector(_) => popup.min_w(SELECTOR_MIN_W),
+                    Overlay::Mode | Overlay::Options => popup.min_w(SELECTOR_MIN_W),
+                    Overlay::Attachments => popup.w_full(),
                 })
                 .rounded(cx.theme().radius)
                 .border_1()
-                .border_color(cx.theme().border)
+                // **A hairline is not enough here, and this is the one place
+                // that is true.** A floating control is told apart from the
+                // transcript by the step its surface takes above it, with the
+                // hairline only drawing the corner. But these lists open from a
+                // button *inside the composer*, and the composer is floating
+                // too -- so the popup lands on a surface of exactly its own
+                // colour, the step is zero, and the panel reads as having no
+                // background at all rather than as a panel. The edge is the
+                // only thing left that can say where one ends, so it is drawn a
+                // real step up instead of at hairline strength.
+                .border_color(cx.theme().accent)
                 // A list that opens over the field it completes is floating, so
                 // it takes the floating surface and the shadow that says so.
                 .bg(cx.theme().popover.alpha(1.))
@@ -1233,7 +1245,16 @@ impl Composer {
                             let pick = row.pick.clone();
                             crate::controls::action(("candidate", i))
                                 .ghost()
-                                .selected(Some(i) == selected)
+                                // Not for the geometry, which is set outright
+                                // below and lands after the library's. This is
+                                // what the row's own `text_sm` could not do:
+                                // the library letters a button from its `Size`,
+                                // on the box holding the words and so closer to
+                                // them than anything the call site sets, and
+                                // with no size named that is a full 1rem -- so
+                                // these rows were reading a step larger than
+                                // the line right here asks for.
+                                .small()
                                 .h_flex()
                                 .gap_2()
                                 .w_full()
@@ -1243,33 +1264,57 @@ impl Composer {
                                 .h(CHIP_H)
                                 .text_sm()
                                 .rounded(cx.theme().radius)
-                                // This list is walked with the arrow keys and committed
-                                // with Enter, so the highlight is the only thing saying
-                                // what Enter will insert -- and it is a fill, with no
-                                // rule around it. The selected step is a real one and
-                                // sits well clear of the hover step, which is what lets
-                                // a bare fill carry the state on its own.
-                                .when(Some(i) == selected, |el| {
-                                    el.bg(cx.theme().accent)
-                                        .text_color(cx.theme().accent_foreground)
+                                // **Two facts, two ways of drawing them.** Which
+                                // value is in force is a property of the setting
+                                // and outlives the popup; where the keyboard is
+                                // standing is a property of this moment. Drawn
+                                // the same way they cannot be told apart, and
+                                // the list opens *on* the current value, so the
+                                // one frame where they coincide is the frame
+                                // most people see.
+                                //
+                                // In force is **weight and ink**, in place of
+                                // the tick it replaces: a mark at the end of a
+                                // row pulls the words off the centre they are
+                                // otherwise set on, so the row that mattered
+                                // most was the one row sitting crooked.
+                                .when(row.checked, |el| {
+                                    el.font_semibold().text_color(cx.theme().primary)
                                 })
-                                .children(row.checked.then(|| Icon::new(IconName::Check).size_3()))
+                                // The keyboard's place is a **whisper of a
+                                // fill** -- present enough to follow while an
+                                // arrow key is held, faint enough that it is
+                                // not read as the answer. It was a full accent
+                                // slab, which is a lot of paint for a cursor
+                                // and buried the weight above it.
+                                .when(Some(i) == selected, |el| {
+                                    el.bg(cx.theme().accent.alpha(0.5))
+                                })
                                 .label(row.label)
+                                // **What makes the row read from the left.**
+                                // The library centres a button's content and
+                                // does it on a box the call site cannot reach,
+                                // so no amount of justifying out here moves it.
+                                // What does move it is giving the row something
+                                // that takes the leftover width: the label is
+                                // built `flex_none`, so everything spare lands
+                                // on this and the words are pushed against the
+                                // start. A row with a detail already has one
+                                // doing that job, which is why this only
+                                // appears where there is none.
+                                .children(row.detail.is_none().then(|| div().flex_1()))
                                 .children(row.detail.map(|detail| {
                                     div()
                                         .flex_1()
                                         .min_w_0()
                                         .truncate()
                                         .text_xs()
-                                        // Secondary on the row it sits in, whichever
-                                        // that is: on the highlighted row the muted ink
-                                        // is the wrong one to fade *from*, since the
-                                        // fill under it has already changed.
-                                        .text_color(if Some(i) == selected {
-                                            cx.theme().accent_foreground.alpha(0.75)
-                                        } else {
-                                            muted
-                                        })
+                                        // Muted on every row now. The fill under
+                                        // the keyboard's row is faint enough that
+                                        // the surface ink still reads against it,
+                                        // so there is no longer a row this has to
+                                        // fade from something else.
+                                        .text_color(muted)
                                         .child(detail)
                                 }))
                                 // A click is a choice already made, so it takes the row
@@ -1290,9 +1335,120 @@ impl Composer {
                                     .text_xs()
                                     .child(format!("{capped} more — keep typing to narrow them")),
                             )
+                        })
+                        .when(overlay == Overlay::Completion, |list| {
+                            list.child(
+                                notice(cx)
+                                    .text_xs()
+                                    .child("↑↓ Navigate · Enter Select · Esc Close"),
+                            )
                         }),
                 ),
         )
+    }
+
+    fn attachments_popup(&self, cx: &mut Context<Self>) -> gpui::Div {
+        let muted = cx.theme().muted_foreground;
+        let danger = crate::theme::status_ink(cx).danger;
+        let hidden = self
+            .attachments
+            .len()
+            .saturating_sub(MAX_ATTACHMENT_MANAGER_ROWS);
+
+        let list = div()
+            .id("attachment-manager")
+            .v_flex()
+            .w_full()
+            .max_h(POPUP_MAX_H)
+            .overflow_y_scroll()
+            .child(
+                div()
+                    .h_flex()
+                    .px_2()
+                    .h(CHIP_H)
+                    .text_sm()
+                    .child(format!("Staged attachments · {}", self.attachments.len())),
+            )
+            .children(
+                self.attachments
+                    .iter()
+                    .take(MAX_ATTACHMENT_MANAGER_ROWS)
+                    .enumerate()
+                    .map(|(i, attachment)| {
+                        let id = attachment.id;
+                        let unavailable = attachment.delivery == AttachmentDelivery::Unavailable;
+                        let path = openable(attachment);
+                        let detail = attachment
+                            .bytes
+                            .map(onehand_core::attachment::size_label)
+                            .unwrap_or_else(|| "Size unavailable".to_string());
+                        let name = attachment.name.clone();
+                        let remove = crate::controls::action(("remove-managed-attachment", i))
+                            .ghost()
+                            .xsmall()
+                            .icon(Icon::new(IconName::Close))
+                            .tooltip("Remove this attachment")
+                            .on_click(cx.listener(move |composer: &mut Self, _, _, cx| {
+                                cx.stop_propagation();
+                                composer.unstage(id, cx);
+                            }));
+                        let row = div()
+                            .h_flex()
+                            .gap_2()
+                            .w_full()
+                            .min_w_0()
+                            .px_2()
+                            .h(CHIP_H)
+                            .children(
+                                unavailable
+                                    .then(|| Icon::new(IconName::Info).size_3().text_color(danger)),
+                            )
+                            .child(
+                                div()
+                                    .flex_1()
+                                    .min_w_0()
+                                    .truncate()
+                                    .text_sm()
+                                    .when(unavailable, |label| label.text_color(danger))
+                                    .child(name),
+                            )
+                            .child(div().flex_none().text_xs().text_color(muted).child(detail))
+                            .child(remove);
+                        match path {
+                            Some(path) => crate::controls::action(("open-managed-attachment", i))
+                                .ghost()
+                                .w_full()
+                                .child(row)
+                                .tooltip("Open this file in the Workbench")
+                                .on_click(cx.listener(move |_: &mut Self, _, _, cx| {
+                                    cx.emit(ComposerEvent::OpenFile(path.clone()));
+                                }))
+                                .into_any_element(),
+                            None => row.into_any_element(),
+                        }
+                    }),
+            )
+            .when(hidden > 0, |list| {
+                list.child(notice(cx).text_xs().child(format!(
+                    "{hidden} more — remove visible items to reveal them"
+                )))
+            });
+
+        div()
+            .v_flex()
+            .w_full()
+            .rounded(cx.theme().radius)
+            .border_1()
+            // A step up rather than the hairline every other edge takes, for
+            // the reason the option lists carry the same colour: this opens
+            // from inside the composer, which is floating too, so its surface
+            // and the one behind it are the same and only the edge can say
+            // where one ends.
+            .border_color(cx.theme().accent)
+            .bg(cx.theme().popover.alpha(1.))
+            .shadow_lg()
+            .p_1()
+            .child(list)
     }
 }
 
@@ -1402,7 +1558,12 @@ fn chip(id: impl Into<gpui::ElementId>, open: bool, cx: &App) -> Button {
         .h(CHIP_H)
         .px_1p5()
         .rounded(radius)
-        .text_size(CHIP_TEXT)
+        // Ink here, but **not the text size**: the library sets that on the box
+        // holding the words, from the button's `Size` and not from anything the
+        // call site asks for -- so a size set out here is overridden by one set
+        // closer to the text, and setting it looks like it worked while nothing
+        // moves. Whatever wants a size of its own says so on the child that
+        // carries the words.
         .text_color(fg)
         .when(open, |chip| chip.bg(open_fill))
 }
@@ -1431,105 +1592,78 @@ where
         }))
 }
 
-/// One agent-advertised selector (mode, model, effort…) as a compact chip.
-fn selector(
-    which: Option<usize>,
-    label: &str,
-    current: Option<&str>,
+/// One of the two option actions: Mode, or Model with the remaining config.
+fn option_action(
+    id: &'static str,
+    label: SharedString,
+    target: Overlay,
     open: bool,
     session: &Entity<ChatSession>,
     cx: &mut Context<Composer>,
 ) -> impl IntoElement + use<> {
     let session = session.clone();
-    // `None` is the mode; `Some(i)` is `config_options[i]`. Element ids have to
-    // be distinct, so the mode takes 0 and the options shift up by one.
-    let id: usize = which.map(|i| i + 1).unwrap_or(0);
-    let visible = SharedString::from(current.unwrap_or(label).to_string());
-    let hint = SharedString::from(format!("{label}: {}", current.unwrap_or("—")));
-    chip(("selector", id), open, cx)
-        // The popup groups and the tooltip carry the setting's name. Repeating
-        // `Mode:`, `Model:`, `Effort:` on every chip spends half the composer's
-        // control row naming controls that are already in a stable order.
-        .max_w(CHIP_MAX_W)
-        // The one control in this row that gives way. `chip` builds every one of
-        // them rigid, which is right for the three fixed actions -- an icon
-        // button squeezed to nothing is a target nobody can hit -- but a
-        // selector carries a word and can lose the end of it and still be read
-        // and still be pressed. So on the last inch it truncates rather than
-        // pushing the row wider than the card.
+    chip(id, open, cx)
+        .max_w(OPTION_MAX_W)
         .flex_shrink_1()
         .min_w_0()
-        .overflow_hidden()
-        .label(visible)
-        // The caret is what makes a chip a control, and it is not redundant
-        // with the two things that look like they cover it: a tooltip has to be
-        // hovered for and a press has to be risked, while this is the only
-        // thing that says "there are choices behind this" to somebody who has
-        // done neither. Without it these are ghost buttons with no border, no
-        // fill and muted ink -- four words in a row, reading as a fragment of a
-        // sentence rather than as four settings. It also separates them from
-        // each other, which is the second job nothing else in the row was doing.
+        // The value is a **child and not the button's `label`**. A label is
+        // wrapped in a box the library builds `flex_none`, so it can neither
+        // shrink nor truncate: against the cap above it took its whole natural
+        // width, pushed the caret out past the clip, and left the end of the
+        // word and the mark that says the button opens both cut off, with
+        // nothing on screen saying either had been. As a child it gives way and
+        // ends in an ellipsis, and the caret keeps its place.
+        //
+        // What it costs is the accessible name, which the library derives from
+        // that same `label` and offers no other way to set -- `aria_label` is a
+        // stateful-element method and this button is not one. So the name is
+        // left to be read off the button's own text, which is the value; the
+        // tooltip still says which setting the value belongs to.
+        .child(div().min_w_0().truncate().text_size(CHIP_TEXT).child(label))
         .dropdown_caret(true)
-        .tooltip(hint)
+        .tooltip(match &target {
+            Overlay::Mode => "Choose mode",
+            Overlay::Options => "Choose model, effort and other options",
+            _ => "Choose an option",
+        })
         .on_click(cx.listener(move |composer: &mut Composer, _, window, cx| {
-            composer.toggle_selector(which, &session, window, cx);
+            composer.toggle_picker(target.clone(), &session, window, cx);
         }))
 }
 
-/// One row of the popup: what it is called, and the quieter half that tells two
-/// rows of the same name apart.
-struct Row {
-    label: SharedString,
-    detail: Option<SharedString>,
-    checked: bool,
-    pick: Pick,
-}
-
-/// What clicking a row does.
-#[derive(Clone)]
-enum Pick {
-    /// Highlight only; Enter accepts.
-    Complete,
-    Mode(String),
-    Config {
-        config_id: String,
-        value: String,
-    },
-}
-
-/// The choices behind a selector chip.
-fn selector_rows(session: &Entity<ChatSession>, which: Option<usize>, cx: &App) -> Vec<Row> {
-    let chat = &session.read(cx).chat;
-    match which {
-        None => chat
-            .modes
-            .iter()
-            .map(|mode| Row {
-                label: SharedString::from(mode.name.clone()),
-                detail: None,
-                checked: Some(&mode.id) == chat.current_mode.as_ref(),
-                pick: Pick::Mode(mode.id.clone()),
-            })
-            .collect(),
-        Some(i) => chat
-            .config_options
-            .get(i)
-            .map(|opt| {
-                opt.choices
-                    .iter()
-                    .map(|choice| Row {
-                        label: SharedString::from(choice.name.clone()),
-                        detail: None,
-                        checked: Some(&choice.value) == opt.current.as_ref(),
-                        pick: Pick::Config {
-                            config_id: opt.id.clone(),
-                            value: choice.value.clone(),
-                        },
-                    })
-                    .collect()
-            })
-            .unwrap_or_default(),
-    }
+/// Keep an option popup spatially attached to the button that opened it.
+/// Absolute positioning lets it overlap the transcript without contributing
+/// to the composer's measured height.
+fn option_anchor(
+    control: impl IntoElement,
+    popup: Option<gpui::Div>,
+    align_end: bool,
+) -> gpui::Div {
+    div()
+        .relative()
+        .flex_shrink_1()
+        .min_w_0()
+        .child(control)
+        .children(popup.map(|popup| {
+            // **Painted late, on purpose.** A div paints its background, then
+            // its children, and then its *border* -- the border last, over
+            // everything inside it. This popup is anchored to a button inside
+            // the composer card, so the card's own outline was being drawn
+            // straight across the list, which reads as the list being
+            // see-through when it is nothing of the kind. Deferring keeps the
+            // layout exactly where it is, next to the button that opened it,
+            // and moves only the painting to after every ancestor has finished.
+            // It is what the component library does for each of its own menus
+            // and dropdowns, and for this reason.
+            gpui::deferred(
+                div()
+                    .absolute()
+                    .bottom(rems(2.))
+                    .when(align_end, |anchor| anchor.right_0())
+                    .when(!align_end, |anchor| anchor.left_0())
+                    .child(popup),
+            )
+        }))
 }
 
 /// Send, or Stop while a turn is in flight — the same button, because they are
@@ -1549,12 +1683,26 @@ fn send_controls(
 ) -> gpui::Div {
     use onehand_core::chat::SubmitBlock;
 
+    // Whichever of the three is showing, it stands at the row's height.
+    //
+    // These are library buttons with no size named, so they were taking the
+    // library's own -- a quarter of a rem taller than every control beside
+    // them. On a row this short that is not a subtle difference: the button sat
+    // proud of the line it is on, and being the loud one here is a job the
+    // primary fill already does on its own.
+    //
+    // Only the height is shared. Everything else about it stays as it was,
+    // because it is the row's one primary action and is meant to look it.
+    fn control(id: &'static str) -> Button {
+        crate::controls::action(id).h(CHIP_H)
+    }
+
     if blocked == Some(SubmitBlock::Busy) {
         return div()
             .h_flex()
             .gap_2()
             .children(has_draft.then(|| {
-                crate::controls::action("queue")
+                control("queue")
                     .primary()
                     .icon(Icon::new(IconName::ArrowUp))
                     .label("Queue")
@@ -1562,7 +1710,7 @@ fn send_controls(
                     .on_click(on_send)
             }))
             .child(
-                crate::controls::action("stop")
+                control("stop")
                     .danger()
                     .icon(Icon::new(IconName::Pause))
                     .label("Stop")
@@ -1570,7 +1718,7 @@ fn send_controls(
                     .on_click(on_stop),
             );
     }
-    let send = crate::controls::action("send")
+    let send = control("send")
         .primary()
         .icon(Icon::new(IconName::ArrowUp))
         .label("Send");
@@ -1590,5 +1738,64 @@ fn send_controls(
             send.tooltip("Enter sends · Shift+Enter for a newline")
                 .on_click(on_send),
         ),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{Draft, TriggerSpot, highlight, split_path, trigger_spot};
+    use onehand_core::attachment::{AttachmentSource, StagedAttachment};
+    use std::path::PathBuf;
+
+    #[test]
+    fn the_command_trigger_goes_to_the_front_and_the_mention_stays_put() {
+        assert_eq!(trigger_spot('/', "", 0), TriggerSpot::Insert(0));
+        assert_eq!(
+            trigger_spot('/', "review this for me", 18),
+            TriggerSpot::Insert(0),
+            "what was written becomes the command's argument"
+        );
+        assert_eq!(
+            trigger_spot('/', "/compact", 8),
+            TriggerSpot::Reuse(1),
+            "one slash is enough"
+        );
+        assert_eq!(trigger_spot('@', "look at ", 8), TriggerSpot::Insert(8));
+        assert_eq!(trigger_spot('@', "look at ", 99), TriggerSpot::Insert(8));
+    }
+
+    #[test]
+    fn a_selection_past_the_end_falls_back_to_the_last_row() {
+        assert_eq!(highlight(0, 3), Some(0));
+        assert_eq!(highlight(2, 3), Some(2));
+        assert_eq!(highlight(7, 3), Some(2));
+        assert_eq!(
+            highlight(0, 0),
+            None,
+            "nothing to highlight, nothing to accept"
+        );
+    }
+
+    #[test]
+    fn a_candidate_path_leads_with_its_filename() {
+        assert_eq!(
+            split_path("crates/app/src/chat/composer.rs"),
+            ("composer.rs", Some("crates/app/src/chat"))
+        );
+        assert_eq!(split_path("README.md"), ("README.md", None));
+        assert_eq!(split_path("crates/app/"), ("crates/app/", None));
+    }
+
+    #[test]
+    fn an_attachment_alone_is_not_an_empty_draft() {
+        let draft = Draft {
+            text: String::new(),
+            attachments: vec![StagedAttachment::inspect(
+                PathBuf::from("/tmp/notes.md"),
+                AttachmentSource::Picker,
+            )],
+        };
+        assert!(!draft.is_empty());
+        assert!(Draft::default().is_empty());
     }
 }

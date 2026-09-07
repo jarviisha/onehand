@@ -3120,29 +3120,6 @@ impl ChatPane {
             let composer = self.composer.read(cx);
             chat.submit_blocker(&composer.text(cx), &composer.attachments)
         };
-        // Mode first, then whatever config options the agent advertised
-        // (model, effort, sub-agent). The list is the agent's, not ours.
-        // `None` addresses the session mode, `Some(i)` the i-th config option --
-        // the same key the composer's overlay uses, so a chip and its open list
-        // cannot disagree about which selector they belong to.
-        let specs: Vec<(Option<usize>, String, Option<String>)> = std::iter::once((
-            None,
-            "Mode".to_string(),
-            chat.modes
-                .iter()
-                .find(|m| Some(&m.id) == chat.current_mode.as_ref())
-                .map(|m| m.name.clone()),
-        ))
-        .filter(|_| !chat.modes.is_empty())
-        .chain(chat.config_options.iter().enumerate().map(|(i, opt)| {
-            let current = opt
-                .current
-                .as_ref()
-                .and_then(|value| opt.choices.iter().find(|c| &c.value == value))
-                .map(|c| c.name.clone());
-            (Some(i), opt.name.clone(), current)
-        }))
-        .collect();
         // Measured last frame. Read once, and turned into one number, because
         // it is the line three separate things rest on -- the last row of the
         // transcript, the jump-to-the-latest pill, and the point a question
@@ -3265,7 +3242,7 @@ impl ChatPane {
                                 ),
                         )
                     })
-                    .child(self.overlay(&session, measure, typing_here, blocked, specs, cx)),
+                    .child(self.overlay(&session, measure, typing_here, blocked, cx)),
             )
             .into_any_element()
     }
@@ -3287,11 +3264,11 @@ impl ChatPane {
         measure: std::rc::Rc<std::cell::Cell<gpui::Pixels>>,
         typing_here: bool,
         blocked: Option<onehand_core::chat::SubmitBlock>,
-        specs: Vec<(Option<usize>, String, Option<String>)>,
         cx: &mut Context<Self>,
     ) -> impl IntoElement + use<> {
         let pinned = self.pinned(session, cx);
         let pane = cx.entity();
+        let completion_popup = self.composer.read(cx).completion_open();
 
         div()
             .absolute()
@@ -3323,12 +3300,19 @@ impl ChatPane {
             // cover the transcript, but it must not move it.
             .children(
                 self.composer
-                    .update(cx, |composer, cx| composer.popup(session, cx))
+                    .update(cx, |composer, cx| composer.detached_popup(session, cx))
                     .map(|popup| {
-                        div()
-                            .w_full()
-                            .px_4()
-                            .child(div().w_full().max_w(CONTENT_COLUMN).mx_auto().child(popup))
+                        let column = div().w_full().max_w(CONTENT_COLUMN).mx_auto();
+                        div().w_full().px_4().child(if completion_popup {
+                            column.child(popup)
+                        } else {
+                            // Option lists and attachment management are opened by
+                            // controls on the card's right-hand side. Keeping
+                            // their compact surface on that edge preserves the
+                            // spatial relationship to the trigger; completion
+                            // stays full-width for long paths.
+                            column.child(div().h_flex().justify_end().child(popup))
+                        })
                     }),
             )
             .child(
@@ -3390,7 +3374,7 @@ impl ChatPane {
                             }))
                             .child(div().w_full().max_w(CONTENT_COLUMN).mx_auto().child(
                                 self.composer.update(cx, |composer, cx| {
-                                    composer.card(session, blocked, &specs, typing_here, cx)
+                                    composer.card(session, blocked, typing_here, cx)
                                 }),
                             )),
                     ),

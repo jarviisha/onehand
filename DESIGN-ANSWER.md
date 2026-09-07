@@ -117,16 +117,12 @@ comes back the moment they scroll off the question, and it takes them to the
 question rather than to the tail, because with a room under the turn those are
 the same place.
 
-The composer’s selector chips show the **current values**, not a repeated row
-of `Mode:` / `Model:` / `Effort:` prefixes. Their stable order, choice popup and
-tooltip retain the setting name while leaving the prompt controls room to fit.
-Each keeps its **dropdown caret**, which is not redundant with either of the two
-things that look like they cover it: a tooltip has to be hovered for and a press
-has to be risked, while the caret is the only thing that says *there are choices
-behind this* to a reader who has done neither. These are ghost controls with no
-border, no resting fill and muted ink, so without it they are four words in a
-row — read as a fragment of a sentence rather than as four settings, and running
-into one another with nothing else in the row separating them.
+The composer presents agent configuration as exactly two option actions:
+**Mode** and **Model**. Both sit in the action row beside Send and name their
+current value. Mode opens its choices directly. Model opens one flat list that
+also includes Effort and every remaining agent-advertised config group; every
+visible row is a choice, with no intermediate settings screen. Their dropdown
+carets remain the immediate signal that the values can be changed.
 
 **Send refuses out loud.** Whether a prompt may be sent is the conversation’s
 answer, not the view’s (`Chat::submit_blocker`), and the controls carry it.
@@ -134,7 +130,9 @@ While a turn is in flight an empty composer offers **Stop**; once a draft exists
 it offers **Queue** as the primary action and keeps **Stop** as a distinct danger
 action. Otherwise Send is disabled with the reason on it — an
 empty buffer, a staged file that could not be read (named), an agent not
-connected. A Send that stays enabled over a prompt the model will discard is a
+connected. Actionable blockers are also written inline under the controls, so
+their explanation does not depend on discovering a disabled button's tooltip.
+A Send that stays enabled over a prompt the model will discard is a
 control that does nothing when pressed and says nothing about why, which reads
 as a fault rather than as a rule.
 
@@ -155,7 +153,9 @@ A selector's list is sized by its own rows instead: three words like *Ask*,
 opened over the conversation rather than as the choices behind the chip a
 finger-width below them. Its floor is a step clear of the chip's own maximum
 width, so it can never come out narrower than the control it belongs to, and the
-shared column remains its maximum.
+shared column remains its maximum. Mode and Model popups are absolutely
+anchored a quarter-rem above their own buttons; unlike completion, they do not
+borrow the reading column's edge and leave a visual gap from their trigger.
 
 **The list is walked, not just pointed at.** `Up`/`Down` move the highlight and
 wrap at both ends, the list **scrolls to keep the highlight on screen**, `Enter`
@@ -165,6 +165,26 @@ belong to the list only while a list is open; the rest of the time they move the
 caret in the prompt. A selector opens **on its current value**, not at the top:
 the list is a setting's state, and arrowing away from where you are is the
 movement the user means.
+
+**Two facts in that list, drawn two ways.** Which value is *in force* is a
+property of the setting and outlives the popup; where the *keyboard* is standing
+is a property of this moment. Drawn alike they cannot be told apart — and since
+a selector opens on its current value, the frame where they coincide is the one
+most people see. In force is **weight and accent ink**, which is also what
+replaced the check mark it used to carry: a mark at the end of a row pulls the
+words off the centre the rest are set on, so the row that mattered most was the
+one row sitting crooked. The keyboard's place is a **whisper of a fill** — enough
+to follow while an arrow key is held, faint enough not to be read as the answer.
+It was a full accent slab, which is a great deal of paint for a cursor and buried
+the weight beside it.
+
+**Rows read from the left**, all of them and not only the ones carrying a path.
+A centred column of choices gives the eye a different starting point on every
+line, which is the one thing a list is meant to spare it. The component library
+centres a button's content on a box no call site can reach, so what un-centres
+these is giving each row something that takes the leftover width — the detail
+column where there is one, and otherwise nothing at all, which is exactly the
+point.
 
 **Anything clickable is keyboard reachable.** Conversation-title menus,
 composer selectors, completion candidates, question tabs and transcript
@@ -215,7 +235,9 @@ image will go as a link rather than inline. Its remove control is a **real
 button**, not a bare glyph: it sits beside the name it destroys and needs the
 hover and focus states that say which of the two the pointer is on. The tray is
 **bounded** — a dropped folder is however many files it held — and what is over
-the bound is counted, not silently dropped.
+the bound is counted, not silently dropped. That count is a **View all** control
+which opens a scrollable manager where every staged item can be opened or
+removed; the rendering bound never makes an attachment unmanageable.
 
 **A chip is also the way to the file it names**, where there is one to go to.
 Three files called `main.rs` are three chips reading `main.rs`, and checking
@@ -238,18 +260,13 @@ queues: nothing about the end of a turn fixes an unreadable attachment or an
 adapter that is gone, so those still refuse and still say why. Stop remains
 visible as the explicit danger action; Queue is never disguised as it.
 
-**Everything in the control row is one rank of control, so it is one shape.**
-Attach, `@`, `/` and the selector chips share a single shell — the same
-padding, radius, ink, text size, hover fill and **height**. The height is the
-shell’s, not the content’s: a chip with a word in it is as tall as that word’s
-line box, one holding only an icon is as tall as the icon, and left to
-themselves they stand seven pixels apart on the same row. Built two ways they
-also came out at two sizes and two inks, with the icons — which carry the
-smaller job — reading as the louder half. Send is the exception and looks it: it
-is the row’s one primary action.
+**The text actions form one control row.** Attach, `@` and `/` share a single
+shell — the same padding, radius, ink, text size, hover fill and height — while
+Send remains the one primary action at the opposite edge. Mode and Model occupy
+the flexible middle. Their labels shrink before
+the fixed prompt actions or Send can be pushed off the card.
 
-**A popup’s rows stand at that same height**, so the choices behind a chip are
-as tall as the chip. They are library buttons, and a button given no size takes
+**A popup’s rows share one deliberate height.** They are library buttons, and a button given no size takes
 the library’s own default — a step above everything in the row that opened it,
 chosen by nobody, and invisible for as long as those lists were as wide as the
 reading column. The rows that are a sentence *about* the list rather than a
@@ -257,24 +274,18 @@ choice in it — that it matched nothing, that it is holding some back — take 
 too: one of them standing taller than its neighbours reads as a row that can be
 taken.
 
-**The composer’s control row gives way from the middle.** The three trigger
-buttons and Send hold their size; the selector chips take what is left and give
-it back first. A row of four chips on a narrow panel must not push Send off its
-own edge. What `Enter` does rides in Send’s **tooltip** rather than in a line of
+**The composer’s control row keeps both edges stable.** The three trigger
+buttons and Send hold their size, with flexible space between them. What
+`Enter` does rides in Send’s **tooltip** rather than in a line of
 its own: it is the one convention here nothing else admits to, but it never
 changes, and a fixed label would spend a narrow panel’s last inch saying so
 while the chips — which do change — are the ones squeezed out.
 
-**The selector region wraps rather than scrolling.** A strip that scrolls with
-no scrollbar, no fade and no count is indistinguishable from one that was cut,
-so a setting pushed off its end is still a setting nothing on screen admits to —
-which is the fault scrolling was supposed to fix, moved one step along. Wrapped,
-there is no end to be pushed off, and the row grows by a line instead. The chips
-also **shrink**, for the last inch where even one of them is wider than the room
-left: an icon button squeezed to nothing is a target nobody can hit, but a chip
-carrying a word can lose the end of that word and still be read and still be
-pressed. The row’s height is measured like everything else in the card, so the
-transcript clears whatever it comes to.
+**The Model popup exposes all config choices at once.** Each selectable row
+carries its group name (`Model`, `Effort`, or another agent-defined option), so
+the complete configuration is visible without drilling into a second screen.
+Choices still carry their stable protocol group ids when applied; the agent may
+re-advertise or reorder configuration while the popup is open.
 
 At the top, the transcript disappears at the header's rule. At the bottom it
 continues behind the transparent overlay wrapper and is covered only where an
@@ -296,6 +307,24 @@ the harder one, because a shadow only reads on a light canvas. On light,
 `popover` is the surface itself and the shadow does the separating; on dark it
 is a step above the surface, because there the shadow separates nothing. The
 overlay area outside those controls stays transparent.
+
+**Two floating surfaces meeting is the case that step cannot cover.** The option
+lists open from buttons *inside the composer*, so a popup lands on a card that
+is floating too and takes the very same colour — the step between them is zero,
+the shadow has nothing to fall on, and the panel reads as having no background
+at all rather than as a panel over another one. Where that happens the **edge**
+is the only thing left that can say where one surface ends, so those popups draw
+theirs a real step up instead of at hairline strength. Nothing else in the pane
+needs this, because nothing else opens over a surface of its own colour.
+
+**And a popup anchored inside a card is painted late.** A box paints its
+background, then what is inside it, and then its *border* — the border over its
+own contents. So the composer's outline was being drawn straight across a list
+opened from a button within it, which reads as the list being see-through when
+it is nothing of the kind, and no surface colour can answer it because the line
+arrives afterwards. The list keeps its place beside the button and only its
+painting moves, to after every box containing it has finished. Any control that
+opens over the edge of the card it lives in owes the same.
 
 - **User prompts** take the row's full width and place the bubble at its right
   end. The bubble itself is bounded well short of the column, so it stays
