@@ -123,8 +123,14 @@ const ACTIVITY_DETAIL_INSET: Rems = rems(1.5);
 const ASK_TAB_W: Rems = rems(8.75);
 /// The marker a pending plan entry draws, in place of an icon.
 const PLAN_DOT: Rems = rems(0.3125);
-/// Height an attached image's thumbnail is bounded to under a prompt.
-const ATTACHMENT_THUMB_H: Rems = rems(9.);
+/// Height an attached image's preview is bounded to beside a prompt.
+///
+/// A preview is here to be recognised, not read: it answers "which picture did
+/// I send" and nothing more, and the file itself is one click away in whatever
+/// opens it. Sized larger it stops being a mark beside the question and becomes
+/// a block of the transcript in its own right, pushing the answer it was asked
+/// about off the screen.
+const ATTACHMENT_THUMB_H: Rems = rems(5.);
 /// How much of the row a user prompt may take before it wraps.
 ///
 /// The prompt is the one block that shrinks to what was typed: a one-line
@@ -252,35 +258,52 @@ pub fn item(
 /// only thing that has to be findable without reading. A fill alone said that
 /// when the transcript was two blocks long; twenty blocks down it is one more
 /// box among boxes, while an edge is still an edge.
+///
+/// **What was handed over is not what was typed, so it sits outside the
+/// bubble.** A picture inside the fill reads as part of the sentence and is
+/// bounded by the sentence's box; a prompt that was nothing but a screenshot
+/// drew an empty filled card above it, which says the user sent a blank
+/// message. Both keep the right edge, because the edge is what says whose they
+/// are, and the files come first — they were handed over before the question
+/// was asked about them.
 fn user(u: &UserMsg, cx: &App) -> impl IntoElement + use<> {
-    div().h_flex().w_full().justify_end().child(
-        div()
-            .v_flex()
-            .gap_2()
-            .max_w(relative(USER_BUBBLE_MAX))
-            .p_3()
-            .rounded(cx.theme().radius * 2.)
-            .bg(cx.theme().secondary)
-            .text_color(cx.theme().secondary_foreground)
-            .child(u.text.clone())
-            .children(
-                u.attachments
-                    .iter()
-                    .take(MAX_ATTACHMENT_ROWS)
-                    .map(|a| attachment(a, cx)),
-            )
-            .when(u.attachments.len() > MAX_ATTACHMENT_ROWS, |card| {
-                card.child(
-                    div()
-                        .text_xs()
-                        .text_color(cx.theme().muted_foreground)
-                        .child(format!(
-                            "+{} more attachment(s)",
-                            u.attachments.len() - MAX_ATTACHMENT_ROWS
-                        )),
+    let over = u.attachments.len().saturating_sub(MAX_ATTACHMENT_ROWS);
+
+    div()
+        .v_flex()
+        .items_end()
+        .gap_2()
+        .w_full()
+        .children((!u.attachments.is_empty()).then(|| {
+            div()
+                .v_flex()
+                .items_end()
+                .gap_2()
+                .max_w(relative(USER_BUBBLE_MAX))
+                .children(
+                    u.attachments
+                        .iter()
+                        .take(MAX_ATTACHMENT_ROWS)
+                        .map(|a| attachment(a, cx)),
                 )
-            }),
-    )
+                .when(over > 0, |list| {
+                    list.child(
+                        div()
+                            .text_xs()
+                            .text_color(cx.theme().muted_foreground)
+                            .child(format!("+{over} more attachment(s)")),
+                    )
+                })
+        }))
+        .children((!u.text.trim().is_empty()).then(|| {
+            div()
+                .max_w(relative(USER_BUBBLE_MAX))
+                .p_3()
+                .rounded(cx.theme().radius * 2.)
+                .bg(cx.theme().secondary)
+                .text_color(cx.theme().secondary_foreground)
+                .child(u.text.clone())
+        }))
 }
 
 /// One attached file: what it is, and — for a picture — what it looks like.
@@ -306,27 +329,45 @@ fn attachment(a: &onehand_core::attachment::AttachmentSnapshot, cx: &App) -> imp
 
     div()
         .v_flex()
+        .items_end()
         .gap_1()
-        .w_full()
+        .max_w_full()
+        // The picture above and the name under it: a preview is read as the
+        // thing itself, and the name is its caption rather than its label. The
+        // border is what gives the picture an edge of its own now that there is
+        // no fill behind it — a screenshot of a window otherwise ends wherever
+        // its own background happens to stop.
+        .children(thumbnail.map(|path| {
+            div()
+                // The picture sits inside the frame rather than against it: a
+                // border drawn on the pixels reads as a crop, and the two
+                // radii have to be concentric or the outer corner cuts across
+                // the inner one.
+                .p_1()
+                .overflow_hidden()
+                .rounded(cx.theme().radius * 1.5)
+                .border_1()
+                .border_color(cx.theme().border)
+                .child(
+                    gpui::img(path)
+                        .max_h(ATTACHMENT_THUMB_H)
+                        .max_w_full()
+                        .rounded(cx.theme().radius),
+                )
+        }))
         .child(
             div()
                 .h_flex()
                 .items_center()
                 .gap_2()
-                .w_full()
+                .max_w_full()
                 .text_xs()
                 .text_color(cx.theme().muted_foreground)
-                .child(
-                    Icon::new(match a.kind {
-                        // The registry has no picture glyph; the plain file
-                        // mark is the honest stand-in, and for an image the
-                        // thumbnail below says it better than an icon could.
-                        AttachmentKind::Image => IconName::File,
-                        AttachmentKind::File => IconName::File,
-                    })
-                    .size_3(),
-                )
-                .child(div().flex_1().min_w_0().truncate().child(a.name.clone()))
+                // The registry has no picture glyph, so the plain file mark
+                // stands in for both kinds; for an image the preview above says
+                // what it is better than any icon could.
+                .child(Icon::new(IconName::File).size_3())
+                .child(div().min_w_0().truncate().child(a.name.clone()))
                 // An attachment the agent never received is the one thing about
                 // this row that changes the answer, so it is spelled out.
                 .when(unavailable, |row| {
@@ -338,12 +379,6 @@ fn attachment(a: &onehand_core::attachment::AttachmentSnapshot, cx: &App) -> imp
                     )
                 }),
         )
-        .children(thumbnail.map(|path| {
-            gpui::img(path)
-                .max_h(ATTACHMENT_THUMB_H)
-                .max_w_full()
-                .rounded(cx.theme().radius)
-        }))
 }
 
 // ── agent answer ────────────────────────────────────────────────────────────

@@ -532,12 +532,18 @@ The **only** block with a fill, and the only one on the right.
   bounded to a fraction of the row before it wraps. A one-line question
   stretched edge to edge is shaped exactly like an answer, and the shape is
   what the eye reads first.
-- Attachments stack under the text as quiet named rows — kind icon, file name,
-  a `danger` "not sent" mark on anything the agent never received, and a bounded
-  thumbnail under an image (§12). Bounded, with the rest counted. **Named, not counted**: "3 attachment(s)" cannot be
-  checked against what the user meant to send, so the one mistake it hides —
-  the wrong screenshot — reads as correct until the answer is about the wrong
-  picture.
+- Attachments stack **above** the bubble and **outside** it, on the same right
+  edge, each a bounded thumbnail for an image (§12) with a quiet caption under
+  it — kind icon, file name, and a `danger` "not sent" mark on anything the
+  agent never received. What was handed over is not what was typed: inside the
+  fill a picture reads as part of the sentence and is bounded by the sentence's
+  box, and a prompt that was nothing but a screenshot drew an empty filled card
+  above it. Bounded, with the rest counted. **Named, not counted**: "3
+  attachment(s)" cannot be checked against what the user meant to send, so the
+  one mistake it hides — the wrong screenshot — reads as correct until the
+  answer is about the wrong picture.
+- The bubble itself is drawn only when something was typed, so an
+  attachment-only prompt is the files alone.
 - *(Not rendered: the per-message footer with Copy / Select text, and the
   long-prompt clamp with "Show full message".)*
 
@@ -908,12 +914,16 @@ a sub-agent as a flat tool call; its inner turns never arrive as nested updates.
 - **An image in a *tool result*** renders as a bounded thumbnail. Decoded
   handles are cached by the payload's pointer identity, so a redraw never
   re-uploads megabytes.
-- **An image attached to a prompt** is a named row *and* a bounded thumbnail,
-  addressed by path — gpui loads and caches a path-sourced image off the UI
-  thread, so a row redrawn on every streamed chunk costs a lookup rather than a
-  decode. The archive keeps paths and not bytes, so a file that has since moved
-  leaves the row as its name. Nothing is drawn for an attachment the agent never
-  received: a thumbnail there would claim it was seen.
+- **An image attached to a prompt** is a bounded thumbnail with its name as the
+  caption under it, addressed by path — gpui loads and caches a path-sourced
+  image off the UI thread, so a row redrawn on every streamed chunk costs a
+  lookup rather than a decode. The archive keeps paths and not bytes, so a file
+  that has since moved leaves the row as its name. Nothing is drawn for an
+  attachment the agent never received: a thumbnail there would claim it was seen.
+- **An image *staged* in the composer** is a named chip and nothing more. The
+  preview belongs to the transcript, where an attachment is a block of the
+  conversation; in the tray it would be a strip of thumbnails taking room from
+  the prompt the card exists to hold.
 - **An unidentifiable payload** renders as a quiet placeholder row — never a raw
   byte dump. Guessing a format renders a broken image, and nothing is the more
   honest of the two.

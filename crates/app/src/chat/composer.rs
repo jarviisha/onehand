@@ -35,7 +35,9 @@ use gpui_component::input::{InputEvent, Textarea, TextareaState};
 use gpui_component::{
     ActiveTheme, Disableable as _, Icon, IconName, Selectable as _, Sizable as _, StyledExt,
 };
-use onehand_core::attachment::{AttachmentDelivery, AttachmentSource, StagedAttachment};
+use onehand_core::attachment::{
+    AttachmentDelivery, AttachmentKind, AttachmentSource, StagedAttachment,
+};
 use onehand_core::completion::{self, ActiveTrigger, TriggerKind};
 
 /// Rows drawn in the completion popup. The list scrolls past this; the cap is
@@ -897,6 +899,12 @@ impl Composer {
     /// dropped on the card is however many files it held, and a tray of two
     /// hundred chips is two hundred elements laid out on every keystroke. What
     /// is over the bound is counted rather than dropped silently.
+    ///
+    /// **A chip names a staged file; it does not show it.** The picture is
+    /// previewed once the prompt is sent, in the transcript, where the
+    /// attachment is a block of the conversation rather than a strip along the
+    /// top of the card holding what is being typed — a tray of thumbnails takes
+    /// that room from the prompt itself, and it is the prompt the card is for.
     fn tray(&self, cx: &mut Context<Self>) -> Option<impl IntoElement + use<>> {
         if self.attachments.is_empty() {
             return None;
@@ -942,12 +950,8 @@ impl Composer {
                                 .text_xs()
                                 .child(
                                     Icon::new(match a.kind {
-                                        onehand_core::attachment::AttachmentKind::Image => {
-                                            IconName::Frame
-                                        }
-                                        onehand_core::attachment::AttachmentKind::File => {
-                                            IconName::File
-                                        }
+                                        AttachmentKind::Image => IconName::Frame,
+                                        AttachmentKind::File => IconName::File,
                                     })
                                     .size_3(),
                                 )
