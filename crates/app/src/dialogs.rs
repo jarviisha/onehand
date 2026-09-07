@@ -720,8 +720,13 @@ pub const SHORTCUTS: &[Shortcut] = &[
     },
     Shortcut {
         label: "Up / Down",
-        what: "Walk the composer's completion list (Enter takes it)",
+        what: "Walk the composer's completion list",
         keys: &["up", "down"],
+    },
+    Shortcut {
+        label: "Tab",
+        what: "Take the highlighted row (Enter does too)",
+        keys: &["tab"],
     },
     Shortcut {
         label: "Ctrl+V",
@@ -851,6 +856,17 @@ mod tests {
         let bound: Vec<&str> = source
             .split("KeyBinding::new(\"")
             .skip(1)
+            // A binding whose action is `NoAction` is the opposite of a
+            // shortcut: it exists to take a key away from a binding made
+            // somewhere else, so what the user gets is the key doing whatever
+            // it would have done with no keymap at all. A row for it would
+            // teach a command that does not exist.
+            .filter(|rest| {
+                !rest
+                    .split(')')
+                    .next()
+                    .is_some_and(|call| call.contains("NoAction"))
+            })
             .filter_map(|rest| rest.split('"').next())
             .collect();
 

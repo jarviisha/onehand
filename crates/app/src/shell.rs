@@ -52,6 +52,7 @@ gpui::actions!(
         ToggleMaximize,
         CompletionNext,
         CompletionPrev,
+        CompletionAccept,
         PasteHere
     ]
 );
@@ -120,6 +121,12 @@ const WARM_DELAY: std::time::Duration = std::time::Duration::from_millis(500);
 /// which is exactly "focus is not inside the terminal". And the terminal
 /// toggle, which is on plain ``Ctrl+` `` because the shifted form is a key no
 /// Linux keystroke can ever spell (the reason is at the binding itself).
+///
+/// The same rule cuts the other way, and this is also where a key is taken
+/// *back* from a binding the app never made: a `NoAction` binding at a deeper
+/// context suppresses the shallower one, leaving the key to reach whatever is
+/// focused. Tab inside the terminal is the one case (the reason is at the
+/// binding itself).
 pub fn init_keymap(cx: &mut App) {
     cx.bind_keys([
         gpui::KeyBinding::new("ctrl-shift-b", ToggleRail, None),
@@ -161,6 +168,24 @@ pub fn init_keymap(cx: &mut App) {
         // plain Ctrl+S -- everywhere except inside the terminal, where the key
         // belongs to whatever is running there.
         gpui::KeyBinding::new("ctrl-s", SaveFile, Some("Shell && !Terminal")),
+        // Tab and Shift+Tab, given back to a focused PTY. The component library
+        // binds both at the window's root view to walk the focus ring, and a
+        // binding there reaches over the terminal exactly the way the app's own
+        // do -- so a shell asking for completion had the caret moved to the next
+        // focusable instead, and `Shift+Tab` walked it backwards. Nothing the
+        // grid does can fix that: bindings are resolved before a key is ever
+        // delivered.
+        //
+        // `NoAction` is the way out. A binding is ranked by how deep in the
+        // focus stack its predicate holds, and the terminal's context is far
+        // below the root's, so this one wins -- and a winning `NoAction`
+        // suppresses the bindings it out-ranks rather than running anything.
+        // With no binding left to match, the key falls through to the grid,
+        // which encodes it (a tab character, and the back-tab sequence for the
+        // shifted form). It is a suppression and not a command: everywhere
+        // outside the terminal, Tab still moves the focus.
+        gpui::KeyBinding::new("tab", gpui::NoAction, Some("Terminal")),
+        gpui::KeyBinding::new("shift-tab", gpui::NoAction, Some("Terminal")),
         // Zoom is app-global on purpose, terminal included: `Ctrl+=` in a PTY
         // is not a key anything reads, and a terminal that could not be made
         // readable would be the one panel that needs it most. The binding
@@ -192,6 +217,19 @@ pub fn init_keymap(cx: &mut App) {
         // moving the caret, which is the whole reason for the narrow predicate.
         gpui::KeyBinding::new("up", CompletionPrev, Some("ChatComposer > Input")),
         gpui::KeyBinding::new("down", CompletionNext, Some("ChatComposer > Input")),
+        // Taking the highlighted row, on the key a shell and an editor have
+        // both trained the hand to reach for. It is the same predicate as the
+        // arrows above and for the same reason -- the composer answers to
+        // `ChatComposer` only while a list is open, so this claims Tab for
+        // exactly as long as there is something for it to take. With no list,
+        // the key goes back to walking the focus ring, which is how the
+        // composer's own buttons are reached without a mouse.
+        //
+        // It also settles the same theft the terminal's suppression does: the
+        // component library's focus-ring binding lives at the window's root,
+        // and this predicate holds far deeper in the focus stack, so it wins
+        // rather than watching the caret jump to the next control mid-word.
+        gpui::KeyBinding::new("tab", CompletionAccept, Some("ChatComposer > Input")),
         // Paste, taken from the input for the same reason and by the same rule
         // -- except that the composer holds `ChatComposerCard` at all times,
         // because an image on the clipboard is an attachment whatever else is

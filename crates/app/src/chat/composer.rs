@@ -647,7 +647,7 @@ impl Composer {
         typing_here: bool,
         cx: &mut Context<Self>,
     ) -> impl IntoElement + use<> {
-        let (step_down, step_up) = (session.clone(), session.clone());
+        let (step_down, step_up, take_row) = (session.clone(), session.clone(), session.clone());
         let tray = self.tray(cx).map(IntoElement::into_any_element);
         let mode = mode_action(session, cx);
         let options = options_action(session, cx);
@@ -746,6 +746,21 @@ impl Composer {
                     .on_action(cx.listener(
                         move |composer: &mut Self, _: &crate::shell::CompletionPrev, _, cx| {
                             composer.step(-1, &step_up, cx);
+                        },
+                    ))
+                    // Tab takes the highlighted row, through the same call
+                    // Enter makes. Two keys meaning one thing is the point:
+                    // what they must not become is two answers to "what is
+                    // highlighted for", which is what a second accept path
+                    // written out here would drift into. The key is claimed
+                    // only while a list is open, so there is always a row for
+                    // it to be about.
+                    .on_action(cx.listener(
+                        move |composer: &mut Self,
+                              _: &crate::shell::CompletionAccept,
+                              window,
+                              cx| {
+                            composer.commit(&take_row, window, cx);
                         },
                     ))
                     .child(Textarea::new(&self.state).appearance(false)),
