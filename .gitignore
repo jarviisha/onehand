@@ -12,6 +12,11 @@
 *.swp
 *~
 
+# Neovim writes its own log beside the directory it was started in, and the
+# Workbench starts it on the project root -- so opening that mode here drops a
+# file in the repo every run. It is this machine's, not the project's.
+nvim.log
+
 # Local onehand runtime state / persisted config written next to the project.
 # Deliberately unanchored: a workspace's storage directory can be any folder the
 # user picks, so `onehand-workspace.toml` can land at any depth, not just here.
