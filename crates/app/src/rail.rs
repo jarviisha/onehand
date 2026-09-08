@@ -273,7 +273,7 @@ fn session_menu(
         let (rename, restart, export, close) =
             (shell.clone(), shell.clone(), shell.clone(), shell.clone());
         menu.item(
-            PopupMenuItem::new("Rename…")
+            crate::controls::menu_item("Rename…")
                 .icon(Icon::new(IconName::Replace))
                 .on_click(move |_, window, cx: &mut App| {
                     rename
@@ -284,7 +284,7 @@ fn session_menu(
                 }),
         )
         .item(
-            PopupMenuItem::new("Restart the agent")
+            crate::controls::menu_item("Restart the agent")
                 .icon(Icon::new(IconName::Redo))
                 .on_click(move |_, window, cx: &mut App| {
                     restart
@@ -295,7 +295,7 @@ fn session_menu(
                 }),
         )
         .item(
-            PopupMenuItem::new("Export as Markdown…")
+            crate::controls::menu_item("Export as Markdown…")
                 .icon(Icon::new(IconName::ExternalLink))
                 .on_click(move |_, window, cx: &mut App| {
                     export
@@ -307,7 +307,7 @@ fn session_menu(
         )
         .separator()
         .item(
-            PopupMenuItem::element(move |_, _| div().text_color(danger).child("Close session"))
+            crate::controls::menu_row(move |_, _| div().text_color(danger).child("Close session"))
                 .icon(Icon::new(IconName::Close).text_color(danger))
                 .on_click(move |_, window, cx: &mut App| {
                     close
@@ -504,7 +504,7 @@ fn project_menu(
                 // The label is the state readout as well as the action: with no
                 // pin marker of its own a row would otherwise only say it is
                 // pinned by *where* it is, which reads as an accident.
-                PopupMenuItem::new(if pinned { "Unpin" } else { "Pin to top" })
+                crate::controls::menu_item(if pinned { "Unpin" } else { "Pin to top" })
                     .icon(Icon::new(IconName::Star))
                     .on_click(move |_, window, cx: &mut App| {
                         pin.update(cx, |shell: &mut Shell, cx| {
@@ -514,7 +514,7 @@ fn project_menu(
                     }),
             )
             .item(
-                PopupMenuItem::new("New session")
+                crate::controls::menu_item("New session")
                     .icon(Icon::new(IconName::Plus))
                     .on_click(move |_, window, cx: &mut App| {
                         start
@@ -530,7 +530,7 @@ fn project_menu(
             // skip.
             .when(is_repo, |menu| {
                 menu.item(
-                    PopupMenuItem::new("New worktree…")
+                    crate::controls::menu_item("New worktree…")
                         .icon(Icon::new(crate::icons::Icon::GitBranch))
                         .on_click(move |_, window, cx: &mut App| {
                             split
@@ -542,7 +542,7 @@ fn project_menu(
                 )
             })
             .item(
-                PopupMenuItem::new("Open terminal")
+                crate::controls::menu_item("Open terminal")
                     .icon(Icon::new(IconName::SquareTerminal))
                     .on_click(move |_, window, cx: &mut App| {
                         terminal
@@ -553,7 +553,7 @@ fn project_menu(
                     }),
             )
             .item(
-                PopupMenuItem::new("Copy project path")
+                crate::controls::menu_item("Copy project path")
                     .icon(Icon::new(IconName::Copy))
                     .on_click(move |_, window, cx: &mut App| {
                         copy.update(cx, |shell: &mut Shell, cx| {
@@ -563,7 +563,7 @@ fn project_menu(
                     }),
             )
             .item(
-                PopupMenuItem::new("Refresh Git status")
+                crate::controls::menu_item("Refresh Git status")
                     .icon(Icon::new(IconName::Redo))
                     .on_click(move |_, _, cx: &mut App| {
                         refresh
@@ -573,7 +573,7 @@ fn project_menu(
             )
             .separator()
             .item(
-                PopupMenuItem::element(move |_, _| {
+                crate::controls::menu_row(move |_, _| {
                     div().text_color(danger).child("Remove from workspace")
                 })
                 .icon(Icon::new(IconName::Delete).text_color(danger))
@@ -1060,8 +1060,11 @@ fn workspace_menu(
                 .map(|parent| ellipsize_front(&parent.display().to_string(), MAX_PARENT));
             let target = shell.clone();
             let dir = dir.clone();
-            menu = menu.item(
-                PopupMenuItem::element(move |_, _| {
+            // The workspace already on screen keeps the library's own row, and so
+            // its cursor: it is checked and unpickable, and a pointer over it
+            // would promise a press that is refused.
+            let row =
+                move |_: &mut Window, _: &mut App| {
                     div()
                         .h_flex()
                         .items_center()
@@ -1071,7 +1074,12 @@ fn workspace_menu(
                         .children(parent.clone().map(|parent| {
                             div().flex_none().text_xs().text_color(muted).child(parent)
                         }))
-                })
+                };
+            menu = menu.item(
+                match is_current {
+                    true => PopupMenuItem::element(row),
+                    false => crate::controls::menu_row(row),
+                }
                 .checked(is_current)
                 .disabled(is_current)
                 .on_click(move |_, _, cx: &mut App| {
@@ -1085,7 +1093,7 @@ fn workspace_menu(
         let (open, new) = (shell.clone(), shell.clone());
         menu.separator()
             .item(
-                PopupMenuItem::new("Open workspace…")
+                crate::controls::menu_item("Open workspace…")
                     .icon(Icon::new(IconName::FolderOpen))
                     .on_click(move |_, _, cx: &mut App| {
                         open.update(cx, |shell: &mut Shell, cx| shell.open_workspace(cx))
@@ -1093,7 +1101,7 @@ fn workspace_menu(
                     }),
             )
             .item(
-                PopupMenuItem::new("New workspace…")
+                crate::controls::menu_item("New workspace…")
                     .icon(Icon::new(IconName::Plus))
                     .on_click(move |_, _, cx: &mut App| {
                         new.update(cx, |shell: &mut Shell, cx| shell.new_workspace(cx))

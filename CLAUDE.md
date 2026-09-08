@@ -228,6 +228,19 @@ two places for the component library's arrow-cursor default to be let through.
 is the app's name for it; the guard that counts call sites exempts exactly one
 file for that reason.
 
+**Popup menu rows are the other half of that, and stay in the app** — no plugin
+draws a menu. A `PopupMenu` row sets no cursor at all, so every menu drew the
+arrow over entries that act while the buttons an inch away drew the pointer;
+`controls::menu_item` / `controls::menu_row` are the one place that answers it.
+The library gives no hook on the row itself, only on what goes inside it, so the
+cursor is carried by the row's *content* stretched back out over the inset the
+row puts around it — otherwise a strip at each end of every row still draws the
+arrow, which is the same half-rule one step smaller. **A disabled entry keeps the
+library's default and should**, for the reason `controls::resting` exists: a
+pointer over something that refuses is a promise the control cannot keep. So the
+handful of conditionally-refusing entries branch on the two builders rather than
+setting one and disabling it.
+
 ### The remote bridge
 
 A second channel into the app, for the times nobody is at the machine. Same shape as the ACP bridge

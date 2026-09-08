@@ -2541,8 +2541,8 @@ impl ChatPane {
                 };
                 let menu = rows.iter().fold(menu, |menu, row| {
                     let (title, aside, open) = (row.title.clone(), row.aside.clone(), row.open);
-                    let item =
-                        PopupMenuItem::element(move |_, _| {
+                    let draw =
+                        move |_: &mut Window, _: &mut App| {
                             div()
                                 .h_flex()
                                 .items_center()
@@ -2556,10 +2556,14 @@ impl ChatPane {
                                         aside.clone()
                                     },
                                 ))
-                        });
+                        };
                     match open {
-                        true => menu.item(item.disabled(true)),
+                        // Already open keeps the library's own cursor with its
+                        // refusal, so the pointer stays a promise a row can
+                        // keep.
+                        true => menu.item(PopupMenuItem::element(draw).disabled(true)),
                         false => {
+                            let item = crate::controls::menu_row(draw);
                             let (start, agent, dir) =
                                 (this.clone(), row.agent.clone(), row.dir.clone());
                             menu.item(item.on_click(move |_, _, cx: &mut App| {
@@ -2710,14 +2714,14 @@ impl ChatPane {
             let (restart, remove) = (this.clone(), this.clone());
             let archive = archive.clone();
             menu.item(
-                PopupMenuItem::new("Rename…")
+                crate::controls::menu_item("Rename…")
                     .icon(Icon::new(crate::icons::Icon::SquarePen))
                     .on_click(move |_, _, cx: &mut App| {
                         rename.update(cx, |_: &mut Self, cx| cx.emit(ChatPaneEvent::Rename));
                     }),
             )
             .item(
-                PopupMenuItem::new("Export as Markdown…")
+                crate::controls::menu_item("Export as Markdown…")
                     .icon(Icon::new(IconName::ExternalLink))
                     .on_click(move |_, _, cx: &mut App| {
                         export.update(cx, |pane: &mut Self, cx| pane.export(cx));
@@ -2744,15 +2748,18 @@ impl ChatPane {
                 // exactly as a restart does, and a menu that has to be
                 // opened twice to be believed is a worse warning than an
                 // item that will not go.
-                PopupMenuItem::new("Resume in this session…")
-                    .icon(Icon::new(IconName::Undo))
-                    .disabled(busy)
-                    .on_click(move |_, _, cx: &mut App| {
-                        history.update(cx, |pane: &mut Self, cx| pane.show_history(cx));
-                    }),
+                match busy {
+                    true => PopupMenuItem::new("Resume in this session…"),
+                    false => crate::controls::menu_item("Resume in this session…"),
+                }
+                .icon(Icon::new(IconName::Undo))
+                .disabled(busy)
+                .on_click(move |_, _, cx: &mut App| {
+                    history.update(cx, |pane: &mut Self, cx| pane.show_history(cx));
+                }),
             )
             .item(
-                PopupMenuItem::new("Restart the agent")
+                crate::controls::menu_item("Restart the agent")
                     .icon(Icon::new(IconName::Redo))
                     .on_click(move |_, _, cx: &mut App| {
                         restart.update(cx, |_: &mut Self, cx| cx.emit(ChatPaneEvent::Restart));
@@ -2764,13 +2771,24 @@ impl ChatPane {
                 // Closing the session -- which keeps every word of this on
                 // disk -- is a control of its own at the other end of the
                 // header, so the two are never one press apart.
-                PopupMenuItem::element(move |_, _| {
-                    div().text_color(danger).child("Delete conversation")
-                })
+                {
+                    let row = move |_: &mut Window, _: &mut App| {
+                        div().text_color(danger).child("Delete conversation")
+                    };
+                    // Nothing on disk to remove until the first turn has
+                    // ended, so until then this refuses -- and a refusal
+                    // keeps the library's own cursor, since a pointer over
+                    // it would promise a press that does nothing.
+                    match archive.is_none() {
+                        true => PopupMenuItem::element(row),
+                        false => crate::controls::menu_row(row),
+                    }
+                }
                 .icon(Icon::new(IconName::Delete).text_color(danger))
-                // Nothing on disk to remove until the first turn has ended,
-                // and an entry that can only report that is one the eye has
-                // to learn to skip.
+                // An entry that can only report that it has nothing to do is
+                // one the eye has to learn to skip, so it is refused rather
+                // than hidden -- the menu keeps its shape between one turn
+                // and the next.
                 .disabled(archive.is_none())
                 .on_click(move |_, _, cx: &mut App| {
                     let Some(dir) = archive.clone() else {
@@ -3866,7 +3884,7 @@ fn project_menu(
             // The label is the state readout as well as the action: with no pin
             // marker anywhere on this page, a project would otherwise only say
             // it is pinned by where it sits in a rail that may be hidden.
-            PopupMenuItem::new(if pinned { "Unpin" } else { "Pin to top" })
+            crate::controls::menu_item(if pinned { "Unpin" } else { "Pin to top" })
                 .icon(Icon::new(IconName::Star))
                 .on_click(act(ProjectAction::TogglePin, pane.clone())),
         )
@@ -3875,24 +3893,24 @@ fn project_menu(
         // job is to fail is one the eye has to learn to skip.
         .when(is_repo, |menu| {
             menu.item(
-                PopupMenuItem::new("New worktree…")
+                crate::controls::menu_item("New worktree…")
                     .icon(Icon::new(crate::icons::Icon::GitBranch))
                     .on_click(act(ProjectAction::Worktree, pane.clone())),
             )
         })
         .item(
-            PopupMenuItem::new("Copy project path")
+            crate::controls::menu_item("Copy project path")
                 .icon(Icon::new(IconName::Copy))
                 .on_click(act(ProjectAction::CopyPath, pane.clone())),
         )
         .item(
-            PopupMenuItem::new("Refresh Git status")
+            crate::controls::menu_item("Refresh Git status")
                 .icon(Icon::new(IconName::Redo))
                 .on_click(act(ProjectAction::RefreshGit, pane.clone())),
         )
         .separator()
         .item(
-            PopupMenuItem::element(move |_, _| {
+            crate::controls::menu_row(move |_, _| {
                 div().text_color(danger).child("Remove from workspace")
             })
             .icon(Icon::new(IconName::Delete).text_color(danger))

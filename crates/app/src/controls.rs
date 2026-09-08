@@ -17,12 +17,13 @@
 //! than at forty call sites that each have to remember.
 
 use gpui::{
-    Div, ElementId, Hsla, InteractiveElement, Interactivity, IntoElement, Stateful,
-    StyleRefinement, Styled,
+    App, Div, ElementId, Hsla, InteractiveElement, Interactivity, IntoElement, ParentElement as _,
+    SharedString, Stateful, StyleRefinement, Styled, Window, div, px,
 };
 use gpui_component::Selectable;
+use gpui_component::StyledExt as _;
 use gpui_component::button::Button;
-use gpui_component::menu::DropdownMenu;
+use gpui_component::menu::{DropdownMenu, PopupMenuItem};
 
 /// A button that answers the pointer, which is every button this app draws.
 ///
@@ -37,6 +38,56 @@ use gpui_component::menu::DropdownMenu;
 /// prompt it will discard: it promises a press will do something.
 pub(crate) fn action(id: impl Into<ElementId>) -> Button {
     onehand_plugin_host::action(id)
+}
+
+/// The inset a `PopupMenu` puts between its edge and a row's content.
+///
+/// The library's own number, hard-coded there in pixels rather than read from a
+/// theme, and matched here in pixels for that reason — a rem would follow this
+/// panel's zoom while the row it is cancelling out would not, and the two would
+/// come apart at every size but one.
+const MENU_INSET: gpui::Pixels = px(8.);
+
+/// One row of a popup menu that does something, drawn with the pointer.
+///
+/// The same problem [`action`] solves for buttons, in the one other place the
+/// library leaves it: a `PopupMenu` row sets no cursor at all, so every menu in
+/// this app drew the arrow over rows that act while the buttons an inch away
+/// drew the pointer. Half the actions answering the pointer and half not is what
+/// makes the cursor stop meaning anything.
+///
+/// **The content carries the cursor, stretched back over the row's own inset.**
+/// The library gives no hook on the row itself — only on what goes inside it —
+/// and content sitting within that inset leaves a strip at each end of every row
+/// still drawing the arrow, which is the same half-rule one step smaller. So the
+/// negative margin is not a layout trick: it is what makes the pointer's region
+/// and the clickable region the same shape.
+///
+/// **Only for a row that acts.** A disabled entry keeps the library's default
+/// and should, for the reason [`resting`] exists: a pointer over something that
+/// refuses is a promise the control cannot keep.
+pub(crate) fn menu_row<E: IntoElement>(
+    render: impl Fn(&mut Window, &mut App) -> E + 'static,
+) -> PopupMenuItem {
+    PopupMenuItem::element(move |window, cx| {
+        div()
+            .h_flex()
+            .items_center()
+            .w_full()
+            .mx(-MENU_INSET)
+            .px(MENU_INSET)
+            .cursor_pointer()
+            .child(render(window, cx))
+    })
+}
+
+/// A plain worded menu row that does something.
+///
+/// The shape almost every entry in the app's menus has, so it is spelled once:
+/// [`menu_row`] is for the rows that draw something other than a line of text.
+pub(crate) fn menu_item(label: impl Into<SharedString>) -> PopupMenuItem {
+    let label = label.into();
+    menu_row(move |_, _| div().child(label.clone()))
 }
 
 /// A hand-made row used whole as the trigger for a dropdown menu.
