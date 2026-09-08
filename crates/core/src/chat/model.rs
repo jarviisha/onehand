@@ -120,6 +120,23 @@ impl AskItem {
         }
     }
 
+    /// Where the card goes once a single-select pick settles `field`: the first
+    /// question after it that carries no answer yet, or `None` to stay put.
+    ///
+    /// A single-select pick *is* that question finished, so the card moves
+    /// itself on rather than making the user aim at the next tab — a form is
+    /// asked one question at a time and the click that answers one is the same
+    /// click that asks for the next.
+    ///
+    /// **Forward only, and never wrapping.** An earlier gap left behind is one
+    /// the user skipped on purpose, and jumping back to it moves the card in
+    /// the opposite direction from the click that asked for it — away from the
+    /// Submit they were walking towards, with the tick on the tab they just
+    /// filled scrolling out of sight. The tabs already say what is still open.
+    pub fn next_unanswered(&self, field: usize) -> Option<usize> {
+        (field + 1..self.req.fields.len()).find(|&f| !self.field_answered(f))
+    }
+
     /// Type into a field's free-text box; a non-blank answer drops that
     /// field's picks (see [`Self::toggle`] for why they can't coexist).
     pub fn set_custom(&mut self, field: usize, value: String) {
@@ -3323,6 +3340,21 @@ mod tests {
         assert_eq!(a.picked[1], vec![0, 1]);
         a.toggle(1, 0); // toggling an on choice turns it off
         assert_eq!(a.picked[1], vec![1]);
+    }
+
+    #[test]
+    fn a_pick_walks_forward_to_the_next_open_question() {
+        let mut a = ask_item();
+        a.toggle(0, 0);
+        assert_eq!(a.next_unanswered(0), Some(1));
+        a.toggle(1, 0);
+        // With nothing open after it, the card stays where it is rather than
+        // moving off the answer that was just given.
+        assert_eq!(a.next_unanswered(0), None);
+        assert_eq!(a.next_unanswered(1), None);
+        // A gap left behind is left behind — the walk never turns round.
+        a.picked[0].clear();
+        assert_eq!(a.next_unanswered(1), None);
     }
 
     #[test]

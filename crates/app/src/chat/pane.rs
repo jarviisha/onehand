@@ -2120,8 +2120,13 @@ impl ChatPane {
     fn pinned(
         &self,
         session: &Entity<ChatSession>,
+        window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Vec<gpui::AnyElement> {
+        // A question's free-text box needs a window to be built and the session
+        // never has one, so the card's own way to the screen is where it is
+        // made. Before the cards are read, since the box is one of them.
+        session.update(cx, |s, cx| s.sync_ask_inputs(window, cx));
         let Some(chat) = self.active_chat(cx) else {
             return Vec::new();
         };
@@ -3509,7 +3514,7 @@ impl ChatPane {
                                 ),
                         )
                     })
-                    .child(self.overlay(&session, measure, typing_here, blocked, cx)),
+                    .child(self.overlay(&session, measure, typing_here, blocked, window, cx)),
             )
             .into_any_element()
     }
@@ -3531,9 +3536,10 @@ impl ChatPane {
         measure: std::rc::Rc<std::cell::Cell<gpui::Pixels>>,
         typing_here: bool,
         blocked: Option<onehand_core::chat::SubmitBlock>,
+        window: &mut Window,
         cx: &mut Context<Self>,
     ) -> impl IntoElement + use<> {
-        let pinned = self.pinned(session, cx);
+        let pinned = self.pinned(session, window, cx);
         let pane = cx.entity();
         let completion_popup = self.composer.read(cx).completion_open();
 

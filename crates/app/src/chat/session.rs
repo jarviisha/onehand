@@ -7,8 +7,10 @@
 
 use crate::state::Shared;
 use futures::StreamExt as _;
-use gpui::{App, AppContext, Context, Entity, EventEmitter, Task};
+use gpui::{App, AppContext, Context, Entity, EventEmitter, Subscription, Task, Window};
+use gpui_component::input::{InputEvent, InputState};
 use gpui_component::text::TextViewState;
+use onehand_core::acp::ElicitKind;
 use onehand_core::chat::{Chat, ChatItem, Md, MdId, TranscriptItemId};
 use onehand_core::completion;
 use onehand_core::config::AgentSpec;
@@ -122,6 +124,21 @@ pub enum ChatEvent {
     OpenFile(std::path::PathBuf),
 }
 
+/// The widget behind one question field's free-text box, and the subscription
+/// that carries what is typed into it back to the model.
+///
+/// The subscription is held rather than detached for the reason the pump is:
+/// it writes into this session, so it has no business outliving it.
+struct AskInput {
+    state: Entity<InputState>,
+    _typing: Subscription,
+}
+
+/// One parked question's claim on a box: which question, which of its fields is
+/// on screen, what the empty box invites, and what has been typed into that
+/// field already.
+type AskBox = (usize, usize, String, String);
+
 pub struct ChatSession {
     pub chat: Chat,
     /// Parsed markdown, keyed by [`MdId`]; the `usize` is how many bytes of the
@@ -139,6 +156,18 @@ pub struct ChatSession {
     /// frames instead of re-hashing megabytes on every redraw. `RefCell`
     /// because the render path only ever has `&self`.
     images: RefCell<HashMap<usize, Arc<gpui::Image>>>,
+    /// The free-text box of a parked question, keyed by its live item index and
+    /// the field it belongs to.
+    ///
+    /// Here rather than in the model for the reason `md` is: an input's caret,
+    /// selection and undo are framework-shaped, and the model is not allowed to
+    /// know a front end exists. The *answer* is not kept here — every keystroke
+    /// is written into the field's own `custom` slot, so what gets sent is read
+    /// off the model like every other part of the card.
+    ///
+    /// One box per field, so moving between a form's questions does not rewrite
+    /// one box under the user.
+    ask_inputs: HashMap<(usize, usize), AskInput>,
     /// Activity runs the user opened, keyed by the run's first item.
     ///
     /// **On the session, because a [`TranscriptItemId`] only means anything
@@ -213,6 +242,7 @@ impl ChatSession {
                 ),
                 md: HashMap::new(),
                 images: RefCell::new(HashMap::new()),
+                ask_inputs: HashMap::new(),
                 activity_open: HashSet::new(),
                 folds_revision: 0,
                 _pump: cx.spawn(async move |session, cx| {
@@ -278,6 +308,101 @@ impl ChatSession {
     /// How many folds have been toggled. See the field.
     pub fn folds_revision(&self) -> u64 {
         self.folds_revision
+    }
+
+    /// Make sure every parked question showing a free-text box has one, and
+    /// drop the boxes of questions that have since been answered.
+    ///
+    /// **Built here and not where the question arrives**, because an input needs
+    /// a window and the event pump has none — it runs off the agent's stream,
+    /// which belongs to no window. So the pane calls this on its way to drawing
+    /// the card, which is the first moment both exist.
+    ///
+    /// Only the question on screen gets a box built; a form's other fields wait
+    /// until the user opens their tab. The box is seeded from the field's own
+    /// stored text, so one rebuilt after a rail switch comes back with what was
+    /// typed into it rather than empty over a tab that says it was answered.
+    pub fn sync_ask_inputs(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        // One walk of the transcript, on a path that runs every frame: what is
+        // parked and what each parked question wants come out of the same pass.
+        let mut live: HashSet<usize> = HashSet::new();
+        let mut wanted: Vec<AskBox> = Vec::new();
+        for (idx, a) in self.chat.pending_asks() {
+            live.insert(idx);
+            let field = a.active_field();
+            if !a.has_custom(field) {
+                continue;
+            }
+            let f = &a.req.fields[field];
+            // A text field *is* its box, so the question's own wording is the
+            // invitation; a select's box is the way past the choices above it
+            // and has to say so.
+            let hint = match &f.kind {
+                ElicitKind::Text => f
+                    .description
+                    .clone()
+                    .or_else(|| f.title.clone())
+                    .unwrap_or_else(|| "Type your answer".into()),
+                _ => "Or type your own answer".into(),
+            };
+            let typed = a.custom.get(field).cloned().unwrap_or_default();
+            wanted.push((idx, field, hint, typed));
+        }
+        if live.is_empty() && self.ask_inputs.is_empty() {
+            return;
+        }
+
+        // A question that has been answered keeps no box: the card it belonged
+        // to is a record now and draws no controls at all.
+        self.ask_inputs.retain(|(idx, _), _| live.contains(idx));
+
+        for (idx, field, hint, typed) in wanted {
+            if self.ask_inputs.contains_key(&(idx, field)) {
+                continue;
+            }
+            let state = cx.new(|cx| {
+                InputState::new(window, cx)
+                    .placeholder(hint)
+                    .default_value(typed)
+            });
+            let typing = cx.subscribe(&state, move |s: &mut Self, state, ev: &InputEvent, cx| {
+                match ev {
+                    InputEvent::Change => {
+                        let text = state.read(cx).value().to_string();
+                        if let Some(a) = s.chat.ask_at_mut(idx) {
+                            a.set_custom(field, text);
+                        }
+                        cx.notify();
+                    }
+                    // A one-line field means Enter, and here it is the only key
+                    // that finishes the card: the choices above it answer on a
+                    // click, so somebody who writes their own answer instead
+                    // would otherwise have to leave the box to send it. Nothing
+                    // typed and nothing picked sends nothing -- an empty accept
+                    // is an answer the agent cannot read.
+                    InputEvent::PressEnter { .. } => {
+                        if s.chat.ask_at_mut(idx).is_some_and(|a| a.has_answer()) {
+                            s.chat.answer_ask(idx, false);
+                        }
+                        cx.notify();
+                    }
+                    _ => {}
+                }
+            });
+            self.ask_inputs.insert(
+                (idx, field),
+                AskInput {
+                    state,
+                    _typing: typing,
+                },
+            );
+        }
+    }
+
+    /// The free-text box for `field` of the question at live index `idx`, once
+    /// [`Self::sync_ask_inputs`] has built one.
+    pub fn ask_input(&self, idx: usize, field: usize) -> Option<&Entity<InputState>> {
+        self.ask_inputs.get(&(idx, field)).map(|i| &i.state)
     }
 
     /// A cached handle for an inline image result.
