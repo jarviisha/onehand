@@ -31,21 +31,35 @@
 //! 3. **Cell Measurement**: Font metrics are measured using the 'M' character and
 //!    reused until the font changes.
 //!
-//! *onehand patch*: this list used to claim a fourth, "text batching" — adjacent
-//! cells with identical styling grouped into one shaped run. The grouping was
-//! computed for every row of every frame and then **discarded by the only
-//! caller**, which painted one glyph at a time regardless, so the cost was paid
-//! and the benefit was not. The structure it produced is gone rather than wired
-//! up, because it could not express what the glyph pass now draws — an
-//! underline's own colour, a strikethrough, or which way round an inverted cell
-//! is — so it was not a head start on batching, it was a stale one.
+//! 4. **Text batching**: adjacent cells sharing a face, a colour and a
+//!    decoration are shaped and painted as one run rather than one glyph at a
+//!    time.
 //!
-//! Batching is still the right answer and is deliberately **not** done here yet:
-//! a terminal has to place every glyph on its own cell, and shaping several
-//! characters as one run hands the advances to the font, where a ligature, a
-//! wide character or one glyph falling through to a fallback face shifts
-//! everything after it. What this pass does instead is make the per-glyph path
-//! allocate nothing — see [`TerminalRenderer::font_variants`] and [`ascii_glyph`].
+//! *onehand patch*: the fourth is ours, and the reason it took two attempts is
+//! worth stating. The batching that used to be here grouped the cells and was
+//! then **discarded by its only caller**, which painted a glyph at a time
+//! regardless — the cost paid, the benefit not. It was removed rather than wired
+//! up, because the structure it produced could not express what the glyph pass
+//! draws: an underline's own colour, a strikethrough, or which way round an
+//! inverted cell is.
+//!
+//! What made batching unsafe was that a terminal has to put every glyph on its
+//! own cell, and shaping several characters as one run hands the advances to the
+//! font — where a ligature, a wide character or one glyph falling through to a
+//! fallback face shifts everything after it. Three answers, one per hazard.
+//! Shaping asks for a **forced cell width**, so gpui snaps each base glyph to
+//! its own column instead of trusting the accumulated advances. The faces are
+//! built with **contextual alternates off**, so a programming font cannot fuse
+//! two cells into one ligature glyph and take the column after it with them —
+//! which is also exactly what the one-glyph-at-a-time pass drew, so nothing on
+//! screen changes. And a **double-width character is a run of its own**, since
+//! it is the one thing that legitimately spans two columns.
+//!
+//! What this buys is the count: a screen of code costs a handful of shaping
+//! calls per row instead of one per visible character, and each of those calls
+//! is a hash into gpui's line-layout cache that a row nobody touched hits on
+//! every frame. See [`split_row_runs`], and [`ascii_glyph`] for the single-glyph
+//! run that still allocates nothing.
 //!
 //! # Cell Dimensions
 //!
@@ -75,8 +89,8 @@
 use crate::box_drawing;
 use crate::colors::ColorPalette;
 use crate::event::GpuiEventProxy;
-use alacritty_terminal::grid::Dimensions;
-use alacritty_terminal::index::{Column, Line, Point as AlacPoint};
+use alacritty_terminal::grid::{Dimensions, Row};
+use alacritty_terminal::index::{Column, Line};
 use alacritty_terminal::term::cell::{Cell, Flags};
 use alacritty_terminal::term::color::Colors;
 use alacritty_terminal::term::{Term, TermMode};
@@ -220,6 +234,215 @@ fn strikethrough_style(cell: &Cell, fg: Hsla) -> Option<StrikethroughStyle> {
             thickness: px(1.0),
             color: Some(fg),
         })
+}
+
+/// onehand patch: what the glyph pass has to do with a cell.
+///
+/// Written down as a type because the answer decides where a shaped run may
+/// start and where it has to stop, and getting that wrong does not look like a
+/// styling mistake — it slides every character after it one column left.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum CellGlyph {
+    /// Nothing is drawn and no run may cross it: an empty cell, or the second
+    /// half of a double-width character, which is a column the text of a run
+    /// cannot account for.
+    Blank,
+    /// A space. Nothing is drawn for it either, but a run may carry it so that
+    /// the words on both sides stay one run — see [`RunStyle::carries_spaces`].
+    Space,
+    /// Drawn as lines by the box-drawing pass, not shaped.
+    Boxed,
+    /// A double-width character. Shaped alone, because it is the one thing that
+    /// legitimately covers two columns.
+    Wide(char),
+    /// An ordinary single-width character.
+    Glyph(char),
+}
+
+/// Which of the five a cell is.
+fn classify(cell: &Cell) -> CellGlyph {
+    if cell
+        .flags
+        .intersects(Flags::WIDE_CHAR_SPACER | Flags::LEADING_WIDE_CHAR_SPACER)
+    {
+        return CellGlyph::Blank;
+    }
+    match cell.c {
+        '\0' => CellGlyph::Blank,
+        ' ' => CellGlyph::Space,
+        ch if box_drawing::is_box_drawing_char(ch) => CellGlyph::Boxed,
+        ch if cell.flags.contains(Flags::WIDE_CHAR) => CellGlyph::Wide(ch),
+        ch => CellGlyph::Glyph(ch),
+    }
+}
+
+/// onehand patch: everything about a cell that a shaped run has to hold constant.
+///
+/// A [`TextRun`] carries one face, one colour and one decoration for its whole
+/// length, so two cells may only be shaped together when all of those agree.
+/// Nothing about the *background* is in here: that is painted as quads before
+/// the glyphs, so a run may cross a change of background colour without being
+/// broken.
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct RunStyle {
+    /// Index into [`TerminalRenderer::font_variants`].
+    font: usize,
+    color: Hsla,
+    underline: Option<UnderlineStyle>,
+    strikethrough: Option<StrikethroughStyle>,
+}
+
+impl RunStyle {
+    fn of(palette: &ColorPalette, cell: &Cell, colors: &Colors) -> Self {
+        let (fg, _) = cell_ink(palette, cell, colors);
+        Self {
+            font: TerminalRenderer::font_index(cell.flags),
+            color: fg,
+            underline: underline_style(palette, cell, colors, fg),
+            strikethrough: strikethrough_style(cell, fg),
+        }
+    }
+
+    /// Whether a space may be carried inside a run of this style.
+    ///
+    /// A space draws no glyph, so carrying one costs nothing and joins the words
+    /// on either side of it into a single shaping call — which is most of what
+    /// batching buys on a screen of prose or code. It is refused for a decorated
+    /// run because a decoration is *not* nothing: an underline or a strikethrough
+    /// runs the full width of the run it belongs to, so carrying a space would
+    /// draw a line under a cell the one-glyph-at-a-time pass left bare.
+    fn carries_spaces(&self) -> bool {
+        self.underline.is_none() && self.strikethrough.is_none()
+    }
+}
+
+/// onehand patch: a stretch of one row that is shaped and painted in one call.
+#[derive(Debug)]
+struct GlyphRun {
+    /// The column the run's first character sits in. Every character in `text`
+    /// occupies exactly one column from here on, which is what lets the whole
+    /// run be placed from a single origin.
+    start_col: usize,
+    style: RunStyle,
+    text: String,
+}
+
+/// onehand patch: the runs of one row, in a buffer that outlives the row.
+///
+/// Held across the whole frame and reset per row rather than rebuilt, because
+/// the `String` inside each run is the allocation this pass exists to avoid: a
+/// grid is forty rows and a frame is however often the child writes. `len` is
+/// how many of `runs` this row is using — the rest keep their capacity for the
+/// row after it.
+#[derive(Default)]
+struct RowRuns {
+    runs: Vec<GlyphRun>,
+    len: usize,
+    /// Whether the last run is still accepting characters. A double-width
+    /// character closes its own run, so "there is a run" and "a run may be
+    /// appended to" are different questions.
+    open: bool,
+}
+
+impl RowRuns {
+    fn reset(&mut self) {
+        self.len = 0;
+        self.open = false;
+    }
+
+    fn start(&mut self, start_col: usize, style: RunStyle) {
+        if self.len == self.runs.len() {
+            self.runs.push(GlyphRun {
+                start_col,
+                style,
+                text: String::new(),
+            });
+        } else {
+            let run = &mut self.runs[self.len];
+            run.start_col = start_col;
+            run.style = style;
+            run.text.clear();
+        }
+        self.len += 1;
+        self.open = true;
+    }
+
+    fn open_run(&mut self) -> Option<&mut GlyphRun> {
+        if self.open {
+            self.runs[..self.len].last_mut()
+        } else {
+            None
+        }
+    }
+
+    fn close(&mut self) {
+        self.open = false;
+    }
+
+    /// Finish the row: trailing spaces are dropped from every run.
+    ///
+    /// They draw nothing, and a run that ends in twenty of them is a different
+    /// cache key from the same words without them — which on a screen where only
+    /// the trailing whitespace moved would miss the cache on every row.
+    fn finish(&mut self) {
+        for run in &mut self.runs[..self.len] {
+            while run.text.ends_with(' ') {
+                run.text.pop();
+            }
+        }
+        self.open = false;
+    }
+
+    /// The runs with something to draw, in column order.
+    fn ready(&self) -> impl Iterator<Item = &GlyphRun> {
+        self.runs[..self.len]
+            .iter()
+            .filter(|run| !run.text.is_empty())
+    }
+}
+
+/// onehand patch: split one row into the runs the glyph pass shapes.
+///
+/// Free rather than a method, and taking cells as an iterator rather than a
+/// grid row, so the whole rule can be tested — placing the runs needs a window
+/// and deciding where they begin and end does not. The property that matters is
+/// that a run's *n*th character is in its `start_col + n`th column: every arm
+/// below either pushes exactly one character for the cell it is looking at or
+/// pushes none and closes the run.
+fn split_row_runs<'a>(
+    palette: &ColorPalette,
+    cells: impl Iterator<Item = &'a Cell>,
+    colors: &Colors,
+    out: &mut RowRuns,
+) {
+    out.reset();
+
+    for (col, cell) in cells.enumerate() {
+        match classify(cell) {
+            CellGlyph::Blank | CellGlyph::Boxed => out.close(),
+            CellGlyph::Space => {
+                if out.open_run().is_some_and(|run| run.style.carries_spaces()) {
+                    out.open_run().expect("just checked").text.push(' ');
+                } else {
+                    out.close();
+                }
+            }
+            CellGlyph::Wide(ch) => {
+                out.start(col, RunStyle::of(palette, cell, colors));
+                out.open_run().expect("just started").text.push(ch);
+                out.close();
+            }
+            CellGlyph::Glyph(ch) => {
+                let style = RunStyle::of(palette, cell, colors);
+                if !out.open_run().is_some_and(|run| run.style == style) {
+                    out.start(col, style);
+                }
+                out.open_run().expect("open by now").text.push(ch);
+            }
+        }
+    }
+
+    out.finish();
 }
 
 impl BackgroundRect {
@@ -402,19 +625,37 @@ impl TerminalRenderer {
     /// three heap allocations for every visible character of every frame.
     /// Cloning one of these four is a pair of `Arc` increments instead.
     fn font_variants(&self) -> [Font; 4] {
-        let face = |weight, style| Font {
+        [
+            self.face(FontWeight::NORMAL, FontStyle::Normal),
+            self.face(FontWeight::NORMAL, FontStyle::Italic),
+            self.face(FontWeight::BOLD, FontStyle::Normal),
+            self.face(FontWeight::BOLD, FontStyle::Italic),
+        ]
+    }
+
+    /// onehand patch: one face, built the one way the grid ever wants one.
+    ///
+    /// **Contextual alternates are off**, and that is the load-bearing part. A
+    /// programming font uses them to fuse `->` or `!=` into a single ligature
+    /// glyph, which in a document is a nicety and in a cell grid is a character
+    /// that has eaten the column after it: the glyph pass shapes several cells
+    /// as one run and places each glyph on its own column, so two characters
+    /// arriving as one glyph move everything after them one cell left. Nothing
+    /// on screen changes by turning it off — a pass that shaped a single
+    /// character at a time never had a neighbour to ligate with in the first
+    /// place.
+    ///
+    /// Shared by every shaping this module does, so the grid is measured, drawn
+    /// and repainted under the cursor through exactly one description of the
+    /// font. Two of them is a cell measured in one face and filled in another.
+    fn face(&self, weight: FontWeight, style: FontStyle) -> Font {
+        Font {
             family: self.font_family.clone().into(),
-            features: FontFeatures::default(),
+            features: FontFeatures::disable_ligatures(),
             fallbacks: None,
             weight,
             style,
-        };
-        [
-            face(FontWeight::NORMAL, FontStyle::Normal),
-            face(FontWeight::NORMAL, FontStyle::Italic),
-            face(FontWeight::BOLD, FontStyle::Normal),
-            face(FontWeight::BOLD, FontStyle::Italic),
-        ]
+        }
     }
 
     /// Which of [`Self::font_variants`] a cell wants.
@@ -446,13 +687,7 @@ impl TerminalRenderer {
         // full-height character.
         const PROBE: &str = "M";
 
-        let font = Font {
-            family: self.font_family.clone().into(),
-            features: FontFeatures::default(),
-            fallbacks: None,
-            weight: FontWeight::NORMAL,
-            style: FontStyle::Normal,
-        };
+        let font = self.face(FontWeight::NORMAL, FontStyle::Normal);
 
         let text_run = TextRun {
             len: PROBE.len(),
@@ -505,10 +740,29 @@ impl TerminalRenderer {
         colors: &Colors,
     ) -> Vec<BackgroundRect> {
         let mut backgrounds = Vec::new();
+        self.collect_backgrounds(
+            row,
+            cells.iter().map(|(col, cell)| (*col, cell)),
+            colors,
+            &mut backgrounds,
+        );
+        self.merge_backgrounds(backgrounds)
+    }
+
+    /// onehand patch: the same rule, writing into a buffer the caller keeps.
+    ///
+    /// What [`Self::layout_backgrounds`] does, minus the `Vec` — the paint runs
+    /// this once per row per frame, and a grid is forty rows.
+    fn collect_backgrounds<'a>(
+        &self,
+        row: usize,
+        cells: impl Iterator<Item = (usize, &'a Cell)>,
+        colors: &Colors,
+        out: &mut Vec<BackgroundRect>,
+    ) {
         let mut current_bg: Option<BackgroundRect> = None;
 
         for (col, cell) in cells {
-            let col = *col;
             // Skip wide character spacers
             if cell.flags.contains(Flags::WIDE_CHAR_SPACER) {
                 continue;
@@ -519,38 +773,31 @@ impl TerminalRenderer {
             // way round an inverted cell is.
             let (_, bg_color) = cell_ink(&self.palette, cell, colors);
 
+            let started = BackgroundRect {
+                start_col: col,
+                end_col: col + 1,
+                row,
+                color: bg_color,
+            };
+
             // Handle background rectangles
-            if let Some(ref mut bg_rect) = current_bg {
+            if let Some(bg_rect) = current_bg.as_mut() {
                 if bg_rect.color == bg_color && bg_rect.end_col == col {
                     // Extend current background
                     bg_rect.end_col = col + 1;
                 } else {
                     // Save current background and start new one
-                    backgrounds.push(bg_rect.clone());
-                    current_bg = Some(BackgroundRect {
-                        start_col: col,
-                        end_col: col + 1,
-                        row,
-                        color: bg_color,
-                    });
+                    out.push(std::mem::replace(bg_rect, started));
                 }
             } else {
                 // Start new background
-                current_bg = Some(BackgroundRect {
-                    start_col: col,
-                    end_col: col + 1,
-                    row,
-                    color: bg_color,
-                });
+                current_bg = Some(started);
             }
         }
 
         if let Some(bg) = current_bg {
-            backgrounds.push(bg);
+            out.push(bg);
         }
-
-        // Merge adjacent backgrounds with same color
-        self.merge_backgrounds(backgrounds)
     }
 
     /// Merge adjacent background rects with same color.
@@ -566,24 +813,31 @@ impl TerminalRenderer {
     ///
     /// A new vector with merged rectangles
     fn merge_backgrounds(&self, mut rects: Vec<BackgroundRect>) -> Vec<BackgroundRect> {
-        if rects.is_empty() {
-            return rects;
+        Self::merge_in_place(&mut rects);
+        rects
+    }
+
+    /// onehand patch: the merge, in place and in one pass.
+    ///
+    /// It used to build a second `Vec` and take its first element with
+    /// `Vec::remove(0)`, which shifts the whole row's rectangles down one slot
+    /// before the merging even starts.
+    fn merge_in_place(rects: &mut Vec<BackgroundRect>) {
+        if rects.len() < 2 {
+            return;
         }
 
-        let mut merged = Vec::new();
-        let mut current = rects.remove(0);
-
-        for rect in rects {
-            if current.can_merge_with(&rect) {
-                current.end_col = rect.end_col;
+        let mut kept = 0;
+        for next in 1..rects.len() {
+            if rects[kept].can_merge_with(&rects[next]) {
+                let end_col = rects[next].end_col;
+                rects[kept].end_col = end_col;
             } else {
-                merged.push(current);
-                current = rect;
+                kept += 1;
+                rects.swap(kept, next);
             }
         }
-
-        merged.push(current);
-        merged
+        rects.truncate(kept + 1);
     }
 
     /// Paint terminal content to the window.
@@ -610,7 +864,7 @@ impl TerminalRenderer {
         term: &Term<GpuiEventProxy>,
         focused: bool,
         window: &mut Window,
-        _cx: &mut App,
+        cx: &mut App,
     ) {
         // Get terminal dimensions
         let grid = term.grid();
@@ -650,15 +904,17 @@ impl TerminalRenderer {
         let display_offset = grid.display_offset() as i32;
         let selection = term.selection.as_ref().and_then(|s| s.to_range(term));
 
-        // onehand patch: three buffers hoisted out of the row loop.
+        // onehand patch: the buffers the row loop reuses.
         //
         // Each was allocated fresh per row per frame, so a forty-row grid paid
         // a hundred and twenty allocations a frame before drawing anything —
-        // and a modal editor redraws the whole grid on every keystroke.
-        // `clear` keeps the capacity, so after the first row they are free.
-        let mut cells: Vec<(usize, Cell)> = Vec::with_capacity(num_cols);
-        let mut processed_horizontal: std::collections::HashSet<usize> =
-            std::collections::HashSet::with_capacity(num_cols);
+        // and a modal editor redraws the whole grid on every keystroke. The row
+        // of cells that used to be *cloned* into a `Vec` is gone entirely: the
+        // grid row is borrowed instead, so a screen of two thousand cells is no
+        // longer copied to be looked at.
+        let mut backgrounds: Vec<BackgroundRect> = Vec::with_capacity(num_cols);
+        let mut spanned = vec![false; num_cols];
+        let mut runs = RowRuns::default();
         // The four faces, made once for the whole grid rather than once per
         // character -- see `font_variants`.
         let fonts = self.font_variants();
@@ -666,22 +922,22 @@ impl TerminalRenderer {
         // Iterate over visible lines
         for line_idx in 0..num_lines {
             let line = Line(line_idx as i32 - display_offset);
+            let row = &grid[line];
 
-            // Collect cells for this line
-            cells.clear();
-            cells.extend((0..num_cols).map(|col_idx| {
-                let col = Column(col_idx);
-                let point = AlacPoint::new(line, col);
-                let cell = grid[point].clone();
-                (col_idx, cell)
-            }));
-
-            // Layout the row for backgrounds. onehand patch: by reference. The
-            // whole row used to be cloned a second time to be handed over.
-            let backgrounds = self.layout_backgrounds(line_idx, &cells, colors);
+            // Lay the row out for backgrounds. onehand patch: into a buffer the
+            // frame owns, over borrowed cells. The row used to be cloned once to
+            // be collected and a second time to be handed over.
+            backgrounds.clear();
+            self.collect_backgrounds(
+                line_idx,
+                (0..num_cols).map(|col| (col, &row[Column(col)])),
+                colors,
+                &mut backgrounds,
+            );
+            Self::merge_in_place(&mut backgrounds);
 
             // Paint backgrounds
-            for bg_rect in backgrounds {
+            for bg_rect in &backgrounds {
                 // Skip if it's the default background color
                 if bg_rect.color == default_bg {
                     continue;
@@ -753,179 +1009,201 @@ impl TerminalRenderer {
                 }
             }
 
-            // Calculate vertical offset to center text in cell
-            // The multiplier adds extra height; we want to distribute it evenly top/bottom
-            let base_height = self.cell_height / self.line_height_multiplier;
-            let vertical_offset = (self.cell_height - base_height) / 2.0;
+            self.paint_box_drawing(origin, line_idx, row, colors, &mut spanned, window);
 
-            let y_base = origin.y + self.cell_height * (line_idx as f32);
-            let cy = y_base + self.cell_height / 2.0;
-
-            // Use cells vec for multiple passes (already collected above)
-            let cells_vec = &cells;
-
-            // First pass: find and draw horizontal spans of box-drawing characters
-            // This draws continuous lines across multiple cells to avoid gaps
-            processed_horizontal.clear();
-
-            let mut i = 0;
-            while i < cells_vec.len() {
-                let (col_idx, ref cell) = cells_vec[i];
-                let ch = cell.c;
-
-                // Check if this starts a horizontal span
-                if let Some(weight) = box_drawing::get_horizontal_weight(ch) {
-                    let fg_color = self.palette.resolve(cell.fg, colors);
-                    let start_col = col_idx;
-                    let mut end_col = col_idx;
-
-                    // Look ahead for consecutive cells with same horizontal weight
-                    let mut j = i + 1;
-                    while j < cells_vec.len() {
-                        let (next_col, ref next_cell) = cells_vec[j];
-                        // Must be adjacent
-                        if next_col != end_col + 1 {
-                            break;
-                        }
-                        // Must have same horizontal weight and same color
-                        let next_fg = self.palette.resolve(next_cell.fg, colors);
-                        if box_drawing::get_horizontal_weight(next_cell.c) == Some(weight)
-                            && next_fg == fg_color
-                        {
-                            end_col = next_col;
-                            j += 1;
-                        } else {
-                            break;
-                        }
-                    }
-
-                    // Draw the horizontal span
-                    let start_x = origin.x + self.cell_width * (start_col as f32);
-                    let end_x = origin.x + self.cell_width * ((end_col + 1) as f32);
-
-                    box_drawing::draw_horizontal_span(
-                        start_x,
-                        end_x,
-                        cy,
-                        weight,
-                        self.cell_width,
-                        fg_color,
-                        window,
-                    );
-
-                    // Mark these columns as having horizontal drawn
-                    for col in start_col..=end_col {
-                        processed_horizontal.insert(col);
-                    }
-
-                    // Skip past this span
-                    i = j;
-                    continue;
-                }
-                i += 1;
-            }
-
-            // Second pass: draw vertical components and non-horizontal box chars
-            for (col_idx, cell) in cells_vec.iter() {
-                let ch = cell.c;
-
-                if ch == ' ' || ch == '\0' {
-                    continue;
-                }
-
-                let x = origin.x + self.cell_width * (*col_idx as f32);
-                let fg_color = self.palette.resolve(cell.fg, colors);
-
-                if box_drawing::is_box_drawing_char(ch) {
-                    let cell_bounds = Bounds {
-                        origin: Point { x, y: y_base },
-                        size: Size {
-                            width: self.cell_width,
-                            height: self.cell_height,
-                        },
-                    };
-
-                    if processed_horizontal.contains(col_idx) {
-                        // Horizontal already drawn, just draw vertical components
-                        box_drawing::draw_vertical_components(
-                            ch,
-                            cell_bounds,
-                            fg_color,
-                            self.cell_width,
-                            window,
-                        );
-                    } else {
-                        // Not part of a horizontal span, draw the whole character
-                        box_drawing::draw_box_character(
-                            ch,
-                            cell_bounds,
-                            fg_color,
-                            self.cell_width,
-                            window,
-                        );
-                    }
-                    continue;
-                }
-            }
-
-            // Third pass: draw regular text characters
-            for (col_idx, cell) in cells_vec.iter() {
-                let ch = cell.c;
-
-                // Skip empty cells and box-drawing (already handled)
-                if ch == ' ' || ch == '\0' || box_drawing::is_box_drawing_char(ch) {
-                    continue;
-                }
-
-                let x = origin.x + self.cell_width * (*col_idx as f32);
-                // onehand patch: the same rule the background pass used, so an
-                // inverted cell is drawn light-on-dark rather than twice dark.
-                let (fg_color, _) = cell_ink(&self.palette, cell, colors);
-
-                // For regular text, apply vertical offset for centering
-                let y = y_base + vertical_offset;
-
-                // Create text run for this single character. onehand patch: the
-                // face is cloned out of the four made for the whole grid and the
-                // text out of the ASCII table, so the common case allocates
-                // nothing at all -- this loop runs once per visible character of
-                // every frame.
-                let text: SharedString = ascii_glyph(ch);
-                let text_run = TextRun {
-                    len: text.len(),
-                    font: fonts[Self::font_index(cell.flags)].clone(),
-                    color: fg_color,
-                    background_color: None,
-                    // onehand patch: every underline the protocol has, in the
-                    // colour the program chose for it, plus the strikethrough
-                    // that used to be hard-coded away.
-                    underline: underline_style(&self.palette, cell, colors, fg_color),
-                    strikethrough: strikethrough_style(cell, fg_color),
-                };
-
-                // Shape and paint the character
-                let shaped_line =
-                    window
-                        .text_system()
-                        .shape_line(text, self.font_size, &[text_run], None);
-
-                // Paint at exact cell position (ignore errors)
-                // onehand patch: gpui grew `TextAlign` + a wrap-width argument
-                // since the crates.io release this was written against. A cell
-                // is exactly one glyph wide, so alignment is Left and there is
-                // nothing to wrap.
-                let _ = shaped_line.paint(
-                    Point { x, y },
-                    self.cell_height,
-                    gpui::TextAlign::Left,
-                    None,
-                    window,
-                    _cx,
-                );
-            }
+            // onehand patch: the glyphs, as runs rather than one call per
+            // visible character -- see `split_row_runs`.
+            split_row_runs(
+                &self.palette,
+                (0..num_cols).map(|col| &row[Column(col)]),
+                colors,
+                &mut runs,
+            );
+            self.paint_row_runs(origin, line_idx, &runs, &fonts, window, cx);
         }
 
-        self.paint_cursor(origin, term, focused, window, _cx);
+        self.paint_cursor(origin, term, focused, window, cx);
+    }
+
+    /// onehand patch: the box-drawing passes for one row.
+    ///
+    /// Two of them, and the order is the point: a horizontal line is drawn
+    /// across every cell it runs through in one span, so a border does not come
+    /// out as a row of dashes with a gap at each cell boundary, and the cells
+    /// that span covered are then drawn again for their *vertical* parts alone.
+    ///
+    /// `spanned` is the frame's buffer rather than this row's, and it is a
+    /// column-indexed `Vec<bool>` where it used to be a `HashSet<usize>` — the
+    /// question asked of it is "was this column covered", forty times a row, and
+    /// hashing an integer to answer it is work with nothing to show for it.
+    fn paint_box_drawing(
+        &self,
+        origin: Point<Pixels>,
+        line_idx: usize,
+        row: &Row<Cell>,
+        colors: &Colors,
+        spanned: &mut [bool],
+        window: &mut Window,
+    ) {
+        let num_cols = row.len();
+        let y_base = origin.y + self.cell_height * (line_idx as f32);
+        // Vertically centred, which is where a horizontal line belongs.
+        let cy = y_base + self.cell_height / 2.0;
+
+        spanned.fill(false);
+
+        // First pass: find and draw horizontal spans of box-drawing characters
+        // This draws continuous lines across multiple cells to avoid gaps
+        let mut col = 0;
+        while col < num_cols {
+            let cell = &row[Column(col)];
+            let Some(weight) = box_drawing::get_horizontal_weight(cell.c) else {
+                col += 1;
+                continue;
+            };
+
+            let fg_color = self.palette.resolve(cell.fg, colors);
+            let start_col = col;
+            let mut end_col = col;
+
+            // Look ahead for consecutive cells with same horizontal weight
+            let mut next = col + 1;
+            while next < num_cols {
+                let next_cell = &row[Column(next)];
+                // Must have same horizontal weight and same color
+                if box_drawing::get_horizontal_weight(next_cell.c) != Some(weight)
+                    || self.palette.resolve(next_cell.fg, colors) != fg_color
+                {
+                    break;
+                }
+                end_col = next;
+                next += 1;
+            }
+
+            // Draw the horizontal span
+            let start_x = origin.x + self.cell_width * (start_col as f32);
+            let end_x = origin.x + self.cell_width * ((end_col + 1) as f32);
+
+            box_drawing::draw_horizontal_span(
+                start_x,
+                end_x,
+                cy,
+                weight,
+                self.cell_width,
+                fg_color,
+                window,
+            );
+
+            // Mark these columns as having horizontal drawn
+            spanned[start_col..=end_col].fill(true);
+
+            // Skip past this span
+            col = next;
+        }
+
+        // Second pass: draw vertical components and non-horizontal box chars
+        for col in 0..num_cols {
+            let cell = &row[Column(col)];
+            let ch = cell.c;
+
+            if !box_drawing::is_box_drawing_char(ch) {
+                continue;
+            }
+
+            let x = origin.x + self.cell_width * (col as f32);
+            let fg_color = self.palette.resolve(cell.fg, colors);
+            let cell_bounds = Bounds {
+                origin: Point { x, y: y_base },
+                size: Size {
+                    width: self.cell_width,
+                    height: self.cell_height,
+                },
+            };
+
+            if spanned[col] {
+                // Horizontal already drawn, just draw vertical components
+                box_drawing::draw_vertical_components(
+                    ch,
+                    cell_bounds,
+                    fg_color,
+                    self.cell_width,
+                    window,
+                );
+            } else {
+                // Not part of a horizontal span, draw the whole character
+                box_drawing::draw_box_character(ch, cell_bounds, fg_color, self.cell_width, window);
+            }
+        }
+    }
+
+    /// onehand patch: shape and paint one row's runs.
+    ///
+    /// Everything about *where* the runs came from is in [`split_row_runs`],
+    /// which can be tested; what is left here is the half that needs a window.
+    ///
+    /// The forced cell width handed to `shape_line` is what keeps this a grid:
+    /// gpui snaps each base glyph of the run to its own column rather than
+    /// letting the font's accumulated advances decide, so a character that fell
+    /// through to a fallback face lands on its cell like every other one.
+    fn paint_row_runs(
+        &self,
+        origin: Point<Pixels>,
+        line_idx: usize,
+        runs: &RowRuns,
+        fonts: &[Font; 4],
+        window: &mut Window,
+        cx: &mut App,
+    ) {
+        // Calculate vertical offset to center text in cell
+        // The multiplier adds extra height; we want to distribute it evenly top/bottom
+        let base_height = self.cell_height / self.line_height_multiplier;
+        let vertical_offset = (self.cell_height - base_height) / 2.0;
+        let y = origin.y + self.cell_height * (line_idx as f32) + vertical_offset;
+
+        for run in runs.ready() {
+            // onehand patch: a run one ASCII character long is the common case
+            // in a column of tool output, and the table answers it without
+            // allocating at all.
+            let text: SharedString = match run.text.chars().next() {
+                Some(ch) if ch.len_utf8() == run.text.len() => ascii_glyph(ch),
+                _ => SharedString::from(run.text.clone()),
+            };
+
+            let text_run = TextRun {
+                len: text.len(),
+                font: fonts[run.style.font].clone(),
+                color: run.style.color,
+                background_color: None,
+                // onehand patch: every underline the protocol has, in the
+                // colour the program chose for it, plus the strikethrough
+                // that used to be hard-coded away.
+                underline: run.style.underline,
+                strikethrough: run.style.strikethrough,
+            };
+
+            let shaped = window.text_system().shape_line(
+                text,
+                self.font_size,
+                &[text_run],
+                Some(self.cell_width),
+            );
+
+            // Paint at exact cell position (ignore errors)
+            // onehand patch: gpui grew `TextAlign` + a wrap-width argument
+            // since the crates.io release this was written against. A run is
+            // laid out on the cell lattice and there is nothing to wrap.
+            let _ = shaped.paint(
+                Point {
+                    x: origin.x + self.cell_width * (run.start_col as f32),
+                    y,
+                },
+                self.cell_height,
+                gpui::TextAlign::Left,
+                None,
+                window,
+                cx,
+            );
+        }
     }
 
     /// onehand patch: draw the cursor the child asked for, where the viewport
@@ -1079,32 +1357,24 @@ impl TerminalRenderer {
         let base_height = self.cell_height / self.line_height_multiplier;
         let vertical_offset = (self.cell_height - base_height) / 2.0;
         let flags = cell.flags;
-        let text: SharedString = ch.to_string().into();
+        let text: SharedString = ascii_glyph(ch);
         let run = TextRun {
             len: text.len(),
-            font: Font {
-                family: self.font_family.clone().into(),
-                features: FontFeatures::default(),
-                fallbacks: None,
-                weight: if flags.contains(alacritty_terminal::term::cell::Flags::BOLD) {
-                    FontWeight::BOLD
-                } else {
-                    FontWeight::NORMAL
-                },
-                style: if flags.contains(alacritty_terminal::term::cell::Flags::ITALIC) {
-                    FontStyle::Italic
-                } else {
-                    FontStyle::Normal
-                },
-            },
+            // onehand patch: the same four faces the glyph pass draws with, so
+            // the character repainted over the block is the character that was
+            // under it.
+            font: self.font_variants()[Self::font_index(flags)].clone(),
             color: ink,
             background_color: None,
             underline: None,
             strikethrough: None,
         };
-        let shaped = window
-            .text_system()
-            .shape_line(text, self.font_size, &[run], None);
+        // Shaped on the cell lattice like the glyph pass, so the character put
+        // back over the block lands exactly where it was taken from.
+        let shaped =
+            window
+                .text_system()
+                .shape_line(text, self.font_size, &[run], Some(self.cell_width));
         let _ = shaped.paint(
             Point {
                 x: cell_origin.x,
@@ -1169,13 +1439,7 @@ impl TerminalRenderer {
             colors,
         );
 
-        let font = Font {
-            family: self.font_family.clone().into(),
-            features: FontFeatures::default(),
-            fallbacks: None,
-            weight: FontWeight::NORMAL,
-            style: FontStyle::Normal,
-        };
+        let font = self.face(FontWeight::NORMAL, FontStyle::Normal);
         let run = TextRun {
             len: text.len(),
             font,
@@ -1507,6 +1771,223 @@ mod tests {
         renderer.measured_for = Some((renderer.font_family.clone(), px(15.0), 1.0));
         renderer.font_family = "JetBrains Mono".to_string();
         assert!(renderer.needs_measure(), "a new family is a new cell");
+    }
+
+    // ── onehand patch: splitting a row into shaped runs ─────────────────────
+    //
+    // Testable because the splitting was kept apart from the painting: where a
+    // run starts and stops is a function of the cells, and only placing it needs
+    // a window. The property every one of these is really checking is that a
+    // run's nth character is in its start_col + nth column — a run that has
+    // swallowed a column it does not draw slides the rest of the line left, and
+    // that is the failure the whole arrangement exists to make impossible.
+
+    fn row(text: &str) -> Vec<Cell> {
+        text.chars()
+            .map(|c| {
+                let mut cell = Cell::default();
+                cell.c = c;
+                cell
+            })
+            .collect()
+    }
+
+    fn split(cells: &[Cell]) -> Vec<(usize, String)> {
+        let mut runs = RowRuns::default();
+        split_row_runs(
+            &ColorPalette::default(),
+            cells.iter(),
+            &Colors::default(),
+            &mut runs,
+        );
+        runs.ready()
+            .map(|run| (run.start_col, run.text.clone()))
+            .collect()
+    }
+
+    /// Every run has to land where its first character was, and hold one
+    /// character per column from there.
+    fn columns_line_up(cells: &[Cell]) {
+        for (start_col, text) in split(cells) {
+            for (offset, ch) in text.chars().enumerate() {
+                assert_eq!(
+                    cells[start_col + offset].c,
+                    ch,
+                    "column {} of the row is not what the run puts there",
+                    start_col + offset
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn one_style_is_one_run() {
+        let cells = row("hello");
+        assert_eq!(split(&cells), vec![(0, "hello".to_string())]);
+        columns_line_up(&cells);
+    }
+
+    /// The case batching is for: a space costs nothing to draw, so carrying it
+    /// turns a line of prose into one shaping call rather than one per word.
+    #[test]
+    fn a_run_carries_the_spaces_inside_it() {
+        let cells = row("let x = 5;");
+        assert_eq!(split(&cells), vec![(0, "let x = 5;".to_string())]);
+        columns_line_up(&cells);
+    }
+
+    /// Trailing spaces are dropped, so the run's cache key is the words and not
+    /// the width of the terminal.
+    #[test]
+    fn trailing_spaces_are_not_shaped() {
+        let cells = row("hi        ");
+        assert_eq!(split(&cells), vec![(0, "hi".to_string())]);
+    }
+
+    /// A leading space starts nothing: the run has to begin at the column its
+    /// first character is in.
+    #[test]
+    fn a_run_starts_at_its_first_character() {
+        let cells = row("    indented");
+        assert_eq!(split(&cells), vec![(4, "indented".to_string())]);
+        columns_line_up(&cells);
+    }
+
+    /// A colour change is a new run, and it starts at the column where the
+    /// colour changed.
+    #[test]
+    fn a_change_of_colour_splits_the_run() {
+        let mut cells = row("redblue");
+        for cell in &mut cells[3..] {
+            cell.fg = Color::Named(NamedColor::Blue);
+        }
+        assert_eq!(
+            split(&cells),
+            vec![(0, "red".to_string()), (3, "blue".to_string())]
+        );
+        columns_line_up(&cells);
+    }
+
+    /// A decorated run refuses spaces, because an underline runs the width of
+    /// the run it belongs to and would otherwise be drawn under a cell the
+    /// character-at-a-time pass left bare.
+    #[test]
+    fn a_decorated_run_stops_at_a_space() {
+        let mut cells = row("a b");
+        for cell in &mut cells {
+            cell.flags = Flags::UNDERLINE;
+        }
+        assert_eq!(
+            split(&cells),
+            vec![(0, "a".to_string()), (2, "b".to_string())]
+        );
+        columns_line_up(&cells);
+    }
+
+    /// A box-drawing character is painted as lines by another pass, so it is a
+    /// hole in the row that no run may be shaped across.
+    #[test]
+    fn a_box_drawing_character_breaks_the_run() {
+        let cells = row("ab│cd");
+        assert_eq!(
+            split(&cells),
+            vec![(0, "ab".to_string()), (3, "cd".to_string())]
+        );
+        columns_line_up(&cells);
+    }
+
+    /// A double-width character covers two columns, so it is shaped alone and
+    /// the cell after it — its spacer — belongs to nobody.
+    #[test]
+    fn a_wide_character_is_a_run_of_its_own() {
+        let mut cells = row("a中b");
+        cells[1].flags = Flags::WIDE_CHAR;
+        // The spacer alacritty writes into the column the wide character covers.
+        let mut spacer = Cell::default();
+        spacer.c = ' ';
+        spacer.flags = Flags::WIDE_CHAR_SPACER;
+        cells.insert(2, spacer);
+
+        assert_eq!(
+            split(&cells),
+            vec![
+                (0, "a".to_string()),
+                (1, "中".to_string()),
+                (3, "b".to_string())
+            ]
+        );
+        columns_line_up(&cells);
+    }
+
+    /// An empty row asks for no shaping at all, which is most of a terminal most
+    /// of the time.
+    #[test]
+    fn an_empty_row_is_no_runs() {
+        assert!(split(&row("          ")).is_empty());
+        assert!(split(&vec![Cell::default(); 10]).is_empty());
+    }
+
+    /// And the buffer is reused across rows without carrying one row's text into
+    /// the next, which is the one way a per-frame buffer goes wrong.
+    #[test]
+    fn the_run_buffer_does_not_leak_between_rows() {
+        let mut runs = RowRuns::default();
+        let palette = ColorPalette::default();
+        let colors = Colors::default();
+
+        let long = row("a much longer first row");
+        split_row_runs(&palette, long.iter(), &colors, &mut runs);
+
+        let short = row("hi");
+        split_row_runs(&palette, short.iter(), &colors, &mut runs);
+
+        let got: Vec<_> = runs
+            .ready()
+            .map(|run| (run.start_col, run.text.clone()))
+            .collect();
+        assert_eq!(got, vec![(0, "hi".to_string())]);
+    }
+
+    /// The measurement the batching exists for, in the only form this crate can
+    /// take without a window: how many shaping calls a row of ordinary source
+    /// costs. One per visible character is what it used to be, and it is what a
+    /// full-screen editor pays on every keystroke.
+    #[test]
+    fn a_row_of_source_costs_a_handful_of_shaping_calls() {
+        let mut cells = row("    let shaped = window.text_system().shape_line(text, size);");
+        let printed = cells.iter().filter(|cell| cell.c != ' ').count();
+        // Syntax highlighting is what splits a row in practice, so colour a few
+        // stretches of it rather than measuring one flat colour.
+        for cell in &mut cells[4..7] {
+            cell.fg = Color::Named(NamedColor::Magenta);
+        }
+        for cell in &mut cells[21..40] {
+            cell.fg = Color::Named(NamedColor::Yellow);
+        }
+
+        let runs = split(&cells).len();
+        assert!(
+            runs * 4 < printed,
+            "{runs} runs for {printed} characters is not worth the machinery"
+        );
+    }
+
+    #[test]
+    fn a_cell_is_classified_by_what_would_draw_it() {
+        assert_eq!(classify(&row("x")[0]), CellGlyph::Glyph('x'));
+        // A cell nobody has written to holds a space, which is why an untouched
+        // screen costs no shaping at all.
+        assert_eq!(classify(&Cell::default()), CellGlyph::Space);
+        assert_eq!(classify(&row("\0")[0]), CellGlyph::Blank);
+        assert_eq!(classify(&row("│")[0]), CellGlyph::Boxed);
+
+        let mut wide = row("中")[0].clone();
+        wide.flags = Flags::WIDE_CHAR;
+        assert_eq!(classify(&wide), CellGlyph::Wide('中'));
+
+        let mut spacer = row(" ")[0].clone();
+        spacer.flags = Flags::WIDE_CHAR_SPACER;
+        assert_eq!(classify(&spacer), CellGlyph::Blank);
     }
 
     /// And the answer has to reach the renderer the view holds, key included —

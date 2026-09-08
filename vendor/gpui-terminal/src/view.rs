@@ -26,6 +26,23 @@
 //! limit, and one `notify` per 4KB chunk made that worse by repainting per
 //! chunk.
 //!
+//! Two further rules stand between output arriving and a repaint being asked
+//! for, because a repaint here is not this widget redrawing — it is the whole
+//! window doing so, and a build log or a full-screen editor produces output far
+//! faster than a screen can show it.
+//!
+//! - **A batch is followed by a pause** ([`REPAINT_INTERVAL`]), so however fast
+//!   the child writes, the window is asked to redraw at most about once per
+//!   displayed frame; the bytes that arrive during the pause are absorbed into
+//!   the next batch and parsed, so nothing is dropped and the grid is only ever
+//!   behind by a frame. Idle stays push-based: with nothing queued the task is
+//!   parked on the channel, not on a timer.
+//! - **A grid nobody drew stops asking** ([`RepaintGate`]). A terminal whose
+//!   dock is closed still parses everything its child writes, and every
+//!   `notify` it made would repaint a window the grid is not even in — which is
+//!   how a `cargo build` left running behind a closed dock came to repaint the
+//!   conversation sixty times a second.
+//!
 //! # Thread Safety
 //!
 //! - [`TerminalView`] itself is not `Send` (it contains GPUI handles)
@@ -77,6 +94,63 @@ use std::thread;
 /// or two, small enough that the queue is bounded memory (~1MB) rather than
 /// however much a runaway command can produce.
 const READ_QUEUE_CHUNKS: usize = 256;
+
+/// onehand patch: how long the reader waits after asking for a repaint before
+/// it parses the next batch.
+///
+/// Roughly half a frame at 60Hz. It is a floor on the gap between two repaints
+/// asked for by output, not a polling interval: it is awaited only after a batch
+/// that asked for one, so a terminal with nothing to say waits on the channel
+/// and not on the clock.
+///
+/// The number is a trade with one live case on each side. Longer coalesces a
+/// burst harder, and delays the echo of a keystroke typed while a command is
+/// still printing. Shorter is the reverse. Half a frame keeps the echo below
+/// what anyone reports as lag while still folding a build log's thousands of
+/// writes a second into one repaint each.
+const REPAINT_INTERVAL: std::time::Duration = std::time::Duration::from_millis(8);
+
+/// onehand patch: whether output should ask the window to repaint at all.
+///
+/// The rule is one sentence: **ask once, then wait to be drawn before asking
+/// again.** A grid that is on screen is drawn within the frame, so this lets
+/// every batch through; a grid that is not — its dock closed, its tab behind
+/// another, its window minimized — is never drawn, so the first request is the
+/// last one until it comes back. There is no timer and nothing to cancel: being
+/// rendered is the signal, and a grid that returns to the screen is rendered by
+/// the act of returning.
+///
+/// It cannot lose an update. The only requests it swallows are ones whose repaint
+/// would not have drawn this grid, and the frame that does draw it reads the grid
+/// as it stands then — which includes every byte parsed while nobody was looking.
+#[derive(Debug)]
+struct RepaintGate {
+    drawn_since_request: bool,
+}
+
+impl RepaintGate {
+    /// Nothing has been asked for yet, so the first batch of output is let
+    /// through.
+    fn new() -> Self {
+        Self {
+            drawn_since_request: true,
+        }
+    }
+
+    /// Whether this batch of output should call `notify`.
+    fn request(&mut self) -> bool {
+        if !self.drawn_since_request {
+            return false;
+        }
+        self.drawn_since_request = false;
+        true
+    }
+
+    /// The grid was rendered, so the next batch may ask again.
+    fn drawn(&mut self) {
+        self.drawn_since_request = true;
+    }
+}
 
 /// onehand patch: the bytes that tell the child the terminal came to the front,
 /// or went away — mode 1004, if it asked.
@@ -507,6 +581,9 @@ pub struct TerminalView {
     /// be answered from a paint -- the cursor's cell is a grid coordinate until
     /// the content rect is known.
     preedit_bounds: Bounds<Pixels>,
+    /// Whether output is still entitled to ask for a repaint -- see
+    /// [`RepaintGate`].
+    repaint: RepaintGate,
 }
 
 impl TerminalView {
@@ -616,11 +693,27 @@ impl TerminalView {
                             for bytes in &batch {
                                 view.state.process_bytes(bytes);
                             }
-                            cx.notify();
+                            // onehand patch: a repaint here is the whole window
+                            // redrawing, so it is asked for only when this grid
+                            // is somewhere it would be seen.
+                            let asked = view.repaint.request();
+                            if asked {
+                                cx.notify();
+                            }
+                            asked
                         });
-                        if result.is_err() {
+                        match result {
+                            // onehand patch: hold the loop for the rest of the
+                            // frame before parsing again. Whatever the child
+                            // writes meanwhile queues up and is parsed in one
+                            // go, so a burst costs one repaint instead of one
+                            // per read. Skipped when nothing was asked for:
+                            // with no repaint to pace against, pacing is only
+                            // the parser falling behind.
+                            Ok(true) => cx.background_executor().timer(REPAINT_INTERVAL).await,
+                            Ok(false) => {}
                             // View was dropped, exit
-                            break;
+                            Err(_) => break,
                         }
                     }
                     Err(_) => {
@@ -657,6 +750,7 @@ impl TerminalView {
             reported_focus: None,
             preedit: String::new(),
             preedit_bounds: Bounds::default(),
+            repaint: RepaintGate::new(),
         }
     }
 
@@ -1508,6 +1602,12 @@ impl EntityInputHandler for TerminalView {
 
 impl Render for TerminalView {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        // onehand patch: being rendered is what earns the next request for one.
+        // Recorded here rather than in the paint closure because a grid laid out
+        // with no room to draw in is still a grid on screen, and one whose panel
+        // was never rendered is the case this is about.
+        self.repaint.drawn();
+
         // Process any pending events
         self.process_events(window, cx);
 
@@ -1716,7 +1816,7 @@ mod tests {
     // with "recursion limit reached while expanding `#[test]`". Naming the two
     // items this module actually needs keeps the glob out and the attribute
     // meaning what it says.
-    use super::focus_report;
+    use super::{RepaintGate, focus_report};
     use alacritty_terminal::term::TermMode;
 
     #[test]
@@ -1747,5 +1847,41 @@ mod tests {
         let mode = TermMode::FOCUS_IN_OUT;
         assert!(focus_report(None, true, mode).is_none());
         assert!(focus_report(None, false, mode).is_none());
+    }
+
+    // ── onehand patch: what output is allowed to ask the window for ─────────
+
+    /// The first thing a child says has to be shown, or a terminal that is
+    /// opened and immediately writes its prompt comes up blank.
+    #[test]
+    fn the_first_output_asks_for_a_repaint() {
+        assert!(RepaintGate::new().request());
+    }
+
+    /// A grid on screen is drawn between one batch and the next, so every batch
+    /// gets its repaint. This is the ordinary case and the one that must not be
+    /// slowed down by the rule that follows it.
+    #[test]
+    fn a_grid_that_is_drawn_keeps_asking() {
+        let mut gate = RepaintGate::new();
+        for _ in 0..5 {
+            assert!(gate.request());
+            gate.drawn();
+        }
+    }
+
+    /// And a grid nobody draws asks once and then stops -- which is the whole
+    /// point: a build running behind a closed dock parses everything and
+    /// repaints nothing.
+    #[test]
+    fn a_grid_nobody_draws_asks_once() {
+        let mut gate = RepaintGate::new();
+        assert!(gate.request());
+        assert!(!gate.request());
+        assert!(!gate.request());
+
+        // Coming back on screen is a draw, and that is all it takes.
+        gate.drawn();
+        assert!(gate.request());
     }
 }
