@@ -648,8 +648,22 @@ impl ChatItem {
 }
 
 /// Session titles are compact task labels, not first-message previews.
-const TITLE_MAX_CHARS: usize = 48;
-const TITLE_MAX_WORDS: usize = 8;
+///
+/// **Sized for the widest place the name is shown, not the narrowest.** These
+/// were cut for a sidebar row, and every surface took the loss: the
+/// conversation's header is as wide as the agent pane and is the one place the
+/// name is a heading rather than an entry in a list, so it had a paragraph's
+/// worth of room and stopped mid-phrase for the sake of a column two hundred
+/// pixels away. Every narrower reader already cuts what it cannot fit *at its
+/// own edge* — the rail's rows, a menu row, the bridge's listing — with an
+/// ellipsis and at the width it actually has, which is a cut that follows the
+/// window instead of guessing at it.
+///
+/// What stays is that this is a **label**: a first prompt is a paragraph and a
+/// conversation's name is not, so the sentence is still clipped at a word
+/// boundary rather than left to run to whatever length somebody typed.
+const TITLE_MAX_CHARS: usize = 96;
+const TITLE_MAX_WORDS: usize = 16;
 
 /// Turn the first meaningful line of a prompt into a short, stable task label.
 ///
@@ -2677,10 +2691,13 @@ mod tests {
     #[test]
     fn title_caps_at_a_word_boundary() {
         let t = summarize_title(
-            "Implement OAuth callback handling for the desktop application and document every edge case",
+            "Implement OAuth callback handling for the desktop application and document every edge case discovered",
         )
         .unwrap();
-        assert_eq!(t, "Implement OAuth callback handling for the…");
+        assert_eq!(
+            t,
+            "Implement OAuth callback handling for the desktop application and document every edge case…",
+        );
         assert!(t.chars().count() <= TITLE_MAX_CHARS + 1);
     }
 
