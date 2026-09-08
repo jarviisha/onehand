@@ -469,7 +469,9 @@ plus `sendMessage` and `answerCallbackQuery`. Everything that is not the wire is
   semibold against an otherwise muted row, with the hover background and a chevron whose space is held
   whether or not it is drawn, so the name does not shift under the pointer. Behind it: *Rename…*,
   *Export as Markdown…*, *Export as JSON…* (named and disabled — it is planned, and leaving it out
-  would say otherwise), *Resume another conversation…*, *Restart the agent*, and then, alone in the
+  would say otherwise), *Resume in this session…* — named for what it does *to this session*, since
+  the header now carries a control reaching the same archives that leaves the session alone —
+  *Restart the agent*, and then, alone in the
   danger tint, *Delete conversation* — the only entry there that ends something for good. It is a
   **The header is drawn on the project page too**, and the page no longer prints the project's name
   itself: the row names the project there and its menu is the project's (`chat::pane::project_menu`)
@@ -492,7 +494,8 @@ plus `sendMessage` and `answerCallbackQuery`. Everything that is not the wire is
   means the transcript's own last block is already saying what is running — but a **lost adapter now
   says so here**, where the header used to be blank and only the rail's small triangle knew.
   The right-hand end carries the row's controls (`ChatPane::header_control`, one builder so the call
-  sites cannot drift): find, the terminal, the Workbench, the way back to a hidden rail, and last
+  sites cannot drift): find, the past-conversations menu, the terminal, the Workbench, the way back
+  to a hidden rail, and last
   *Close session*, offered only while there is one. The terminal button carries a **dot in success ink
   at its corner while a shell is alive** — a child process outliving a closed dock is the one thing
   the icon cannot say, and closing the window is what would end it. The fact is pushed down from the
@@ -505,6 +508,28 @@ plus `sendMessage` and `answerCallbackQuery`. Everything that is not the wire is
   every turn — while deleting is the one thing the app cannot undo, so it stays behind the name, two
   presses and a warning away, and the two are never adjacent. There is no ••• — a menu button beside
   the name it acts on says nothing the name could not say itself.
+  **The past-conversations menu** (`ChatPane::history_control`) is the one route to an archive that
+  keeps the session on screen: picking a row emits `StartSession { agent, resume }`, so the old
+  conversation comes up as a second session and the current one stays where it is in the rail. The
+  other two routes both cost it — the project page mints a session on the archive picked, but it is
+  what the centre of the window shows *instead of* a conversation, so reaching it means closing every
+  session in the project; and the title menu's own picker takes the session in front of the user off
+  its conversation to ask the question. It is offered **only while a session is showing**, because
+  with none the project page is already that list. It reads **every agent's** conversations, as that
+  page does and for the same reason: the question is which conversation, and which agent had it is a
+  property of the answer. A conversation **already open in this window is listed and refused, not
+  hidden** — two sessions on one archive each believe the transcript so far is on disk, so the
+  second's first turn writes the file back holding only what came after it, and dropping the row
+  instead would leave the conversation a user is most likely to look for missing with nothing said.
+  The menu **scrolls and lists everything the project has** — a project worked in for months has
+  more conversations than a menu is tall, and the cap on it (`HISTORY_ROWS`) sits far past what
+  anybody scrolls to, bounding the *work* of building rows rather than editing the list; the one time
+  it bites it says so.
+  The listing is **held, not read when the menu opens** (`ChatPane::archives`): building a menu
+  happens inside a render and a render cannot wait on a directory of files. It follows the *project*,
+  so switching between two sessions of one root does not re-read it, and it is re-read at the two
+  moments the store changes under a running window — a turn ending, which is what writes a
+  conversation, and a session closing, which is when somebody is most likely to want it back.
 
 The **model** is core's (`onehand_core::chat`): `Chat` + `apply(AcpEvent)`, the conversation store, the
 find pass, and the activity-run rules. `ChatSession` derefs to it, which is what lets the whole
@@ -890,9 +915,12 @@ fails if a binding is added without a row — a shortcut nobody can find is a sh
   than describe it.
 - **The resume picker is asked for, never volunteered.** A new session connects straight away — it
   was minted by an explicit *New session*, and a picker there asks the user to choose a conversation
-  immediately after they chose not to resume one. It is reached from a live session's header menu
-  (*Resume another conversation…*), and the choice still happens *before* anything reconnects:
-  connecting first would start a fresh conversation and archive it.
+  immediately after they chose not to resume one. It is reached from a live session's title menu
+  (*Resume in this session…*), and the choice still happens *before* anything reconnects:
+  connecting first would start a fresh conversation and archive it. It is the **narrow** half of the
+  pair: this one swaps what the session on screen is on and lists that session's own agent only,
+  while the header's past-conversations menu opens an archive as a session of its own and lists every
+  agent's.
 - **Deleting is offered in two places, and both ask the same way: a modal naming the conversation.**
   A live conversation deleted underneath its own session would not even stay deleted — the next turn
   writes the file again holding only what came after, because the session's mark says the rest is

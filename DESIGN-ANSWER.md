@@ -778,7 +778,9 @@ Transient rows that are not answers:
 
 - **The session header**, above the transcript: what this conversation is
   called, what it is doing, and the things done *to* it — Find, and a `•••`
-  holding Export, Resume another conversation, Restart and Close. Plus the two
+  holding Export, Resume in this session, Restart and Close; and a menu of the
+  project's past conversations, each opening as a session of its own beside this
+  one. Plus the two
   ways back to something the window has put away: the rail, while it is hidden,
   and the Workbench. Those are here because **the pane is mounted as a bare
   panel with no tab bar**, and this row is the only chrome it has.

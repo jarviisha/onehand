@@ -35,7 +35,7 @@ use onehand_core::remote::types::Button;
 use onehand_core::remote::{Press, press};
 use std::collections::HashMap;
 use std::collections::hash_map::Entry;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 /// The rest the transcript comes to above the composer.
 ///
@@ -139,6 +139,23 @@ struct EmptyProject {
     is_repo: bool,
 }
 
+/// The conversations already had in the project on screen, for the header's
+/// *Open a past conversation* menu.
+///
+/// **Held rather than read when the menu opens.** Building a menu happens inside
+/// a render, and a render cannot wait on a directory of files; a menu that came
+/// up empty and filled itself in afterwards would be one the user had already
+/// closed and drawn their conclusion from.
+struct Archives {
+    /// The project these belong to. An answer that lands after the pane has
+    /// moved on names a project nobody is looking at, and adopting it would
+    /// offer one project's conversations under another's name.
+    root: PathBuf,
+    /// `None` while the read is out — which is a different thing from a project
+    /// that has never been prompted, and the menu says the two differently.
+    found: Option<Vec<ConvMeta>>,
+}
+
 pub struct ChatPane {
     focus_handle: FocusHandle,
     /// Every session the user has opened, in whatever phase it has reached.
@@ -185,6 +202,11 @@ pub struct ChatPane {
     ///
     /// Only ever read while no session is showing.
     empty: Option<EmptyProject>,
+    /// The past conversations of the project that *is* showing, for the
+    /// header's menu. Separate from `empty` above, which is the same listing for
+    /// the opposite state — that one is the body of the page shown when a
+    /// project has nothing running, this one is offered while something is.
+    archives: Option<Archives>,
     /// The archived conversation the next [`Self::show`] of a session must open
     /// on.
     ///
@@ -287,6 +309,7 @@ impl ChatPane {
                 window: window.window_handle(),
                 handle: cx.entity().downgrade(),
                 empty: None,
+                archives: None,
                 pending_resume: None,
                 rail_hidden: false,
                 terminal_live: false,
@@ -344,6 +367,10 @@ impl ChatPane {
             self.restore_draft(uid, window, cx);
         }
         self.active = Some(uid);
+        // The header's menu is about the project, so it follows the project
+        // rather than the session: switching between two sessions of one root
+        // reads the same list and does not re-read it.
+        self.follow_archives(&root, cx);
         if window.is_window_active()
             && let Some(conv) = self.conversations.get_mut(&uid)
         {
@@ -455,6 +482,10 @@ impl ChatPane {
                     ChatEvent::TurnEnded => {
                         Self::archive_detached(uid, &session, cx);
                         pane.turn_ended_detached(uid, &agent, &root_label, cx);
+                        // The turn that just ended is what wrote the archive, so
+                        // this is the moment a conversation first exists on disk
+                        // and the moment its summary and its age change.
+                        pane.refresh_archives(cx);
                         cx.emit(ChatPaneEvent::WorkTreeTouched);
                     }
                     ChatEvent::AwaitingUser(ask) => {
@@ -696,6 +727,9 @@ impl ChatPane {
             // unaddressed draft as unaddressed.
             self.find = None;
         }
+        // The conversation just closed is the one most likely to be wanted back,
+        // and until this read lands the menu still lists it as open.
+        self.refresh_archives(cx);
         cx.notify();
     }
 
@@ -744,6 +778,66 @@ impl ChatPane {
         self.leave_shown_session(window, cx);
         self.active = None;
         cx.notify();
+    }
+
+    /// Point the header's menu at `root`, reading its conversations if it is not
+    /// already the one being held.
+    fn follow_archives(&mut self, root: &Path, cx: &mut Context<Self>) {
+        if self.archives.as_ref().is_some_and(|held| held.root == root) {
+            return;
+        }
+        self.archives = Some(Archives {
+            root: root.to_path_buf(),
+            found: None,
+        });
+        self.scan_archives(cx);
+    }
+
+    /// Read the held project's conversations again.
+    ///
+    /// Called at the two moments the listing on disk actually changes under a
+    /// running window: a turn ending, which is when a conversation is written —
+    /// so a session's first turn is when it appears here at all — and a session
+    /// closing, which is the moment somebody is most likely to want it back.
+    /// Neither re-reads the *directory* on the UI thread; both go the same way
+    /// the first read did.
+    fn refresh_archives(&mut self, cx: &mut Context<Self>) {
+        if self.archives.is_some() {
+            self.scan_archives(cx);
+        }
+    }
+
+    /// The read itself. Leaves whatever is held in place until the answer lands,
+    /// so a refresh does not blank a menu that already had something in it.
+    fn scan_archives(&mut self, cx: &mut Context<Self>) {
+        let Some(path) = self.archives.as_ref().map(|held| held.root.clone()) else {
+            return;
+        };
+        let scan = path.clone();
+        cx.spawn(async move |pane, cx| {
+            let past = cx
+                .background_executor()
+                .spawn(async move {
+                    onehand_core::chat::list_conversations(
+                        &onehand_core::chat::conversations_dir(),
+                        &scan,
+                        None,
+                    )
+                })
+                .await;
+            let _ = pane.update(cx, |pane: &mut Self, cx| {
+                // Only for the project it was asked about: reading a directory
+                // of archives takes long enough that the user can have moved to
+                // another project twice over, and one project's conversations
+                // are not an answer about another's.
+                let Some(held) = pane.archives.as_mut().filter(|held| held.root == path) else {
+                    return;
+                };
+                held.found = Some(past);
+                cx.notify();
+            });
+        })
+        .detach();
     }
 
     /// Read the project page's list of past conversations, off the UI loop.
@@ -2311,6 +2405,12 @@ impl ChatPane {
                         })),
                 )
             })
+            // Only while a session is showing, and for a reason worth stating:
+            // this is the same list the project page draws, and that page is
+            // exactly what the centre of the window shows when there is no
+            // session — offering it there too would be saying one thing twice
+            // within an inch of itself.
+            .when(live, |header| header.child(self.history_control(cx)))
             // Beside the Workbench button rather than in the status bar, where
             // it used to be: both are docks this panel is sitting between, and
             // a closed one leaves nothing on screen at all -- no edge, no strip,
@@ -2344,6 +2444,149 @@ impl ChatPane {
                             cx.emit(ChatPaneEvent::CloseSession);
                         })),
                 )
+            })
+    }
+
+    /// The way back to a conversation this project has already had — as a
+    /// session of its own, beside the one on screen.
+    ///
+    /// **The gap it fills.** Every other route to an archive costs the session
+    /// in front of the user. The project page lists them and mints a session on
+    /// the one picked, but it is what the centre of the window shows *instead
+    /// of* a conversation, so reaching it meant closing every session in the
+    /// project first; and the title menu's own picker leaves nothing running —
+    /// it takes the session on screen off its conversation to ask the question.
+    /// So this is the one that opens an old conversation and keeps the current
+    /// one where it is, as a second row in the rail.
+    ///
+    /// **A menu on a header button rather than a dialog**, because it is a
+    /// short list of one project's own conversations and the header is already
+    /// where the things about this pane are. A modal over the conversation to
+    /// pick a conversation is a heavier gesture than the choice deserves.
+    ///
+    /// **Every agent's**, as the project page's list is and for the same reason:
+    /// the question is which conversation, and which agent had it is a property
+    /// of the answer rather than a filter on the question. The title menu's
+    /// picker is the narrow one, because there the agent is already decided.
+    ///
+    /// **A conversation already open is listed and refused, not hidden.** Two
+    /// sessions on one archive both believe the transcript so far is on disk, so
+    /// the second one's first turn writes the file back holding only what came
+    /// after it. Dropping the row instead would leave the one conversation the
+    /// user is most likely to look for missing from the list with nothing said.
+    fn history_control(&self, cx: &mut Context<Self>) -> impl IntoElement + use<> {
+        // Owned rather than borrowed out of the sessions: the menu is built
+        // later, from a closure that outlives this borrow of the pane.
+        let open: Vec<String> = self
+            .conversations
+            .values()
+            .filter_map(Conversation::session)
+            .filter_map(|session| session.read(cx).chat.session_id.clone())
+            .collect();
+        let now = onehand_core::chat::now_secs();
+        let held = self.archives.as_ref().and_then(|held| held.found.as_ref());
+        let rows: Vec<HistoryRow> = held
+            .into_iter()
+            .flatten()
+            .take(HISTORY_ROWS)
+            .map(|meta| HistoryRow {
+                title: SharedString::from(meta.title.clone()),
+                // The age, and the agent only where it is not the one running
+                // this session — on a machine with one agent configured, naming
+                // it on every row is a column of the same word.
+                aside: SharedString::from(format!(
+                    "{} · {}",
+                    rel_time(now, meta.updated),
+                    meta.agent
+                )),
+                open: open.iter().any(|id| id == &meta.session_id),
+                agent: SharedString::from(meta.agent.clone()),
+                dir: meta.dir.clone(),
+            })
+            .collect();
+        let hidden = held.map_or(0, |all| all.len().saturating_sub(HISTORY_ROWS));
+        // `None` is the read still out and `Some([])` is a project that has
+        // never been prompted. One is a wait and the other is an answer, and a
+        // menu that gives the second while the first is true tells somebody with
+        // a hundred conversations that they have none.
+        let standing = match held {
+            None => Some(SharedString::from("Reading conversations…")),
+            Some(all) if all.is_empty() => {
+                Some(SharedString::from("No conversations in this project yet"))
+            }
+            Some(_) => None,
+        };
+        let this = cx.entity();
+
+        header_control("history", IconName::GalleryVerticalEnd, cx)
+            .tooltip("Open a past conversation in a new session")
+            // Anchored to its own right-hand corner: this button sits at the end
+            // of the header, and a menu hanging rightwards from it opens off the
+            // edge of the window.
+            .dropdown_menu_with_anchor(gpui::Anchor::TopRight, move |menu, _, cx| {
+                let muted = cx.theme().muted_foreground;
+                // A project is worked in for months and every conversation had
+                // in it is a row here, so the list is longer than a menu's
+                // height by design. Without this the rows past the bottom are
+                // built and drawn with no way to reach them.
+                let menu = menu.scrollable(true);
+                let menu = match standing.clone() {
+                    Some(line) => menu.item(
+                        PopupMenuItem::element(move |_, _| {
+                            div().text_color(muted).child(line.clone())
+                        })
+                        .disabled(true),
+                    ),
+                    None => menu,
+                };
+                let menu = rows.iter().fold(menu, |menu, row| {
+                    let (title, aside, open) = (row.title.clone(), row.aside.clone(), row.open);
+                    let item =
+                        PopupMenuItem::element(move |_, _| {
+                            div()
+                                .h_flex()
+                                .items_center()
+                                .gap_3()
+                                .w_full()
+                                .child(div().flex_1().min_w_0().truncate().child(title.clone()))
+                                .child(div().flex_none().text_xs().text_color(muted).child(
+                                    if open {
+                                        SharedString::from("already open")
+                                    } else {
+                                        aside.clone()
+                                    },
+                                ))
+                        });
+                    match open {
+                        true => menu.item(item.disabled(true)),
+                        false => {
+                            let (start, agent, dir) =
+                                (this.clone(), row.agent.clone(), row.dir.clone());
+                            menu.item(item.on_click(move |_, _, cx: &mut App| {
+                                start.update(cx, |_: &mut Self, cx| {
+                                    cx.emit(ChatPaneEvent::StartSession {
+                                        agent: Some(agent.clone()),
+                                        resume: Some(dir.clone()),
+                                    });
+                                });
+                            }))
+                        }
+                    }
+                });
+                // Said out loud rather than left as a list that simply stops: a
+                // cut nobody is told about reads as archives that were lost.
+                match hidden {
+                    0 => menu,
+                    n => menu.separator().item(
+                        PopupMenuItem::element(move |_, _| {
+                            div()
+                                .text_xs()
+                                .text_color(muted)
+                                .child(format!("{n} older, not shown"))
+                        })
+                        .disabled(true),
+                    ),
+                }
             })
     }
 
@@ -2490,12 +2733,18 @@ impl ChatPane {
             )
             .separator()
             .item(
+                // Named for what it does *to this session*, because the
+                // header now carries a control that reaches the same
+                // archives and leaves the session alone: this one swaps
+                // what the conversation on screen is, and the difference
+                // between the two is the whole question.
+                //
                 // Disabled mid-turn rather than guarded by a second click:
                 // going back to the picker throws the running turn away
                 // exactly as a restart does, and a menu that has to be
                 // opened twice to be believed is a worse warning than an
                 // item that will not go.
-                PopupMenuItem::new("Resume another conversation…")
+                PopupMenuItem::new("Resume in this session…")
                     .icon(Icon::new(IconName::Undo))
                     .disabled(busy)
                     .on_click(move |_, _, cx: &mut App| {
@@ -3670,6 +3919,33 @@ fn header_control(id: &'static str, icon: IconName, cx: &App) -> gpui_component:
         .small()
         .icon(Icon::new(icon))
         .text_color(cx.theme().muted_foreground)
+}
+
+/// How many past conversations the header's menu offers before it stops and
+/// says so.
+///
+/// **High enough that it is not the thing deciding what the list shows.** The
+/// menu scrolls, so what a reader can reach is not bounded by what fits; this
+/// bounds the *work*, because a menu builds every row it holds the moment it
+/// opens. It sits far past what anybody scrolls a menu for — the menu's own
+/// height shows on the order of a dozen rows at a time — so it is a backstop
+/// against a store nothing ever prunes rather than an editorial cut, and the one
+/// time it bites it says so.
+const HISTORY_ROWS: usize = 200;
+
+/// One row of that menu, prepared before the menu builder runs.
+///
+/// The builder is an `Fn` that outlives the borrow of the pane these came from,
+/// so everything it needs is copied out here rather than read through a handle
+/// at the moment it draws.
+struct HistoryRow {
+    title: SharedString,
+    /// How long ago, and which agent had it.
+    aside: SharedString,
+    /// Whether a session in this window is already on this conversation.
+    open: bool,
+    agent: SharedString,
+    dir: PathBuf,
 }
 
 /// How wide the header's status badge may get.
