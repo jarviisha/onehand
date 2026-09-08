@@ -31,9 +31,9 @@
 //! 3. **Cell Measurement**: Font metrics are measured using the 'M' character and
 //!    reused until the font changes.
 //!
-//! 4. **Text batching**: adjacent cells sharing a face, a colour and a
-//!    decoration are shaped and painted as one run rather than one glyph at a
-//!    time.
+//! 4. *onehand patch* — **Text batching**: adjacent cells sharing a face, a
+//!    colour and a decoration are shaped and painted as one run rather than one
+//!    glyph at a time.
 //!
 //! *onehand patch*: the fourth is ours, and the reason it took two attempts is
 //! worth stating. The batching that used to be here grouped the cells and was
@@ -259,7 +259,7 @@ enum CellGlyph {
     Glyph(char),
 }
 
-/// Which of the five a cell is.
+/// onehand patch: which of the five a cell is.
 fn classify(cell: &Cell) -> CellGlyph {
     if cell
         .flags
@@ -350,7 +350,11 @@ impl RowRuns {
         self.open = false;
     }
 
-    fn start(&mut self, start_col: usize, style: RunStyle) {
+    /// Open a run at `start_col` and hand it back to be written into.
+    ///
+    /// Returning the run rather than only opening it is what keeps the caller
+    /// from having to ask for it again and unwrap an `Option` it just created.
+    fn start(&mut self, start_col: usize, style: RunStyle) -> &mut GlyphRun {
         if self.len == self.runs.len() {
             self.runs.push(GlyphRun {
                 start_col,
@@ -365,6 +369,7 @@ impl RowRuns {
         }
         self.len += 1;
         self.open = true;
+        &mut self.runs[self.len - 1]
     }
 
     fn open_run(&mut self) -> Option<&mut GlyphRun> {
@@ -393,8 +398,11 @@ impl RowRuns {
         self.open = false;
     }
 
-    /// The runs with something to draw, in column order.
-    fn ready(&self) -> impl Iterator<Item = &GlyphRun> {
+    /// The runs that have text left to draw, in column order.
+    ///
+    /// A run can end up empty: one made of nothing but spaces has them all
+    /// trimmed by [`Self::finish`], and there is nothing to shape.
+    fn drawable(&self) -> impl Iterator<Item = &GlyphRun> {
         self.runs[..self.len]
             .iter()
             .filter(|run| !run.text.is_empty())
@@ -420,24 +428,22 @@ fn split_row_runs<'a>(
     for (col, cell) in cells.enumerate() {
         match classify(cell) {
             CellGlyph::Blank | CellGlyph::Boxed => out.close(),
-            CellGlyph::Space => {
-                if out.open_run().is_some_and(|run| run.style.carries_spaces()) {
-                    out.open_run().expect("just checked").text.push(' ');
-                } else {
-                    out.close();
-                }
-            }
+            CellGlyph::Space => match out.open_run() {
+                Some(run) if run.style.carries_spaces() => run.text.push(' '),
+                _ => out.close(),
+            },
             CellGlyph::Wide(ch) => {
-                out.start(col, RunStyle::of(palette, cell, colors));
-                out.open_run().expect("just started").text.push(ch);
+                out.start(col, RunStyle::of(palette, cell, colors))
+                    .text
+                    .push(ch);
                 out.close();
             }
             CellGlyph::Glyph(ch) => {
                 let style = RunStyle::of(palette, cell, colors);
-                if !out.open_run().is_some_and(|run| run.style == style) {
-                    out.start(col, style);
+                match out.open_run() {
+                    Some(run) if run.style == style => run.text.push(ch),
+                    _ => out.start(col, style).text.push(ch),
                 }
-                out.open_run().expect("open by now").text.push(ch);
             }
         }
     }
@@ -633,6 +639,19 @@ impl TerminalRenderer {
         ]
     }
 
+    /// onehand patch: where a glyph's baseline sits for a given row.
+    ///
+    /// The line-height multiplier adds height around the text, and the text is
+    /// centred in what it added. One function because two places need the
+    /// answer and have to agree: the glyph pass, and the cursor repainting the
+    /// character it is sitting on. Worked out separately, the character the
+    /// block puts back lands a pixel or two off the one it covered.
+    fn glyph_baseline(&self, line_idx: usize) -> Pixels {
+        let base_height = self.cell_height / self.line_height_multiplier;
+        let vertical_offset = (self.cell_height - base_height) / 2.0;
+        self.cell_height * (line_idx as f32) + vertical_offset
+    }
+
     /// onehand patch: one face, built the one way the grid ever wants one.
     ///
     /// **Contextual alternates are off**, and that is the load-bearing part. A
@@ -687,6 +706,10 @@ impl TerminalRenderer {
         // full-height character.
         const PROBE: &str = "M";
 
+        // onehand patch: the grid's own face, not one built here. The cell is
+        // measured in whatever the glyph pass will draw in, features included,
+        // or the lattice is laid out from one description of the font and
+        // filled from another.
         let font = self.face(FontWeight::NORMAL, FontStyle::Normal);
 
         let text_run = TextRun {
@@ -856,7 +879,9 @@ impl TerminalRenderer {
     ///
     /// onehand patch: `focused` is ours. Only the view knows the answer, and the
     /// cursor is drawn differently without the keyboard -- see
-    /// [`Self::paint_cursor`].
+    /// [`Self::paint_cursor`]. The app context is ours to the extent that it is
+    /// now *used*: upstream took it as `_cx` and painted no text through it,
+    /// because painting a shaped line needs it and upstream shaped none here.
     pub fn paint(
         &self,
         bounds: Bounds<Pixels>,
@@ -1145,6 +1170,17 @@ impl TerminalRenderer {
     /// gpui snaps each base glyph of the run to its own column rather than
     /// letting the font's accumulated advances decide, so a character that fell
     /// through to a fallback face lands on its cell like every other one.
+    ///
+    /// **What makes an untouched row cheap is gpui's, not ours**, and the
+    /// dependency is worth naming rather than assuming: `shape_line` goes
+    /// through `LineLayoutCache`, which carries entries from the previous frame
+    /// into the current one on a hit, keyed by the text, the size, the resolved
+    /// faces and the forced width. So a row nobody wrote to shapes nothing on
+    /// the second frame and every frame after it — the call is a hash and an
+    /// `Arc` clone. Batching is what makes that lookup cheap enough to matter:
+    /// it is paid per run rather than per character. If that cache ever stops
+    /// promoting across frames, this pass silently goes back to reshaping every
+    /// visible row on every frame, with nothing here to say so.
     fn paint_row_runs(
         &self,
         origin: Point<Pixels>,
@@ -1154,13 +1190,9 @@ impl TerminalRenderer {
         window: &mut Window,
         cx: &mut App,
     ) {
-        // Calculate vertical offset to center text in cell
-        // The multiplier adds extra height; we want to distribute it evenly top/bottom
-        let base_height = self.cell_height / self.line_height_multiplier;
-        let vertical_offset = (self.cell_height - base_height) / 2.0;
-        let y = origin.y + self.cell_height * (line_idx as f32) + vertical_offset;
+        let y = origin.y + self.glyph_baseline(line_idx);
 
-        for run in runs.ready() {
+        for run in runs.drawable() {
             // onehand patch: a run one ASCII character long is the common case
             // in a column of tool output, and the table answers it without
             // allocating at all.
@@ -1354,16 +1386,27 @@ impl TerminalRenderer {
         // colour the text would otherwise have been -- and a cursor sitting on a
         // status line or a search hit is exactly where that happens.
         let (_, ink) = cell_ink(&self.palette, cell, colors);
-        let base_height = self.cell_height / self.line_height_multiplier;
-        let vertical_offset = (self.cell_height - base_height) / 2.0;
         let flags = cell.flags;
         let text: SharedString = ascii_glyph(ch);
         let run = TextRun {
             len: text.len(),
-            // onehand patch: the same four faces the glyph pass draws with, so
-            // the character repainted over the block is the character that was
-            // under it.
-            font: self.font_variants()[Self::font_index(flags)].clone(),
+            // onehand patch: built the same way the glyph pass builds its four,
+            // so the character repainted over the block is the character that
+            // was under it. One face and not the whole table: asking for all
+            // four here would make three of them to throw away, on a path that
+            // runs once a frame in a module whose point is not to.
+            font: self.face(
+                if flags.contains(Flags::BOLD) {
+                    FontWeight::BOLD
+                } else {
+                    FontWeight::NORMAL
+                },
+                if flags.contains(Flags::ITALIC) {
+                    FontStyle::Italic
+                } else {
+                    FontStyle::Normal
+                },
+            ),
             color: ink,
             background_color: None,
             underline: None,
@@ -1378,7 +1421,9 @@ impl TerminalRenderer {
         let _ = shaped.paint(
             Point {
                 x: cell_origin.x,
-                y: cell_origin.y + vertical_offset,
+                // The glyph pass's own baseline, asked of the one function that
+                // works it out.
+                y: origin.y + self.glyph_baseline(row as usize),
             },
             self.cell_height,
             gpui::TextAlign::Left,
@@ -1439,7 +1484,22 @@ impl TerminalRenderer {
             colors,
         );
 
-        let font = self.face(FontWeight::NORMAL, FontStyle::Normal);
+        // onehand patch: **not** `face`, which turns contextual alternates off.
+        //
+        // That is a rule about the *grid*: a cell may hold one character and no
+        // font may fuse two of them into one glyph. A composition is not on the
+        // grid — it is a run of ordinary text painted over it, several
+        // characters long, and it is being read by somebody halfway through a
+        // syllable. Contextual alternates are how a font joins letters that have
+        // to be joined, so borrowing the grid's rule here would break the
+        // shaping of the very scripts this is drawn for.
+        let font = Font {
+            family: self.font_family.clone().into(),
+            features: FontFeatures::default(),
+            fallbacks: None,
+            weight: FontWeight::NORMAL,
+            style: FontStyle::Normal,
+        };
         let run = TextRun {
             len: text.len(),
             font,
@@ -1782,7 +1842,7 @@ mod tests {
     // swallowed a column it does not draw slides the rest of the line left, and
     // that is the failure the whole arrangement exists to make impossible.
 
-    fn row(text: &str) -> Vec<Cell> {
+    fn cells(text: &str) -> Vec<Cell> {
         text.chars()
             .map(|c| {
                 let mut cell = Cell::default();
@@ -1800,7 +1860,7 @@ mod tests {
             &Colors::default(),
             &mut runs,
         );
-        runs.ready()
+        runs.drawable()
             .map(|run| (run.start_col, run.text.clone()))
             .collect()
     }
@@ -1822,7 +1882,7 @@ mod tests {
 
     #[test]
     fn one_style_is_one_run() {
-        let cells = row("hello");
+        let cells = cells("hello");
         assert_eq!(split(&cells), vec![(0, "hello".to_string())]);
         columns_line_up(&cells);
     }
@@ -1831,7 +1891,7 @@ mod tests {
     /// turns a line of prose into one shaping call rather than one per word.
     #[test]
     fn a_run_carries_the_spaces_inside_it() {
-        let cells = row("let x = 5;");
+        let cells = cells("let x = 5;");
         assert_eq!(split(&cells), vec![(0, "let x = 5;".to_string())]);
         columns_line_up(&cells);
     }
@@ -1840,7 +1900,7 @@ mod tests {
     /// the width of the terminal.
     #[test]
     fn trailing_spaces_are_not_shaped() {
-        let cells = row("hi        ");
+        let cells = cells("hi        ");
         assert_eq!(split(&cells), vec![(0, "hi".to_string())]);
     }
 
@@ -1848,7 +1908,7 @@ mod tests {
     /// first character is in.
     #[test]
     fn a_run_starts_at_its_first_character() {
-        let cells = row("    indented");
+        let cells = cells("    indented");
         assert_eq!(split(&cells), vec![(4, "indented".to_string())]);
         columns_line_up(&cells);
     }
@@ -1857,7 +1917,7 @@ mod tests {
     /// colour changed.
     #[test]
     fn a_change_of_colour_splits_the_run() {
-        let mut cells = row("redblue");
+        let mut cells = cells("redblue");
         for cell in &mut cells[3..] {
             cell.fg = Color::Named(NamedColor::Blue);
         }
@@ -1873,7 +1933,7 @@ mod tests {
     /// character-at-a-time pass left bare.
     #[test]
     fn a_decorated_run_stops_at_a_space() {
-        let mut cells = row("a b");
+        let mut cells = cells("a b");
         for cell in &mut cells {
             cell.flags = Flags::UNDERLINE;
         }
@@ -1888,7 +1948,7 @@ mod tests {
     /// hole in the row that no run may be shaped across.
     #[test]
     fn a_box_drawing_character_breaks_the_run() {
-        let cells = row("ab│cd");
+        let cells = cells("ab│cd");
         assert_eq!(
             split(&cells),
             vec![(0, "ab".to_string()), (3, "cd".to_string())]
@@ -1900,7 +1960,7 @@ mod tests {
     /// the cell after it — its spacer — belongs to nobody.
     #[test]
     fn a_wide_character_is_a_run_of_its_own() {
-        let mut cells = row("a中b");
+        let mut cells = cells("a中b");
         cells[1].flags = Flags::WIDE_CHAR;
         // The spacer alacritty writes into the column the wide character covers.
         let mut spacer = Cell::default();
@@ -1923,7 +1983,7 @@ mod tests {
     /// of the time.
     #[test]
     fn an_empty_row_is_no_runs() {
-        assert!(split(&row("          ")).is_empty());
+        assert!(split(&cells("          ")).is_empty());
         assert!(split(&vec![Cell::default(); 10]).is_empty());
     }
 
@@ -1935,14 +1995,14 @@ mod tests {
         let palette = ColorPalette::default();
         let colors = Colors::default();
 
-        let long = row("a much longer first row");
+        let long = cells("a much longer first row");
         split_row_runs(&palette, long.iter(), &colors, &mut runs);
 
-        let short = row("hi");
+        let short = cells("hi");
         split_row_runs(&palette, short.iter(), &colors, &mut runs);
 
         let got: Vec<_> = runs
-            .ready()
+            .drawable()
             .map(|run| (run.start_col, run.text.clone()))
             .collect();
         assert_eq!(got, vec![(0, "hi".to_string())]);
@@ -1954,7 +2014,7 @@ mod tests {
     /// full-screen editor pays on every keystroke.
     #[test]
     fn a_row_of_source_costs_a_handful_of_shaping_calls() {
-        let mut cells = row("    let shaped = window.text_system().shape_line(text, size);");
+        let mut cells = cells("    let shaped = window.text_system().shape_line(text, size);");
         let printed = cells.iter().filter(|cell| cell.c != ' ').count();
         // Syntax highlighting is what splits a row in practice, so colour a few
         // stretches of it rather than measuring one flat colour.
@@ -1974,18 +2034,18 @@ mod tests {
 
     #[test]
     fn a_cell_is_classified_by_what_would_draw_it() {
-        assert_eq!(classify(&row("x")[0]), CellGlyph::Glyph('x'));
+        assert_eq!(classify(&cells("x")[0]), CellGlyph::Glyph('x'));
         // A cell nobody has written to holds a space, which is why an untouched
         // screen costs no shaping at all.
         assert_eq!(classify(&Cell::default()), CellGlyph::Space);
-        assert_eq!(classify(&row("\0")[0]), CellGlyph::Blank);
-        assert_eq!(classify(&row("│")[0]), CellGlyph::Boxed);
+        assert_eq!(classify(&cells("\0")[0]), CellGlyph::Blank);
+        assert_eq!(classify(&cells("│")[0]), CellGlyph::Boxed);
 
-        let mut wide = row("中")[0].clone();
+        let mut wide = cells("中")[0].clone();
         wide.flags = Flags::WIDE_CHAR;
         assert_eq!(classify(&wide), CellGlyph::Wide('中'));
 
-        let mut spacer = row(" ")[0].clone();
+        let mut spacer = cells(" ")[0].clone();
         spacer.flags = Flags::WIDE_CHAR_SPACER;
         assert_eq!(classify(&spacer), CellGlyph::Blank);
     }

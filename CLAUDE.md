@@ -1149,13 +1149,31 @@ Listed because a missing feature nobody wrote down reads as a bug in the ones th
   task does not ask for one per read: it parses a batch, asks once, and then pauses for
   `view::REPAINT_INTERVAL` (half a frame) before parsing again, absorbing whatever the child wrote
   meanwhile into the next batch. Nothing is dropped and the grid is at most a frame behind; idle stays
-  push-based, because the pause is awaited only after a batch that asked for a repaint and a terminal
-  with nothing to say is parked on its channel. The other half is `view::RepaintGate`: **ask once,
-  then wait to be drawn before asking again**. A grid on screen is drawn within the frame so every
-  batch gets its repaint, while one whose dock is closed is never drawn — which is what stops a
-  `cargo build` running behind a closed terminal from repainting the conversation sixty times a
-  second. Being rendered is the whole signal; there is no timer to cancel and a grid that comes back
-  on screen re-arms itself by the act of returning.
+  push-based, because the pause is awaited only after a batch that asked for a repaint
+  (`view::pace_after`) and a terminal with nothing to say is parked on its channel. The other half is
+  `view::RepaintGate`: **ask once, then wait to be drawn before asking again**. A grid on screen is
+  drawn within the frame so every batch gets its repaint, while one whose dock is closed is never
+  drawn — which is what stops a `cargo build` running behind a closed terminal from repainting the
+  conversation sixty times a second. Being rendered is the whole signal; there is no timer to cancel
+  and a grid that comes back on screen re-arms itself by the act of returning. Being wrong about it
+  costs the saving and nothing else: a host that renders an off-screen grid anyway leaves the gate
+  permanently open.
+- **Parsing runs on the main thread, so a batch is the UI held.** `cx.spawn` is the foreground
+  executor. Two things follow. The drain has a bound of its own (`view::PARSE_BATCH_CHUNKS`) well
+  under the channel's, because the channel's answers a different question — how far the reader may run
+  ahead of the parser — and draining it whole meant a megabyte of escape sequences inside one update.
+  And the unpaced path still yields (`view::YieldOnce`): `flume`'s receive completes without touching
+  the executor when a message is already queued, so a child outrunning the loop would otherwise be
+  parsed in back-to-back batches with the keyboard never getting a turn. A zero-length timer does not
+  do it — gpui answers that with an already-complete task.
+- **A keystroke is not a repaint.** Typing does not draw itself: the child echoes it and the echo
+  repaints. The only thing typing changes on its own is what `view::write_typed` does first — snapping
+  a viewport parked in the scrollback back to the bottom, and dropping a selection about to stop
+  describing what is under it — and neither is true at a prompt or under a held key, which is where
+  typing happens. So the repaint is asked for only when `view::typing_changes_the_view` says one of
+  those two was true; unconditionally, every keystroke cost two whole-window repaints and one of them
+  drew the frame already on screen. Pasting asks for none at all, because `write_paste` hands bytes to
+  the child and touches nothing.
 - **The measured cell has to reach the view, not only the paint.** `TerminalRenderer::measure_cell`
   needs the window, and the window exists only inside the canvas paint — so it runs on a *clone* of
   the renderer, and writing the result back to the view's own copy is a separate step. Skip it and

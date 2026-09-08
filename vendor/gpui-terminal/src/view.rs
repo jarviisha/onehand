@@ -127,6 +127,56 @@ const PARSE_BATCH_CHUNKS: usize = 64;
 /// writes a second into one repaint each.
 const REPAINT_INTERVAL: std::time::Duration = std::time::Duration::from_millis(8);
 
+/// onehand patch: how long to wait after a batch before parsing the next one.
+///
+/// `Some` is the pacing: a batch that asked for a repaint holds the loop for the
+/// rest of the frame so a burst cannot ask again immediately, and the bytes that
+/// arrive meanwhile are absorbed into the batch after it.
+///
+/// `None` is a batch that asked for nothing, which is a grid nobody is drawing.
+/// Pacing that one would buy nothing — there is no repaint to space out — and
+/// would cost the child, which fills the queue and blocks. But it still yields
+/// (see the caller), because *not waiting* and *not letting go* are different
+/// things, and this runs on the main thread.
+///
+/// A function so the rule can be tested, since the half of it that matters is
+/// exactly the guarantee that a terminal with nothing to say waits on its
+/// channel rather than on a clock.
+fn pace_after(asked_for_repaint: bool) -> Option<std::time::Duration> {
+    asked_for_repaint.then_some(REPAINT_INTERVAL)
+}
+
+/// onehand patch: hand the main thread back once, without waiting for anything.
+///
+/// The parse loop runs on the foreground executor, and `flume`'s receive
+/// completes without ever yielding when a message is already queued. So a child
+/// writing faster than the loop consumes — a build log into a terminal nobody is
+/// looking at, which is the case that asks for no repaint and therefore no pause
+/// — would be parsed in back-to-back batches with the main thread never handed
+/// back, and the window would stop answering the keyboard while it went on.
+///
+/// A zero-length timer will not do it: gpui answers that with a task that is
+/// already complete, which is the thing being avoided.
+struct YieldOnce(bool);
+
+impl std::future::Future for YieldOnce {
+    type Output = ();
+
+    fn poll(
+        mut self: std::pin::Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<()> {
+        if self.0 {
+            return std::task::Poll::Ready(());
+        }
+        self.0 = true;
+        // Woken before returning pending, so this is a trip through the
+        // executor's queue and not a stall.
+        cx.waker().wake_by_ref();
+        std::task::Poll::Pending
+    }
+}
+
 /// onehand patch: whether typing has anything to redraw before the child answers.
 ///
 /// The two things a keystroke does to the screen by itself, and it usually does
@@ -155,6 +205,15 @@ fn typing_changes_the_view(term: &Term<GpuiEventProxy>) -> bool {
 /// It cannot lose an update. The only requests it swallows are ones whose repaint
 /// would not have drawn this grid, and the frame that does draw it reads the grid
 /// as it stands then — which includes every byte parsed while nobody was looking.
+///
+/// **It fails towards doing nothing, which is the direction that matters.** What
+/// it saves depends on the host genuinely not rendering a grid that is off
+/// screen. A host that renders one anyway — a panel kept mounted behind a tab,
+/// say — calls `drawn` every frame, so the gate stands permanently open and the
+/// saving is lost. That is the whole cost of being wrong about it. The other
+/// direction, a grid that is drawn but never reports it and so goes silent, is
+/// not reachable: reporting happens in `render`, and a grid that is drawn is a
+/// grid that rendered.
 #[derive(Debug)]
 struct RepaintGate {
     drawn_since_request: bool,
@@ -735,15 +794,12 @@ impl TerminalView {
                             asked
                         });
                         match result {
-                            // onehand patch: hold the loop for the rest of the
-                            // frame before parsing again. Whatever the child
-                            // writes meanwhile queues up and is parsed in one
-                            // go, so a burst costs one repaint instead of one
-                            // per read. Skipped when nothing was asked for:
-                            // with no repaint to pace against, pacing is only
-                            // the parser falling behind.
-                            Ok(true) => cx.background_executor().timer(REPAINT_INTERVAL).await,
-                            Ok(false) => {}
+                            // onehand patch: pace, or at least let go -- see
+                            // `pace_after` and `YieldOnce`.
+                            Ok(asked) => match pace_after(asked) {
+                                Some(gap) => cx.background_executor().timer(gap).await,
+                                None => YieldOnce(false).await,
+                            },
                             // View was dropped, exit
                             Err(_) => break,
                         }
@@ -1871,7 +1927,7 @@ mod tests {
     // with "recursion limit reached while expanding `#[test]`". Naming the two
     // items this module actually needs keeps the glob out and the attribute
     // meaning what it says.
-    use super::{RepaintGate, focus_report, typing_changes_the_view};
+    use super::{REPAINT_INTERVAL, RepaintGate, focus_report, pace_after, typing_changes_the_view};
     use crate::event::GpuiEventProxy;
     use crate::terminal::TerminalState;
     use alacritty_terminal::grid::Scroll;
@@ -1929,6 +1985,24 @@ mod tests {
             assert!(gate.request());
             gate.drawn();
         }
+    }
+
+    // ── onehand patch: the pacing between one batch of output and the next ──
+
+    /// A batch that asked for a repaint holds the loop for the rest of the
+    /// frame, so a burst cannot ask for a second one inside the same frame.
+    #[test]
+    fn a_repaint_is_followed_by_the_rest_of_the_frame() {
+        assert_eq!(pace_after(true), Some(REPAINT_INTERVAL));
+    }
+
+    /// And a batch that asked for nothing waits for nothing. This is the
+    /// acceptance condition in one line: a terminal with nothing to say is
+    /// parked on its channel, never on a clock, so nothing here can wake a
+    /// window on a timer.
+    #[test]
+    fn a_batch_that_asked_for_nothing_waits_for_nothing() {
+        assert_eq!(pace_after(false), None);
     }
 
     // ── onehand patch: what a keystroke has to redraw before the child answers ──
