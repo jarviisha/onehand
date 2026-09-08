@@ -1131,14 +1131,49 @@ Listed because a missing feature nobody wrote down reads as a bug in the ones th
   expanding `#[test]`"*. Nothing in the message points at the glob. Import the two or three items the
   tests actually need by name. This is what upstream's note about "macro expansion issues with the
   test attribute" was, and it is why `view.rs` had no tests at all.
-- **The grid's paint runs once per visible character, so anything it allocates is multiplied by the
-  screen.** A modal editor redraws the whole grid on every keystroke, which is what turns a cost a
-  shell hides into typing latency. Three things were being built per glyph and are not any more: the
-  text (`ch.to_string()` then a `SharedString`), the `Font` (whose `family` is a `SharedString` built
-  from a `String`, and whose `FontFeatures::default()` is an `Arc<Vec<_>>`), and — per *row* — a
-  `Vec`, a `HashSet` and a discarded batching pass. `render::ascii_glyph` and
-  `TerminalRenderer::font_variants` are what keep the common case at zero allocations. **Measure
-  before assuming the shaping is the cost**; here the allocations around it were.
+- **Whatever the grid's paint does per cell is multiplied by the screen, and the screen is redrawn
+  whenever bytes arrive.** A modal editor redraws the whole grid on every keystroke, which is what
+  turns a cost a shell hides into typing latency. The paint is now per *run* rather than per
+  character: `render::split_row_runs` groups the cells of a row that share a face, a colour and a
+  decoration, and each group is one `shape_line` — a row of source costs a handful instead of eighty,
+  and gpui's own line-layout cache then hits on every row nobody touched. Three hazards make batching
+  wrong in a cell grid, and each has an answer: shaping asks for a **forced cell width** so gpui snaps
+  every base glyph to its own column, `TerminalRenderer::face` builds the faces with **contextual
+  alternates off** so no font can fuse two cells into one ligature glyph, and a **double-width
+  character is a run of its own**. Under that, the per-glyph allocations still matter and are still
+  gone — the text (`render::ascii_glyph`), the `Font` (`TerminalRenderer::font_variants`), and per row
+  a `Vec`, a `HashSet` and a row of cells that was *cloned* out of the grid to be read. **Measure
+  before assuming the shaping is the cost**; the first pass over this found the allocations around it
+  were.
+- **A repaint asked for by a terminal is the whole window redrawing, not the grid.** So the reader
+  task does not ask for one per read: it parses a batch, asks once, and then pauses for
+  `view::REPAINT_INTERVAL` (half a frame) before parsing again, absorbing whatever the child wrote
+  meanwhile into the next batch. Nothing is dropped and the grid is at most a frame behind; idle stays
+  push-based, because the pause is awaited only after a batch that asked for a repaint
+  (`view::pace_after`) and a terminal with nothing to say is parked on its channel. The other half is
+  `view::RepaintGate`: **ask once, then wait to be drawn before asking again**. A grid on screen is
+  drawn within the frame so every batch gets its repaint, while one whose dock is closed is never
+  drawn — which is what stops a `cargo build` running behind a closed terminal from repainting the
+  conversation sixty times a second. Being rendered is the whole signal; there is no timer to cancel
+  and a grid that comes back on screen re-arms itself by the act of returning. Being wrong about it
+  costs the saving and nothing else: a host that renders an off-screen grid anyway leaves the gate
+  permanently open.
+- **Parsing runs on the main thread, so a batch is the UI held.** `cx.spawn` is the foreground
+  executor. Two things follow. The drain has a bound of its own (`view::PARSE_BATCH_CHUNKS`) well
+  under the channel's, because the channel's answers a different question — how far the reader may run
+  ahead of the parser — and draining it whole meant a megabyte of escape sequences inside one update.
+  And the unpaced path still yields (`view::YieldOnce`): `flume`'s receive completes without touching
+  the executor when a message is already queued, so a child outrunning the loop would otherwise be
+  parsed in back-to-back batches with the keyboard never getting a turn. A zero-length timer does not
+  do it — gpui answers that with an already-complete task.
+- **A keystroke is not a repaint.** Typing does not draw itself: the child echoes it and the echo
+  repaints. The only thing typing changes on its own is what `view::write_typed` does first — snapping
+  a viewport parked in the scrollback back to the bottom, and dropping a selection about to stop
+  describing what is under it — and neither is true at a prompt or under a held key, which is where
+  typing happens. So the repaint is asked for only when `view::typing_changes_the_view` says one of
+  those two was true; unconditionally, every keystroke cost two whole-window repaints and one of them
+  drew the frame already on screen. Pasting asks for none at all, because `write_paste` hands bytes to
+  the child and touches nothing.
 - **The measured cell has to reach the view, not only the paint.** `TerminalRenderer::measure_cell`
   needs the window, and the window exists only inside the canvas paint — so it runs on a *clone* of
   the renderer, and writing the result back to the view's own copy is a separate step. Skip it and

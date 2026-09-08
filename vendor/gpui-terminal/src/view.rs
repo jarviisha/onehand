@@ -26,6 +26,23 @@
 //! limit, and one `notify` per 4KB chunk made that worse by repainting per
 //! chunk.
 //!
+//! Two further rules stand between output arriving and a repaint being asked
+//! for, because a repaint here is not this widget redrawing — it is the whole
+//! window doing so, and a build log or a full-screen editor produces output far
+//! faster than a screen can show it.
+//!
+//! - **A batch is followed by a pause** ([`REPAINT_INTERVAL`]), so however fast
+//!   the child writes, the window is asked to redraw at most about once per
+//!   displayed frame; the bytes that arrive during the pause are absorbed into
+//!   the next batch and parsed, so nothing is dropped and the grid is only ever
+//!   behind by a frame. Idle stays push-based: with nothing queued the task is
+//!   parked on the channel, not on a timer.
+//! - **A grid nobody drew stops asking** ([`RepaintGate`]). A terminal whose
+//!   dock is closed still parses everything its child writes, and every
+//!   `notify` it made would repaint a window the grid is not even in — which is
+//!   how a `cargo build` left running behind a closed dock came to repaint the
+//!   conversation sixty times a second.
+//!
 //! # Thread Safety
 //!
 //! - [`TerminalView`] itself is not `Send` (it contains GPUI handles)
@@ -62,7 +79,7 @@ use crate::terminal::TerminalState;
 use alacritty_terminal::grid::Scroll;
 use alacritty_terminal::index::{Column, Line, Point as AlacPoint, Side};
 use alacritty_terminal::selection::{Selection, SelectionType};
-use alacritty_terminal::term::TermMode;
+use alacritty_terminal::term::{Term, TermMode};
 use gpui::{Edges, *};
 use std::io::{Read, Write};
 use std::sync::Arc;
@@ -77,6 +94,154 @@ use std::thread;
 /// or two, small enough that the queue is bounded memory (~1MB) rather than
 /// however much a runaway command can produce.
 const READ_QUEUE_CHUNKS: usize = 256;
+
+/// onehand patch: how much of that queue one parse may take at a time.
+///
+/// The parsing runs on the **main thread** — `cx.spawn` is the foreground
+/// executor — so a batch is not merely CPU spent, it is the UI thread held for
+/// as long as the batch takes. Draining the whole queue meant up to a megabyte
+/// of escape sequences parsed inside a single update, which is a hitch nobody
+/// can type through, and pausing between batches made the queue *more* likely
+/// to be full when the drain came.
+///
+/// A quarter of the queue instead. Throughput is still far past anything a
+/// terminal produces — a batch this size every pause is megabytes a second —
+/// while the longest the thread can be held is a slice short enough that a
+/// keystroke landing in the middle of a build log is still answered in the same
+/// frame. The channel keeps its own, larger bound: that one is about how far the
+/// reader may run ahead of the parser, which is a different question.
+const PARSE_BATCH_CHUNKS: usize = 64;
+
+/// onehand patch: how long the reader waits after asking for a repaint before
+/// it parses the next batch.
+///
+/// Roughly half a frame at 60Hz. It is a floor on the gap between two repaints
+/// asked for by output, not a polling interval: it is awaited only after a batch
+/// that asked for one, so a terminal with nothing to say waits on the channel
+/// and not on the clock.
+///
+/// The number is a trade with one live case on each side. Longer coalesces a
+/// burst harder, and delays the echo of a keystroke typed while a command is
+/// still printing. Shorter is the reverse. Half a frame keeps the echo below
+/// what anyone reports as lag while still folding a build log's thousands of
+/// writes a second into one repaint each.
+const REPAINT_INTERVAL: std::time::Duration = std::time::Duration::from_millis(8);
+
+/// onehand patch: how long to wait after a batch before parsing the next one.
+///
+/// `Some` is the pacing: a batch that asked for a repaint holds the loop for the
+/// rest of the frame so a burst cannot ask again immediately, and the bytes that
+/// arrive meanwhile are absorbed into the batch after it.
+///
+/// `None` is a batch that asked for nothing, which is a grid nobody is drawing.
+/// Pacing that one would buy nothing — there is no repaint to space out — and
+/// would cost the child, which fills the queue and blocks. But it still yields
+/// (see the caller), because *not waiting* and *not letting go* are different
+/// things, and this runs on the main thread.
+///
+/// A function so the rule can be tested, since the half of it that matters is
+/// exactly the guarantee that a terminal with nothing to say waits on its
+/// channel rather than on a clock.
+fn pace_after(asked_for_repaint: bool) -> Option<std::time::Duration> {
+    asked_for_repaint.then_some(REPAINT_INTERVAL)
+}
+
+/// onehand patch: hand the main thread back once, without waiting for anything.
+///
+/// The parse loop runs on the foreground executor, and `flume`'s receive
+/// completes without ever yielding when a message is already queued. So a child
+/// writing faster than the loop consumes — a build log into a terminal nobody is
+/// looking at, which is the case that asks for no repaint and therefore no pause
+/// — would be parsed in back-to-back batches with the main thread never handed
+/// back, and the window would stop answering the keyboard while it went on.
+///
+/// A zero-length timer will not do it: gpui answers that with a task that is
+/// already complete, which is the thing being avoided.
+struct YieldOnce(bool);
+
+impl std::future::Future for YieldOnce {
+    type Output = ();
+
+    fn poll(
+        mut self: std::pin::Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<()> {
+        if self.0 {
+            return std::task::Poll::Ready(());
+        }
+        self.0 = true;
+        // Woken before returning pending, so this is a trip through the
+        // executor's queue and not a stall.
+        cx.waker().wake_by_ref();
+        std::task::Poll::Pending
+    }
+}
+
+/// onehand patch: whether typing has anything to redraw before the child answers.
+///
+/// The two things a keystroke does to the screen by itself, and it usually does
+/// neither: bring a viewport parked up in the scrollback back to the bottom, and
+/// drop a selection that is about to stop describing what is under it. With both
+/// already true — a prompt at the bottom of the screen with nothing selected,
+/// which is where typing happens — the keystroke changes nothing that can be
+/// drawn, and the echo a millisecond later is what there is to see.
+///
+/// Split out from [`TerminalView::write_typed`] so the rule can be tested: it
+/// takes a terminal and no window, and a terminal is buildable here.
+fn typing_changes_the_view(term: &Term<GpuiEventProxy>) -> bool {
+    term.grid().display_offset() != 0 || term.selection.is_some()
+}
+
+/// onehand patch: whether output should ask the window to repaint at all.
+///
+/// The rule is one sentence: **ask once, then wait to be drawn before asking
+/// again.** A grid that is on screen is drawn within the frame, so this lets
+/// every batch through; a grid that is not — its dock closed, its tab behind
+/// another, its window minimized — is never drawn, so the first request is the
+/// last one until it comes back. There is no timer and nothing to cancel: being
+/// rendered is the signal, and a grid that returns to the screen is rendered by
+/// the act of returning.
+///
+/// It cannot lose an update. The only requests it swallows are ones whose repaint
+/// would not have drawn this grid, and the frame that does draw it reads the grid
+/// as it stands then — which includes every byte parsed while nobody was looking.
+///
+/// **It fails towards doing nothing, which is the direction that matters.** What
+/// it saves depends on the host genuinely not rendering a grid that is off
+/// screen. A host that renders one anyway — a panel kept mounted behind a tab,
+/// say — calls `drawn` every frame, so the gate stands permanently open and the
+/// saving is lost. That is the whole cost of being wrong about it. The other
+/// direction, a grid that is drawn but never reports it and so goes silent, is
+/// not reachable: reporting happens in `render`, and a grid that is drawn is a
+/// grid that rendered.
+#[derive(Debug)]
+struct RepaintGate {
+    drawn_since_request: bool,
+}
+
+impl RepaintGate {
+    /// Nothing has been asked for yet, so the first batch of output is let
+    /// through.
+    fn new() -> Self {
+        Self {
+            drawn_since_request: true,
+        }
+    }
+
+    /// Whether this batch of output should call `notify`.
+    fn request(&mut self) -> bool {
+        if !self.drawn_since_request {
+            return false;
+        }
+        self.drawn_since_request = false;
+        true
+    }
+
+    /// The grid was rendered, so the next batch may ask again.
+    fn drawn(&mut self) {
+        self.drawn_since_request = true;
+    }
+}
 
 /// onehand patch: the bytes that tell the child the terminal came to the front,
 /// or went away — mode 1004, if it asked.
@@ -507,6 +672,9 @@ pub struct TerminalView {
     /// be answered from a paint -- the cursor's cell is a grid coordinate until
     /// the content rect is known.
     preedit_bounds: Bounds<Pixels>,
+    /// Whether output is still entitled to ask for a repaint -- see
+    /// [`RepaintGate`].
+    repaint: RepaintGate,
 }
 
 impl TerminalView {
@@ -607,7 +775,7 @@ impl TerminalView {
                         let mut batch = vec![bytes];
                         while let Ok(more) = bytes_rx.try_recv() {
                             batch.push(more);
-                            if batch.len() >= READ_QUEUE_CHUNKS {
+                            if batch.len() >= PARSE_BATCH_CHUNKS {
                                 break;
                             }
                         }
@@ -616,11 +784,24 @@ impl TerminalView {
                             for bytes in &batch {
                                 view.state.process_bytes(bytes);
                             }
-                            cx.notify();
+                            // onehand patch: a repaint here is the whole window
+                            // redrawing, so it is asked for only when this grid
+                            // is somewhere it would be seen.
+                            let asked = view.repaint.request();
+                            if asked {
+                                cx.notify();
+                            }
+                            asked
                         });
-                        if result.is_err() {
+                        match result {
+                            // onehand patch: pace, or at least let go -- see
+                            // `pace_after` and `YieldOnce`.
+                            Ok(asked) => match pace_after(asked) {
+                                Some(gap) => cx.background_executor().timer(gap).await,
+                                None => YieldOnce(false).await,
+                            },
                             // View was dropped, exit
-                            break;
+                            Err(_) => break,
                         }
                     }
                     Err(_) => {
@@ -657,6 +838,7 @@ impl TerminalView {
             reported_focus: None,
             preedit: String::new(),
             preedit_bounds: Bounds::default(),
+            repaint: RepaintGate::new(),
         }
     }
 
@@ -887,8 +1069,10 @@ impl TerminalView {
                             self.write_paste(&text);
                         }
                     }
+                    // onehand patch: no repaint asked for. A paste hands bytes
+                    // to the child and touches nothing on screen -- what there
+                    // is to see is the echo, which repaints when it arrives.
                     consume(cx);
-                    cx.notify();
                     return;
                 }
                 _ => {}
@@ -896,9 +1080,14 @@ impl TerminalView {
         }
 
         if let Some(bytes) = keystroke_to_bytes(&event.keystroke, self.state.mode()) {
-            self.write_typed(&bytes);
+            // onehand patch: only when the keystroke itself changed the screen.
+            // The character being typed is drawn by the child's echo, which
+            // repaints on its own -- see `write_typed`.
+            let changed = self.write_typed(&bytes);
             consume(cx);
-            cx.notify();
+            if changed {
+                cx.notify();
+            }
         }
     }
 
@@ -909,14 +1098,30 @@ impl TerminalView {
     /// terminal whose viewport is parked up in the scrollback looks like the
     /// keystroke did nothing, and a stale selection left highlighted over text
     /// that has since scrolled says the wrong thing about what would be copied.
-    fn write_typed(&mut self, bytes: &[u8]) {
-        self.state.with_term_mut(|term| {
+    /// onehand patch: returns whether the *screen* changed, which is a different
+    /// question from whether anything was typed.
+    ///
+    /// A keystroke does not draw itself — the child echoes it, and that echo
+    /// arrives a millisecond later and repaints. So the only thing a keystroke
+    /// can change on its own is the courtesy above: snapping a parked viewport
+    /// back to the bottom, and dropping a selection that no longer describes
+    /// what is under it. Neither is true in the ordinary case of typing at a
+    /// prompt or holding a key down in an editor, and there a repaint here
+    /// draws a frame identical to the one already on screen — then the echo
+    /// draws the real one, so **every keystroke cost two whole-window repaints
+    /// and one of them was always waste**. That is felt rather than measured: it
+    /// is the ordinary path through a full-screen program.
+    fn write_typed(&mut self, bytes: &[u8]) -> bool {
+        let changed = self.state.with_term_mut(|term| {
+            let changed = typing_changes_the_view(term);
             term.scroll_display(Scroll::Bottom);
             term.selection = None;
+            changed
         });
         let mut writer = self.stdin_writer.lock();
         let _ = writer.write_all(bytes);
         let _ = writer.flush();
+        changed
     }
 
     /// onehand patch: write bytes the *terminal* is saying on its own behalf.
@@ -1508,6 +1713,12 @@ impl EntityInputHandler for TerminalView {
 
 impl Render for TerminalView {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        // onehand patch: being rendered is what earns the next request for one.
+        // Recorded here rather than in the paint closure because a grid laid out
+        // with no room to draw in is still a grid on screen, and one whose panel
+        // was never rendered is the case this is about.
+        self.repaint.drawn();
+
         // Process any pending events
         self.process_events(window, cx);
 
@@ -1716,8 +1927,14 @@ mod tests {
     // with "recursion limit reached while expanding `#[test]`". Naming the two
     // items this module actually needs keeps the glob out and the attribute
     // meaning what it says.
-    use super::focus_report;
+    use super::{REPAINT_INTERVAL, RepaintGate, focus_report, pace_after, typing_changes_the_view};
+    use crate::event::GpuiEventProxy;
+    use crate::terminal::TerminalState;
+    use alacritty_terminal::grid::Scroll;
+    use alacritty_terminal::index::{Column, Line, Point, Side};
+    use alacritty_terminal::selection::{Selection, SelectionType};
     use alacritty_terminal::term::TermMode;
+    use std::sync::mpsc::channel;
 
     #[test]
     fn nothing_is_reported_unless_the_child_asked() {
@@ -1747,5 +1964,105 @@ mod tests {
         let mode = TermMode::FOCUS_IN_OUT;
         assert!(focus_report(None, true, mode).is_none());
         assert!(focus_report(None, false, mode).is_none());
+    }
+
+    // ── onehand patch: what output is allowed to ask the window for ─────────
+
+    /// The first thing a child says has to be shown, or a terminal that is
+    /// opened and immediately writes its prompt comes up blank.
+    #[test]
+    fn the_first_output_asks_for_a_repaint() {
+        assert!(RepaintGate::new().request());
+    }
+
+    /// A grid on screen is drawn between one batch and the next, so every batch
+    /// gets its repaint. This is the ordinary case and the one that must not be
+    /// slowed down by the rule that follows it.
+    #[test]
+    fn a_grid_that_is_drawn_keeps_asking() {
+        let mut gate = RepaintGate::new();
+        for _ in 0..5 {
+            assert!(gate.request());
+            gate.drawn();
+        }
+    }
+
+    // ── onehand patch: the pacing between one batch of output and the next ──
+
+    /// A batch that asked for a repaint holds the loop for the rest of the
+    /// frame, so a burst cannot ask for a second one inside the same frame.
+    #[test]
+    fn a_repaint_is_followed_by_the_rest_of_the_frame() {
+        assert_eq!(pace_after(true), Some(REPAINT_INTERVAL));
+    }
+
+    /// And a batch that asked for nothing waits for nothing. This is the
+    /// acceptance condition in one line: a terminal with nothing to say is
+    /// parked on its channel, never on a clock, so nothing here can wake a
+    /// window on a timer.
+    #[test]
+    fn a_batch_that_asked_for_nothing_waits_for_nothing() {
+        assert_eq!(pace_after(false), None);
+    }
+
+    // ── onehand patch: what a keystroke has to redraw before the child answers ──
+
+    fn terminal() -> TerminalState {
+        let (tx, _rx) = channel();
+        TerminalState::new(80, 24, GpuiEventProxy::new(tx))
+    }
+
+    /// The case that is nearly every keystroke: a prompt at the bottom of the
+    /// screen with nothing selected. The character is drawn by the echo, so
+    /// repainting here draws the frame that is already on screen and then does
+    /// it again a millisecond later for real.
+    #[test]
+    fn typing_at_the_bottom_redraws_nothing_by_itself() {
+        assert!(!terminal().with_term(typing_changes_the_view));
+    }
+
+    /// Typing while parked up in the scrollback snaps the viewport back, and
+    /// that is a change worth a frame -- otherwise the keystroke looks like it
+    /// did nothing until the echo happens to scroll something into view.
+    #[test]
+    fn typing_out_of_the_scrollback_redraws() {
+        let mut state = terminal();
+        for _ in 0..40 {
+            state.process_bytes(b"a line of output\r\n");
+        }
+        state.with_term_mut(|term| term.scroll_display(Scroll::Delta(5)));
+
+        assert!(state.with_term(typing_changes_the_view));
+    }
+
+    /// So does typing over a selection, which stops describing what is under it
+    /// the moment the child answers.
+    #[test]
+    fn typing_over_a_selection_redraws() {
+        let state = terminal();
+        state.with_term_mut(|term| {
+            term.selection = Some(Selection::new(
+                SelectionType::Simple,
+                Point::new(Line(0), Column(0)),
+                Side::Left,
+            ));
+        });
+
+        assert!(state.with_term(typing_changes_the_view));
+    }
+
+    /// And a grid nobody draws asks once and then stops -- which is the whole
+    /// point: a build running behind a closed dock parses everything and
+    /// repaints nothing.
+    #[test]
+    fn a_grid_nobody_draws_asks_once() {
+        let mut gate = RepaintGate::new();
+        assert!(gate.request());
+        assert!(!gate.request());
+        assert!(!gate.request());
+
+        // Coming back on screen is a draw, and that is all it takes.
+        gate.drawn();
+        assert!(gate.request());
     }
 }
