@@ -79,7 +79,7 @@ use crate::terminal::TerminalState;
 use alacritty_terminal::grid::Scroll;
 use alacritty_terminal::index::{Column, Line, Point as AlacPoint, Side};
 use alacritty_terminal::selection::{Selection, SelectionType};
-use alacritty_terminal::term::TermMode;
+use alacritty_terminal::term::{Term, TermMode};
 use gpui::{Edges, *};
 use std::io::{Read, Write};
 use std::sync::Arc;
@@ -95,6 +95,23 @@ use std::thread;
 /// however much a runaway command can produce.
 const READ_QUEUE_CHUNKS: usize = 256;
 
+/// onehand patch: how much of that queue one parse may take at a time.
+///
+/// The parsing runs on the **main thread** — `cx.spawn` is the foreground
+/// executor — so a batch is not merely CPU spent, it is the UI thread held for
+/// as long as the batch takes. Draining the whole queue meant up to a megabyte
+/// of escape sequences parsed inside a single update, which is a hitch nobody
+/// can type through, and pausing between batches made the queue *more* likely
+/// to be full when the drain came.
+///
+/// A quarter of the queue instead. Throughput is still far past anything a
+/// terminal produces — a batch this size every pause is megabytes a second —
+/// while the longest the thread can be held is a slice short enough that a
+/// keystroke landing in the middle of a build log is still answered in the same
+/// frame. The channel keeps its own, larger bound: that one is about how far the
+/// reader may run ahead of the parser, which is a different question.
+const PARSE_BATCH_CHUNKS: usize = 64;
+
 /// onehand patch: how long the reader waits after asking for a repaint before
 /// it parses the next batch.
 ///
@@ -109,6 +126,21 @@ const READ_QUEUE_CHUNKS: usize = 256;
 /// what anyone reports as lag while still folding a build log's thousands of
 /// writes a second into one repaint each.
 const REPAINT_INTERVAL: std::time::Duration = std::time::Duration::from_millis(8);
+
+/// onehand patch: whether typing has anything to redraw before the child answers.
+///
+/// The two things a keystroke does to the screen by itself, and it usually does
+/// neither: bring a viewport parked up in the scrollback back to the bottom, and
+/// drop a selection that is about to stop describing what is under it. With both
+/// already true — a prompt at the bottom of the screen with nothing selected,
+/// which is where typing happens — the keystroke changes nothing that can be
+/// drawn, and the echo a millisecond later is what there is to see.
+///
+/// Split out from [`TerminalView::write_typed`] so the rule can be tested: it
+/// takes a terminal and no window, and a terminal is buildable here.
+fn typing_changes_the_view(term: &Term<GpuiEventProxy>) -> bool {
+    term.grid().display_offset() != 0 || term.selection.is_some()
+}
 
 /// onehand patch: whether output should ask the window to repaint at all.
 ///
@@ -684,7 +716,7 @@ impl TerminalView {
                         let mut batch = vec![bytes];
                         while let Ok(more) = bytes_rx.try_recv() {
                             batch.push(more);
-                            if batch.len() >= READ_QUEUE_CHUNKS {
+                            if batch.len() >= PARSE_BATCH_CHUNKS {
                                 break;
                             }
                         }
@@ -981,8 +1013,10 @@ impl TerminalView {
                             self.write_paste(&text);
                         }
                     }
+                    // onehand patch: no repaint asked for. A paste hands bytes
+                    // to the child and touches nothing on screen -- what there
+                    // is to see is the echo, which repaints when it arrives.
                     consume(cx);
-                    cx.notify();
                     return;
                 }
                 _ => {}
@@ -990,9 +1024,14 @@ impl TerminalView {
         }
 
         if let Some(bytes) = keystroke_to_bytes(&event.keystroke, self.state.mode()) {
-            self.write_typed(&bytes);
+            // onehand patch: only when the keystroke itself changed the screen.
+            // The character being typed is drawn by the child's echo, which
+            // repaints on its own -- see `write_typed`.
+            let changed = self.write_typed(&bytes);
             consume(cx);
-            cx.notify();
+            if changed {
+                cx.notify();
+            }
         }
     }
 
@@ -1003,14 +1042,30 @@ impl TerminalView {
     /// terminal whose viewport is parked up in the scrollback looks like the
     /// keystroke did nothing, and a stale selection left highlighted over text
     /// that has since scrolled says the wrong thing about what would be copied.
-    fn write_typed(&mut self, bytes: &[u8]) {
-        self.state.with_term_mut(|term| {
+    /// onehand patch: returns whether the *screen* changed, which is a different
+    /// question from whether anything was typed.
+    ///
+    /// A keystroke does not draw itself — the child echoes it, and that echo
+    /// arrives a millisecond later and repaints. So the only thing a keystroke
+    /// can change on its own is the courtesy above: snapping a parked viewport
+    /// back to the bottom, and dropping a selection that no longer describes
+    /// what is under it. Neither is true in the ordinary case of typing at a
+    /// prompt or holding a key down in an editor, and there a repaint here
+    /// draws a frame identical to the one already on screen — then the echo
+    /// draws the real one, so **every keystroke cost two whole-window repaints
+    /// and one of them was always waste**. That is felt rather than measured: it
+    /// is the ordinary path through a full-screen program.
+    fn write_typed(&mut self, bytes: &[u8]) -> bool {
+        let changed = self.state.with_term_mut(|term| {
+            let changed = typing_changes_the_view(term);
             term.scroll_display(Scroll::Bottom);
             term.selection = None;
+            changed
         });
         let mut writer = self.stdin_writer.lock();
         let _ = writer.write_all(bytes);
         let _ = writer.flush();
+        changed
     }
 
     /// onehand patch: write bytes the *terminal* is saying on its own behalf.
@@ -1816,8 +1871,14 @@ mod tests {
     // with "recursion limit reached while expanding `#[test]`". Naming the two
     // items this module actually needs keeps the glob out and the attribute
     // meaning what it says.
-    use super::{RepaintGate, focus_report};
+    use super::{RepaintGate, focus_report, typing_changes_the_view};
+    use crate::event::GpuiEventProxy;
+    use crate::terminal::TerminalState;
+    use alacritty_terminal::grid::Scroll;
+    use alacritty_terminal::index::{Column, Line, Point, Side};
+    use alacritty_terminal::selection::{Selection, SelectionType};
     use alacritty_terminal::term::TermMode;
+    use std::sync::mpsc::channel;
 
     #[test]
     fn nothing_is_reported_unless_the_child_asked() {
@@ -1868,6 +1929,52 @@ mod tests {
             assert!(gate.request());
             gate.drawn();
         }
+    }
+
+    // ── onehand patch: what a keystroke has to redraw before the child answers ──
+
+    fn terminal() -> TerminalState {
+        let (tx, _rx) = channel();
+        TerminalState::new(80, 24, GpuiEventProxy::new(tx))
+    }
+
+    /// The case that is nearly every keystroke: a prompt at the bottom of the
+    /// screen with nothing selected. The character is drawn by the echo, so
+    /// repainting here draws the frame that is already on screen and then does
+    /// it again a millisecond later for real.
+    #[test]
+    fn typing_at_the_bottom_redraws_nothing_by_itself() {
+        assert!(!terminal().with_term(typing_changes_the_view));
+    }
+
+    /// Typing while parked up in the scrollback snaps the viewport back, and
+    /// that is a change worth a frame -- otherwise the keystroke looks like it
+    /// did nothing until the echo happens to scroll something into view.
+    #[test]
+    fn typing_out_of_the_scrollback_redraws() {
+        let mut state = terminal();
+        for _ in 0..40 {
+            state.process_bytes(b"a line of output\r\n");
+        }
+        state.with_term_mut(|term| term.scroll_display(Scroll::Delta(5)));
+
+        assert!(state.with_term(typing_changes_the_view));
+    }
+
+    /// So does typing over a selection, which stops describing what is under it
+    /// the moment the child answers.
+    #[test]
+    fn typing_over_a_selection_redraws() {
+        let state = terminal();
+        state.with_term_mut(|term| {
+            term.selection = Some(Selection::new(
+                SelectionType::Simple,
+                Point::new(Line(0), Column(0)),
+                Side::Left,
+            ));
+        });
+
+        assert!(state.with_term(typing_changes_the_view));
     }
 
     /// And a grid nobody draws asks once and then stops -- which is the whole
