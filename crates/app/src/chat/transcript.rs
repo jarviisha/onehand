@@ -57,6 +57,16 @@ const MAX_CODE_BLOCK_H: Rems = rems(22.5);
 /// Height one machine-detail card may occupy before its contents scroll inside
 /// the card instead of lengthening the transcript.
 const MAX_TOOL_DETAIL_H: Rems = rems(18.);
+/// Height the body of a blocking card may occupy before it scrolls inside
+/// itself.
+///
+/// Set a step under the transcript's other bounded card because what it holds
+/// back is different: that one is a detail somebody chose to unfold, this one is
+/// standing between the conversation and everything after it. The number is what
+/// leaves the card's header, its body and the buttons that answer it on one
+/// screen together at the sizes around them — which is the whole point of
+/// bounding it, and is why it is a height rather than a count of lines or rows.
+const MAX_BLOCKING_BODY_H: Rems = rems(16.);
 /// The size every well of machine text is set at — a tool's output, a diff, a
 /// live terminal, and the fenced blocks inside an answer.
 ///
@@ -195,6 +205,74 @@ impl RenderOnce for ActivityDetail {
             .child(
                 ScrollableMask::new(Axis::Vertical, &scroll).id(("activity-detail-mask", target)),
             )
+            .child(Scrollbar::vertical(&scroll).mode(ScrollbarMode::Always))
+    }
+}
+
+/// The body of a blocking card, bounded and scrolling inside itself.
+///
+/// **The controls have to outlive the content.** A permission names a command
+/// the agent wrote and a question offers choices the agent worded, so both
+/// bodies are exactly as long as the agent made them — sixty lines of shell, a
+/// dozen options each running to a paragraph — and both cards end in the buttons
+/// that are the only way past them. Left to grow, the card is taller than the
+/// pane and Allow, Deny and Submit sit below the bottom edge of a transcript
+/// that has already scrolled itself as far as it goes: the one block nothing
+/// proceeds without becomes the one block that cannot be answered.
+///
+/// **Scrolled rather than cut**, which is the opposite of what every other well
+/// in this file does. A tool's output drops its head and reports how many lines
+/// went, because nobody is required to read it. This is the text a grant is
+/// given on the strength of and the wording a choice is made from, and a
+/// permission whose command is hidden in the middle is a permission answered
+/// blind.
+#[derive(IntoElement)]
+struct BlockingBody {
+    target: TranscriptItemId,
+    children: Vec<gpui::AnyElement>,
+}
+
+impl BlockingBody {
+    fn new(target: TranscriptItemId, children: Vec<gpui::AnyElement>) -> Self {
+        Self { target, children }
+    }
+}
+
+impl RenderOnce for BlockingBody {
+    fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
+        let key = fold_key(self.target);
+        let scroll = window
+            .use_keyed_state(("blocking-body-scroll-state", key), cx, |_, _| {
+                ScrollHandle::default()
+            })
+            .read(cx)
+            .clone();
+
+        div()
+            .id(("blocking-body-frame", key))
+            .relative()
+            .w_full()
+            .max_h(MAX_BLOCKING_BODY_H)
+            .child(
+                div()
+                    .id(("blocking-body-scroll", key))
+                    .v_flex()
+                    .gap_1()
+                    .w_full()
+                    .max_h(MAX_BLOCKING_BODY_H)
+                    .overflow_y_scroll()
+                    .track_scroll(&scroll)
+                    // The thumb overlays the viewport instead of taking a column
+                    // of its own, so the body is held off the right edge: a
+                    // choice's border running underneath the thumb reads as a
+                    // row drawn wrong rather than as one that scrolls.
+                    .pr_2()
+                    .children(self.children),
+            )
+            // The mask takes vertical wheel input in the capture phase. A bubble
+            // listener runs too late inside `gpui::list`: the transcript has
+            // already spent the same delta scrolling itself by then.
+            .child(ScrollableMask::new(Axis::Vertical, &scroll).id(("blocking-body-mask", key)))
             .child(Scrollbar::vertical(&scroll).mode(ScrollbarMode::Always))
     }
 }
@@ -1407,7 +1485,10 @@ pub(super) fn permission(
                 // only two allowed to speak as loudly as the conversation.
                 .child(div().font_semibold().child("Permission required")),
         )
-        .child(mono_well(&p.req.title, MAX_MONO_LINES, cx))
+        .child(BlockingBody::new(
+            target,
+            vec![mono_well(&p.req.title, MAX_MONO_LINES, cx).into_any_element()],
+        ))
         .map(|card| match (&p.resolved, idx) {
             // Resolved, or living in read-only history where no rpc id is
             // answerable: what is drawn is the record of what was decided, not
@@ -1494,7 +1575,7 @@ pub(super) fn ask(
             // adapter issued: showing controls would invite an answer nobody
             // is waiting for.
             (None, None) => card,
-            (None, Some(idx)) => ask_form(card, session, a, idx, cx),
+            (None, Some(idx)) => ask_form(card, session, a, target, idx, cx),
         })
 }
 
@@ -1513,6 +1594,7 @@ fn ask_form(
     card: gpui::Div,
     session: &Entity<ChatSession>,
     a: &AskItem,
+    target: TranscriptItemId,
     idx: usize,
     cx: &App,
 ) -> gpui::Div {
@@ -1675,7 +1757,11 @@ fn ask_form(
     let footer = !quick || typed;
 
     card.children(tabs)
-        .child(div().v_flex().gap_1().w_full().children(rows))
+        // Only the choices scroll. The tab strip is how the *other* questions
+        // are reached and the box below is where an answer nobody offered is
+        // written, so both are controls and both stay on the card beside the
+        // footer rather than inside the region that can be scrolled away from.
+        .children((!rows.is_empty()).then(|| BlockingBody::new(target, rows)))
         .children(custom.map(|state| div().w_full().child(Input::new(&state))))
         .when(footer, |card| {
             card.child(
