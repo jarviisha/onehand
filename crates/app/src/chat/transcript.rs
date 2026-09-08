@@ -1350,9 +1350,26 @@ fn plan(
 /// over whatever the card put below it and the card reads as a pile of
 /// overlapping text rather than as a form. Auto height is what puts the space
 /// reserved and the text drawn back in agreement.
+///
+/// **The floor and the padding come with it.** The library gives a button of
+/// this size no vertical padding at all, because the fixed row plus centring
+/// already held the label off both edges — so taking the row away and nothing
+/// else leaves every control shrink-wrapped around its text, which is a
+/// different card to be wrong about in the same place. A single line lands back
+/// on exactly the row the library would have drawn: [`CONTROL_ROW`] is that
+/// height, and the padding is what a second line grows by rather than what a
+/// first line needs.
 fn grows(button: Button) -> Button {
-    button.h(Length::Auto)
+    button.h(Length::Auto).min_h(CONTROL_ROW).py_2()
 }
+
+/// The row a default-sized button is given by the component library.
+///
+/// Carried here as a number because the library hard-codes it in its own sizing
+/// branch and offers no way to ask for it — and it is worth matching exactly:
+/// these controls sit a few inches from buttons that kept the fixed row, and a
+/// floor a pixel or two off is a line of controls that no longer agree.
+const CONTROL_ROW: Rems = rems(2.);
 
 // ── permission — blocking; the agent parks until answered ───────────────────
 
