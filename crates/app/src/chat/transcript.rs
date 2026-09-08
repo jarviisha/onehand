@@ -14,9 +14,9 @@
 use super::session::ChatSession;
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
-    App, Axis, ClickEvent, Entity, HighlightStyle, InteractiveElement, IntoElement, ParentElement,
-    Rems, RenderOnce, ScrollHandle, SharedString, StatefulInteractiveElement, StyleRefinement,
-    Styled, Window, div, relative, rems,
+    App, Axis, ClickEvent, Entity, HighlightStyle, InteractiveElement, IntoElement, Length,
+    ParentElement, Rems, RenderOnce, ScrollHandle, SharedString, StatefulInteractiveElement,
+    StyleRefinement, Styled, Window, div, relative, rems,
 };
 use gpui_component::Disableable as _;
 use gpui_component::button::{Button, ButtonVariants as _};
@@ -1338,6 +1338,22 @@ fn plan(
         .children(body)
 }
 
+/// Let a control take the height its own text needs.
+///
+/// The component library sizes every button to **one fixed row** — 32px at the
+/// default size — which is right for a control the app worded and wrong for
+/// every control on the two blocking cards, where the wording is the agent's:
+/// a permission's options, a question's choices and their explanations are
+/// sentences, in whatever language the conversation is being held in. A
+/// sentence that wraps to three lines inside a row that reserved one is laid
+/// out at 32px and *painted* at ninety, so every line past the first is drawn
+/// over whatever the card put below it and the card reads as a pile of
+/// overlapping text rather than as a form. Auto height is what puts the space
+/// reserved and the text drawn back in agreement.
+fn grows(button: Button) -> Button {
+    button.h(Length::Auto)
+}
+
 // ── permission — blocking; the agent parks until answered ───────────────────
 
 pub(super) fn permission(
@@ -1394,7 +1410,7 @@ pub(super) fn permission(
                         .enumerate()
                         .map(|(i, option)| {
                             let (id, session) = (option.id.clone(), session.clone());
-                            crate::controls::action(("perm", i))
+                            grows(crate::controls::action(("perm", i)))
                                 // One primary per card, and it is the grant
                                 // that expires with this call. "Always allow"
                                 // is the same word with a far longer reach:
@@ -1521,8 +1537,13 @@ fn ask_form(
                             .text_color(cx.theme().accent_foreground)
                             .font_semibold()
                     })
-                    // Only a *tab* label is elided; a choice never is.
+                    // Only a *tab* label is cut short; a choice never is. It is
+                    // held to one line as well as to a width: a title long
+                    // enough to wrap turns the strip three rows tall, and the
+                    // row height the library gave it stays at one — so the
+                    // second and third lines are drawn over the choices below.
                     .max_w(ASK_TAB_W)
+                    .whitespace_nowrap()
                     .overflow_hidden()
                     .label(label)
                     .children(
@@ -1574,7 +1595,7 @@ fn ask_form(
                         .child(description),
                 );
             }
-            crate::controls::action(("ask-choice", o))
+            grows(crate::controls::action(("ask-choice", o)))
                 .ghost()
                 .selected(on)
                 .p_2()
