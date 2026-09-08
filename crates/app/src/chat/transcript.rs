@@ -20,6 +20,7 @@ use gpui::{
 };
 use gpui_component::Disableable as _;
 use gpui_component::button::{Button, ButtonVariants as _};
+use gpui_component::input::Input;
 use gpui_component::scroll::{ScrollableMask, Scrollbar, ScrollbarMode};
 use gpui_component::text::{TextView, TextViewStyle};
 use gpui_component::{ActiveTheme, Icon, IconName, Selectable as _, Sizable as _, StyledExt};
@@ -1471,6 +1472,10 @@ pub(super) fn ask(
 /// the card taller than the pane and the overflow was lost off the top
 ///. A single single-select form is the *quick* shape —
 /// clicking a choice answers on the spot, with no Submit to hunt for.
+///
+/// Picking in a multi-question form **walks itself on** to the next open
+/// question, so the tab strip is there to go back and check an answer rather
+/// than to be aimed at once per question.
 fn ask_form(
     card: gpui::Div,
     session: &Entity<ChatSession>,
@@ -1535,6 +1540,10 @@ fn ask_form(
             }))
     });
 
+    let single = matches!(
+        a.req.fields.get(active).map(|f| &f.kind),
+        Some(ElicitKind::Select(_))
+    );
     let choices = a
         .req
         .fields
@@ -1589,6 +1598,14 @@ fn ask_form(
                     session.update(cx, |s, cx| {
                         if let Some(item) = s.chat.ask_at_mut(idx) {
                             item.toggle(active, o);
+                            // One pick settles a single-select, so the card
+                            // shows the next open question by itself; a
+                            // multi-select stays, since the user is still
+                            // choosing. Nothing left open leaves the tab where
+                            // it is, in front of Submit.
+                            if single && let Some(next) = item.next_unanswered(active) {
+                                item.tab = next;
+                            }
                         }
                         // A one-question single-select has nothing left to
                         // decide, so it commits on the click.
@@ -1603,17 +1620,33 @@ fn ask_form(
         .collect::<Vec<_>>();
 
     let can_submit = a.has_answer();
+    // The free-text box, where the question offers one. The choices above it
+    // are what the agent thought of; this is the answer it did not, and a form
+    // that shows only the first is a question the user cannot actually answer.
+    let custom = a
+        .has_custom(active)
+        .then(|| session.read(cx).ask_input(idx, active).cloned())
+        .flatten();
+    let typed = a.custom.get(active).is_some_and(|c| !c.trim().is_empty());
+
+    // The quick card commits on a click and deliberately carries no footer to
+    // hunt for -- but typing is not a click, so Submit appears the moment there
+    // are words with no other way out. Skip is not added with it: refusing the
+    // whole question is a thing that card has never offered, and writing an
+    // answer is not the moment to start.
+    let footer = !quick || typed;
 
     card.children(tabs)
         .child(div().v_flex().gap_1().w_full().children(rows))
-        .when(!quick, |card| {
+        .children(custom.map(|state| div().w_full().child(Input::new(&state))))
+        .when(footer, |card| {
             card.child(
                 div()
                     .h_flex()
                     .gap_2()
                     .justify_end()
                     .w_full()
-                    .child(
+                    .children((!quick).then(|| {
                         crate::controls::action(("ask-skip", idx))
                             .ghost()
                             .label("Skip")
@@ -1625,8 +1658,8 @@ fn ask_form(
                                         cx.notify();
                                     });
                                 }
-                            }),
-                    )
+                            })
+                    }))
                     .child(
                         crate::controls::action(("ask-submit", idx))
                             .primary()
