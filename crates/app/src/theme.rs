@@ -29,6 +29,12 @@ use gpui::{App, Hsla, SharedString};
 use gpui_component::{ActiveTheme as _, Colorize as _, Theme, ThemeConfigColors, ThemeRegistry};
 use std::rc::Rc;
 
+/// Status ink is the plugin host's, because a built-in plugin needs it too and
+/// cannot reach in here. Named through this module all the same: every call
+/// site in the app already says `crate::theme::status_ink`, and that is the
+/// name the guard against using a raw status fill as text points at.
+pub(crate) use onehand_plugin_host::status_ink;
+
 /// One mode's surfaces, and the ink that has to be legible on each.
 ///
 /// Named by what the step is *for* rather than by the token it lands in: the
@@ -213,38 +219,6 @@ pub(crate) fn install(cx: &mut App) {
     // wash the library clamps to a fifth of its opacity, so the two disagree
     // about what a selection looks like *and* the survivor is the fainter one.
     theme.list.active_highlight = false;
-}
-
-/// Status colours used as ink on the app's normal surfaces.
-#[derive(Clone, Copy)]
-pub(crate) struct StatusInk {
-    pub danger: Hsla,
-    pub warning: Hsla,
-    pub success: Hsla,
-}
-
-/// Resolve status ink from the active palette.
-///
-/// Base hues already switch between darker 600-level colours in light mode and
-/// brighter 400-level colours in dark mode. Pulling them part of the way toward
-/// the theme foreground gives small labels and thin icons enough contrast
-/// without inventing a second set of hues beside the ramp.
-///
-/// **How far is set by the well, not by the reading surface.** A tool's status
-/// word, a diff's added and removed lines and a terminal's exit code are all
-/// drawn on the sunk fill rather than on the surface, and light amber is the
-/// one that runs out of margin there first.
-pub(crate) fn status_ink(cx: &App) -> StatusInk {
-    let theme = cx.theme();
-    StatusInk {
-        danger: status_hue(theme.red, theme.foreground),
-        warning: status_hue(theme.yellow, theme.foreground),
-        success: status_hue(theme.green, theme.foreground),
-    }
-}
-
-fn status_hue(base: Hsla, foreground: Hsla) -> Hsla {
-    base.mix_oklab(foreground, 0.70)
 }
 
 /// A base hue tempered for use as ink where it is already legible.
@@ -561,7 +535,7 @@ mod tests {
                 ("warning", theme.yellow),
                 ("success", theme.green),
             ] {
-                let ink = status_hue(base, theme.foreground);
+                let ink = onehand_plugin_host::status_hue(base, theme.foreground);
                 let mut on = vec![("surface", theme.background), ("well", theme.muted)];
                 if role == "danger" {
                     on.push(("bubble", theme.secondary));

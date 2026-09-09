@@ -1,6 +1,15 @@
 //! Composition root for every plugin compiled into the Onehand binary.
 
-use onehand_plugin_host::PluginRegistry;
+use onehand_plugin_host::{Ask, PluginRegistry, WorkbenchMode};
+
+/// The Workbench modes this window draws, in the order they sit on the strip.
+///
+/// One list per window rather than one for the process, because a mode holds
+/// entities: a view is bound to the window that renders it, and a second window
+/// showing the same one would be the same entity mounted twice.
+pub fn workbench_modes(ask: Ask, cx: &mut gpui::App) -> Vec<Box<dyn WorkbenchMode>> {
+    vec![Box::new(onehand_workbench_files::Mode::new(ask, cx))]
+}
 
 pub fn builtins() -> Result<PluginRegistry, onehand_plugin_host::RegistryError> {
     let mut registry = PluginRegistry::new();

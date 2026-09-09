@@ -1,7 +1,11 @@
 //! Startup-only registry for built-in plugins.
 
-use gpui::{App, ElementId, FocusHandle, Styled as _};
+mod workbench;
+pub use workbench::{Ask, Request, WorkbenchMode};
+
+use gpui::{App, ElementId, FocusHandle, Hsla, Styled as _};
 use gpui_component::button::Button;
+use gpui_component::{ActiveTheme as _, Colorize as _};
 use onehand_plugin_api::{
     BuiltinPlugin, Capability, PLUGIN_API_VERSION, PluginDescriptor, PluginId, PluginRegistrar,
     WorkbenchModeSpec,
@@ -34,6 +38,43 @@ pub type RemoteChannelFactory = fn(String) -> Box<dyn onehand_core::remote::type
 /// against.
 pub fn action(id: impl Into<ElementId>) -> Button {
     Button::new(id).cursor_pointer()
+}
+
+/// Status colours used as ink on the app's normal surfaces.
+///
+/// Here rather than in the app for the reason [`action`] is: a built-in plugin
+/// draws change badges and cannot reach into the binary hosting it, and a
+/// second copy of the derivation is a second place for the raw status fill to
+/// be used as ink — which is the mistake this exists to prevent.
+#[derive(Clone, Copy)]
+pub struct StatusInk {
+    pub danger: Hsla,
+    pub warning: Hsla,
+    pub success: Hsla,
+}
+
+/// Resolve status ink from the active palette.
+///
+/// Base hues already switch between darker 600-level colours in light mode and
+/// brighter 400-level colours in dark mode. Pulling them part of the way toward
+/// the theme foreground gives small labels and thin icons enough contrast
+/// without inventing a second set of hues beside the ramp.
+///
+/// **How far is set by the well, not by the reading surface.** A tool's status
+/// word, a diff's added and removed lines and a terminal's exit code are all
+/// drawn on the sunk fill rather than on the surface, and light amber is the
+/// one that runs out of margin there first.
+pub fn status_ink(cx: &App) -> StatusInk {
+    let theme = cx.theme();
+    StatusInk {
+        danger: status_hue(theme.red, theme.foreground),
+        warning: status_hue(theme.yellow, theme.foreground),
+        success: status_hue(theme.green, theme.foreground),
+    }
+}
+
+pub fn status_hue(base: Hsla, foreground: Hsla) -> Hsla {
+    base.mix_oklab(foreground, 0.70)
 }
 
 /// Per-window Workbench host: which modes exist, which one is showing, and the

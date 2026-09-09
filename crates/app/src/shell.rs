@@ -7,9 +7,7 @@ use crate::chat::ChatPane;
 use crate::dialogs::AgentDraft;
 use crate::state::{OpenWindow, Shared, WorkspaceWindow};
 use crate::terminal::TerminalPanel;
-use crate::workbench::{
-    EDITOR_MODE, FILES_MODE, MARKDOWN_MODE, NEOVIM_MODE, Workbench, WorkbenchMode,
-};
+use crate::workbench::{EDITOR_MODE, FILES_MODE, MARKDOWN_MODE, NEOVIM_MODE, Workbench};
 use gpui::{
     App, AppContext, BorrowAppContext, Context, Entity, Focusable as _, InteractiveElement,
     IntoElement, ParentElement, Render, SharedString, Styled, Window, WindowAppearance, div, px,
@@ -1983,7 +1981,7 @@ impl Shell {
     /// nobody presses a key for.
     pub fn show_workbench(
         &mut self,
-        mode: WorkbenchMode,
+        mode: onehand_plugin_api::PluginId,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {

@@ -27,23 +27,21 @@ use gpui_component::input::InputEvent;
 use gpui_component::{ActiveTheme, Sizable as _, StyledExt, h_resizable, resizable_panel};
 use onehand_core::editor::SaveOutcome;
 use onehand_core::gitstat::GitStatus;
-use onehand_core::tree::{self, FileTree};
 use onehand_plugin_api::PluginId;
-use onehand_plugin_host::WorkbenchHost;
+use onehand_plugin_host::{Ask, Request, WorkbenchHost, WorkbenchMode};
 use onehand_terminal_ui::{Program, TerminalThemeKey, spawn_pty, terminal_palette};
 use onehand_workbench_editor::{self as editor, RootBuffers};
-use onehand_workbench_files as files;
 use onehand_workbench_markdown::{self as markdown, RootDocs};
 use onehand_workbench_neovim::NeovimSessions;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
+use std::rc::Rc;
 use std::time::Duration;
 
-pub type WorkbenchMode = PluginId;
-pub const EDITOR_MODE: WorkbenchMode = onehand_workbench_editor::MODE_ID;
-pub const FILES_MODE: WorkbenchMode = onehand_workbench_files::MODE_ID;
-pub const MARKDOWN_MODE: WorkbenchMode = onehand_workbench_markdown::MODE_ID;
-pub const NEOVIM_MODE: WorkbenchMode = onehand_workbench_neovim::MODE_ID;
+pub const EDITOR_MODE: PluginId = onehand_workbench_editor::MODE_ID;
+pub const FILES_MODE: PluginId = onehand_workbench_files::MODE_ID;
+pub const MARKDOWN_MODE: PluginId = onehand_workbench_markdown::MODE_ID;
+pub const NEOVIM_MODE: PluginId = onehand_workbench_neovim::MODE_ID;
 
 /// How often the open document's file is asked whether it has changed.
 ///
@@ -67,10 +65,15 @@ const DOC_LIST_MAX: f32 = 420.;
 
 pub struct Workbench {
     host: WorkbenchHost,
+    /// The modes that own their own state and draw their own body.
+    ///
+    /// Each is asked in the panel's order, and a mode that has an answer to a
+    /// request says so. The `if` chain in `render` is what is left of the modes
+    /// that have not moved here yet.
+    modes: Vec<Box<dyn WorkbenchMode>>,
     /// The root everything below is keyed by. `None` before any root is active.
     root: Option<PathBuf>,
     editors: HashMap<PathBuf, RootBuffers>,
-    trees: HashMap<PathBuf, FileTree>,
     /// The markdown index and the document being read, per root.
     docs: HashMap<PathBuf, RootDocs>,
     /// Whether the document view draws its list beside the document.
@@ -102,7 +105,6 @@ pub struct Workbench {
     /// removed takes its polling with it. One for the panel and not one per
     /// document, because only the active root's document is on screen.
     doc_watch: Option<gpui::Task<()>>,
-    git: HashMap<PathBuf, GitStatus>,
     /// The Neovim running on each root, at most one apiece.
     ///
     /// One and not a set, unlike the terminal's shells: several shells is what
@@ -165,27 +167,62 @@ impl Workbench {
             .workbench_modes()
             .to_vec();
         let host = WorkbenchHost::new(modes, cx);
-        cx.new(|cx| Self {
-            host,
-            zoom: crate::zoom::Zoom::default(),
-            root: None,
-            editors: HashMap::new(),
-            trees: HashMap::new(),
-            docs: HashMap::new(),
-            doc_list_shown: true,
-            doc_split: cx.new(|_| gpui_component::ResizableState::default()),
-            _doc_scan: None,
-            doc_watch: None,
-            git: HashMap::new(),
-            neovim: NeovimSessions::default(),
-            terminal_theme: TerminalThemeKey::current(cx),
-            status: None,
-            saving: HashMap::new(),
-            pending_close: None,
+        cx.new(|cx| {
+            // Handed to the modes as they are built rather than set afterwards,
+            // so none of them is ever on screen holding nothing to ask through.
+            let panel = cx.weak_entity();
+            let ask: Ask = Rc::new(move |request, window, cx| {
+                let _ = panel.update(cx, |panel: &mut Self, cx| {
+                    panel.answer(request, window, cx);
+                });
+            });
+            Self {
+                modes: crate::plugins::workbench_modes(ask, cx),
+                host,
+                zoom: crate::zoom::Zoom::default(),
+                root: None,
+                editors: HashMap::new(),
+                docs: HashMap::new(),
+                doc_list_shown: true,
+                doc_split: cx.new(|_| gpui_component::ResizableState::default()),
+                _doc_scan: None,
+                doc_watch: None,
+                neovim: NeovimSessions::default(),
+                terminal_theme: TerminalThemeKey::current(cx),
+                status: None,
+                saving: HashMap::new(),
+                pending_close: None,
+            }
         })
     }
 
-    pub fn mode(&self) -> WorkbenchMode {
+    /// Answer a request a mode raised, which is the panel's half of
+    /// [`onehand_plugin_host::Ask`].
+    ///
+    /// The vocabulary is the same in both directions, so what arrives here is
+    /// either something only the panel can do — opening a file is the quick
+    /// editor's business and the file tree cannot reach it — or something to
+    /// pass on to whichever mode owns it.
+    fn answer(&mut self, request: &Request<'_>, window: &mut Window, cx: &mut Context<Self>) {
+        match request {
+            Request::OpenFile(path) => self.open_file(path.to_path_buf(), window, cx),
+            other => {
+                self.broadcast(other, cx);
+            }
+        }
+    }
+
+    /// Put a request to every mode in the panel's order, and say whether one of
+    /// them took it.
+    fn broadcast(&mut self, request: &Request<'_>, cx: &mut Context<Self>) -> bool {
+        let mut taken = false;
+        for mode in &mut self.modes {
+            taken |= mode.handle(request, cx);
+        }
+        taken
+    }
+
+    pub fn mode(&self) -> PluginId {
         self.host.active()
     }
 
@@ -207,8 +244,10 @@ impl Workbench {
     }
 
     pub fn forget_root(&mut self, root: &Path, cx: &mut Context<Self>) {
+        for mode in &mut self.modes {
+            mode.forget_root(root, cx);
+        }
         self.editors.remove(root);
-        self.trees.remove(root);
         self.docs.remove(root);
         if self.root.as_deref() == Some(root) {
             // The document that was being watched belonged to this root, and
@@ -216,7 +255,6 @@ impl Workbench {
             // no longer in the workspace.
             self.doc_watch = None;
         }
-        self.git.remove(root);
         // Dropping the entry ends the child, the way dropping a terminal tab
         // does: a project removed from the workspace must not leave an editor
         // running on it with nothing on screen pointing at it.
@@ -334,7 +372,7 @@ impl Workbench {
         self.host.focus_handle().focus(window, cx);
     }
 
-    pub fn set_mode(&mut self, mode: WorkbenchMode, cx: &mut Context<Self>) {
+    pub fn set_mode(&mut self, mode: PluginId, cx: &mut Context<Self>) {
         if self.host.select(mode) {
             // The document index is walked when somebody arrives at the mode
             // that draws it, never at boot and never on a project switch that
@@ -353,55 +391,31 @@ impl Workbench {
         if self.root.as_ref() == Some(&root) {
             return;
         }
+        let seen = self.docs.contains_key(&root);
         self.root = Some(root.clone());
+        for mode in &mut self.modes {
+            mode.set_root(&root, cx);
+        }
         // The document being watched belonged to the root being left. Whether
         // the arriving one has one of its own is decided below, once its state
         // is in hand.
         self.doc_watch = None;
         self.watch_doc(cx);
-        if self.trees.contains_key(&root) {
+        if seen {
             // A root seen before: its cached listings are as old as the last
-            // time it was on screen, and the agent has been working since. The
-            // document index is stale for the same reason, and `rescan` walks
-            // it — so this branch must not walk it again, or every switch to a
-            // familiar project costs two recursive walks of the whole thing.
-            self.rescan(cx);
-        } else {
-            self.trees.insert(root.clone(), FileTree::default());
-            self.scan(root, cx);
-            if self.mode() == MARKDOWN_MODE {
-                self.index_docs(cx);
-            }
+            // time it was on screen, and the agent has been working since.
+            self.index_docs_if_showing(cx);
+        } else if self.mode() == MARKDOWN_MODE {
+            self.index_docs(cx);
         }
         cx.notify();
     }
 
     pub fn set_git(&mut self, git: HashMap<PathBuf, GitStatus>, cx: &mut Context<Self>) {
-        self.git = git;
+        for mode in &mut self.modes {
+            mode.handle(&Request::SetGit(&git), cx);
+        }
         cx.notify();
-    }
-
-    /// Read one directory off the UI loop and cache its listing.
-    fn scan(&mut self, dir: PathBuf, cx: &mut Context<Self>) {
-        let Some(root) = self.root.clone() else {
-            return;
-        };
-        cx.spawn(async move |panel, cx| {
-            let listing = cx
-                .background_executor()
-                .spawn({
-                    let dir = dir.clone();
-                    async move { tree::read_dir_sorted(&dir) }
-                })
-                .await;
-            let _ = panel.update(cx, |panel: &mut Self, cx| {
-                if let Some(tree) = panel.trees.get_mut(&root) {
-                    tree.listings.insert(dir, listing);
-                }
-                cx.notify();
-            });
-        })
-        .detach();
     }
 
     /// Re-read every directory currently on screen for the active root.
@@ -416,24 +430,23 @@ impl Workbench {
     /// which is exactly what `visible_rows` draws from. A collapsed subtree is
     /// rescanned when it is opened, as it always was.
     pub fn rescan(&mut self, cx: &mut Context<Self>) {
-        let Some(root) = self.root.clone() else {
-            return;
-        };
-        let Some(tree) = self.trees.get(&root) else {
-            return;
-        };
-        let dirs: Vec<PathBuf> = std::iter::once(root)
-            .chain(tree.expanded.iter().cloned())
-            .collect();
-        for dir in dirs {
-            self.scan(dir, cx);
+        for mode in &mut self.modes {
+            mode.handle(&Request::Rescan, cx);
         }
-        // A document *list* goes stale the same way the tree does, and for the
-        // same reason: the agent has been writing since it was walked, and a
-        // file it just wrote is exactly what somebody switches to this mode to
-        // read. Only while the mode is showing, since the walk is the whole
-        // project rather than one directory. The document already open re-reads
-        // itself on its own clock.
+        self.index_docs_if_showing(cx);
+    }
+
+    /// Re-walk the document index, but only while the mode that draws it is on
+    /// screen.
+    ///
+    /// A document *list* goes stale the same way the file tree does, and for
+    /// the same reason: the agent has been writing since it was walked, and a
+    /// file it just wrote is exactly what somebody switches to this mode to
+    /// read. Guarded because the walk is the whole project rather than one
+    /// directory, and a workspace with a dozen roots must not walk a dozen of
+    /// them for a mode nobody has opened. The document already open re-reads
+    /// itself on its own clock.
+    fn index_docs_if_showing(&mut self, cx: &mut Context<Self>) {
         if self.mode() == MARKDOWN_MODE {
             self.index_docs(cx);
         }
@@ -638,30 +651,6 @@ impl Workbench {
                 }
             }
         }));
-    }
-
-    /// Fold or unfold a directory. Expanding rescans — a cached listing can be
-    /// minutes old, and the agent has been writing to this tree the whole time.
-    pub fn toggle_dir(&mut self, dir: PathBuf, cx: &mut Context<Self>) {
-        let Some(root) = self.root.clone() else {
-            return;
-        };
-        let expanding = self
-            .trees
-            .get_mut(&root)
-            .map(|tree| {
-                if tree.expanded.remove(&dir) {
-                    false
-                } else {
-                    tree.expanded.insert(dir.clone());
-                    true
-                }
-            })
-            .unwrap_or(false);
-        if expanding {
-            self.scan(dir, cx);
-        }
-        cx.notify();
     }
 
     /// Open `path` in the editor.
@@ -976,10 +965,17 @@ impl Render for Workbench {
         // scales. A zoomed-in editor whose own tab bar grew with it wastes the
         // room the zoom was asking for.
         let zoom = self.zoom;
-        let body = if mode == EDITOR_MODE {
+        // A mode that owns its own body draws it; the chain below is what is
+        // left of the modes still drawn from here.
+        let owned = self
+            .modes
+            .iter()
+            .find(|item| item.spec().id == mode)
+            .map(|item| item.view());
+        let body = if let Some(view) = owned {
+            view.into_any_element()
+        } else if mode == EDITOR_MODE {
             self.editor_body(cx)
-        } else if mode == FILES_MODE {
-            self.files_body(cx)
         } else if mode == MARKDOWN_MODE {
             self.markdown_body(window, cx)
         } else if mode == NEOVIM_MODE {
@@ -1207,43 +1203,12 @@ impl Workbench {
             )
             .into_any_element()
     }
-
-    fn files_body(&mut self, cx: &mut Context<Self>) -> gpui::AnyElement {
-        let Some(root) = self.root.clone() else {
-            return hint("No project root", cx);
-        };
-        let Some(tree) = self.trees.get(&root) else {
-            return hint("No project root", cx);
-        };
-        let ink = crate::theme::status_ink(cx);
-        div()
-            .flex_1()
-            .min_h_0()
-            .child(files::tree(
-                &root,
-                tree,
-                self.git.get(&root),
-                cx.listener(|panel: &mut Self, dir: &PathBuf, _, cx| {
-                    panel.toggle_dir(dir.clone(), cx)
-                }),
-                cx.listener(|panel: &mut Self, path: &PathBuf, window, cx| {
-                    panel.open_file(path.clone(), window, cx)
-                }),
-                files::ChangeColors {
-                    warning: ink.warning,
-                    success: ink.success,
-                    danger: ink.danger,
-                },
-                cx,
-            ))
-            .into_any_element()
-    }
 }
 
 fn mode_tab(
     label: &'static str,
-    which: WorkbenchMode,
-    active: WorkbenchMode,
+    which: PluginId,
+    active: PluginId,
     cx: &mut Context<Workbench>,
 ) -> impl IntoElement + use<> {
     crate::controls::action(label)
