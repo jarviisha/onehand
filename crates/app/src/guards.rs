@@ -418,6 +418,28 @@ mod tests {
     /// mentioned again after construction, which is worth having and is why the
     /// modules are private.)
     ///
+    /// **That claim was challenged and measured**, because it is the whole
+    /// reason this exists and it had stopped being obvious. The argument was
+    /// that once every first-party crate stopped re-exporting its internals,
+    /// `dead_code` would cover all of [`ui_sources`] with types and this could
+    /// go. Part of it is true, and is worth knowing: a field never mentioned
+    /// again after construction is now caught by rustc in every one of those
+    /// crates, which it was not while they exported globs. **Only where the
+    /// field is not itself reachable from outside its crate**, though — a `pub`
+    /// field on a `pub` struct the crate root exports is where `dead_code`
+    /// still stops, and `unreachable_pub` cannot reach it because such a struct
+    /// is legitimately public. `StatusInk`'s three colours are that shape.
+    ///
+    /// The rest is not true at all. A field assigned through `self.f = x` and
+    /// never read draws no warning from any lint, in any crate, at any
+    /// visibility — which is how `Shell.status` and `Shell.layout_dirty` hid,
+    /// two of the three failures this was written for. (The third,
+    /// `ChatPane.unseen`, is the collection case below, which nothing here
+    /// catches either.)
+    ///
+    /// So what is left is narrower than what this was written to be, and it is
+    /// the part with no compiler behind it.
+    ///
     /// **Where this stops.** It reads `.name` occurrences and treats anything
     /// that is not an assignment target as a read — so a field mutated through
     /// its own methods (`self.set.insert(..)`, `self.map.remove(..)`) counts as
@@ -425,6 +447,15 @@ mod tests {
     /// exactly how `ChatPane.unseen` hid, and this test would not have caught
     /// it: telling mutation from observation needs the type, which a source
     /// scan does not have. It catches the scalar case, which is the other half.
+    ///
+    /// It is blind to a **common field name** for the same reason. The scan
+    /// looks for `.name` across every source at once, so a field whose name is
+    /// spelled elsewhere reads as live however dead it is. `StatusInk.danger`
+    /// is the sharpest case here: strip every reader of it and five `.danger`
+    /// occurrences remain, from `cx.theme().danger` and the component library's
+    /// own `.danger()` builder. `warning` keeps one that way and `success`
+    /// none, so of the one struct in [`ui_sources`] that `dead_code` cannot
+    /// reach, this covers one field of three.
     ///
     /// A field that is deliberately held rather than read — an RAII guard whose
     /// whole job is its `Drop` — opts out by starting with `_`, the convention
