@@ -262,8 +262,9 @@ tokio runtime of its own with events crossing on a `futures` channel.
 ids are strings, a message carries text and rows of `Button`s, and `RemoteChannel::connect` folds its
 serve loop into the stream it returns. The built-in Telegram plugin is the only implementation, a long poll
 plus `sendMessage` and `answerCallbackQuery`. Everything that is not the wire is pure and tested:
-`access` (who may reach the app), `command` (the little language a chat drives it with), `press`
-(what a button means). Telegram's plugin owns `secret` (where its credential comes from).
+`command` (the little language a chat drives it with), `press` (what a button means) and `chats`
+(who may reach the app, where each types, and what each has asked to hear). Telegram's plugin owns
+`secret` (where its credential comes from).
 
 - **The token is read and never written, and it is not in `onehand.toml`.** That file is rewritten
   whole by the settings dialog and the agent manager, it is what people paste into a bug report, and
@@ -276,7 +277,10 @@ plus `sendMessage` and `answerCallbackQuery`. Everything that is not the wire is
   a feature that silently does not work. It is still plaintext on disk, and this is not a keyring.
 - **A chat not on `allowed_chats` is answered with nothing at all** — not a refusal, because a refusal
   confirms that the bot is real, that it is running right now, and that there is a list to get onto.
-  **The empty list allows nobody**, so forgetting to fill it in fails closed. It is **permission and
+  **The empty list allows nobody**, so forgetting to fill it in fails closed. The rule is
+  `Chats::allows`, on the type holding the list rather than beside it — the negative case has no
+  function of its own, because the caller that would have had to name it does not exist and a
+  negation nobody calls cannot enforce anything. It is **permission and
   not audience**: being on it is what lets a chat say anything and be told anything, while what a chat
   actually hears about a *session* is the narrower list it subscribed to itself (see **Following**
   below). The two coincide only for what is about the bridge rather than about a session — the away

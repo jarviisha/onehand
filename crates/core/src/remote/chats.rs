@@ -190,12 +190,45 @@ impl Chats {
 
     /// Whether `chat` may reach the app at all.
     ///
-    /// Asked through here rather than against the list directly, so the rule and
-    /// the list stay in one place: a chat that is not allowed is answered with
-    /// nothing at all, and the one function that could accidentally start
-    /// replying is the one holding the list it would have to ignore.
+    /// The whole of what stands between the bridge and a stranger, which is why
+    /// it lives on the type holding the list rather than beside it: a bot token
+    /// identifies the *bot*, not the person typing at it, so anybody who guesses
+    /// the bot's name can open a chat with it. The list is what turns that into
+    /// a private channel.
+    ///
+    /// It gates what comes *in*. What goes out to the list without being asked
+    /// for is [`Chats::everyone`], which hands back the entries as configured —
+    /// so a blank line this refuses on the way in is still an address the away
+    /// switch is broadcast to. Harmless, since no channel can deliver to it, but
+    /// the two are not the same filter and reading this one as total is how they
+    /// would come to be treated as one.
+    ///
+    /// **The empty list allows nobody.** That is the useful reading and not a
+    /// degenerate one: an enabled bridge with no list is a bot that anyone who
+    /// finds it can drive, so forgetting to fill the list in has to fail closed.
+    ///
+    /// Compared as trimmed text rather than as numbers, because that is what the
+    /// model carries end to end and what the next channel will hand over — and
+    /// because a hand-typed list has spaces in it. An entry that is nothing at
+    /// all matches nothing, so an empty line left in the config does not become
+    /// a wildcard.
+    ///
+    /// **A chat this refuses is answered with nothing** — not an error, not a
+    /// refusal, not a read receipt. A refusal is a confirmation: it tells
+    /// whoever sent it that the bot is real, that it is running right now, and
+    /// that there is a list to get onto. Silence tells them nothing, which is
+    /// the only answer that does not help.
+    ///
+    /// The negative case has no *function* of its own, deliberately. It had one
+    /// — named so that the one place which could accidentally start replying had
+    /// to say the word `silently` — and nothing ever called it, because every
+    /// caller reads this as permission to reply at all and returns on the
+    /// negation. A rule with no call site cannot enforce anything; it only makes
+    /// the rule look guarded. So the word is here instead, on the function the
+    /// callers do reach, holding the list they would have to ignore.
     pub fn allows(&self, chat: &str) -> bool {
-        super::access::is_allowed(&self.allowed, &chat.to_string())
+        let chat = chat.trim();
+        !chat.is_empty() && self.allowed.iter().any(|allowed| allowed.trim() == chat)
     }
 
     /// Every chat allowed to hear what is about the bridge rather than about a
@@ -528,6 +561,38 @@ mod tests {
             agent: "Claude Code".to_string(),
             state: None,
         }
+    }
+
+    #[test]
+    fn a_listed_chat_is_allowed() {
+        let chats = allowing(&["123", "-100456"]);
+        assert!(chats.allows("123"));
+        assert!(chats.allows("-100456"));
+        assert!(!chats.allows("124"));
+    }
+
+    /// The failure mode this exists to prevent: an enabled bridge whose list was
+    /// never filled in must be reachable by nobody, not by everybody.
+    #[test]
+    fn an_empty_list_allows_nobody() {
+        assert!(!allowing(&[]).allows("123"));
+    }
+
+    /// A hand-typed list has spaces in it, and a chat id that only differs by
+    /// one is the same chat.
+    #[test]
+    fn surrounding_space_is_not_part_of_an_id() {
+        assert!(allowing(&[" 123 "]).allows("123"));
+        assert!(allowing(&["123"]).allows(" 123"));
+    }
+
+    /// An id that is nothing at all matches nothing, including a list entry that
+    /// is also nothing — an empty line left in the config must not become a
+    /// wildcard.
+    #[test]
+    fn an_empty_id_matches_nothing() {
+        assert!(!allowing(&["", "123"]).allows(""));
+        assert!(!allowing(&["   "]).allows("  "));
     }
 
     /// Pointing at a session is also subscribing to it, and that is the half of
@@ -869,17 +934,6 @@ mod tests {
             Some("saved 9".to_string())
         );
         assert!(chats.archive_at("7", 2).is_none(), "the old page is gone");
-    }
-
-    /// The gate the whole bridge rests on, asked through this type so the one
-    /// place that could accidentally start replying is the one place that holds
-    /// the list. An enabled bridge whose list was never filled in has to be
-    /// reachable by nobody, not by everybody.
-    #[test]
-    fn an_empty_allow_list_lets_nobody_in() {
-        assert!(!allowing(&[]).allows("7"));
-        assert!(allowing(&["7", "8"]).allows("8"));
-        assert!(!allowing(&["7", "8"]).allows("9"));
     }
 
     /// What is about the bridge rather than about a session goes to everyone
