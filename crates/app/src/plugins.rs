@@ -8,7 +8,10 @@ use onehand_plugin_host::{Ask, PluginRegistry, WorkbenchMode};
 /// entities: a view is bound to the window that renders it, and a second window
 /// showing the same one would be the same entity mounted twice.
 pub fn workbench_modes(ask: Ask, cx: &mut gpui::App) -> Vec<Box<dyn WorkbenchMode>> {
-    vec![Box::new(onehand_workbench_files::Mode::new(ask, cx))]
+    vec![
+        Box::new(onehand_workbench_files::Mode::new(ask.clone(), cx)),
+        Box::new(onehand_workbench_markdown::Mode::new(ask, cx)),
+    ]
 }
 
 pub fn builtins() -> Result<PluginRegistry, onehand_plugin_host::RegistryError> {

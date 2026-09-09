@@ -98,6 +98,13 @@ pub enum Request<'a> {
     /// Re-read whatever this mode listed off the disk, because a turn has ended
     /// and the agent has been writing the whole time.
     Rescan,
+    /// This mode has just become the one on screen.
+    ///
+    /// The one request that is **not** broadcast: it goes to the arriving mode
+    /// alone, since every other mode's answer would be a lie. A mode whose
+    /// listing costs a walk of the whole project uses this to decide the walk
+    /// is worth paying for.
+    Shown,
     /// Collect a child that has exited.
     ///
     /// Answered `true` by a mode that had one, which is what tells the panel to
