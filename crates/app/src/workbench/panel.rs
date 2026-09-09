@@ -28,7 +28,7 @@ use gpui_component::dock::{Panel, PanelControl, PanelEvent};
 use gpui_component::{ActiveTheme, Sizable as _, StyledExt};
 use onehand_core::gitstat::GitStatus;
 use onehand_plugin_api::{PluginId, WorkbenchModeSpec};
-use onehand_plugin_host::{Ask, Request, WorkbenchMode};
+use onehand_plugin_host::{Ask, Request, WorkbenchMode, hint};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
@@ -374,15 +374,4 @@ fn mode_tab(
         .on_click(cx.listener(move |panel: &mut Workbench, _, _, cx| {
             panel.set_mode(which, cx);
         }))
-}
-
-fn hint(text: &'static str, cx: &App) -> gpui::AnyElement {
-    div()
-        .flex_1()
-        .v_flex()
-        .items_center()
-        .justify_center()
-        .text_color(cx.theme().muted_foreground)
-        .child(text)
-        .into_any_element()
 }

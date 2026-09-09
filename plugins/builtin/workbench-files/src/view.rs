@@ -13,7 +13,7 @@ use gpui::{
 use gpui_component::{ActiveTheme, Icon, IconName, StyledExt};
 use onehand_core::gitstat::{FileChange, GitStatus};
 use onehand_core::tree::{self, FileTree};
-use onehand_plugin_host::{Ask, Request, status_ink};
+use onehand_plugin_host::{Ask, Request, hint, status_ink};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
@@ -311,14 +311,4 @@ fn rows(
 /// outlives this frame's borrow of the tree.
 fn entry_is_dir(path: &Path) -> bool {
     path.is_dir()
-}
-
-fn hint(text: &'static str, cx: &App) -> impl IntoElement {
-    div()
-        .flex_1()
-        .v_flex()
-        .items_center()
-        .justify_center()
-        .text_color(cx.theme().muted_foreground)
-        .child(text)
 }

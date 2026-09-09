@@ -6,7 +6,7 @@ use gpui::{
     App, AppContext as _, Context, Entity, IntoElement, ParentElement, Render, Styled, Window, div,
 };
 use gpui_component::{ActiveTheme, StyledExt, h_resizable, resizable_panel};
-use onehand_plugin_host::{Ask, Request, status_ink};
+use onehand_plugin_host::{Ask, Request, hint, status_line};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
@@ -355,14 +355,7 @@ impl Render for MarkdownView {
             .min_h_0()
             .v_flex()
             .child(body)
-            .children(self.status.clone().map(|status| {
-                div()
-                    .px_2()
-                    .py_1()
-                    .text_xs()
-                    .text_color(status_ink(cx).warning)
-                    .child(status)
-            }))
+            .children(self.status.clone().map(|status| status_line(status, cx)))
     }
 }
 
@@ -457,15 +450,4 @@ impl MarkdownView {
             )
             .into_any_element()
     }
-}
-
-fn hint(text: &'static str, cx: &App) -> gpui::AnyElement {
-    div()
-        .flex_1()
-        .v_flex()
-        .items_center()
-        .justify_center()
-        .text_color(cx.theme().muted_foreground)
-        .child(text)
-        .into_any_element()
 }

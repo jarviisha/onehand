@@ -10,9 +10,9 @@ use gpui::{
     App, AppContext as _, Context, Entity, FocusHandle, IntoElement, ParentElement, Pixels, Render,
     Styled, Window, div,
 };
+use gpui_component::StyledExt;
 use gpui_component::button::ButtonVariants as _;
-use gpui_component::{ActiveTheme, StyledExt};
-use onehand_plugin_host::{Ask, Request, action, status_ink};
+use onehand_plugin_host::{Ask, Request, action, hint, status_line};
 use onehand_terminal_ui::{Program, PtyTab, TerminalThemeKey, spawn_pty, terminal_palette};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -186,14 +186,7 @@ impl Render for NeovimView {
             .min_h_0()
             .v_flex()
             .child(body)
-            .children(self.status.clone().map(|status| {
-                div()
-                    .px_2()
-                    .py_1()
-                    .text_xs()
-                    .text_color(status_ink(cx).warning)
-                    .child(status)
-            }))
+            .children(self.status.clone().map(|status| status_line(status, cx)))
     }
 }
 
@@ -241,15 +234,4 @@ impl NeovimView {
             .child(tab.view().clone())
             .into_any_element()
     }
-}
-
-fn hint(text: &'static str, cx: &App) -> gpui::AnyElement {
-    div()
-        .flex_1()
-        .v_flex()
-        .items_center()
-        .justify_center()
-        .text_color(cx.theme().muted_foreground)
-        .child(text)
-        .into_any_element()
 }

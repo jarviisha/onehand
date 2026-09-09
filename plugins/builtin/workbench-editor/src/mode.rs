@@ -2,15 +2,15 @@
 //! rules that keep a save from clobbering somebody else's write.
 
 use crate::view::{RootBuffers, body, new_buffer, save_status, tab_strip};
-use gpui::prelude::FluentBuilder as _;
+
 use gpui::{
     App, AppContext as _, Context, Entity, Focusable as _, IntoElement, ParentElement, Render,
     Styled, Window, div,
 };
+use gpui_component::StyledExt;
 use gpui_component::input::InputEvent;
-use gpui_component::{ActiveTheme, StyledExt};
 use onehand_core::editor::SaveOutcome;
-use onehand_plugin_host::status_ink;
+use onehand_plugin_host::{hint, status_line};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
@@ -396,29 +396,11 @@ impl Render for EditorView {
             }
         };
 
-        div().flex_1().min_h_0().v_flex().child(body).when_some(
-            self.status.clone(),
-            |panel, status| {
-                panel.child(
-                    div()
-                        .px_2()
-                        .py_1()
-                        .text_xs()
-                        .text_color(status_ink(cx).warning)
-                        .child(status),
-                )
-            },
-        )
+        div()
+            .flex_1()
+            .min_h_0()
+            .v_flex()
+            .child(body)
+            .children(self.status.clone().map(|status| status_line(status, cx)))
     }
-}
-
-fn hint(text: &'static str, cx: &App) -> gpui::AnyElement {
-    div()
-        .flex_1()
-        .v_flex()
-        .items_center()
-        .justify_center()
-        .text_color(cx.theme().muted_foreground)
-        .child(text)
-        .into_any_element()
 }

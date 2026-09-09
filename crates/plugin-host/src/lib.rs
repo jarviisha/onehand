@@ -13,9 +13,11 @@
 mod workbench;
 pub use workbench::{Ask, Request, WorkbenchMode};
 
-use gpui::{App, ElementId, Hsla, Styled as _};
+use gpui::{
+    AnyElement, App, ElementId, Hsla, IntoElement as _, ParentElement as _, Styled as _, div,
+};
 use gpui_component::button::Button;
-use gpui_component::{ActiveTheme as _, Colorize as _};
+use gpui_component::{ActiveTheme as _, Colorize as _, StyledExt as _};
 
 /// How a remote channel is opened, once its credential has been read.
 pub type RemoteChannelFactory = fn(String) -> Box<dyn onehand_core::remote::types::RemoteChannel>;
@@ -80,4 +82,41 @@ pub fn status_ink(cx: &App) -> StatusInk {
 
 pub fn status_hue(base: Hsla, foreground: Hsla) -> Hsla {
     base.mix_oklab(foreground, 0.70)
+}
+
+/// A mode's empty state: one muted line, centred in the body it would fill.
+///
+/// Here rather than copied into each mode for the reason [`action`] is. Four
+/// copies of a centred muted line is four places for one of them to drift into
+/// a different silence from its neighbours, in a panel where the user switches
+/// between them with one click.
+pub fn hint(text: &'static str, cx: &App) -> AnyElement {
+    div()
+        .flex_1()
+        .v_flex()
+        .items_center()
+        .justify_center()
+        .text_color(cx.theme().muted_foreground)
+        .child(text)
+        .into_any_element()
+}
+
+/// The line a mode draws under its body for a standing condition.
+///
+/// **Deliberately not a notification**, unlike the rest of the app's transient
+/// status. A save refused because the file changed on disk, a document that has
+/// outgrown the read's size bound, an editor that would not start: none of them
+/// is news that may be missed, and a toast that fades leaves the user believing
+/// the thing went through. Each is cleared by whatever answers it.
+///
+/// Drawn by the mode and not by the panel, because the panel no longer knows
+/// what any of them mean — which is what makes one definition worth having.
+pub fn status_line(message: String, cx: &App) -> AnyElement {
+    div()
+        .px_2()
+        .py_1()
+        .text_xs()
+        .text_color(status_ink(cx).warning)
+        .child(message)
+        .into_any_element()
 }
