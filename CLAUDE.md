@@ -622,8 +622,10 @@ reads off the showing mode's declaration (see *Built-in plugins*).
   stamp. The mode is **read-only** — a second buffer here would be a second copy of the editor's tab
   set, mtime guard and unsaved-edit rules, so the header's *Edit source* hands the file to the editor
   instead. The walk runs when the mode is next **drawn** after the index went stale — a project switch,
-  a turn ending — and never at boot: a workspace with a dozen roots must not walk a dozen projects for
-  a mode nobody opened, and being drawn is the moment that is known not to be the case.
+  a turn ending, or `Ctrl+Shift+M` pressed on the mode already showing, which is why selecting the
+  showing mode is deliberately not a no-op — and never at boot: a workspace with a dozen roots must
+  not walk a dozen projects for a mode nobody opened, and being drawn is the moment that is known not
+  to be the case.
 - **A tab whose child exits is dropped**, in both the Neovim mode and the terminal's panel
   (`NeovimView::reap`, `TerminalPanel::reap`, fed by `spawn_pty`'s exit callback). Nothing notices otherwise: the grid keeps
   drawing the last screen the child painted, which after `:q` or `exit` is an empty one with a cursor
@@ -838,7 +840,11 @@ status bar.
   line a Workbench mode draws under its own body — a save conflict, a document that has outgrown the
   read's size bound, a Neovim that would not start — each a standing condition rather than news: a
   toast that fades leaves the user believing the save went through. It is cleared by whatever answers
-  it. Drawn by the mode and not the panel, because the panel no longer knows what any of them mean.
+  it. Drawn by the mode and not the panel, because the panel no longer knows what any of them mean —
+  so each line **shows only while its own mode does**, which is a narrower audience than the single
+  panel-wide line this replaced. That is the trade taken deliberately: the old one was readable from
+  any mode, and any mode's message also cleared any other's, so a save conflict could be wiped by a
+  document that failed to open.
 - **Two things are said on the *desktop*, outside the window** (`chat::session::notify_desktop`, over
   `notify-rust`, fire-and-forget on its own thread because `show()` blocks on the bus): a turn that
   finished, and an agent that has parked a permission or a question and stopped. The pane gathers what

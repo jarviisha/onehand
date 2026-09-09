@@ -28,7 +28,7 @@ use gpui_component::dock::{Panel, PanelControl, PanelEvent};
 use gpui_component::{ActiveTheme, Sizable as _, StyledExt};
 use onehand_core::gitstat::GitStatus;
 use onehand_plugin_api::{PluginId, WorkbenchModeSpec};
-use onehand_plugin_host::{Ask, Request, WorkbenchMode, hint};
+use onehand_plugin_host::{Ask, Request, WorkbenchMode};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
@@ -45,8 +45,15 @@ pub struct Workbench {
     /// Each is asked in this order, and a mode that has an answer to a request
     /// says so.
     modes: Vec<Box<dyn WorkbenchMode>>,
-    /// Which mode is showing.
-    active: PluginId,
+    /// Which mode is showing, as a place in `modes` rather than an ID.
+    ///
+    /// A place and not a name because a name can fail to resolve, and this one
+    /// cannot: the list is built once and never added to, so every ID that ever
+    /// reaches `active` was found in it first. Held as an ID, the panel had to
+    /// draw an unavailable state for a mode nothing contributed — an arm no
+    /// input could reach, which is the decoration the seam was meant to remove
+    /// rather than keep.
+    active: usize,
     /// The root every mode is pointed at. `None` before any root is active.
     root: Option<PathBuf>,
     /// Reading size for the body. Per panel, not per root: the dock's own
@@ -68,12 +75,9 @@ impl Workbench {
             });
             let zoom = crate::zoom::Zoom::default();
             let modes = crate::plugins::workbench_modes(ask, crate::zoom::term_font_size(zoom), cx);
+            assert!(!modes.is_empty(), "the Workbench has no built-in modes");
             Self {
-                active: modes
-                    .first()
-                    .expect("the Workbench has no built-in modes")
-                    .spec()
-                    .id,
+                active: 0,
                 modes,
                 focus_handle: cx.focus_handle(),
                 root: None,
@@ -124,15 +128,17 @@ impl Workbench {
 
     /// The showing mode's own declaration, which is where the two facts the
     /// frame needs are read from.
-    fn showing(&self) -> Option<WorkbenchModeSpec> {
-        self.modes
-            .iter()
-            .find(|item| item.spec().id == self.active)
-            .map(|item| item.spec())
+    fn showing(&self) -> WorkbenchModeSpec {
+        self.modes[self.active].spec()
+    }
+
+    /// Where `id` sits on the strip, if it names a mode this panel holds.
+    fn place_of(&self, id: PluginId) -> Option<usize> {
+        self.modes.iter().position(|item| item.spec().id == id)
     }
 
     pub fn mode(&self) -> PluginId {
-        self.active
+        self.showing().id
     }
 
     /// How many of `root`'s open files have edits a removal would discard.
@@ -194,9 +200,7 @@ impl Workbench {
     /// reach for the mouse to use what they just opened. A mode that is clicked
     /// rather than typed into refuses, and the caret lands on the panel itself.
     pub fn focus_active(&self, window: &mut Window, cx: &mut App) {
-        if let Some(showing) = self.modes.iter().find(|item| item.spec().id == self.active)
-            && showing.focus(window, cx)
-        {
+        if self.modes[self.active].focus(window, cx) {
             return;
         }
         self.focus_handle.focus(window, cx);
@@ -204,23 +208,23 @@ impl Workbench {
 
     /// Show `mode`, if it names one this panel holds.
     ///
-    /// A mode nobody contributed is refused rather than left as the active ID,
-    /// or the panel would draw its unavailable state with no way back.
+    /// A mode nobody contributed is refused rather than left as the active
+    /// place, which is what keeps that place always in range.
+    ///
+    /// **Showing the mode already showing is not a no-op**, deliberately: the
+    /// keys are three-state and pressing one on the mode in front of you is how
+    /// a listing gets asked for again. Returning early here is what silently
+    /// took the document walk away from a second `Ctrl+Shift+M`.
     pub fn set_mode(&mut self, mode: PluginId, cx: &mut Context<Self>) {
-        if !self.modes.iter().any(|item| item.spec().id == mode) {
+        let Some(place) = self.place_of(mode) else {
             return;
-        }
-        if self.active == mode {
-            return;
-        }
-        self.active = mode;
+        };
+        self.active = place;
         // To the arriving mode alone, and not broadcast: it is the one request
         // whose answer depends on being the mode about to be seen. A listing
         // that costs a walk of the whole project is refreshed here rather than
         // at boot or on a project switch behind another mode's back.
-        if let Some(arriving) = self.modes.iter_mut().find(|item| item.spec().id == mode) {
-            arriving.handle(&Request::Shown, cx);
-        }
+        self.modes[place].handle(&Request::Shown, cx);
         cx.notify();
     }
 
@@ -254,15 +258,13 @@ impl Workbench {
     /// Switching is what the answer buys: the mode that took the file is the
     /// one worth looking at, and the panel does not have to know which that is.
     pub fn open_file(&mut self, path: &Path, window: &mut Window, cx: &mut Context<Self>) {
-        let mut opened = None;
-        for mode in &mut self.modes {
-            if mode.open_file(path, window, cx) {
-                opened = Some(mode.spec().id);
-                break;
-            }
-        }
-        if let Some(id) = opened {
-            self.set_mode(id, cx);
+        let opened = self
+            .modes
+            .iter_mut()
+            .position(|mode| mode.open_file(path, window, cx));
+        if let Some(place) = opened {
+            self.active = place;
+            self.modes[place].handle(&Request::Shown, cx);
         }
         cx.notify();
     }
@@ -296,7 +298,7 @@ impl Focusable for Workbench {
 
 impl Render for Workbench {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let active = self.active;
+        let showing = self.showing();
         let specs: Vec<WorkbenchModeSpec> = self.modes.iter().map(|item| item.spec()).collect();
         let strip = div()
             .h_flex()
@@ -310,31 +312,19 @@ impl Render for Workbench {
             .children(
                 specs
                     .into_iter()
-                    .map(|spec| mode_tab(spec.label, spec.id, active, cx)),
+                    .map(|spec| mode_tab(spec.label, spec.id, showing.id, cx)),
             );
-
-        // A mode nothing registered has neither fact, and falls back to the
-        // panel's own context and scale so the strip that would switch away
-        // from it still answers the keyboard.
-        let showing = self.showing();
-        let key_context = showing
-            .map(|spec| spec.key_context)
-            .unwrap_or(onehand_plugin_api::WORKBENCH_KEY_CONTEXT);
-        let rem_zoom = showing.is_none_or(|spec| spec.rem_zoom);
 
         // The mode strip is chrome and keeps its size; only the work below it
         // scales. A zoomed-in editor whose own tab bar grew with it wastes the
         // room the zoom was asking for.
-        let body = match self.modes.iter().find(|item| item.spec().id == active) {
-            Some(mode) => mode.view().into_any_element(),
-            None => hint("This Workbench contribution is unavailable", cx),
-        };
+        let body = self.modes[self.active].view().into_any_element();
         // A measured glyph grid is sized by the font it was configured with and
         // not by the rem base around it, so a mode that says so is left alone:
         // wrapping it in the scale would stretch the box while the cell stayed
         // put, leaving every column landing past its own character. Such a mode
         // takes its reading size as a font size instead, through `set_zoom`.
-        let body = if rem_zoom {
+        let body = if showing.rem_zoom {
             self.zoom.scale(window, body).into_any_element()
         } else {
             body
@@ -349,7 +339,7 @@ impl Render for Workbench {
             // same fact is one that gets updated in one place and not the other.
             // Under any other mode this is the Workbench, which is what the save
             // is *for*.
-            .key_context(key_context)
+            .key_context(showing.key_context)
             .child(strip)
             .child(body)
     }

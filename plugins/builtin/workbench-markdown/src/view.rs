@@ -1,396 +1,453 @@
-//! Markdown mode: the project's documents on the left, the one being read on
-//! the right.
-//!
-//! Read-only by design. Editing a file is what the quick editor is for, and a
-//! second buffer here would be a second copy of its whole tab set, mtime guard
-//! and unsaved-edit rules; the header's *Edit source* hands the document over
-//! to it instead. What this mode owns is the opposite half — a rendered
-//! document that **re-reads itself when the file changes on disk**, because in
-//! this app the writer is usually the agent rather than the person watching.
+//! The Markdown mode's own state: which project it is looking at, what the
+//! walk found, and what is being read.
 
-use crate::index::{DocIndex, DocRow};
-use gpui::prelude::FluentBuilder as _;
+use crate::document::{RootDocs, list, reader};
 use gpui::{
-    App, AppContext as _, Entity, InteractiveElement, IntoElement, ParentElement,
-    StatefulInteractiveElement, Styled, Window, div, px,
+    App, AppContext as _, Context, Entity, IntoElement, ParentElement, Render, Styled, Window, div,
 };
-use gpui_component::button::ButtonVariants as _;
-use gpui_component::text::{TextView, TextViewState, TextViewStyle};
-use gpui_component::{ActiveTheme, Icon, IconName, Sizable as _, StyledExt};
-use std::collections::HashSet;
+use gpui_component::{ActiveTheme, StyledExt, h_resizable, resizable_panel};
+use onehand_plugin_host::{Ask, Request, hint, status_line};
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use std::time::SystemTime;
+use std::time::Duration;
 
-/// One project root's document view: what was found, what is folded away, and
-/// what is being read.
+/// How often the open document's file is asked whether it has changed.
 ///
-/// Per root like everything else in this panel, so switching projects swaps the
-/// list and the document together rather than leaving one project's reading
-/// open over another project's index.
-#[derive(Default)]
-pub(crate) struct RootDocs {
-    /// `None` until the first scan lands, which is what tells the empty list
-    /// apart from the one still being walked.
-    pub(crate) index: Option<DocIndex>,
-    /// Directories folded away, the closed half rather than the open one (the
-    /// reason is with [`DocIndex::rows`]).
-    pub(crate) folded: HashSet<PathBuf>,
-    pub(crate) open: Option<OpenDoc>,
-}
+/// One `stat` at this rate, and only while a document is actually open — the
+/// re-read and the re-parse happen on the ticks where the answer moved, which
+/// for a file nobody is writing is none of them. Fast enough that a document
+/// the agent is editing reads as live rather than as stale.
+const DOC_POLL: Duration = Duration::from_millis(750);
 
-/// The document on screen.
-pub(crate) struct OpenDoc {
-    pub(crate) path: PathBuf,
-    /// The path relative to the root, which is what the header prints: a
-    /// project's documents are mostly the same handful of names once per
-    /// folder, so the name alone does not say which one is being read.
-    pub(crate) label: String,
-    /// The file's mtime as of the last read.
+/// The document list's width before anybody drags it, and the range a drag may
+/// take it through.
+///
+/// Pixels rather than rems because that is the only thing the split accepts,
+/// the same as the rail's own range. Its own numbers and not the rail's: this
+/// column holds file names inside a dock the user has already sized, so the
+/// floor is what a name needs to be readable at and the ceiling is the point
+/// past which the list is taking the room the document was opened for.
+const DOC_LIST_W: f32 = 220.;
+const DOC_LIST_MIN: f32 = 140.;
+const DOC_LIST_MAX: f32 = 420.;
+
+pub(crate) struct MarkdownView {
+    root: Option<PathBuf>,
+    /// The index and the document being read, per root.
+    docs: HashMap<PathBuf, RootDocs>,
+    /// Whether the document list is drawn beside the document.
     ///
-    /// This is the whole of the live reload: one `stat` against this says
-    /// whether the file moved under the reader, and nothing is re-read or
-    /// re-parsed while it has not.
-    pub(crate) mtime: Option<SystemTime>,
-    state: Entity<TextViewState>,
+    /// Per window rather than per root, unlike everything else here: how much
+    /// room the reading gets is a preference about this panel, and one that
+    /// reset itself on every project switch would be the odd one out. Not
+    /// persisted either, for the reason the rail's own visibility is not: a
+    /// panel that came back with its list gone reads as one that lost it.
+    list_shown: bool,
+    /// Where the drag between the list and the document sits.
+    ///
+    /// Held here rather than left to the element, for the reason the window's
+    /// rail split is held by the shell: a width has to outlive the frames its
+    /// panel is not drawn in, and this one is not drawn whenever the list is
+    /// hidden. Kept out of the split entirely while the list is hidden, so the
+    /// group never renders holding one panel — that truncates the state to one
+    /// size and loses the width the user chose.
+    split: Entity<gpui_component::ResizableState>,
+    /// Whether the index needs walking again before it is next drawn.
+    ///
+    /// The walk is the whole project, so it is deliberately not run when the
+    /// root changes or a turn ends — only when this mode is about to be *seen*
+    /// after one of those. A workspace with a dozen roots must not walk a dozen
+    /// projects for a mode nobody has opened, and the render is the one moment
+    /// that is known not to be the case.
+    stale: bool,
+    /// The document walk in flight, held only so that starting another drops
+    /// it.
+    ///
+    /// Underscored because nothing reads it and nothing should: what it is for
+    /// is its `Drop`, which cancels a walk whose answer is already out of date.
+    _scan: Option<gpui::Task<()>>,
+    /// The `stat` loop behind the live reload.
+    ///
+    /// Held rather than detached, and that is what stops it: the task ends when
+    /// this is cleared, which is how a document being closed or a root being
+    /// removed takes its polling with it. One for the mode and not one per
+    /// document, because only the active root's document is on screen.
+    watch: Option<gpui::Task<()>>,
+    /// A document that could not be read, shown as a line under the reading.
+    ///
+    /// **Deliberately not a notification**, unlike the rest of the app's
+    /// transient status. A file that has outgrown the read's size bound or gone
+    /// missing is a standing condition rather than news, and a toast that fades
+    /// leaves the reader believing the document on screen is current. Cleared
+    /// by a read that works.
+    status: Option<String>,
+    /// How the header's *Edit source* reaches the mode that edits files.
+    ask: Ask,
 }
 
-impl RootDocs {
-    /// Fold or unfold `dir`.
-    pub(crate) fn toggle(&mut self, dir: &Path) {
-        if !self.folded.remove(dir) {
-            self.folded.insert(dir.to_path_buf());
+impl MarkdownView {
+    pub(crate) fn new(ask: Ask, cx: &mut App) -> Entity<Self> {
+        cx.new(|cx| Self {
+            root: None,
+            docs: HashMap::new(),
+            list_shown: true,
+            split: cx.new(|_| gpui_component::ResizableState::default()),
+            stale: false,
+            _scan: None,
+            watch: None,
+            status: None,
+            ask,
+        })
+    }
+
+    pub(crate) fn set_root(&mut self, root: &Path, cx: &mut Context<Self>) {
+        if self.root.as_deref() == Some(root) {
+            return;
         }
+        self.root = Some(root.to_path_buf());
+        // The document being watched belonged to the root being left. Whether
+        // the arriving one has one of its own is decided by the poll itself,
+        // once its state is in hand.
+        self.watch = None;
+        self.watch_doc(cx);
+        self.stale = true;
+        cx.notify();
     }
 
-    /// Put a freshly read document on screen.
-    pub(crate) fn show(
-        &mut self,
-        path: PathBuf,
-        label: String,
-        text: &str,
-        mtime: Option<SystemTime>,
-        cx: &mut App,
-    ) {
-        let state = cx.new(|cx| TextViewState::markdown(text, cx));
-        self.open = Some(OpenDoc {
-            path,
-            label,
-            mtime,
-            state,
-        });
+    pub(crate) fn forget_root(&mut self, root: &Path, cx: &mut Context<Self>) {
+        self.docs.remove(root);
+        if self.root.as_deref() == Some(root) {
+            // The document that was being watched belonged to this root, and
+            // the poll would otherwise go on asking about a file in a project
+            // no longer in the workspace.
+            self.watch = None;
+            self.root = None;
+        }
+        cx.notify();
     }
 
-    /// Re-set the open document's text after the file changed underneath it.
+    /// Note that the index is out of date. A turn has ended and the agent has
+    /// been writing since the walk, and a file it just wrote is exactly what
+    /// somebody switches to this mode to read.
+    pub(crate) fn mark_stale(&mut self, cx: &mut Context<Self>) {
+        self.stale = true;
+        cx.notify();
+    }
+
+    /// Walk the active root for markdown documents.
     ///
-    /// The same state entity is kept rather than a new one built: rebuilding it
-    /// would put the reader back at the top of the document every time the
-    /// agent touched the file, which for a file being written repeatedly is a
-    /// document that cannot be read at all.
-    pub(crate) fn refresh(
-        &mut self,
-        path: &Path,
-        text: &str,
-        mtime: Option<SystemTime>,
-        cx: &mut App,
-    ) {
-        let Some(doc) = self.open.as_mut() else {
+    /// Re-walked rather than merged into what is there: a document deleted
+    /// since the last walk has to leave the list, and a walk that only ever
+    /// added would keep a row that opens nothing.
+    ///
+    /// The state is made **here**, while the root is known to be active, and
+    /// the walk that lands later only fills it in. An entry created on the way
+    /// back would resurrect a root the workspace had removed in the meantime,
+    /// and leave its index and its parsed document alive for as long as the
+    /// window is.
+    ///
+    /// The task is **held**, so starting a walk drops whichever was still
+    /// running. Two walks of one project cost twice for one answer, and the
+    /// slower of them can land last and put a staler index on screen.
+    fn index(&mut self, cx: &mut Context<Self>) {
+        let Some(root) = self.root.clone() else {
             return;
         };
-        // The read was spawned against whatever was open when it started, and a
-        // click can land while it is in flight.
-        if doc.path != path {
+        self.docs.entry(root.clone()).or_default();
+        self._scan = Some(cx.spawn(async move |view, cx| {
+            let index = cx
+                .background_executor()
+                .spawn({
+                    let root = root.clone();
+                    async move { crate::index::scan_blocking(&root) }
+                })
+                .await;
+            let _ = view.update(cx, |view: &mut Self, cx| {
+                let Some(docs) = view.docs.get_mut(&root) else {
+                    return;
+                };
+                docs.index = Some(index);
+                cx.notify();
+            });
+        }));
+    }
+
+    /// Show or hide the document list beside the document.
+    fn toggle_list(&mut self, cx: &mut Context<Self>) {
+        self.list_shown = !self.list_shown;
+        cx.notify();
+    }
+
+    /// Fold or unfold a directory in the document list.
+    fn toggle_dir(&mut self, dir: &Path, cx: &mut Context<Self>) {
+        if let Some(root) = self.root.clone()
+            && let Some(docs) = self.docs.get_mut(&root)
+        {
+            docs.toggle(dir);
+            cx.notify();
+        }
+    }
+
+    /// Read a document and put it on screen.
+    ///
+    /// Through core's editor read, so this obeys the same size bound the quick
+    /// editor does and comes back with the same mtime — which is what the live
+    /// reload then compares against.
+    fn open_doc(&mut self, path: PathBuf, cx: &mut Context<Self>) {
+        let Some(root) = self.root.clone() else {
+            return;
+        };
+        let label = path
+            .strip_prefix(&root)
+            .unwrap_or(&path)
+            .display()
+            .to_string();
+
+        cx.spawn(async move |view, cx| {
+            let read = cx
+                .background_executor()
+                .spawn({
+                    let path = path.clone();
+                    async move { onehand_core::editor::read_blocking(&path) }
+                })
+                .await;
+
+            let _ = view.update(cx, |view: &mut Self, cx| {
+                // The root can have left the workspace while the read was in
+                // flight, and putting the entry back would leave a parsed
+                // document alive under a project nothing can reach.
+                if !view.docs.contains_key(&root) {
+                    return;
+                }
+                match read {
+                    Ok((text, mtime)) => {
+                        // A read that worked answers whatever the last failure
+                        // said, the same way opening a file in the editor does.
+                        view.status = None;
+                        if let Some(docs) = view.docs.get_mut(&root) {
+                            docs.show(path, label, &text, mtime, cx);
+                        }
+                        view.watch_doc(cx);
+                    }
+                    Err(e) => view.status = Some(format!("{} — {e}", path.display())),
+                }
+                cx.notify();
+            });
+        })
+        .detach();
+    }
+
+    /// Keep one poll running for as long as a document is open, and no longer.
+    ///
+    /// Dropping the task is what stops it, so this is called from both ends —
+    /// after a document opens, and after the active root changes to one that
+    /// may have none.
+    fn watch_doc(&mut self, cx: &mut Context<Self>) {
+        let open = self
+            .root
+            .as_ref()
+            .and_then(|root| self.docs.get(root))
+            .is_some_and(|docs| docs.open.is_some());
+        if !open {
+            self.watch = None;
             return;
         }
-        doc.mtime = mtime;
-        doc.state.update(cx, |state, cx| state.set_text(text, cx));
-    }
-
-    /// Record that the file moved without its new contents being readable, and
-    /// say whether it is still the document being read.
-    ///
-    /// What the stamp buys is that a document deleted or grown past the read's
-    /// size bound is complained about once. Without it the mtime on record stays
-    /// the one that was read, so every check afterwards sees a change and
-    /// reports the same failure again for as long as the document is open.
-    ///
-    /// The answer matters as much as the stamp: a failed read that landed after
-    /// the reader moved on belongs to a document nobody is looking at, and a
-    /// caller that complained about it anyway would leave a standing warning
-    /// naming a file that is no longer on screen.
-    pub(crate) fn stamp(&mut self, path: &Path, mtime: Option<SystemTime>) -> bool {
-        match self.open.as_mut() {
-            Some(doc) if doc.path == path => {
-                doc.mtime = mtime;
-                true
-            }
-            _ => false,
+        if self.watch.is_some() {
+            return;
         }
-    }
 
-    /// The document on screen, for a row to draw itself as the selected one.
-    pub(crate) fn showing(&self) -> Option<&Path> {
-        self.open.as_ref().map(|doc| doc.path.as_path())
-    }
-}
+        self.watch = Some(cx.spawn(async move |view, cx| {
+            loop {
+                cx.background_executor().timer(DOC_POLL).await;
+                // The view is asked afresh every tick rather than closing over
+                // a path: the reader can have moved to another document, or to
+                // another project, since the last one.
+                let Ok(open) = view.update(cx, |view: &mut Self, _| {
+                    view.root
+                        .as_ref()
+                        .and_then(|root| view.docs.get(root))
+                        .and_then(|docs| docs.open.as_ref())
+                        .map(|doc| (doc.path.clone(), doc.mtime))
+                }) else {
+                    // The view is gone, and with it the window.
+                    return;
+                };
+                let Some((path, seen)) = open else {
+                    continue;
+                };
 
-/// The document list.
-pub(crate) fn list(
-    root: &Path,
-    docs: &RootDocs,
-    on_toggle: impl Fn(&PathBuf, &mut Window, &mut App) + 'static,
-    on_open: impl Fn(&PathBuf, &mut Window, &mut App) + 'static,
-    cx: &App,
-) -> gpui::AnyElement {
-    let Some(index) = docs.index.as_ref() else {
-        return note("Looking for documents…", cx);
-    };
-    if index.docs.is_empty() {
-        return note("No markdown in this project", cx);
-    }
-
-    let rows = index.rows(root, &docs.folded);
-    let showing = docs.showing().map(|p| p.to_path_buf());
-    let on_toggle = std::rc::Rc::new(on_toggle);
-    let on_open = std::rc::Rc::new(on_open);
-
-    div()
-        .id("markdown-list")
-        .v_flex()
-        .size_full()
-        .p_1()
-        .overflow_y_scroll()
-        .children(
-            rows.into_iter()
-                .enumerate()
-                .map(|(i, row)| {
-                    doc_row(
-                        i,
-                        row,
-                        &docs.folded,
-                        showing.as_deref(),
-                        on_toggle.clone(),
-                        on_open.clone(),
-                        cx,
-                    )
-                })
-                .collect::<Vec<_>>(),
-        )
-        .when(index.truncated, |list| {
-            // The cap is the index's, and a list that silently stops is one the
-            // reader believes they have seen the whole of.
-            list.child(
-                div()
-                    .px_2()
-                    .py_1()
-                    .text_xs()
-                    .text_color(cx.theme().muted_foreground)
-                    .child("… more documents not shown"),
-            )
-        })
-        .into_any_element()
-}
-
-#[allow(clippy::too_many_arguments)]
-fn doc_row(
-    i: usize,
-    row: DocRow,
-    folded: &HashSet<PathBuf>,
-    showing: Option<&Path>,
-    on_toggle: std::rc::Rc<impl Fn(&PathBuf, &mut Window, &mut App) + 'static>,
-    on_open: std::rc::Rc<impl Fn(&PathBuf, &mut Window, &mut App) + 'static>,
-    cx: &App,
-) -> gpui::AnyElement {
-    let selected = !row.is_dir && showing == Some(row.path.as_path());
-    let shut = folded.contains(&row.path);
-    let path = row.path.clone();
-    let is_dir = row.is_dir;
-
-    div()
-        .id(("markdown-row", i))
-        .h_flex()
-        .items_center()
-        .gap_1()
-        .w_full()
-        .h_6()
-        .px_1()
-        .rounded(cx.theme().radius)
-        .text_sm()
-        .cursor_pointer()
-        .when(selected, |row| row.bg(cx.theme().accent))
-        .hover(|row| row.bg(cx.theme().accent.opacity(0.5)))
-        // Indent by depth rather than by nested containers, for the same reason
-        // the file tree does: the cap here is 400 documents, and that many
-        // nested elements is that many wasted.
-        .pl(px(4. + row.depth as f32 * 12.))
-        .child(
-            Icon::new(if is_dir {
-                if shut {
-                    IconName::ChevronRight
-                } else {
-                    IconName::ChevronDown
+                let fresh = cx
+                    .background_executor()
+                    .spawn({
+                        let path = path.clone();
+                        async move {
+                            std::fs::metadata(&path)
+                                .ok()
+                                .and_then(|meta| meta.modified().ok())
+                        }
+                    })
+                    .await;
+                if fresh == seen {
+                    continue;
                 }
-            } else {
-                IconName::File
-            })
-            .size_3(),
-        )
-        .child(
-            div()
-                .flex_1()
-                .min_w_0()
-                .truncate()
-                // A directory here is a heading over what it holds, not a place
-                // to go: the documents are the point of the list, so the
-                // folders stay quieter than they do in the file tree.
-                .when(is_dir, |name| name.text_color(cx.theme().muted_foreground))
-                .child(row.name),
-        )
-        .on_click(move |_, window, cx: &mut App| {
-            if is_dir {
-                on_toggle(&path, window, cx);
-            } else {
-                on_open(&path, window, cx);
+
+                let read = cx
+                    .background_executor()
+                    .spawn({
+                        let path = path.clone();
+                        async move { onehand_core::editor::read_blocking(&path) }
+                    })
+                    .await;
+
+                let updated = view.update(cx, |view: &mut Self, cx| {
+                    let Some(root) = view.root.clone() else {
+                        return;
+                    };
+                    let Some(docs) = view.docs.get_mut(&root) else {
+                        return;
+                    };
+                    let failed = match read {
+                        Ok((text, mtime)) => {
+                            docs.refresh(&path, &text, mtime, cx);
+                            None
+                        }
+                        // A file that grew past the size bound, or that was
+                        // deleted out from under the reader. The new stamp is
+                        // recorded anyway, or this same failure would be
+                        // reported again on every tick from here on — and it is
+                        // said only while the stamp landed, since a failure
+                        // about a document the reader has already moved off is a
+                        // standing warning naming a file that is not on screen.
+                        Err(e) => docs
+                            .stamp(&path, fresh)
+                            .then(|| format!("{} — {e}", path.display())),
+                    };
+                    if let Some(message) = failed {
+                        view.status = Some(message);
+                    }
+                    cx.notify();
+                });
+                if updated.is_err() {
+                    return;
+                }
             }
-        })
-        .into_any_element()
+        }));
+    }
 }
 
-/// The reading side: the document, under a header that is always drawn.
-///
-/// **Always**, and that is what makes the list hideable at all. The control
-/// that brings the list back lives in this header, so a header that appeared
-/// only once a document was open would let somebody hide the list with nothing
-/// open and be left facing a panel with no way back to either.
-///
-/// `rem` is the base the headings are scaled off, and it is asked for rather
-/// than read from the window because the two are not the same number here: this
-/// is built *before* the panel wraps it in its zoom, so the window still holds
-/// the unzoomed base. Handed one, the caller has to say which it means.
-pub(crate) fn reader(
-    doc: Option<&OpenDoc>,
-    list_shown: bool,
-    rem: gpui::Pixels,
-    on_toggle_list: impl Fn(&gpui::ClickEvent, &mut Window, &mut App) + 'static,
-    on_edit: impl Fn(&gpui::ClickEvent, &mut Window, &mut App) + 'static,
-    cx: &App,
-) -> gpui::AnyElement {
-    div()
-        .flex_1()
-        .min_w_0()
-        // The column takes the panel's whole height on its own account rather
-        // than leaving it to the row: the body below is sized from what the
-        // header leaves over, and a column as tall as its content has nothing
-        // to leave.
-        .h_full()
-        .v_flex()
-        .child(
-            div()
-                .h_flex()
-                .items_center()
-                .gap_2()
-                .w_full()
-                .flex_none()
-                .px_2()
-                .py_1()
-                .border_b_1()
-                .border_color(cx.theme().border)
-                // The icon says which way the press goes rather than which
-                // state is in force: a panel drawn open beside a list that is
-                // open is a control that looks like a reading.
-                .child(
-                    onehand_plugin_host::action("markdown-toggle-list")
-                        .xsmall()
-                        .ghost()
-                        .icon(if list_shown {
-                            IconName::PanelLeftClose
-                        } else {
-                            IconName::PanelLeftOpen
-                        })
-                        .tooltip(if list_shown {
-                            "Hide the document list"
-                        } else {
-                            "Show the document list"
-                        })
-                        .on_click(on_toggle_list),
-                )
-                .child(
-                    div()
-                        .flex_1()
-                        .min_w_0()
-                        .truncate()
-                        .text_xs()
-                        .text_color(cx.theme().muted_foreground)
-                        .child(match doc {
-                            Some(doc) => doc.label.clone(),
-                            None => String::new(),
-                        }),
-                )
-                // Read-only is the rule, so the way out of it is said rather
-                // than left to be discovered: this is the one control that
-                // turns a document being read into a file being changed. Only
-                // where there is a document for it to act on.
-                .children(doc.map(|_| {
-                    onehand_plugin_host::action("markdown-edit")
-                        .xsmall()
-                        .ghost()
-                        .label("Edit source")
-                        .tooltip("Open this file in the editor")
-                        .on_click(on_edit)
-                })),
-        )
-        .child(match doc {
-            Some(doc) => div()
+impl Render for MarkdownView {
+    /// The document list beside the document, which is the whole mode.
+    ///
+    /// The list keeps a third of the panel and the document the rest: the rows
+    /// are file names and the document is prose, so the two do not want the
+    /// same share of a dock the user has already sized for reading.
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        // Being drawn is what says the walk is worth its cost, so it is started
+        // here rather than at the moment the index went stale.
+        if self.stale {
+            self.stale = false;
+            self.index(cx);
+        }
+
+        let body = self.body(window, cx);
+        div()
+            .flex_1()
+            .min_h_0()
+            .v_flex()
+            .child(body)
+            .children(self.status.clone().map(|status| status_line(status, cx)))
+    }
+}
+
+impl MarkdownView {
+    fn body(&mut self, window: &Window, cx: &mut Context<Self>) -> gpui::AnyElement {
+        let Some(root) = self.root.clone() else {
+            return hint("No project root", cx);
+        };
+        let Some(docs) = self.docs.get(&root) else {
+            // The walk was asked for and has not landed; the list says so for
+            // itself once there is one.
+            return hint("Looking for documents…", cx);
+        };
+
+        let reader = {
+            let path = docs.open.as_ref().map(|doc| doc.path.clone());
+            let ask = self.ask.clone();
+            reader(
+                docs.open.as_ref(),
+                self.list_shown,
+                // The rem base in force, which is the panel's zoom: this body
+                // is drawn inside the override, so the window is already
+                // answering with the zoomed value. The renderer sizes its
+                // headings from an absolute pixel value, which is the one thing
+                // that override cannot reach by itself.
+                window.rem_size(),
+                cx.listener(|view: &mut Self, _, _, cx| view.toggle_list(cx)),
+                move |_, window, cx: &mut App| {
+                    // Handing it to the editor switches the mode, which is the
+                    // honest answer: this one does not edit.
+                    if let Some(path) = path.clone() {
+                        ask(&Request::OpenFile(&path), window, cx);
+                    }
+                },
+                cx,
+            )
+        };
+
+        if !self.list_shown {
+            // No list, so no split: a group holding one panel draws a handle
+            // against the panel's own edge that resizes nothing. The same
+            // reason the window's rail split is skipped while the rail is
+            // hidden.
+            return div()
                 .flex_1()
                 .min_h_0()
-                .p_3()
-                .child(
-                    TextView::new(&doc.state)
-                        .selectable(true)
-                        // Virtualized: a long document draws the rows on screen
-                        // rather than all of it.
-                        .scrollable(true)
-                        .style(doc_style(rem)),
-                )
-                .into_any_element(),
-            None => div()
-                .flex_1()
-                .min_h_0()
-                .child(note("Pick a document to read it", cx))
-                .into_any_element(),
-        })
-        .into_any_element()
-}
+                // A row, but deliberately not the shared `h_flex`: that one
+                // centres its children, which leaves each column as tall as its
+                // own content instead of as tall as the panel. The document's
+                // body is sized by what is left over, so centred it is given
+                // nothing and the header floats in the middle of an empty panel.
+                .flex()
+                .flex_row()
+                .child(reader)
+                .into_any_element();
+        }
 
-/// Document styling.
-///
-/// The renderer's own defaults are a document's, which is what is wanted here —
-/// unlike in the transcript, where the same renderer is drawing one message and
-/// its headings have to be pulled back down. Two things still have to be said.
-/// The heading base is an absolute pixel value in the renderer, which is exactly
-/// what a rem-base override cannot reach, so the panel's zoom has to be written
-/// into it by hand — that is what `rem` is, and why it is a parameter rather
-/// than a reading off the window. And the code block's text size is in rems,
-/// which the override *does* reach.
-fn doc_style(rem: gpui::Pixels) -> TextViewStyle {
-    let mut style = TextViewStyle::default().code_block(
-        gpui::StyleRefinement::default()
-            .p(gpui::rems(0.75))
-            .text_size(gpui::rems(0.8125)),
-    );
-    style.heading_base_font_size = rem;
-    style
-}
+        let list = div()
+            .size_full()
+            .border_r_1()
+            .border_color(cx.theme().border)
+            .child(list(
+                &root,
+                docs,
+                cx.listener(|view: &mut Self, dir: &PathBuf, _, cx| view.toggle_dir(dir, cx)),
+                cx.listener(|view: &mut Self, path: &PathBuf, _, cx| {
+                    view.open_doc(path.clone(), cx)
+                }),
+                cx,
+            ));
 
-/// A line where the list would be, for the two states that are not a list.
-fn note(text: &'static str, cx: &App) -> gpui::AnyElement {
-    div()
-        .size_full()
-        .v_flex()
-        .items_center()
-        .justify_center()
-        .px_2()
-        .text_xs()
-        .text_color(cx.theme().muted_foreground)
-        .child(text)
-        .into_any_element()
+        div()
+            .flex_1()
+            .min_h_0()
+            .child(
+                h_resizable("markdown-split")
+                    .with_state(&self.split)
+                    .child(
+                        // `flex_none`, as the rail's own panel is: the group
+                        // sets `flex_grow: 1` on a panel, and a list that grows
+                        // takes whatever the document is not using — which is
+                        // most of the panel. The width here is only the one it
+                        // starts at; once dragged, the split's own state is
+                        // what answers.
+                        resizable_panel()
+                            .size(gpui::px(DOC_LIST_W))
+                            .size_range(gpui::px(DOC_LIST_MIN)..gpui::px(DOC_LIST_MAX))
+                            .flex_none()
+                            .child(list),
+                    )
+                    .child(resizable_panel().child(reader)),
+            )
+            .into_any_element()
+    }
 }

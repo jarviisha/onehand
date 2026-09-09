@@ -8,10 +8,9 @@
 //! half that has to stay GUI-free — the mode trait itself names a `Window`, so
 //! it is next door in the plugin host.
 
-// Nothing here is `pub` unless the binary names it: a `pub` item in a
-// library is reachable from outside the crate as far as rustc is concerned,
-// so `dead_code` stops at one and a contribution that lost its last caller
-// looks exactly like a working feature.
+// Nothing here is `pub` unless the binary names it: `dead_code` stops at a
+// `pub` item in a library, so one that lost its last caller looks exactly like
+// a working feature.
 #![warn(unreachable_pub)]
 
 use std::fmt;

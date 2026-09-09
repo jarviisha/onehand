@@ -91,9 +91,9 @@ pub trait WorkbenchMode {
 /// tree's.
 ///
 /// This enum is what keeps the trait above from growing a method per shell
-/// feature. It is deliberately exhaustive rather than open: this is one binary,
-/// compiled together, so a mode that wants to ignore a variant writes the arm
-/// that says so and the compiler names every mode when a variant is added.
+/// feature. A mode writes an arm for what it recognises and falls through the
+/// rest, which is the same bargain the trait's own defaults strike: an eighth
+/// request must not become an edit in four crates that have no answer to it.
 pub enum Request<'a> {
     /// Open a file in whichever mode edits files, and switch to it.
     ///

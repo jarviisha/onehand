@@ -1,7 +1,6 @@
-// Nothing here is `pub` unless the binary names it: a `pub` item in a
-// library is reachable from outside the crate as far as rustc is concerned,
-// so `dead_code` stops at one and a contribution that lost its last caller
-// looks exactly like a working feature.
+// Nothing here is `pub` unless the binary names it: `dead_code` stops at a
+// `pub` item in a library, so one that lost its last caller looks exactly like
+// a working feature.
 #![warn(unreachable_pub)]
 
 use gpui::{AnyView, App, Entity, Window};
@@ -9,9 +8,9 @@ use onehand_plugin_api::{PluginId, WorkbenchModeSpec};
 use onehand_plugin_host::{Request, WorkbenchMode};
 use std::path::Path;
 
-mod mode;
+mod buffers;
 mod view;
-pub(crate) use mode::EditorView;
+pub(crate) use view::EditorView;
 
 /// What this mode declares about itself, which is what the panel reads
 /// instead of matching the ID against a list it has to know by heart.
@@ -77,7 +76,7 @@ impl WorkbenchMode for Mode {
 
 #[cfg(test)]
 mod tests {
-    use crate::view::RootBuffers;
+    use crate::buffers::RootBuffers;
     use std::path::PathBuf;
 
     #[test]
