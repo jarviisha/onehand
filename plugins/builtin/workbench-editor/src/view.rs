@@ -21,8 +21,8 @@ use std::path::Path;
 /// Editor state for one project root: the tab set from core, plus this front
 /// end's buffers.
 #[derive(Default)]
-pub struct RootBuffers {
-    pub tabs: RootEditors,
+pub(crate) struct RootBuffers {
+    pub(crate) tabs: RootEditors,
     /// Keyed by the tab's `uid` rather than by path: a path-keyed buffer would
     /// be shared across windows, and `uid` is what core hands out to prevent
     /// exactly that.
@@ -39,22 +39,27 @@ pub struct RootBuffers {
 }
 
 impl RootBuffers {
-    pub fn buffer(&self, uid: u64) -> Option<&Entity<EditorState>> {
+    pub(crate) fn buffer(&self, uid: u64) -> Option<&Entity<EditorState>> {
         self.buffers.get(&uid)
     }
 
-    pub fn insert(&mut self, uid: u64, state: Entity<EditorState>, watch: gpui::Subscription) {
+    pub(crate) fn insert(
+        &mut self,
+        uid: u64,
+        state: Entity<EditorState>,
+        watch: gpui::Subscription,
+    ) {
         self.buffers.insert(uid, state);
         self.watches.insert(uid, watch);
     }
 
-    pub fn forget(&mut self, uid: u64) {
+    pub(crate) fn forget(&mut self, uid: u64) {
         self.buffers.remove(&uid);
         self.watches.remove(&uid);
     }
 
     /// Whether any open tab has edits that a close would throw away.
-    pub fn any_dirty(&self) -> bool {
+    pub(crate) fn any_dirty(&self) -> bool {
         self.tabs.files.iter().any(|f| f.dirty)
     }
 }
@@ -64,7 +69,7 @@ impl RootBuffers {
 /// gpui-component keys its grammars by name, and only the ones enabled in
 /// `Cargo.toml` resolve; an unknown token renders as plain text, which is the
 /// right failure for a quick editor.
-pub fn language_for(path: &Path) -> &'static str {
+pub(crate) fn language_for(path: &Path) -> &'static str {
     match onehand_core::editor::syntax_token(path).as_str() {
         "rs" => "rust",
         "ts" | "mts" | "cts" => "typescript",
@@ -91,7 +96,7 @@ pub fn language_for(path: &Path) -> &'static str {
 /// The file-tab strip. A trailing close button shuts the whole set in one
 /// touch, rather than making the user close tabs one at a time to get the room
 /// back.
-pub fn tab_strip(
+pub(crate) fn tab_strip(
     root: &RootBuffers,
     on_select: impl Fn(&usize, &mut Window, &mut App) + 'static,
     on_close: impl Fn(&usize, &mut Window, &mut App) + 'static,
@@ -165,12 +170,12 @@ pub fn tab_strip(
 }
 
 /// The editor body for the active tab.
-pub fn body(state: &Entity<EditorState>) -> impl IntoElement + use<> {
+pub(crate) fn body(state: &Entity<EditorState>) -> impl IntoElement + use<> {
     Editor::new(state).h_full()
 }
 
 /// Build a buffer for a newly opened file.
-pub fn new_buffer(
+pub(crate) fn new_buffer(
     path: &Path,
     text: &str,
     window: &mut Window,
@@ -193,7 +198,7 @@ pub fn new_buffer(
 /// A conflict is *not* an error to shrug off: the agent edits files by design,
 /// so this is the expected way a save fails and the user has to be told which
 /// way it went.
-pub fn save_status(outcome: &SaveOutcome, label: &str) -> Option<String> {
+pub(crate) fn save_status(outcome: &SaveOutcome, label: &str) -> Option<String> {
     match outcome {
         SaveOutcome::Saved { .. } => None,
         // No on-disk time means the file is *gone*, not merely different --

@@ -75,7 +75,7 @@ Tests are inline `#[cfg(test)]` modules — there is no `tests/` directory.
 | `crates/app` | `onehand` | the GPUI front end + the binary |
 | `crates/core` | `onehand-core` | GUI-free logic: config, the workspace tree, ACP, the chat model, the remote bridge, editor rules, completion, git status, worktree rules, the directory flatten |
 | `crates/plugin-api` | `onehand-plugin-api` | GUI-free plugin IDs, descriptors, capabilities and registration contract |
-| `crates/plugin-host` | `onehand-plugin-host` | startup registry, the Workbench host, the channel factory, and the one button wrapper |
+| `crates/plugin-host` | `onehand-plugin-host` | the Workbench mode contract, the remote-channel factory type, and the two things a plugin cannot reach into the binary for: the button wrapper and status ink |
 | `crates/terminal-ui` | `onehand-terminal-ui` | shared PTY/grid ownership used by the terminal dock and Neovim |
 | `plugins/builtin/*` | built-in plugins | Editor, Files, Markdown, Neovim and Telegram contributions compiled into the binary |
 | `vendor/gpui-terminal` | `gpui-terminal` | a vendored terminal grid + the interaction layer upstream never had |
@@ -205,30 +205,56 @@ module owns, and events cross to GPUI on a plain `futures` channel belonging to 
 
 ### Built-in plugins
 
-`crates/app/src/plugins.rs` is the composition root. It registers every plugin,
-attaches the channel factory, and seals the registry before `Shared` exists and
-before a window is opened. Workbench order is declared there as Editor, Files,
-Markdown, Neovim. Registration is deliberately not dynamic in API v1: duplicate plugin
-or contribution IDs, an unsupported API version, a capability mismatch, a
-factory offered for an ID nothing registered, and a registered contribution
-left without one all abort startup, each naming the plugin and the contribution.
-The last two are separate errors on purpose — they are opposite mistakes with
-opposite fixes, and one variant for both is unreadable in the panic that is the
-only place either is seen.
+`crates/app/src/plugins.rs` is the composition root, and it is two ordered lists:
+the Workbench modes (Editor, Files, Markdown, Neovim, which is the order on the
+strip) and how a named remote channel is opened. Nothing registers, nothing is
+sealed, and there is no capability declaration or API version — each was checking
+something the compiler checks harder. `impl WorkbenchMode` *is* the capability
+declaration and a mode that does not compile does not ship; this is one binary
+compiled together, so cargo is the version check; and a list built and returned
+in one call has no window in which anything could register late. What the
+registry was genuinely buying is the order, declared here rather than inherited
+from filesystem or linker order, and that is now the literal order of the list.
 
-**A contribution is data, not an object.** A Workbench mode declares its ID, its
-label, the key context the panel takes while it shows, and whether its body is
-scaled by the panel's rem base; the panel reads those instead of matching the
-mode's ID against a list it has to know by heart. What a mode *works on* — open
-buffers, the file tree, a live PTY — stays with the panel that renders it,
-because drawing it needs the window and the panel's own entity context. There is
-deliberately no per-mode lifecycle object beside that: it would be a second copy
-of facts the panel already holds, kept in step by hand and read by nobody, which
-is what the first attempt at this was.
+**A mode owns its state and its view; the panel owns neither.** The trait is
+`onehand_plugin_host::WorkbenchMode`: declare yourself, hand back a view, answer
+the requests you recognise. Everything a mode works on — open buffers, the file
+tree, a document index, a live PTY — is inside that mode, and the panel keeps the
+list, the active ID and the strip. This is *not* the arrangement an earlier
+attempt removed: that one put a mode object **beside** the panel's own copy of
+the same state and kept the two in step by hand. The rule that tells them apart
+is testable — the panel holds no per-mode state at all, so there is nothing for a
+mode object to be a second copy of.
+
+**`Request` is what keeps the trait from growing a method per shell feature**,
+and it is one vocabulary in both directions. Downward it is broadcast in the
+panel's order and a mode says whether it took it, because the shell asks *the
+Workbench* to save, to rescan, to reap and has no business knowing which mode
+owns a buffer or a child. Upward it is what a mode raises through its `Ask` when
+a click inside it means something another mode owns — a row in the file tree, the
+Markdown header's *Edit source*, both of which mean "open this file" and neither
+of which can reach the quick editor.
+
+Three deliberate exceptions to that shape, each for a stated reason.
+`Request::Shown` goes to the **arriving mode alone**, since every other mode's
+answer would be a lie; it is what tells a mode whose listing costs a walk of the
+whole project that the walk is now worth paying for. `focus` and `open_file` are
+**methods rather than requests**, because they are the two things a mode is asked
+that need a `Window` — and requests arrive from paths that have none, such as a
+`git status` sweep landing or a turn ending. And **reaping splits across the
+seam**: the mode collects its own exited children, but the panel decides the
+caret, because only the panel knows whether focus was inside it, and it has to
+ask before the drop since a handle no longer drawn cannot answer.
 
 The Rust traits are versioned `0.x` and are an internal composition seam, not a
 stable third-party ABI. A future external-plugin system is expected to use a
 process protocol rather than Rust dynamic libraries.
+
+**Status ink lives in the plugin host** for the reason the button wrapper below
+does. A mode draws its own status line — a save conflict, a document that has
+outgrown the read's size bound, a Neovim that would not start — and a second copy
+of the derivation is a second place for a raw status fill to be used as ink,
+which is the mistake `crate::theme::status_ink` exists to prevent.
 
 **The button wrapper lives here, not in the app.** A built-in plugin draws
 buttons and cannot reach into the binary hosting it, so a copy in each half is
@@ -563,7 +589,10 @@ renderer read `chat.items` / `chat.busy` without knowing where the model lives.
 
 ### Workbench
 
-[crates/app/src/workbench/](crates/app/src/workbench/) — one dock panel, four modes:
+[crates/app/src/workbench/](crates/app/src/workbench/) — one dock panel, four modes. **The panel
+draws none of them**: each is a crate implementing one trait, holding its own state and handing back
+its own view, and what is left here is the list, the active ID, the strip and the two facts the frame
+reads off the showing mode's declaration (see *Built-in plugins*).
 
 - **Editor**: a quick editor, not an IDE. Buffers here, rules in core (`onehand_core::editor`): the
   size bound, the tab set, the **mtime guard**, labels, blocking read/save. Highlighting is
@@ -592,20 +621,23 @@ renderer read `chat.items` / `chat.busy` without knowing where the model lives.
   outgrows the bound is complained about **once**, because the failed check still records the new
   stamp. The mode is **read-only** — a second buffer here would be a second copy of the editor's tab
   set, mtime guard and unsaved-edit rules, so the header's *Edit source* hands the file to the editor
-  instead. The walk runs when somebody arrives at this mode and when a turn ends while it is showing,
-  never at boot: a workspace with a dozen roots must not walk a dozen projects for a mode nobody
-  opened.
-- **A tab whose child exits is dropped**, in both this panel and the terminal's (`Workbench::reap_neovim`,
-  `TerminalPanel::reap`, fed by `spawn_pty`'s exit callback). Nothing notices otherwise: the grid keeps
+  instead. The walk runs when the mode is next **drawn** after the index went stale — a project switch,
+  a turn ending — and never at boot: a workspace with a dozen roots must not walk a dozen projects for
+  a mode nobody opened, and being drawn is the moment that is known not to be the case.
+- **A tab whose child exits is dropped**, in both the Neovim mode and the terminal's panel
+  (`NeovimView::reap`, `TerminalPanel::reap`, fed by `spawn_pty`'s exit callback). Nothing notices otherwise: the grid keeps
   drawing the last screen the child painted, which after `:q` or `exit` is an empty one with a cursor
   on it, and the tab takes keystrokes nothing will ever read. Three things this owes.
-  It is **deferred** through `Window::defer` — the callback fires from inside the grid's own render,
-  and the panel that owns the tab is the thing currently rendering that grid, so reaching into it
-  there is a panic rather than an error, at the exact moment somebody typed `:q`.
+  It is **deferred** through `Window::defer`, inside `spawn_pty` so both callers inherit it — the
+  callback fires from inside the grid's own render, and the view that owns the tab is the thing
+  currently rendering that grid, so reaching into it there is a panic rather than an error, at the
+  exact moment somebody typed `:q`.
   It is a **sweep** over every tab rather than a removal of the one that spoke, because `PtyTab::finished`
   asks the process (`try_wait`) — so a child killed from somewhere else, or gone while its root was off
   screen, is collected too, and reaped rather than left a zombie.
-  And it moves **focus only if focus was already inside that panel**: a grid dropped while holding the
+  And it moves **focus only if focus was already inside that panel** — which is why in the Workbench
+  the reap splits across the seam, the mode collecting its own children and the panel deciding the
+  caret: a grid dropped while holding the
   caret leaves the window pointing at an element no frame contains, which takes the whole keymap with
   it — while a background shell exiting must not steal the caret from what the user is doing.
 - **Neovim** (`Ctrl+Shift+N`): the real thing, in a PTY, on the project root. Here and not in the
@@ -615,16 +647,18 @@ renderer read `chat.items` / `chat.busy` without knowing where the model lives.
   `onehand_terminal_ui::spawn_pty`, so it inherits the shared rules about `TERM`, resize, clipboard and
   reaping.
 
-State is per project root, so switching roots swaps the whole thing.
+State is per project root, held by the mode that works on it, so switching roots swaps the whole
+thing.
 
 Three things the Neovim mode owes that the other two do not, all because it is a live PTY rather than
 an element tree:
 
 - **Its zoom is a font size, not the rem scale** wrapped around the other bodies. The grid is
   *measured* from a shaped glyph, so scaling the box around it stretches the container while the cell
-  stays put and every column lands past its own character. `Workbench::set_zoom` pushes the size into
-  the view instead, which is why the shell hands it the whole value rather than `&mut` to the field.
-- **The panel takes the key context `Terminal` while this mode shows**, and it must be that name and
+  stays put and every column lands past its own character. `Workbench::set_zoom` broadcasts the size
+  instead, which is why the shell hands it the whole value rather than `&mut` to the field.
+- **The panel takes the key context `Terminal` while this mode shows** — read off the mode's own
+  declaration, not worked out from its ID — and it must be that name and
   not one of its own: `Ctrl+S` is bound `Shell && !Terminal` exactly so a program in a PTY keeps it,
   and a grid mounted with no such context would have the quick editor's save fire over the top of
   `:w`.
@@ -800,9 +834,11 @@ status bar.
   but draws none of them — `Shell::render` calls `Root::render_{sheet,dialog,notification}_layer`.
   Forget that and `Dialog::trigger` opens into a list nobody reads, which is exactly what happened
   between P2 and P7: every dialog was dead and nothing pointed at why.
-- **Transient status is a notification**, pushed with `window.push_notification`. The one exception is
-  the Workbench's save-conflict line, which is a standing condition rather than news: a toast that
-  fades leaves the user believing the save went through. It is cleared by whatever answers it.
+- **Transient status is a notification**, pushed with `window.push_notification`. The exception is the
+  line a Workbench mode draws under its own body — a save conflict, a document that has outgrown the
+  read's size bound, a Neovim that would not start — each a standing condition rather than news: a
+  toast that fades leaves the user believing the save went through. It is cleared by whatever answers
+  it. Drawn by the mode and not the panel, because the panel no longer knows what any of them mean.
 - **Two things are said on the *desktop*, outside the window** (`chat::session::notify_desktop`, over
   `notify-rust`, fire-and-forget on its own thread because `show()` blocks on the bus): a turn that
   finished, and an agent that has parked a permission or a question and stopped. The pane gathers what

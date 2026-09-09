@@ -17,7 +17,7 @@ use onehand_terminal_ui::{Program, PtyTab, TerminalThemeKey, spawn_pty, terminal
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
-pub struct NeovimView {
+pub(crate) struct NeovimView {
     root: Option<PathBuf>,
     /// The Neovim running on each root, at most one apiece.
     ///
@@ -53,7 +53,7 @@ pub struct NeovimView {
 }
 
 impl NeovimView {
-    pub fn new(ask: Ask, font_size: Pixels, cx: &mut App) -> Entity<Self> {
+    pub(crate) fn new(ask: Ask, font_size: Pixels, cx: &mut App) -> Entity<Self> {
         cx.new(|cx| Self {
             root: None,
             tabs: HashMap::new(),
@@ -64,7 +64,7 @@ impl NeovimView {
         })
     }
 
-    pub fn set_root(&mut self, root: &Path, cx: &mut Context<Self>) {
+    pub(crate) fn set_root(&mut self, root: &Path, cx: &mut Context<Self>) {
         if self.root.as_deref() == Some(root) {
             return;
         }
@@ -72,7 +72,7 @@ impl NeovimView {
         cx.notify();
     }
 
-    pub fn forget_root(&mut self, root: &Path, cx: &mut Context<Self>) {
+    pub(crate) fn forget_root(&mut self, root: &Path, cx: &mut Context<Self>) {
         // Dropping the entry ends the child, the way dropping a terminal tab
         // does: a project removed from the workspace must not leave an editor
         // running on it with nothing on screen pointing at it.
@@ -90,7 +90,7 @@ impl NeovimView {
     /// becomes three buttons of which one spawns something. The key does this
     /// first and then switches; the empty state's own button is the other way
     /// in.
-    pub fn start(&mut self, cx: &mut Context<Self>) {
+    pub(crate) fn start(&mut self, cx: &mut Context<Self>) {
         let Some(root) = self.root.clone() else {
             return;
         };
@@ -128,7 +128,7 @@ impl NeovimView {
     /// because the question is asked of the process (`try_wait`) — so a child
     /// killed from somewhere else, or gone while its root was off screen, is
     /// collected too, and reaped rather than left a zombie.
-    pub fn reap(&mut self, cx: &mut Context<Self>) -> bool {
+    pub(crate) fn reap(&mut self, cx: &mut Context<Self>) -> bool {
         let before = self.tabs.len();
         self.tabs.retain(|_, tab| !tab.finished());
         let reaped = self.tabs.len() != before;
@@ -139,7 +139,7 @@ impl NeovimView {
     }
 
     /// Re-measure a live grid at a new reading size.
-    pub fn set_font_size(&mut self, size: Pixels, cx: &mut Context<Self>) {
+    pub(crate) fn set_font_size(&mut self, size: Pixels, cx: &mut Context<Self>) {
         self.font_size = size;
         for tab in self.tabs.values() {
             tab.set_font_size(size, cx);
@@ -154,7 +154,7 @@ impl NeovimView {
     /// keystroke aimed at it goes somewhere else. Handed back rather than
     /// focused here, since focusing needs the window and reading the handle
     /// needs this view — and holding both at once is one borrow too many.
-    pub fn caret(&self, cx: &App) -> Option<FocusHandle> {
+    pub(crate) fn caret(&self, cx: &App) -> Option<FocusHandle> {
         let tab = self.root.as_ref().and_then(|root| self.tabs.get(root))?;
         Some(tab.view().read(cx).focus_handle().clone())
     }

@@ -1,19 +1,25 @@
 //! Markdown mode: the project's `.md` files, and the one being read, rendered.
 
+// Nothing here is `pub` unless the binary names it: a `pub` item in a
+// library is reachable from outside the crate as far as rustc is concerned,
+// so `dead_code` stops at one and a contribution that lost its last caller
+// looks exactly like a working feature.
+#![warn(unreachable_pub)]
+
 use gpui::{AnyView, App, Entity};
-use onehand_plugin_api::{
-    BuiltinPlugin, Capability, PLUGIN_API_VERSION, PluginDescriptor, PluginId, PluginRegistrar,
-    WorkbenchModeSpec,
-};
+use onehand_plugin_api::{PluginId, WorkbenchModeSpec};
 use onehand_plugin_host::{Ask, Request, WorkbenchMode};
 use std::path::Path;
 
 mod index;
 mod mode;
 mod view;
-pub use mode::MarkdownView;
+pub(crate) use mode::MarkdownView;
 
-pub const MODE_ID: PluginId = PluginId::new("workbench.markdown");
+/// What this mode declares about itself, which is what the panel reads
+/// instead of matching the ID against a list it has to know by heart.
+pub const SPEC: WorkbenchModeSpec =
+    WorkbenchModeSpec::element(PluginId::new("workbench.markdown"), "Markdown");
 
 /// The Markdown mode: a view and nothing else.
 pub struct Mode {
@@ -30,7 +36,7 @@ impl Mode {
 
 impl WorkbenchMode for Mode {
     fn spec(&self) -> WorkbenchModeSpec {
-        WorkbenchModeSpec::element(MODE_ID, "Markdown")
+        SPEC
     }
 
     fn view(&self) -> AnyView {
@@ -57,23 +63,5 @@ impl WorkbenchMode for Mode {
             }
             _ => false,
         }
-    }
-}
-
-pub struct MarkdownPlugin;
-
-impl BuiltinPlugin for MarkdownPlugin {
-    fn descriptor(&self) -> PluginDescriptor {
-        PluginDescriptor {
-            id: PluginId::new("builtin.workbench-markdown"),
-            name: "Workbench Markdown",
-            version: env!("CARGO_PKG_VERSION"),
-            api_version: PLUGIN_API_VERSION,
-            capabilities: &[Capability::WorkbenchMode],
-        }
-    }
-
-    fn register(&self, registrar: &mut dyn PluginRegistrar) -> Result<(), String> {
-        registrar.register_workbench_mode(WorkbenchModeSpec::element(MODE_ID, "Markdown"))
     }
 }

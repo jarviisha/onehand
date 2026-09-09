@@ -1,17 +1,23 @@
 //! Neovim mode: the real editor, in a PTY, on the project root.
 
+// Nothing here is `pub` unless the binary names it: a `pub` item in a
+// library is reachable from outside the crate as far as rustc is concerned,
+// so `dead_code` stops at one and a contribution that lost its last caller
+// looks exactly like a working feature.
+#![warn(unreachable_pub)]
+
 use gpui::{AnyView, App, Entity, Pixels, Window};
-use onehand_plugin_api::{
-    BuiltinPlugin, Capability, PLUGIN_API_VERSION, PluginDescriptor, PluginId, PluginRegistrar,
-    WorkbenchModeSpec,
-};
+use onehand_plugin_api::{PluginId, WorkbenchModeSpec};
 use onehand_plugin_host::{Ask, Request, WorkbenchMode};
 use std::path::Path;
 
 mod view;
-pub use view::NeovimView;
+pub(crate) use view::NeovimView;
 
-pub const MODE_ID: PluginId = PluginId::new("workbench.neovim");
+/// What this mode declares about itself, which is what the panel reads
+/// instead of matching the ID against a list it has to know by heart.
+pub const SPEC: WorkbenchModeSpec =
+    WorkbenchModeSpec::terminal_grid(PluginId::new("workbench.neovim"), "Neovim");
 
 /// The Neovim mode: a view and nothing else.
 pub struct Mode {
@@ -30,7 +36,7 @@ impl WorkbenchMode for Mode {
     /// A live PTY, so it declares the terminal's key context and takes its
     /// reading size as a font size rather than from the panel's rem base.
     fn spec(&self) -> WorkbenchModeSpec {
-        WorkbenchModeSpec::terminal_grid(MODE_ID, "Neovim")
+        SPEC
     }
 
     fn view(&self) -> AnyView {
@@ -67,25 +73,5 @@ impl WorkbenchMode for Mode {
             }
             _ => false,
         }
-    }
-}
-
-pub struct NeovimPlugin;
-
-impl BuiltinPlugin for NeovimPlugin {
-    fn descriptor(&self) -> PluginDescriptor {
-        PluginDescriptor {
-            id: PluginId::new("builtin.workbench-neovim"),
-            name: "Workbench Neovim",
-            version: env!("CARGO_PKG_VERSION"),
-            api_version: PLUGIN_API_VERSION,
-            capabilities: &[Capability::WorkbenchMode],
-        }
-    }
-
-    /// A live PTY, so it declares the terminal's key context and takes its
-    /// reading size as a font size rather than from the panel's rem base.
-    fn register(&self, registrar: &mut dyn PluginRegistrar) -> Result<(), String> {
-        registrar.register_workbench_mode(WorkbenchModeSpec::terminal_grid(MODE_ID, "Neovim"))
     }
 }

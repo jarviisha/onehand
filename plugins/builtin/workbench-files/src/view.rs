@@ -23,7 +23,7 @@ use std::path::{Path, PathBuf};
 /// Keyed by root the way everything else in the Workbench is, so switching
 /// projects swaps the whole tree rather than mixing one project's folders with
 /// another's.
-pub struct FilesView {
+pub(crate) struct FilesView {
     root: Option<PathBuf>,
     trees: HashMap<PathBuf, FileTree>,
     git: HashMap<PathBuf, GitStatus>,
@@ -33,7 +33,7 @@ pub struct FilesView {
 }
 
 impl FilesView {
-    pub fn new(ask: Ask, cx: &mut App) -> Entity<Self> {
+    pub(crate) fn new(ask: Ask, cx: &mut App) -> Entity<Self> {
         cx.new(|_| Self {
             root: None,
             trees: HashMap::new(),
@@ -43,7 +43,7 @@ impl FilesView {
     }
 
     /// Point the tree at a project root, seeding it on first sight.
-    pub fn set_root(&mut self, root: &Path, cx: &mut Context<Self>) {
+    pub(crate) fn set_root(&mut self, root: &Path, cx: &mut Context<Self>) {
         if self.root.as_deref() == Some(root) {
             return;
         }
@@ -59,7 +59,7 @@ impl FilesView {
         cx.notify();
     }
 
-    pub fn forget_root(&mut self, root: &Path, cx: &mut Context<Self>) {
+    pub(crate) fn forget_root(&mut self, root: &Path, cx: &mut Context<Self>) {
         self.trees.remove(root);
         self.git.remove(root);
         if self.root.as_deref() == Some(root) {
@@ -68,7 +68,7 @@ impl FilesView {
         cx.notify();
     }
 
-    pub fn set_git(&mut self, git: &HashMap<PathBuf, GitStatus>, cx: &mut Context<Self>) {
+    pub(crate) fn set_git(&mut self, git: &HashMap<PathBuf, GitStatus>, cx: &mut Context<Self>) {
         self.git = git.clone();
         cx.notify();
     }
@@ -84,7 +84,7 @@ impl FilesView {
     /// Bounded by what is *visible*: the root plus its expanded directories,
     /// which is exactly what `visible_rows` draws from. A collapsed subtree is
     /// rescanned when it is opened, as it always was.
-    pub fn rescan(&mut self, cx: &mut Context<Self>) {
+    pub(crate) fn rescan(&mut self, cx: &mut Context<Self>) {
         let Some(root) = self.root.clone() else {
             return;
         };

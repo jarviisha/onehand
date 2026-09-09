@@ -66,7 +66,7 @@ pub fn telegram_token(cfg: &TelegramConfig) -> Option<String> {
 /// answer: an environment variable set to nothing is how a service manager says
 /// "unset" when the file it read was empty, and a token file ending in the
 /// newline every editor adds is the ordinary case rather than the exception.
-pub fn pick_token(from_env: Option<&str>, from_file: Option<&str>) -> Option<String> {
+pub(crate) fn pick_token(from_env: Option<&str>, from_file: Option<&str>) -> Option<String> {
     [from_env, from_file]
         .into_iter()
         .flatten()
@@ -81,7 +81,7 @@ pub fn pick_token(from_env: Option<&str>, from_file: Option<&str>) -> Option<Str
 /// anyone with an account on the machine is a token that is not really a secret,
 /// and on a shared or multi-user box that is the difference between a
 /// credential and a published one.
-pub fn mode_is_private(mode: u32) -> bool {
+pub(crate) fn mode_is_private(mode: u32) -> bool {
     mode & 0o077 == 0
 }
 

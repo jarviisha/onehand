@@ -186,17 +186,10 @@ pub fn boot(cfg: &RemoteConfig, cx: &mut App) {
     };
     // Said and returned rather than asserted. Every other way this function
     // gives up prints a line and leaves the app running, and a bridge that
-    // cannot start is not worth taking the window down for -- the registry is
-    // sealed before `Shared` exists, so a contribution missing here means the
-    // composition root changed and the app is still perfectly usable without a
-    // phone attached to it.
-    let Some(factory) = Shared::global(cx)
-        .plugins
-        .remote_channels()
-        .iter()
-        .find(|item| item.id == onehand_remote_telegram::CHANNEL_ID)
-        .and_then(|item| item.factory)
-    else {
+    // cannot start is not worth taking the window down for -- a channel missing
+    // here means the composition root changed, and the app is still perfectly
+    // usable without a phone attached to it.
+    let Some(factory) = crate::plugins::remote_channel(onehand_remote_telegram::CHANNEL_ID) else {
         eprintln!(
             "onehand: the Telegram bridge is enabled but no channel is registered under `{}`.",
             onehand_remote_telegram::CHANNEL_ID

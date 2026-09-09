@@ -31,7 +31,7 @@ const DOC_LIST_W: f32 = 220.;
 const DOC_LIST_MIN: f32 = 140.;
 const DOC_LIST_MAX: f32 = 420.;
 
-pub struct MarkdownView {
+pub(crate) struct MarkdownView {
     root: Option<PathBuf>,
     /// The index and the document being read, per root.
     docs: HashMap<PathBuf, RootDocs>,
@@ -86,7 +86,7 @@ pub struct MarkdownView {
 }
 
 impl MarkdownView {
-    pub fn new(ask: Ask, cx: &mut App) -> Entity<Self> {
+    pub(crate) fn new(ask: Ask, cx: &mut App) -> Entity<Self> {
         cx.new(|cx| Self {
             root: None,
             docs: HashMap::new(),
@@ -100,7 +100,7 @@ impl MarkdownView {
         })
     }
 
-    pub fn set_root(&mut self, root: &Path, cx: &mut Context<Self>) {
+    pub(crate) fn set_root(&mut self, root: &Path, cx: &mut Context<Self>) {
         if self.root.as_deref() == Some(root) {
             return;
         }
@@ -114,7 +114,7 @@ impl MarkdownView {
         cx.notify();
     }
 
-    pub fn forget_root(&mut self, root: &Path, cx: &mut Context<Self>) {
+    pub(crate) fn forget_root(&mut self, root: &Path, cx: &mut Context<Self>) {
         self.docs.remove(root);
         if self.root.as_deref() == Some(root) {
             // The document that was being watched belonged to this root, and
@@ -129,7 +129,7 @@ impl MarkdownView {
     /// Note that the index is out of date. A turn has ended and the agent has
     /// been writing since the walk, and a file it just wrote is exactly what
     /// somebody switches to this mode to read.
-    pub fn mark_stale(&mut self, cx: &mut Context<Self>) {
+    pub(crate) fn mark_stale(&mut self, cx: &mut Context<Self>) {
         self.stale = true;
         cx.notify();
     }

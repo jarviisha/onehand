@@ -21,7 +21,7 @@ use std::collections::{HashSet, VecDeque};
 use std::path::{Component, Path, PathBuf};
 
 /// Cap on documents one index holds (bounded render).
-pub const MAX_DOCUMENTS: usize = 400;
+pub(crate) const MAX_DOCUMENTS: usize = 400;
 
 /// Cap on directories one scan opens.
 ///
@@ -29,7 +29,7 @@ pub const MAX_DOCUMENTS: usize = 400;
 /// deepest level reached rather than at an arbitrary subtree: the documents
 /// lying beside the project and one folder in are found before anything buried,
 /// which is the order somebody would have looked in anyway.
-pub const MAX_DIRECTORIES: usize = 2_000;
+pub(crate) const MAX_DIRECTORIES: usize = 2_000;
 
 /// Directory names the walk never descends into.
 ///
@@ -40,7 +40,7 @@ pub const MAX_DIRECTORIES: usize = 2_000;
 /// project they would fill the document cap before the project's own docs were
 /// reached. By name, because the name is the only thing available before the
 /// directory is opened, and opening it is the cost being avoided.
-pub const GENERATED_DIRS: &[&str] = &[
+pub(crate) const GENERATED_DIRS: &[&str] = &[
     ".git",
     "node_modules",
     "target",
@@ -58,7 +58,7 @@ pub const GENERATED_DIRS: &[&str] = &[
 /// By extension, case-insensitively: there is no other evidence available
 /// before the file is read, and an upper-cased extension written on a
 /// case-insensitive filesystem names the same kind of document.
-pub fn is_markdown(path: &Path) -> bool {
+pub(crate) fn is_markdown(path: &Path) -> bool {
     path.extension()
         .map(|ext| ext.to_string_lossy().to_lowercase())
         .is_some_and(|ext| ext == "md" || ext == "markdown")
@@ -66,27 +66,27 @@ pub fn is_markdown(path: &Path) -> bool {
 
 /// Every markdown document under one project root, in drawing order.
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
-pub struct DocIndex {
+pub(crate) struct DocIndex {
     /// Absolute paths, sorted the way the rows are drawn.
-    pub docs: Vec<PathBuf>,
+    pub(crate) docs: Vec<PathBuf>,
     /// Whether a cap cut the walk short, so the view can say so.
-    pub truncated: bool,
+    pub(crate) truncated: bool,
 }
 
 /// One row of the document list: a directory holding documents, or a document.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct DocRow {
+pub(crate) struct DocRow {
     /// Absolute path — the directory to fold, or the document to open.
-    pub path: PathBuf,
+    pub(crate) path: PathBuf,
     /// The last component, which is what the row prints.
-    pub name: String,
+    pub(crate) name: String,
     /// Indent level, counted from the root.
-    pub depth: u16,
-    pub is_dir: bool,
+    pub(crate) depth: u16,
+    pub(crate) is_dir: bool,
 }
 
 /// Walk `root` for markdown documents. Blocking — run it off the UI loop.
-pub fn scan_blocking(root: &Path) -> DocIndex {
+pub(crate) fn scan_blocking(root: &Path) -> DocIndex {
     let mut docs = Vec::new();
     let mut queue = VecDeque::from([root.to_path_buf()]);
     let mut opened = 0usize;
@@ -136,7 +136,7 @@ impl DocIndex {
     /// because the whole index is known by the time this is asked: a document
     /// list that opened folded would be a list of folders hiding the one thing
     /// it exists to show.
-    pub fn rows(&self, root: &Path, folded: &HashSet<PathBuf>) -> Vec<DocRow> {
+    pub(crate) fn rows(&self, root: &Path, folded: &HashSet<PathBuf>) -> Vec<DocRow> {
         let mut rows = Vec::new();
         // The directory chain the last document sat in, so a directory shared
         // by a run of documents is drawn once instead of above each of them.

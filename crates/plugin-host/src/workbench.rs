@@ -40,6 +40,17 @@ pub trait WorkbenchMode {
     /// Drop everything held for a root that has left the workspace.
     fn forget_root(&mut self, _root: &Path, _cx: &mut App) {}
 
+    /// Open a file, and say whether this mode was the one that edits files.
+    ///
+    /// A method rather than a broadcast [`Request`] for the reason
+    /// [`Self::focus`] is: building a buffer needs a `Window`, and a request
+    /// can arrive from a path that has none. [`Request::OpenFile`] is the same
+    /// thing travelling the other way — what a mode raises through its [`Ask`]
+    /// when a click inside it means a file should be opened.
+    fn open_file(&mut self, _path: &Path, _window: &mut Window, _cx: &mut App) -> bool {
+        false
+    }
+
     /// Put the caret where this mode's work happens, and say whether there was
     /// anywhere to put it.
     ///
@@ -85,6 +96,11 @@ pub trait WorkbenchMode {
 /// that says so and the compiler names every mode when a variant is added.
 pub enum Request<'a> {
     /// Open a file in whichever mode edits files, and switch to it.
+    ///
+    /// Only ever travels **upward**: it is what a mode raises through its
+    /// [`Ask`], and the panel puts it to the modes through
+    /// [`WorkbenchMode::open_file`], which has the `Window` that building a
+    /// buffer needs.
     OpenFile(&'a Path),
     /// Write the active buffer. `Ctrl+S`, which is bound so that a program in a
     /// PTY keeps it — so this only ever reaches a mode drawing an element tree.

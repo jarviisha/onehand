@@ -28,42 +28,42 @@ use std::time::SystemTime;
 /// list and the document together rather than leaving one project's reading
 /// open over another project's index.
 #[derive(Default)]
-pub struct RootDocs {
+pub(crate) struct RootDocs {
     /// `None` until the first scan lands, which is what tells the empty list
     /// apart from the one still being walked.
-    pub index: Option<DocIndex>,
+    pub(crate) index: Option<DocIndex>,
     /// Directories folded away, the closed half rather than the open one (the
     /// reason is with [`DocIndex::rows`]).
-    pub folded: HashSet<PathBuf>,
-    pub open: Option<OpenDoc>,
+    pub(crate) folded: HashSet<PathBuf>,
+    pub(crate) open: Option<OpenDoc>,
 }
 
 /// The document on screen.
-pub struct OpenDoc {
-    pub path: PathBuf,
+pub(crate) struct OpenDoc {
+    pub(crate) path: PathBuf,
     /// The path relative to the root, which is what the header prints: a
     /// project's documents are mostly the same handful of names once per
     /// folder, so the name alone does not say which one is being read.
-    pub label: String,
+    pub(crate) label: String,
     /// The file's mtime as of the last read.
     ///
     /// This is the whole of the live reload: one `stat` against this says
     /// whether the file moved under the reader, and nothing is re-read or
     /// re-parsed while it has not.
-    pub mtime: Option<SystemTime>,
+    pub(crate) mtime: Option<SystemTime>,
     state: Entity<TextViewState>,
 }
 
 impl RootDocs {
     /// Fold or unfold `dir`.
-    pub fn toggle(&mut self, dir: &Path) {
+    pub(crate) fn toggle(&mut self, dir: &Path) {
         if !self.folded.remove(dir) {
             self.folded.insert(dir.to_path_buf());
         }
     }
 
     /// Put a freshly read document on screen.
-    pub fn show(
+    pub(crate) fn show(
         &mut self,
         path: PathBuf,
         label: String,
@@ -86,7 +86,13 @@ impl RootDocs {
     /// would put the reader back at the top of the document every time the
     /// agent touched the file, which for a file being written repeatedly is a
     /// document that cannot be read at all.
-    pub fn refresh(&mut self, path: &Path, text: &str, mtime: Option<SystemTime>, cx: &mut App) {
+    pub(crate) fn refresh(
+        &mut self,
+        path: &Path,
+        text: &str,
+        mtime: Option<SystemTime>,
+        cx: &mut App,
+    ) {
         let Some(doc) = self.open.as_mut() else {
             return;
         };
@@ -111,7 +117,7 @@ impl RootDocs {
     /// the reader moved on belongs to a document nobody is looking at, and a
     /// caller that complained about it anyway would leave a standing warning
     /// naming a file that is no longer on screen.
-    pub fn stamp(&mut self, path: &Path, mtime: Option<SystemTime>) -> bool {
+    pub(crate) fn stamp(&mut self, path: &Path, mtime: Option<SystemTime>) -> bool {
         match self.open.as_mut() {
             Some(doc) if doc.path == path => {
                 doc.mtime = mtime;
@@ -122,13 +128,13 @@ impl RootDocs {
     }
 
     /// The document on screen, for a row to draw itself as the selected one.
-    pub fn showing(&self) -> Option<&Path> {
+    pub(crate) fn showing(&self) -> Option<&Path> {
         self.open.as_ref().map(|doc| doc.path.as_path())
     }
 }
 
 /// The document list.
-pub fn list(
+pub(crate) fn list(
     root: &Path,
     docs: &RootDocs,
     on_toggle: impl Fn(&PathBuf, &mut Window, &mut App) + 'static,
@@ -260,7 +266,7 @@ fn doc_row(
 /// than read from the window because the two are not the same number here: this
 /// is built *before* the panel wraps it in its zoom, so the window still holds
 /// the unzoomed base. Handed one, the caller has to say which it means.
-pub fn reader(
+pub(crate) fn reader(
     doc: Option<&OpenDoc>,
     list_shown: bool,
     rem: gpui::Pixels,

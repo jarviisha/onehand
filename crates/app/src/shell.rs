@@ -562,7 +562,7 @@ impl Shell {
                     E::OpenFile(path) => {
                         shell
                             .workbench
-                            .update(cx, |panel, cx| panel.open_file(path.clone(), window, cx));
+                            .update(cx, |panel, cx| panel.open_file(path, window, cx));
                         // Opening a file is what makes the Workbench worth
                         // showing -- but only if it is closed, since toggling
                         // an open dock would hide the file just asked for.
@@ -833,7 +833,7 @@ impl Shell {
                 .window
                 .workspace
                 .active_root()
-                .map(|root| self.workbench.read(cx).unsaved_in(&root.path))
+                .map(|root| self.workbench.read(cx).unsaved_in(&root.path, cx))
                 .unwrap_or(0),
             terminal_live: self.terminal.read(cx).has_shell(),
         }
@@ -1131,7 +1131,7 @@ impl Shell {
         // they have nowhere to go afterwards -- the tab strip they belong to
         // leaves with the root. Guarded on the same second click rather than a
         // second one of its own.
-        let unsaved = self.workbench.read(cx).unsaved_in(&path);
+        let unsaved = self.workbench.read(cx).unsaved_in(&path, cx);
 
         if (live > 0 || unsaved > 0) && self.pending_remove != Some(idx) {
             self.pending_remove = Some(idx);
@@ -3099,12 +3099,10 @@ fn open_window(workspace: Workspace, cx: &mut App) {
 /// Install global state and open the first window.
 pub fn boot(cx: &mut App) {
     let (cfg, config_path) = AppConfig::load_resolved();
-    let plugins = crate::plugins::builtins()
-        .unwrap_or_else(|error| panic!("built-in plugin registration failed: {error}"));
     let mono = cfg.font.monospace.clone();
     let appearance = cfg.appearance;
     let remote = cfg.remote.clone();
-    cx.set_global(Shared::from_config(cfg, config_path, plugins));
+    cx.set_global(Shared::from_config(cfg, config_path));
     init_keymap(cx);
     // After the global exists, because that is where the bridge is filed, and
     // before the first window, so a channel that takes a moment to answer has
