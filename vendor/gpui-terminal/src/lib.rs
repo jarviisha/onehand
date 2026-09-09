@@ -296,7 +296,7 @@
 //! ## Platform Support
 //!
 //! - **Linux**: X11 and Wayland via GPUI's platform support
-//! - **Clipboard**: Uses [arboard](https://docs.rs/arboard) with Wayland data-control
+//! - **Clipboard**: GPUI's own, on the connection the app already holds
 //!
 //! ## Modules
 //!
@@ -309,7 +309,6 @@
 //! | [`event`] | Event bridge ([`TerminalEvent`], [`GpuiEventProxy`]) |
 //! | [`input`] | Keyboard to escape sequence conversion |
 //! | [`mouse`] | Mouse event handling and reporting |
-//! | [`clipboard`] | System clipboard integration ([`Clipboard`]) |
 //!
 //! ## Troubleshooting
 //!
@@ -338,7 +337,6 @@
 //! to accommodate tall glyphs.
 
 pub mod box_drawing;
-pub mod clipboard;
 pub mod colors;
 pub mod event;
 pub mod input;
@@ -348,7 +346,6 @@ pub mod terminal;
 pub mod view;
 
 // Re-export main types for convenience
-pub use clipboard::Clipboard;
 pub use colors::{ColorPalette, ColorPaletteBuilder};
 pub use event::{GpuiEventProxy, TerminalEvent};
 pub use render::TerminalRenderer;

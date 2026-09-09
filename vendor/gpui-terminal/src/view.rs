@@ -499,12 +499,8 @@ pub type TitleCallback = Box<dyn Fn(&mut Window, &mut Context<TerminalView>, &st
 /// # Example
 ///
 /// ```ignore
-/// use gpui_terminal::Clipboard;
-///
-/// terminal.with_clipboard_store_callback(|window, cx, text| {
-///     if let Ok(mut clipboard) = Clipboard::new() {
-///         clipboard.copy(text).ok();
-///     }
+/// terminal.with_clipboard_store_callback(|_window, cx, text| {
+///     cx.write_to_clipboard(gpui::ClipboardItem::new_string(text.to_string()));
 /// });
 /// ```
 pub type ClipboardStoreCallback = Box<dyn Fn(&mut Window, &mut Context<TerminalView>, &str)>;
@@ -1055,19 +1051,15 @@ impl TerminalView {
                 "c" => {
                     if let Some(text) = self.selection_text() {
                         if !text.is_empty() {
-                            if let Ok(mut clipboard) = crate::clipboard::Clipboard::new() {
-                                let _ = clipboard.copy(&text);
-                            }
+                            cx.write_to_clipboard(gpui::ClipboardItem::new_string(text));
                         }
                     }
                     consume(cx);
                     return;
                 }
                 "v" => {
-                    if let Ok(mut clipboard) = crate::clipboard::Clipboard::new() {
-                        if let Ok(text) = clipboard.paste() {
-                            self.write_paste(&text);
-                        }
+                    if let Some(text) = cx.read_from_clipboard().and_then(clipboard_text) {
+                        self.write_paste(&text);
                     }
                     // onehand patch: no repaint asked for. A paste hands bytes
                     // to the child and touches nothing on screen -- what there
@@ -1251,10 +1243,22 @@ impl TerminalView {
             }
         }
 
-        // Selection is the left button's alone: the middle and right buttons
-        // have no meaning here once the child has declined the press, and a
-        // right-click that wiped the selection would take away the thing the
-        // user was about to copy.
+        // onehand patch: middle-click pastes the primary selection, the other
+        // half of the copy-on-select below. Reading primary rather than the
+        // clipboard is the whole point of the pair: the two hold different text
+        // on purpose, and a middle click that pasted whatever was last copied
+        // with a key would make dragging a word do nothing anybody can see.
+        if event.button == MouseButton::Middle {
+            if let Some(text) = cx.read_from_primary().and_then(clipboard_text) {
+                self.write_paste(&text);
+            }
+            return;
+        }
+
+        // Selection is the left button's alone: the right button has no meaning
+        // here once the child has declined the press, and a right-click that
+        // wiped the selection would take away the thing the user was about to
+        // copy.
         if event.button != MouseButton::Left {
             return;
         }
@@ -1302,15 +1306,16 @@ impl TerminalView {
         }
         self.dragging = false;
 
-        // Copy-on-select, the Linux convention. PRIMARY is the right target,
-        // but `arboard` does not expose it portably, so this writes the regular
-        // clipboard only when the selection is non-empty -- an empty drag must
-        // never clobber what the user already had there.
+        // Copy-on-select, the Linux convention, and it goes to the primary
+        // selection rather than to the clipboard: those are two different places
+        // on this desktop, and writing a drag into the clipboard would throw
+        // away whatever the user had deliberately copied a moment earlier --
+        // every time they so much as swept the pointer across a word. Middle
+        // click above is how it comes back out. Only a non-empty selection is
+        // written, so an empty drag clobbers neither.
         if let Some(text) = self.selection_text() {
             if !text.is_empty() {
-                if let Ok(mut clipboard) = crate::clipboard::Clipboard::new() {
-                    let _ = clipboard.copy(&text);
-                }
+                cx.write_to_primary(gpui::ClipboardItem::new_string(text));
             }
         }
         cx.notify();
@@ -1915,6 +1920,29 @@ impl Render for TerminalView {
 // without one as free functions. What follows tests the whole of the focus
 // reporting decision; all that is left in the render pass is reading two facts
 // and writing the answer.
+
+/// onehand patch: the text a clipboard item holds, and nothing but text.
+///
+/// Deliberately not [`gpui::ClipboardItem::text`], which -- when the item
+/// carries no string at all -- falls back to the file paths a file manager left
+/// there, concatenated with no separator between them. Two files copied out of a
+/// file manager and pasted here would arrive as one run-together word, which the
+/// shell then tries to run as a command naming nothing. A clipboard with no text
+/// in it is a paste with nothing to send.
+///
+/// Free rather than a method so the rule can be tested without a window.
+fn clipboard_text(item: gpui::ClipboardItem) -> Option<String> {
+    let text: String = item
+        .entries()
+        .iter()
+        .filter_map(|entry| match entry {
+            gpui::ClipboardEntry::String(string) => Some(string.text().as_str()),
+            _ => None,
+        })
+        .collect();
+    (!text.is_empty()).then_some(text)
+}
+
 #[cfg(test)]
 mod tests {
     // Named imports and **not** `use super::*`, which is what upstream's note
@@ -1927,7 +1955,10 @@ mod tests {
     // with "recursion limit reached while expanding `#[test]`". Naming the two
     // items this module actually needs keeps the glob out and the attribute
     // meaning what it says.
-    use super::{REPAINT_INTERVAL, RepaintGate, focus_report, pace_after, typing_changes_the_view};
+    use super::{
+        REPAINT_INTERVAL, RepaintGate, clipboard_text, focus_report, pace_after,
+        typing_changes_the_view,
+    };
     use crate::event::GpuiEventProxy;
     use crate::terminal::TerminalState;
     use alacritty_terminal::grid::Scroll;
@@ -2064,5 +2095,36 @@ mod tests {
         // Coming back on screen is a draw, and that is all it takes.
         gate.drawn();
         assert!(gate.request());
+    }
+
+    /// A clipboard holding files and no text has nothing to paste, and must not
+    /// hand the shell the paths run together into one word.
+    #[test]
+    fn only_text_is_pasted() {
+        use gpui::{ClipboardEntry, ClipboardItem, ClipboardString, ExternalPaths};
+        use std::path::PathBuf;
+
+        let text = ClipboardItem::new_string("cargo test".into());
+        assert_eq!(clipboard_text(text).as_deref(), Some("cargo test"));
+
+        let files = ClipboardItem {
+            entries: vec![ClipboardEntry::ExternalPaths(ExternalPaths(
+                [PathBuf::from("/a/one.txt"), PathBuf::from("/a/two.txt")]
+                    .into_iter()
+                    .collect(),
+            ))],
+        };
+        assert_eq!(clipboard_text(files), None);
+
+        // A file manager that offers both is pasted as the text it offered.
+        let both = ClipboardItem {
+            entries: vec![
+                ClipboardEntry::ExternalPaths(ExternalPaths(
+                    [PathBuf::from("/a/one.txt")].into_iter().collect(),
+                )),
+                ClipboardEntry::String(ClipboardString::new("one.txt".into())),
+            ],
+        };
+        assert_eq!(clipboard_text(both).as_deref(), Some("one.txt"));
     }
 }

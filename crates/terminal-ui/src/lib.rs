@@ -292,13 +292,20 @@ pub fn spawn_pty(
             // system clipboard silently does nothing at all, which reads as the
             // editor being misconfigured.
             //
-            // Failures are dropped: the clipboard can be held by another
-            // process, and a tab that started printing errors because a copy did
-            // not land would be worse than the copy not landing.
-            .with_clipboard_store_callback(|_, _, text| {
-                if let Ok(mut clipboard) = gpui_terminal::Clipboard::new() {
-                    let _ = clipboard.copy(text);
-                }
+            // On Wayland it lands only while this window has the focus, and it
+            // is worth knowing why the limit is not ours to lift: taking the
+            // selection needs a serial from an input event the compositor
+            // handed us, so an application nobody is looking at cannot set the
+            // clipboard at all. The protocol that bypasses that is the one the
+            // second clipboard stack used to speak, and reading through that
+            // stack deadlocked the app outright whenever this same process was
+            // the one holding the clipboard -- the read blocked the thread that
+            // had to answer it. A yank the user typed always has the focus and
+            // the serial; what is lost is a command copying while its window
+            // sits behind another application, and that is the cheaper of the
+            // two failures by a distance.
+            .with_clipboard_store_callback(|_, cx, text| {
+                cx.write_to_clipboard(gpui::ClipboardItem::new_string(text.to_string()));
             })
             // The child is gone; tell whoever is holding this tab.
             //
