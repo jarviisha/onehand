@@ -7,9 +7,7 @@ use crate::chat::ChatPane;
 use crate::dialogs::AgentDraft;
 use crate::state::{OpenWindow, Shared, WorkspaceWindow};
 use crate::terminal::TerminalPanel;
-use crate::workbench::{
-    EDITOR_MODE, FILES_MODE, MARKDOWN_MODE, NEOVIM_MODE, Workbench, WorkbenchMode,
-};
+use crate::workbench::{EDITOR_MODE, FILES_MODE, MARKDOWN_MODE, NEOVIM_MODE, Workbench};
 use gpui::{
     App, AppContext, BorrowAppContext, Context, Entity, Focusable as _, InteractiveElement,
     IntoElement, ParentElement, Render, SharedString, Styled, Window, WindowAppearance, div, px,
@@ -564,7 +562,7 @@ impl Shell {
                     E::OpenFile(path) => {
                         shell
                             .workbench
-                            .update(cx, |panel, cx| panel.open_file(path.clone(), window, cx));
+                            .update(cx, |panel, cx| panel.open_file(path, window, cx));
                         // Opening a file is what makes the Workbench worth
                         // showing -- but only if it is closed, since toggling
                         // an open dock would hide the file just asked for.
@@ -835,7 +833,7 @@ impl Shell {
                 .window
                 .workspace
                 .active_root()
-                .map(|root| self.workbench.read(cx).unsaved_in(&root.path))
+                .map(|root| self.workbench.read(cx).unsaved_in(&root.path, cx))
                 .unwrap_or(0),
             terminal_live: self.terminal.read(cx).has_shell(),
         }
@@ -1133,7 +1131,7 @@ impl Shell {
         // they have nowhere to go afterwards -- the tab strip they belong to
         // leaves with the root. Guarded on the same second click rather than a
         // second one of its own.
-        let unsaved = self.workbench.read(cx).unsaved_in(&path);
+        let unsaved = self.workbench.read(cx).unsaved_in(&path, cx);
 
         if (live > 0 || unsaved > 0) && self.pending_remove != Some(idx) {
             self.pending_remove = Some(idx);
@@ -1983,7 +1981,7 @@ impl Shell {
     /// nobody presses a key for.
     pub fn show_workbench(
         &mut self,
-        mode: WorkbenchMode,
+        mode: onehand_plugin_api::PluginId,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
@@ -2047,7 +2045,7 @@ impl Shell {
     /// it — the panel entity outlives the dock, so the PTY, its scrollback and
     /// whatever is unsaved in the buffer are all still there on the next press.
     pub fn show_neovim(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        self.workbench.update(cx, |panel, cx| panel.open_neovim(cx));
+        self.workbench.update(cx, |panel, cx| panel.start_child(cx));
         self.show_workbench(NEOVIM_MODE, window, cx);
     }
 
@@ -3101,12 +3099,10 @@ fn open_window(workspace: Workspace, cx: &mut App) {
 /// Install global state and open the first window.
 pub fn boot(cx: &mut App) {
     let (cfg, config_path) = AppConfig::load_resolved();
-    let plugins = crate::plugins::builtins()
-        .unwrap_or_else(|error| panic!("built-in plugin registration failed: {error}"));
     let mono = cfg.font.monospace.clone();
     let appearance = cfg.appearance;
     let remote = cfg.remote.clone();
-    cx.set_global(Shared::from_config(cfg, config_path, plugins));
+    cx.set_global(Shared::from_config(cfg, config_path));
     init_keymap(cx);
     // After the global exists, because that is where the bridge is filed, and
     // before the first window, so a channel that takes a moment to answer has

@@ -87,23 +87,38 @@ because an unresolved icon draws blank rather than failing the build. New local
 icons go through `assets/icons/manifest.toml`, `scripts/sync-icons.sh` and the
 `icons!` registry, with their licences retained.
 
-## D6 · Plugins are built in and the registry seals at startup
+## D6 · Plugins are built in, and a mode owns its state and its view
 
 **Context.** The first plugin boundary is for composition and ownership, not an
 extension marketplace. Loading third-party Rust dynamic libraries would expose
 an unstable ABI and couple extensions to the GUI implementation.
 
-**Decision.** Editor, Files, Neovim and Telegram are separate built-in crates
-linked into the binary. `crates/app/src/plugins.rs` registers their contributions
-before the first window and then seals the registry. The GUI-free API contains
-stable identifiers, descriptors and capabilities. Per-window Workbench hosting
-and contribution-specific integration types live in the host; the composition
-root attaches the remote-channel factory. Any future external plugin system uses
-a process protocol.
+**Decision.** Editor, Files, Markdown, Neovim and Telegram are separate built-in
+crates linked into the binary. A Workbench mode implements one trait: it declares
+itself, hands back a view, and answers the requests it recognises. The panel
+keeps the list, the active ID and the strip, and holds no mode's state.
+`crates/app/src/plugins.rs` is two ordered lists — the modes, and how a named
+remote channel is opened — and that order is the user-visible one. Any future
+external plugin system uses a process protocol.
 
-**Consequences.** Registration is unavailable after boot and the Rust API stays
-`0.x` without a third-party compatibility promise. This boundary must not change
-observable Workbench order, configuration, shortcuts or per-root state.
+**Consequences.** The Rust API stays `0.x` without a third-party compatibility
+promise, and this boundary must not change observable Workbench order,
+configuration, shortcuts or per-root state.
+
+There is no registry, no capability declaration, no API version and no sealing
+step, because each was checking something the compiler already checks harder:
+`impl WorkbenchMode` *is* the capability declaration, one binary compiled
+together makes cargo the version check, and a list built and returned in one call
+has no window in which anything could register late. What the registry was
+genuinely buying — an explicit order, declared rather than inherited from
+filesystem or linker order — is the literal order of the list.
+
+The earlier attempt at per-mode objects (`WorkbenchModeView` and its factories)
+was removed for a reason that still holds: it put a mode object *beside* the
+panel's own copy of that mode's state and kept the two in step by hand. The rule
+that distinguishes this from that one is testable — the panel must end up holding
+no per-mode state at all. State that has to stay behind is the signal the
+boundary is in the wrong place.
 
 ## D7 · Pin GPUI through one git source and the lock file
 

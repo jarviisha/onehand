@@ -1,29 +1,14 @@
-use onehand_plugin_api::{
-    BuiltinPlugin, Capability, PLUGIN_API_VERSION, PluginDescriptor, PluginId, PluginRegistrar,
-};
+// Nothing here is `pub` unless the binary names it: `dead_code` stops at a
+// `pub` item in a library, so one that lost its last caller looks exactly like
+// a working feature.
+#![warn(unreachable_pub)]
+
+use onehand_plugin_api::PluginId;
 
 pub const CHANNEL_ID: PluginId = PluginId::new("remote.telegram");
 
-pub struct TelegramPlugin;
-
-impl BuiltinPlugin for TelegramPlugin {
-    fn descriptor(&self) -> PluginDescriptor {
-        PluginDescriptor {
-            id: PluginId::new("builtin.remote-telegram"),
-            name: "Remote Telegram",
-            version: env!("CARGO_PKG_VERSION"),
-            api_version: PLUGIN_API_VERSION,
-            capabilities: &[Capability::RemoteChannel],
-        }
-    }
-
-    fn register(&self, registrar: &mut dyn PluginRegistrar) -> Result<(), String> {
-        registrar.register_remote_channel(CHANNEL_ID, "Telegram")
-    }
-}
-
 mod telegram;
-pub use telegram::Telegram;
+pub(crate) use telegram::Telegram;
 
 pub mod secret;
 

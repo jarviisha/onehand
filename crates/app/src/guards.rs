@@ -397,7 +397,8 @@ mod tests {
                     assert!(
                         !source.contains(&expression),
                         "{path} uses the status background `{role}` as text; use \
-                         crate::theme::status_ink instead"
+                         status_ink instead -- crate::theme in the app, \
+                         onehand_plugin_host in a plugin"
                     );
                 }
             }

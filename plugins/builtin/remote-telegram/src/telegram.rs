@@ -80,13 +80,13 @@ const RATE_LIMIT_RETRIES: usize = 1;
 const RATE_LIMIT_MAX_WAIT: Duration = Duration::from_secs(30);
 
 /// The Telegram bridge, ready to be connected.
-pub struct Telegram {
+pub(crate) struct Telegram {
     token: String,
     root: String,
 }
 
 impl Telegram {
-    pub fn new(token: String) -> Self {
+    pub(crate) fn new(token: String) -> Self {
         Self {
             token,
             root: API_ROOT.to_string(),
