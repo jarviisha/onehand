@@ -34,7 +34,7 @@ pub enum Update {
 }
 
 /// Parse the inner `update` object of a `session/update` notification.
-pub fn parse_session_update(update: &Value) -> Vec<Update> {
+pub(crate) fn parse_session_update(update: &Value) -> Vec<Update> {
     let kind = update
         .get("sessionUpdate")
         .and_then(Value::as_str)
@@ -63,7 +63,7 @@ pub fn parse_session_update(update: &Value) -> Vec<Update> {
 /// Parse a `configOptions` array (from `session/new` or `config_option_update`)
 /// into the selectable groups. The `"mode"` group is dropped — session mode is
 /// driven by the standard `modes` field + `session/set_mode`.
-pub fn parse_config_options(options: Option<&Value>) -> Vec<ConfigOption> {
+pub(crate) fn parse_config_options(options: Option<&Value>) -> Vec<ConfigOption> {
     options
         .and_then(Value::as_array)
         .map(|arr| {

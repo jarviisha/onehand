@@ -8,7 +8,7 @@
 pub struct ActiveTrigger {
     pub kind: TriggerKind,
     /// Byte index of the trigger char (`@` or `/`) in the source string.
-    pub start: usize,
+    pub(crate) start: usize,
     /// The query text typed after the trigger (may be empty).
     pub query: String,
 }

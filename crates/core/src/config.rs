@@ -36,7 +36,7 @@ impl AgentSpec {
 ///
 /// Not a general shell quoter: it exists so a round trip through the agent
 /// form is lossless, and its only contract is `split_args(join_args(a)) == a`.
-pub fn join_args(args: &[String]) -> String {
+pub(crate) fn join_args(args: &[String]) -> String {
     args.iter()
         .map(|arg| {
             if arg.is_empty() {
@@ -112,12 +112,12 @@ pub fn split_args(line: &str) -> Vec<String> {
 #[serde(default)]
 pub struct FontConfig {
     /// Base body size (default ~14).
-    pub size: f32,
+    pub(crate) size: f32,
     /// Master zoom, 0.5–3.0.
-    pub scale: f32,
-    pub sans: Option<String>,
+    pub(crate) scale: f32,
+    pub(crate) sans: Option<String>,
     pub monospace: Option<String>,
-    pub fallbacks: Vec<String>,
+    pub(crate) fallbacks: Vec<String>,
 }
 
 impl Default for FontConfig {
@@ -205,32 +205,6 @@ pub fn resolve_monospace<'a>(
         })
 }
 
-impl FontConfig {
-    /// Clamp `scale` into the documented 0.5–3.0 range.
-    ///
-    /// Range-checked rather than `clamp`ed, for the reason
-    /// [`PanelLayout::clamped`] spells out: `f32::clamp` passes NaN through.
-    pub fn clamped_scale(&self) -> f32 {
-        if (0.5..=3.0).contains(&self.scale) {
-            self.scale
-        } else if self.scale.is_finite() {
-            self.scale.clamp(0.5, 3.0)
-        } else {
-            1.0
-        }
-    }
-
-    /// Validated base size: a nonsensical `size` (0, negative, NaN, or absurd)
-    /// falls back to the default instead of rendering the whole UI invisible.
-    pub fn clamped_size(&self) -> f32 {
-        if (6.0..=72.0).contains(&self.size) {
-            self.size
-        } else {
-            14.0
-        }
-    }
-}
-
 /// Which of the theme's two modes the window is drawn in.
 ///
 /// Three values rather than a `dark = true` flag, because "follow the desktop"
@@ -265,7 +239,7 @@ impl Appearance {
     }
 
     /// The config value this parses from, and what it serializes back to.
-    pub fn key(self) -> &'static str {
+    pub(crate) fn key(self) -> &'static str {
         match self {
             Self::System => "system",
             Self::Light => "light",
@@ -295,14 +269,14 @@ impl<'de> Deserialize<'de> for Appearance {
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct IconConfig {
-    pub accent: Option<String>,
-    pub success: Option<String>,
-    pub warning: Option<String>,
-    pub danger: Option<String>,
-    pub muted: Option<String>,
-    pub faint: Option<String>,
-    pub strong: Option<String>,
-    pub discovery: Option<String>,
+    pub(crate) accent: Option<String>,
+    pub(crate) success: Option<String>,
+    pub(crate) warning: Option<String>,
+    pub(crate) danger: Option<String>,
+    pub(crate) muted: Option<String>,
+    pub(crate) faint: Option<String>,
+    pub(crate) strong: Option<String>,
+    pub(crate) discovery: Option<String>,
 }
 
 /// `[remote]` — the ways a device outside this machine can reach the app.
@@ -354,7 +328,7 @@ pub struct AppConfig {
     pub appearance: Appearance,
     pub agents: Vec<AgentSpec>,
     pub font: FontConfig,
-    pub icons: IconConfig,
+    pub(crate) icons: IconConfig,
     pub remote: RemoteConfig,
 }
 
@@ -404,7 +378,7 @@ pub fn default_adapter_args() -> Vec<String> {
 }
 
 /// Built-in default: Claude Code as an ACP agent.
-pub fn default_agents() -> Vec<AgentSpec> {
+pub(crate) fn default_agents() -> Vec<AgentSpec> {
     vec![AgentSpec {
         name: "Claude Code".into(),
         command: "npx".into(),
@@ -420,7 +394,7 @@ impl AppConfig {
     }
 
     /// Serialize back to TOML (round-trips all sections for `persist_agents`).
-    pub fn to_toml(&self) -> Result<String, toml::ser::Error> {
+    pub(crate) fn to_toml(&self) -> Result<String, toml::ser::Error> {
         toml::to_string_pretty(self)
     }
 
@@ -490,7 +464,7 @@ pub struct WorkspaceConfig {
     pub active_root: usize,
     /// Workspace icon tint as `#RRGGBB`. `None` (and any malformed hex) falls
     /// back to a stable palette color derived from the name.
-    pub icon_color: Option<String>,
+    pub(crate) icon_color: Option<String>,
     /// How the window's side panels were arranged. `#[serde(default)]` on the
     /// struct means an older file without this section simply gets the
     /// built-in arrangement.
@@ -580,7 +554,7 @@ impl PanelLayout {
     /// hand-edited or corrupted `workbench_w = nan` went straight through the
     /// guard and into the layout. A non-finite size is not a
     /// size at all, so it falls back to the default rather than to a bound.
-    pub fn clamped(self) -> Self {
+    pub(crate) fn clamped(self) -> Self {
         fn size(value: f32, fallback: f32, min: f32, max: f32) -> f32 {
             if value.is_finite() {
                 value.clamp(min, max)
@@ -652,7 +626,7 @@ pub(crate) fn write_synced(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
 /// not waited for, so a crash immediately after one can leave the previous
 /// version in place. That costs the newest save; it cannot cost a readable
 /// file, which is the property worth paying an extra wait per write for.
-pub fn write_atomic(path: &Path, text: &str) -> std::io::Result<()> {
+pub(crate) fn write_atomic(path: &Path, text: &str) -> std::io::Result<()> {
     static TMP_SEQ: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
     if let Some(dir) = path.parent() {
         std::fs::create_dir_all(dir)?;
@@ -690,11 +664,6 @@ impl<T> Load<T> {
             Load::Found(v) => Some(v),
             Load::Missing | Load::Unreadable => None,
         }
-    }
-
-    /// Whether the folder is free to bind a new workspace into.
-    pub fn is_missing(&self) -> bool {
-        matches!(self, Load::Missing)
     }
 }
 
@@ -747,7 +716,7 @@ pub struct AppState {
     /// Legacy single remembered dir (pre-recents). Folded into
     /// `recent_workspaces` on load; mirrors `recent_workspaces[0]` on save so
     /// an older binary reading this file still reopens the right workspace.
-    pub workspace_dir: Option<PathBuf>,
+    pub(crate) workspace_dir: Option<PathBuf>,
     /// Bound workspace storage dirs, most-recent-first, deduped, capped.
     pub recent_workspaces: Vec<PathBuf>,
 }
@@ -756,7 +725,7 @@ impl AppState {
     /// Cap on `recent_workspaces`.
     pub const MAX_RECENTS: usize = 8;
 
-    pub fn path() -> PathBuf {
+    pub(crate) fn path() -> PathBuf {
         config_dir().join("state.toml")
     }
 
@@ -938,28 +907,6 @@ mod tests {
     }
 
     #[test]
-    fn scale_is_clamped() {
-        let mut f = FontConfig {
-            scale: 9.0,
-            ..FontConfig::default()
-        };
-        assert_eq!(f.clamped_scale(), 3.0);
-        f.scale = 0.1;
-        assert_eq!(f.clamped_scale(), 0.5);
-    }
-
-    #[test]
-    fn nonsense_size_falls_back_to_default() {
-        let mut f = FontConfig::default();
-        for bad in [0.0, -3.0, f32::NAN, 500.0] {
-            f.size = bad;
-            assert_eq!(f.clamped_size(), 14.0);
-        }
-        f.size = 18.0;
-        assert_eq!(f.clamped_size(), 18.0);
-    }
-
-    #[test]
     fn legacy_profile_section_is_ignored() {
         // Older configs carried a `[profile]` section; it must parse as an
         // unknown key, not an error.
@@ -1114,15 +1061,6 @@ mod tests {
         );
         // The default must itself be inside the range it is the fallback for.
         assert!((PanelLayout::RAIL_MIN..=PanelLayout::RAIL_MAX).contains(&d.rail_w));
-
-        assert_eq!(
-            FontConfig {
-                scale: f32::NAN,
-                ..FontConfig::default()
-            }
-            .clamped_scale(),
-            1.0
-        );
     }
 
     #[test]
@@ -1166,14 +1104,12 @@ mod tests {
             WorkspaceConfig::load_from(&dir),
             Load::<WorkspaceConfig>::Missing
         );
-        assert!(WorkspaceConfig::load_from(&dir).is_missing());
 
         std::fs::write(dir.join(WorkspaceConfig::FILE), "name = \"unclosed").unwrap();
         assert_eq!(
             WorkspaceConfig::load_from(&dir),
             Load::<WorkspaceConfig>::Unreadable
         );
-        assert!(!WorkspaceConfig::load_from(&dir).is_missing());
         assert!(WorkspaceConfig::load_from(&dir).found().is_none());
 
         let _ = std::fs::remove_dir_all(&dir);

@@ -71,13 +71,20 @@ pub fn group(item: &ChatItem) -> Option<ActivityGroup> {
 }
 
 pub struct Presentation {
-    pub action: &'static str,
-    pub subject: String,
-    pub metadata: Option<String>,
-    // Retained as part of the semantic presentation contract and covered by
-    // classification tests, even though the calmer aggregate header no longer
-    // prints per-kind counts.
+    /// The verb a tool call is classified as — "Searched", "Ran tests",
+    /// "Built". **Nothing prints it.** The classification is finer than
+    /// [`ActivityKind`], which is what the transcript actually groups by, so
+    /// these strings are the only statement of that finer rule and the tests
+    /// below are its whole readership. Whether the rule is worth keeping
+    /// without a reader is a question about what a run header should say, not
+    /// a question about dead code, so it is not settled here.
     #[cfg_attr(not(test), allow(dead_code))]
+    pub(crate) action: &'static str,
+    pub subject: String,
+    /// Always `None`. Set by nothing, read by nothing but the tests, and kept
+    /// for the same reason as `action`.
+    #[cfg_attr(not(test), allow(dead_code))]
+    pub(crate) metadata: Option<String>,
     pub kind: ActivityKind,
 }
 

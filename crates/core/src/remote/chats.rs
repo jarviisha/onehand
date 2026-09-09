@@ -31,7 +31,7 @@ impl RemoteSession {
     /// that is a fact about the reader rather than about the session, so it is
     /// carried by the mark in the margin and not by this, which is printed in
     /// places where there is no margin.
-    pub fn line(&self) -> String {
+    pub(crate) fn line(&self) -> String {
         let name = self.conversation.as_deref().unwrap_or("no name yet");
         let state = self.state.unwrap_or("Idle");
         format!(
@@ -214,7 +214,7 @@ impl Chats {
     }
 
     /// Whether `chat` has asked to hear about `uid`.
-    pub fn follows(&self, chat: &str, uid: u64) -> bool {
+    pub(crate) fn follows(&self, chat: &str, uid: u64) -> bool {
         self.followed
             .get(chat)
             .is_some_and(|set| set.contains(&uid))
@@ -267,7 +267,7 @@ impl Chats {
     ///
     /// An empty answer is the ordinary case, not a failure: a bridge nobody has
     /// subscribed from says nothing.
-    pub fn audience_for(&self, uid: u64) -> Vec<ChatId> {
+    pub(crate) fn audience_for(&self, uid: u64) -> Vec<ChatId> {
         self.allowed
             .iter()
             .filter(|chat| self.follows(chat, uid))

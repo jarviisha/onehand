@@ -9,7 +9,8 @@
 //! The buffer itself is not here -- it is framework-shaped (an `InputState` in
 //! the GPUI front end) and derived from the same text on disk. What lives here
 //! is everything that decides correctness: the
-//! size bound, the tab set, and the mtime guard.
+//! size bound, the tab set, the mtime guard, and turning a path an agent named
+//! into one that opens the file the agent meant.
 
 use std::path::{Path, PathBuf};
 
@@ -50,10 +51,6 @@ pub struct RootEditors {
 impl RootEditors {
     pub fn active_file(&self) -> Option<&EditorFile> {
         self.files.get(self.active)
-    }
-
-    pub fn active_file_mut(&mut self) -> Option<&mut EditorFile> {
-        self.files.get_mut(self.active)
     }
 
     pub fn index_of(&self, path: &Path) -> Option<usize> {
@@ -188,15 +185,51 @@ pub fn syntax_token(path: &Path) -> String {
 }
 
 /// A tab label — the file name (the path tail).
-pub fn tab_label(path: &Path) -> String {
+pub(crate) fn tab_label(path: &Path) -> String {
     path.file_name()
         .map(|n| n.to_string_lossy().into_owned())
         .unwrap_or_else(|| path.display().to_string())
 }
 
+/// Resolve a path an agent named against the session's project root.
+///
+/// ACP requires absolute paths, but "the peer follows the spec" is not
+/// something to bet a file open on: a relative path handed straight to the
+/// filesystem resolves against the *process* working directory, which is
+/// whatever shell launched onehand — not the project the agent is working in.
+/// With several roots open, or the app started from anywhere but the root, that
+/// opens the wrong file or none at all.
+///
+/// Absolute paths pass through untouched, so a conforming agent is unaffected.
+/// No canonicalization and no touching the disk: this is a pure join, and the
+/// caller is already prepared for the file not to exist.
+pub fn resolve_in_root(root: &std::path::Path, path: &str) -> std::path::PathBuf {
+    let path = std::path::Path::new(path);
+    if path.is_absolute() {
+        path.to_path_buf()
+    } else {
+        root.join(path)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_relative_path_resolves_against_the_root_not_the_process_cwd() {
+        let root = std::path::Path::new("/home/me/project");
+        assert_eq!(
+            resolve_in_root(root, "src/main.rs"),
+            std::path::PathBuf::from("/home/me/project/src/main.rs")
+        );
+        // A conforming agent sends absolute paths, and those must not be
+        // re-rooted into nonsense like /home/me/project/home/me/other/x.rs.
+        assert_eq!(
+            resolve_in_root(root, "/home/me/other/x.rs"),
+            std::path::PathBuf::from("/home/me/other/x.rs")
+        );
+    }
 
     #[test]
     fn syntax_token_is_the_extension() {

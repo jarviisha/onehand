@@ -106,7 +106,7 @@ fn path_tail(line: &str, fields: usize) -> Option<&str> {
 /// non-ASCII bytes (`"t\341\273\207p.txt"` for `tệp.txt` under the default
 /// `core.quotepath`), so the stored path would never match the real file and
 /// its badge silently vanished. With `-z` paths are always raw.
-pub fn parse_porcelain(out: &str) -> GitStatus {
+pub(crate) fn parse_porcelain(out: &str) -> GitStatus {
     let mut branch = String::new();
     let mut changed = 0;
     let mut entries = HashMap::new();
@@ -152,7 +152,7 @@ pub fn parse_porcelain(out: &str) -> GitStatus {
 /// trailing slash included) and strip it — consumers look paths up relative
 /// to the *root*, and would otherwise never match. A toplevel root
 /// (empty prefix) passes through untouched.
-pub fn rebase_to_root(status: GitStatus, prefix: &str) -> GitStatus {
+pub(crate) fn rebase_to_root(status: GitStatus, prefix: &str) -> GitStatus {
     if prefix.is_empty() {
         return status;
     }

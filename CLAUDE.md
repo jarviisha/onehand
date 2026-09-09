@@ -83,7 +83,7 @@ Tests are inline `#[cfg(test)]` modules — there is no `tests/` directory.
 The workspace root is a **virtual manifest** — it owns nothing but the member list and the release
 profile.
 
-**Two invariants hold the split together:**
+**Three invariants hold the split together:**
 
 - `cargo tree -p onehand-core -i gpui` must keep **erroring with "did not match any packages"**.
   Core is the half that survived one front-end rewrite; keeping it framework-free is what would let
@@ -92,6 +92,15 @@ profile.
 - **Core must not dictate an async runtime.** Every blocking operation is a plain blocking function;
   anything async is a thin wrapper over it. GPUI runs on smol and has no tokio reactor, so a core
   that awaited tokio I/O directly would panic inside the UI process.
+- **Nothing in core is `pub` unless something outside the crate names it.** This is the same rule
+  `crates/app` keeps by making its modules private, arrived at from the other side: core cannot hide
+  its modules, because the app imports all fourteen. So the visibility is per item, and widening one
+  is a decision rather than the default. It is load-bearing for the same reason: `dead_code` stops at
+  a `pub` item in a library, so while every function here was `pub`, one that had lost its last
+  caller looked exactly like a working feature to the compiler — seventeen accumulated that way, plus
+  a fold-state chain and a write-only field that a repo-wide grep could not see and one compile did.
+  `#![warn(unreachable_pub)]` is there too and catches nothing today, since no module is private; it
+  is the guard for the first one that is.
 
 Shared rules live in core, not restated per call site: `GitStatus::label`, `AppConfig::update_in_place`,
 `gitstat::read_blocking`, `RootEditors::open`, `Chat::apply`, `Away::headline`, `remote::press::option_at`,
@@ -1037,8 +1046,9 @@ Listed because a missing feature nobody wrote down reads as a bug in the ones th
   implement, but nothing else does. There is no Discord adapter and no HTTP endpoint.
 - **`path:line:col` tokens in agent prose are not clickable.** The transcript renders prose through
   `TextView::markdown` and does not scan it for path tokens. Only a tool card's path header opens a
-  file, and it carries no line — ACP's diff payload has no hunk offsets. Core's
-  `parse::parse_path_line` is the parser that feature needs and currently **has no caller**.
+  file, and it carries no line — ACP's diff payload has no hunk offsets. Core holds no parser for
+  these tokens either: the feature is the detection pass, and a parser written ahead of it is a
+  guess at an interface nobody has designed.
 - **A fenced code block inside prose cannot fold independently.** `TextViewStyle::code_block` is
   shared by every block and has nowhere to keep per-block fold state. Supporting it means owning a
   custom Markdown code-block renderer; the current compromise is a height cap and Copy button.

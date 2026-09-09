@@ -154,9 +154,9 @@ struct Meta {
 #[derive(Serialize, Deserialize, Default, Clone, Debug, PartialEq, Eq)]
 pub struct Prefs {
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub mode: Option<String>,
+    pub(crate) mode: Option<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub config: Vec<ConfigPick>,
+    pub(crate) config: Vec<ConfigPick>,
 }
 
 /// One config-option pick (`id` → chosen `value`).
@@ -277,24 +277,23 @@ pub struct ConversationSnapshot {
     pub session_id: String,
     pub title: Option<String>,
     pub updated: u64,
-    pub created: u64,
-    pub prefs: Prefs,
+    pub(crate) prefs: Prefs,
     /// Renderable items, already parsed. Not lines: the restart path hands over
     /// live items, and round-tripping those through the archive form would
     /// flatten a running terminal into a snapshot of its output.
     pub items: Vec<ChatItem>,
     /// How many transcript positions are already on disk — the mark the
     /// adopting chat carries on from.
-    pub written: usize,
+    pub(crate) written: usize,
     /// Whether `items` is the whole conversation. False when the read hit its
     /// bound, which is what forbids rewriting the file from it.
-    pub complete: bool,
+    pub(crate) complete: bool,
 }
 
 /// Everything one save has to put on disk, prepared while the transcript is in
 /// hand so the writing itself needs nothing but this.
 pub struct PendingWrite {
-    pub(crate) dir: PathBuf,
+    pub dir: PathBuf,
     pub(crate) lines: Vec<String>,
     pub(crate) blobs: Vec<Blob>,
     pub(crate) meta: MetaWrite,
@@ -309,16 +308,16 @@ pub struct PendingWrite {
 
 /// The metadata half of a save, which is written whether or not any line was.
 pub(crate) struct MetaWrite {
-    pub(crate) session_id: String,
-    pub(crate) root: String,
-    pub(crate) agent: String,
-    pub(crate) title: Option<String>,
+    pub session_id: String,
+    pub root: String,
+    pub agent: String,
+    pub title: Option<String>,
     pub(crate) preview: String,
     pub(crate) prefs: Prefs,
     /// `Some` when this save added messages, and then it is the moment they
     /// were added. `None` leaves whatever is on disk alone.
-    pub(crate) updated: Option<u64>,
-    pub(crate) items: usize,
+    pub updated: Option<u64>,
+    pub items: usize,
 }
 
 // ── reading ─────────────────────────────────────────────────────────────────
@@ -379,11 +378,6 @@ fn describe(dir: &Path, meta: Meta) -> ConvMeta {
         title,
         item_count: meta.items,
     }
-}
-
-/// Read one conversation's metadata. Blocking.
-pub fn read_meta(dir: &Path) -> Option<ConvMeta> {
-    meta_at(dir).map(|meta| describe(dir, meta))
 }
 
 /// Conversations under `store` belonging to `project`, and to `agent` when one
@@ -448,7 +442,6 @@ pub fn load(dir: &Path) -> Option<ConversationSnapshot> {
         session_id: meta.session_id,
         title: meta.title,
         updated: meta.updated,
-        created: meta.created,
         prefs: meta.prefs,
         // Every position restored counts as already written, the synthetic
         // notice included, so nothing on screen is ever appended a second time.
@@ -792,6 +785,15 @@ fn content_of(chat: &Chat, content: &ToolContent, blobs: &mut Vec<Blob>) -> Stor
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// One conversation's metadata, read back off disk.
+    ///
+    /// Only the tests ask this: nothing in the app reads a single conversation
+    /// by directory — the pickers list a whole store through
+    /// [`list_conversations`], which reads the same file for its own reasons.
+    fn read_meta(dir: &Path) -> Option<ConvMeta> {
+        meta_at(dir).map(|meta| describe(dir, meta))
+    }
 
     /// A temp directory of this test's own, cleaned up on the way out.
     fn scratch(name: &str) -> PathBuf {

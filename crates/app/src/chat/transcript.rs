@@ -534,8 +534,8 @@ fn md_view(
 /// replacing gpui-component's code-block renderer through a custom block
 /// parser, trading away its syntax highlighting to get a chevron. Capping the
 /// height keeps the answer readable, which is what the fold was for; Copy on
-/// the block is how the clipped tail stays reachable. (`Md::open_blocks` and `Chat::toggle_code`
-/// are still in the model for whenever that trade looks worth making.)
+/// the block is how the clipped tail stays reachable. The model carries no
+/// fold state for it to key against.
 ///
 /// **The rest of this is the renderer's defaults being wrong for a chat.**
 /// `TextView` is a document renderer: its headings are scaled off a base of its
@@ -1256,7 +1256,7 @@ fn diff(
                     // handed, and a relative one there resolves against the
                     // process working directory.
                     let path =
-                        onehand_core::parse::resolve_in_root(&session.read(cx).chat.root, path);
+                        onehand_core::editor::resolve_in_root(&session.read(cx).chat.root, path);
                     let session = session.clone();
                     move |_, _, cx: &mut App| {
                         session.update(cx, |_, cx| {

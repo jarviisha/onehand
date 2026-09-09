@@ -66,7 +66,7 @@ pub fn validate_branch(name: &str) -> Result<(), &'static str> {
 /// Runs of separators collapse and the ends are trimmed, so `feat//x-` cannot
 /// produce a name with a doubled or dangling dash — this is a label, and a
 /// label that reads as a typo reads as the app having made one.
-pub fn slug(branch: &str) -> String {
+pub(crate) fn slug(branch: &str) -> String {
     let mut out = String::with_capacity(branch.len());
     for ch in branch.chars() {
         if ch.is_alphanumeric() || ch == '_' || ch == '.' {
@@ -168,7 +168,7 @@ pub fn subtree_in(made: &Path, top: &Path, root: &Path) -> PathBuf {
 /// Whether `branch` already names a local branch of the repository at `root`.
 ///
 /// Blocking, and runtime-agnostic like every other process call in this crate.
-pub fn branch_exists_blocking(root: &Path, branch: &str) -> bool {
+pub(crate) fn branch_exists_blocking(root: &Path, branch: &str) -> bool {
     std::process::Command::new("git")
         .arg("-C")
         .arg(root)

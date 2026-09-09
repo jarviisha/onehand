@@ -103,7 +103,7 @@ impl Press {
     /// is safe for exactly the reason a parked card is worth answering at all:
     /// it is frozen from the moment it is raised until the moment it is
     /// answered, so the list cannot have been rebuilt underneath the button.
-    pub fn encode(&self) -> String {
+    pub(crate) fn encode(&self) -> String {
         match self {
             Self::Permission { uid, item, option } => format!("p:{uid}:{item}:{option}"),
             Self::Question { uid, item, choice } => format!("q:{uid}:{item}:{choice}"),
@@ -119,7 +119,7 @@ impl Press {
     /// by the far side — the whole message is refused, so a notification that
     /// grew one button too long simply never arrives. Asked before a button is
     /// built rather than discovered when nothing shows up.
-    pub fn fits(&self) -> bool {
+    pub(crate) fn fits(&self) -> bool {
         // What Telegram allows, and the smallest cap of anything likely to
         // follow. One number for every channel: a payload sized to the most
         // generous one is a payload the next channel silently drops.

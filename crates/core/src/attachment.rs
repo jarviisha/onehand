@@ -65,7 +65,7 @@ impl StagedAttachment {
         }
     }
 
-    pub fn snapshot(self) -> AttachmentSnapshot {
+    pub(crate) fn snapshot(self) -> AttachmentSnapshot {
         AttachmentSnapshot {
             path: self.path,
             name: self.name,
@@ -84,24 +84,6 @@ pub struct AttachmentSnapshot {
     pub bytes: Option<u64>,
     pub kind: AttachmentKind,
     pub delivery: AttachmentDelivery,
-}
-
-impl AttachmentSnapshot {
-    /// Restore the best available snapshot from a legacy path-only archive.
-    pub fn from_path(path: PathBuf) -> Self {
-        let inspected = inspect_path(&path);
-        Self {
-            path,
-            name: inspected.name,
-            bytes: inspected.bytes,
-            kind: inspected.kind,
-            delivery: inspected.delivery,
-        }
-    }
-
-    pub fn is_available(&self) -> bool {
-        !matches!(self.delivery, AttachmentDelivery::Unavailable) && self.path.is_file()
-    }
 }
 
 struct InspectedPath {
@@ -281,7 +263,10 @@ mod tests {
 
     #[test]
     fn missing_path_keeps_a_stable_display_name() {
-        let attachment = AttachmentSnapshot::from_path(PathBuf::from("/missing/report.pdf"));
+        let attachment = StagedAttachment::inspect(
+            PathBuf::from("/missing/report.pdf"),
+            AttachmentSource::Picker,
+        );
         assert_eq!(attachment.name, "report.pdf");
         assert_eq!(attachment.delivery, AttachmentDelivery::Unavailable);
     }

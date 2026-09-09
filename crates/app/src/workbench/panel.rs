@@ -674,9 +674,8 @@ impl Workbench {
     /// `{ path, old_text, new_text }` with no hunk offsets, so the tool card
     /// that links here has no line to send. The other half — `path:line:col`
     /// tokens written in an agent's prose — needs the transcript to *detect*
-    /// them first, which it does not do. Core's
-    /// `parse::parse_path_line` is the parser that feature would use and
-    /// currently has no caller.
+    /// them first, which it does not do, and there is no parser waiting in core
+    /// for it either.
     pub fn open_file(&mut self, path: PathBuf, window: &mut Window, cx: &mut Context<Self>) {
         let Some(root) = self.root.clone() else {
             return;

@@ -636,9 +636,9 @@ speaker.
   per-block fold state has nowhere to live; reaching it would mean replacing that
   renderer through a custom block parser and trading away its syntax
   highlighting to get a chevron. The cap keeps a long answer readable, which is
-  what the fold was for, and Copy is how the clipped tail stays reachable.
-  (`Md::open_blocks` and `Chat::toggle_code` are still in the model for whenever
-  that trade looks worth making.)
+  what the fold was for, and Copy is how the clipped tail stays reachable. The
+  model carries no fold state for a block, so there is nothing here that is
+  half-wired: adding the fold means designing both halves at once.
 - **The turn's chrome sits on the turn, not on the block.** An answer split by
   tool calls arrives as several `Agent` items; the label goes on the first and
   the footer — "Processed in Xs", and Copy — on the last, both decided by the
@@ -887,14 +887,14 @@ impl ToolItem {   // only work changing right now force-opens
 `PlanItem` does the same while any entry is in progress.
 
 **Code-block identity under streaming.** The answer's markdown re-parses as
-tokens arrive, so "the Nth block of the parse" is not a stable identity. Code
-blocks are identified by **fence-open order** — a counter incremented when a
-fence *opens*, never renumbered on re-parse — so a fold made mid-stream survives
-the blocks that arrive after it.
+tokens arrive, so "the Nth block of the parse" is not a stable identity. Any
+per-block state a fold needs would have to be keyed by **fence-open order** — a
+counter incremented when a fence *opens*, never renumbered on re-parse — so that
+a fold made mid-stream survives the blocks arriving after it. The model keys
+nothing by it today, because nothing folds a code block.
 
 **Defaults:** tool cards and thoughts fold collapsed. Code blocks do not fold at
-all in this build (§5.2) — the fence-order identity above is what the model still
-keys, for when they can.
+all in this build (§5.2).
 
 ---
 
