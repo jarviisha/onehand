@@ -1,8 +1,15 @@
 //! `onehand.toml` parsing — pure, GUI-free.
 //!
-//! Loads global agent definitions plus the `[font]` and `[icons]` theming
-//! sections. `#[serde(default)]` everywhere means a partial file overrides only
-//! the keys it sets — a `[font]`-only file keeps the default agents.
+//! Loads the appearance, the global agent definitions, the `[font]` preference
+//! and the remote channels.
+//!
+//! Two separate tolerances keep a hand-written file working, and they are not
+//! the same mechanism. `#[serde(default)]` everywhere covers keys the file
+//! *omits*, so a partial file overrides only what it sets and a `[font]`-only
+//! file keeps the default agents. Keys the file has and this build does not are
+//! covered by serde's own default of ignoring unknown fields — nothing here
+//! opts into `deny_unknown_fields`, which is the attribute that would turn a
+//! setting left over from an older build into a refusal to load at all.
 
 use serde::{Deserialize, Serialize};
 use std::io::Write as _;
@@ -107,29 +114,20 @@ pub fn split_args(line: &str) -> Vec<String> {
     out
 }
 
-/// `[font]` — type + master zoom.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+/// `[font]` — the monospace family to prefer, if the machine has one by that
+/// name.
+///
+/// One key, because one key is what is read. This table also carried a body
+/// size, a master zoom, a sans family and a fallback list; all four parsed
+/// cleanly and none of them reached the screen, so a file setting `size = 18`
+/// loaded without complaint and changed nothing. A key that is honoured only by
+/// the parser is worse than a missing one: the missing key is a feature the app
+/// does not have, and the parsed one is a feature it appears to have and lies
+/// about.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct FontConfig {
-    /// Base body size (default ~14).
-    pub(crate) size: f32,
-    /// Master zoom, 0.5–3.0.
-    pub(crate) scale: f32,
-    pub(crate) sans: Option<String>,
     pub monospace: Option<String>,
-    pub(crate) fallbacks: Vec<String>,
-}
-
-impl Default for FontConfig {
-    fn default() -> Self {
-        Self {
-            size: 14.0,
-            scale: 1.0,
-            sans: None,
-            monospace: None,
-            fallbacks: Vec::new(),
-        }
-    }
 }
 
 /// Monospace families to fall back through, in order, when nothing preferred
@@ -265,20 +263,6 @@ impl<'de> Deserialize<'de> for Appearance {
     }
 }
 
-/// `[icons]` — per-role hex overrides; bad/missing hex keeps the dark default.
-#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(default)]
-pub struct IconConfig {
-    pub(crate) accent: Option<String>,
-    pub(crate) success: Option<String>,
-    pub(crate) warning: Option<String>,
-    pub(crate) danger: Option<String>,
-    pub(crate) muted: Option<String>,
-    pub(crate) faint: Option<String>,
-    pub(crate) strong: Option<String>,
-    pub(crate) discovery: Option<String>,
-}
-
 /// `[remote]` — the ways a device outside this machine can reach the app.
 ///
 /// One table per channel rather than one flat set of keys, because the channels
@@ -328,7 +312,6 @@ pub struct AppConfig {
     pub appearance: Appearance,
     pub agents: Vec<AgentSpec>,
     pub font: FontConfig,
-    pub(crate) icons: IconConfig,
     pub remote: RemoteConfig,
 }
 
@@ -338,7 +321,6 @@ impl Default for AppConfig {
             appearance: Appearance::default(),
             agents: default_agents(),
             font: FontConfig::default(),
-            icons: IconConfig::default(),
             remote: RemoteConfig::default(),
         }
     }
@@ -462,9 +444,6 @@ pub struct WorkspaceConfig {
     pub name: String,
     pub roots: Vec<PathBuf>,
     pub active_root: usize,
-    /// Workspace icon tint as `#RRGGBB`. `None` (and any malformed hex) falls
-    /// back to a stable palette color derived from the name.
-    pub(crate) icon_color: Option<String>,
     /// How the window's side panels were arranged. `#[serde(default)]` on the
     /// struct means an older file without this section simply gets the
     /// built-in arrangement.
@@ -647,9 +626,11 @@ pub(crate) fn write_atomic(path: &Path, text: &str) -> std::io::Result<()> {
 /// The distinction that matters is `Missing` vs `Unreadable`: the first says a
 /// folder is free to write into, the second says something is there and we
 /// could not make sense of it. Treating the second as the first destroys data.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum Load<T> {
-    Found(T),
+// No `Eq`: `WorkspaceConfig` carries floats, so the generic form's `Eq` was
+// only ever derivable because no caller had asked for it on this type.
+#[derive(Debug, Clone, PartialEq)]
+pub enum WorkspaceLoad {
+    Found(WorkspaceConfig),
     /// No such file. The folder holds no workspace.
     Missing,
     /// The file exists but could not be read or parsed — a permission problem,
@@ -658,11 +639,11 @@ pub enum Load<T> {
     Unreadable,
 }
 
-impl<T> Load<T> {
-    pub fn found(self) -> Option<T> {
+impl WorkspaceLoad {
+    pub fn found(self) -> Option<WorkspaceConfig> {
         match self {
-            Load::Found(v) => Some(v),
-            Load::Missing | Load::Unreadable => None,
+            WorkspaceLoad::Found(v) => Some(v),
+            WorkspaceLoad::Missing | WorkspaceLoad::Unreadable => None,
         }
     }
 }
@@ -678,22 +659,22 @@ impl WorkspaceConfig {
     /// destructive: binding overwrote a workspace whose config had one bad
     /// character, and a recent whose folder was briefly unreachable (an
     /// unmounted share, a permission blip) was forgotten for good
-    ///. Only [`Load::Missing`] means the folder is free.
-    pub fn load_from(dir: &Path) -> Load<Self> {
+    ///. Only [`WorkspaceLoad::Missing`] means the folder is free.
+    pub fn load_from(dir: &Path) -> WorkspaceLoad {
         let path = dir.join(Self::FILE);
         let text = match std::fs::read_to_string(&path) {
             Ok(text) => text,
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Load::Missing,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => return WorkspaceLoad::Missing,
             Err(e) => {
                 eprintln!("onehand: cannot read {}: {e}", path.display());
-                return Load::Unreadable;
+                return WorkspaceLoad::Unreadable;
             }
         };
         match toml::from_str(&text) {
-            Ok(cfg) => Load::Found(cfg),
+            Ok(cfg) => WorkspaceLoad::Found(cfg),
             Err(e) => {
                 eprintln!("onehand: bad workspace config in {}: {e}", dir.display());
-                Load::Unreadable
+                WorkspaceLoad::Unreadable
             }
         }
     }
@@ -787,14 +768,29 @@ mod tests {
     fn empty_file_keeps_defaults() {
         let cfg = AppConfig::parse("").unwrap();
         assert_eq!(cfg.agents, default_agents());
-        assert_eq!(cfg.font.size, 14.0);
+        assert_eq!(cfg.font.monospace, None);
     }
 
     #[test]
-    fn font_only_file_keeps_default_agents() {
-        // A `[font]`-only file keeps the default agents.
-        let cfg = AppConfig::parse("[font]\nsize = 15.0\n").unwrap();
-        assert_eq!(cfg.font.size, 15.0);
+    fn a_config_written_for_the_old_font_and_icon_tables_still_loads() {
+        // `size`, `scale`, `sans` and `fallbacks` were `[font]` keys, and
+        // `[icons]` was a whole table; all of them were parsed and none were
+        // read. They are gone, and a file that still sets them has to keep
+        // working. What allows that is serde ignoring unknown fields, which is
+        // its default and which nothing here overrides — the same reason a
+        // legacy agent's `kind` still parses. This test is what would fail if
+        // anyone reached for `deny_unknown_fields`, because that attribute
+        // would turn every one of these leftovers into a refusal to load.
+        //
+        // It is also the `[font]`-only case, which is the *other* tolerance:
+        // `#[serde(default)]` filling in the tables this file never mentions,
+        // so the default agents survive it.
+        let cfg = AppConfig::parse(
+            "[font]\nsize = 15.0\nscale = 2.0\nsans = \"Inter\"\nfallbacks = [\"X\"]\n\
+             monospace = \"Iosevka\"\n\n[icons]\naccent = \"#ff0000\"\n",
+        )
+        .unwrap();
+        assert_eq!(cfg.font.monospace.as_deref(), Some("Iosevka"));
         assert_eq!(cfg.agents, default_agents());
     }
 
@@ -929,7 +925,6 @@ mod tests {
             name: "Mine".into(),
             roots: vec![PathBuf::from("/a"), PathBuf::from("/b")],
             active_root: 1,
-            icon_color: Some("#3B82F6".into()),
             layout: PanelLayout::default(),
             pinned: Vec::new(),
         };
@@ -945,12 +940,11 @@ mod tests {
             name: "Persisted".into(),
             roots: vec![PathBuf::from("/x")],
             active_root: 0,
-            icon_color: None,
             layout: PanelLayout::default(),
             pinned: Vec::new(),
         };
         cfg.save_to(&dir).unwrap();
-        assert_eq!(WorkspaceConfig::load_from(&dir), Load::Found(cfg));
+        assert_eq!(WorkspaceConfig::load_from(&dir), WorkspaceLoad::Found(cfg));
         let _ = std::fs::remove_dir_all(&dir);
     }
 
@@ -1100,16 +1094,10 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
 
-        assert_eq!(
-            WorkspaceConfig::load_from(&dir),
-            Load::<WorkspaceConfig>::Missing
-        );
+        assert_eq!(WorkspaceConfig::load_from(&dir), WorkspaceLoad::Missing);
 
         std::fs::write(dir.join(WorkspaceConfig::FILE), "name = \"unclosed").unwrap();
-        assert_eq!(
-            WorkspaceConfig::load_from(&dir),
-            Load::<WorkspaceConfig>::Unreadable
-        );
+        assert_eq!(WorkspaceConfig::load_from(&dir), WorkspaceLoad::Unreadable);
         assert!(WorkspaceConfig::load_from(&dir).found().is_none());
 
         let _ = std::fs::remove_dir_all(&dir);

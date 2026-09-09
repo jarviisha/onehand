@@ -23,7 +23,7 @@ use gpui_component::{
     ResizableState, Root, StyledExt, Theme, ThemeMode, WindowExt as _, h_resizable, resizable_panel,
 };
 use onehand_core::config::{AgentSpec, AppConfig, Appearance, PanelLayout};
-use onehand_core::config::{Load, WorkspaceConfig};
+use onehand_core::config::{WorkspaceConfig, WorkspaceLoad};
 use onehand_core::gitstat;
 use onehand_core::workspace::{self, Workspace};
 use onehand_core::worktree;
@@ -2449,12 +2449,12 @@ impl Shell {
                 .await;
 
             cx.update(|cx| match existing {
-                Load::Found(cfg) => open_or_focus(Workspace::from_config(cfg, dir), cx),
+                WorkspaceLoad::Found(cfg) => open_or_focus(Workspace::from_config(cfg, dir), cx),
                 // Something is in that folder and we could not read it. The
                 // overwrite guard has to cover this case too, or a workspace
                 // config with one bad character is a workspace deleted by a
                 // folder picker.
-                Load::Unreadable => {
+                WorkspaceLoad::Unreadable => {
                     shell
                         .update_in(cx, |_, window, cx| {
                             window.push_notification(
@@ -2469,7 +2469,7 @@ impl Shell {
                         })
                         .ok();
                 }
-                Load::Missing => {
+                WorkspaceLoad::Missing => {
                     shell
                         .update_in(cx, |shell, window, cx| {
                             shell.bind_storage(dir.clone(), window, cx);
@@ -2507,14 +2507,14 @@ impl Shell {
                 .await;
 
             match loaded {
-                Load::Found(cfg) => {
+                WorkspaceLoad::Found(cfg) => {
                     cx.update(|cx| open_or_focus(Workspace::from_config(cfg, dir), cx));
                 }
                 // Two different sentences on purpose: "there is nothing here"
                 // sends the user to a different folder, "I could not read what
                 // is here" sends them to fix the file they meant to open.
-                Load::Missing | Load::Unreadable => {
-                    let missing = matches!(loaded, Load::Missing);
+                WorkspaceLoad::Missing | WorkspaceLoad::Unreadable => {
+                    let missing = matches!(loaded, WorkspaceLoad::Missing);
                     shell
                         .update_in(cx, |_, window, cx| {
                             window.push_notification(
@@ -2679,12 +2679,12 @@ impl Shell {
                 .await;
 
             match loaded {
-                Load::Found(cfg) => {
+                WorkspaceLoad::Found(cfg) => {
                     cx.update(|cx| open_or_focus(Workspace::from_config(cfg, dir), cx));
                 }
                 // Gone for good: no such file. Stale, not an error the user
                 // caused, so drop it rather than nag.
-                Load::Missing => {
+                WorkspaceLoad::Missing => {
                     shell
                         .update(cx, |_shell, cx| {
                             cx.update_global::<Shared, _>(|shared, _| {
@@ -2698,7 +2698,7 @@ impl Shell {
                 // Present but unreadable -- an unmounted share, a permission
                 // blip, a TOML typo. Every one of those is recoverable, and
                 // forgetting the recent is not: say so and keep the row.
-                Load::Unreadable => {
+                WorkspaceLoad::Unreadable => {
                     shell
                         .update_in(cx, |_, window, cx| {
                             window.push_notification(

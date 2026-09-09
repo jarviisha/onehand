@@ -8,5 +8,7 @@ and the upstream legal disclaimer:
 - https://github.com/simple-icons/simple-icons/blob/develop/LICENSE.md
 - https://github.com/simple-icons/simple-icons/blob/develop/DISCLAIMER.md
 
-The Claude mark in this repository is used to identify the corresponding
-agent integration and is sourced from the version pinned in `manifest.toml`.
+No asset in this repository currently comes from Simple Icons. This notice
+stays because `manifest.toml` still names a brand mark as one of the two kinds
+of thing that may be checked in, and the review above is what has to happen
+before one is — not because anything here is under it today.
