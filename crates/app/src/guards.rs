@@ -418,6 +418,20 @@ mod tests {
     /// mentioned again after construction, which is worth having and is why the
     /// modules are private.)
     ///
+    /// **That claim was challenged and measured**, because it is the whole
+    /// reason this exists and it had stopped being obvious. The argument was
+    /// that once every first-party crate stopped re-exporting its internals,
+    /// `dead_code` would cover all of [`ui_sources`] with types and this could
+    /// go. Half of it is true, and is worth knowing: a field never mentioned
+    /// again after construction is now caught by rustc in every one of those
+    /// crates, at every visibility, which it was not while they exported globs.
+    /// The other half is not. A field assigned through `self.f = x` and never
+    /// read draws no warning from any lint, in any crate, at any visibility —
+    /// and that is the shape all three historical failures had.
+    ///
+    /// So what is left here is narrower than what it was written to be, and it
+    /// is the part with no compiler behind it.
+    ///
     /// **Where this stops.** It reads `.name` occurrences and treats anything
     /// that is not an assignment target as a read — so a field mutated through
     /// its own methods (`self.set.insert(..)`, `self.map.remove(..)`) counts as

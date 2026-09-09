@@ -125,6 +125,14 @@ icon, our own event enums matched exhaustively (not `matches!`), no field assign
 a guard here is evidence that the rule cannot be held by intention alone, so removing one because it
 is inconvenient re-opens something that has already gone wrong more than once.
 
+**A guard that overlaps a compiler lint is removed by measurement, not by argument.** The
+field-never-read guard was proposed for deletion on the reasoning that narrowing every crate's `pub`
+surface would let `dead_code` cover the same ground. Probing it settled the question and split it in
+two: a field never mentioned again after construction *is* now caught by rustc everywhere, which it
+was not while the crates exported globs — and a field assigned through `self.f = x` and never read is
+caught by nothing, at any visibility, which is the shape all three historical failures had. The guard
+stayed and its doc records the measurement. Do the probe before the deletion.
+
 ### The GPUI model (what replaced MVU)
 
 There is no central `update(Message)`. State lives in **entities** (`Entity<T>`), each rendering

@@ -1,6 +1,11 @@
 //! Shared PTY ownership and terminal-grid setup used by the shell dock and
 //! built-in Neovim plugin. Rendering and input remain in the main GPUI process.
 
+// Nothing here is `pub` unless the binary names it: `dead_code` stops at a
+// `pub` item in a library, so one that lost its last caller looks exactly like
+// a working feature.
+#![warn(unreachable_pub)]
+
 use gpui::{App, AppContext as _, Entity, SharedString, Window};
 use gpui_component::ActiveTheme as _;
 use gpui_terminal::{ColorPalette, TerminalConfig, TerminalView};
