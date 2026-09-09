@@ -100,7 +100,9 @@ profile.
   caller looked exactly like a working feature to the compiler — seventeen accumulated that way, plus
   a fold-state chain and a write-only field that a repo-wide grep could not see and one compile did.
   `#![warn(unreachable_pub)]` is there too and catches nothing today, since no module is private; it
-  is the guard for the first one that is.
+  is the guard for the first one that is. Every other first-party library carries the same line for
+  the same reason — `plugin-api`, `plugin-host`, `terminal-ui` and each built-in plugin — while
+  `crates/app` gets the effect from private modules instead.
 
 Shared rules live in core, not restated per call site: `GitStatus::label`, `AppConfig::update_in_place`,
 `gitstat::read_blocking`, `RootEditors::open`, `Chat::apply`, `Away::headline`, `remote::press::option_at`,
@@ -127,11 +129,10 @@ is inconvenient re-opens something that has already gone wrong more than once.
 
 **A guard that overlaps a compiler lint is removed by measurement, not by argument.** The
 field-never-read guard was proposed for deletion on the reasoning that narrowing every crate's `pub`
-surface would let `dead_code` cover the same ground. Probing it settled the question and split it in
-two: a field never mentioned again after construction *is* now caught by rustc everywhere, which it
-was not while the crates exported globs — and a field assigned through `self.f = x` and never read is
-caught by nothing, at any visibility, which is the shape all three historical failures had. The guard
-stayed and its doc records the measurement. Do the probe before the deletion.
+surface would let `dead_code` cover the same ground. It does not, and a probe said so in a minute
+where the reasoning had been persuasive for a page. The guard stayed; what exactly rustc does and
+does not cover is recorded on the guard itself, where the next person to argue this will be standing.
+**Do the probe before the deletion.**
 
 ### The GPUI model (what replaced MVU)
 
