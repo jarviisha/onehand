@@ -5,12 +5,11 @@
 //!
 //! - [`types`] — the neutral message model plus the [`types::RemoteChannel`]
 //!   trait. Nothing here names a channel and nothing here names a front end.
-//! - [`access`] — who is allowed to reach the app, and the rule that anyone else
-//!   is answered with silence.
 //! - [`command`] — the little language a chat drives the app with.
 //! - [`press`] — what a button means, packed small enough to survive the trip.
-//! - [`chats`] — where each chat types and what each has asked to hear about,
-//!   and every reply that reports or changes either.
+//! - [`chats`] — who is allowed to reach the app at all, where each chat types
+//!   and what each has asked to hear about, and every reply that reports or
+//!   changes either.
 //!
 //! Wire implementations and their secret loading live in built-in plugins.
 //!
@@ -21,13 +20,11 @@
 //! ACP client's shape: a serve loop folded into the stream it returns, so a
 //! front end drives it however it likes and dropping the stream ends it.
 
-pub mod access;
 pub mod chats;
 pub mod command;
 pub mod press;
 pub mod types;
 
-pub use access::{is_allowed, is_silently_ignored};
 pub use chats::{Announcement, ArchiveRow, Chats, Origin, RemoteSession};
 pub use command::{Aim, RemoteCommand};
 pub use press::Press;
