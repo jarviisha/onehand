@@ -60,7 +60,7 @@ impl Buffer {
 #[derive(Default)]
 pub struct ExitState {
     pub exited: bool,
-    pub code: Option<i32>,
+    pub(crate) code: Option<i32>,
 }
 
 struct Term {
@@ -92,7 +92,7 @@ impl TerminalRegistry {
     }
 
     /// `terminal/create`: spawn the command in a PTY, returning `{ terminalId }`.
-    pub fn create(&mut self, params: &Value, default_cwd: &Path) -> Result<Value, String> {
+    pub(crate) fn create(&mut self, params: &Value, default_cwd: &Path) -> Result<Value, String> {
         let command = params
             .get("command")
             .and_then(Value::as_str)
@@ -235,7 +235,7 @@ impl TerminalRegistry {
     }
 
     /// `terminal/output`: the current buffered output + truncation + exit.
-    pub fn output(&self, id: &str) -> Result<Value, String> {
+    pub(crate) fn output(&self, id: &str) -> Result<Value, String> {
         let term = self.terms.get(id).ok_or("unknown terminal")?;
         let buf = term.buffer.lock().unwrap();
         let output = String::from_utf8_lossy(&buf.data).into_owned();
@@ -248,7 +248,7 @@ impl TerminalRegistry {
     }
 
     /// Whether a terminal has already exited (answer `wait_for_exit` inline).
-    pub fn exit_now(&self, id: &str) -> Option<Value> {
+    pub(crate) fn exit_now(&self, id: &str) -> Option<Value> {
         let term = self.terms.get(id)?;
         let exit = term.exit.lock().unwrap();
         exit.exited
@@ -257,20 +257,20 @@ impl TerminalRegistry {
 
     /// The shared exit state for parking a `wait_for_exit` (when not yet
     /// exited). The client polls it. Returns `None` for an unknown terminal.
-    pub fn waiter(&self, id: &str) -> Option<Arc<Mutex<ExitState>>> {
+    pub(crate) fn waiter(&self, id: &str) -> Option<Arc<Mutex<ExitState>>> {
         self.terms.get(id).map(|t| t.exit.clone())
     }
 
     /// `terminal/kill`: signal the child to stop (the terminal stays available
     /// so the agent can still read the final output).
-    pub fn kill(&mut self, id: &str) -> Result<Value, String> {
+    pub(crate) fn kill(&mut self, id: &str) -> Result<Value, String> {
         let term = self.terms.get_mut(id).ok_or("unknown terminal")?;
         let _ = term.killer.kill();
         Ok(Value::Null)
     }
 
     /// `terminal/release`: kill and drop the terminal entirely.
-    pub fn release(&mut self, id: &str) -> Result<Value, String> {
+    pub(crate) fn release(&mut self, id: &str) -> Result<Value, String> {
         if let Some(mut term) = self.terms.remove(id) {
             let _ = term.killer.kill();
         }
@@ -319,7 +319,7 @@ fn exit_status_value(exit: &ExitState) -> Value {
 }
 
 /// Build the `wait_for_exit` result from a settled [`ExitState`].
-pub fn wait_result(exit: &ExitState) -> Value {
+pub(crate) fn wait_result(exit: &ExitState) -> Value {
     json!({ "exitStatus": exit_status_value(exit) })
 }
 

@@ -46,27 +46,6 @@ impl ProjectRoot {
     pub fn active_session(&self) -> Option<&Session> {
         self.sessions.get(self.active_session)
     }
-
-    pub fn active_session_mut(&mut self) -> Option<&mut Session> {
-        self.sessions.get_mut(self.active_session)
-    }
-}
-
-/// The workspace-icon initial for a name: the first letter of its first word,
-/// uppercased. Empty names fall back to `"W"` so the badge never renders blank.
-pub fn initials(name: &str) -> String {
-    let out: String = name
-        .split_whitespace()
-        .next()
-        .unwrap_or("")
-        .chars()
-        .take(1)
-        .collect();
-    if out.is_empty() {
-        "W".into()
-    } else {
-        out.to_uppercase()
-    }
 }
 
 /// The folder's display label — its final path component, else the whole path.
@@ -99,7 +78,7 @@ pub struct Workspace {
     pub name: String,
     /// Icon tint as `#RRGGBB` (workspace settings pick it; persisted). `None`
     /// ⇒ a stable palette color derived from the name at render time.
-    pub icon_color: Option<String>,
+    pub(crate) icon_color: Option<String>,
     pub roots: Vec<ProjectRoot>,
     pub active_root: usize,
     /// Storage directory this workspace persists to, if bound. `None` ⇒
@@ -215,7 +194,7 @@ impl Workspace {
         self.roots.get(self.active_root)
     }
 
-    pub fn active_root_mut(&mut self) -> Option<&mut ProjectRoot> {
+    pub(crate) fn active_root_mut(&mut self) -> Option<&mut ProjectRoot> {
         self.roots.get_mut(self.active_root)
     }
 
@@ -305,17 +284,6 @@ mod tests {
             command: "x".into(),
             args: vec![],
         }
-    }
-
-    #[test]
-    fn initials_take_first_letter_of_first_word() {
-        assert_eq!(initials("onehand dev"), "O");
-        assert_eq!(initials("My Big Workspace"), "M");
-        assert_eq!(initials("workspace"), "W");
-        assert_eq!(initials("x"), "X");
-        assert_eq!(initials(""), "W");
-        assert_eq!(initials("   "), "W");
-        assert_eq!(initials("việt nam"), "V"); // unicode-safe
     }
 
     #[test]

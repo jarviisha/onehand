@@ -72,7 +72,7 @@ pub struct TranscriptMatch {
     pub target: TranscriptItemId,
     /// Absolute item position in the history + live sequence. Used only to
     /// choose a bounded render page and a relative scroll destination.
-    pub position: usize,
+    pub(crate) position: usize,
 }
 
 pub fn compute_matches(chat: &Chat, query: &str) -> Vec<TranscriptMatch> {

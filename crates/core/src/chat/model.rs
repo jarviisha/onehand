@@ -38,10 +38,6 @@ impl TranscriptItemId {
             Self::History(index) | Self::Live(index) => index,
         }
     }
-
-    pub const fn is_history(self) -> bool {
-        matches!(self, Self::History(_))
-    }
 }
 
 /// A permission request rendered as a card with option buttons.
@@ -176,7 +172,7 @@ impl AskItem {
     /// The `(key, value)` pairs for the response `content`: a typed answer wins
     /// over that field's picks (the user wrote their own instead of choosing),
     /// and an unanswered field contributes nothing.
-    pub fn answers(&self) -> Vec<(String, ElicitValue)> {
+    pub(crate) fn answers(&self) -> Vec<(String, ElicitValue)> {
         let mut out = Vec::new();
         for (i, f) in self.req.fields.iter().enumerate() {
             let typed = self.custom.get(i).map(|s| s.trim()).unwrap_or_default();
@@ -207,37 +203,9 @@ impl AskItem {
         out
     }
 
-    /// The question as plain text for the clipboard: the prompt, then each
-    /// field's own heading and its choices as a bullet list (an option's
-    /// description trails its label). What the user picked is deliberately left
-    /// out — this copies the *question*, so it stays pasteable while the card
-    /// is still open.
-    pub fn copy_text(&self) -> String {
-        let mut out = self.req.message.clone();
-        for f in &self.req.fields {
-            for line in [f.title.as_ref(), f.description.as_ref()]
-                .into_iter()
-                .flatten()
-            {
-                out.push_str("\n\n");
-                out.push_str(line);
-            }
-            for c in f.kind.choices() {
-                out.push_str("\n- ");
-                out.push_str(&c.label);
-                if let Some(d) = &c.description {
-                    out.push_str(": ");
-                    out.push_str(d);
-                }
-            }
-        }
-        out.push('\n');
-        out
-    }
-
     /// The audit-trail line shown once answered — the chosen *labels* (not the
     /// wire values), comma-joined.
-    pub fn summary(&self) -> String {
+    pub(crate) fn summary(&self) -> String {
         let mut parts = Vec::new();
         for (i, f) in self.req.fields.iter().enumerate() {
             let typed = self.custom.get(i).map(|s| s.trim()).unwrap_or_default();
@@ -276,8 +244,8 @@ impl MdId {
     }
 }
 
-/// One block of streamed markdown: the raw source plus the fold state of its
-/// code blocks and tables.
+/// One block of streamed markdown: its raw source, and an id to cache the
+/// parse against.
 ///
 /// The *parsed* form a renderer needs (a `TextViewState` in the GPUI front end)
 /// is deliberately absent — it is a derived cache of `source`, and it is
@@ -290,13 +258,6 @@ pub struct Md {
     /// it, so neither an index nor an address will do.
     pub id: MdId,
     pub source: String,
-    /// Code blocks the user expanded, keyed by **fence-open order** within this
-    /// block : a monotone counter that never renumbers on
-    /// re-parse, so a fold set mid-stream survives later blocks arriving.
-    pub open_blocks: HashSet<usize>,
-    /// Tables whose >`MAX_TABLE_ROWS` tail the user revealed, keyed by table
-    /// order within this block.
-    pub open_tables: HashSet<usize>,
 }
 
 impl Md {
@@ -304,35 +265,10 @@ impl Md {
         Self {
             id: MdId::next(),
             source: s.to_string(),
-            open_blocks: HashSet::new(),
-            open_tables: HashSet::new(),
         }
     }
-    pub fn push(&mut self, s: &str) {
+    pub(crate) fn push(&mut self, s: &str) {
         self.source.push_str(s);
-    }
-    /// Toggle a code block's fold (by fence-open order).
-    pub fn toggle_block(&mut self, n: usize) {
-        if !self.open_blocks.remove(&n) {
-            self.open_blocks.insert(n);
-        }
-    }
-    /// Toggle a table's row-cap fold (by table order).
-    pub fn toggle_table(&mut self, n: usize) {
-        if !self.open_tables.remove(&n) {
-            self.open_tables.insert(n);
-        }
-    }
-    /// The fence-open index of a still-unterminated ``` fence, if any — an odd
-    /// number of fence lines means the last code block is still streaming and
-    /// renders force-open, chevron-less.
-    pub fn streaming_block(&self) -> Option<usize> {
-        let fences = self
-            .source
-            .lines()
-            .filter(|l| l.trim_start().starts_with("```"))
-            .count();
-        (fences % 2 == 1).then_some(fences / 2)
     }
 }
 
@@ -454,7 +390,7 @@ pub struct ToolItem {
     /// filled.
     pub diff_rows: HashMap<usize, Vec<crate::diff::Row>>,
     /// The user opened this card.
-    pub fold: bool,
+    pub(crate) fold: bool,
     /// Content sections whose OUT well is un-folded past the threshold,
     /// keyed by the section's index in `call.content`.
     pub out_open: HashSet<usize>,
@@ -525,7 +461,7 @@ impl ToolItem {
 pub struct PlanItem {
     pub entries: Vec<PlanEntry>,
     /// The user opened this card.
-    pub fold: bool,
+    pub(crate) fold: bool,
 }
 
 impl PlanItem {
@@ -555,10 +491,10 @@ pub struct UserMsg {
     pub attachments: Vec<AttachmentSnapshot>,
     /// Epoch seconds captured when the prompt was submitted. Replayed/legacy
     /// protocol messages may not carry one.
-    pub sent_at: Option<u64>,
+    pub(crate) sent_at: Option<u64>,
     /// Epoch seconds captured when the corresponding response settles. Kept
     /// on the user item because that item is the stable boundary of a turn.
-    pub completed_at: Option<u64>,
+    pub(crate) completed_at: Option<u64>,
 }
 
 impl UserMsg {
@@ -621,7 +557,7 @@ impl NoticeLevel {
     /// The archived form. Info is the empty string so a quiet notice costs no
     /// key on disk, and so an archive from before levels existed round-trips
     /// to exactly the bytes it came in as.
-    pub fn as_str(self) -> &'static str {
+    pub(crate) fn as_str(self) -> &'static str {
         match self {
             Self::Info => "",
             Self::Error => "error",
@@ -639,7 +575,7 @@ impl ChatItem {
     }
 
     /// A failure the user has to see.
-    pub fn error(text: impl Into<String>) -> Self {
+    pub(crate) fn error(text: impl Into<String>) -> Self {
         Self::Notice {
             text: text.into(),
             level: NoticeLevel::Error,
@@ -672,7 +608,7 @@ const TITLE_MAX_WORDS: usize = 16;
 /// is removed in the two languages commonly used in the app, then the label is
 /// clipped at a word boundary. `None` is reserved for attachment-only turns so
 /// callers can keep the agent-name fallback.
-pub fn summarize_title(text: &str) -> Option<String> {
+pub(crate) fn summarize_title(text: &str) -> Option<String> {
     let line = text.lines().map(str::trim).find(|l| !l.is_empty())?;
     let mut title = line
         .trim_start_matches(['#', '>', '-', '*', '•'])
@@ -1051,7 +987,7 @@ pub struct Chat {
     /// Last activity (epoch secs): bumped on every applied agent event and on
     /// each submitted prompt, seeded from the archive's `updated` on resume.
     /// Drives the rail session row's relative-time label. Runtime-only.
-    pub last_activity: Option<u64>,
+    pub(crate) last_activity: Option<u64>,
     /// Where this conversation is between adopting an archive and knowing what
     /// the agent's replay actually delivered. See [`Replay`].
     replay: Replay,
@@ -1062,7 +998,7 @@ pub struct Chat {
     /// concatenate into one).
     user_chunk_open: bool,
     /// The live request channel once `Connected`; `None` while not running.
-    pub tx: Option<ReqTx>,
+    pub(crate) tx: Option<ReqTx>,
     /// Whether the adapter is coming up, live, or gone. See [`Link`].
     pub link: Link,
     /// A turn is in flight (Send becomes Stop).
@@ -1073,7 +1009,7 @@ pub struct Chat {
     /// the reducer is the only thing that sees a turn end, and a queue flushed
     /// from anywhere else is a queue that flushes late, twice, or never.
     pub queued: Option<QueuedPrompt>,
-    pub resumed: bool,
+    pub(crate) resumed: bool,
 
     // ── composer sources (Phase 3B) ──
     /// Root-relative file paths for `@`-mention completion.
@@ -1090,8 +1026,8 @@ pub struct Chat {
     /// from the archive on load and replayed once the adapter reconnects
     /// (`reapply_prefs`). The adapter rebuilds effort/agent from static settings
     /// on `session/load`, so without this a reopened session loses them.
-    pub pending_mode: Option<String>,
-    pub pending_config: Vec<(String, String)>,
+    pub(crate) pending_mode: Option<String>,
+    pub(crate) pending_config: Vec<(String, String)>,
     /// Files staged with 📎 to send with the next prompt.
     /// Live terminals (ACP terminal extension), keyed by terminalId.
     pub terminals: HashMap<String, TermView>,
@@ -1112,7 +1048,7 @@ pub struct Chat {
     /// Where this conversation is kept. `None` never persists — which is what
     /// makes a chat built in a test provably inert, and what lets the store's
     /// own tests point one at a directory of their own.
-    pub store: Option<PathBuf>,
+    pub(crate) store: Option<PathBuf>,
     /// How many transcript positions (history then items) are already written.
     ///
     /// Positions rather than lines: the two differ only by the cards that are a
@@ -1165,7 +1101,12 @@ impl Chat {
     }
 
     /// Whether an adopted archive is still waiting for the agent to replay it.
-    pub fn replay_pending(&self) -> bool {
+    ///
+    /// Only the tests ask this: the app never inspects the replay window, it
+    /// just keeps prompting. [`Chat::flush`] is what consults the state before
+    /// anything is written, and [`Chat::take_snapshot`] is what settles it.
+    #[cfg(test)]
+    fn replay_pending(&self) -> bool {
         matches!(self.replay, Replay::Armed)
     }
 
@@ -1351,7 +1292,6 @@ impl Chat {
             updated: self.last_activity.unwrap_or_else(store::now_secs),
             // The file's own, and the file keeps it: a snapshot passing through
             // memory has no business telling a conversation when it began.
-            created: 0,
             prefs: self.prefs(),
             items: kept,
             written: self.persisted.saturating_sub(dropped_before),
@@ -1411,17 +1351,12 @@ impl Chat {
         self.revision = self.revision.wrapping_add(1);
     }
 
-    /// True if there is nothing rendered yet (history + live both empty).
-    pub fn is_empty(&self) -> bool {
-        self.history.is_empty() && self.items.is_empty()
-    }
-
     /// A title derived from the conversation's **first user prompt** — its first
     /// non-empty line, trimmed and length-capped — so each session reads
     /// distinctly in the rail row / pane header instead of all showing the
     /// agent name. Looks through resumed `history` then live `items`. `None`
     /// until a prompt exists (callers fall back to the agent name).
-    pub fn derived_title(&self) -> Option<String> {
+    pub(crate) fn derived_title(&self) -> Option<String> {
         self.history
             .iter()
             .chain(self.items.iter())
@@ -1552,7 +1487,7 @@ impl Chat {
 
     /// Optimistically reflect a config-option choice (the adapter answers the
     /// `set_config_option` in its reply, not as a `session/update`).
-    pub fn set_config_current(&mut self, config_id: &str, value: &str) {
+    pub(crate) fn set_config_current(&mut self, config_id: &str, value: &str) {
         if let Some(opt) = self.config_options.iter_mut().find(|o| o.id == config_id) {
             opt.current = Some(value.to_string());
         }
@@ -1568,7 +1503,12 @@ impl Chat {
     /// `Connected { resumed: false }` so old history stays as read-only context.
     /// `written` is how many of `items` are already on disk — the mark the
     /// conversation carries on from.
-    pub fn load_history(&mut self, items: Vec<ChatItem>, session_id: String, written: usize) {
+    pub(crate) fn load_history(
+        &mut self,
+        items: Vec<ChatItem>,
+        session_id: String,
+        written: usize,
+    ) {
         // The loaded transcript *is* this conversation, and a `session/load`
         // replay re-delivers it into `items`. Without the reset the view
         // (history ⧺ items) shows everything twice.
@@ -1616,7 +1556,7 @@ impl Chat {
     /// Arm the mode + config picks to replay once this resumed session
     /// reconnects (`Connected { resumed: true }` → [`Self::reapply_prefs`]).
     /// Set right after [`Self::load_history`] from the archive's `prefs`.
-    pub fn arm_prefs(&mut self, mode: Option<String>, config: Vec<(String, String)>) {
+    pub(crate) fn arm_prefs(&mut self, mode: Option<String>, config: Vec<(String, String)>) {
         self.pending_mode = mode;
         self.pending_config = config;
     }
@@ -1969,15 +1909,6 @@ impl Chat {
         }
     }
 
-    /// The pending (unresolved) permission's rpc id at `idx`, with the option
-    /// name for a chosen id — used by the app to answer and mark it resolved.
-    pub fn permission_at(&self, idx: usize) -> Option<&PermissionRequest> {
-        match self.items.get(idx) {
-            Some(ChatItem::Permission(p)) if p.resolved.is_none() => Some(&p.req),
-            _ => None,
-        }
-    }
-
     /// Every still-pending (unresolved) permission with its live-items index,
     /// in transcript order. Rendered as a slide-up prompt above the composer
     /// (resolved ones stay inline in the transcript as an audit trail).
@@ -1993,7 +1924,7 @@ impl Chat {
     }
 
     /// Mark a permission resolved with the chosen option's display name.
-    pub fn resolve_permission(&mut self, idx: usize, option_name: String) {
+    pub(crate) fn resolve_permission(&mut self, idx: usize, option_name: String) {
         if let Some(ChatItem::Permission(p)) = self.items.get_mut(idx) {
             p.resolved = Some(option_name);
             self.touch();
@@ -2098,7 +2029,7 @@ impl Chat {
     /// would echo an rpc id a since-restarted adapter never issued), and the
     /// rail dot stays stuck on "waiting for you". With no live `tx`
     /// (disconnected) the cards are still resolved locally.
-    pub fn cancel_pending_permissions(&mut self) {
+    pub(crate) fn cancel_pending_permissions(&mut self) {
         for it in &mut self.items {
             match it {
                 ChatItem::Permission(p) if p.resolved.is_none() => {
@@ -2158,36 +2089,6 @@ impl Chat {
                 t.out_open.insert(section);
             }
         }
-    }
-
-    /// Toggle an answer/thought code block's fold (by fence-open order).
-    pub fn toggle_code(&mut self, target: TranscriptItemId, block: usize) {
-        match self.list_mut(target).get_mut(target.index()) {
-            Some(ChatItem::Agent(md)) => md.toggle_block(block),
-            Some(ChatItem::Thought(th)) => th.md.toggle_block(block),
-            _ => {}
-        }
-    }
-
-    /// Toggle an answer/thought table's row-cap fold (by table order).
-    pub fn toggle_prose_table(&mut self, target: TranscriptItemId, table: usize) {
-        match self.list_mut(target).get_mut(target.index()) {
-            Some(ChatItem::Agent(md)) => md.toggle_table(table),
-            Some(ChatItem::Thought(th)) => th.md.toggle_table(table),
-            _ => {}
-        }
-    }
-
-    /// How many *messages* the conversation holds — user prompts + agent reply
-    /// blocks, across the loaded history and the live transcript. Drives the
-    /// chat header's "· N messages" meta; tool cards, thoughts and notices
-    /// don't count — they are how an answer got made, not the conversation.
-    pub fn message_count(&self) -> usize {
-        self.history
-            .iter()
-            .chain(self.items.iter())
-            .filter(|i| matches!(i, ChatItem::User(_) | ChatItem::Agent(_)))
-            .count()
     }
 
     /// Why this prompt cannot be sent, or `None` when it can.
@@ -2310,7 +2211,7 @@ impl Chat {
         true
     }
 
-    pub fn push_user(&mut self, text: String, attachments: Vec<AttachmentSnapshot>) {
+    pub(crate) fn push_user(&mut self, text: String, attachments: Vec<AttachmentSnapshot>) {
         // A user prompt ends the replay window, but must NOT drop the loaded
         // history: if `session/load` succeeded while replaying nothing (the
         // protocol allows it), that history is the only copy of the
@@ -2426,43 +2327,6 @@ impl Chat {
             })
             .collect::<Vec<_>>()
             .join("\n\n")
-    }
-
-    /// Aggregate the file changes made during the turn that contains the agent
-    /// block at `idx`: every `Diff` in the turn's tool cards, summed per path
-    /// (adds = new-line count, removes = old-line count), in first-seen order.
-    /// Drives the summary that closes a turn: one line per file touched, so the
-    /// reader sees what changed without opening every tool card in the run.
-    pub fn turn_changes(&self, target: TranscriptItemId) -> Vec<(String, usize, usize)> {
-        let items = self.list(target);
-        let idx = target.index();
-        if idx >= items.len() {
-            return Vec::new();
-        }
-        let start = items[..idx]
-            .iter()
-            .rposition(|it| matches!(it, ChatItem::User(_)))
-            .map(|p| p + 1)
-            .unwrap_or(0);
-        let end = items[idx + 1..]
-            .iter()
-            .position(|it| matches!(it, ChatItem::User(_)))
-            .map(|p| idx + 1 + p)
-            .unwrap_or(items.len());
-        let mut acc: Vec<(String, usize, usize)> = Vec::new();
-        for it in &items[start..end] {
-            let ChatItem::Tool(t) = it else { continue };
-            for (path, adds, removes) in &t.diff_summary {
-                match acc.iter_mut().find(|(p, _, _)| p == path) {
-                    Some(entry) => {
-                        entry.1 += adds;
-                        entry.2 += removes;
-                    }
-                    None => acc.push((path.clone(), *adds, *removes)),
-                }
-            }
-        }
-        acc
     }
 
     fn push_agent(&mut self, s: &str) {
@@ -2856,18 +2720,10 @@ mod tests {
     }
 
     #[test]
-    fn code_block_ids_follow_fence_open_order() {
-        // BlockId = fence-open order, stable under streaming re-parse:
-        // an unterminated fence is the streaming block; closing it (and adding
-        // more prose) never renumbers earlier blocks.
+    fn streamed_chunks_append_to_one_block() {
         let mut md = Md::parse("```rust\nlet x = 1;\n");
-        assert_eq!(md.streaming_block(), Some(0));
-        md.push("```\n\ntext\n\n```sh\nls\n");
-        assert_eq!(md.streaming_block(), Some(1));
-        md.toggle_block(0);
-        md.push("```\n");
-        assert_eq!(md.streaming_block(), None);
-        assert!(md.open_blocks.contains(&0), "fold survives later blocks");
+        md.push("```\n\ntext\n");
+        assert_eq!(md.source, "```rust\nlet x = 1;\n```\n\ntext\n");
     }
 
     #[test]
@@ -2902,16 +2758,6 @@ mod tests {
         // A non-agent index has no turn answer.
         assert!(chat.turn_answer(TranscriptItemId::Live(0)).is_none());
         assert!(chat.turn_answer(TranscriptItemId::Live(2)).is_none());
-    }
-
-    #[test]
-    fn turn_changes_is_safe_for_history_indices() {
-        // Even a typed but out-of-range history target must return safely.
-        let chat = Chat::default();
-        assert!(chat
-            .turn_changes(TranscriptItemId::History(usize::MAX))
-            .is_empty());
-        assert!(chat.turn_changes(TranscriptItemId::Live(0)).is_empty());
     }
 
     /// The card carries its hunks, and a later report of the same tool call
@@ -2957,27 +2803,6 @@ mod tests {
             !after.contains(&crate::diff::Row::Added("z".to_string())),
             "a re-reported edit replaces the hunks rather than adding to them"
         );
-    }
-
-    #[test]
-    fn turn_changes_aggregates_diffs_per_path() {
-        let mut chat = Chat::default();
-        chat.push_user("go".into(), Vec::new());
-        chat.items.push(ChatItem::Tool(ToolItem::new(ToolCall {
-            id: "t1".into(),
-            title: "edit".into(),
-            description: None,
-            kind: crate::acp::ToolKind::Edit,
-            status: ToolStatus::Completed,
-            content: vec![ToolContent::Diff {
-                path: "a.rs".into(),
-                old: Some("x\ny\n".into()),
-                new: "x\ny\nz\n".into(),
-            }],
-        })));
-        chat.items.push(ChatItem::Agent(Md::parse("done")));
-        let changes = chat.turn_changes(TranscriptItemId::Live(2));
-        assert_eq!(changes, vec![("a.rs".to_string(), 1, 0)]);
     }
 
     #[test]
@@ -3116,7 +2941,6 @@ mod tests {
             session_id: "sid-1".into(),
             title: None,
             updated: 1,
-            created: 1,
             prefs: Prefs::default(),
             items: (0..n)
                 .map(|i| ChatItem::User(UserMsg::text(format!("message {i}"))))
@@ -3415,12 +3239,6 @@ mod tests {
             a.answers(),
             vec![("question_0".into(), ElicitValue::Text("a".into()))]
         );
-    }
-
-    #[test]
-    fn copy_text_carries_the_prompt_and_every_choice() {
-        let a = ask_item();
-        assert_eq!(a.copy_text(), "pick\n- A\n- B\n- X\n- Y\n");
     }
 
     #[test]
@@ -3857,7 +3675,6 @@ mod tests {
             session_id: "sess-9".into(),
             title: Some("Ship the parser".into()),
             updated: 1_700_000_000,
-            created: 1_600_000_000,
             prefs: Prefs {
                 mode: Some("plan".into()),
                 config: vec![ConfigPick {

@@ -38,7 +38,7 @@ pub enum Row {
 }
 
 /// Diff `old` against `new` and keep the result.
-pub fn rows(old: &str, new: &str) -> Vec<Row> {
+pub(crate) fn rows(old: &str, new: &str) -> Vec<Row> {
     lines(old, new)
         .into_iter()
         .map(|line| match line {
@@ -58,7 +58,7 @@ pub const CONTEXT: usize = 3;
 ///
 /// The whole point is that the caller's render budget is spent on *changes*, so
 /// a long file with a small edit still shows the edit.
-pub fn lines<'a>(old: &'a str, new: &'a str) -> Vec<Line<'a>> {
+pub(crate) fn lines<'a>(old: &'a str, new: &'a str) -> Vec<Line<'a>> {
     let a: Vec<&str> = split(old);
     let b: Vec<&str> = split(new);
     with_context(&script(&a, &b))

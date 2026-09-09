@@ -108,7 +108,7 @@ pub fn read_dir_sorted(dir: &Path) -> Vec<TreeEntry> {
 }
 
 /// Directories before files, then case-insensitive name.
-pub fn sort_entries(entries: &mut [TreeEntry]) {
+pub(crate) fn sort_entries(entries: &mut [TreeEntry]) {
     entries.sort_by(|a, b| {
         b.is_dir
             .cmp(&a.is_dir)

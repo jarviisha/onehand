@@ -117,7 +117,7 @@ impl PlanStatus {
             _ => PlanStatus::Pending,
         }
     }
-    pub fn as_str(&self) -> &'static str {
+    pub(crate) fn as_str(&self) -> &'static str {
         match self {
             PlanStatus::Pending => "pending",
             PlanStatus::InProgress => "in_progress",
@@ -156,7 +156,7 @@ impl ToolKind {
             _ => ToolKind::Other,
         }
     }
-    pub fn as_str(&self) -> &'static str {
+    pub(crate) fn as_str(&self) -> &'static str {
         match self {
             ToolKind::Read => "read",
             ToolKind::Edit => "edit",
@@ -189,7 +189,7 @@ impl ToolStatus {
             _ => ToolStatus::Pending,
         }
     }
-    pub fn as_str(&self) -> &'static str {
+    pub(crate) fn as_str(&self) -> &'static str {
         match self {
             ToolStatus::Pending => "pending",
             ToolStatus::InProgress => "in_progress",
@@ -333,7 +333,7 @@ impl ElicitKind {
             ElicitKind::Text => &[],
         }
     }
-    pub fn is_multi(&self) -> bool {
+    pub(crate) fn is_multi(&self) -> bool {
         matches!(self, ElicitKind::MultiSelect(_))
     }
 }
@@ -351,7 +351,7 @@ pub struct ElicitField {
     pub kind: ElicitKind,
     /// The paired free-text "Other" property (`<key>_custom`), when the form
     /// offers one — a typed answer there overrides the picked choice.
-    pub custom_key: Option<String>,
+    pub(crate) custom_key: Option<String>,
 }
 
 /// A parked `elicitation/create` awaiting the user's answers. `rpc_id` is the
