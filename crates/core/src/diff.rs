@@ -12,23 +12,25 @@
 //! So the hunks are computed here. Pure and GUI-free, which is where this kind
 //! of rule belongs (shared rules live in core).
 
-/// One line of a rendered diff.
+/// One line of a rendered diff, borrowed from the two texts being compared.
+///
+/// Internal to the diff: the elision below throws away most of what the script
+/// produces, and borrowing is what keeps a 300-line file with a one-line edit
+/// from allocating 600 strings to discard 590 of them. What a caller keeps is
+/// [`Row`].
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum Line<'a> {
+enum Line<'a> {
     Context(&'a str),
     Removed(&'a str),
     Added(&'a str),
-    /// `n` unchanged lines skipped between two hunks.
-    Skipped(usize),
 }
 
 /// One line of a rendered diff, owning its text.
 ///
-/// The borrowed [`Line`] is what the algorithm produces; this is what a caller
-/// can *keep*. Computing hunks is quadratic in the worst case and the answer
-/// only changes when the edit does, so it belongs beside the edit — held once,
-/// not recomputed by whoever happens to be drawing it. Elision means a row list
-/// is roughly the size of the change rather than the size of the file.
+/// What a caller keeps. Computing hunks is quadratic in the worst case and the
+/// answer only changes when the edit does, so it belongs beside the edit — held
+/// once, not recomputed by whoever happens to be drawing it. Elision means a
+/// row list is roughly the size of the change rather than the size of the file.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Row {
     Context(String),
@@ -37,32 +39,19 @@ pub enum Row {
     Skipped(usize),
 }
 
-/// Diff `old` against `new` and keep the result.
-pub(crate) fn rows(old: &str, new: &str) -> Vec<Row> {
-    lines(old, new)
-        .into_iter()
-        .map(|line| match line {
-            Line::Context(l) => Row::Context(l.to_string()),
-            Line::Removed(l) => Row::Removed(l.to_string()),
-            Line::Added(l) => Row::Added(l.to_string()),
-            Line::Skipped(n) => Row::Skipped(n),
-        })
-        .collect()
-}
-
-/// How many unchanged lines to keep either side of a change.
-pub const CONTEXT: usize = 3;
-
 /// Diff `old` against `new`, line by line, with [`CONTEXT`] lines of context
-/// and a [`Line::Skipped`] marker standing in for each elided run.
+/// and a [`Row::Skipped`] marker standing in for each elided run.
 ///
 /// The whole point is that the caller's render budget is spent on *changes*, so
 /// a long file with a small edit still shows the edit.
-pub(crate) fn lines<'a>(old: &'a str, new: &'a str) -> Vec<Line<'a>> {
+pub(crate) fn rows(old: &str, new: &str) -> Vec<Row> {
     let a: Vec<&str> = split(old);
     let b: Vec<&str> = split(new);
     with_context(&script(&a, &b))
 }
+
+/// How many unchanged lines to keep either side of a change.
+const CONTEXT: usize = 3;
 
 /// Split into lines, treating "" as no lines rather than one empty one — a
 /// created file has no `old` side, and an empty first row would render as a
@@ -149,8 +138,9 @@ fn lcs_script<'a>(a: &[&'a str], b: &[&'a str]) -> Vec<Line<'a>> {
     out
 }
 
-/// Collapse runs of context longer than `2 * CONTEXT` into a [`Line::Skipped`].
-fn with_context<'a>(script: &[Line<'a>]) -> Vec<Line<'a>> {
+/// Collapse runs of context longer than `2 * CONTEXT` into a [`Row::Skipped`],
+/// taking ownership of only the lines that survive.
+fn with_context(script: &[Line<'_>]) -> Vec<Row> {
     let changed: Vec<bool> = script
         .iter()
         .map(|l| !matches!(l, Line::Context(_)))
@@ -175,16 +165,20 @@ fn with_context<'a>(script: &[Line<'a>]) -> Vec<Line<'a>> {
     for (i, line) in script.iter().enumerate() {
         if keep[i] {
             if skipped > 0 {
-                out.push(Line::Skipped(skipped));
+                out.push(Row::Skipped(skipped));
                 skipped = 0;
             }
-            out.push(line.clone());
+            out.push(match *line {
+                Line::Context(l) => Row::Context(l.to_string()),
+                Line::Removed(l) => Row::Removed(l.to_string()),
+                Line::Added(l) => Row::Added(l.to_string()),
+            });
         } else {
             skipped += 1;
         }
     }
     if skipped > 0 {
-        out.push(Line::Skipped(skipped));
+        out.push(Row::Skipped(skipped));
     }
     out
 }
@@ -204,21 +198,21 @@ mod tests {
             .concat();
         let new = old.replace("line 150\n", "line 150 CHANGED\n");
 
-        let diff = lines(&old, &new);
+        let diff = rows(&old, &new);
         assert!(
             diff.len() < 20,
             "expected a small hunk, got {} rows",
             diff.len()
         );
-        assert!(diff.contains(&Line::Removed("line 150")));
-        assert!(diff.contains(&Line::Added("line 150 CHANGED")));
-        assert!(diff.contains(&Line::Context("line 149")));
+        assert!(diff.contains(&Row::Removed("line 150".into())));
+        assert!(diff.contains(&Row::Added("line 150 CHANGED".into())));
+        assert!(diff.contains(&Row::Context("line 149".into())));
         // And the 290-odd untouched lines are accounted for, not dropped
         // silently.
         let skipped: usize = diff
             .iter()
             .filter_map(|l| match l {
-                Line::Skipped(n) => Some(*n),
+                Row::Skipped(n) => Some(*n),
                 _ => None,
             })
             .sum();
@@ -227,31 +221,34 @@ mod tests {
 
     #[test]
     fn a_new_file_is_all_additions() {
-        let diff = lines("", "a\nb\n");
-        assert_eq!(diff, vec![Line::Added("a"), Line::Added("b")]);
+        let diff = rows("", "a\nb\n");
+        assert_eq!(diff, vec![Row::Added("a".into()), Row::Added("b".into())]);
     }
 
     #[test]
     fn a_deleted_body_is_all_removals() {
-        let diff = lines("a\nb\n", "");
-        assert_eq!(diff, vec![Line::Removed("a"), Line::Removed("b")]);
+        let diff = rows("a\nb\n", "");
+        assert_eq!(
+            diff,
+            vec![Row::Removed("a".into()), Row::Removed("b".into())]
+        );
     }
 
     #[test]
     fn identical_sides_produce_nothing() {
-        assert!(lines("a\nb\n", "a\nb\n").is_empty());
+        assert!(rows("a\nb\n", "a\nb\n").is_empty());
     }
 
     #[test]
     fn an_insertion_is_not_reported_as_a_rewrite() {
-        let diff = lines("a\nb\nc\n", "a\nb\nx\nc\n");
+        let diff = rows("a\nb\nc\n", "a\nb\nx\nc\n");
         assert_eq!(
             diff,
             vec![
-                Line::Context("a"),
-                Line::Context("b"),
-                Line::Added("x"),
-                Line::Context("c"),
+                Row::Context("a".into()),
+                Row::Context("b".into()),
+                Row::Added("x".into()),
+                Row::Context("c".into()),
             ]
         );
     }
@@ -260,11 +257,8 @@ mod tests {
     fn separate_edits_become_separate_hunks() {
         let old: String = (0..60).map(|i| format!("l{i}\n")).collect();
         let new = old.replace("l5\n", "l5!\n").replace("l50\n", "l50!\n");
-        let diff = lines(&old, &new);
-        let gaps = diff
-            .iter()
-            .filter(|l| matches!(l, Line::Skipped(_)))
-            .count();
+        let diff = rows(&old, &new);
+        let gaps = diff.iter().filter(|l| matches!(l, Row::Skipped(_))).count();
         // Head gap, middle gap, tail gap -- the middle one is the point: two
         // hunks, not one run spanning the file.
         assert!(gaps >= 2, "expected separate hunks, got {diff:?}");

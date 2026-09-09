@@ -1015,13 +1015,21 @@ outright.
 the network on the strength of a file nobody edited. It carries `enabled`, `allowed_chats` and an
 optional `token_env`, and **it deliberately has no key for the token**; see the remote bridge above
 for where that is read from and why it is not here. Declaration order does not bite for this one,
-since it is a table like `[font]` and `[icons]` and only the bare `appearance` key has to lead.
+since it is a table like `[font]` and only the bare `appearance` key has to lead.
 
-`AppConfig` still carries `[font]` and `[icons]` sections the front end **mostly does not read**:
-decision D1 makes gpui-component's theme the look. They parse (so existing config files keep working)
-and are the obvious hook if per-role icon tinting comes back. The one exception is
-`[font].monospace`, which `shell::use_installed_mono` takes as the first preference when it picks a
-mono family the machine actually has (see the font gotcha).
+`[font]` carries exactly one key, `monospace`, which `shell::use_installed_mono` takes as the first
+preference when it picks a mono family the machine actually has (see the font gotcha). It used to
+carry a body size, a master zoom, a sans family and a fallback list, and there was an `[icons]` table
+of per-role hex overrides beside it; decision D1 makes gpui-component's theme the look, so none of
+them ever reached the screen. **They parsed, which is what made them worse than absent** — a file
+setting `font.size = 18` loaded without complaint and changed nothing, and there was no way to tell
+that from the app ignoring a value it disagreed with. They are gone, and a config that still sets
+them keeps loading — **because serde ignores unknown fields by default and nothing here opts into
+`deny_unknown_fields`**, which is the same reason a legacy agent's `kind` still parses. That is a
+different tolerance from `#[serde(default)]`, which covers the keys a file *omits*; reaching for
+`deny_unknown_fields` would leave `default` in place and still break every config written for an
+older build. If per-role tinting is ever wanted, the hook is `AppConfig` itself: adding one field
+back is smaller than carrying a table that says the feature is wired up.
 
 ## Known gaps in this build
 
@@ -1057,7 +1065,6 @@ Listed because a missing feature nobody wrote down reads as a bug in the ones th
   always send the ordinary form. The rest of the required full-screen terminal behaviour is present.
 - **The terminal's cursor does not blink**, by decision — it would mean a repaint on a timer for the
   life of every tab, in a view that otherwise draws only when bytes arrive.
-- **`[font]` and `[icons]` config sections are parsed and ignored** (see Config).
 - Transcript blocks the design contract asks for that are not drawn are marked *(not rendered)* in
   DESIGN-ANSWER.md, each with the reason.
 
@@ -1070,9 +1077,12 @@ Listed because a missing feature nobody wrote down reads as a bug in the ones th
   them** (its `close` is Lucide's `x`, its `delete` is the backspace key), and an icon that fails to
   resolve draws *nothing* rather than failing the build. Bumping the `gpui-component` rev means
   looking at the app's chrome afterwards.
-  `crate::icons` holds **only what that enum cannot draw**: brand marks, plus the occasional shape
-  the bundled set has no drawing of at all (today two — a pencil, for the transcript's *Changed*
-  group, and a branch, for splitting a project into a worktree).
+  `crate::icons` holds **only what that enum cannot draw**: a shape the bundled set has no drawing
+  of at all, and a brand mark, which belongs to the product it stands for rather than to a
+  general-purpose UI kit. Today it is five shapes and **no brand marks** — the one there was, for
+  the default agent, sat in the binary drawn by nothing, which is what the registry's
+  `allow(dead_code)` guarantees nobody will ever notice. So an entry is added when a call site needs
+  it, never in advance.
   An `IconName` whose *name* reads oddly does not qualify; a missing drawing does.
   To add one: update [assets/icons/manifest.toml](assets/icons/manifest.toml) with the reason beside
   the entry, run [scripts/sync-icons.sh](scripts/sync-icons.sh) (it knows Simple Icons for marks and

@@ -14,8 +14,12 @@ lucide_version = "1.34.0"
 #     with its reason written beside it. That is not a door back to a
 #     self-hosted UI set: when `IconName` already carries the shape, the entry
 #     does not belong here, whatever it would be named.
+# An entry is added when a call site needs it, never in advance. The registry
+# carries `allow(dead_code)` because it mirrors this table, so an abandoned
+# asset looks exactly like a curated one and nothing will ever ask about it —
+# a brand mark for the default agent sat here unused, in the binary, for
+# exactly that reason.
 [icons]
-claude-code = "simple-icons:claude"
 # The transcript's "Changed" activity group. The bundled set has no pencil of
 # any kind, and its nearest shape is `replace` — a find-and-replace mark, which
 # reads as swapping one box for another rather than as editing a file.

@@ -76,9 +76,6 @@ pub fn canon_dir(path: PathBuf) -> PathBuf {
 #[derive(Debug)]
 pub struct Workspace {
     pub name: String,
-    /// Icon tint as `#RRGGBB` (workspace settings pick it; persisted). `None`
-    /// ⇒ a stable palette color derived from the name at render time.
-    pub(crate) icon_color: Option<String>,
     pub roots: Vec<ProjectRoot>,
     pub active_root: usize,
     /// Storage directory this workspace persists to, if bound. `None` ⇒
@@ -96,7 +93,6 @@ impl Workspace {
         let root = ProjectRoot::new(root);
         Self {
             name: "Workspace".into(),
-            icon_color: None,
             roots: vec![root],
             active_root: 0,
             storage_dir: None,
@@ -134,7 +130,6 @@ impl Workspace {
             } else {
                 cfg.name
             },
-            icon_color: cfg.icon_color,
             roots,
             active_root,
             storage_dir: Some(storage_dir),
@@ -150,7 +145,6 @@ impl Workspace {
             name: self.name.clone(),
             roots: self.roots.iter().map(|r| r.path.clone()).collect(),
             active_root: self.active_root,
-            icon_color: self.icon_color.clone(),
             layout: self.layout,
             pinned: self
                 .roots
@@ -395,7 +389,6 @@ mod tests {
                 PathBuf::from("/a"),
             ],
             active_root: 2, // the duplicate /a
-            icon_color: None,
             layout: PanelLayout::default(),
             pinned: Vec::new(),
         };
@@ -408,13 +401,11 @@ mod tests {
     fn config_roundtrips_roots_and_active() {
         let mut ws = Workspace::seeded("/a");
         ws.name = "Mine".into();
-        ws.icon_color = Some("#55C38C".into());
         ws.add_root("/b");
         ws.add_root("/c");
         ws.select_root(1);
         let cfg = ws.to_config();
         assert_eq!(cfg.name, "Mine");
-        assert_eq!(cfg.icon_color.as_deref(), Some("#55C38C"));
         assert_eq!(
             cfg.roots,
             vec![
@@ -427,7 +418,6 @@ mod tests {
 
         let back = Workspace::from_config(cfg, PathBuf::from("/store"));
         assert_eq!(back.name, "Mine");
-        assert_eq!(back.icon_color.as_deref(), Some("#55C38C"));
         assert_eq!(back.roots.len(), 3);
         assert_eq!(back.active_root, 1);
         assert_eq!(back.storage_dir, Some(PathBuf::from("/store")));
@@ -443,7 +433,6 @@ mod tests {
             name: "W".into(),
             roots: vec![PathBuf::from("/a")],
             active_root: 0,
-            icon_color: None,
             layout: PanelLayout {
                 workbench_w: 0.0,
                 workbench_open: true,
@@ -485,7 +474,6 @@ mod tests {
             name: String::new(),
             roots: vec![PathBuf::from("/a")],
             active_root: 9,
-            icon_color: None,
             layout: PanelLayout::default(),
             pinned: Vec::new(),
         };

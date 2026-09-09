@@ -36,9 +36,6 @@ network; every SVG is committed.
 
 ## Sources and licenses
 
-- [Simple Icons](https://github.com/simple-icons/simple-icons), CC0-1.0. Brand
-  names and logos may still be protected by trademark; see
-  `licenses/SIMPLE_ICONS.md`.
 - [Lucide](https://github.com/lucide-icons/lucide), ISC — the same upstream the
   bundled set is packaged from, so a missing shape taken from here matches its
   neighbours' stroke weight exactly. See `licenses/LUCIDE.txt`.
@@ -47,3 +44,10 @@ The bundled UI set now comes from `gpui-component-assets` (Apache-2.0), which is
 a normal cargo dependency rather than a checked-in asset. It is Lucide
 underneath, so `licenses/LUCIDE.txt` would have to travel with the binary even
 if nothing here were fetched from Lucide directly.
+
+Nothing here currently comes from
+[Simple Icons](https://github.com/simple-icons/simple-icons) (CC0-1.0), but
+`manifest.toml` still names a brand mark as something that may be checked in and
+`sync-icons.sh` still knows how to fetch one. `licenses/SIMPLE_ICONS.md` stays
+for that reason and says what has to be reviewed first — brand names and logos
+can be protected by trademark whatever the icon set's own licence says.
