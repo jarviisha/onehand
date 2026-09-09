@@ -29,9 +29,7 @@ use onehand_core::editor::SaveOutcome;
 use onehand_core::gitstat::GitStatus;
 use onehand_plugin_api::PluginId;
 use onehand_plugin_host::{Ask, Request, WorkbenchHost, WorkbenchMode};
-use onehand_terminal_ui::{Program, TerminalThemeKey, spawn_pty, terminal_palette};
 use onehand_workbench_editor::{self as editor, RootBuffers};
-use onehand_workbench_neovim::NeovimSessions;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
@@ -52,21 +50,6 @@ pub struct Workbench {
     /// The root everything below is keyed by. `None` before any root is active.
     root: Option<PathBuf>,
     editors: HashMap<PathBuf, RootBuffers>,
-    /// The Neovim running on each root, at most one apiece.
-    ///
-    /// One and not a set, unlike the terminal's shells: several shells is what
-    /// somebody opens on purpose, one per thing they are watching, while a
-    /// second editor on the same files is two views of one buffer with no way to
-    /// tell which holds the unsaved copy.
-    ///
-    /// Kept across a mode change and across the dock closing, the same way the
-    /// quick editor's buffers are — closing this panel is putting work aside,
-    /// not discarding it. It ends when the project root leaves the workspace, or
-    /// when the window does.
-    neovim: NeovimSessions,
-    /// What the terminal palette was last built from, so a live grid is
-    /// recoloured once per appearance change instead of on every frame.
-    terminal_theme: TerminalThemeKey,
     /// A save conflict, a read failure, or a Neovim that would not start, shown
     /// as a line under the body.
     ///
@@ -124,13 +107,15 @@ impl Workbench {
                 });
             });
             Self {
-                modes: crate::plugins::workbench_modes(ask, cx),
+                modes: crate::plugins::workbench_modes(
+                    ask,
+                    crate::zoom::term_font_size(crate::zoom::Zoom::default()),
+                    cx,
+                ),
                 host,
                 zoom: crate::zoom::Zoom::default(),
                 root: None,
                 editors: HashMap::new(),
-                neovim: NeovimSessions::default(),
-                terminal_theme: TerminalThemeKey::current(cx),
                 status: None,
                 saving: HashMap::new(),
                 pending_close: None,
@@ -148,6 +133,20 @@ impl Workbench {
     fn answer(&mut self, request: &Request<'_>, window: &mut Window, cx: &mut Context<Self>) {
         match request {
             Request::OpenFile(path) => self.open_file(path.to_path_buf(), window, cx),
+            // The caret is the panel's half of reaping: a view dropped while it
+            // holds focus leaves the window pointing at an element no frame
+            // contains, and GPUI resolves a key along the path down to the
+            // focused node — so every shortcut stops working, including the one
+            // that would reopen this panel. Asked *before* the drop, since a
+            // handle no longer drawn cannot answer. Only moved when focus was
+            // inside this panel already: a child exiting in the background must
+            // not take the caret from what the user is doing.
+            Request::Reap => {
+                let held = self.host.focus_handle().contains_focused(window, cx);
+                if self.broadcast(&Request::Reap, cx) && held {
+                    self.focus_active(window, cx);
+                }
+            }
             other => {
                 self.broadcast(other, cx);
             }
@@ -190,72 +189,20 @@ impl Workbench {
             mode.forget_root(root, cx);
         }
         self.editors.remove(root);
-        // Dropping the entry ends the child, the way dropping a terminal tab
-        // does: a project removed from the workspace must not leave an editor
-        // running on it with nothing on screen pointing at it.
-        self.neovim.forget_root(root);
         if self.root.as_deref() == Some(root) {
             self.root = None;
         }
         cx.notify();
     }
 
-    /// Start Neovim on the active root, if it is not already running.
+    /// Start whatever child process a mode is a front end for.
     ///
-    /// Separate from [`Self::set_mode`] on purpose: switching to this mode is a
-    /// view change and must not launch a process, or the mode strip becomes
-    /// three buttons of which one spawns something. The key does this first and
-    /// then switches; the empty state's own button is the other way in.
-    pub fn open_neovim(&mut self, cx: &mut Context<Self>) {
-        let Some(root) = self.root.clone() else {
-            return;
-        };
-        if self.neovim.contains(&root) {
-            return;
-        }
-        let panel = cx.entity().downgrade();
-        let spawned = spawn_pty(
-            &root,
-            Program::Neovim,
-            crate::zoom::term_font_size(self.zoom),
-            cx,
-            move |window, cx| {
-                let _ = panel.update(cx, |panel: &mut Self, cx| panel.reap_neovim(window, cx));
-            },
-        );
-        match spawned {
-            Ok(tab) => {
-                self.neovim.insert(root, tab);
-                self.status = None;
-            }
-            Err(e) => self.status = Some(e),
-        }
-        cx.notify();
-    }
-
-    /// Drop a Neovim that has exited.
-    ///
-    /// Without this, `:q` leaves the grid drawing the last screen Neovim
-    /// painted — which after quitting is an empty one with a cursor on it — and
-    /// the mode becomes a panel that takes keystrokes nothing will ever read.
-    /// The mode is *not* switched away from: the empty state offers to start
-    /// another, and moving the user somewhere they did not ask to go is a worse
-    /// answer than showing them what happened.
-    ///
-    /// Focus is only moved when it was inside this panel already. A grid dropped
-    /// while holding the caret leaves the window pointing at an element no frame
-    /// contains, and GPUI resolves a key along the path down to the focused
-    /// node, so every shortcut stops working — including the ones that would get
-    /// out of here.
-    pub fn reap_neovim(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let held_focus = self.host.focus_handle().contains_focused(window, cx);
-        if !self.neovim.reap_finished() {
-            return;
-        }
-        if held_focus {
-            self.focus_active(window, cx);
-        }
-        cx.notify();
+    /// Separate from switching to that mode on purpose: a mode change is a view
+    /// change and must not launch a process, or the strip becomes a row of
+    /// buttons one of which spawns something. The key does this first and then
+    /// switches; the mode's own empty state is the other way in.
+    pub fn start_child(&mut self, cx: &mut Context<Self>) {
+        self.broadcast(&Request::Start, cx);
     }
 
     /// Step this panel's zoom.
@@ -266,8 +213,7 @@ impl Workbench {
     /// Neovim drawn at the old one.
     pub fn set_zoom(&mut self, zoom: crate::zoom::Zoom, cx: &mut Context<Self>) {
         self.zoom = zoom;
-        let size = crate::zoom::term_font_size(zoom);
-        self.neovim.set_font_size(size, cx);
+        self.broadcast(&Request::SetFontSize(crate::zoom::term_font_size(zoom)), cx);
         cx.notify();
     }
 
@@ -281,14 +227,13 @@ impl Workbench {
     /// rather than typed into. A panel shortcut that opens a dock without moving
     /// focus makes the user reach for the mouse to use what they just opened.
     pub fn focus_active(&self, window: &mut Window, cx: &mut App) {
-        if self.mode() == NEOVIM_MODE {
-            // Nothing else in this panel needs the caret as badly: a grid that
-            // is drawn but unfocused looks exactly like one that is running,
-            // and every keystroke aimed at it goes somewhere else.
-            if let Some(tab) = self.root.as_ref().and_then(|root| self.neovim.get(root)) {
-                tab.view().read(cx).focus_handle().clone().focus(window, cx);
-                return;
-            }
+        // The showing mode first: it is the only one whose body is on screen,
+        // and a mode that is clicked rather than typed into refuses, which is
+        // what leaves the caret on the panel itself further down.
+        if let Some(showing) = self.modes.iter().find(|item| item.spec().id == self.mode())
+            && showing.focus(window, cx)
+        {
+            return;
         }
         if self.mode() == EDITOR_MODE {
             let buffer = self
@@ -637,7 +582,6 @@ impl Focusable for Workbench {
 
 impl Render for Workbench {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        self.sync_terminal_theme(cx);
         let mode = self.mode();
         let contributions = self.host.contributions().to_vec();
         let modes = div()
@@ -680,8 +624,6 @@ impl Render for Workbench {
             view.into_any_element()
         } else if mode == EDITOR_MODE {
             self.editor_body(cx)
-        } else if mode == NEOVIM_MODE {
-            self.neovim_body(cx)
         } else {
             hint("This Workbench contribution is unavailable", cx)
         };
@@ -722,63 +664,6 @@ impl Render for Workbench {
 }
 
 impl Workbench {
-    /// Recolour a live grid after an app appearance change.
-    ///
-    /// Guarded by comparison rather than run every frame: rebuilding the palette
-    /// and pushing a whole config into the view is work, and this is called from
-    /// render.
-    fn sync_terminal_theme(&mut self, cx: &mut Context<Self>) {
-        let current = TerminalThemeKey::current(cx);
-        if self.terminal_theme == current {
-            return;
-        }
-        self.terminal_theme = current;
-        let colors = terminal_palette(cx);
-        self.neovim.set_palette(colors, cx);
-    }
-
-    fn neovim_body(&mut self, cx: &mut Context<Self>) -> gpui::AnyElement {
-        let Some(root) = self.root.clone() else {
-            return hint("No project root", cx);
-        };
-
-        let Some(tab) = self.neovim.get(&root) else {
-            // The button and not an automatic spawn, for the same reason
-            // switching to this mode does not spawn: arriving at a tab should
-            // not start a process. It also gives the failure somewhere to be
-            // read — a Neovim that would not start leaves its reason in
-            // `status`, one line below this.
-            return div()
-                .flex_1()
-                .v_flex()
-                .items_center()
-                .justify_center()
-                .gap_2()
-                .child(
-                    crate::controls::action("start-neovim")
-                        .primary()
-                        .label("Start Neovim")
-                        .on_click(cx.listener(|panel: &mut Self, _, window, cx| {
-                            panel.open_neovim(cx);
-                            panel.focus_active(window, cx);
-                        })),
-                )
-                .into_any_element();
-        };
-
-        div()
-            .flex_1()
-            .min_h_0()
-            // The grid draws from its own top-left corner outward, so without
-            // this the first column sits against the panel edge. Costs a column
-            // rather than being painted over: the view measures its own bounds
-            // and reports the cell count back through the PTY resize, so what it
-            // lays out and what the child believes stay in step.
-            .p_2()
-            .child(tab.view().clone())
-            .into_any_element()
-    }
-
     fn editor_body(&mut self, cx: &mut Context<Self>) -> gpui::AnyElement {
         let Some(buffers) = self.root.as_ref().and_then(|r| self.editors.get(r)) else {
             return hint("Open a file from a tool card or the Files tab", cx);

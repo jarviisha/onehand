@@ -2045,7 +2045,7 @@ impl Shell {
     /// it — the panel entity outlives the dock, so the PTY, its scrollback and
     /// whatever is unsaved in the buffer are all still there on the next press.
     pub fn show_neovim(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        self.workbench.update(cx, |panel, cx| panel.open_neovim(cx));
+        self.workbench.update(cx, |panel, cx| panel.start_child(cx));
         self.show_workbench(NEOVIM_MODE, window, cx);
     }
 

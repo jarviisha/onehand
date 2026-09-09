@@ -7,10 +7,15 @@ use onehand_plugin_host::{Ask, PluginRegistry, WorkbenchMode};
 /// One list per window rather than one for the process, because a mode holds
 /// entities: a view is bound to the window that renders it, and a second window
 /// showing the same one would be the same entity mounted twice.
-pub fn workbench_modes(ask: Ask, cx: &mut gpui::App) -> Vec<Box<dyn WorkbenchMode>> {
+pub fn workbench_modes(
+    ask: Ask,
+    font_size: gpui::Pixels,
+    cx: &mut gpui::App,
+) -> Vec<Box<dyn WorkbenchMode>> {
     vec![
         Box::new(onehand_workbench_files::Mode::new(ask.clone(), cx)),
-        Box::new(onehand_workbench_markdown::Mode::new(ask, cx)),
+        Box::new(onehand_workbench_markdown::Mode::new(ask.clone(), cx)),
+        Box::new(onehand_workbench_neovim::Mode::new(ask, font_size, cx)),
     ]
 }
 

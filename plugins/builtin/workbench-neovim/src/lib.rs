@@ -1,54 +1,76 @@
+//! Neovim mode: the real editor, in a PTY, on the project root.
+
+use gpui::{AnyView, App, Entity, Pixels, Window};
 use onehand_plugin_api::{
     BuiltinPlugin, Capability, PLUGIN_API_VERSION, PluginDescriptor, PluginId, PluginRegistrar,
     WorkbenchModeSpec,
 };
-use onehand_terminal_ui::PtyTab;
-use std::collections::HashMap;
-use std::path::{Path, PathBuf};
+use onehand_plugin_host::{Ask, Request, WorkbenchMode};
+use std::path::Path;
+
+mod view;
+pub use view::NeovimView;
 
 pub const MODE_ID: PluginId = PluginId::new("workbench.neovim");
 
+/// The Neovim mode: a view and nothing else.
+pub struct Mode {
+    view: Entity<NeovimView>,
+}
+
+impl Mode {
+    pub fn new(ask: Ask, font_size: Pixels, cx: &mut App) -> Self {
+        Self {
+            view: NeovimView::new(ask, font_size, cx),
+        }
+    }
+}
+
+impl WorkbenchMode for Mode {
+    /// A live PTY, so it declares the terminal's key context and takes its
+    /// reading size as a font size rather than from the panel's rem base.
+    fn spec(&self) -> WorkbenchModeSpec {
+        WorkbenchModeSpec::terminal_grid(MODE_ID, "Neovim")
+    }
+
+    fn view(&self) -> AnyView {
+        self.view.clone().into()
+    }
+
+    fn set_root(&mut self, root: &Path, cx: &mut App) {
+        self.view.update(cx, |view, cx| view.set_root(root, cx));
+    }
+
+    fn forget_root(&mut self, root: &Path, cx: &mut App) {
+        self.view.update(cx, |view, cx| view.forget_root(root, cx));
+    }
+
+    fn focus(&self, window: &mut Window, cx: &mut App) -> bool {
+        let Some(caret) = self.view.read(cx).caret(cx) else {
+            return false;
+        };
+        caret.focus(window, cx);
+        true
+    }
+
+    fn handle(&mut self, request: &Request<'_>, cx: &mut App) -> bool {
+        match request {
+            Request::Start => {
+                self.view.update(cx, |view, cx| view.start(cx));
+                true
+            }
+            Request::Reap => self.view.update(cx, |view, cx| view.reap(cx)),
+            Request::SetFontSize(size) => {
+                self.view
+                    .update(cx, |view, cx| view.set_font_size(*size, cx));
+                true
+            }
+            _ => false,
+        }
+    }
+}
+
 pub struct NeovimPlugin;
-
-/// The live Neovim processes owned by one Workbench window, at most one per
-/// project root. Dropping or forgetting an entry terminates and reaps its PTY.
-#[derive(Default)]
-pub struct NeovimSessions {
-    tabs: HashMap<PathBuf, PtyTab>,
-}
-
-impl NeovimSessions {
-    pub fn contains(&self, root: &Path) -> bool {
-        self.tabs.contains_key(root)
-    }
-    pub fn insert(&mut self, root: PathBuf, tab: PtyTab) {
-        self.tabs.insert(root, tab);
-    }
-    pub fn forget_root(&mut self, root: &Path) {
-        self.tabs.remove(root);
-    }
-    pub fn get(&self, root: &Path) -> Option<&PtyTab> {
-        self.tabs.get(root)
-    }
-
-    pub fn reap_finished(&mut self) -> bool {
-        let before = self.tabs.len();
-        self.tabs.retain(|_, tab| !tab.finished());
-        self.tabs.len() != before
-    }
-
-    pub fn set_font_size(&self, size: gpui::Pixels, cx: &mut gpui::App) {
-        for tab in self.tabs.values() {
-            tab.set_font_size(size, cx);
-        }
-    }
-
-    pub fn set_palette(&self, palette: gpui_terminal::ColorPalette, cx: &mut gpui::App) {
-        for tab in self.tabs.values() {
-            tab.set_palette(palette.clone(), cx);
-        }
-    }
-}
 
 impl BuiltinPlugin for NeovimPlugin {
     fn descriptor(&self) -> PluginDescriptor {
