@@ -771,17 +771,46 @@ status bar.
   turn finished unseen. Every mark names itself in a tooltip (`rail::signal_hint`) — colour alone is
   a code that has to be learned first and cannot be read at all by someone who does not separate red
   from green.
-  *Add project…* closes the Projects group. **The selected project row is marked whether or not it
+  **The selected project row is marked whether or not it
   holds the session on screen**, only the selected project starts expanded, and a project with no
   sessions expands into a *Start a session* row rather than into nothing. Branch and
   change count ride in the suffix — the count as a badge, not a coloured number — with the full
   branch, the count in words and the root's path in a tooltip. The primary *New session* button names
   the project it would start in, in its tooltip.
-- **The rail's two header rows are a block one step above the list** (`rail::lead_row`): the workspace
+- **Selecting a project and folding it away are two different targets** (`click_to_toggle(false)`).
+  While the whole row toggled, every click on a project both switched to it *and* snapped its
+  sessions shut, so reaching a session in the project just arrived at meant clicking the row a
+  second time to undo what the first click did. The caret opens and closes; the row selects and
+  leaves the fold where the user put it.
+- **The list is two tabs, not two stacked groups** (`rail::RailTab`, a segmented `TabBar` in the
+  header): *Projects* is the tree, *All sessions* is every session in the workspace, flat.
+  The flat list **sorts itself by what each session wants** — `rail::session_order`, which is
+  `SessionSignal::rank` first and then recency, so a parked question or a dead adapter rises to the
+  top and a session carrying no signal at all falls into the tail in most-recently-viewed order. That
+  reordering is why they are tabs: a section that rearranges under the eye cannot sit above a tree
+  the user navigates by position. A flat row is named by its session's uid and never by its place,
+  since its place moves the moment an agent starts working; it carries its project in the suffix
+  where a tree row carries the agent, and its menu is the tree row's, unchanged — one conversation
+  must not offer two different sets of things to do depending on which list it is being read in.
+  The tab is **not persisted**: a launch that came up on the flat list would be one where the tree,
+  the thing that says what a workspace *is*, had to be found before anything else could be read.
+- **The rail's header is a block one step above the list** (`rail::lead_row`): the workspace
   name and *New session*, taller, at a larger text size and a weight up, with the identity's icon in
   full ink rather than muted. At the list's own scale they read as its first two entries, which is
   what they are not. **The 16px icon column does not move** — only the row around it grows, or the
-  header's labels would sit a few pixels off every label below them.
+  header's labels would sit a few pixels off every label below them. *Add project…* sits between
+  them, quieter than either: it is what a workspace with no project needs first and it is about the
+  workspace rather than about the list, and it is done once per project where *New session* is done
+  all day. It was the last row *inside* the Projects group, which is a place a tab bar cannot have.
+- **The caret beside *New session* picks the project** (`rail::new_session_menu`), and the row itself
+  is unchanged: one click still starts the default agent on the selected project. What the menu adds
+  is the two things that click has to choose silently — every project in the workspace under *Start
+  in* (each selecting that root on the way, since a session bound to a root the rail is not showing
+  is an agent nobody is watching), and, only where more than one is configured, the agents under
+  *With agent*. A popup and not the list that used to expand in the rail: that list pushed the whole
+  tree down while it was open, which is affordable for two agents and not for a workspace's worth of
+  projects, and the flag saying whether it was open had to be carried on the shell and cleared on
+  every path that started a session.
 - **The workspace identity row *is* the switcher** (`rail::workspace_menu`) — the whole row opens the
   menu, and nothing marks it but the hover, the pointer and the tooltip: no chevron, because a caret
   on the rail's topmost row competed with the primary action directly below it. The menu is the
@@ -824,9 +853,6 @@ status bar.
 - **A project row rolls up its sessions' signals** (`SessionSignal::most_urgent`, same rank as a
   single session's `pick`), so a collapsed project is not silent about an agent waiting or dead
   inside it.
-- **A *Recent* group sits above Projects** once the workspace holds at least four sessions: up to
-  five rows, most recently viewed first, each naming its project. It is a separate section precisely
-  so the tree itself never reorders.
 - **`Ctrl+Shift+B` hides the rail; it never narrows it.** An icon-width rail is ten identical folder
   icons, which is the one thing a session-first rail must not become. The way back is a button in the
   agent panel's header, shown only while the rail is hidden (`ChatPaneEvent::ShowRail`).

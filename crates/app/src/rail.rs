@@ -4,6 +4,10 @@
 //! **session-first**: every folder row lists its root's sessions underneath, and
 //! clicking a session row selects root *and* session in one touch.
 //!
+//! It draws one of two lists at a time ([`RailTab`]): the project tree, which
+//! answers "what is in this workspace", and every session flat, which answers
+//! "what wants me" and sorts itself to say so.
+//!
 //! What each row *shows* is decided in `onehand-core`, not here:
 //!
 //! - folder row — label, plus the root's branch and change count when it is a
@@ -26,8 +30,9 @@ use gpui::{
 };
 use gpui_component::button::{Button, ButtonVariants as _};
 use gpui_component::menu::{DropdownMenu as _, PopupMenu, PopupMenuItem};
-use gpui_component::sidebar::{Sidebar, SidebarCollapsible, SidebarGroup, SidebarMenuItem};
+use gpui_component::sidebar::{Sidebar, SidebarCollapsible, SidebarMenuItem};
 use gpui_component::spinner::Spinner;
+use gpui_component::tab::{Tab, TabBar};
 use gpui_component::tooltip::Tooltip;
 use gpui_component::{ActiveTheme, Icon, IconName, Side, Sizable as _, StyledExt};
 use onehand_core::agent::Session;
@@ -851,8 +856,7 @@ fn folder_row(
             .active(is_active)
             // Only the selected project starts expanded. With every project open
             // and every one of them now carrying at least two rows, a workspace of
-            // ten roots was a rail nobody could see the bottom of; clicking a
-            // project both selects it and opens it, so the rest are one click away.
+            // ten roots was a rail nobody could see the bottom of.
             //
             // *Starts* is now the whole of it, and it was not before. This is
             // the initial value of a state the window keeps under the row's
@@ -861,7 +865,14 @@ fn folder_row(
             // A project the user had folded away would spring back open on its
             // own; now it stays folded until they say otherwise.
             .default_open(is_active)
-            .click_to_toggle(true)
+            // **Selecting a project and folding it away are two different
+            // intentions, so they are two different targets.** While the whole
+            // row toggled, every click on a project both switched to it and
+            // snapped its sessions shut -- so reaching a session in the project
+            // you had just arrived at meant clicking the row a second time to
+            // undo what the first click did. The caret is the control that
+            // opens and closes; the row selects and leaves the fold alone.
+            .click_to_toggle(false)
             .on_click(
                 cx.listener(move |shell: &mut Shell, _: &ClickEvent, window, cx| {
                     shell.select_root(root_idx, window, cx);
@@ -908,106 +919,141 @@ fn folder_row(
     )
 }
 
-/// How many sessions a workspace needs before *Recent* earns its space.
+/// Which of the rail's two lists is showing.
 ///
-/// Below this the whole tree is on screen already and Recent would be the same
-/// rows written twice, one scroll apart.
-const RECENT_THRESHOLD: usize = 4;
-/// How many it lists. Short on purpose: this is "where was I", not a second
-/// copy of the tree, and a long list is one the eye has to search rather than
-/// recognize.
-const RECENT_ROWS: usize = 5;
+/// The tree answers "what is in this workspace"; the flat list answers "what
+/// wants me". They are two questions about one set of sessions, and the reason
+/// they are tabs rather than two stacked groups is that the second one
+/// **reorders itself**: a section that rearranges under the eye cannot sit above
+/// a tree the user navigates by position, because every glance at the busy list
+/// moves the quiet one.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum RailTab {
+    Projects,
+    Sessions,
+}
 
-/// The *Recent* rows, most recently viewed first — or nothing at all.
+impl RailTab {
+    /// Both of them, in the order they are drawn.
+    const ALL: [Self; 2] = [Self::Projects, Self::Sessions];
+
+    fn label(self) -> &'static str {
+        match self {
+            Self::Projects => "Projects",
+            Self::Sessions => "All sessions",
+        }
+    }
+}
+
+/// Where a session sits in the flat list: what it wants first, then when it was
+/// last looked at.
 ///
-/// Flat, and **the tree keeps its own order**: jumping back to a conversation
-/// must not rearrange the project list underneath it, because a list that
-/// reorders itself has to be re-read every time it is looked at. So recency
-/// gets a section of its own and the tree stays exactly where the user left it.
+/// **The signal leads, and that is the whole feature.** A session with a parked
+/// question or a dead adapter is one the user has to do something about, and in
+/// a workspace of a dozen conversations it is exactly the one that goes unseen
+/// at the bottom of a tree. [`SessionSignal::rank`] is the order — the same one
+/// a row's mark and a project's roll-up use, so "more urgent" means one thing in
+/// the rail rather than three.
 ///
-/// A uid that no longer resolves is dropped rather than drawn: sessions close,
-/// and a recency list is the last place that should be keeping one alive.
-fn recent_rows(
+/// A session carrying no signal at all sorts last as a block, and inside that
+/// block recency decides: with nothing asking for attention, "where was I" is
+/// the only question left. A session the recency list has never seen goes to the
+/// very end rather than to the front, because a list that has not been visited
+/// is not a list that was visited long ago.
+///
+/// Pure, and separate from the rendering, because it is a rule about attention —
+/// and rules about attention are what regress silently.
+fn session_order(signal: Option<SessionSignal>, recency: Option<usize>) -> (u8, usize) {
+    (
+        signal.map_or(u8::MAX, SessionSignal::rank),
+        recency.unwrap_or(usize::MAX),
+    )
+}
+
+/// Every session in the workspace, flat, most in need of an answer first.
+///
+/// Out of the tree a row has lost the one thing that said which project it
+/// belongs to, so that rides in the suffix — the place the agent's name takes on
+/// a tree row, and for the same reason: it is a footnote about the conversation,
+/// not its name.
+///
+/// The menu is the tree row's, unchanged. A session is the same session whichever
+/// list it is being read in, and two lists offering two different sets of things
+/// to do with one conversation is a rail that has to be learned twice.
+fn session_rows(
     shell: &Shell,
     window_state: &WorkspaceWindow,
     cx: &mut Context<Shell>,
 ) -> Vec<(ElementId, SidebarMenuItem)> {
-    let total: usize = window_state
-        .workspace
-        .roots
-        .iter()
-        .map(|root| root.sessions.len())
-        .sum();
-    if total < RECENT_THRESHOLD {
-        return Vec::new();
-    }
-
+    let recent = shell.recent_order();
     let active = window_state
         .workspace
         .active_root()
         .and_then(|root| root.active_session().map(|s| s.uid));
+    let cap = label_cap(shell.rail_width(cx));
 
-    shell
-        .recent_order()
-        .iter()
-        .copied()
-        // The conversation already on screen is not somewhere to go back to,
-        // and it would take the top row every time.
-        .filter(|uid| Some(*uid) != active)
-        .filter_map(|uid| {
-            let (root_idx, root) = window_state
-                .workspace
-                .roots
-                .iter()
-                .enumerate()
-                .find(|(_, root)| root.sessions.iter().any(|s| s.uid == uid))?;
-            let session_idx = root.sessions.iter().position(|s| s.uid == uid)?;
+    let mut rows: Vec<((u8, usize), (ElementId, SidebarMenuItem))> = Vec::new();
+    for (root_idx, root) in window_state.workspace.roots.iter().enumerate() {
+        for (session_idx, session) in root.sessions.iter().enumerate() {
+            let uid = session.uid;
             let state = shell.session_row(uid, cx);
-            let label = session_label(
-                state.title.as_deref(),
-                root.sessions[session_idx].title(),
-                label_cap(shell.rail_width(cx)),
-            );
-            let project = ellipsize(&root.label, MAX_AGENT_LABEL);
             let signal = state.signal;
+            let label = session_label(state.title.as_deref(), session.title(), cap);
+            let project = ellipsize(&root.label, MAX_AGENT_LABEL);
+            let is_active = Some(uid) == active;
+            let menu_target = cx.entity().downgrade();
+            let suffix_target = menu_target.clone();
 
-            Some((
-                // Flat, so this row keeps no expanded state and the key buys
-                // it nothing today. It is named all the same, because the two
-                // lists have to be one type and a row named by its position in
-                // a list that reorders on every visit is the thing this whole
-                // change is about not doing.
-                ElementId::Name(SharedString::from(format!("rail-recent-{uid}"))),
-                SidebarMenuItem::new(label)
-                    .icon(Icon::new(IconName::Undo))
-                    .on_click(
-                        cx.listener(move |shell: &mut Shell, _: &ClickEvent, window, cx| {
-                            shell.select_root_session(root_idx, session_idx, window, cx);
+            rows.push((
+                session_order(signal, recent.iter().position(|&seen| seen == uid)),
+                (
+                    // Named by the session and not by its place, because its
+                    // place moves the moment an agent starts working: a row keyed
+                    // by position would hand one conversation's state to another
+                    // every time the list re-sorted.
+                    ElementId::Name(SharedString::from(format!("rail-session-{uid}"))),
+                    SidebarMenuItem::new(label)
+                        .active(is_active)
+                        .on_click(cx.listener(
+                            move |shell: &mut Shell, _: &ClickEvent, window, cx| {
+                                shell.select_root_session(root_idx, session_idx, window, cx);
+                            },
+                        ))
+                        .context_menu(session_menu(root_idx, session_idx, uid, menu_target))
+                        .suffix(move |_, cx: &mut App| {
+                            let suffix_target = suffix_target.clone();
+                            div()
+                                .h_flex()
+                                .items_center()
+                                .gap_1()
+                                .flex_shrink(1.)
+                                .min_w_0()
+                                .child(
+                                    div()
+                                        .max_w(MAX_AGENT_W)
+                                        .truncate()
+                                        .text_xs()
+                                        .text_color(cx.theme().muted_foreground)
+                                        .child(project.clone()),
+                                )
+                                .when_some(signal, |row, signal| row.child(signal_mark(signal, cx)))
+                                .when(is_active, |row| {
+                                    row.child(menu_button(
+                                        ("flat-session-menu", uid),
+                                        "What can be done with this session",
+                                        session_menu(root_idx, session_idx, uid, suffix_target),
+                                    ))
+                                })
                         }),
-                    )
-                    // Which project it is in, because out of the tree the row
-                    // has lost the one thing that said so.
-                    .suffix(move |_, cx: &mut App| {
-                        div()
-                            .h_flex()
-                            .items_center()
-                            .gap_1()
-                            .flex_shrink(1.)
-                            .min_w_0()
-                            .child(
-                                div()
-                                    .max_w(MAX_AGENT_W)
-                                    .truncate()
-                                    .text_xs()
-                                    .text_color(cx.theme().muted_foreground)
-                                    .child(project.clone()),
-                            )
-                            .when_some(signal, |row, signal| row.child(signal_mark(signal, cx)))
-                    }),
-            ))
-        })
-        .take(RECENT_ROWS)
-        .collect()
+                ),
+            ));
+        }
+    }
+
+    // Stable, so two sessions that want the same thing at the same time keep the
+    // order the tree puts them in rather than swapping places on every frame.
+    rows.sort_by_key(|(order, _)| *order);
+    rows.into_iter().map(|(_, row)| row).collect()
 }
 
 /// Build the rail for a window.
@@ -1029,32 +1075,26 @@ pub fn rail(
     let workspace_dir = window_state.workspace.storage_dir.clone();
     let workspace_recents = window_state_shell.recents(cx);
     let workspace_target = cx.entity().downgrade();
-    let recent = recent_rows(window_state_shell, window_state, cx);
-    // `display_order`, not `0..len`: pinned projects are drawn first while the
-    // roots themselves stay put, so every index a row hands back still means
-    // the project the user clicked.
-    let mut roots = window_state
-        .workspace
-        .display_order()
-        .into_iter()
-        .map(|idx| folder_row(window_state_shell, window_state, idx, show_agent, cx))
-        .collect::<Vec<_>>();
-    // Last in the group, not in the header: adding a project is a *list*
-    // action, and it reads as the end of the list it extends. The header holds
-    // the one action that is about the session, not the tree.
-    roots.push((
-        "rail-add-project".into(),
-        SidebarMenuItem::new("Add project…")
-            .icon(Icon::new(IconName::FolderOpen))
-            .on_click(cx.listener(|shell: &mut Shell, _: &ClickEvent, _, cx| {
-                shell.add_root(cx);
-            })),
-    ));
+    let tab = window_state_shell.rail_tab();
+    // Only the list being drawn is built. The other tab's rows cost a lookup per
+    // session and hang a handler on each, and none of that reaches the screen.
+    let rows = match tab {
+        // `display_order`, not `0..len`: pinned projects are drawn first while
+        // the roots themselves stay put, so every index a row hands back still
+        // means the project the user clicked.
+        RailTab::Projects => window_state
+            .workspace
+            .display_order()
+            .into_iter()
+            .map(|idx| folder_row(window_state_shell, window_state, idx, show_agent, cx))
+            .collect::<Vec<_>>(),
+        RailTab::Sessions => session_rows(window_state_shell, window_state, cx),
+    };
 
     // Every `Sidebar` child must be the same type, so the primary action rides
-    // in the header next to the workspace identity and "Projects" is the sole
-    // group -- which is where it belongs anyway: starting a session is about
-    // the workspace, not about the project list.
+    // in the header next to the workspace identity and the tab bar, and the
+    // content is one keyed menu -- which is where it belongs anyway: starting a
+    // session is about the workspace, not about the project list.
     Sidebar::new("rail")
         .side(Side::Left)
         // The rail is a panel in a draggable split now, so its width is the
@@ -1094,19 +1134,30 @@ pub fn rail(
                     workspace_target,
                     cx,
                 ))
+                // Above *New session*, because it is what a workspace with no
+                // project needs first and because both of them are about the
+                // workspace rather than about the list underneath. Quieter than
+                // the primary action right below it: adding a project is done
+                // once per project, starting a session is done all day.
+                .child(
+                    rail_row("rail-add-project", IconName::FolderOpen, "Add project…", cx)
+                        .text_color(cx.theme().muted_foreground)
+                        .tooltip(|window, cx| {
+                            Tooltip::new("Add a project root to this workspace").build(window, cx)
+                        })
+                        .on_click(cx.listener(|shell: &mut Shell, _: &ClickEvent, _, cx| {
+                            shell.add_root(cx);
+                        })),
+                )
                 .child(new_session_block(
                     window_state_shell,
                     active_root.as_deref(),
+                    window_state,
                     cx,
-                )),
+                ))
+                .child(tab_bar(tab, cx)),
         )
-        // Above Projects, and only once there are enough sessions for "where
-        // was I" to be a real question. Empty means no group at all rather than
-        // a heading over nothing.
-        .children(
-            (!recent.is_empty()).then(|| SidebarGroup::new("Recent").child(KeyedMenu::new(recent))),
-        )
-        .child(SidebarGroup::new("Projects").child(KeyedMenu::new(roots)))
+        .child(KeyedMenu::new(rows))
         // Not `SidebarFooter`: that is an `h_flex justify_between` with its own
         // hover highlight, meant for one row of controls. Three stacked triggers
         // inside it made hovering any one of them light up the whole block.
@@ -1300,26 +1351,6 @@ fn workspace_menu(
     }
 }
 
-/// The rail's primary action, and the agent list behind it.
-///
-/// Filled rather than outlined so it still reads as *the* action, but on the
-/// same icon column as every other row -- the `+` used to sit mid-rail while the
-/// workspace icon above it and the folder icons below it were at the left edge.
-///
-/// **One agent stays one click.** The chevron and the list appear only when
-/// there is more than one configured, because with one there is nothing to
-/// choose; and the row itself always starts the default, so adding a second
-/// agent never makes the common case slower. Before this the second agent was
-/// configurable in the agent manager and unreachable everywhere else.
-///
-/// The list expands *in the rail* rather than in a popup: the rail already
-/// nests rows under rows (sessions under folders), so this is the shape it
-/// already has, and it needs no overlay layer to own.
-///
-/// **The row names the project it would start in**, in its tooltip. A session
-/// belongs to exactly one project root and this button silently picks the
-/// selected one -- which is only obvious to someone who already knows that, and
-/// invisible to someone reading a rail with ten projects in it.
 /// What the primary action promises, in words.
 ///
 /// Pure and separate because it is the rule rather than the rendering: the
@@ -1335,9 +1366,34 @@ fn new_session_hint(root: Option<&str>, agent: Option<&str>) -> SharedString {
     }
 }
 
+/// The rail's primary action, and the chooser beside it.
+///
+/// On the same icon column as every other row -- the `+` used to sit mid-rail
+/// while the workspace icon above it and the folder icons below it were at the
+/// left edge.
+///
+/// **The row itself is unchanged and stays one click**: the selected project,
+/// the default agent. What the caret adds is the two things that click has to
+/// pick silently, and the project is the one worth reaching first — a session is
+/// bound to one project root for its whole life, so starting one somewhere else
+/// used to mean selecting that project, tearing down whatever was on screen, and
+/// only then pressing `+`. The agents follow underneath, and only where there is
+/// more than one configured: with one there is nothing to choose.
+///
+/// A popup and not the list that used to expand in the rail. That list pushed
+/// the whole tree down while it was open, which is affordable for two agents and
+/// not for a workspace's worth of projects — and the state saying whether it was
+/// open had to be carried on the shell and cleared on every path that started a
+/// session.
+///
+/// **The row names the project it would start in**, in its tooltip. A session
+/// belongs to exactly one project root and this button silently picks the
+/// selected one -- which is only obvious to someone who already knows that, and
+/// invisible to someone reading a rail with ten projects in it.
 fn new_session_block(
     shell: &Shell,
     active_root: Option<&str>,
+    window_state: &WorkspaceWindow,
     cx: &mut Context<Shell>,
 ) -> impl IntoElement {
     let agents: Vec<SharedString> = shell
@@ -1345,11 +1401,24 @@ fn new_session_block(
         .iter()
         .map(|spec| ellipsize(&spec.name, MAX_LABEL))
         .collect();
-    let choosable = agents.len() > 1;
-    let open = choosable && shell.agent_menu_open();
-    // The default agent is the one this row starts, which is the whole reason
-    // the chevron beside it is optional.
+    // The default agent is the one this row starts, which is what the tooltip
+    // names.
     let hint = new_session_hint(active_root, agents.first().map(SharedString::as_ref));
+    // `display_order` so the menu lists projects the way the rail draws them:
+    // two orders for one list is two lists as far as the reader is concerned.
+    let projects: Vec<(usize, SharedString)> = window_state
+        .workspace
+        .display_order()
+        .into_iter()
+        .filter_map(|idx| {
+            let root = window_state.workspace.roots.get(idx)?;
+            Some((idx, ellipsize(&root.label, MAX_LABEL)))
+        })
+        .collect();
+    let active_idx = window_state.workspace.active_root;
+    // Nothing to choose between: no project to start in and no second agent.
+    let choosable = !projects.is_empty() || agents.len() > 1;
+    let target = cx.entity().downgrade();
 
     let primary = lead_row(rail_row("new-session", IconName::Plus, "New session", cx))
         .tooltip(move |window, cx| Tooltip::new(hint.clone()).build(window, cx))
@@ -1360,68 +1429,127 @@ fn new_session_block(
         );
 
     div()
-        .v_flex()
-        .gap_0p5()
+        .h_flex()
+        .items_center()
+        .gap_1()
         .w_full()
         .min_w_0()
-        .child(
-            div()
-                .h_flex()
-                .items_center()
-                .gap_1()
-                .w_full()
-                .min_w_0()
-                .child(div().flex_1().min_w_0().child(primary))
-                .when(choosable, |bar| {
-                    bar.child(
-                        rail_control(
-                            "new-session-agent",
-                            if open {
-                                IconName::ChevronDown
-                            } else {
-                                IconName::ChevronRight
-                            },
-                        )
-                        .tooltip("Start a session with a different agent")
-                        .on_click(cx.listener(
-                            |shell: &mut Shell, _, _, cx| {
-                                shell.toggle_agent_menu(cx);
-                            },
-                        )),
-                    )
-                }),
+        .child(div().flex_1().min_w_0().child(primary))
+        .when(choosable, |bar| {
+            // The wrapping closure for the reason [`menu_button`] has one: this
+            // host hands the builder a `&mut Context<PopupMenu>` where the
+            // context-menu host hands over a `&mut App`, and `Context` derefs to
+            // it.
+            let build = new_session_menu(projects, active_idx, agents, target);
+            bar.child(
+                div().flex_none().occlude().child(
+                    rail_control("new-session-target", IconName::ChevronDown)
+                        .tooltip("Start a session in another project")
+                        .dropdown_menu_with_anchor(Anchor::TopRight, move |menu, window, cx| {
+                            build(menu, window, cx)
+                        }),
+                ),
+            )
+        })
+}
+
+/// Where a new session can go: a project, or — where there is a choice — an
+/// agent.
+///
+/// Two lists in one menu because they answer the same question from two sides.
+/// A project row starts the default agent there and **selects that project on
+/// the way**, which is the same thing the project row's own *New session* entry
+/// does: a session bound to a root the rail is not showing is an agent nobody is
+/// watching. An agent row starts in the project already selected, since the
+/// caret's whole promise is that the row above it is unchanged.
+///
+/// The project already selected is checked and still pickable, unlike the
+/// workspace switcher's current row: picking it is not a no-op, it starts a
+/// session exactly as the button above would.
+fn new_session_menu(
+    projects: Vec<(usize, SharedString)>,
+    active: usize,
+    agents: Vec<SharedString>,
+    shell: WeakEntity<Shell>,
+) -> impl Fn(PopupMenu, &mut Window, &mut App) -> PopupMenu + use<> {
+    move |menu, _, _cx: &mut App| {
+        let mut menu = menu;
+        if !projects.is_empty() {
+            menu = menu.label("Start in");
+        }
+        for (idx, label) in &projects {
+            let (idx, label, target) = (*idx, label.clone(), shell.clone());
+            menu = menu.item(
+                crate::controls::menu_item(label)
+                    .icon(Icon::new(IconName::Folder))
+                    .checked(idx == active)
+                    .on_click(move |_, window, cx: &mut App| {
+                        target
+                            .update(cx, |shell: &mut Shell, cx| {
+                                shell.new_session_in(idx, window, cx);
+                            })
+                            .ok();
+                    }),
+            );
+        }
+        // Only where there is a choice. A list of one agent is a control that
+        // exists to disappoint, and it would sit under a heading naming a
+        // decision nobody has.
+        if agents.len() > 1 {
+            menu = menu.separator().label("With agent");
+            for (i, name) in agents.iter().enumerate() {
+                let (name, target) = (name.clone(), shell.clone());
+                menu = menu.item(
+                    crate::controls::menu_item(name)
+                        .icon(Icon::new(IconName::Bot))
+                        .on_click(move |_, window, cx: &mut App| {
+                            target
+                                .update(cx, |shell: &mut Shell, cx| {
+                                    shell.new_session_with(i, window, cx);
+                                })
+                                .ok();
+                        }),
+                );
+            }
+        }
+        menu
+    }
+}
+
+/// The two lists, as a segmented control.
+///
+/// In the header rather than in the scrolling content: it is the thing that says
+/// what is underneath it, and a control that scrolls away from what it labels
+/// leaves the reader with a list and no name for it.
+fn tab_bar(active: RailTab, cx: &mut Context<Shell>) -> impl IntoElement + use<> {
+    let target = cx.entity().downgrade();
+    TabBar::new("rail-tabs")
+        .segmented()
+        .small()
+        .w_full()
+        .selected_index(
+            RailTab::ALL
+                .iter()
+                .position(|tab| *tab == active)
+                .unwrap_or(0),
         )
-        .when(open, |block| {
-            block.children(agents.into_iter().enumerate().map(|(i, name)| {
-                div()
-                    .id(("agent-choice", i))
-                    .h_flex()
-                    .items_center()
-                    .gap_x_2()
-                    .w_full()
-                    .min_w_0()
-                    .h_7()
-                    // Indented past the icon column so the list reads as
-                    // belonging to the row above it, the same way session rows
-                    // sit under their folder.
-                    .pl_6()
-                    .pr_2()
-                    .rounded(cx.theme().radius)
-                    .text_sm()
-                    .cursor_pointer()
-                    .hover(|row| row.bg(cx.theme().accent.opacity(0.5)))
-                    .child(Icon::new(IconName::Bot).size_4())
-                    .child(div().flex_1().min_w_0().truncate().child(name))
-                    .on_click(cx.listener(move |shell: &mut Shell, _, window, cx| {
-                        shell.new_session_with(i, window, cx);
-                    }))
-            }))
+        .children(RailTab::ALL.map(|tab| Tab::new().label(tab.label())))
+        .on_click(move |ix, _, cx: &mut App| {
+            let Some(tab) = RailTab::ALL.get(*ix).copied() else {
+                return;
+            };
+            target
+                .update(cx, |shell: &mut Shell, cx| shell.set_rail_tab(tab, cx))
+                .ok();
         })
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{MAX_LABEL, label_cap, new_session_hint, project_key, session_label, signal_hint};
+    use super::{
+        MAX_LABEL, RailTab, label_cap, new_session_hint, project_key, session_label, session_order,
+        signal_hint,
+    };
     use crate::chat::pane::SessionSignal;
     use onehand_core::config::PanelLayout;
     use std::path::Path;
@@ -1528,6 +1656,39 @@ mod tests {
     fn with_no_project_the_hint_asks_for_one() {
         let hint = new_session_hint(None, Some("Claude Code"));
         assert!(hint.contains("Add a project"), "{hint}");
+    }
+
+    /// The whole reason the flat list exists: a session that wants an answer
+    /// goes above one that is merely the last one looked at.
+    #[test]
+    fn a_session_wanting_an_answer_outranks_the_one_just_read() {
+        let parked = session_order(Some(SessionSignal::AwaitingUser), Some(9));
+        let just_read = session_order(None, Some(0));
+        assert!(parked < just_read, "{parked:?} vs {just_read:?}");
+    }
+
+    /// Underneath the signals, recency is what is left — and a session the
+    /// recency list has never seen has not been visited, which is the opposite
+    /// of having been visited longest ago.
+    #[test]
+    fn with_nothing_asking_the_last_one_looked_at_leads_and_the_unseen_trail() {
+        let seen = session_order(None, Some(0));
+        let older = session_order(None, Some(3));
+        let never = session_order(None, None);
+        assert!(seen < older);
+        assert!(older < never);
+    }
+
+    /// Two tabs, two names, and every tab in the list has one — a segmented
+    /// control with a blank half is one nobody can press on purpose.
+    #[test]
+    fn each_tab_names_itself_and_no_two_alike() {
+        let labels: Vec<&str> = RailTab::ALL.iter().map(|tab| tab.label()).collect();
+        assert!(labels.iter().all(|label| !label.trim().is_empty()));
+        let mut unique = labels.clone();
+        unique.sort_unstable();
+        unique.dedup();
+        assert_eq!(unique.len(), labels.len());
     }
 
     #[test]

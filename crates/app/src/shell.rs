@@ -409,12 +409,13 @@ pub struct Shell {
     /// included -- in the output path of `cargo build`. Comparing the two facts
     /// actually drawn is what keeps it out.
     panels: PanelFacts,
-    /// Whether the agent list under *New session* is expanded.
+    /// Which of the rail's two lists is showing.
     ///
-    /// Only ever shown when more than one agent is configured: with one there
-    /// is nothing to choose, and a chevron that opens a list of length one is
-    /// a control that exists to disappoint.
-    agent_menu_open: bool,
+    /// Not persisted: it is where the user is looking right now, and a launch
+    /// that came up on the flat list would be one where the project tree — the
+    /// thing that says what a workspace *is* — had to be found before anything
+    /// else could be read.
+    rail_tab: crate::rail::RailTab,
     /// The panel a panel-scoped command falls back to when focus is not in one.
     last_panel: FocusedPanel,
     /// Whether the terminal dock was open, per project root.
@@ -762,7 +763,7 @@ impl Shell {
             git_generation: 0,
             rail_sessions: Vec::new(),
             panels: PanelFacts::default(),
-            agent_menu_open: false,
+            rail_tab: crate::rail::RailTab::Projects,
             last_panel: FocusedPanel::Chat,
             terminal_open: seed_root
                 .clone()
@@ -1839,15 +1840,14 @@ impl Shell {
         cx.notify();
     }
 
-    /// Whether the agent list under *New session* is showing.
-    pub fn agent_menu_open(&self) -> bool {
-        self.agent_menu_open
+    /// Which of the rail's two lists is showing.
+    pub fn rail_tab(&self) -> crate::rail::RailTab {
+        self.rail_tab
     }
 
-    /// Show or hide the agent list. Only reachable when there is more than one
-    /// agent to choose between.
-    pub fn toggle_agent_menu(&mut self, cx: &mut Context<Self>) {
-        self.agent_menu_open = !self.agent_menu_open;
+    /// Show the other list.
+    pub fn set_rail_tab(&mut self, tab: crate::rail::RailTab, cx: &mut Context<Self>) {
+        self.rail_tab = tab;
         cx.notify();
     }
 
@@ -1966,7 +1966,6 @@ impl Shell {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Option<u64> {
-        self.agent_menu_open = false;
         let Some(spec) = Shared::global(cx).agents.get(idx).cloned() else {
             window.push_notification(Notification::warning("No agents configured"), cx);
             return None;
