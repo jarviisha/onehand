@@ -26,9 +26,7 @@ use gpui::{
 };
 use gpui_component::button::{Button, ButtonVariants as _};
 use gpui_component::menu::{DropdownMenu as _, PopupMenu, PopupMenuItem};
-use gpui_component::sidebar::{
-    Sidebar, SidebarCollapsible, SidebarGroup, SidebarMenu, SidebarMenuItem,
-};
+use gpui_component::sidebar::{Sidebar, SidebarCollapsible, SidebarGroup, SidebarMenuItem};
 use gpui_component::spinner::Spinner;
 use gpui_component::tooltip::Tooltip;
 use gpui_component::{ActiveTheme, Icon, IconName, Side, Sizable as _, StyledExt};
@@ -69,6 +67,108 @@ fn label_cap(rail_w: f32) -> usize {
     // anything it can be dragged to would need -- and the cast already does
     // it, so there is nothing here to guard.
     (MAX_LABEL as f32 + (rail_w - default) / CHAR_W) as usize
+}
+
+/// The rail's own menu: a column of rows, each named by what it *is*.
+///
+/// **This is the whole fix for two bugs that looked unrelated.**
+/// `SidebarMenuItem` keeps whether it is expanded in `window.use_keyed_state`,
+/// under the id it was rendered with — and every container in the library
+/// hands that id down as a position: a `Sidebar` names its children by their
+/// index, a group names its children by theirs, and `SidebarMenu` named the
+/// rows by theirs. So a project's expanded state belonged to the *slot* rather
+/// than to the project in it. Pinning a project moved it up the list and it
+/// arrived carrying whatever the project previously in that slot had been
+/// doing; removing one shifted every project after it the same way. And the id
+/// began with the group's index, so the moment a second group appeared above
+/// Projects — which happens on its own, the first time a workspace holds four
+/// sessions and *Recent* earns its place — every project's id changed at once
+/// and the whole tree collapsed.
+///
+/// This stands exactly where `SidebarMenu` stood and draws what it drew: a
+/// flex column with a gap, and the pointer for every row inside it. **The gap
+/// has to be here.** `SidebarGroup` wraps its children in `div().gap_2()
+/// .flex_col()`, and a gpui `div` starts at `display: block` while `flex_col`
+/// sets only the direction — so both of those declarations do nothing there,
+/// and the space between rows was always this column's to draw.
+///
+/// Nothing here re-implements a row: `SidebarMenuItem` still does every bit of
+/// the drawing. What this replaces is the one thing the library offers no
+/// other way to say, which is what a row is *called* — and `Sidebar` and
+/// `SidebarGroup` are both generic over their item type precisely so a host
+/// can answer that itself.
+///
+/// **A session row underneath a project is still named by its position**, and
+/// that is the library's to decide: `SidebarMenuItem::children` takes its own
+/// type and keys each child by index. It costs nothing today, because a flat
+/// row keeps no expanded state at all — the state is only created for a row
+/// that has children. It is the ceiling here, not a gap being left open.
+#[derive(Clone)]
+struct KeyedMenu {
+    rows: Vec<(ElementId, SidebarMenuItem)>,
+    collapsed: bool,
+}
+
+impl KeyedMenu {
+    fn new(rows: Vec<(ElementId, SidebarMenuItem)>) -> Self {
+        Self {
+            rows,
+            collapsed: false,
+        }
+    }
+}
+
+impl gpui_component::Collapsible for KeyedMenu {
+    fn is_collapsed(&self) -> bool {
+        self.collapsed
+    }
+
+    fn collapsed(mut self, collapsed: bool) -> Self {
+        self.collapsed = collapsed;
+        self
+    }
+}
+
+impl gpui_component::sidebar::SidebarItem for KeyedMenu {
+    /// The id the group offers is ignored, and that is the point: it is a
+    /// position, and a position is what these rows must not be named by.
+    fn render(
+        self,
+        _position: impl Into<ElementId>,
+        window: &mut Window,
+        cx: &mut App,
+    ) -> impl IntoElement {
+        let collapsed = self.collapsed;
+        div()
+            .v_flex()
+            .gap_2()
+            // On the rows and not on the gaps between them. A project row and
+            // a session row are the most-clicked things in the window,
+            // `SidebarMenuItem` sets no cursor and is not `Styled` so it cannot
+            // be told to, and gpui resolves the cursor from the topmost hitbox
+            // that names one. gpui-component's own `Button` sets
+            // `cursor_default` on itself, so the ••• inside a row still keeps
+            // the arrow, which is upstream's intent.
+            .cursor_pointer()
+            .children(self.rows.into_iter().map(|(key, row)| {
+                row.collapsed(collapsed)
+                    .render(key, window, cx)
+                    .into_any_element()
+            }))
+    }
+}
+
+/// What a project's row is called, as far as the window is concerned.
+///
+/// **The path and not the label**: two checkouts of one repository have the
+/// same folder name and are two different projects, so a key made from what
+/// the row says would hand one project's expanded state to the other. It is
+/// the same identity pinning already uses, for the same reason.
+fn project_key(path: &std::path::Path) -> ElementId {
+    ElementId::Name(SharedString::from(format!(
+        "rail-project-{}",
+        path.display()
+    )))
 }
 
 /// The branch name is the *least* important thing on a folder row -- it must
@@ -668,7 +768,7 @@ fn folder_row(
     root_idx: usize,
     show_agent: bool,
     cx: &mut Context<Shell>,
-) -> SidebarMenuItem {
+) -> (ElementId, SidebarMenuItem) {
     let root = &window_state.workspace.roots[root_idx];
     let is_active = window_state.workspace.active_root == root_idx;
     let active_session = root.active_session;
@@ -736,65 +836,76 @@ fn folder_row(
     let menu_target = cx.entity().downgrade();
     let suffix_target = menu_target.clone();
     let label = SharedString::from(root.label.clone());
+    let key = project_key(&root.path);
 
-    SidebarMenuItem::new(ellipsize(&root.label, label_cap(shell.rail_width(cx))))
-        .icon(Icon::new(IconName::Folder))
-        // The selected project is marked whether or not it has sessions. While
-        // this was `is_active && sessions.is_empty()`, a project holding the
-        // conversation on screen was the one project in the rail with no mark
-        // at all -- the highlight moved to its session row and the row naming
-        // the *project* went plain, so nothing on screen said which project the
-        // user was in.
-        .active(is_active)
-        // Only the selected project starts expanded. With every project open
-        // and every one of them now carrying at least two rows, a workspace of
-        // ten roots was a rail nobody could see the bottom of; clicking a
-        // project both selects it and opens it, so the rest are one click away.
-        .default_open(is_active)
-        .click_to_toggle(true)
-        .on_click(
-            cx.listener(move |shell: &mut Shell, _: &ClickEvent, window, cx| {
-                shell.select_root(root_idx, window, cx);
+    (
+        key,
+        SidebarMenuItem::new(ellipsize(&root.label, label_cap(shell.rail_width(cx))))
+            .icon(Icon::new(IconName::Folder))
+            // The selected project is marked whether or not it has sessions. While
+            // this was `is_active && sessions.is_empty()`, a project holding the
+            // conversation on screen was the one project in the rail with no mark
+            // at all -- the highlight moved to its session row and the row naming
+            // the *project* went plain, so nothing on screen said which project the
+            // user was in.
+            .active(is_active)
+            // Only the selected project starts expanded. With every project open
+            // and every one of them now carrying at least two rows, a workspace of
+            // ten roots was a rail nobody could see the bottom of; clicking a
+            // project both selects it and opens it, so the rest are one click away.
+            //
+            // *Starts* is now the whole of it, and it was not before. This is
+            // the initial value of a state the window keeps under the row's
+            // name, so while that name was a position it was re-created --
+            // and this re-applied -- every time the list moved underneath.
+            // A project the user had folded away would spring back open on its
+            // own; now it stays folded until they say otherwise.
+            .default_open(is_active)
+            .click_to_toggle(true)
+            .on_click(
+                cx.listener(move |shell: &mut Shell, _: &ClickEvent, window, cx| {
+                    shell.select_root(root_idx, window, cx);
+                }),
+            )
+            .children(children)
+            .context_menu(project_menu(root_idx, pinned, is_repo, menu_target))
+            .suffix(move |_, cx: &mut App| {
+                let suffix_target = suffix_target.clone();
+                div()
+                    .h_flex()
+                    .items_center()
+                    .flex_shrink(1.)
+                    .min_w_0()
+                    .gap_1()
+                    .text_xs()
+                    .text_color(cx.theme().muted_foreground)
+                    // A pinned project must say so on the row. Position alone does
+                    // not: "first in the list" is where a project can also be by
+                    // accident, so a pinned row and an ordinary top row would look
+                    // identical and the order would read as the app rearranging
+                    // things on its own.
+                    .when(pinned, |row| {
+                        row.child(Icon::new(IconName::Star).size_3().flex_none())
+                    })
+                    .when(branch.is_some() || changed > 0, |row| {
+                        row.child(git_facts(
+                            label.clone(),
+                            branch.clone(),
+                            changed,
+                            path.clone(),
+                            cx,
+                        ))
+                    })
+                    .when_some(rollup, |row, signal| row.child(signal_mark(signal, cx)))
+                    .when(is_active, |row| {
+                        row.child(menu_button(
+                            ("project-menu", root_idx),
+                            "What can be done with this project",
+                            project_menu(root_idx, pinned, is_repo, suffix_target),
+                        ))
+                    })
             }),
-        )
-        .children(children)
-        .context_menu(project_menu(root_idx, pinned, is_repo, menu_target))
-        .suffix(move |_, cx: &mut App| {
-            let suffix_target = suffix_target.clone();
-            div()
-                .h_flex()
-                .items_center()
-                .flex_shrink(1.)
-                .min_w_0()
-                .gap_1()
-                .text_xs()
-                .text_color(cx.theme().muted_foreground)
-                // A pinned project must say so on the row. Position alone does
-                // not: "first in the list" is where a project can also be by
-                // accident, so a pinned row and an ordinary top row would look
-                // identical and the order would read as the app rearranging
-                // things on its own.
-                .when(pinned, |row| {
-                    row.child(Icon::new(IconName::Star).size_3().flex_none())
-                })
-                .when(branch.is_some() || changed > 0, |row| {
-                    row.child(git_facts(
-                        label.clone(),
-                        branch.clone(),
-                        changed,
-                        path.clone(),
-                        cx,
-                    ))
-                })
-                .when_some(rollup, |row, signal| row.child(signal_mark(signal, cx)))
-                .when(is_active, |row| {
-                    row.child(menu_button(
-                        ("project-menu", root_idx),
-                        "What can be done with this project",
-                        project_menu(root_idx, pinned, is_repo, suffix_target),
-                    ))
-                })
-        })
+    )
 }
 
 /// How many sessions a workspace needs before *Recent* earns its space.
@@ -820,7 +931,7 @@ fn recent_rows(
     shell: &Shell,
     window_state: &WorkspaceWindow,
     cx: &mut Context<Shell>,
-) -> Vec<SidebarMenuItem> {
+) -> Vec<(ElementId, SidebarMenuItem)> {
     let total: usize = window_state
         .workspace
         .roots
@@ -860,7 +971,13 @@ fn recent_rows(
             let project = ellipsize(&root.label, MAX_AGENT_LABEL);
             let signal = state.signal;
 
-            Some(
+            Some((
+                // Flat, so this row keeps no expanded state and the key buys
+                // it nothing today. It is named all the same, because the two
+                // lists have to be one type and a row named by its position in
+                // a list that reorders on every visit is the thing this whole
+                // change is about not doing.
+                ElementId::Name(SharedString::from(format!("rail-recent-{uid}"))),
                 SidebarMenuItem::new(label)
                     .icon(Icon::new(IconName::Undo))
                     .on_click(
@@ -887,7 +1004,7 @@ fn recent_rows(
                             )
                             .when_some(signal, |row, signal| row.child(signal_mark(signal, cx)))
                     }),
-            )
+            ))
         })
         .take(RECENT_ROWS)
         .collect()
@@ -925,13 +1042,14 @@ pub fn rail(
     // Last in the group, not in the header: adding a project is a *list*
     // action, and it reads as the end of the list it extends. The header holds
     // the one action that is about the session, not the tree.
-    roots.push(
+    roots.push((
+        "rail-add-project".into(),
         SidebarMenuItem::new("Add project…")
             .icon(Icon::new(IconName::FolderOpen))
             .on_click(cx.listener(|shell: &mut Shell, _: &ClickEvent, _, cx| {
                 shell.add_root(cx);
             })),
-    );
+    ));
 
     // Every `Sidebar` child must be the same type, so the primary action rides
     // in the header next to the workspace identity and "Projects" is the sole
@@ -985,21 +1103,10 @@ pub fn rail(
         // Above Projects, and only once there are enough sessions for "where
         // was I" to be a real question. Empty means no group at all rather than
         // a heading over nothing.
-        .children((!recent.is_empty()).then(|| {
-            SidebarGroup::new("Recent").child(SidebarMenu::new().cursor_pointer().children(recent))
-        }))
-        // The pointer belongs on the *menu*, not on the rows. A project row and
-        // a session row are the most-clicked things in the window and had the
-        // plain arrow over them, because `SidebarMenuItem` sets no cursor and
-        // exposes no way to -- it is not `Styled`. GPUI resolves the cursor from
-        // the topmost hitbox that names one, and the rows name none, so one
-        // declaration on the container they all sit in covers every row at once.
-        // gpui-component's own `Button` sets `cursor_default` on itself, so the
-        // ✕ and ••• inside a row keep the arrow, which is upstream's intent.
-        .child(
-            SidebarGroup::new("Projects")
-                .child(SidebarMenu::new().cursor_pointer().children(roots)),
+        .children(
+            (!recent.is_empty()).then(|| SidebarGroup::new("Recent").child(KeyedMenu::new(recent))),
         )
+        .child(SidebarGroup::new("Projects").child(KeyedMenu::new(roots)))
         // Not `SidebarFooter`: that is an `h_flex justify_between` with its own
         // hover highlight, meant for one row of controls. Three stacked triggers
         // inside it made hovering any one of them light up the whole block.
@@ -1314,9 +1421,37 @@ fn new_session_block(
 
 #[cfg(test)]
 mod tests {
-    use super::{MAX_LABEL, label_cap, new_session_hint, session_label, signal_hint};
+    use super::{MAX_LABEL, label_cap, new_session_hint, project_key, session_label, signal_hint};
     use crate::chat::pane::SessionSignal;
     use onehand_core::config::PanelLayout;
+    use std::path::Path;
+
+    /// A project's row has to be named by the project, because the library
+    /// keys a row's expanded state by whatever name the row is rendered under
+    /// — and the name it hands out by default is the row's *position*, which
+    /// moves when a project is pinned or another one is removed. What moved
+    /// with it was the wrong project's expanded state.
+    ///
+    /// The folder name is not enough on its own: two checkouts of one
+    /// repository are two projects sharing one folder name, and a worktree
+    /// made from the rail is exactly that.
+    #[test]
+    fn two_projects_with_one_folder_name_are_two_different_rows() {
+        assert_ne!(
+            project_key(Path::new("/work/alpha/onehand")),
+            project_key(Path::new("/work/beta/onehand")),
+        );
+    }
+
+    /// The other half: the same project is the same row wherever it is drawn,
+    /// which is what makes pinning safe to reorder the list.
+    #[test]
+    fn one_project_keeps_one_row_wherever_it_is_drawn() {
+        assert_eq!(
+            project_key(Path::new("/work/alpha/onehand")),
+            project_key(Path::new("/work/alpha/onehand")),
+        );
+    }
 
     /// The rail is draggable, so the cap has to move with it.
     ///
