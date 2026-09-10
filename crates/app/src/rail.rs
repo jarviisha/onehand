@@ -1016,12 +1016,6 @@ fn recent_rows(
         .collect()
 }
 
-/// How many rows the tree has to hold before the filter earns its place.
-///
-/// Below this the whole tree is on screen and a field over it is a control
-/// asking to be used on a list the eye has already finished reading.
-const FILTER_THRESHOLD: usize = 8;
-
 /// Everything the filter matches, flat, projects and sessions together.
 ///
 /// **Flat, and it replaces the tree rather than thinning it.** A filtered
@@ -1121,10 +1115,17 @@ fn attention_block(
 
 /// The filter field.
 ///
-/// Always drawn once the tree is long enough, with no toggle and no shortcut
-/// behind it. A filter that has to be summoned needs a key nobody knows and a
-/// button somewhere to teach them, which is two more pieces of chrome than the
-/// field itself; a field that is simply there is found by looking at it.
+/// Always drawn, with no toggle and no shortcut behind it. A filter that has
+/// to be summoned needs a key nobody knows and a button somewhere to teach
+/// them, which is two more pieces of chrome than the field itself; a field
+/// that is simply there is found by looking at it.
+///
+/// **And no threshold either.** It was first drawn only once the tree passed a
+/// row count, on the reasoning that a filter over a short list is a control
+/// asking to be used on a list already read — but the way a threshold fails is
+/// that the feature is missing and nothing on screen says why, and a workspace
+/// landing one row under the line looks exactly like a build where the filter
+/// was never written. What that bought back was one row of chrome.
 ///
 /// `cleanable` is what empties it — the library draws the ✕ and the rail needs
 /// no opinion about where it goes, and clearing the field is what puts the
@@ -1159,17 +1160,6 @@ pub fn rail(
     let recent = recent_rows(window_state_shell, window_state, cx);
     let attention = attention_rows(window_state_shell, window_state, cx);
     let query = window_state_shell.rail_query(cx);
-    // The field is worth its row once the tree is longer than one look, and
-    // it is drawn whenever the *tree* is that long rather than whenever the
-    // results are -- a field that vanished as its own query narrowed the list
-    // would take the caret with it mid-word.
-    let rows: usize = window_state.workspace.roots.len()
-        + window_state
-            .workspace
-            .roots
-            .iter()
-            .map(|root| root.sessions.len())
-            .sum::<usize>();
     let filtering = !query.is_empty();
 
     // **The Projects group stays the sole group either way**, and the results
@@ -1269,10 +1259,7 @@ pub fn rail(
                 // are about the workspace rather than about the list: a field
                 // between *New session* and *Needs you* would read as
                 // filtering those rows instead.
-                .children(
-                    (rows > FILTER_THRESHOLD)
-                        .then(|| filter_field(window_state_shell).into_any_element()),
-                ),
+                .child(filter_field(window_state_shell)),
         )
         // Above Projects, and only once there are enough sessions for "where
         // was I" to be a real question. Empty means no group at all rather than
