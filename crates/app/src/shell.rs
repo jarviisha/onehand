@@ -371,6 +371,14 @@ pub struct Shell {
     agent_draft: AgentDraft,
     /// The workspace-rename field.
     workspace_name: Entity<InputState>,
+    /// What the rail is being filtered by, if anything.
+    ///
+    /// Held for the window's whole life rather than made when a filter opens,
+    /// because there is nothing to open: the field is drawn whenever the tree
+    /// is long enough to be worth searching, so there is no toggle, no
+    /// shortcut and no moment at which it has to be created with a `Window` in
+    /// hand. Empty means the rail is showing the tree.
+    rail_query: Entity<InputState>,
     /// The session whose name is being edited, if any.
     ///
     /// By uid, not by position: the rename outlives its own dialog frame, and a
@@ -720,6 +728,23 @@ impl Shell {
         )
         .detach();
 
+        let rail_query =
+            cx.new(|cx| InputState::new(window, cx).placeholder("Filter projects and sessions"));
+
+        // The rail is drawn by this entity, so telling it the query changed is
+        // the whole of it -- there is no filtered list kept anywhere to keep in
+        // step, because the filter is applied where the rows are built.
+        cx.subscribe_in(
+            &rail_query,
+            window,
+            |_: &mut Self, _, event: &InputEvent, _, cx| {
+                if matches!(event, InputEvent::Change) {
+                    cx.notify();
+                }
+            },
+        )
+        .detach();
+
         let worktree_branch =
             cx.new(|cx| InputState::new(window, cx).placeholder("feat/what-it-is-for"));
 
@@ -747,6 +772,7 @@ impl Shell {
             rail_split: cx.new(|_| ResizableState::default()),
             agent_draft: AgentDraft::new(window, cx),
             workspace_name,
+            rail_query,
             renaming: None,
             rename_input: cx.new(|cx| {
                 InputState::new(window, cx).placeholder("What this conversation is about")
@@ -2365,6 +2391,15 @@ impl Shell {
         &self.workspace_name
     }
 
+    pub fn rail_query_input(&self) -> &Entity<InputState> {
+        &self.rail_query
+    }
+
+    /// What the rail is being filtered by, trimmed; empty means the tree.
+    pub fn rail_query(&self, cx: &App) -> String {
+        self.rail_query.read(cx).value().trim().to_string()
+    }
+
     pub fn storage_dir(&self) -> Option<&std::path::PathBuf> {
         self.window.workspace.storage_dir.as_ref()
     }
@@ -2876,7 +2911,7 @@ impl Render for Shell {
         // is not rendered at all rather than rendered at zero width, so
         // nothing of it can catch a click along the edge.
         let rail = (self.app_maximized.is_none() && !self.rail_hidden)
-            .then(|| crate::rail::rail(self, &self.window, cx));
+            .then(|| crate::rail::rail(self, &self.window, window, cx));
         // Gone for the same reason and in the same direction: maximizing a
         // panel in the app direction means the frame *is* that panel, and a
         // strip of chrome across the bottom is the one thing that would still

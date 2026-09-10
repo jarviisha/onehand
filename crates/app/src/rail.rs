@@ -25,9 +25,10 @@ use gpui::{
     div, px,
 };
 use gpui_component::button::{Button, ButtonVariants as _};
+use gpui_component::input::Input;
 use gpui_component::menu::{DropdownMenu as _, PopupMenu, PopupMenuItem};
 use gpui_component::sidebar::{
-    Sidebar, SidebarCollapsible, SidebarGroup, SidebarMenu, SidebarMenuItem,
+    Sidebar, SidebarCollapsible, SidebarGroup, SidebarItem as _, SidebarMenu, SidebarMenuItem,
 };
 use gpui_component::spinner::Spinner;
 use gpui_component::tooltip::Tooltip;
@@ -218,6 +219,33 @@ fn signal_hint(signal: SessionSignal) -> &'static str {
     }
 }
 
+/// Whether a signal means the session has stopped and will not start again
+/// until the user goes to it.
+///
+/// Pure and separate because it is the rule rather than the rendering, and
+/// exhaustive rather than a `matches!` for the reason the guards give: a fifth
+/// signal must not be able to join the enum and quietly default to *not worth
+/// telling anyone about*, which is the one answer nobody would notice being
+/// wrong.
+fn calls_for_you(signal: SessionSignal) -> bool {
+    match signal {
+        SessionSignal::Lost | SessionSignal::AwaitingUser => true,
+        // Working resolves itself, and a finished turn has already resolved.
+        SessionSignal::Busy | SessionSignal::UnseenTurn => false,
+    }
+}
+
+/// Whether a name answers to what is typed in the rail's filter.
+///
+/// Case-insensitive and anywhere in the string. A conversation is named by its
+/// first prompt, so the word being hunted for is usually mid-sentence, and the
+/// case it was typed in is whatever the user was holding down at the time --
+/// a filter that only matched a prefix, or only matched exactly, would be one
+/// that mostly returns nothing while looking like it works.
+fn hits(query: &str, text: &str) -> bool {
+    text.to_lowercase().contains(&query.to_lowercase())
+}
+
 /// What a signal is called where there is room for a name but not a sentence.
 ///
 /// Separate from [`signal_hint`], which is what to *do* about the state: a
@@ -381,6 +409,39 @@ fn session_menu(
     }
 }
 
+/// How many session rows a digit can reach.
+///
+/// `Ctrl+1` … `Ctrl+9` and no further, because that is every binding there is:
+/// a tenth row is reached by clicking it or by `Ctrl+Tab`.
+const SHORTCUT_ROWS: usize = 9;
+
+/// The digit that reaches this row.
+///
+/// The shortcut has existed for as long as the rail has and was written down
+/// in exactly one place, the Help dialog — which is a list somebody has to
+/// already suspect the feature exists to go and read. The row it acts on is
+/// where it can be noticed without being looked for.
+///
+/// Muted and small, because it is a footnote about how to get here rather than
+/// anything about the conversation, and it sits beside a mark that means
+/// something is wrong. It says what it is in a tooltip for the reason every
+/// other mark on the rail does: a bare digit in a column is a code, and a code
+/// has to be learned before it can be read.
+///
+/// **Only on the active project's rows**, since the binding is "the *n*th
+/// session of the project on screen" — a digit beside a row the key would not
+/// reach is worse than no digit at all.
+fn shortcut_hint(digit: usize, cx: &App) -> impl IntoElement + use<> {
+    let hint = SharedString::from(format!("Ctrl+{digit} switches to this session"));
+    div()
+        .id("shortcut")
+        .flex_none()
+        .text_xs()
+        .text_color(cx.theme().muted_foreground)
+        .child(format!("{digit}"))
+        .tooltip(move |window, cx| Tooltip::new(hint.clone()).build(window, cx))
+}
+
 /// One session row, nested under its root's folder row.
 fn session_row(
     shell: &Shell,
@@ -388,15 +449,17 @@ fn session_row(
     session_idx: usize,
     session: &Session,
     active: bool,
-    // Which agent ran a session is worth saying only where there is more than
-    // one to be: with a single configured agent it is the same word on every
-    // row, and a column of identical words is what the title just replaced.
-    show_agent: bool,
+    // Which digit `Ctrl+…` would use to reach this row, where one would.
+    shortcut: Option<usize>,
     cx: &mut Context<Shell>,
 ) -> SidebarMenuItem {
     let uid = session.uid;
     let state = shell.session_row(uid, cx);
     let signal = state.signal;
+    // Which agent ran a session is worth saying only where there is more than
+    // one to be: with a single configured agent it is the same word on every
+    // row, and a column of identical words is what the title just replaced.
+    let show_agent = shell.agents(cx).len() > 1;
     let label = session_label(
         state.title.as_deref(),
         session.title(),
@@ -436,6 +499,7 @@ fn session_row(
                             .child(agent),
                     )
                 })
+                .when_some(shortcut, |row, digit| row.child(shortcut_hint(digit, cx)))
                 .when_some(signal, |row, signal| row.child(signal_mark(signal, cx)))
                 // Offered on the **active** row only, as the project row's is:
                 // a rail where every row carries a control is a rail of
@@ -666,7 +730,6 @@ fn folder_row(
     shell: &Shell,
     window_state: &WorkspaceWindow,
     root_idx: usize,
-    show_agent: bool,
     cx: &mut Context<Shell>,
 ) -> SidebarMenuItem {
     let root = &window_state.workspace.roots[root_idx];
@@ -704,7 +767,10 @@ fn folder_row(
                 i,
                 session,
                 is_active && active_session == i,
-                show_agent,
+                // `Ctrl+1…9` reaches the *active* project's sessions by
+                // position, so the digit is offered exactly where the key
+                // would land and nowhere else.
+                (is_active && i < SHORTCUT_ROWS).then_some(i + 1),
                 cx,
             )
         })
@@ -807,6 +873,99 @@ const RECENT_THRESHOLD: usize = 4;
 /// recognize.
 const RECENT_ROWS: usize = 5;
 
+/// One session drawn outside the tree.
+///
+/// Three lists want exactly this row — *Needs you*, *Recent*, and a filter's
+/// results — and they want it to stay one row: each is a session lifted out of
+/// the tree, so each has lost the one thing that said which project it belongs
+/// to, and each is read at a glance rather than scanned. The project's name
+/// rides in the suffix for that reason, and the icon is the only thing on the
+/// row that says which of the three lists it is in.
+fn flat_session_row(
+    shell: &Shell,
+    root: &onehand_core::workspace::ProjectRoot,
+    root_idx: usize,
+    session_idx: usize,
+    icon: IconName,
+    cx: &mut Context<Shell>,
+) -> Option<SidebarMenuItem> {
+    let session = root.sessions.get(session_idx)?;
+    let state = shell.session_row(session.uid, cx);
+    let label = session_label(
+        state.title.as_deref(),
+        session.title(),
+        label_cap(shell.rail_width(cx)),
+    );
+    let project = ellipsize(&root.label, MAX_AGENT_LABEL);
+    let signal = state.signal;
+
+    Some(
+        SidebarMenuItem::new(label)
+            .icon(Icon::new(icon))
+            .on_click(
+                cx.listener(move |shell: &mut Shell, _: &ClickEvent, window, cx| {
+                    shell.select_root_session(root_idx, session_idx, window, cx);
+                }),
+            )
+            .suffix(move |_, cx: &mut App| {
+                div()
+                    .h_flex()
+                    .items_center()
+                    .gap_1()
+                    .flex_shrink(1.)
+                    .min_w_0()
+                    .child(
+                        div()
+                            .max_w(MAX_AGENT_W)
+                            .truncate()
+                            .text_xs()
+                            .text_color(cx.theme().muted_foreground)
+                            .child(project.clone()),
+                    )
+                    .when_some(signal, |row, signal| row.child(signal_mark(signal, cx)))
+            }),
+    )
+}
+
+/// The sessions that have stopped and will not start again on their own.
+///
+/// **A flat list and not an expanded project.** What somebody wants when an
+/// agent parks a question is to be taken to it, not to have the folder it
+/// lives in opened for them — and the rail cannot open that folder anyway,
+/// since a project's expanded state is keyed by its position rather than by
+/// the project.
+///
+/// It sits in the rail's header rather than in a group of its own for a
+/// reason that is not about design: `Sidebar` keys each child by index, and
+/// each project's expanded state hangs off that index, so a group that comes
+/// and go with a parked question would collapse every open project each time
+/// one appeared. The header is the app's own element and is keyed by nothing.
+fn attention_rows(
+    shell: &Shell,
+    window_state: &WorkspaceWindow,
+    cx: &mut Context<Shell>,
+) -> Vec<SidebarMenuItem> {
+    let mut rows = Vec::new();
+    for root_idx in 0..window_state.workspace.roots.len() {
+        for session_idx in 0..window_state.workspace.roots[root_idx].sessions.len() {
+            let root = &window_state.workspace.roots[root_idx];
+            let uid = root.sessions[session_idx].uid;
+            if !shell.session_row(uid, cx).signal.is_some_and(calls_for_you) {
+                continue;
+            }
+            rows.extend(flat_session_row(
+                shell,
+                root,
+                root_idx,
+                session_idx,
+                IconName::Bell,
+                cx,
+            ));
+        }
+    }
+    rows
+}
+
 /// The *Recent* rows, most recently viewed first — or nothing at all.
 ///
 /// Flat, and **the tree keeps its own order**: jumping back to a conversation
@@ -851,52 +1010,138 @@ fn recent_rows(
                 .enumerate()
                 .find(|(_, root)| root.sessions.iter().any(|s| s.uid == uid))?;
             let session_idx = root.sessions.iter().position(|s| s.uid == uid)?;
-            let state = shell.session_row(uid, cx);
-            let label = session_label(
-                state.title.as_deref(),
-                root.sessions[session_idx].title(),
-                label_cap(shell.rail_width(cx)),
-            );
-            let project = ellipsize(&root.label, MAX_AGENT_LABEL);
-            let signal = state.signal;
-
-            Some(
-                SidebarMenuItem::new(label)
-                    .icon(Icon::new(IconName::Undo))
-                    .on_click(
-                        cx.listener(move |shell: &mut Shell, _: &ClickEvent, window, cx| {
-                            shell.select_root_session(root_idx, session_idx, window, cx);
-                        }),
-                    )
-                    // Which project it is in, because out of the tree the row
-                    // has lost the one thing that said so.
-                    .suffix(move |_, cx: &mut App| {
-                        div()
-                            .h_flex()
-                            .items_center()
-                            .gap_1()
-                            .flex_shrink(1.)
-                            .min_w_0()
-                            .child(
-                                div()
-                                    .max_w(MAX_AGENT_W)
-                                    .truncate()
-                                    .text_xs()
-                                    .text_color(cx.theme().muted_foreground)
-                                    .child(project.clone()),
-                            )
-                            .when_some(signal, |row, signal| row.child(signal_mark(signal, cx)))
-                    }),
-            )
+            flat_session_row(shell, root, root_idx, session_idx, IconName::Undo, cx)
         })
         .take(RECENT_ROWS)
         .collect()
+}
+
+/// How many rows the tree has to hold before the filter earns its place.
+///
+/// Below this the whole tree is on screen and a field over it is a control
+/// asking to be used on a list the eye has already finished reading.
+const FILTER_THRESHOLD: usize = 8;
+
+/// Everything the filter matches, flat, projects and sessions together.
+///
+/// **Flat, and it replaces the tree rather than thinning it.** A filtered
+/// *tree* is the shape that stalled this feature the first time: matches are
+/// buried inside projects, and `SidebarMenuItem` cannot be told to open, so
+/// the results would arrive folded away inside rows the rail has no way to
+/// unfold. A result that cannot be seen is not a result. Flattening drops the
+/// question entirely — every match is its own row, and the row says which
+/// project it came from.
+///
+/// A project matches on its own name and carries none of its sessions with
+/// it: the row selects the project, which is what somebody looking for a
+/// project wants, and a project whose sessions also match contributes those
+/// rows itself.
+fn filter_rows(
+    shell: &Shell,
+    window_state: &WorkspaceWindow,
+    query: &str,
+    cx: &mut Context<Shell>,
+) -> Vec<SidebarMenuItem> {
+    let cap = label_cap(shell.rail_width(cx));
+    let mut rows = Vec::new();
+    // `display_order` so a filter reads in the order the tree does — a result
+    // list that disagreed with the list behind it would make the two hard to
+    // hold in mind at once.
+    for root_idx in window_state.workspace.display_order() {
+        let root = &window_state.workspace.roots[root_idx];
+        if hits(query, &root.label) {
+            rows.push(
+                SidebarMenuItem::new(ellipsize(&root.label, cap))
+                    .icon(Icon::new(IconName::Folder))
+                    .on_click(
+                        cx.listener(move |shell: &mut Shell, _: &ClickEvent, window, cx| {
+                            shell.select_root(root_idx, window, cx);
+                        }),
+                    ),
+            );
+        }
+        for session_idx in 0..window_state.workspace.roots[root_idx].sessions.len() {
+            let root = &window_state.workspace.roots[root_idx];
+            let session = &root.sessions[session_idx];
+            let title = shell.session_row(session.uid, cx).title;
+            // The agent's name as well as the conversation's, because until a
+            // session has been prompted the agent's name is the only name it
+            // has — and that is exactly the session somebody is hunting for
+            // when they cannot remember what they called it.
+            let named =
+                title.as_deref().is_some_and(|t| hits(query, t)) || hits(query, session.title());
+            if !named {
+                continue;
+            }
+            rows.extend(flat_session_row(
+                shell,
+                root,
+                root_idx,
+                session_idx,
+                IconName::Bot,
+                cx,
+            ));
+        }
+    }
+    rows
+}
+
+/// How many rows *Needs you* draws before it starts counting instead.
+///
+/// It sits in the header, which does not scroll, so an unbounded list here
+/// would push the whole tree off a short window — and the list this one is
+/// longest in is exactly the workspace where the tree matters most.
+const ATTENTION_ROWS: usize = 5;
+
+/// The *Needs you* block: a heading and the sessions that have stopped.
+///
+/// The library's own group and menu, rendered by hand into the rail's header
+/// rather than handed to `Sidebar` as a child, because a child is keyed by its
+/// index and this block comes and goes. Rendering it here is what buys the
+/// heading, the row inset and the hover for nothing while keeping the index
+/// the projects depend on still.
+///
+/// **The heading carries the true count when the list is cut**, so a workspace
+/// with eight parked agents does not quietly report five.
+fn attention_block(
+    rows: Vec<SidebarMenuItem>,
+    window: &mut Window,
+    cx: &mut App,
+) -> impl IntoElement {
+    let total = rows.len();
+    let label = match total > ATTENTION_ROWS {
+        true => SharedString::from(format!("Needs you ({total})")),
+        false => SharedString::from("Needs you"),
+    };
+    let rows: Vec<_> = rows.into_iter().take(ATTENTION_ROWS).collect();
+    SidebarGroup::new(label)
+        .child(SidebarMenu::new().cursor_pointer().children(rows))
+        .render("rail-attention", window, cx)
+}
+
+/// The filter field.
+///
+/// Always drawn once the tree is long enough, with no toggle and no shortcut
+/// behind it. A filter that has to be summoned needs a key nobody knows and a
+/// button somewhere to teach them, which is two more pieces of chrome than the
+/// field itself; a field that is simply there is found by looking at it.
+///
+/// `cleanable` is what empties it — the library draws the ✕ and the rail needs
+/// no opinion about where it goes, and clearing the field is what puts the
+/// tree back.
+fn filter_field(shell: &Shell) -> impl IntoElement + use<> {
+    div()
+        .px_2()
+        .w_full()
+        .min_w_0()
+        .child(Input::new(shell.rail_query_input()).cleanable(true).small())
 }
 
 /// Build the rail for a window.
 pub fn rail(
     window_state_shell: &Shell,
     window_state: &WorkspaceWindow,
+    window: &mut Window,
     cx: &mut Context<Shell>,
     // `use<>`: the returned sidebar is fully owned (every string is cloned and
     // every handler is an Rc), so it must not capture the borrows of `self` and
@@ -908,30 +1153,65 @@ pub fn rail(
         .workspace
         .active_root()
         .map(|root| root.label.clone());
-    let show_agent = window_state_shell.agents(cx).len() > 1;
     let workspace_dir = window_state.workspace.storage_dir.clone();
     let workspace_recents = window_state_shell.recents(cx);
     let workspace_target = cx.entity().downgrade();
     let recent = recent_rows(window_state_shell, window_state, cx);
-    // `display_order`, not `0..len`: pinned projects are drawn first while the
-    // roots themselves stay put, so every index a row hands back still means
-    // the project the user clicked.
-    let mut roots = window_state
-        .workspace
-        .display_order()
-        .into_iter()
-        .map(|idx| folder_row(window_state_shell, window_state, idx, show_agent, cx))
-        .collect::<Vec<_>>();
-    // Last in the group, not in the header: adding a project is a *list*
-    // action, and it reads as the end of the list it extends. The header holds
-    // the one action that is about the session, not the tree.
-    roots.push(
-        SidebarMenuItem::new("Add project…")
-            .icon(Icon::new(IconName::FolderOpen))
-            .on_click(cx.listener(|shell: &mut Shell, _: &ClickEvent, _, cx| {
-                shell.add_root(cx);
-            })),
-    );
+    let attention = attention_rows(window_state_shell, window_state, cx);
+    let query = window_state_shell.rail_query(cx);
+    // The field is worth its row once the tree is longer than one look, and
+    // it is drawn whenever the *tree* is that long rather than whenever the
+    // results are -- a field that vanished as its own query narrowed the list
+    // would take the caret with it mid-word.
+    let rows: usize = window_state.workspace.roots.len()
+        + window_state
+            .workspace
+            .roots
+            .iter()
+            .map(|root| root.sessions.len())
+            .sum::<usize>();
+    let filtering = !query.is_empty();
+
+    // **The Projects group stays the sole group either way**, and the results
+    // go inside it rather than into a group of their own. `Sidebar` keys each
+    // child by index and a project's expanded state hangs off that index, so a
+    // results group appearing would collapse every open project -- and then
+    // clearing the query would do it again. Swapping what is inside one group
+    // moves no index, and the project rows come back to the places they left.
+    let (group, roots) = match filtering {
+        true => {
+            let found = filter_rows(window_state_shell, window_state, &query, cx);
+            let label = match found.len() {
+                0 => "No match".to_string(),
+                1 => "1 match".to_string(),
+                n => format!("{n} matches"),
+            };
+            (SharedString::from(label), found)
+        }
+        false => {
+            // `display_order`, not `0..len`: pinned projects are drawn first
+            // while the roots themselves stay put, so every index a row hands
+            // back still means the project the user clicked.
+            let mut roots = window_state
+                .workspace
+                .display_order()
+                .into_iter()
+                .map(|idx| folder_row(window_state_shell, window_state, idx, cx))
+                .collect::<Vec<_>>();
+            // Last in the group, not in the header: adding a project is a
+            // *list* action, and it reads as the end of the list it extends.
+            // The header holds the one action that is about the session, not
+            // the tree.
+            roots.push(
+                SidebarMenuItem::new("Add project…")
+                    .icon(Icon::new(IconName::FolderOpen))
+                    .on_click(cx.listener(|shell: &mut Shell, _: &ClickEvent, _, cx| {
+                        shell.add_root(cx);
+                    })),
+            );
+            (SharedString::from("Projects"), roots)
+        }
+    };
 
     // Every `Sidebar` child must be the same type, so the primary action rides
     // in the header next to the workspace identity and "Projects" is the sole
@@ -980,7 +1260,19 @@ pub fn rail(
                     window_state_shell,
                     active_root.as_deref(),
                     cx,
-                )),
+                ))
+                .children(
+                    (!attention.is_empty())
+                        .then(|| attention_block(attention, window, cx).into_any_element()),
+                )
+                // Directly over the list it acts on, and under the rows that
+                // are about the workspace rather than about the list: a field
+                // between *New session* and *Needs you* would read as
+                // filtering those rows instead.
+                .children(
+                    (rows > FILTER_THRESHOLD)
+                        .then(|| filter_field(window_state_shell).into_any_element()),
+                ),
         )
         // Above Projects, and only once there are enough sessions for "where
         // was I" to be a real question. Empty means no group at all rather than
@@ -996,10 +1288,7 @@ pub fn rail(
         // declaration on the container they all sit in covers every row at once.
         // gpui-component's own `Button` sets `cursor_default` on itself, so the
         // ✕ and ••• inside a row keep the arrow, which is upstream's intent.
-        .child(
-            SidebarGroup::new("Projects")
-                .child(SidebarMenu::new().cursor_pointer().children(roots)),
-        )
+        .child(SidebarGroup::new(group).child(SidebarMenu::new().cursor_pointer().children(roots)))
         // Not `SidebarFooter`: that is an `h_flex justify_between` with its own
         // hover highlight, meant for one row of controls. Three stacked triggers
         // inside it made hovering any one of them light up the whole block.
@@ -1314,9 +1603,43 @@ fn new_session_block(
 
 #[cfg(test)]
 mod tests {
-    use super::{MAX_LABEL, label_cap, new_session_hint, session_label, signal_hint};
+    use super::{
+        MAX_LABEL, calls_for_you, hits, label_cap, new_session_hint, session_label, signal_hint,
+    };
     use crate::chat::pane::SessionSignal;
     use onehand_core::config::PanelLayout;
+
+    /// A filter typed in a hurry is typed in the wrong case, and a name in the
+    /// rail is whatever the folder or the first prompt happened to be.
+    #[test]
+    fn a_filter_ignores_case() {
+        assert!(hits("LOGIN", "Fix the login flow"));
+        assert!(hits("fix", "Fix the login flow"));
+    }
+
+    /// Matching anywhere and not only at the start: a conversation is named by
+    /// its first prompt, so the word being looked for is usually in the middle
+    /// of the sentence rather than at its front.
+    #[test]
+    fn a_filter_matches_inside_a_name() {
+        assert!(hits("the login", "Fix the login flow"));
+        assert!(!hits("logout", "Fix the login flow"));
+    }
+
+    /// The two signals that mean a session is standing still until somebody
+    /// goes to it, and the two that do not.
+    ///
+    /// Busy resolves on its own and a finished turn is already done, so
+    /// listing either would fill the group that exists to be short with rows
+    /// nobody has to act on -- which is the same mistake as a rail where every
+    /// row carries a mark.
+    #[test]
+    fn only_a_stopped_session_calls_for_the_user() {
+        assert!(calls_for_you(SessionSignal::AwaitingUser));
+        assert!(calls_for_you(SessionSignal::Lost));
+        assert!(!calls_for_you(SessionSignal::Busy));
+        assert!(!calls_for_you(SessionSignal::UnseenTurn));
+    }
 
     /// The rail is draggable, so the cap has to move with it.
     ///
