@@ -777,11 +777,14 @@ status bar.
   change count ride in the suffix — the count as a badge, not a coloured number — with the full
   branch, the count in words and the root's path in a tooltip. The primary *New session* button names
   the project it would start in, in its tooltip.
-- **Selecting a project and folding it away are two different targets** (`click_to_toggle(false)`).
-  While the whole row toggled, every click on a project both switched to it *and* snapped its
-  sessions shut, so reaching a session in the project just arrived at meant clicking the row a
-  second time to undo what the first click did. The caret opens and closes; the row selects and
-  leaves the fold where the user put it.
+- **Selecting a project and folding it away are two different targets** (`click_to_open(true)`,
+  never `click_to_toggle`). While the whole row toggled, every click on a project both switched to
+  it *and* snapped its sessions shut, so reaching a session in the project just arrived at meant
+  clicking the row a second time to undo what the first click did. **Open and never toggle**, which
+  is not the same as leaving the fold alone: a row that only selected would hide the sessions of
+  every project the user had ever folded, and arriving at one would mean hunting a 16px caret to see
+  what is in it — the same extra click in mirror image. Going to a project is asking what is in it,
+  so the row reveals; only the caret puts it away again.
 - **The list is two tabs, not two stacked groups** (`rail::RailTab`, a segmented `TabBar` in the
   header): *Projects* is the tree, *All sessions* is every session in the workspace, flat.
   The flat list **sorts itself by what each session wants** — `rail::session_order`, which is
@@ -789,9 +792,16 @@ status bar.
   top and a session carrying no signal at all falls into the tail in most-recently-viewed order. That
   reordering is why they are tabs: a section that rearranges under the eye cannot sit above a tree
   the user navigates by position. A flat row is named by its session's uid and never by its place,
-  since its place moves the moment an agent starts working; it carries its project in the suffix
-  where a tree row carries the agent, and its menu is the tree row's, unchanged — one conversation
-  must not offer two different sets of things to do depending on which list it is being read in.
+  since its place moves the moment an agent starts working.
+  **Both lists draw the same row** (`rail::session_row`) — same click, same menu, same mark — and
+  everything they disagree about is `rail::Note`, the footnote beside the mark: the agent on a tree
+  row, the project on a flat one. They were briefly written out separately, which left the flat one
+  a near-verbatim copy that would have drifted at the first edit to either.
+  Neither list is capped, and that is one ceiling rather than two: every row is a session somebody
+  minted by hand, and the tree draws the same set once its projects are unfolded, so a cap on the
+  flat list alone would report as truncated a workspace the tab beside it draws in full.
+  An empty workspace gets the *Start a session* offer rather than a blank panel, as a project with
+  no sessions does in the tree.
   The tab is **not persisted**: a launch that came up on the flat list would be one where the tree,
   the thing that says what a workspace *is*, had to be found before anything else could be read.
 - **The rail's header is a block one step above the list** (`rail::lead_row`): the workspace
@@ -806,11 +816,15 @@ status bar.
   is unchanged: one click still starts the default agent on the selected project. What the menu adds
   is the two things that click has to choose silently — every project in the workspace under *Start
   in* (each selecting that root on the way, since a session bound to a root the rail is not showing
-  is an agent nobody is watching), and, only where more than one is configured, the agents under
-  *With agent*. A popup and not the list that used to expand in the rail: that list pushed the whole
-  tree down while it was open, which is affordable for two agents and not for a workspace's worth of
-  projects, and the flag saying whether it was open had to be carried on the shell and cleared on
-  every path that started a session.
+  is an agent nobody is watching), and the agents under *With agent*. **Each section needs more than
+  one of its own kind, and so does the caret**: one project and one agent leaves a control whose
+  whole menu is a single row doing what the button beside it does, and gating one section that way
+  and not the other is the rule applied in one place and not the other. A popup and not the list
+  that used to expand in the rail: that list pushed the whole tree down while it was open, which is
+  affordable for two agents and not for a workspace's worth of projects, and the flag saying whether
+  it was open had to be carried on the shell and cleared on every path that started a session.
+  It is drawn by `rail::menu_button`, the same builder the two ••• menus use — three controls, one
+  shape, after the second copy of it appeared here.
 - **The workspace identity row *is* the switcher** (`rail::workspace_menu`) — the whole row opens the
   menu, and nothing marks it but the hover, the pointer and the tooltip: no chevron, because a caret
   on the rail's topmost row competed with the primary action directly below it. The menu is the
