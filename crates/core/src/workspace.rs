@@ -72,6 +72,58 @@ pub fn canon_dir(path: PathBuf) -> PathBuf {
     std::fs::canonicalize(&path).unwrap_or(path)
 }
 
+/// Where a workspace created *from* a project folder keeps its config.
+///
+/// Under the per-user data root, never inside the project. A workspace file
+/// written into the folder that is also its first project root leaves a clean
+/// repository dirty with a file that shows in that project's own tree and
+/// change count, and committing it publishes every root's absolute path on this
+/// machine. Nothing else the app persists lives outside the data root either.
+///
+/// The name carries the folder's, so the folder is recognisable in a picker and
+/// in the recents list, plus a digest of the whole path — two checkouts of one
+/// repository are two projects with one folder name, and the digest is also
+/// what makes the answer *stable*: creating a workspace on a folder that
+/// already has one finds it again instead of quietly making a second.
+///
+/// The digest is written out here rather than taken from `DefaultHasher`,
+/// which is explicitly not promised to be the same from one Rust release to the
+/// next — a hash that moved under a toolchain upgrade would point every
+/// existing project at a fresh empty workspace.
+pub fn storage_for(root: &Path) -> PathBuf {
+    let name = root
+        .file_name()
+        .map(|s| slug(&s.to_string_lossy()))
+        .filter(|s| !s.is_empty())
+        .unwrap_or_else(|| "workspace".to_string());
+    let digest = fnv1a(root.as_os_str().as_encoded_bytes());
+    crate::config::config_dir()
+        .join("workspaces")
+        .join(format!("{name}-{digest:08x}"))
+}
+
+/// A folder name as a name a folder may have: what is not plainly a letter,
+/// digit, `_` or `.` becomes a dash, runs collapse and the ends are trimmed.
+fn slug(name: &str) -> String {
+    let mut out = String::with_capacity(name.len());
+    for ch in name.chars() {
+        if ch.is_alphanumeric() || ch == '_' || ch == '.' {
+            out.push(ch);
+        } else if !out.ends_with('-') {
+            out.push('-');
+        }
+    }
+    out.trim_matches('-').to_string()
+}
+
+/// FNV-1a, 32-bit. Not a security property — this only has to spread folder
+/// paths apart and give the same answer every launch.
+fn fnv1a(bytes: &[u8]) -> u32 {
+    bytes.iter().fold(0x811c_9dc5, |hash, byte| {
+        (hash ^ u32::from(*byte)).wrapping_mul(0x0100_0193)
+    })
+}
+
 /// One window's single workspace.
 #[derive(Debug)]
 pub struct Workspace {
@@ -496,6 +548,19 @@ mod tests {
         let alias = sub.join("..").join(sub.file_name().unwrap());
         assert_eq!(canon_dir(alias), canon_dir(sub.clone()));
         let _ = std::fs::remove_dir_all(&sub);
+    }
+
+    #[test]
+    fn storage_for_is_stable_outside_the_project_and_split_by_path() {
+        let a = storage_for(Path::new("/home/me/code/app"));
+        assert_eq!(a, storage_for(Path::new("/home/me/code/app")));
+        assert!(!a.starts_with("/home/me/code/app"));
+        assert!(
+            a.file_name().unwrap().to_string_lossy().starts_with("app-"),
+            "the folder's own name has to be readable in {a:?}"
+        );
+        // Same folder name, different checkout: two workspaces, not one.
+        assert_ne!(a, storage_for(Path::new("/home/me/other/app")));
     }
 
     #[test]

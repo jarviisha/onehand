@@ -1043,6 +1043,24 @@ fails if a binding is added without a row — a shortcut nobody can find is a sh
   `<config_dir>/onehand/state.toml` as a recents list, and the next launch reopens the most recent,
   taking precedence over the CLI root. Binding a directory that already holds another workspace's
   config **never overwrites it** — that workspace is opened instead.
+- **A workspace made by *New workspace…* is bound before its window opens**, and it is bound to
+  `workspace::storage_for(root)` — `<config_dir>/onehand/workspaces/<folder>-<digest of the path>` —
+  never to the project folder itself. Two things this settles. An unbound workspace persists nothing,
+  so one that opened unbound was remembered nowhere: it was gone on the next launch and the folder it
+  was created in did not open it either, since nothing had been written there. And a config written
+  *into* the project would leave a clean repository dirty with a file that shows in that project's own
+  tree and change count, and publish every root's absolute local path to anyone who cloned it. The
+  digest is FNV-1a written out in core rather than `DefaultHasher`, which is not promised to be stable
+  across Rust releases — a derived path that moved under a toolchain upgrade would point every project
+  at a fresh empty workspace. Being stable is what lets the overwrite guard mean something here:
+  creating a workspace on a folder that already has one **opens it** rather than starting a second one
+  nothing distinguishes from the first. *Open workspace…* tries the picked folder and then that
+  derived storage, because the folder a user can find in a picker is the project, not the data root.
+- **The overwrite guard is one function** (`shell::workspace_in`): a folder already holding a
+  workspace, a folder free to write into, and a config that exists and cannot be read — that last
+  never reading as the second, or a workspace with one bad character in its file is a workspace
+  deleted by a folder picker. The sentence refusing it lives there too, so the two write paths cannot
+  come to refuse the same thing in different words.
 
 ### Config
 
