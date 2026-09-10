@@ -34,10 +34,42 @@ use gpui_component::tooltip::Tooltip;
 use gpui_component::{ActiveTheme, Icon, IconName, Side, Sizable as _, StyledExt};
 use onehand_core::agent::Session;
 
-/// Project labels are structural anchors, not content: cap them so a deep path
-/// cannot push the rail's width around. `SidebarMenuItem` clips its label with
+/// Names are structural anchors, not content: cap them so a deep path cannot
+/// push the rail's width around. `SidebarMenuItem` clips its label with
 /// `overflow_x_hidden` and no ellipsis, so this is what produces the `…`.
+///
+/// This is the cap at the rail's *default* width — the width it was drawn at
+/// while the figure was chosen by eye, which is what makes that one pairing
+/// the fixed point [`label_cap`] works out from.
+///
+/// Everything else still capped by this constant rather than by [`label_cap`]
+/// is a string the rail's width does not decide: each of them already sits
+/// behind something that clips on its own — a pixel cap, one of our own
+/// truncating divs, or a popup sized by its own contents — so none of them is
+/// waiting on the drag, and the figure here is only their upper bound.
 const MAX_LABEL: usize = 24;
+
+/// How much of a name a rail row carries at the width the rail is drawn at.
+///
+/// The rail is draggable (232–320px) while this was one constant, so widening
+/// it bought nothing: every name stayed cut at the same character and the
+/// handle promised width the rows never spent. The rule is [`MAX_LABEL`] at
+/// the default width and one character per `CHAR_W` either side of it.
+///
+/// Characters and not pixels, because the label is a string by the time the
+/// library sees it. `CHAR_W` is an average across a proportional face, so a
+/// name in capitals cuts a character early and a name of `i`s a character
+/// late; measuring for real needs the text system, which means being inside a
+/// paint, and what being wrong here costs is one character of a name.
+fn label_cap(rail_w: f32) -> usize {
+    /// The width of one character of a name, averaged over a name.
+    const CHAR_W: f32 = 7.;
+    let default = onehand_core::config::PanelLayout::default().rail_w;
+    // Saturating on the way to `usize`, which is what a rail narrower than
+    // anything it can be dragged to would need -- and the cast already does
+    // it, so there is nothing here to guard.
+    (MAX_LABEL as f32 + (rail_w - default) / CHAR_W) as usize
+}
 
 /// The branch name is the *least* important thing on a folder row -- it must
 /// never cost the project label its space. `SidebarMenuItem` gives the label
@@ -140,6 +172,35 @@ fn rail_control(id: impl Into<ElementId>, icon: IconName) -> Button {
         .icon(Icon::new(icon))
 }
 
+/// The ••• a row carries while it is the active one.
+///
+/// Both row kinds draw exactly this, so it is built once: a project row and a
+/// session row differ in the id, the sentence and the builder, and in nothing
+/// about the shape.
+///
+/// `occlude`, because the button sits inside a row whose own click already
+/// means something — selecting a session, or selecting a project and toggling
+/// it open — and opening a menu must not do that on its way past.
+///
+/// The wrapping closure is what lets one builder serve both this and the
+/// row's right-click menu: `SidebarMenuItem::context_menu` hands its builder
+/// `&mut App` while this host hands over a `&mut Context<PopupMenu>`, which
+/// derefs to it. Written once here rather than at each row, which is where
+/// the two copies of it were.
+fn menu_button(
+    id: impl Into<ElementId>,
+    tooltip: &'static str,
+    build: impl Fn(PopupMenu, &mut Window, &mut App) -> PopupMenu + 'static,
+) -> impl IntoElement {
+    div().flex_none().occlude().child(
+        rail_control(id, IconName::Ellipsis)
+            .tooltip(tooltip)
+            .dropdown_menu_with_anchor(Anchor::TopRight, move |menu, window, cx| {
+                build(menu, window, cx)
+            }),
+    )
+}
+
 /// What a signal says, in words.
 ///
 /// Every mark on the rail has one, and that is the point: a mark is a code, and
@@ -239,8 +300,8 @@ fn dot(color: gpui::Hsla) -> impl IntoElement + use<> {
 /// on a root used to be labelled with its agent's name, so three sessions on
 /// one project read "Claude Code" three times and the rail could not be used to
 /// tell them apart -- which is the one thing a session-first rail is for.
-fn session_label(title: Option<&str>, agent: &str) -> SharedString {
-    ellipsize(title.unwrap_or(agent), MAX_LABEL)
+fn session_label(title: Option<&str>, agent: &str, cap: usize) -> SharedString {
+    ellipsize(title.unwrap_or(agent), cap)
 }
 
 /// Everything a session row offers.
@@ -336,7 +397,11 @@ fn session_row(
     let uid = session.uid;
     let state = shell.session_row(uid, cx);
     let signal = state.signal;
-    let label = session_label(state.title.as_deref(), session.title());
+    let label = session_label(
+        state.title.as_deref(),
+        session.title(),
+        label_cap(shell.rail_width(cx)),
+    );
     // Only alongside a conversation title: where the row has fallen back to the
     // agent's name, the suffix would repeat the label it sits next to.
     let agent =
@@ -377,21 +442,12 @@ fn session_row(
                 // controls, and the user selects a session to see what is in it
                 // before acting on it anyway. Every other row still has the
                 // same menu on right-click.
-                //
-                // `occlude`: the row's own click selects the session, and
-                // opening a menu must not do that on its way past.
                 .when(active, |row| {
-                    let build = session_menu(root_idx, session_idx, uid, suffix_target);
-                    row.child(
-                        div().flex_none().occlude().child(
-                            rail_control(("session-menu", uid), IconName::Ellipsis)
-                                .tooltip("What can be done with this session")
-                                .dropdown_menu_with_anchor(
-                                    Anchor::TopRight,
-                                    move |menu, window, cx| build(menu, window, cx),
-                                ),
-                        ),
-                    )
+                    row.child(menu_button(
+                        ("session-menu", uid),
+                        "What can be done with this session",
+                        session_menu(root_idx, session_idx, uid, suffix_target),
+                    ))
                 })
         })
 }
@@ -403,12 +459,21 @@ fn session_row(
 /// the root's path because the label is a folder name and two projects can
 /// share one.
 ///
+/// **The project's own untruncated name leads it**, because the row's label is
+/// cut to fit and `SidebarMenuItem` offers nowhere to hang a tooltip of its
+/// own -- its label is a bare string, not an element. This is the one hover
+/// target on the row that can carry the whole name, so it does. What it does
+/// not cover is a project that is neither a repository nor has changes: there
+/// is no suffix drawn there at all, so there is nothing to hover, and the
+/// answer to that one is the row type this rail does not own.
+///
 /// The count is a **badge**, not a coloured number. As a bare figure in the
 /// warning tint its colour was the whole message, and a colour is a message
 /// only to someone who already knows the code: a project with a lot of ordinary
 /// work in it read as a project in trouble. The pill says "this is a count";
 /// the tooltip says a count of what.
 fn git_facts(
+    label: SharedString,
     branch: Option<SharedString>,
     changed: usize,
     path: SharedString,
@@ -446,11 +511,12 @@ fn git_facts(
             )
         })
         .tooltip(move |window, cx| {
-            let (branch, path) = (full_branch.clone(), path.clone());
+            let (label, branch, path) = (label.clone(), full_branch.clone(), path.clone());
             Tooltip::element(move |_, _| {
                 div()
                     .v_flex()
                     .gap_0p5()
+                    .child(label.clone())
                     .when_some(branch.clone(), |col, branch| {
                         col.child(format!("Branch: {branch}"))
                     })
@@ -478,114 +544,121 @@ fn git_facts(
 /// tint. The other four entries are things that were either buried or reachable
 /// only by first selecting the project.
 ///
-/// Offered on the **active** row only, for the same reason the ✕ was: a rail
-/// where every row carries a control is a rail of controls, and the user
-/// selects a project to see what is in it before acting on it anyway.
+/// The button is offered on the **active** row only, for the same reason the ✕
+/// was: a rail where every row carries a control is a rail of controls, and the
+/// user selects a project to see what is in it before acting on it anyway.
+/// Every other row still reaches the same entries by right-click, exactly as a
+/// session row does — that parity is the point. While this menu existed only as
+/// a dropdown, *Remove from workspace* and *New worktree…* could be reached on
+/// one row in the rail and nowhere else, so acting on a project always meant
+/// selecting it first and tearing down whatever was on screen on the way.
+///
+/// Written against `&mut App` rather than `&mut Context<PopupMenu>` for the
+/// reason [`session_menu`] is: the dropdown host and the context-menu host
+/// disagree about that argument, and `Context` derefs to `App`.
 fn project_menu(
     root_idx: usize,
     pinned: bool,
     is_repo: bool,
     shell: WeakEntity<Shell>,
-) -> impl IntoElement + use<> {
-    rail_control(("project-menu", root_idx), IconName::Ellipsis)
-        .tooltip("What can be done with this project")
-        .dropdown_menu_with_anchor(Anchor::TopRight, move |menu, _, cx| {
-            let danger = crate::theme::status_ink(cx).danger;
-            let (pin, start, split, terminal, copy, refresh, remove) = (
-                shell.clone(),
-                shell.clone(),
-                shell.clone(),
-                shell.clone(),
-                shell.clone(),
-                shell.clone(),
-                shell.clone(),
-            );
-            menu.item(
-                // The label is the state readout as well as the action: with no
-                // pin marker of its own a row would otherwise only say it is
-                // pinned by *where* it is, which reads as an accident.
-                crate::controls::menu_item(if pinned { "Unpin" } else { "Pin to top" })
-                    .icon(Icon::new(IconName::Star))
-                    .on_click(move |_, window, cx: &mut App| {
-                        pin.update(cx, |shell: &mut Shell, cx| {
-                            shell.toggle_pin(root_idx, window, cx);
-                        })
-                        .ok();
-                    }),
-            )
-            .item(
-                crate::controls::menu_item("New session")
-                    .icon(Icon::new(IconName::Plus))
-                    .on_click(move |_, window, cx: &mut App| {
-                        start
-                            .update(cx, |shell: &mut Shell, cx| {
-                                shell.new_session_in(root_idx, window, cx);
-                            })
-                            .ok();
-                    }),
-            )
-            // Only where there is a repository to split. On a plain folder the
-            // entry could not do anything but report that git said no, and an
-            // entry whose whole job is to fail is one the eye has to learn to
-            // skip.
-            .when(is_repo, |menu| {
-                menu.item(
-                    crate::controls::menu_item("New worktree…")
-                        .icon(Icon::new(crate::icons::Icon::GitBranch))
-                        .on_click(move |_, window, cx: &mut App| {
-                            split
-                                .update(cx, |shell: &mut Shell, cx| {
-                                    shell.begin_worktree(root_idx, window, cx);
-                                })
-                                .ok();
-                        }),
-                )
-            })
-            .item(
-                crate::controls::menu_item("Open terminal")
-                    .icon(Icon::new(IconName::SquareTerminal))
-                    .on_click(move |_, window, cx: &mut App| {
-                        terminal
-                            .update(cx, |shell: &mut Shell, cx| {
-                                shell.open_terminal_in(root_idx, window, cx);
-                            })
-                            .ok();
-                    }),
-            )
-            .item(
-                crate::controls::menu_item("Copy project path")
-                    .icon(Icon::new(IconName::Copy))
-                    .on_click(move |_, window, cx: &mut App| {
-                        copy.update(cx, |shell: &mut Shell, cx| {
-                            shell.copy_root_path(root_idx, window, cx);
-                        })
-                        .ok();
-                    }),
-            )
-            .item(
-                crate::controls::menu_item("Refresh Git status")
-                    .icon(Icon::new(IconName::Redo))
-                    .on_click(move |_, _, cx: &mut App| {
-                        refresh
-                            .update(cx, |shell: &mut Shell, cx| shell.refresh_git(cx))
-                            .ok();
-                    }),
-            )
-            .separator()
-            .item(
-                crate::controls::menu_row(move |_, _| {
-                    div().text_color(danger).child("Remove from workspace")
-                })
-                .icon(Icon::new(IconName::Delete).text_color(danger))
+) -> impl Fn(PopupMenu, &mut Window, &mut App) -> PopupMenu + use<> {
+    move |menu, _, cx: &mut App| {
+        let danger = crate::theme::status_ink(cx).danger;
+        let (pin, start, split, terminal, copy, refresh, remove) = (
+            shell.clone(),
+            shell.clone(),
+            shell.clone(),
+            shell.clone(),
+            shell.clone(),
+            shell.clone(),
+            shell.clone(),
+        );
+        menu.item(
+            // The label is the state readout as well as the action: with no
+            // pin marker of its own a row would otherwise only say it is
+            // pinned by *where* it is, which reads as an accident.
+            crate::controls::menu_item(if pinned { "Unpin" } else { "Pin to top" })
+                .icon(Icon::new(IconName::Star))
                 .on_click(move |_, window, cx: &mut App| {
-                    remove
+                    pin.update(cx, |shell: &mut Shell, cx| {
+                        shell.toggle_pin(root_idx, window, cx);
+                    })
+                    .ok();
+                }),
+        )
+        .item(
+            crate::controls::menu_item("New session")
+                .icon(Icon::new(IconName::Plus))
+                .on_click(move |_, window, cx: &mut App| {
+                    start
                         .update(cx, |shell: &mut Shell, cx| {
-                            shell.remove_root(root_idx, window, cx);
+                            shell.new_session_in(root_idx, window, cx);
                         })
                         .ok();
                 }),
+        )
+        // Only where there is a repository to split. On a plain folder the
+        // entry could not do anything but report that git said no, and an
+        // entry whose whole job is to fail is one the eye has to learn to
+        // skip.
+        .when(is_repo, |menu| {
+            menu.item(
+                crate::controls::menu_item("New worktree…")
+                    .icon(Icon::new(crate::icons::Icon::GitBranch))
+                    .on_click(move |_, window, cx: &mut App| {
+                        split
+                            .update(cx, |shell: &mut Shell, cx| {
+                                shell.begin_worktree(root_idx, window, cx);
+                            })
+                            .ok();
+                    }),
             )
         })
+        .item(
+            crate::controls::menu_item("Open terminal")
+                .icon(Icon::new(IconName::SquareTerminal))
+                .on_click(move |_, window, cx: &mut App| {
+                    terminal
+                        .update(cx, |shell: &mut Shell, cx| {
+                            shell.open_terminal_in(root_idx, window, cx);
+                        })
+                        .ok();
+                }),
+        )
+        .item(
+            crate::controls::menu_item("Copy project path")
+                .icon(Icon::new(IconName::Copy))
+                .on_click(move |_, window, cx: &mut App| {
+                    copy.update(cx, |shell: &mut Shell, cx| {
+                        shell.copy_root_path(root_idx, window, cx);
+                    })
+                    .ok();
+                }),
+        )
+        .item(
+            crate::controls::menu_item("Refresh Git status")
+                .icon(Icon::new(IconName::Redo))
+                .on_click(move |_, _, cx: &mut App| {
+                    refresh
+                        .update(cx, |shell: &mut Shell, cx| shell.refresh_git(cx))
+                        .ok();
+                }),
+        )
+        .separator()
+        .item(
+            crate::controls::menu_row(move |_, _| {
+                div().text_color(danger).child("Remove from workspace")
+            })
+            .icon(Icon::new(IconName::Delete).text_color(danger))
+            .on_click(move |_, window, cx: &mut App| {
+                remove
+                    .update(cx, |shell: &mut Shell, cx| {
+                        shell.remove_root(root_idx, window, cx);
+                    })
+                    .ok();
+            }),
+        )
+    }
 }
 
 /// One folder row, with its sessions nested beneath it.
@@ -659,10 +732,12 @@ fn folder_row(
         );
     }
 
-    // A weak handle because the suffix closure outlives this frame.
+    // A weak handle because both menu closures outlive this frame.
     let menu_target = cx.entity().downgrade();
+    let suffix_target = menu_target.clone();
+    let label = SharedString::from(root.label.clone());
 
-    SidebarMenuItem::new(ellipsize(&root.label, MAX_LABEL))
+    SidebarMenuItem::new(ellipsize(&root.label, label_cap(shell.rail_width(cx))))
         .icon(Icon::new(IconName::Folder))
         // The selected project is marked whether or not it has sessions. While
         // this was `is_active && sessions.is_empty()`, a project holding the
@@ -683,8 +758,9 @@ fn folder_row(
             }),
         )
         .children(children)
+        .context_menu(project_menu(root_idx, pinned, is_repo, menu_target))
         .suffix(move |_, cx: &mut App| {
-            let menu_target = menu_target.clone();
+            let suffix_target = suffix_target.clone();
             div()
                 .h_flex()
                 .items_center()
@@ -702,19 +778,21 @@ fn folder_row(
                     row.child(Icon::new(IconName::Star).size_3().flex_none())
                 })
                 .when(branch.is_some() || changed > 0, |row| {
-                    row.child(git_facts(branch.clone(), changed, path.clone(), cx))
+                    row.child(git_facts(
+                        label.clone(),
+                        branch.clone(),
+                        changed,
+                        path.clone(),
+                        cx,
+                    ))
                 })
                 .when_some(rollup, |row, signal| row.child(signal_mark(signal, cx)))
-                // `occlude`: the menu button sits inside a row whose own click
-                // selects the project and toggles it open, and opening a menu
-                // must not do either on its way past.
                 .when(is_active, |row| {
-                    row.child(div().flex_none().occlude().child(project_menu(
-                        root_idx,
-                        pinned,
-                        is_repo,
-                        menu_target,
-                    )))
+                    row.child(menu_button(
+                        ("project-menu", root_idx),
+                        "What can be done with this project",
+                        project_menu(root_idx, pinned, is_repo, suffix_target),
+                    ))
                 })
         })
 }
@@ -774,7 +852,11 @@ fn recent_rows(
                 .find(|(_, root)| root.sessions.iter().any(|s| s.uid == uid))?;
             let session_idx = root.sessions.iter().position(|s| s.uid == uid)?;
             let state = shell.session_row(uid, cx);
-            let label = session_label(state.title.as_deref(), root.sessions[session_idx].title());
+            let label = session_label(
+                state.title.as_deref(),
+                root.sessions[session_idx].title(),
+                label_cap(shell.rail_width(cx)),
+            );
             let project = ellipsize(&root.label, MAX_AGENT_LABEL);
             let signal = state.signal;
 
@@ -1232,8 +1314,45 @@ fn new_session_block(
 
 #[cfg(test)]
 mod tests {
-    use super::{MAX_LABEL, new_session_hint, session_label, signal_hint};
+    use super::{MAX_LABEL, label_cap, new_session_hint, session_label, signal_hint};
     use crate::chat::pane::SessionSignal;
+    use onehand_core::config::PanelLayout;
+
+    /// The rail is draggable, so the cap has to move with it.
+    ///
+    /// This is the whole point of deriving it: while it was one constant,
+    /// dragging the rail wider bought nothing at all -- every name stayed cut
+    /// at the same character, and the handle promised width the rows never
+    /// spent.
+    #[test]
+    fn a_wider_rail_shows_more_of_a_name() {
+        assert!(label_cap(PanelLayout::RAIL_MAX) > label_cap(PanelLayout::RAIL_MIN));
+    }
+
+    /// Growing with the width is not enough on its own: a rule that grows can
+    /// still be wrong at both ends of the drag, leaving a name unreadably
+    /// short where the rail is narrowest or running past what a row can draw
+    /// where it is widest. The test above cannot see either, because both
+    /// grow.
+    ///
+    /// The bounds are what the row has to be worth: sixteen characters is
+    /// about where a conversation's title stops being a title, and past forty
+    /// there is nothing left for the branch, the count and the mark that share
+    /// the row.
+    #[test]
+    fn every_width_the_rail_can_have_leaves_a_name_worth_reading() {
+        for width in [
+            PanelLayout::RAIL_MIN,
+            PanelLayout::default().rail_w,
+            PanelLayout::RAIL_MAX,
+        ] {
+            let cap = label_cap(width);
+            assert!(
+                (16..=40).contains(&cap),
+                "a {width}px rail caps a name at {cap} characters"
+            );
+        }
+    }
 
     /// Every signal says something, and no two say the same thing.
     ///
@@ -1279,7 +1398,7 @@ mod tests {
     #[test]
     fn a_session_row_prefers_the_conversations_own_name() {
         assert_eq!(
-            session_label(Some("Fix the login flow"), "Claude Code"),
+            session_label(Some("Fix the login flow"), "Claude Code", MAX_LABEL),
             "Fix the login flow"
         );
     }
@@ -1288,7 +1407,7 @@ mod tests {
     /// blank row would be worse than a repeated one.
     #[test]
     fn an_unprompted_session_falls_back_to_its_agent() {
-        assert_eq!(session_label(None, "Claude Code"), "Claude Code");
+        assert_eq!(session_label(None, "Claude Code", MAX_LABEL), "Claude Code");
     }
 
     /// A first prompt is free text and users paste paragraphs into it. The row
@@ -1296,7 +1415,7 @@ mod tests {
     /// deciding the rail's width.
     #[test]
     fn a_long_title_is_capped() {
-        let label = session_label(Some(&"a".repeat(MAX_LABEL * 3)), "Claude Code");
+        let label = session_label(Some(&"a".repeat(MAX_LABEL * 3)), "Claude Code", MAX_LABEL);
         assert_eq!(label.chars().count(), MAX_LABEL);
         assert!(label.ends_with('…'));
     }

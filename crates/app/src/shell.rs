@@ -925,20 +925,29 @@ impl Shell {
             workbench_open: right.is_some_and(|d| d.is_open()),
             terminal_h: bottom.map_or(fallback.terminal_h, |d| f32::from(d.size())),
             terminal_open: bottom.is_some_and(|d| d.is_open()),
-            // Kept only when it is a width the rail could actually have been
-            // dragged to. The split seeds every panel at its own floor before
-            // the first prepaint measures anything, so a snapshot taken in that
-            // gap would record a number the user never chose and quietly
-            // replace the width they did.
-            rail_w: self
-                .rail_split
-                .read(cx)
-                .sizes()
-                .first()
-                .map(|w| f32::from(*w))
-                .filter(|w| (PanelLayout::RAIL_MIN..=PanelLayout::RAIL_MAX).contains(w))
-                .unwrap_or(fallback.rail_w),
+            rail_w: self.rail_width(cx),
         }
+    }
+
+    /// How wide the rail is right now, as the split has it.
+    ///
+    /// The saved width is only ever the answer when the live one cannot be:
+    /// the split seeds every panel at its own floor before the first prepaint
+    /// measures anything, so a size outside the range the rail could have been
+    /// dragged to is that gap rather than a width the user chose.
+    ///
+    /// Two readers, and they want different things from it -- the snapshot
+    /// wants a number to write down, the rail wants to know how much of a name
+    /// a row can carry this frame -- so the check and the fallback are here
+    /// rather than at each of them.
+    pub fn rail_width(&self, cx: &App) -> f32 {
+        self.rail_split
+            .read(cx)
+            .sizes()
+            .first()
+            .map(|w| f32::from(*w))
+            .filter(|w| (PanelLayout::RAIL_MIN..=PanelLayout::RAIL_MAX).contains(w))
+            .unwrap_or(self.window.workspace.layout.rail_w)
     }
 
     /// Write the workspace once the user stops changing it.
