@@ -192,6 +192,16 @@ fn typing_changes_the_view(term: &Term<GpuiEventProxy>) -> bool {
     term.grid().display_offset() != 0 || term.selection.is_some()
 }
 
+/// onehand patch: IMEs can resend the same composition, or clear an already
+/// empty one. Only a changed overlay needs a frame before the child's echo.
+fn update_preedit(preedit: &mut String, text: &str) -> bool {
+    if preedit == text {
+        return false;
+    }
+    text.clone_into(preedit);
+    true
+}
+
 /// onehand patch: whether output should ask the window to repaint at all.
 ///
 /// The rule is one sentence: **ask once, then wait to be drawn before asking
@@ -719,7 +729,12 @@ impl TerminalView {
         let event_proxy = GpuiEventProxy::new(event_tx);
 
         // Create terminal state
-        let state = TerminalState::new(config.cols, config.rows, event_proxy);
+        let state = TerminalState::with_scrollback(
+            config.cols,
+            config.rows,
+            config.scrollback,
+            event_proxy,
+        );
 
         // Create renderer with font settings and color palette
         let renderer = TerminalRenderer::new(
@@ -1563,6 +1578,10 @@ impl TerminalView {
     /// * `config` - The new configuration to apply
     /// * `cx` - The context for triggering a repaint
     pub fn update_config(&mut self, config: TerminalConfig, cx: &mut Context<Self>) {
+        // onehand patch: the configured bound must reach the backing grid.
+        if config.scrollback != self.config.scrollback {
+            self.state.set_scrollback(config.scrollback);
+        }
         // Update renderer with new font settings and palette
         self.renderer.font_family = config.font_family.clone();
         self.renderer.font_size = config.font_size;
@@ -1655,8 +1674,9 @@ impl EntityInputHandler for TerminalView {
     }
 
     fn unmark_text(&mut self, _window: &mut Window, cx: &mut Context<Self>) {
-        self.preedit.clear();
-        cx.notify();
+        if update_preedit(&mut self.preedit, "") {
+            cx.notify();
+        }
     }
 
     fn replace_text_in_range(
@@ -1670,14 +1690,17 @@ impl EntityInputHandler for TerminalView {
         // child's. Cleared first: a commit that left the preedit drawn would
         // paint the same syllable twice, once over the cursor and once in the
         // cell the child echoed it into.
-        self.preedit.clear();
+        let had_preedit = update_preedit(&mut self.preedit, "");
         // A terminal's Return is carriage return; a line feed here would ask
         // for a new line without asking to run the command.
         let bytes = text.replace("\r\n", "\r").replace('\n', "\r");
-        if !bytes.is_empty() {
-            self.write_typed(bytes.as_bytes());
+        let changed = !bytes.is_empty() && self.write_typed(bytes.as_bytes());
+        // onehand patch: committing text follows the keyboard's rule. The
+        // child's echo repaints; only removing a composition, selection, or
+        // scroll offset has anything new to draw before that echo arrives.
+        if had_preedit || changed {
+            cx.notify();
         }
-        cx.notify();
     }
 
     fn replace_and_mark_text_in_range(
@@ -1688,8 +1711,9 @@ impl EntityInputHandler for TerminalView {
         _window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        new_text.clone_into(&mut self.preedit);
-        cx.notify();
+        if update_preedit(&mut self.preedit, new_text) {
+            cx.notify();
+        }
     }
 
     fn bounds_for_range(
@@ -1766,7 +1790,9 @@ impl Render for TerminalView {
 
         div()
             .size_full()
-            .bg(rgb(0x1e1e1e))
+            // onehand patch: the canvas paints an opaque background over its
+            // entire bounds, including padding. A second full-size quad here
+            // only adds overdraw, especially when Neovim fills the window.
             .track_focus(&self.focus_handle)
             .on_key_down(cx.listener(Self::on_key_down))
             // onehand patch: all three buttons, not just the left one. Only the
@@ -1957,10 +1983,23 @@ mod tests {
     // meaning what it says.
     use super::{
         REPAINT_INTERVAL, RepaintGate, clipboard_text, focus_report, pace_after,
-        typing_changes_the_view,
+        typing_changes_the_view, update_preedit,
     };
     use crate::event::GpuiEventProxy;
     use crate::terminal::TerminalState;
+
+    #[test]
+    fn ime_repaints_only_when_the_composition_changes() {
+        let mut preedit = String::new();
+        assert!(!update_preedit(&mut preedit, ""));
+        assert!(update_preedit(&mut preedit, "tiê"));
+        assert_eq!(preedit, "tiê");
+        assert!(!update_preedit(&mut preedit, "tiê"));
+        assert!(update_preedit(&mut preedit, "tiếng"));
+        assert!(update_preedit(&mut preedit, ""));
+        assert!(preedit.is_empty());
+        assert!(!update_preedit(&mut preedit, ""));
+    }
     use alacritty_terminal::grid::Scroll;
     use alacritty_terminal::index::{Column, Line, Point, Side};
     use alacritty_terminal::selection::{Selection, SelectionType};
