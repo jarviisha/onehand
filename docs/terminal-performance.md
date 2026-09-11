@@ -2,6 +2,9 @@
 
 Reference: [issue #9](https://github.com/jarviisha/onehand/issues/9), with the shared-terminal changes from PR #10 already present.
 
+Follow-up: [controlled cadence and host-stage profiling](terminal-profiling.md)
+separates the remaining CPU costs and repeats the border comparison on 2026-09-11.
+
 ## Findings and changes
 
 - **Straight box-drawing strokes used the vector-path pipeline.** Neovim indent guides and picker borders can insert these between text on every row. In the pinned GPUI WGPU backend (`e0931d5`, `gpui_wgpu/src/wgpu_renderer.rs`), every `PrimitiveBatch::Paths` ends the main pass, clears/rasterizes an intermediate attachment, and resumes the main pass. A straight segment now uses a quad with the same centerline, thickness, endpoints and existing junction overlap. Double strokes still use two segments; rounded corners retain their curved paths.

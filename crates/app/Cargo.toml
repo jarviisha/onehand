@@ -15,6 +15,9 @@ repository = "https://github.com/jarviisha/onehand"
 name = "onehand"
 path = "src/lib.rs"
 
+[features]
+terminal-profiling = ["gpui-terminal/profiling"]
+
 [[bin]]
 name = "onehand"
 path = "src/main.rs"
@@ -82,5 +85,6 @@ rfd = "0.15"
 notify-rust = "4"
 
 [dev-dependencies]
+gpui-terminal = { path = "../../vendor/gpui-terminal" }
 # Reads the pinned icon manifest in the registry consistency test.
 toml = "0.8"

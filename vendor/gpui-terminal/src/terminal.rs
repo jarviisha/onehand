@@ -227,6 +227,8 @@ impl TerminalState {
     /// terminal.process_bytes(b"Hello, world!\r\n");
     /// ```
     pub fn process_bytes(&mut self, bytes: &[u8]) {
+        #[cfg(feature = "profiling")]
+        let _span = crate::profiling::Span::new(crate::profiling::Stage::Parse, bytes.len());
         let mut term = self.term.lock();
         // The parser.advance method calls handler methods on the Term
         // The Term implements the Handler trait from the VTE crate

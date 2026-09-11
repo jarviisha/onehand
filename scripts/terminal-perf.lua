@@ -19,6 +19,9 @@ vim.api.nvim_buf_set_lines(0, 0, -1, false, lines)
 vim.bo.filetype = 'lua'
 vim.cmd('syntax on')
 local tick = 0
+local interval = tonumber(vim.env.PERF_INTERVAL_MS) or 16
+local ticks = tonumber(vim.env.PERF_TICKS) or 500
+assert(interval >= 1 and ticks >= 1)
 local timer = vim.uv.new_timer()
 local last_phase
 local function phase(name)
@@ -27,19 +30,19 @@ local function phase(name)
   vim.fn.writefile({name, tostring(vim.o.columns), tostring(vim.o.lines)}, os.getenv('PERF_PHASE'))
 end
 phase('warmup')
-timer:start(3000, 16, vim.schedule_wrap(function()
+timer:start(3000, interval, vim.schedule_wrap(function()
   tick = tick + 1
-  if tick <= 500 then
+  if tick <= ticks then
     phase('cursor')
     vim.api.nvim_win_set_cursor(0, {10 + tick % 2, 12})
-  elseif tick <= 1000 then
+  elseif tick <= 2 * ticks then
     phase('scroll')
     vim.cmd('normal! j')
-  elseif tick <= 1500 then
+  elseif tick <= 3 * ticks then
     phase('redraw')
     vim.cmd('normal! j')
     vim.cmd('redraw!')
-  elseif tick <= 1800 then
+  elseif tick <= 3 * ticks + math.ceil(4000 / interval) then
     phase('idle')
   else
     phase('done')

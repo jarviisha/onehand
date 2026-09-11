@@ -891,6 +891,8 @@ impl TerminalRenderer {
         window: &mut Window,
         cx: &mut App,
     ) {
+        #[cfg(feature = "profiling")]
+        let _paint = crate::profiling::Span::new(crate::profiling::Stage::Paint, 1);
         // Get terminal dimensions
         let grid = term.grid();
         let num_lines = grid.screen_lines();
@@ -953,6 +955,8 @@ impl TerminalRenderer {
             // frame owns, over borrowed cells. The row used to be cloned once to
             // be collected and a second time to be handed over.
             backgrounds.clear();
+            #[cfg(feature = "profiling")]
+            let background_span = crate::profiling::Span::new(crate::profiling::Stage::Backgrounds, num_cols);
             self.collect_backgrounds(
                 line_idx,
                 (0..num_cols).map(|col| (col, &row[Column(col)])),
@@ -1034,19 +1038,31 @@ impl TerminalRenderer {
                 }
             }
 
+            #[cfg(feature = "profiling")]
+            drop(background_span);
+            #[cfg(feature = "profiling")]
+            let boxes_span = crate::profiling::Span::new(crate::profiling::Stage::Boxes, num_cols);
             self.paint_box_drawing(origin, line_idx, row, colors, &mut spanned, window);
+            #[cfg(feature = "profiling")]
+            drop(boxes_span);
 
             // onehand patch: the glyphs, as runs rather than one call per
             // visible character -- see `split_row_runs`.
+            #[cfg(feature = "profiling")]
+            let runs_span = crate::profiling::Span::new(crate::profiling::Stage::Runs, num_cols);
             split_row_runs(
                 &self.palette,
                 (0..num_cols).map(|col| &row[Column(col)]),
                 colors,
                 &mut runs,
             );
+            #[cfg(feature = "profiling")]
+            drop(runs_span);
             self.paint_row_runs(origin, line_idx, &runs, &fonts, window, cx);
         }
 
+        #[cfg(feature = "profiling")]
+        let _cursor = crate::profiling::Span::new(crate::profiling::Stage::Cursor, 1);
         self.paint_cursor(origin, term, focused, window, cx);
     }
 
@@ -1193,6 +1209,8 @@ impl TerminalRenderer {
         let y = origin.y + self.glyph_baseline(line_idx);
 
         for run in runs.drawable() {
+            #[cfg(feature = "profiling")]
+            let shape_span = crate::profiling::Span::new(crate::profiling::Stage::Shape, run.text.len());
             // onehand patch: a run one ASCII character long is the common case
             // in a column of tool output, and the table answers it without
             // allocating at all.
@@ -1219,6 +1237,10 @@ impl TerminalRenderer {
                 &[text_run],
                 Some(self.cell_width),
             );
+            #[cfg(feature = "profiling")]
+            drop(shape_span);
+            #[cfg(feature = "profiling")]
+            let _glyphs = crate::profiling::Span::new(crate::profiling::Stage::Glyphs, run.text.len());
 
             // Paint at exact cell position (ignore errors)
             // onehand patch: gpui grew `TextAlign` + a wrap-width argument

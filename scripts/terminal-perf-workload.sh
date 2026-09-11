@@ -10,7 +10,8 @@ case "${PERF_WORKLOAD:-cursor}" in
         PERF_LUA="$perf_script_dir/terminal-perf-snacks.lua"
         ;;
     seq) exec python3 "$perf_script_dir/terminal-perf-seq.py" ;;
-    *) echo 'PERF_WORKLOAD must be cursor, snacks or seq' >&2; exit 2 ;;
+    replay) exec python3 "$perf_script_dir/terminal-perf-replay.py" ;;
+    *) echo 'PERF_WORKLOAD must be cursor, snacks, seq or replay' >&2; exit 2 ;;
 esac
 export PERF_LUA
 exec "${PERF_NVIM:-nvim}" --clean -n -i NONE -c 'lua dofile(vim.env.PERF_LUA)'

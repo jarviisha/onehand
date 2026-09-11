@@ -85,6 +85,7 @@ fn main() {
 }
 
 fn sample_frames(handle: gpui::AnyWindowHandle, cx: &mut App) {
+    let started = std::time::Instant::now();
     // Reading histograms does not invalidate the window. The idle phase
     // therefore also checks that the probe itself causes no extra frames.
     cx.spawn(async move |cx| {
@@ -96,12 +97,21 @@ fn sample_frames(handle: gpui::AnyWindowHandle, cx: &mut App) {
                 .update(cx, |_, window, _| {
                     let frames = window.frame_duration_snapshot().draw_duration_histogram;
                     eprintln!(
-                        "frames={} mean_us={:.1} p95_us={:.1} max_us={:.1}",
+                        "sample_s={:.3} frames={} draw_ns={:.0} mean_us={:.1} p95_us={:.1} max_us={:.1}",
+                        started.elapsed().as_secs_f64(),
                         frames.len(),
+                        frames.mean() * frames.len() as f64,
                         frames.mean() / 1000.,
                         frames.value_at_quantile(0.95) as f64 / 1000.,
                         frames.max() as f64 / 1000.
                     );
+                    #[cfg(feature = "terminal-profiling")]
+                    for (stage, sample) in gpui_terminal::profiling::snapshot() {
+                        eprintln!(
+                            "terminal_stage stage={stage} calls={} ns={} units={}",
+                            sample.calls, sample.nanos, sample.units
+                        );
+                    }
                 })
                 .is_err()
             {
