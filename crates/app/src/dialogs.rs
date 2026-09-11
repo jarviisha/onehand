@@ -1,4 +1,4 @@
-//! The modal windows: agent manager, workspace settings, help.
+//! The modal windows: settings, the conversation rename, the worktree split.
 //!
 //! Each is a gpui-component `Dialog`, which owns the overlay, the focus trap
 //! and the Esc handling — none of that is worth hand-rolling, and a
@@ -11,11 +11,12 @@ use crate::controls::Refuses as _;
 use crate::shell::Shell;
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
-    App, AppContext, ClickEvent, Context, Entity, IntoElement, ParentElement, SharedString, Styled,
-    Window, div,
+    AnyElement, App, AppContext, ClickEvent, Context, Div, Entity, InteractiveElement, IntoElement,
+    ParentElement, SharedString, StatefulInteractiveElement as _, Styled, Window, div, px,
+    relative,
 };
 use gpui_component::button::{ButtonGroup, ButtonVariants};
-use gpui_component::dialog::{Dialog, DialogClose, DialogFooter, DialogTitle};
+use gpui_component::dialog::{Dialog, DialogClose, DialogTitle};
 use gpui_component::input::{Input, InputState};
 use gpui_component::{
     ActiveTheme, Disableable, Icon, IconName, Selectable, Sizable as _, StyledExt,
@@ -83,6 +84,38 @@ impl AgentDraft {
     }
 }
 
+/// What deleting an agent does to a form left open on one.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum DraftShift {
+    /// The form is about an agent the deletion did not move.
+    Keep,
+    /// The agent being edited is the one that went.
+    Clear,
+    /// The form's agent slid down into the hole above it.
+    MoveTo(usize),
+}
+
+/// Where a form open on `editing` belongs once the agent at `removed` is gone.
+///
+/// `AgentDraft::editing` is a *position* in the agent list, and deleting shifts
+/// every position after the one removed. Left alone, a form opened on the third
+/// agent while the first is deleted goes on pointing at index 2 -- a different
+/// agent now, which Save then overwrites. Deleting the agent being edited is
+/// worse: the index falls off the end and Save appends, putting back the agent
+/// the user had just asked to be rid of.
+///
+/// A position and not an id because an agent is identified by a name the user
+/// writes and renaming one is the whole point of the form. So the rule is to
+/// correct the position at the one place the list shifts, and it is pure so
+/// that place can be checked without a window.
+pub fn draft_shift(editing: Option<usize>, removed: usize) -> DraftShift {
+    match editing {
+        Some(editing) if editing == removed => DraftShift::Clear,
+        Some(editing) if editing > removed => DraftShift::MoveTo(editing - 1),
+        Some(_) | None => DraftShift::Keep,
+    }
+}
+
 /// One row in the agent list: name + command, with edit and delete actions.
 ///
 /// Takes the shell handle rather than a `Context<Shell>` because the dialog's
@@ -113,7 +146,11 @@ fn agent_row(shell: &Entity<Shell>, idx: usize, spec: &AgentSpec, cx: &App) -> i
         .child(
             crate::controls::action(("edit-agent", idx))
                 .ghost()
-                .icon(Icon::new(IconName::Replace))
+                // Not the bundled `replace`, which is a find-and-replace mark:
+                // it reads as swapping this agent for another one rather than
+                // as opening it in the form below.
+                .icon(Icon::new(crate::icons::Icon::SquarePen))
+                .tooltip("Edit")
                 .on_click({
                     let shell = shell.clone();
                     move |_: &ClickEvent, window: &mut Window, cx: &mut App| {
@@ -124,7 +161,11 @@ fn agent_row(shell: &Entity<Shell>, idx: usize, spec: &AgentSpec, cx: &App) -> i
         .child(
             crate::controls::action(("delete-agent", idx))
                 .ghost()
-                .icon(Icon::new(IconName::Delete))
+                // Not the bundled `delete`, which is the backspace *key* --
+                // "erase the character behind the caret", drawn beside a button
+                // that removes a saved agent for good.
+                .icon(Icon::new(crate::icons::Icon::Trash))
+                .tooltip("Delete")
                 .on_click({
                     let shell = shell.clone();
                     move |_: &ClickEvent, window: &mut Window, cx: &mut App| {
@@ -144,10 +185,10 @@ fn agent_row(shell: &Entity<Shell>, idx: usize, spec: &AgentSpec, cx: &App) -> i
 /// every press, and what survives that is its content builder, its style and its
 /// props — not its title, header or footer, which are elements and so cannot be
 /// cloned into a closure that runs again on each open. A name set through the
-/// slot is therefore dropped in silence on exactly the three dialogs this app
-/// opens from the rail, and the content builder is the only slot left to put it
-/// in. Every dialog here goes through this one, trigger or not: a rule half the
-/// call sites follow is the rule the next call site forgets.
+/// slot is therefore dropped in silence on any dialog the rail opens, and the
+/// content builder is the only slot left to put it in. Every dialog here goes
+/// through this one, trigger or not: a rule half the call sites follow is the
+/// rule the next call site forgets.
 ///
 /// **The ✕.** The library builds its own out of a plain library button inside
 /// the dialog element, so it never passes through the app's action wrapper and
@@ -167,7 +208,18 @@ fn title_row(name: &'static str) -> impl IntoElement {
         .justify_between()
         .gap_2()
         .w_full()
-        .child(DialogTitle::new().min_w_0().truncate().child(name))
+        .child(
+            DialogTitle::new()
+                .min_w_0()
+                // The library sets this title's line height to exactly one em,
+                // and `truncate` clips to the box -- so every descender is cut
+                // off at the baseline, which is the "g" in *Settings* losing
+                // its tail. The refinement lands after the library's own, so
+                // asking for the room back here is enough.
+                .line_height(relative(1.3))
+                .truncate()
+                .child(name),
+        )
         .child(
             div().flex_none().size_6().child(
                 DialogClose::new().child(
@@ -190,11 +242,11 @@ fn field(label: &'static str, state: &Entity<InputState>) -> impl IntoElement {
         .child(Input::new(state))
 }
 
-/// The agent manager: the global agent menu a new session spawns from.
-pub fn agent_manager(shell: &Shell, cx: &mut Context<Shell>) -> Dialog {
-    let handle = cx.entity();
+/// The agent page: the global agent menu a new session spawns from, and the
+/// form that adds to it.
+fn agents_page(handle: &Entity<Shell>, cx: &App) -> AnyElement {
+    let shell = handle.read(cx);
     let specs = shell.agents(cx).to_vec();
-
     let draft = shell.agent_draft();
     let (name, command, args) = (
         draft.name.clone(),
@@ -204,69 +256,48 @@ pub fn agent_manager(shell: &Shell, cx: &mut Context<Shell>) -> Dialog {
     let saveable = draft.to_spec(cx).is_some();
     let editing = draft.editing.is_some();
 
-    Dialog::new(cx)
-        .trigger(crate::rail::rail_row(
-            "open-agents",
-            IconName::Bot,
-            "Agents",
-            cx,
-        ))
-        .close_button(false)
-        .content(move |content, _, cx: &mut App| {
-            let rows = specs
-                .iter()
-                .enumerate()
-                .map(|(i, spec)| agent_row(&handle, i, spec, cx).into_any_element())
-                .collect::<Vec<_>>();
-            // Cloned per build rather than captured once: the content of a
-            // triggered dialog is rebuilt on every open, so a handle moved into
-            // a click would be gone the second time the window is shown.
-            let (clear, save) = (handle.clone(), handle.clone());
-            content
-                .child(title_row("Agents"))
+    let rows = specs
+        .iter()
+        .enumerate()
+        .map(|(i, spec)| agent_row(handle, i, spec, cx).into_any_element())
+        .collect::<Vec<_>>();
+    let (clear, save) = (handle.clone(), handle.clone());
+
+    div()
+        .v_flex()
+        .gap_3()
+        .w_full()
+        .child(page_title("Agents"))
+        .children(rows)
+        .child(field("Name", &name))
+        .child(field("Command", &command))
+        .child(field("Args", &args))
+        .child(
+            div()
+                .h_flex()
+                .gap_2()
+                .w_full()
                 .child(
-                    div()
-                        .v_flex()
-                        .gap_3()
-                        .w_full()
-                        .children(rows)
-                        .child(field("Name", &name))
-                        .child(field("Command", &command))
-                        .child(field("Args", &args)),
+                    crate::controls::action("save-agent")
+                        .primary()
+                        // Disabled until name and command are both non-blank:
+                        // an agent missing either cannot be launched.
+                        .refuses(!saveable)
+                        .label(if editing { "Save" } else { "Add" })
+                        .on_click(move |_: &ClickEvent, window: &mut Window, cx: &mut App| {
+                            save.update(cx, |shell, cx| shell.save_agent_draft(window, cx));
+                        }),
                 )
                 .child(
-                    DialogFooter::new()
-                        .w_full()
-                        .child(
-                            crate::controls::action("clear-agent")
-                                .ghost()
-                                .label(if editing { "Cancel edit" } else { "Clear" })
-                                .on_click(
-                                    move |_: &ClickEvent, window: &mut Window, cx: &mut App| {
-                                        clear.update(cx, |shell, cx| {
-                                            shell.clear_agent_draft(window, cx)
-                                        });
-                                    },
-                                ),
-                        )
-                        .child(
-                            crate::controls::action("save-agent")
-                                .primary()
-                                // Disabled until name and command are both
-                                // non-blank: an agent missing either cannot be
-                                // launched.
-                                .refuses(!saveable)
-                                .label(if editing { "Save" } else { "Add" })
-                                .on_click(
-                                    move |_: &ClickEvent, window: &mut Window, cx: &mut App| {
-                                        save.update(cx, |shell, cx| {
-                                            shell.save_agent_draft(window, cx)
-                                        });
-                                    },
-                                ),
-                        ),
-                )
-        })
+                    crate::controls::action("clear-agent")
+                        .ghost()
+                        .label(if editing { "Cancel edit" } else { "Clear" })
+                        .on_click(move |_: &ClickEvent, window: &mut Window, cx: &mut App| {
+                            clear.update(cx, |shell, cx| shell.clear_agent_draft(window, cx));
+                        }),
+                ),
+        )
+        .into_any_element()
 }
 
 /// The light/dark/system picker.
@@ -300,26 +331,136 @@ fn appearance_picker(shell: &Entity<Shell>, current: Appearance) -> impl IntoEle
         )
 }
 
-/// Settings: the appearance, then the workspace's own name, storage-folder
-/// binding, and the Workspaces section (new / open / recents).
+/// Which page Settings is showing.
 ///
-/// No workspace is ever *replaced* in place -- one window hosts exactly one
-/// workspace, so every row here opens another window, or focuses the one
-/// already showing that folder. The rail's identity row offers the same list
-/// behind its own mark, which is where the switch is actually reached from; the
-/// section stays here because this is where the binding it depends on lives.
-pub fn workspace_settings(shell: &Shell, cx: &mut Context<Shell>) -> Dialog {
+/// Four pages because there are four groups of control, and three of them used
+/// to be their own surface: the agent list and the keyboard table were separate
+/// dialogs behind separate rail rows, so "where is that setting" had three
+/// answers and which one was right depended on which row somebody remembered.
+/// One dialog, one way in, and the rail's footer is one row instead of three.
+#[derive(Clone, Copy, PartialEq, Eq, Default, Debug)]
+pub enum SettingsPage {
+    /// Appearance first, and it is the default, because it is the only page
+    /// here that changes what the app *looks* like and so the one somebody
+    /// opening Settings without a specific errand came for.
+    #[default]
+    Appearance,
+    Workspace,
+    Agents,
+    Shortcuts,
+}
+
+impl SettingsPage {
+    pub const ALL: [Self; 4] = [
+        Self::Appearance,
+        Self::Workspace,
+        Self::Agents,
+        Self::Shortcuts,
+    ];
+
+    /// The name in the nav and at the head of the page, which are one string on
+    /// purpose: a nav that says one word and a heading that says another leaves
+    /// the reader working out whether they landed where they clicked.
+    fn label(self) -> &'static str {
+        match self {
+            Self::Appearance => "Appearance",
+            Self::Workspace => "Workspace",
+            Self::Agents => "Agents",
+            Self::Shortcuts => "Shortcuts",
+        }
+    }
+}
+
+/// One row in the nav column.
+///
+/// A div and not the app's button wrapper, for the reason the rail's rows are:
+/// a full-width [`gpui_component::button::Button`] centres its own content and
+/// that is not style-refinable from outside, so a column of them reads as a row
+/// of banners rather than as a list. No icons, unlike the rail — four words in
+/// a column need no second alphabet to be told apart, and every icon added here
+/// would be one chosen for a category rather than for a thing.
+fn nav_row(page: SettingsPage, current: SettingsPage, handle: &Entity<Shell>, cx: &App) -> Div {
+    let (accent, accent_fg, muted, radius) = (
+        cx.theme().accent,
+        cx.theme().accent_foreground,
+        cx.theme().muted_foreground,
+        cx.theme().radius,
+    );
+    let handle = handle.clone();
+    let selected = page == current;
+
+    div().w_full().child(
+        div()
+            .id(page.label())
+            .w_full()
+            .px_2()
+            .py_1()
+            .rounded(radius)
+            .text_sm()
+            .cursor_pointer()
+            .map(|row| match selected {
+                true => row.bg(accent).text_color(accent_fg),
+                false => row
+                    .text_color(muted)
+                    .hover(move |row| row.bg(accent.opacity(0.5))),
+            })
+            .child(page.label())
+            .on_click(move |_: &ClickEvent, _: &mut Window, cx: &mut App| {
+                handle.update(cx, |shell, cx| shell.show_settings_page(page, cx));
+            }),
+    )
+}
+
+/// The heading a page opens with -- the same word its nav row carries.
+fn page_title(name: &'static str) -> impl IntoElement {
+    div().text_lg().font_semibold().child(name)
+}
+
+/// How wide Settings would like to be, and how wide it is allowed to be.
+///
+/// Two columns need the room, but the library positions a dialog by
+/// subtracting half its width from half the viewport's and never clamps, so a
+/// box wider than the window starts at a negative x -- the nav column is off
+/// the left edge and the ✕ off the right, with no scroll to bring either back.
+/// The floor is what the app's own controls need to stay pressable; below that
+/// the window is smaller than any dialog and something has to overflow.
+fn width_within(window: &Window) -> gpui::Pixels {
+    (window.viewport_size().width - px(48.)).clamp(px(360.), px(720.))
+}
+
+/// How tall the nav and the page are, against the same frame.
+///
+/// The subtraction is the room the dialog needs around this box: the title row
+/// above it, the padding, and the tenth of the viewport the library drops it
+/// from the top.
+fn body_height(window: &Window) -> gpui::Pixels {
+    (window.viewport_size().height - px(220.)).clamp(px(200.), px(420.))
+}
+
+/// Settings: appearance, this workspace, the agent menu, the keymap.
+///
+/// **A nav column and a page, not one scroll.** What is in here belongs to
+/// three different scopes -- the theme is app-wide, the name and the storage
+/// binding are this workspace's, the agent list is every workspace's -- and
+/// stacked in one column the only thing saying so was a row of `text_xs`
+/// labels. A page per scope is the shape that says it without a sentence.
+///
+/// **There is no footer, and no control here sits away from what it acts on.**
+/// The pair that binds and unbinds storage was in one, three items below the
+/// folder it names -- and a `.primary()` button at the foot of a settings
+/// dialog reads as *Save*, while that one opens a folder picker and re-points
+/// where the workspace is written.
+pub fn settings(window: &Window, cx: &mut Context<Shell>) -> Dialog {
     let handle = cx.entity();
-    let appearance = shell.appearance(cx);
-    let name = shell.workspace_name_input().clone();
-    let storage = shell
-        .storage_dir()
-        .map(|dir| SharedString::from(dir.display().to_string()));
-    let bound = storage.is_some();
-    let current = shell.storage_dir().cloned();
-    let recents = shell.recents(cx);
 
     Dialog::new(cx)
+        // Clamped to the frame, because the library centres the box on the
+        // viewport by subtracting half this width from half the window's -- so
+        // a width wider than the window puts the left edge at a negative x, and
+        // the nav column goes off the side of the screen with nothing to scroll
+        // it back. Read at build time, which is the frame the trigger is
+        // pressed in; the props the dialog keeps are cloned when it opens.
+        .w(width_within(window))
         .trigger(crate::rail::rail_row(
             "open-settings",
             IconName::Settings,
@@ -327,104 +468,149 @@ pub fn workspace_settings(shell: &Shell, cx: &mut Context<Shell>) -> Dialog {
             cx,
         ))
         .close_button(false)
-        .content(move |content, _, cx: &mut App| {
-            let storage = storage.clone();
-            let rows = recents
-                .iter()
-                .enumerate()
-                .map(|(i, dir)| {
-                    // The window's own directory is marked and unclickable --
-                    // "open" would be a no-op that looks like a failure.
-                    let is_current = current.as_ref() == Some(dir);
-                    let label = SharedString::from(dir.display().to_string());
-                    let dir = dir.clone();
-                    let handle = handle.clone();
-                    crate::controls::action(("recent", i))
-                        .ghost()
-                        .w_full()
-                        .refuses(is_current)
-                        .label(if is_current {
-                            SharedString::from(format!("{label}  (current)"))
-                        } else {
-                            label
-                        })
-                        .on_click(move |_: &ClickEvent, _: &mut Window, cx: &mut App| {
-                            handle.update(cx, |shell, cx| shell.open_recent(dir.clone(), cx));
-                        })
-                        .into_any_element()
-                })
+        .content(move |content, window: &mut Window, cx: &mut App| {
+            // Read per build rather than captured once: the content of an open
+            // dialog is rebuilt every frame, which is what makes the nav work
+            // at all -- a page captured here would be the one that was showing
+            // when the dialog opened, for as long as it stayed open.
+            let current = handle.read(cx).settings_page();
+            let body = body_height(window);
+            let nav = SettingsPage::ALL
+                .into_iter()
+                .map(|page| nav_row(page, current, &handle, cx).into_any_element())
                 .collect::<Vec<_>>();
+            let page = match current {
+                SettingsPage::Appearance => appearance_page(&handle, cx),
+                SettingsPage::Workspace => workspace_page(&handle, cx),
+                SettingsPage::Agents => agents_page(&handle, cx),
+                SettingsPage::Shortcuts => shortcuts_page(cx),
+            };
 
-            // Cloned per build rather than captured once: the content of a
-            // triggered dialog is rebuilt on every open, so a handle moved into
-            // a click would be gone the second time the window is shown.
-            let (unbind, bind) = (handle.clone(), handle.clone());
-            content
-                .child(title_row("Settings"))
+            content.child(title_row("Settings")).child(
+                div()
+                    .h_flex()
+                    .items_start()
+                    .gap_4()
+                    .w_full()
+                    // One height for every page, so the box does not grow to
+                    // whatever the keymap table needs and shrink back on the
+                    // way out -- which reads as the window jumping rather than
+                    // as a page changing. Re-read each frame, unlike the width:
+                    // this one is inside the content, so it does follow a
+                    // window resized while the dialog is open.
+                    .h(body)
+                    .child(
+                        div()
+                            .v_flex()
+                            .gap_0p5()
+                            .flex_none()
+                            .w(px(150.))
+                            .h_full()
+                            .pr_3()
+                            .border_r_1()
+                            .border_color(cx.theme().border)
+                            .children(nav),
+                    )
+                    .child(
+                        // The page scrolls, not the dialog: the nav has to stay
+                        // reachable from the bottom of a long page, and the
+                        // keymap is longer than any window this opens in.
+                        div()
+                            .id("settings-page")
+                            .v_flex()
+                            .flex_1()
+                            .min_w_0()
+                            .h_full()
+                            .pr_1()
+                            .overflow_y_scroll()
+                            .child(page),
+                    ),
+            )
+        })
+}
+
+/// The appearance page. One control, and it is app-wide -- said on the page,
+/// since every other page here is about one workspace and nothing else marks
+/// the difference.
+fn appearance_page(handle: &Entity<Shell>, cx: &App) -> AnyElement {
+    let current = handle.read(cx).appearance(cx);
+    div()
+        .v_flex()
+        .gap_3()
+        .w_full()
+        .child(page_title("Appearance"))
+        .child(appearance_picker(handle, current))
+        .child(
+            div()
+                .text_xs()
+                .text_color(cx.theme().muted_foreground)
+                .child("Applies to every window. Following the system keeps up with it."),
+        )
+        .into_any_element()
+}
+
+/// The workspace page: this workspace's name and storage binding, then the two
+/// ways to reach another one.
+///
+/// No workspace is ever *replaced* in place -- one window hosts exactly one
+/// workspace, so both buttons at the end open another window, or focus the one
+/// already showing that folder.
+///
+/// **The list of known workspaces is deliberately not here.** The rail's
+/// identity row is the switcher, and it draws the same directories better: a
+/// row named by its folder with the parent beside it, the one on screen checked
+/// and unpickable. A second copy here printed each absolute path whole into a
+/// button, uncapped, so the longer the app was used the further it pushed
+/// everything else off the bottom. What stays is the binding, which has nowhere
+/// else to live.
+fn workspace_page(handle: &Entity<Shell>, cx: &App) -> AnyElement {
+    let shell = handle.read(cx);
+    let name = shell.workspace_name_input().clone();
+    let storage = shell
+        .storage_dir()
+        .map(|dir| SharedString::from(dir.display().to_string()));
+    let bound = storage.is_some();
+    let (bind, unbind, new, open) = (
+        handle.clone(),
+        handle.clone(),
+        handle.clone(),
+        handle.clone(),
+    );
+
+    div()
+        .v_flex()
+        .gap_3()
+        .w_full()
+        .child(page_title("Workspace"))
+        .child(field("Workspace name", &name))
+        .child(
+            div()
+                .v_flex()
+                .gap_1()
+                .w_full()
+                .child(div().text_xs().child("Storage folder"))
                 .child(
                     div()
-                        .v_flex()
-                        .gap_3()
-                        .w_full()
-                        .child(
-                            div()
-                                .v_flex()
-                                .gap_1()
-                                .child(div().text_xs().child("Appearance"))
-                                .child(appearance_picker(&handle, appearance)),
-                        )
-                        .child(field("Workspace name", &name))
-                        .child(
-                            div()
-                                .v_flex()
-                                .gap_1()
-                                .child(div().text_xs().child("Storage folder"))
-                                .child(div().text_color(cx.theme().muted_foreground).child(
-                                    storage.unwrap_or_else(|| {
-                                        // An unbound workspace persists nothing;
-                                        // say so rather than showing a blank.
-                                        SharedString::from("Not bound — nothing is saved")
-                                    }),
-                                )),
-                        )
-                        .child(div().text_xs().child("Workspaces"))
-                        .child(
-                            div()
-                                .h_flex()
-                                .gap_2()
-                                .w_full()
-                                .child({
-                                    let handle = handle.clone();
-                                    crate::controls::action("new-workspace")
-                                        .ghost()
-                                        .label("New workspace…")
-                                        .on_click(
-                                            move |_: &ClickEvent, _: &mut Window, cx: &mut App| {
-                                                handle.update(cx, |shell, cx| {
-                                                    shell.new_workspace(cx)
-                                                });
-                                            },
-                                        )
-                                })
-                                .child({
-                                    let handle = handle.clone();
-                                    crate::controls::action("open-workspace")
-                                        .ghost()
-                                        .label("Open workspace…")
-                                        .on_click(
-                                            move |_: &ClickEvent, _: &mut Window, cx: &mut App| {
-                                                handle.update(cx, |shell, cx| {
-                                                    shell.open_workspace(cx)
-                                                });
-                                            },
-                                        )
-                                }),
-                        )
-                        .children(rows),
+                        .text_color(cx.theme().muted_foreground)
+                        .child(storage.unwrap_or_else(|| {
+                            // An unbound workspace persists nothing; say so
+                            // rather than showing a blank.
+                            SharedString::from("Not bound — nothing is saved")
+                        })),
                 )
                 .child(
-                    DialogFooter::new()
+                    div()
+                        .h_flex()
+                        .gap_2()
                         .w_full()
+                        .child(
+                            crate::controls::action("bind-storage")
+                                .primary()
+                                .label("Choose folder…")
+                                .on_click(move |_: &ClickEvent, _: &mut Window, cx: &mut App| {
+                                    bind.update(cx, |shell, cx| shell.pick_storage_dir(cx));
+                                }),
+                        )
                         .child(
                             crate::controls::action("unbind-storage")
                                 .ghost()
@@ -437,17 +623,33 @@ pub fn workspace_settings(shell: &Shell, cx: &mut Context<Shell>) -> Dialog {
                                         });
                                     },
                                 ),
-                        )
-                        .child(
-                            crate::controls::action("bind-storage")
-                                .primary()
-                                .label("Choose folder…")
-                                .on_click(move |_: &ClickEvent, _: &mut Window, cx: &mut App| {
-                                    bind.update(cx, |shell, cx| shell.pick_storage_dir(cx));
-                                }),
                         ),
+                ),
+        )
+        .child(div().text_xs().child("Workspaces"))
+        .child(
+            div()
+                .h_flex()
+                .gap_2()
+                .w_full()
+                .child(
+                    crate::controls::action("new-workspace")
+                        .ghost()
+                        .label("New workspace…")
+                        .on_click(move |_: &ClickEvent, _: &mut Window, cx: &mut App| {
+                            new.update(cx, |shell, cx| shell.new_workspace(cx));
+                        }),
                 )
-        })
+                .child(
+                    crate::controls::action("open-workspace")
+                        .ghost()
+                        .label("Open workspace…")
+                        .on_click(move |_: &ClickEvent, _: &mut Window, cx: &mut App| {
+                            open.update(cx, |shell, cx| shell.open_workspace(cx));
+                        }),
+                ),
+        )
+        .into_any_element()
 }
 
 /// The conversation-rename window.
@@ -766,62 +968,78 @@ pub const SHORTCUTS: &[Shortcut] = &[
     },
 ];
 
-pub fn help(cx: &mut Context<Shell>) -> Dialog {
-    Dialog::new(cx)
-        .trigger(crate::rail::rail_row(
-            "open-help",
-            IconName::Info,
-            "Help",
-            cx,
-        ))
-        .close_button(false)
-        .content(|content, _, cx: &mut App| {
-            content
-                .child(title_row("Keyboard shortcuts"))
-                .child(
-                    div().v_flex().gap_2().w_full().children(
-                        SHORTCUTS
-                            .iter()
-                            .map(|shortcut| {
+/// The keymap, and the build that draws it.
+///
+/// The version rides at the foot of this page rather than on an *About* page of
+/// its own: one line is not a page, and a nav entry leading to one line is a
+/// click that answers less than the row promised.
+fn shortcuts_page(cx: &App) -> AnyElement {
+    div()
+        .v_flex()
+        .gap_3()
+        .w_full()
+        .child(page_title("Shortcuts"))
+        .child(
+            div().v_flex().gap_2().w_full().children(
+                SHORTCUTS
+                    .iter()
+                    .map(|shortcut| {
+                        div()
+                            .h_flex()
+                            .w_full()
+                            .justify_between()
+                            .gap_4()
+                            .child(div().child(shortcut.what))
+                            .child(
                                 div()
-                                    .h_flex()
-                                    .w_full()
-                                    .justify_between()
-                                    .gap_4()
-                                    .child(div().child(shortcut.what))
-                                    .child(
-                                        div()
-                                            .text_color(cx.theme().muted_foreground)
-                                            .child(shortcut.label),
-                                    )
-                            })
-                            .collect::<Vec<_>>(),
-                    ),
-                )
-                // The build, where somebody who never opens a terminal can read it.
-                // `onehand --version` answers the same question for everybody else.
-                .child(
-                    div()
-                        .pt_2()
-                        .text_xs()
-                        .text_color(cx.theme().muted_foreground)
-                        .child(format!("onehand {}", env!("CARGO_PKG_VERSION"))),
-                )
-        })
+                                    .flex_none()
+                                    .text_color(cx.theme().muted_foreground)
+                                    .child(shortcut.label),
+                            )
+                    })
+                    .collect::<Vec<_>>(),
+            ),
+        )
+        // The build, where somebody who never opens a terminal can read it.
+        // `onehand --version` answers the same question for everybody else.
+        .child(
+            div()
+                .pt_2()
+                .text_xs()
+                .text_color(cx.theme().muted_foreground)
+                .child(format!("onehand {}", env!("CARGO_PKG_VERSION"))),
+        )
+        .into_any_element()
 }
 
 #[cfg(test)]
 mod tests {
-    use super::SHORTCUTS;
+    use super::{DraftShift, SHORTCUTS, draft_shift};
+
+    /// Deleting an agent moves a form open on another one with it.
+    ///
+    /// Every case here is a save that would otherwise land on the wrong agent:
+    /// the list shifts under a position the form is still holding.
+    #[test]
+    fn deleting_an_agent_moves_the_form_off_the_hole() {
+        assert_eq!(draft_shift(None, 0), DraftShift::Keep);
+        // Deleted below the form: nothing the form points at has moved.
+        assert_eq!(draft_shift(Some(0), 2), DraftShift::Keep);
+        // Deleted above it: everything after the hole slid down one.
+        assert_eq!(draft_shift(Some(2), 0), DraftShift::MoveTo(1));
+        assert_eq!(draft_shift(Some(1), 0), DraftShift::MoveTo(0));
+        // The agent being edited is the one that went.
+        assert_eq!(draft_shift(Some(1), 1), DraftShift::Clear);
+    }
 
     /// No dialog here names itself through the library's own title slot.
     ///
     /// A dialog opened from a trigger is rebuilt when that trigger is pressed,
     /// out of its content builder, its style and its props. Its title, header
     /// and footer are elements, which cannot be cloned into a builder that runs
-    /// again on every open, so they do not survive the trip -- and the three
-    /// dialogs this app opens from the rail lost their name and their buttons
-    /// that way, in silence, while otherwise working.
+    /// again on every open, so they do not survive the trip -- and every dialog
+    /// the rail opened lost its name and its buttons that way, in silence,
+    /// while otherwise working.
     ///
     /// The name goes in the content instead, and on every dialog rather than
     /// only the triggered ones: one shape is what stops the next dialog picking

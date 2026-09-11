@@ -62,7 +62,7 @@ A release is cut by pushing a `v*` tag: that builds `--locked` on an older runne
 glibc requirement is one more distributions meet, and packages the binary with the icon, the desktop
 installer and the licences into a tarball attached to a GitHub pre-release. Nothing publishes to
 crates.io and nothing can — a git dependency with no rev is not publishable there, so tagged tarballs
-are the only channel. `onehand --version` and the Help dialog both name the build.
+are the only channel. `onehand --version` and Settings' Shortcuts page both name the build.
 
 Tests are inline `#[cfg(test)]` modules — there is no `tests/` directory.
 
@@ -165,7 +165,7 @@ Shell (one per window)                           crates/app/src/shell.rs
 ```
 
 - Agent *definitions* are global: `Shared.agents` is the menu a new session spawns from, edited in
-  the agent-manager dialog; each session keeps a clone of the spec it was spawned with.
+  Settings' Agents page; each session keeps a clone of the spec it was spawned with.
 - `Session.uid` is a process-wide id salt (`Shared::next_uid`), which is how a session's chat state
   survives switching roots and sessions, and how an event finds its window.
 - Sessions connect **lazily**: `Shell::show_active_session` spawns an adapter the first time a
@@ -302,7 +302,7 @@ plus `sendMessage` and `answerCallbackQuery`. Everything that is not the wire is
 `secret` (where its credential comes from).
 
 - **The token is read and never written, and it is not in `onehand.toml`.** That file is rewritten
-  whole by the settings dialog and the agent manager, it is what people paste into a bug report, and
+  whole by the settings dialog, it is what people paste into a bug report, and
   it is world-readable because everything else in it is a preference — so a bearer credential in it
   would be printed back out on a schedule nobody chose. Two sources instead: `$ONEHAND_TELEGRAM_TOKEN`
   (or whatever `token_env` names), then `<config_dir>/onehand/telegram.token`, a file whose only
@@ -841,8 +841,11 @@ status bar.
   its tail), the one on screen checked and unpickable — then *Open workspace…* and *New workspace…*.
   **Nothing is replaced in place**: every entry funnels through `Shell::open_recent` /
   `open_or_focus`, so a pick opens another window or focuses the one already showing that folder.
-  The same list is still in Settings, where the storage binding it depends on lives; what changed is
-  that reaching it no longer means opening a dialog two surfaces away from the name it changes.
+  **This is now the only copy of that list.** Settings drew it too, as a column of ghost buttons each
+  printing one absolute path whole, uncapped, in a dialog that does not scroll — so the longer the app
+  was used the further the list pushed the fields above it off the bottom. Settings keeps the storage
+  binding, which has nowhere else to live, and *New workspace…* / *Open workspace…*, which are about
+  making a workspace rather than switching to one.
   A row can be a menu trigger at all because of `controls::MenuTrigger`: the library opens a menu
   from anything `Selectable`, `Stateful<Div>` is not, and both of those are other crates' — so the
   newtype that answers `Selectable` for a row is what stops the target being the icon at its end.
@@ -954,10 +957,34 @@ status bar.
   **guarded by comparison**, the same way the rail's rows are — the terminal notifies once per chunk
   of output, so an unguarded observer would put a full window repaint in the output path of every
   build.
-- **Dialogs** ([dialogs.rs](crates/app/src/dialogs.rs)): settings (the light/dark/system picker, then
-  the workspace's name, storage folder and recents), the agent manager, and Help. The appearance is
-  app-wide while everything below it in that dialog is one workspace's — the theme it selects is a
-  global, so two windows cannot be drawn in two modes.
+- **Dialogs** ([dialogs.rs](crates/app/src/dialogs.rs)): Settings, the conversation rename and the
+  worktree split. **Settings is a nav column and a page**, four pages wide: *Appearance* (the
+  light/dark/system picker), *Workspace* (the name and the storage binding, then *New* / *Open
+  workspace…*), *Agents* (the global agent menu and the form that edits it) and *Shortcuts* (the
+  keymap, with the build at its foot). Agents and the keymap were dialogs of their own behind two
+  more rail rows, so "where is that setting" had three answers and which was right depended on which
+  row somebody remembered; the rail footer is one row now. What is in here belongs to three scopes —
+  the theme is app-wide, the name and binding are one workspace's, the agent list is every
+  workspace's — and stacked in a single column the only thing that said so was a row of `text_xs`
+  labels. A page per scope says it without a sentence, and the appearance page says its own out loud
+  because the theme is a global: two windows cannot be drawn in two modes.
+  Three things that shape carries. **The page is `Shell::settings_page`, not dialog state**: a
+  triggered dialog is rebuilt from its content closure on every frame it is open, so a page captured
+  when it opened would be the page it showed until it closed — reading the shell inside the closure
+  is what makes the nav work at all. **The page scrolls and the dialog does not**, at one height for every
+  page, so the nav stays reachable from the bottom of the keymap and the box does not jump size
+  between pages. Both that height and the width are **clamped to the frame** (`dialogs::body_height`,
+  `width_within`): the library centres a dialog by subtracting half its width from half the
+  viewport's and never clamps, so a box wider than the window starts at a negative x with its nav
+  column off the left edge and its ✕ off the right, and nothing to scroll either back. And a nav row is a `div`, not the app's button wrapper, for the reason the rail's rows are:
+  a full-width library `Button` centres its content and cannot be refined out of it, so a column of
+  them reads as a stack of banners. No icons on them either — four words in a column need no second
+  alphabet, and every icon would be one chosen for a category rather than for a thing.
+  **There is no footer**, and that is the rule it keeps: every control sits under what it acts on.
+  *Choose folder…* and *Unbind* were in one, three items below the folder they name and under a list
+  of arbitrary length — and a `.primary()` button at the foot of a settings dialog reads as *Save*,
+  while that one opens a picker and re-points where the workspace is written. The close button in the
+  title row and Esc are the way out, as on every dialog here.
 - **Multi-window**: one window hosts exactly one workspace. Opening a workspace whose storage dir is
   already on screen focuses that window instead of duplicating it; storage dirs are canonicalized on
   the way in so symlink and `..` aliases dedupe.
@@ -999,7 +1026,7 @@ that re-measures the cell and resizes the PTY.
 panel's tab bar fills only the dock area and keeps it. Only the Workbench offers the second — the
 agent pane and the terminal are mounted bare and have no tab bar to put it on.
 
-The Help dialog's table is the whole keymap, and a test (`dialogs::tests::keymap_and_help_agree`)
+Settings' Shortcuts page is the whole keymap, and a test (`dialogs::tests::keymap_and_help_agree`)
 fails if a binding is added without a row — a shortcut nobody can find is a shortcut nobody has.
 
 ### Persistence

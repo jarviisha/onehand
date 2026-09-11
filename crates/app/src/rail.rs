@@ -1238,6 +1238,9 @@ fn session_rows(
 pub fn rail(
     window_state_shell: &Shell,
     window_state: &WorkspaceWindow,
+    // Only so the Settings dialog can size itself against the frame it opens
+    // in; nothing here holds the borrow past this call.
+    window: &Window,
     cx: &mut Context<Shell>,
     // `use<>`: the returned sidebar is fully owned (every string is cloned and
     // every handler is an Rc), so it must not capture the borrows of `self` and
@@ -1345,19 +1348,19 @@ pub fn rail(
         )
         .child(KeyedMenu::new(rows))
         // Not `SidebarFooter`: that is an `h_flex justify_between` with its own
-        // hover highlight, meant for one row of controls. Three stacked triggers
+        // hover highlight, meant for one row of controls. Stacked triggers
         // inside it made hovering any one of them light up the whole block.
+        //
+        // One row, where there were three. Agents and the keyboard table are
+        // pages of Settings now, and a rail footer listing every page of one
+        // dialog is a table of contents for a dialog nobody has opened yet.
         .footer(
             div()
                 .v_flex()
                 .gap_0p5()
                 .w_full()
                 .min_w_0()
-                // Each modal is its own trigger, so "at most one open" is
-                // structural rather than an invariant to maintain.
-                .child(crate::dialogs::agent_manager(window_state_shell, cx))
-                .child(crate::dialogs::workspace_settings(window_state_shell, cx))
-                .child(crate::dialogs::help(cx)),
+                .child(crate::dialogs::settings(window, cx)),
         )
 }
 

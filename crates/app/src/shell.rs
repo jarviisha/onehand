@@ -4,7 +4,7 @@
 //! is about the window rather than about one panel.
 
 use crate::chat::ChatPane;
-use crate::dialogs::AgentDraft;
+use crate::dialogs::{AgentDraft, DraftShift, SettingsPage};
 use crate::state::{OpenWindow, Shared, WorkspaceWindow};
 use crate::terminal::TerminalPanel;
 use crate::workbench::{EDITOR_MODE, FILES_MODE, MARKDOWN_MODE, NEOVIM_MODE, Workbench};
@@ -369,6 +369,16 @@ pub struct Shell {
     rail_split: Entity<ResizableState>,
     /// The agent add/edit form.
     agent_draft: AgentDraft,
+    /// Which page the Settings dialog is showing.
+    ///
+    /// On the shell rather than inside the dialog because a triggered dialog is
+    /// rebuilt from its content closure on every frame it is open, so it has
+    /// nowhere of its own to keep a selection.
+    ///
+    /// Not persisted: a launch that opened Settings on the agent list would be
+    /// one where the appearance, the thing most likely to be looked for, is a
+    /// page away.
+    settings_page: SettingsPage,
     /// The workspace-rename field.
     workspace_name: Entity<InputState>,
     /// The session whose name is being edited, if any.
@@ -762,6 +772,7 @@ impl Shell {
             rail_hidden: false,
             rail_split: cx.new(|_| ResizableState::default()),
             agent_draft: AgentDraft::new(window, cx),
+            settings_page: SettingsPage::default(),
             workspace_name,
             renaming: None,
             rename_input: cx.new(|cx| {
@@ -2003,7 +2014,7 @@ impl Shell {
     ///
     /// **An unknown agent falls back to the default rather than refusing.** The
     /// name comes off an archive, and the agent that wrote it can since have
-    /// been renamed or removed in the agent manager — a conversation the user
+    /// been renamed or removed in Settings — a conversation the user
     /// can see listed must still be openable, and which agent replays it is the
     /// smaller loss.
     /// Returns the new session's uid, for a caller that has to say which one it
@@ -2323,7 +2334,7 @@ impl Shell {
         self.toggle_rail(cx);
     }
 
-    // ── Agent manager ───────────────────────────────────────────────────────
+    // ── Agents ──────────────────────────────────────────────────────────────
 
     /// The global agent menu. Definitions are process-wide; a session keeps a
     /// clone of the spec it was spawned with.
@@ -2333,6 +2344,15 @@ impl Shell {
 
     pub fn agent_draft(&self) -> &AgentDraft {
         &self.agent_draft
+    }
+
+    pub fn settings_page(&self) -> SettingsPage {
+        self.settings_page
+    }
+
+    pub fn show_settings_page(&mut self, page: SettingsPage, cx: &mut Context<Self>) {
+        self.settings_page = page;
+        cx.notify();
     }
 
     pub fn edit_agent(&mut self, idx: usize, window: &mut Window, cx: &mut Context<Self>) {
@@ -2348,12 +2368,24 @@ impl Shell {
         cx.notify();
     }
 
+    /// Remove an agent, and move the form off the hole it leaves.
+    ///
+    /// The rule is `dialogs::draft_shift`, which says why a position left
+    /// uncorrected here is a form that saves over the wrong agent.
     pub fn delete_agent(&mut self, idx: usize, window: &mut Window, cx: &mut Context<Self>) {
         cx.update_global::<Shared, _>(|shared, _| {
             if idx < shared.agents.len() {
                 shared.agents.remove(idx);
             }
         });
+        match crate::dialogs::draft_shift(self.agent_draft.editing, idx) {
+            DraftShift::Keep => {}
+            // The fields go too, not just the index: left filled under a button
+            // that now reads "Add", the form offers to recreate the agent the
+            // user has just deleted.
+            DraftShift::Clear => self.agent_draft.clear(window, cx),
+            DraftShift::MoveTo(editing) => self.agent_draft.editing = Some(editing),
+        }
         self.persist_agents(window, cx);
         cx.notify();
     }
@@ -2949,7 +2981,7 @@ impl Render for Shell {
         // is not rendered at all rather than rendered at zero width, so
         // nothing of it can catch a click along the edge.
         let rail = (self.app_maximized.is_none() && !self.rail_hidden)
-            .then(|| crate::rail::rail(self, &self.window, cx));
+            .then(|| crate::rail::rail(self, &self.window, window, cx));
         // Gone for the same reason and in the same direction: maximizing a
         // panel in the app direction means the frame *is* that panel, and a
         // strip of chrome across the bottom is the one thing that would still

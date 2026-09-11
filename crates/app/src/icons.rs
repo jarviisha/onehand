@@ -91,6 +91,7 @@ icons! {
     Paperclip => "paperclip",
     SquarePen => "square-pen",
     SquareSlash => "square-slash",
+    Trash => "trash-2",
 }
 
 #[cfg(test)]
