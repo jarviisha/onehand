@@ -409,12 +409,28 @@ pub struct Shell {
     /// included -- in the output path of `cargo build`. Comparing the two facts
     /// actually drawn is what keeps it out.
     panels: PanelFacts,
-    /// Whether the agent list under *New session* is expanded.
+    /// Which of the rail's two lists is showing.
     ///
-    /// Only ever shown when more than one agent is configured: with one there
-    /// is nothing to choose, and a chevron that opens a list of length one is
-    /// a control that exists to disappoint.
-    agent_menu_open: bool,
+    /// Not persisted: it is where the user is looking right now, and a launch
+    /// that came up on the flat list would be one where the project tree — the
+    /// thing that says what a workspace *is* — had to be found before anything
+    /// else could be read.
+    rail_tab: crate::rail::RailTab,
+    /// Whether each project's sessions are showing under it in the rail.
+    ///
+    /// **Here and not in the row, because the row does not live long enough.**
+    /// gpui keeps an element's state only across frames the key is *accessed*
+    /// in, so every project's fold died the moment the rail drew the flat list
+    /// instead — and coming back re-seeded each row from scratch, springing a
+    /// folded project open and snapping an unfolded one shut. The window
+    /// outlives both lists; a row drawn in one of them does not.
+    ///
+    /// By path, like pinning, and for the same reason: two checkouts of one
+    /// repository share a folder name and are two different projects. Absent
+    /// means untouched, which is why this is a map rather than a set of the
+    /// open ones — the answer for a project nobody has folded depends on
+    /// whether it is the selected one.
+    folds: HashMap<PathBuf, bool>,
     /// The panel a panel-scoped command falls back to when focus is not in one.
     last_panel: FocusedPanel,
     /// Whether the terminal dock was open, per project root.
@@ -762,7 +778,8 @@ impl Shell {
             git_generation: 0,
             rail_sessions: Vec::new(),
             panels: PanelFacts::default(),
-            agent_menu_open: false,
+            rail_tab: crate::rail::RailTab::Projects,
+            folds: HashMap::new(),
             last_panel: FocusedPanel::Chat,
             terminal_open: seed_root
                 .clone()
@@ -977,9 +994,38 @@ impl Shell {
         }));
     }
 
+    /// Whether a project's sessions are showing under it in the rail.
+    ///
+    /// A project nobody has touched answers with `is_active`, which is the rule
+    /// the rail has always drawn: the selected project shows what is in it and
+    /// the rest stay shut, or a workspace of ten roots is a rail nobody can see
+    /// the bottom of.
+    pub fn project_unfolded(&self, path: &std::path::Path, is_active: bool) -> bool {
+        self.folds.get(path).copied().unwrap_or(is_active)
+    }
+
+    /// Open a project's sessions, or put them away.
+    pub fn toggle_fold(&mut self, path: PathBuf, is_active: bool, cx: &mut Context<Self>) {
+        let open = self.project_unfolded(&path, is_active);
+        self.folds.insert(path, !open);
+        cx.notify();
+    }
+
+    /// Going to a project is asking what is in it, so arriving opens it.
+    ///
+    /// Written explicitly rather than by dropping the entry: falling back to
+    /// `is_active` would snap the project shut again the moment the selection
+    /// moved on, and a project left open is what the user last saw.
+    fn reveal_root(&mut self, idx: usize) {
+        if let Some(root) = self.window.workspace.roots.get(idx) {
+            self.folds.insert(root.path.clone(), true);
+        }
+    }
+
     /// Select a root, and show whatever session it was last on.
     pub fn select_root(&mut self, idx: usize, window: &mut Window, cx: &mut Context<Self>) {
         self.window.workspace.select_root(idx);
+        self.reveal_root(idx);
         self.show_active_session(window, cx);
         cx.notify();
     }
@@ -995,6 +1041,7 @@ impl Shell {
         cx: &mut Context<Self>,
     ) {
         self.window.workspace.select_root(root_idx);
+        self.reveal_root(root_idx);
         self.window.workspace.select_session(session_idx);
         self.show_active_session(window, cx);
         cx.notify();
@@ -1114,6 +1161,7 @@ impl Shell {
                 .update_in(cx, |shell: &mut Self, window, cx| {
                     let idx = shell.window.workspace.add_root(dir);
                     shell.window.workspace.select_root(idx);
+                    shell.reveal_root(idx);
                     shell.show_active_session(window, cx);
                     shell.refresh_git(cx);
                     shell.save_workspace(window, cx);
@@ -1184,6 +1232,7 @@ impl Shell {
         self.window.git.remove(&path);
         self.mru.remove(&path);
         self.terminal_open.remove(&path);
+        self.folds.remove(&path);
         // The dock on screen no longer belongs to anyone. Left naming this root,
         // the next handover would file the live state under a project that is
         // gone and hand a re-added one a state it never chose.
@@ -1404,6 +1453,7 @@ impl Shell {
                             let label = workspace::label_for(&dir);
                             let idx = shell.window.workspace.add_root(dir);
                             shell.window.workspace.select_root(idx);
+                            shell.reveal_root(idx);
                             shell.show_active_session(window, cx);
                             shell.refresh_git(cx);
                             shell.save_workspace(window, cx);
@@ -1720,7 +1770,8 @@ impl Shell {
         order.insert(0, uid);
         // The same move, once more across the whole workspace. `Ctrl+Tab` walks
         // *within* a root, so that list cannot answer "where was I before this
-        // project" -- which is the question the rail's Recent section is for.
+        // project" -- and that is what breaks the tie in the rail's flat
+        // session list, underneath everything asking for attention.
         self.recent.retain(|&seen| seen != uid);
         self.recent.insert(0, uid);
     }
@@ -1839,15 +1890,14 @@ impl Shell {
         cx.notify();
     }
 
-    /// Whether the agent list under *New session* is showing.
-    pub fn agent_menu_open(&self) -> bool {
-        self.agent_menu_open
+    /// Which of the rail's two lists is showing.
+    pub fn rail_tab(&self) -> crate::rail::RailTab {
+        self.rail_tab
     }
 
-    /// Show or hide the agent list. Only reachable when there is more than one
-    /// agent to choose between.
-    pub fn toggle_agent_menu(&mut self, cx: &mut Context<Self>) {
-        self.agent_menu_open = !self.agent_menu_open;
+    /// Show the other list.
+    pub fn set_rail_tab(&mut self, tab: crate::rail::RailTab, cx: &mut Context<Self>) {
+        self.rail_tab = tab;
         cx.notify();
     }
 
@@ -1869,6 +1919,7 @@ impl Shell {
     /// a prompt sent into a project nobody has open.
     pub fn new_session_in(&mut self, root_idx: usize, window: &mut Window, cx: &mut Context<Self>) {
         self.window.workspace.select_root(root_idx);
+        self.reveal_root(root_idx);
         self.new_session(window, cx);
     }
 
@@ -1966,7 +2017,6 @@ impl Shell {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Option<u64> {
-        self.agent_menu_open = false;
         let Some(spec) = Shared::global(cx).agents.get(idx).cloned() else {
             window.push_notification(Notification::warning("No agents configured"), cx);
             return None;

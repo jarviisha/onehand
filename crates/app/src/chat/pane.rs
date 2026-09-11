@@ -3081,11 +3081,13 @@ pub enum SessionSignal {
 impl SessionSignal {
     /// How badly each state wants the user's eye, lowest first.
     ///
-    /// **The one place the order lives.** Two rows read it — a session row
-    /// reducing its own four facts, and a project row reducing its sessions'
-    /// signals — and an order written out twice is an order that will disagree
-    /// with itself the first time someone edits one copy.
-    fn rank(self) -> u8 {
+    /// **The one place the order lives.** Three readers now — a session row
+    /// reducing its own four facts, a project row reducing its sessions'
+    /// signals, and the rail's flat session list sorting itself so the ones
+    /// wanting an answer rise to the top — and an order written out twice is an
+    /// order that will disagree with itself the first time someone edits one
+    /// copy.
+    pub(crate) fn rank(self) -> u8 {
         match self {
             // A dead adapter outranks a question nobody can answer any more.
             Self::Lost => 0,
