@@ -5,6 +5,10 @@ Follow-up to [the initial audit](terminal-performance.md) and
 comparison processed different numbers of window frames, so CPU percentages
 alone could not identify the residual cost per update.
 
+The [subsequent coalescing change](terminal-coalescing.md) addresses the measured
+multipart-update frame overhead; the measurements below describe the preceding
+implementation.
+
 ## Results and interpretation
 
 Thirteen completed cases are retained in [the measured aggregates](terminal-profiling-results.json),

@@ -80,12 +80,20 @@ fn main() {
                 )
                 .unwrap();
             sample_frames(handle.into(), cx);
+            if std::env::var("PERF_WORKLOAD").as_deref() == Ok("echo") {
+                inject_echo(handle.into(), cx);
+            }
             cx.activate(true);
         });
 }
 
 fn sample_frames(handle: gpui::AnyWindowHandle, cx: &mut App) {
     let started = std::time::Instant::now();
+    #[cfg(feature = "terminal-profiling")]
+    let mut frame_trace = std::env::var_os("ONEHAND_TERMINAL_TRACE").map(|_| {
+        gpui::profiler::set_trace_enabled(true);
+        gpui::profiler::FrameTimingCollector::new()
+    });
     // Reading histograms does not invalidate the window. The idle phase
     // therefore also checks that the probe itself causes no extra frames.
     cx.spawn(async move |cx| {
@@ -112,10 +120,69 @@ fn sample_frames(handle: gpui::AnyWindowHandle, cx: &mut App) {
                             sample.calls, sample.nanos, sample.units
                         );
                     }
+                    #[cfg(feature = "terminal-profiling")]
+                    if let Some(collector) = frame_trace.as_mut() {
+                        for event in collector.collect_unseen() {
+                            if let gpui::profiler::FrameEvent::Present(present) = event
+                                && present.window_id == handle.window_id()
+                            {
+                                gpui_terminal::profiling::presented(present.presented_at.elapsed());
+                            }
+                        }
+                    }
+                    #[cfg(feature = "terminal-profiling")]
+                    for event in gpui_terminal::profiling::take_events() {
+                        eprintln!(
+                            "terminal_event ns={} kind={} bytes={} requested={}",
+                            event.nanos, event.kind, event.bytes, event.requested
+                        );
+                    }
                 })
                 .is_err()
             {
                 break;
+            }
+        }
+    })
+    .detach();
+}
+
+// Exercise the normal GPUI key dispatch, terminal input handler, PTY child and
+// repaint path in this probe only. The child acknowledges each input by writing
+// a numbered frame. No compositor key injection or user's editor is involved.
+fn inject_echo(handle: gpui::AnyWindowHandle, cx: &mut App) {
+    let phase_path = std::env::var("PERF_PHASE").expect("echo workload phase file");
+    let hz: u64 = std::env::var("PERF_HZ")
+        .unwrap_or_else(|_| "20".into())
+        .parse()
+        .expect("integer PERF_HZ");
+    assert!((1..=120).contains(&hz));
+    cx.spawn(async move |cx| {
+        let mut previous = String::new();
+        let mut sent = 0;
+        loop {
+            cx.background_executor()
+                .timer(std::time::Duration::from_micros(1_000_000 / hz))
+                .await;
+            let phase = std::fs::read_to_string(&phase_path).unwrap_or_default();
+            let phase = phase.lines().next().unwrap_or("");
+            if phase != previous {
+                previous = phase.to_owned();
+                sent = 0;
+            }
+            if phase == "done" {
+                break;
+            }
+            if matches!(phase, "echo" | "echo-redraw") && sent < hz * 8 {
+                if handle
+                    .update(cx, |_, window, cx| {
+                        window.dispatch_keystroke(gpui::Keystroke::parse("a").unwrap(), cx);
+                    })
+                    .is_err()
+                {
+                    break;
+                }
+                sent += 1;
             }
         }
     })

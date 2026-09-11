@@ -1064,6 +1064,8 @@ impl TerminalRenderer {
         #[cfg(feature = "profiling")]
         let _cursor = crate::profiling::Span::new(crate::profiling::Stage::Cursor, 1);
         self.paint_cursor(origin, term, focused, window, cx);
+        #[cfg(feature = "profiling")]
+        crate::profiling::event("paint", 0, false);
     }
 
     /// onehand patch: the box-drawing passes for one row.

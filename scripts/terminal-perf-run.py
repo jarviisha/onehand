@@ -72,8 +72,10 @@ def main():
     parser.add_argument('--host', choices=('probe', 'kitty'), default='probe')
     parser.add_argument('--binary', type=Path, default=SCRIPTS.parent / 'target/release/examples/terminal_perf')
     parser.add_argument('--output', type=Path, default=Path('/tmp/onehand-terminal-profiling'))
-    parser.add_argument('--workload', choices=('replay', 'cursor', 'snacks', 'seq'), default='replay')
+    parser.add_argument('--workload', choices=('replay', 'cursor', 'snacks', 'seq', 'echo'), default='replay')
     parser.add_argument('--hz', type=int, default=20)
+    parser.add_argument('--trace', action='store_true', help='enable bounded PTY batch/render event logs')
+    parser.add_argument('--monitor', default='eDP-1', help='Hyprland monitor name for the isolated window')
     parser.add_argument('--border', choices=('text', 'straight', 'rounded'), default='straight')
     args = parser.parse_args()
     args.output.mkdir(parents=True, exist_ok=True)
@@ -84,16 +86,20 @@ def main():
         parser.error('use a fresh case name; measurements are never overwritten')
     if args.hz not in (20, 40):
         parser.error('--hz must be 20 or 40')
+    if args.workload == 'echo' and args.host != 'probe':
+        parser.error('echo uses the GPUI probe input injector')
     env = dict(os.environ, PERF_PHASE=str(phase_path), PERF_WORKLOAD=args.workload,
                PERF_HZ=str(args.hz), PERF_BORDER=args.border,
                PERF_INTERVAL_MS=str(1000 // args.hz), PERF_TICKS=str(args.hz * 8),
                PERF_GUIDES='1', SHELL=str(SCRIPTS / 'terminal-perf-workload.sh'))
+    if args.trace:
+        env['ONEHAND_TERMINAL_TRACE'] = '1'
     command = [str(args.binary.resolve())] if args.host == 'probe' else [
         'kitty', '--config', 'NONE', '--class', 'onehand-terminal-perf-kitty',
         '-o', 'font_family=Liberation Mono', '-o', 'font_size=10.5',
         '-o', 'cursor_blink_interval=0', '-o', 'window_padding_width=0', env['SHELL']]
     focused = json.loads(hypr('activewindow', '-j')).get('address')
-    monitor = next(m for m in json.loads(hypr('monitors', '-j')) if m['name'] == 'eDP-1')
+    monitor = next(m for m in json.loads(hypr('monitors', '-j')) if m['name'] == args.monitor)
     samples, profiles, windows = [], [], []
     invalid = []
     with log_path.open('w') as log:
