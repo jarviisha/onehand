@@ -877,7 +877,7 @@ fn folder_row(
     // bottom of. The answer is the window's rather than the row's: the row is
     // not drawn at all while the flat list shows, and a fold kept inside it
     // died every time the user looked at the other tab.
-    let unfolded = shell.project_unfolded(&root.path, is_active);
+    let unfolded = shell.project_unfolded(&root.path);
     let fold_path = root.path.clone();
 
     // Branch and count are read as two fields rather than through
@@ -1052,7 +1052,7 @@ fn folder_row(
                                 let fold_path = fold_path.clone();
                                 fold_target
                                     .update(cx, |shell: &mut Shell, cx| {
-                                        shell.toggle_fold(fold_path, is_active, cx);
+                                        shell.toggle_fold(fold_path, cx);
                                     })
                                     .ok();
                             }),

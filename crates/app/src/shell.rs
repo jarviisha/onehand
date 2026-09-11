@@ -996,17 +996,28 @@ impl Shell {
 
     /// Whether a project's sessions are showing under it in the rail.
     ///
-    /// A project nobody has touched answers with `is_active`, which is the rule
-    /// the rail has always drawn: the selected project shows what is in it and
-    /// the rest stay shut, or a workspace of ten roots is a rail nobody can see
-    /// the bottom of.
-    pub fn project_unfolded(&self, path: &std::path::Path, is_active: bool) -> bool {
-        self.folds.get(path).copied().unwrap_or(is_active)
+    /// **A fact and never a derivation.** This used to answer `is_active` for a
+    /// project nobody had touched, which made the fold a function of the
+    /// selection -- so it moved when the selection did, and a single click on
+    /// one project folded a different one away. The project the user was
+    /// leaving had never been written down: `reveal_root` records the project
+    /// being arrived *at*, and the one already on screen at launch was never
+    /// arrived at, so its open state was only ever implied. It lost the
+    /// implication and shut itself, which is exactly the click-toggles-the-row
+    /// behaviour the caret was introduced to take away.
+    ///
+    /// Shut is the right answer for a project nobody has opened: a workspace of
+    /// ten roots is otherwise a rail nobody can see the bottom of. The selected
+    /// project still shows what is in it, because arriving at one opens it --
+    /// that is [`Shell::show_active_session`]'s job now, and it happens once,
+    /// as a write.
+    pub fn project_unfolded(&self, path: &std::path::Path) -> bool {
+        self.folds.get(path).copied().unwrap_or(false)
     }
 
     /// Open a project's sessions, or put them away.
-    pub fn toggle_fold(&mut self, path: PathBuf, is_active: bool, cx: &mut Context<Self>) {
-        let open = self.project_unfolded(&path, is_active);
+    pub fn toggle_fold(&mut self, path: PathBuf, cx: &mut Context<Self>) {
+        let open = self.project_unfolded(&path);
         self.folds.insert(path, !open);
         cx.notify();
     }
@@ -1016,8 +1027,8 @@ impl Shell {
     /// Written explicitly rather than by dropping the entry: falling back to
     /// `is_active` would snap the project shut again the moment the selection
     /// moved on, and a project left open is what the user last saw.
-    fn reveal_root(&mut self, idx: usize) {
-        if let Some(root) = self.window.workspace.roots.get(idx) {
+    fn reveal_root(&mut self) {
+        if let Some(root) = self.window.workspace.active_root() {
             self.folds.insert(root.path.clone(), true);
         }
     }
@@ -1025,7 +1036,6 @@ impl Shell {
     /// Select a root, and show whatever session it was last on.
     pub fn select_root(&mut self, idx: usize, window: &mut Window, cx: &mut Context<Self>) {
         self.window.workspace.select_root(idx);
-        self.reveal_root(idx);
         self.show_active_session(window, cx);
         cx.notify();
     }
@@ -1041,7 +1051,6 @@ impl Shell {
         cx: &mut Context<Self>,
     ) {
         self.window.workspace.select_root(root_idx);
-        self.reveal_root(root_idx);
         self.window.workspace.select_session(session_idx);
         self.show_active_session(window, cx);
         cx.notify();
@@ -1053,6 +1062,23 @@ impl Shell {
     /// Lazy: a workspace with a dozen roots must not launch a dozen agent
     /// processes at boot.
     fn show_active_session(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        // Arriving at a project is asking what is in it, so arriving opens it
+        // -- and this is the one place every arrival passes through, which is
+        // what the two callers that used to do it themselves could not be.
+        // A root becomes the active one down paths that never touch
+        // `select_root`: `Ctrl+Tab` across projects, a session closing, a
+        // project being removed from under the selection, a chat on the remote
+        // bridge pointing itself somewhere. Each of those left the project it
+        // landed on unwritten, and the fold then had to be guessed from the
+        // selection -- which is the guess that made a click fold a row the user
+        // had not clicked.
+        //
+        // It is a *write*, so the answer stops moving once it is made. The one
+        // consequence worth naming: folding the active project with the caret
+        // and then reaching a session inside it by keyboard opens it again,
+        // because asking to see a session in a project is asking to see the
+        // project.
+        self.reveal_root();
         let Some(root) = self.window.workspace.active_root() else {
             // No roots at all. The pane has to be told, or removing the last
             // project leaves the centre of the window inviting the user to
@@ -1161,7 +1187,6 @@ impl Shell {
                 .update_in(cx, |shell: &mut Self, window, cx| {
                     let idx = shell.window.workspace.add_root(dir);
                     shell.window.workspace.select_root(idx);
-                    shell.reveal_root(idx);
                     shell.show_active_session(window, cx);
                     shell.refresh_git(cx);
                     shell.save_workspace(window, cx);
@@ -1453,7 +1478,6 @@ impl Shell {
                             let label = workspace::label_for(&dir);
                             let idx = shell.window.workspace.add_root(dir);
                             shell.window.workspace.select_root(idx);
-                            shell.reveal_root(idx);
                             shell.show_active_session(window, cx);
                             shell.refresh_git(cx);
                             shell.save_workspace(window, cx);
@@ -1919,7 +1943,6 @@ impl Shell {
     /// a prompt sent into a project nobody has open.
     pub fn new_session_in(&mut self, root_idx: usize, window: &mut Window, cx: &mut Context<Self>) {
         self.window.workspace.select_root(root_idx);
-        self.reveal_root(root_idx);
         self.new_session(window, cx);
     }
 
