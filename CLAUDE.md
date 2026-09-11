@@ -777,14 +777,22 @@ status bar.
   change count ride in the suffix — the count as a badge, not a coloured number — with the full
   branch, the count in words and the root's path in a tooltip. The primary *New session* button names
   the project it would start in, in its tooltip.
-- **Selecting a project and folding it away are two different targets** (`click_to_open(true)`,
-  never `click_to_toggle`). While the whole row toggled, every click on a project both switched to
-  it *and* snapped its sessions shut, so reaching a session in the project just arrived at meant
-  clicking the row a second time to undo what the first click did. **Open and never toggle**, which
-  is not the same as leaving the fold alone: a row that only selected would hide the sessions of
-  every project the user had ever folded, and arriving at one would mean hunting a 16px caret to see
-  what is in it — the same extra click in mirror image. Going to a project is asking what is in it,
-  so the row reveals; only the caret puts it away again.
+- **Selecting a project and folding it away are two different targets.** While the whole row
+  toggled, every click on a project both switched to it *and* snapped its sessions shut, so reaching
+  a session in the project just arrived at meant clicking the row a second time to undo what the
+  first click did. **Open and never toggle**, which is not the same as leaving the fold alone: a row
+  that only selected would hide the sessions of every project the user had ever folded, and arriving
+  at one would mean hunting a caret to see what is in it — the same extra click in mirror image.
+  Going to a project is asking what is in it, so `Shell::select_root` reveals; only the caret puts
+  it away again.
+- **The fold belongs to the window, not to the row** (`Shell::folds` / `project_unfolded`), and the
+  rail draws the nesting itself rather than through `SidebarMenuItem::children`. gpui keeps an
+  element's state only across consecutive frames its key is *accessed* in, and the tab showing the
+  flat list draws no project row at all — so a row-owned fold was destroyed on every tab switch and
+  re-seeded on the way back, springing a folded project open and snapping an unfolded one shut. By
+  path, like pinning, and a `HashMap<PathBuf, bool>` rather than a set: absent means untouched, and
+  an untouched project follows the selection. A **folded project builds no session rows at all**,
+  which is what keeps a workspace of ten roots cheap.
 - **The list is two tabs, not two stacked groups** (`rail::RailTab`, a segmented `TabBar` in the
   header): *Projects* is the tree, *All sessions* is every session in the workspace, flat.
   The flat list **sorts itself by what each session wants** — `rail::session_order`, which is

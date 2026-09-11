@@ -74,21 +74,57 @@ fn label_cap(rail_w: f32) -> usize {
     (MAX_LABEL as f32 + (rail_w - default) / CHAR_W) as usize
 }
 
-/// The rail's own menu: a column of rows, each named by what it *is*.
+/// One row of the rail's list, and whatever is nested under it.
+#[derive(Clone)]
+struct Row {
+    /// What the row is *called*, as opposed to where it sits.
+    key: ElementId,
+    item: SidebarMenuItem,
+    /// A project's sessions, drawn inside its rule. Empty for every row in the
+    /// flat list, which nests nothing.
+    children: Vec<(ElementId, SidebarMenuItem)>,
+}
+
+impl Row {
+    fn flat(key: ElementId, item: SidebarMenuItem) -> Self {
+        Self {
+            key,
+            item,
+            children: Vec::new(),
+        }
+    }
+}
+
+/// The rail's own menu: a column of rows, each named by what it *is*, and each
+/// opened and closed by the window rather than by itself.
 ///
-/// **This is the whole fix for two bugs that looked unrelated.**
-/// `SidebarMenuItem` keeps whether it is expanded in `window.use_keyed_state`,
-/// under the id it was rendered with — and every container in the library
-/// hands that id down as a position: a `Sidebar` names its children by their
-/// index, a group names its children by theirs, and `SidebarMenu` named the
-/// rows by theirs. So a project's expanded state belonged to the *slot* rather
-/// than to the project in it. Pinning a project moved it up the list and it
-/// arrived carrying whatever the project previously in that slot had been
-/// doing; removing one shifted every project after it the same way. And the id
-/// began with the group's index, so the moment a second group appeared above
-/// Projects — which happens on its own, the first time a workspace holds four
-/// sessions and *Recent* earns its place — every project's id changed at once
-/// and the whole tree collapsed.
+/// **This is the whole fix for three bugs that looked unrelated**, and all
+/// three were one thing: `SidebarMenuItem` keeps whether it is expanded in
+/// `window.use_keyed_state`, which is neither named nor scoped the way the
+/// rail needs.
+///
+/// It was named by *position*. Every container in the library hands its id
+/// down as one — a `Sidebar` names its children by their index, a group names
+/// its children by theirs, and `SidebarMenu` named the rows by theirs — so a
+/// project's expanded state belonged to the slot rather than to the project in
+/// it. Pinning a project moved it up the list and it arrived carrying whatever
+/// the project previously in that slot had been doing; removing one shifted
+/// every project after it the same way. And the id began with the group's
+/// index, so the moment a second group appeared above Projects — which
+/// happened on its own, as soon as a workspace held enough sessions for a
+/// second section to earn its place — every project's id changed at once and
+/// the whole tree collapsed. Naming each row for itself answered that much.
+///
+/// It did not answer the third, because element state is **scoped to
+/// consecutive frames the key is accessed in**: gpui carries forward only the
+/// states a frame actually touched and drops the rest. The tab that shows the
+/// flat list does not draw a single project row, so every project's fold was
+/// destroyed on the way out and re-seeded on the way back — a folded project
+/// sprang open and an unfolded one snapped shut, for no reason a user could
+/// see. So the fold is the window's (`Shell::project_unfolded`), which outlives
+/// any list, and this draws the nesting the library's submenu would have:
+/// children inside one rule, which is also what keeps the rule continuous
+/// instead of one dash per row.
 ///
 /// This stands exactly where `SidebarMenu` stood and draws what it drew: a
 /// flex column with a gap, and the pointer for every row inside it. **The gap
@@ -97,25 +133,17 @@ fn label_cap(rail_w: f32) -> usize {
 /// sets only the direction — so both of those declarations do nothing there,
 /// and the space between rows was always this column's to draw.
 ///
-/// Nothing here re-implements a row: `SidebarMenuItem` still does every bit of
-/// the drawing. What this replaces is the one thing the library offers no
-/// other way to say, which is what a row is *called* — and `Sidebar` and
-/// `SidebarGroup` are both generic over their item type precisely so a host
-/// can answer that itself.
-///
-/// **A session row underneath a project is still named by its position**, and
-/// that is the library's to decide: `SidebarMenuItem::children` takes its own
-/// type and keys each child by index. It costs nothing today, because a flat
-/// row keeps no expanded state at all — the state is only created for a row
-/// that has children. It is the ceiling here, not a gap being left open.
+/// Nothing here re-implements a *row*: `SidebarMenuItem` still does every bit
+/// of that drawing, and `Sidebar` and `SidebarGroup` are both generic over
+/// their item type precisely so a host can answer what a row is called.
 #[derive(Clone)]
 struct KeyedMenu {
-    rows: Vec<(ElementId, SidebarMenuItem)>,
+    rows: Vec<Row>,
     collapsed: bool,
 }
 
 impl KeyedMenu {
-    fn new(rows: Vec<(ElementId, SidebarMenuItem)>) -> Self {
+    fn new(rows: Vec<Row>) -> Self {
         Self {
             rows,
             collapsed: false,
@@ -144,6 +172,7 @@ impl gpui_component::sidebar::SidebarItem for KeyedMenu {
         cx: &mut App,
     ) -> impl IntoElement {
         let collapsed = self.collapsed;
+        let nest = cx.theme().sidebar_border;
         div()
             .v_flex()
             .gap_2()
@@ -155,9 +184,36 @@ impl gpui_component::sidebar::SidebarItem for KeyedMenu {
             // `cursor_default` on itself, so the ••• inside a row still keeps
             // the arrow, which is upstream's intent.
             .cursor_pointer()
-            .children(self.rows.into_iter().map(|(key, row)| {
-                row.collapsed(collapsed)
-                    .render(key, window, cx)
+            .children(self.rows.into_iter().map(|row| {
+                let children = row.children;
+                div()
+                    .v_flex()
+                    .child(
+                        row.item
+                            .collapsed(collapsed)
+                            .render(row.key, window, cx)
+                            .into_any_element(),
+                    )
+                    // One rule down the whole nest rather than a segment per
+                    // row, which is what drawing it per child would give.
+                    .when(!children.is_empty(), |block| {
+                        block.child(
+                            div()
+                                .v_flex()
+                                .gap_1()
+                                .ml_3p5()
+                                .pl_2p5()
+                                .py_0p5()
+                                .border_l_1()
+                                .border_color(nest)
+                                .children(children.into_iter().map(|(key, child)| {
+                                    child
+                                        .collapsed(collapsed)
+                                        .render(key, window, cx)
+                                        .into_any_element()
+                                })),
+                        )
+                    })
                     .into_any_element()
             }))
     }
@@ -811,11 +867,18 @@ fn folder_row(
     root_idx: usize,
     show_agent: bool,
     cx: &mut Context<Shell>,
-) -> (ElementId, SidebarMenuItem) {
+) -> Row {
     let root = &window_state.workspace.roots[root_idx];
     let is_active = window_state.workspace.active_root == root_idx;
     let active_session = root.active_session;
     let pinned = root.pinned;
+    // Only the selected project shows what is in it until somebody says
+    // otherwise, or a workspace of ten roots is a rail nobody can see the
+    // bottom of. The answer is the window's rather than the row's: the row is
+    // not drawn at all while the flat list shows, and a fold kept inside it
+    // died every time the user looked at the other tab.
+    let unfolded = shell.project_unfolded(&root.path, is_active);
+    let fold_path = root.path.clone();
 
     // Branch and count are read as two fields rather than through
     // `GitStatus::label()`: the label is one string, and one string can only
@@ -836,22 +899,34 @@ fn folder_row(
             .iter()
             .filter_map(|session| shell.session_row(session.uid, cx).signal),
     );
-    let mut children = root
-        .sessions
-        .iter()
-        .enumerate()
-        .map(|(i, session)| {
-            session_row(
-                shell,
-                root_idx,
-                i,
-                session,
-                is_active && active_session == i,
-                show_agent.then_some(Note::Agent),
-                cx,
-            )
-        })
-        .collect::<Vec<_>>();
+    let mut children = match unfolded {
+        // Folded is not "drawn and hidden": a closed project builds no rows at
+        // all, which is what keeps a workspace of ten roots cheap to draw.
+        false => Vec::new(),
+        true => root
+            .sessions
+            .iter()
+            .enumerate()
+            .map(|(i, session)| {
+                (
+                    // Named by the session for the reason the project row is
+                    // named by its path: a child keyed by its place in the list
+                    // is a child that changes identity when a session above it
+                    // closes.
+                    ElementId::Name(SharedString::from(format!("rail-nested-{}", session.uid))),
+                    session_row(
+                        shell,
+                        root_idx,
+                        i,
+                        session,
+                        is_active && active_session == i,
+                        show_agent.then_some(Note::Agent),
+                        cx,
+                    ),
+                )
+            })
+            .collect::<Vec<_>>(),
+    };
 
     // A project with nothing running expands into the one thing to do about
     // it. Before this it expanded into nothing at all while the centre of the
@@ -863,8 +938,9 @@ fn folder_row(
     // column of clickable ones it took the pointer cursor from its
     // neighbours -- `SidebarMenuItem` is not `Styled`, so the cursor is set
     // once on the menu they all sit in and cannot be taken back per row.
-    if children.is_empty() {
-        children.push(
+    if unfolded && children.is_empty() {
+        children.push((
+            ElementId::Name(SharedString::from(format!("rail-start-{root_idx}"))),
             SidebarMenuItem::new("Start a session")
                 .icon(Icon::new(IconName::Plus))
                 .on_click(
@@ -872,7 +948,7 @@ fn folder_row(
                         shell.new_session_in(root_idx, window, cx);
                     }),
                 ),
-        );
+        ));
     }
 
     // A weak handle because both menu closures outlive this frame.
@@ -881,9 +957,12 @@ fn folder_row(
     let label = SharedString::from(root.label.clone());
     let key = project_key(&root.path);
 
-    (
+    // A weak handle for the caret, which outlives this frame as the menus do.
+    let fold_target = cx.entity().downgrade();
+
+    Row {
         key,
-        SidebarMenuItem::new(ellipsize(&root.label, label_cap(shell.rail_width(cx))))
+        item: SidebarMenuItem::new(ellipsize(&root.label, label_cap(shell.rail_width(cx))))
             .icon(Icon::new(IconName::Folder))
             // The selected project is marked whether or not it has sessions. While
             // this was `is_active && sessions.is_empty()`, a project holding the
@@ -892,17 +971,6 @@ fn folder_row(
             // the *project* went plain, so nothing on screen said which project the
             // user was in.
             .active(is_active)
-            // Only the selected project starts expanded. With every project open
-            // and every one of them now carrying at least two rows, a workspace of
-            // ten roots was a rail nobody could see the bottom of.
-            //
-            // *Starts* is now the whole of it, and it was not before. This is
-            // the initial value of a state the window keeps under the row's
-            // name, so while that name was a position it was re-created --
-            // and this re-applied -- every time the list moved underneath.
-            // A project the user had folded away would spring back open on its
-            // own; now it stays folded until they say otherwise.
-            .default_open(is_active)
             // **Selecting a project and folding it away are two different
             // intentions, so they are two different targets.** While the whole
             // row toggled, every click on a project both switched to it and
@@ -915,17 +983,16 @@ fn folder_row(
             // project the user had ever folded, and arriving at one would mean
             // hunting the caret to see what is in it -- the same extra click,
             // in mirror image. Going to a project is asking what is in it, so
-            // the row reveals; only the caret puts it away again.
-            .click_to_open(true)
+            // `Shell::select_root` reveals; only the caret puts it away again.
             .on_click(
                 cx.listener(move |shell: &mut Shell, _: &ClickEvent, window, cx| {
                     shell.select_root(root_idx, window, cx);
                 }),
             )
-            .children(children)
             .context_menu(project_menu(root_idx, pinned, is_repo, menu_target))
             .suffix(move |_, cx: &mut App| {
-                let suffix_target = suffix_target.clone();
+                let (suffix_target, fold_target) = (suffix_target.clone(), fold_target.clone());
+                let fold_path = fold_path.clone();
                 div()
                     .h_flex()
                     .items_center()
@@ -960,8 +1027,40 @@ fn folder_row(
                             project_menu(root_idx, pinned, is_repo, suffix_target),
                         ))
                     })
+                    // Last, so it is in the same place on every row whatever
+                    // else the row happens to be carrying -- a control the eye
+                    // has to find is not a target, and this is the one the
+                    // whole click-reveals rule sends people to.
+                    //
+                    // `occlude`, as the ••• beside it is: the row's own click
+                    // selects the project, and putting its sessions away must
+                    // not do that on the way past.
+                    .child(
+                        div().flex_none().occlude().child(
+                            rail_control(
+                                ("project-fold", root_idx),
+                                match unfolded {
+                                    true => IconName::ChevronDown,
+                                    false => IconName::ChevronRight,
+                                },
+                            )
+                            .tooltip(match unfolded {
+                                true => "Hide this project's sessions",
+                                false => "Show this project's sessions",
+                            })
+                            .on_click(move |_, _, cx: &mut App| {
+                                let fold_path = fold_path.clone();
+                                fold_target
+                                    .update(cx, |shell: &mut Shell, cx| {
+                                        shell.toggle_fold(fold_path, is_active, cx);
+                                    })
+                                    .ok();
+                            }),
+                        ),
+                    )
             }),
-    )
+        children,
+    }
 }
 
 /// Which of the rail's two lists is showing.
@@ -1037,7 +1136,7 @@ fn session_rows(
     shell: &Shell,
     window_state: &WorkspaceWindow,
     cx: &mut Context<Shell>,
-) -> Vec<(ElementId, SidebarMenuItem)> {
+) -> Vec<Row> {
     // Read once into a lookup rather than scanned per session: the list is
     // walked inside a render, and a scan per row makes that quadratic in a
     // workspace's sessions for a fact each row wants exactly once.
@@ -1052,7 +1151,7 @@ fn session_rows(
         .active_root()
         .and_then(|root| root.active_session().map(|s| s.uid));
 
-    let mut rows: Vec<((u8, usize), (ElementId, SidebarMenuItem))> = Vec::new();
+    let mut rows: Vec<((u8, usize), Row)> = Vec::new();
     for (root_idx, root) in window_state.workspace.roots.iter().enumerate() {
         let project = ellipsize(&root.label, MAX_AGENT_LABEL);
         for (session_idx, session) in root.sessions.iter().enumerate() {
@@ -1060,7 +1159,7 @@ fn session_rows(
             let signal = shell.session_row(uid, cx).signal;
             rows.push((
                 session_order(signal, recency.get(&uid).copied()),
-                (
+                Row::flat(
                     // Named by the session and not by its place, because its
                     // place moves the moment an agent starts working: a row keyed
                     // by position would hand one conversation's state to another
@@ -1081,7 +1180,7 @@ fn session_rows(
     }
 
     if rows.is_empty() {
-        return vec![(
+        return vec![Row::flat(
             "rail-no-sessions".into(),
             SidebarMenuItem::new("Start a session")
                 .icon(Icon::new(IconName::Plus))
@@ -1482,10 +1581,19 @@ fn new_session_block(
         .min_w_0()
         .child(div().flex_1().min_w_0().child(primary))
         .when(choosable, |bar| {
+            // The sentence names whichever section the menu will actually
+            // carry. With one project and several agents there is no *Start
+            // in* to open, and a caret promising another project over a menu
+            // that has none is a control lying about itself before it is even
+            // pressed.
+            let says = match projects.len() > 1 {
+                true => "Start a session in another project",
+                false => "Start a session with a different agent",
+            };
             bar.child(menu_button(
                 "new-session-target",
                 IconName::ChevronDown,
-                "Start a session in another project",
+                says,
                 new_session_menu(projects, active_idx, agents, target),
             ))
         })
