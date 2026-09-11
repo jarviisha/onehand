@@ -1,7 +1,8 @@
 //! Custom box-drawing character rendering.
 //!
 //! This module provides programmatic rendering for Unicode box-drawing characters
-//! (U+2500-U+257F) using GPUI's path-building primitives instead of font glyphs.
+//! (U+2500-U+257F) using GPUI geometry instead of font glyphs.
+//! onehand patch: straight strokes use quads; only rounded corners use paths.
 //! This approach eliminates anti-aliasing artifacts and ensures perfect alignment
 //! at cell boundaries.
 //!
@@ -26,7 +27,7 @@
 //! }
 //! ```
 
-use gpui::{point, Bounds, Hsla, PathBuilder, Pixels, Point, Window, px};
+use gpui::{point, Bounds, Hsla, PathBuilder, Pixels, Point, Window, fill, px};
 
 /// Calculate line thicknesses rounded to integer pixels to avoid aliasing.
 fn calculate_thickness(cell_width: Pixels) -> (Pixels, Pixels) {
@@ -701,7 +702,12 @@ fn draw_continuous_line(
     }
 }
 
-/// Draws a single line using PathBuilder.
+/// onehand patch: a straight box segment is a rectangle, not a vector path.
+/// GPUI's WGPU backend interrupts the main render pass to rasterize each path
+/// batch into an intermediate texture. Border/indent segments interleaved with
+/// text across a terminal can cause that work once per row. Quads stay in the
+/// main pass. Keep the stroke's center, thickness, butt ends and caller's overlap
+/// unchanged; rounded corners still use the curve path below.
 fn draw_line(
     from: Point<Pixels>,
     to: Point<Pixels>,
@@ -709,11 +715,23 @@ fn draw_line(
     color: Hsla,
     window: &mut Window,
 ) {
-    let mut builder = PathBuilder::stroke(thickness);
-    builder.move_to(from);
-    builder.line_to(to);
-    if let Ok(path) = builder.build() {
-        window.paint_path(path, color);
+    window.paint_quad(fill(straight_line_bounds(from, to, thickness), color));
+}
+
+// onehand patch: all draw_line callers produce axis-aligned segments. Their
+// endpoints are the stroke centerline, not the rectangle's outer corners.
+fn straight_line_bounds(from: Point<Pixels>, to: Point<Pixels>, thickness: Pixels) -> Bounds<Pixels> {
+    debug_assert!(from.x == to.x || from.y == to.y);
+    if from.y == to.y {
+        Bounds::from_corners(
+            point(from.x.min(to.x), from.y - thickness / 2.0),
+            point(from.x.max(to.x), from.y + thickness / 2.0),
+        )
+    } else {
+        Bounds::from_corners(
+            point(from.x - thickness / 2.0, from.y.min(to.y)),
+            point(from.x + thickness / 2.0, from.y.max(to.y)),
+        )
     }
 }
 
@@ -797,6 +815,18 @@ fn draw_rounded_corner(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn straight_strokes_keep_their_center_width_and_endpoints() {
+        let horizontal = straight_line_bounds(point(px(2.4), px(8.)), point(px(27.6), px(8.)), px(1.));
+        assert_eq!(horizontal.origin, point(px(2.4), px(7.5)));
+        assert_eq!(horizontal.bottom_right(), point(px(27.6), px(8.5)));
+        // Reversed endpoints occur when a segment goes back toward its junction.
+        assert_eq!(horizontal, straight_line_bounds(point(px(27.6), px(8.)), point(px(2.4), px(8.)), px(1.)));
+        let vertical = straight_line_bounds(point(px(4.5), px(17.)), point(px(4.5), px(-1.)), px(2.));
+        assert_eq!(vertical.origin, point(px(3.5), px(-1.)));
+        assert_eq!(vertical.bottom_right(), point(px(5.5), px(17.)));
+    }
 
     #[test]
     fn test_is_box_drawing_char() {
