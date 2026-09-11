@@ -28,13 +28,12 @@ use gpui::{
     ParentElement, SharedString, Stateful, StatefulInteractiveElement, Styled, WeakEntity, Window,
     div, px,
 };
-use gpui_component::button::{Button, ButtonVariants as _};
+use gpui_component::button::{Button, ButtonGroup, ButtonVariants as _};
 use gpui_component::menu::{DropdownMenu as _, PopupMenu, PopupMenuItem};
 use gpui_component::sidebar::{Sidebar, SidebarCollapsible, SidebarMenuItem};
 use gpui_component::spinner::Spinner;
-use gpui_component::tab::{Tab, TabBar};
 use gpui_component::tooltip::Tooltip;
-use gpui_component::{ActiveTheme, Icon, IconName, Side, Sizable as _, StyledExt};
+use gpui_component::{ActiveTheme, Icon, IconName, Selectable as _, Side, Sizable as _, StyledExt};
 use onehand_core::agent::Session;
 
 /// Names are structural anchors, not content: cap them so a deep path cannot
@@ -265,12 +264,10 @@ fn ellipsize(s: &str, max: usize) -> SharedString {
 /// style-refinable from outside, so `.w_full()` on a Button can only ever
 /// produce a centred banner.
 ///
-/// Ghost, and that includes the primary action. A rail is chrome the
-/// conversation sits in front of, and a filled row is the loudest thing that
-/// can happen in one -- the fill *New session* used to carry made the panel's
-/// quietest job, getting out of the way, impossible for the one control the eye
-/// lands on first. What marks it as the primary action is its place at the top
-/// of the rail and the tooltip naming the project it would start in.
+/// Ghost, which is every row here but one: a rail is chrome the conversation
+/// sits in front of, and a column of filled rows is a panel shouting over the
+/// thing it exists to get you to. The exception is [`rail_row_outlined`], and
+/// it is one row.
 ///
 /// Carries its own hover, so no caller may add a second one: `hover` panics in
 /// debug when it is set twice.
@@ -280,15 +277,50 @@ pub(crate) fn rail_row(
     label: &'static str,
     cx: &App,
 ) -> Stateful<Div> {
-    let radius = cx.theme().radius;
     // Resolved up front: the hover closure outlives this borrow of `cx`.
     let (accent, accent_fg) = (
         cx.theme().sidebar_accent,
         cx.theme().sidebar_accent_foreground,
     );
+    row_shape(id, icon, label, cx)
+        .hover(move |row| row.bg(accent.opacity(0.8)).text_color(accent_fg))
+}
+
+/// The one row the rail draws an outline around: *New session*.
+///
+/// **An outline and not a fill**, which was tried first and is the version this
+/// replaced. A filled row is the loudest thing that can happen in a panel whose
+/// job is to get out of the way, and the fill this row used to carry is exactly
+/// what an earlier pass took off it. The hairline says the same thing for the
+/// price of one pixel: everything else on the rail is a name in a column, and
+/// this is the one thing with an edge around it.
+///
+/// Ghost underneath, so it hovers like every other row — the outline marks what
+/// the control *is*, not what the pointer is doing.
+///
+/// **The seam is the caller's.** A split control's two halves share one line
+/// between them, so this draws three sides when it is about to be joined and
+/// four when it stands alone; the caret's own left border is the divider.
+pub(crate) fn rail_row_outlined(
+    id: &'static str,
+    icon: IconName,
+    label: &'static str,
+    joined: bool,
+    cx: &App,
+) -> Stateful<Div> {
+    rail_row(id, icon, label, cx)
+        .border_color(cx.theme().border)
+        .map(|row| match joined {
+            true => row.border_l_1().border_t_1().border_b_1(),
+            false => row.border_1(),
+        })
+}
+
+/// The column every row tone shares: everything but the fill and the hover.
+fn row_shape(id: &'static str, icon: IconName, label: &'static str, cx: &App) -> Stateful<Div> {
+    let radius = cx.theme().radius;
     div()
         .id(id)
-        .hover(move |row| row.bg(accent.opacity(0.8)).text_color(accent_fg))
         .h_flex()
         .items_center()
         .w_full()
@@ -337,9 +369,14 @@ fn rail_control(id: impl Into<ElementId>, icon: IconName) -> Button {
 ///
 /// Three draw exactly this, so it is built once: the ••• a project row and a
 /// session row carry while active, and the caret beside *New session*. They
-/// differ in the id, the icon, the sentence and the builder, and in nothing
-/// about the shape — which is what the two that already existed proved, having
-/// been written out twice before this was extracted.
+/// differ in the sentence and the builder, and in nothing about the wiring —
+/// which is what the two that already existed proved, having been written out
+/// twice before this was extracted.
+///
+/// **The control is handed in rather than named**, because the caret is the one
+/// of the three that is not a free-standing ••• : it is the right half of the
+/// *New session* control, so it is sized and squared off to join the row beside
+/// it, and the only thing that can express that is the button itself.
 ///
 /// `occlude`, because the button sits inside something whose own click already
 /// means something — selecting a session, selecting a project, starting one —
@@ -351,13 +388,12 @@ fn rail_control(id: impl Into<ElementId>, icon: IconName) -> Button {
 /// derefs to it. Written once here rather than at each call site, which is
 /// where the copies of it were.
 fn menu_button(
-    id: impl Into<ElementId>,
-    icon: IconName,
+    control: Button,
     tooltip: &'static str,
     build: impl Fn(PopupMenu, &mut Window, &mut App) -> PopupMenu + 'static,
 ) -> impl IntoElement {
     div().flex_none().occlude().child(
-        rail_control(id, icon)
+        control
             .tooltip(tooltip)
             .dropdown_menu_with_anchor(Anchor::TopRight, move |menu, window, cx| {
                 build(menu, window, cx)
@@ -642,8 +678,7 @@ fn session_row(
                 // list drew it, because only one list is on screen at a time.
                 .when(active, |row| {
                     row.child(menu_button(
-                        ("session-menu", uid),
-                        IconName::Ellipsis,
+                        rail_control(("session-menu", uid), IconName::Ellipsis),
                         "What can be done with this session",
                         session_menu(root_idx, session_idx, uid, suffix_target),
                     ))
@@ -1021,8 +1056,7 @@ fn folder_row(
                     .when_some(rollup, |row, signal| row.child(signal_mark(signal, cx)))
                     .when(is_active, |row| {
                         row.child(menu_button(
-                            ("project-menu", root_idx),
-                            IconName::Ellipsis,
+                            rail_control(("project-menu", root_idx), IconName::Ellipsis),
                             "What can be done with this project",
                             project_menu(root_idx, pinned, is_repo, suffix_target),
                         ))
@@ -1264,7 +1298,11 @@ pub fn rail(
         .header(
             div()
                 .v_flex()
-                .gap_2()
+                // A step wider than the list's own row gap. Three rows of
+                // roughly one height, stacked at the spacing a list uses, read
+                // as the first three entries of that list -- which is the one
+                // thing the header is not.
+                .gap_2p5()
                 .w_full()
                 .min_w_0()
                 .child(workspace_identity(
@@ -1290,7 +1328,20 @@ pub fn rail(
                         })),
                 )
                 .child(new_session_block(window_state_shell, window_state, cx))
-                .child(tab_bar(tab, cx)),
+                // The hairline is where the header stops being about the
+                // workspace and starts being about the list: everything above
+                // it acts on the whole window, everything from the tabs down is
+                // what is in it. Space alone said it too quietly, since the
+                // rows above are already spaced.
+                .child(
+                    div()
+                        .w_full()
+                        .min_w_0()
+                        .pt_3()
+                        .border_t_1()
+                        .border_color(cx.theme().sidebar_border)
+                        .child(tab_bar(tab, cx)),
+                ),
         )
         .child(KeyedMenu::new(rows))
         // Not `SidebarFooter`: that is an `h_flex justify_between` with its own
@@ -1565,18 +1616,28 @@ fn new_session_block(
     let choosable = projects.len() > 1 || agents.len() > 1;
     let target = cx.entity().downgrade();
 
-    let primary = lead_row(rail_row("new-session", IconName::Plus, "New session", cx))
-        .tooltip(move |window, cx| Tooltip::new(hint.clone()).build(window, cx))
-        .on_click(
-            cx.listener(|shell: &mut Shell, _: &ClickEvent, window, cx| {
-                shell.new_session(window, cx);
-            }),
-        );
+    let (radius, hairline) = (cx.theme().radius, cx.theme().border);
+    let primary = lead_row(rail_row_outlined(
+        "new-session",
+        IconName::Plus,
+        "New session",
+        choosable,
+        cx,
+    ))
+    // The two halves of one control, so the seam between them is square and
+    // the outer edges keep the radius. Only while there is a caret to join:
+    // a lone row squared off on one side reads as clipped.
+    .when(choosable, |row| row.rounded_r(px(0.)))
+    .tooltip(move |window, cx| Tooltip::new(hint.clone()).build(window, cx))
+    .on_click(
+        cx.listener(|shell: &mut Shell, _: &ClickEvent, window, cx| {
+            shell.new_session(window, cx);
+        }),
+    );
 
     div()
         .h_flex()
         .items_center()
-        .gap_1()
         .w_full()
         .min_w_0()
         .child(div().flex_1().min_w_0().child(primary))
@@ -1591,8 +1652,21 @@ fn new_session_block(
                 false => "Start a session with a different agent",
             };
             bar.child(menu_button(
-                "new-session-target",
-                IconName::ChevronDown,
+                // Sized to the header row rather than to the ••• it shares a
+                // builder with: this one is the right half of the control
+                // beside it, and a control half the height of its own other
+                // half is two controls that happen to touch.
+                rail_control("new-session-target", IconName::ChevronDown)
+                    // The other half of one outlined control: its own left
+                    // border is the line between the two halves, and the other
+                    // three continue the row's. Still ghost underneath, so
+                    // hovering either half lights that half alone.
+                    .border_1()
+                    .border_color(hairline)
+                    .h_8()
+                    .w_7()
+                    .rounded_l(px(0.))
+                    .rounded_r(radius),
                 says,
                 new_session_menu(projects, active_idx, agents, target),
             ))
@@ -1672,21 +1746,37 @@ fn new_session_menu(
 /// In the header rather than in the scrolling content: it is the thing that says
 /// what is underneath it, and a control that scrolls away from what it labels
 /// leaves the reader with a list and no name for it.
+///
+/// The space and the hairline above it are the header's, not this control's:
+/// they separate two halves of the header rather than decorating one element,
+/// and the half below the line is this and the list under it.
+///
+/// **A `ButtonGroup` and not a segmented `TabBar`, because the two halves are
+/// each half the rail.** A tab is sized by its label, and `TabBar` lays its tabs
+/// out inside a content-sized row of its own that nothing outside the library
+/// can stretch — so *Projects* came out a third of the width of *All sessions*
+/// and the pair sat against the left edge with the rest of the rail empty beside
+/// them. Every button in a group takes the instance style it is built with, so
+/// `flex_1` on each over a `w_full` group is an even split at any rail width.
 fn tab_bar(active: RailTab, cx: &mut Context<Shell>) -> impl IntoElement + use<> {
     let target = cx.entity().downgrade();
-    TabBar::new("rail-tabs")
-        .segmented()
+    ButtonGroup::new("rail-tabs")
+        .ghost()
+        .outline()
         .small()
         .w_full()
-        .selected_index(
-            RailTab::ALL
-                .iter()
-                .position(|tab| *tab == active)
-                .unwrap_or(0),
-        )
-        .children(RailTab::ALL.map(|tab| Tab::new().label(tab.label())))
-        .on_click(move |ix, _, cx: &mut App| {
-            let Some(tab) = RailTab::ALL.get(*ix).copied() else {
+        .children(RailTab::ALL.map(|tab| {
+            crate::controls::action(tab.label())
+                .label(tab.label())
+                .selected(tab == active)
+                .flex_1()
+        }))
+        .on_click(move |clicked, _, cx: &mut App| {
+            let Some(tab) = clicked
+                .first()
+                .and_then(|ix| RailTab::ALL.get(*ix))
+                .copied()
+            else {
                 return;
             };
             target
