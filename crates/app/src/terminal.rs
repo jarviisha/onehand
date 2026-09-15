@@ -499,13 +499,18 @@ impl TerminalPanel {
                             .flex_none()
                             .max_w(px(220.))
                             // 8px is what the grid's own inset is built on and
-                            // cannot move on its own. The vertical stays tight:
-                            // this is the fill's own shape, and a taller chip
-                            // is a louder tab, not a calmer strip -- the room
-                            // wanted between the tabs and the shell is room
-                            // *between* them, which is the strip's to give.
+                            // cannot move on its own.
+                            //
+                            // **Vertically there is no padding, and removing it
+                            // is not what sets the height.** A tab is as tall as
+                            // the tallest thing in it, and that is the ✕ below,
+                            // whose box the component sizes off `xsmall` -- so
+                            // the chip stayed the same height however little
+                            // padding it was given. The pair has to move
+                            // together, and this is the half that costs nothing:
+                            // the fill still clears the text on its own line
+                            // height.
                             .px_2()
-                            .py_0p5()
                             .rounded(cx.theme().radius)
                             .text_xs()
                             .cursor_pointer()
@@ -546,6 +551,16 @@ impl TerminalPanel {
                                     .ghost()
                                     .xsmall()
                                     .icon(Icon::new(IconName::Close))
+                                    // The tab's floor, so it is set here rather
+                                    // than left at what `xsmall` picks: an icon
+                                    // button is a square of the size's own
+                                    // choosing, 20px, and a chip cannot be
+                                    // shorter than the thing inside it. 16px is
+                                    // what a close button on a tab is elsewhere,
+                                    // and it lands after the size match in the
+                                    // component's own refinement order, so it
+                                    // takes rather than being overwritten.
+                                    .size_4()
                                     .invisible()
                                     .group_hover(hovered, |style| style.visible())
                                     .on_click(cx.listener(
