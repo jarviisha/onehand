@@ -691,10 +691,15 @@ shutdown to forget.
 **Lazy about roots, not about the clock.** A launch restoring a saved layout used to mount the panel
 and stop, so a user who left the terminal open was met on the next launch by an empty dock asking
 them to press *New terminal* — a question they had already answered by leaving it open.
-`Shell::fill_open_terminal` starts one where the dock is open on a root with no shell. It runs at the
-handover and nowhere else, for the reason the handover itself exists — the dock is read rather than
-assumed — so it is the arriving root alone and only where that root's dock is showing: a workspace of
-a dozen projects still starts at most one shell, in the project on screen.
+`Shell::fill_open_terminal` holds one sentence instead — **a terminal dock on screen has a shell in
+it** — and what earns the shell is the panel being *drawn*, not any particular route to it: arriving
+at a project, returning to one, a launch restoring a layout, or moving between sessions in a project
+whose last shell was closed. It runs at the handover and nowhere else, for the reason the handover
+itself exists — the dock is read rather than assumed — so it is the arriving root alone and only
+where that root's dock is showing: a workspace of a dozen projects still starts at most one shell, in
+the project on screen. The session-switch case is an `else` rather than an early return for exactly
+that coverage, which is also the one place the *New terminal* button is still reachable: closing the
+last shell leaves the panel empty until the next arrival.
 
 **Every tab here is a login shell; Neovim is not one of them** — it is a Workbench mode, because that
 is the panel about files and a tab called `nvim` between two called `zsh` says the editor is a kind of

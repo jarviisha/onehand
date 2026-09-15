@@ -2243,17 +2243,23 @@ impl Shell {
         let leaving = self.terminal_root.replace(root.to_path_buf());
         if leaving.as_deref() == Some(root) {
             self.terminal_open.insert(root.to_path_buf(), live);
-            return;
+        } else {
+            if let Some(leaving) = leaving {
+                self.terminal_open.insert(leaving, live);
+            }
+            // A project the terminal has never been opened in gets it closed.
+            // The shells that were on screen a moment ago belong to the project
+            // just left and do not come along, so an inherited open dock would
+            // greet the new one with an empty panel where they had been.
+            let wanted = self.terminal_open.get(root).copied().unwrap_or(false);
+            self.set_terminal_visible(wanted, window, cx);
         }
-        if let Some(leaving) = leaving {
-            self.terminal_open.insert(leaving, live);
-        }
-        // A project the terminal has never been opened in gets it closed. The
-        // shells that were on screen a moment ago belong to the project just
-        // left and do not come along, so an inherited open dock would greet the
-        // new one with an empty panel where they had been.
-        let wanted = self.terminal_open.get(root).copied().unwrap_or(false);
-        self.set_terminal_visible(wanted, window, cx);
+        // Whichever branch ran, and this is the whole rule: a dock that is on
+        // screen has a shell in it. The session-switch branch is an `else` now
+        // rather than an early return precisely so this covers it too -- there
+        // the dock was already showing and was already this root's, so the one
+        // way to reach it with nothing inside is to have closed the last shell,
+        // and a panel drawn over nothing is what this exists to prevent.
         self.fill_open_terminal(window, cx);
     }
 
@@ -2265,6 +2271,13 @@ impl Shell {
     /// open saw on the next launch was an empty panel asking them to press
     /// *New terminal* — a question whose answer they had already given by
     /// leaving it open.
+    ///
+    /// The rule it holds is one sentence — **a terminal dock on screen has a
+    /// shell in it** — and it is the panel being *drawn* that earns the shell,
+    /// not any particular way of getting there. Arriving at a project, coming
+    /// back to one, a launch restoring a layout, or moving between sessions in
+    /// a project whose last shell was closed: all of them are the panel about
+    /// to be drawn, so all of them go through here.
     ///
     /// This is not the rule that keeps shells lazy, which is about roots nobody
     /// is looking at: this runs for the arriving root alone and only where that
