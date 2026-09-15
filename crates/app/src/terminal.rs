@@ -586,15 +586,22 @@ impl TerminalPanel {
                     // panel -- so the one place a user is certainly looking when
                     // they want it gone was the one place that could not do it.
                     //
-                    // A chevron pointing down, which is where the panel goes,
-                    // rather than a ✕: the shells are not being ended, and the ✕
-                    // an inch to its left on every tab is.
+                    // A minus, the mark a window's own chrome uses for the
+                    // thing that goes away and comes back, rather than a ✕: the
+                    // shells are not being ended, and the ✕ an inch to its left
+                    // on every tab is.
+                    //
+                    // `Minus` and never `Dash`, which is the same drawing under
+                    // another name with `stroke` written into it as literal
+                    // black -- so it ignores `text_color` and comes out
+                    // invisible against a dark panel, with nothing in the build
+                    // or the log to say why.
                     .child(
                         crate::controls::action("hide-terminal")
                             .ghost()
                             .xsmall()
                             .flex_none()
-                            .icon(Icon::new(IconName::ChevronDown))
+                            .icon(Icon::new(IconName::Minus))
                             .tooltip("Hide the terminal — Ctrl+`")
                             .on_click(cx.listener(|_: &mut Self, _, _, cx| {
                                 cx.emit(TerminalPanelEvent::Hide);

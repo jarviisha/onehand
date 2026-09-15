@@ -1284,9 +1284,13 @@ Listed because a missing feature nobody wrote down reads as a bug in the ones th
 - **Every icon is an SVG, and nearly every UI glyph comes from `gpui_component::IconName`.** No Unicode or
   emoji glyphs as icons. `IconName` is generated from the SVGs `gpui-component-assets` ships, which
   is also what the library's own components reach for in ~97 places — so that set has to stay loaded
-  regardless. Two things this costs, both silent: the library **renames icons when it packages
-  them** (its `close` is Lucide's `x`, its `delete` is the backspace key), and an icon that fails to
-  resolve draws *nothing* rather than failing the build. Bumping the `gpui-component` rev means
+  regardless. Three things this costs, all silent: the library **renames icons when it packages
+  them** (its `close` is Lucide's `x`, its `delete` is the backspace key), an icon that fails to
+  resolve draws *nothing* rather than failing the build, and **a shipped SVG can carry a hard-coded
+  `stroke`** — `dash` is `minus` drawn again with `stroke="black"` written in, so it ignores
+  `text_color` and comes out invisible on a dark panel while the identical `minus` beside it uses
+  `currentColor`. Two names for one drawing is reason enough to check which; a colour baked into one
+  of them is reason enough to check every time. Bumping the `gpui-component` rev means
   looking at the app's chrome afterwards.
   `crate::icons` holds **only what that enum cannot draw**: a shape the bundled set has no drawing
   of at all, and a brand mark, which belongs to the product it stands for rather than to a
