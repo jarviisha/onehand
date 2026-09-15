@@ -569,10 +569,18 @@ impl TerminalPanel {
                             )
                             })),
                     )
+                    // **A size up on the two controls, and it costs no height.**
+                    // They are aimed at from across the panel while the ✕ is
+                    // found by already being on the tab it belongs to, so the
+                    // pair at the end are the ones that want a target. The row
+                    // is as tall as the tabs, which are the ✕ plus their own
+                    // padding, and that is the size these land on -- so the
+                    // strip is the same height it was and the two buttons now
+                    // line up with the chips rather than sitting inside them.
                     .child(
                         crate::controls::action("add-shell")
                             .ghost()
-                            .xsmall()
+                            .small()
                             .flex_none()
                             .icon(Icon::new(IconName::Plus))
                             .tooltip("New shell in this project")
@@ -599,7 +607,7 @@ impl TerminalPanel {
                     .child(
                         crate::controls::action("hide-terminal")
                             .ghost()
-                            .xsmall()
+                            .small()
                             .flex_none()
                             .icon(Icon::new(IconName::Minus))
                             .tooltip("Hide the terminal — Ctrl+`")
