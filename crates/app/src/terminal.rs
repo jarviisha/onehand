@@ -442,14 +442,16 @@ impl TerminalPanel {
                     // first character stops sitting under the tab naming it.
                     // Moving one of the three means moving all three.
                     //
-                    // Vertically 8px, and it was tried at 4 on the reasoning
-                    // that the rule underneath had taken over the separating so
-                    // the gap could shrink. The rule separates; it does not hold
-                    // the tabs off anything. At 4px the chips sit against their
-                    // own row's edges again, which is the crowding this padding
-                    // was put here to answer and which a hairline does not
-                    // touch.
-                    .p_2()
+                    // Vertically 6px, and the number is bracketed rather than
+                    // picked: 4px was tried and the chips sat against their own
+                    // row's edges again -- which is the crowding this padding
+                    // answers, and which the hairline below does not touch,
+                    // because a rule separates the strip from the shell without
+                    // holding the tabs off anything. 8px cleared that and left
+                    // the strip taller than a row of 20px chips needs. This is
+                    // the smaller of the two that still holds them clear.
+                    .px_2()
+                    .py_1p5()
                     // **The tabs live in a box of their own, and that box is
                     // what gives way.** Flat in the row with the controls, a
                     // fourth shell pushed `+` and the way out past the panel's
