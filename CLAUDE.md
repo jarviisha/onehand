@@ -688,6 +688,14 @@ an element tree:
 spawned lazily; dropping a tab drops its PTY, so the child dies with it and there is no separate
 shutdown to forget.
 
+**Lazy about roots, not about the clock.** A launch restoring a saved layout used to mount the panel
+and stop, so a user who left the terminal open was met on the next launch by an empty dock asking
+them to press *New terminal* — a question they had already answered by leaving it open.
+`Shell::fill_open_terminal` starts one where the dock is open on a root with no shell. It runs at the
+handover and nowhere else, for the reason the handover itself exists — the dock is read rather than
+assumed — so it is the arriving root alone and only where that root's dock is showing: a workspace of
+a dozen projects still starts at most one shell, in the project on screen.
+
 **Every tab here is a login shell; Neovim is not one of them** — it is a Workbench mode, because that
 is the panel about files and a tab called `nvim` between two called `zsh` says the editor is a kind of
 shell. The `onehand-terminal-ui` crate owns spawning and `Program`, so the Workbench starts its grid

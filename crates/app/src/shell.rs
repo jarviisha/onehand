@@ -2254,6 +2254,35 @@ impl Shell {
         // new one with an empty panel where they had been.
         let wanted = self.terminal_open.get(root).copied().unwrap_or(false);
         self.set_terminal_visible(wanted, window, cx);
+        self.fill_open_terminal(window, cx);
+    }
+
+    /// Start a shell where the dock is open on a root that has none.
+    ///
+    /// **An open dock is a request for a terminal, and the only thing that ever
+    /// answered it was the key.** A launch restoring a saved layout mounts the
+    /// panel and stops there, so the first thing a user who left the terminal
+    /// open saw on the next launch was an empty panel asking them to press
+    /// *New terminal* — a question whose answer they had already given by
+    /// leaving it open.
+    ///
+    /// This is not the rule that keeps shells lazy, which is about roots nobody
+    /// is looking at: this runs for the arriving root alone and only where that
+    /// root's dock is open, so a workspace of a dozen projects still starts at
+    /// most one shell, in the project on screen, because its dock is showing.
+    ///
+    /// Called from the handover and nowhere else, for the reason the handover
+    /// itself is: the dock is *read* rather than assumed, so this cannot drift
+    /// from the four controls that toggle it.
+    fn fill_open_terminal(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if !self.dock.read(cx).is_dock_open(DockPlacement::Bottom, cx) {
+            return;
+        }
+        self.terminal.update(cx, |panel, cx| {
+            if !panel.has_shell() {
+                panel.open_shell(window, cx);
+            }
+        });
     }
 
     /// Blow the focused panel up to the whole frame, or put it back.

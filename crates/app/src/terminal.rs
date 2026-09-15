@@ -130,10 +130,15 @@ impl TerminalPanel {
 
     /// Open a shell on the active root.
     ///
-    /// Spawned lazily and never at boot: a workspace with a dozen roots must
-    /// not start a dozen shells nobody asked for. Always a new one — shells are
-    /// what somebody opens several of on purpose, one per thing they are
-    /// watching.
+    /// Spawned lazily: a workspace with a dozen roots must not start a dozen
+    /// shells nobody asked for. Lazy about *roots*, though, and not about the
+    /// clock — a launch that restores an open dock does start the one shell
+    /// that dock is for (`Shell::fill_open_terminal`), because leaving the
+    /// terminal open is the request, and greeting it with a button asking
+    /// whether a terminal is wanted asks a question already answered.
+    ///
+    /// Always a new one — shells are what somebody opens several of on purpose,
+    /// one per thing they are watching.
     pub fn open_shell(&mut self, _window: &mut Window, cx: &mut Context<Self>) {
         let Some(root) = self.root.clone() else {
             return;
