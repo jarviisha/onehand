@@ -28,11 +28,11 @@ use gpui::{
     ParentElement, SharedString, Stateful, StatefulInteractiveElement, Styled, WeakEntity, Window,
     div, px,
 };
-use gpui_component::button::{Button, ButtonGroup, ButtonVariants as _};
+use gpui_component::button::{Button, ButtonVariants as _};
 use gpui_component::menu::{DropdownMenu as _, PopupMenu, PopupMenuItem};
 use gpui_component::sidebar::{Sidebar, SidebarCollapsible, SidebarMenuItem};
 use gpui_component::tooltip::Tooltip;
-use gpui_component::{ActiveTheme, Icon, IconName, Selectable as _, Side, Sizable as _, StyledExt};
+use gpui_component::{ActiveTheme, Icon, IconName, Side, Sizable as _, StyledExt};
 use onehand_core::agent::Session;
 
 /// Names are structural anchors, not content: cap them so a deep path cannot
@@ -1760,38 +1760,55 @@ fn new_session_menu(
 /// they separate two halves of the header rather than decorating one element,
 /// and the half below the line is this and the list under it.
 ///
-/// **A `ButtonGroup` and not a segmented `TabBar`, because the two halves are
-/// each half the rail.** A tab is sized by its label, and `TabBar` lays its tabs
-/// out inside a content-sized row of its own that nothing outside the library
-/// can stretch — so *Projects* came out a third of the width of *All sessions*
-/// and the pair sat against the left edge with the rest of the rail empty beside
-/// them. Every button in a group takes the instance style it is built with, so
-/// `flex_1` on each over a `w_full` group is an even split at any rail width.
+/// **A switch drawn here, after both of the library's answers were tried.** The
+/// two halves are one choice between two states, and what says so is a track
+/// with a raised plate in one end of it — the shape needs a fill, an inset and
+/// two halves of equal width, and neither component gives all three. A
+/// `ButtonGroup` splits evenly (`flex_1` on each over a `w_full` group) but has
+/// no track, so it reads as two outlined controls that happen to disagree. A
+/// segmented `TabBar` is the track and the plate exactly, and sizes every tab to
+/// its own label inside a `flex_shrink_0` nothing outside the library can
+/// stretch — so *Projects* came out two thirds the width of *All sessions*, both
+/// against the left edge of a bar as wide as the rail.
+///
+/// So the colours are the library's own segmented pair, and the two halves are
+/// `flex_1`. Nothing else here is invented: the fills come from the theme, the
+/// radius is the theme's, and the pointer is the same promise every other
+/// clickable in this file makes.
 fn tab_bar(active: RailTab, cx: &mut Context<Shell>) -> impl IntoElement + use<> {
-    let target = cx.entity().downgrade();
-    ButtonGroup::new("rail-tabs")
-        .ghost()
-        .outline()
-        .small()
+    let theme = cx.theme();
+    let (track, plate, radius) = (
+        theme.tokens.tab_bar_segmented,
+        theme.tokens.background,
+        theme.radius,
+    );
+    let (ink, ink_on) = (theme.muted_foreground, theme.foreground);
+
+    div()
+        .h_flex()
         .w_full()
+        .gap_0p5()
+        .p_0p5()
+        .rounded(radius)
+        .bg(track)
         .children(RailTab::ALL.map(|tab| {
-            crate::controls::action(tab.label())
-                .label(tab.label())
-                .selected(tab == active)
+            let on = tab == active;
+            div()
+                .id(tab.label())
+                .h_flex()
+                .justify_center()
                 .flex_1()
+                .min_w_0()
+                .rounded(radius)
+                .cursor_pointer()
+                .text_xs()
+                .text_color(if on { ink_on } else { ink })
+                .when(on, |half| half.bg(plate).shadow_sm())
+                .on_click(cx.listener(move |shell: &mut Shell, _, _, cx| {
+                    shell.set_rail_tab(tab, cx);
+                }))
+                .child(tab.label())
         }))
-        .on_click(move |clicked, _, cx: &mut App| {
-            let Some(tab) = clicked
-                .first()
-                .and_then(|ix| RailTab::ALL.get(*ix))
-                .copied()
-            else {
-                return;
-            };
-            target
-                .update(cx, |shell: &mut Shell, cx| shell.set_rail_tab(tab, cx))
-                .ok();
-        })
 }
 
 #[cfg(test)]
