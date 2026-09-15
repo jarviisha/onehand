@@ -1,0 +1,440 @@
+{
+  "date": "2026-09-10",
+  "host_revision": "77ef803",
+  "reference_terminal_revision": "7fede12",
+  "gpu": "AMD 1002:1636 / amdgpu",
+  "gpui_revision": "e0931d5a9dbf4f781b336fdf448739e74a2ac0b5",
+  "notes": [
+    "See terminal-performance.md for geometry, workloads, units and limitations.",
+    "Reference guide run excluded: window moved/covered. Earlier exploratory runs excluded.",
+    "CPU excludes Neovim and rg child processes. GPU is DRM gfx-engine time, not VRAM."
+  ],
+  "build_sha256": {
+    "reference_probe": "72393385f6edece11fcbd507086b186ac904242aab36ecac03d239c25eb9da35",
+    "patched_probe": "cf7cc9006c3b7de2e087be479e052c2197c7e5268c7c0ce505cd0ba93538da69",
+    "patched_app": "e22fc045ade49ea73455089b68bd6f6f520526d4cd7f9c58b316c52e84a03fc9"
+  },
+  "runs": {
+    "shared-snacks-reference": {
+      "phases": [
+        {
+          "phase": "snacks-grep",
+          "grid": [
+            "114",
+            "62"
+          ],
+          "wall_seconds": 8.438597763997677,
+          "cpu_seconds": 1.51,
+          "cpu_percent_one_core": 17.893968195074354,
+          "gpu_engine_seconds": {
+            "0000:07:00.0/gfx": 6.540824242
+          },
+          "gpu_engine_percent": {
+            "0000:07:00.0/gfx": 77.51079533504591
+          },
+          "rss_bytes": 207794176
+        },
+        {
+          "phase": "snacks-scroll",
+          "grid": [
+            "114",
+            "62"
+          ],
+          "wall_seconds": 7.906810802000109,
+          "cpu_seconds": 1.28,
+          "cpu_percent_one_core": 16.188575040599314,
+          "gpu_engine_seconds": {
+            "0000:07:00.0/gfx": 6.18422586
+          },
+          "gpu_engine_percent": {
+            "0000:07:00.0/gfx": 78.21390968955065
+          },
+          "rss_bytes": 290918400
+        },
+        {
+          "phase": "idle",
+          "grid": [
+            "114",
+            "62"
+          ],
+          "wall_seconds": 3.9790741439974227,
+          "cpu_seconds": 0.020000000000000018,
+          "cpu_percent_one_core": 0.5026294880725141,
+          "gpu_engine_seconds": {
+            "0000:07:00.0/gfx": 0.053830047
+          },
+          "gpu_engine_percent": {
+            "0000:07:00.0/gfx": 1.3528284483264674
+          },
+          "rss_bytes": 290918400
+        }
+      ],
+      "frame_histogram_final": "frames=210 mean_us=6495.8 p95_us=10903.6 max_us=110362.6"
+    },
+    "shared-snacks-final": {
+      "phases": [
+        {
+          "phase": "snacks-grep",
+          "grid": [
+            "114",
+            "62"
+          ],
+          "wall_seconds": 8.237154273003398,
+          "cpu_seconds": 2.02,
+          "cpu_percent_one_core": 24.523032263950494,
+          "gpu_engine_seconds": {
+            "0000:07:00.0/gfx": 1.779359602
+          },
+          "gpu_engine_percent": {
+            "0000:07:00.0/gfx": 21.601630162879264
+          },
+          "rss_bytes": 203169792
+        },
+        {
+          "phase": "snacks-scroll",
+          "grid": [
+            "114",
+            "62"
+          ],
+          "wall_seconds": 7.95708988700062,
+          "cpu_seconds": 1.0100000000000002,
+          "cpu_percent_one_core": 12.69308270162968,
+          "gpu_engine_seconds": {
+            "0000:07:00.0/gfx": 0.874999161
+          },
+          "gpu_engine_percent": {
+            "0000:07:00.0/gfx": 10.99647199448473
+          },
+          "rss_bytes": 203464704
+        },
+        {
+          "phase": "idle",
+          "grid": [
+            "114",
+            "62"
+          ],
+          "wall_seconds": 3.9622819000032905,
+          "cpu_seconds": 0.020000000000000018,
+          "cpu_percent_one_core": 0.5047596436786441,
+          "gpu_engine_seconds": {
+            "0000:07:00.0/gfx": 0.0
+          },
+          "gpu_engine_percent": {
+            "0000:07:00.0/gfx": 0.0
+          },
+          "rss_bytes": 203464704
+        }
+      ],
+      "frame_histogram_final": "frames=452 mean_us=4512.4 p95_us=7708.7 max_us=12247.0"
+    },
+    "kitty-snacks-final": {
+      "phases": [
+        {
+          "phase": "snacks-grep",
+          "grid": [
+            "120",
+            "62"
+          ],
+          "wall_seconds": 8.176458573998389,
+          "cpu_seconds": 1.16,
+          "cpu_percent_one_core": 14.187071205727953,
+          "gpu_engine_seconds": {
+            "0000:07:00.0/gfx": 0.653398239,
+            "0000:07:00.0/compute": 0.0
+          },
+          "gpu_engine_percent": {
+            "0000:07:00.0/gfx": 7.991213226198494,
+            "0000:07:00.0/compute": 0.0
+          },
+          "rss_bytes": 215511040
+        },
+        {
+          "phase": "snacks-scroll",
+          "grid": [
+            "120",
+            "62"
+          ],
+          "wall_seconds": 7.8929778419988,
+          "cpu_seconds": 0.6300000000000001,
+          "cpu_percent_one_core": 7.981778393545577,
+          "gpu_engine_seconds": {
+            "0000:07:00.0/gfx": 0.267350395,
+            "0000:07:00.0/compute": 0.000986039
+          },
+          "gpu_engine_percent": {
+            "0000:07:00.0/gfx": 3.3871930258998018,
+            "0000:07:00.0/compute": 0.012492610770465531
+          },
+          "rss_bytes": 215511040
+        },
+        {
+          "phase": "idle",
+          "grid": [
+            "120",
+            "62"
+          ],
+          "wall_seconds": 3.967211806000705,
+          "cpu_seconds": 0.0,
+          "cpu_percent_one_core": 0.0,
+          "gpu_engine_seconds": {
+            "0000:07:00.0/gfx": 0.0,
+            "0000:07:00.0/compute": 0.0
+          },
+          "gpu_engine_percent": {
+            "0000:07:00.0/gfx": 0.0,
+            "0000:07:00.0/compute": 0.0
+          },
+          "rss_bytes": 215511040
+        }
+      ]
+    },
+    "shared-guides-final": {
+      "phases": [
+        {
+          "phase": "cursor",
+          "grid": [
+            "114",
+            "62"
+          ],
+          "wall_seconds": 8.001945733001776,
+          "cpu_seconds": 2.06,
+          "cpu_percent_one_core": 25.743738694754065,
+          "gpu_engine_seconds": {
+            "0000:07:00.0/gfx": 1.23667269
+          },
+          "gpu_engine_percent": {
+            "0000:07:00.0/gfx": 15.45464979723233
+          },
+          "rss_bytes": 196378624
+        },
+        {
+          "phase": "scroll",
+          "grid": [
+            "114",
+            "62"
+          ],
+          "wall_seconds": 8.004092638999282,
+          "cpu_seconds": 2.23,
+          "cpu_percent_one_core": 27.86074700253354,
+          "gpu_engine_seconds": {
+            "0000:07:00.0/gfx": 1.031914191
+          },
+          "gpu_engine_percent": {
+            "0000:07:00.0/gfx": 12.892331929943978
+          },
+          "rss_bytes": 196378624
+        },
+        {
+          "phase": "redraw",
+          "grid": [
+            "114",
+            "62"
+          ],
+          "wall_seconds": 8.010857371999009,
+          "cpu_seconds": 2.2299999999999995,
+          "cpu_percent_one_core": 27.837220118219765,
+          "gpu_engine_seconds": {
+            "0000:07:00.0/gfx": 1.309731505
+          },
+          "gpu_engine_percent": {
+            "0000:07:00.0/gfx": 16.349454798409088
+          },
+          "rss_bytes": 196378624
+        },
+        {
+          "phase": "idle",
+          "grid": [
+            "114",
+            "62"
+          ],
+          "wall_seconds": 4.74220616799721,
+          "cpu_seconds": 0.020000000000000462,
+          "cpu_percent_one_core": 0.4217446330142816,
+          "gpu_engine_seconds": {
+            "0000:07:00.0/gfx": 0.0
+          },
+          "gpu_engine_percent": {
+            "0000:07:00.0/gfx": 0.0
+          },
+          "rss_bytes": 196378624
+        }
+      ],
+      "frame_histogram_final": "frames=1389 mean_us=3231.4 p95_us=4726.8 max_us=12116.0"
+    },
+    "kitty-guides-final": {
+      "phases": [
+        {
+          "phase": "cursor",
+          "grid": [
+            "120",
+            "62"
+          ],
+          "wall_seconds": 8.853521625002031,
+          "cpu_seconds": 0.43000000000000005,
+          "cpu_percent_one_core": 4.856824416463787,
+          "gpu_engine_seconds": {
+            "0000:07:00.0/gfx": 1.023651442,
+            "0000:07:00.0/compute": 0.0
+          },
+          "gpu_engine_percent": {
+            "0000:07:00.0/gfx": 11.562082133613869,
+            "0000:07:00.0/compute": 0.0
+          },
+          "rss_bytes": 212389888
+        },
+        {
+          "phase": "scroll",
+          "grid": [
+            "120",
+            "62"
+          ],
+          "wall_seconds": 7.971576667998306,
+          "cpu_seconds": 0.44999999999999996,
+          "cpu_percent_one_core": 5.645056414078204,
+          "gpu_engine_seconds": {
+            "0000:07:00.0/gfx": 1.088550829,
+            "0000:07:00.0/compute": 0.0
+          },
+          "gpu_engine_percent": {
+            "0000:07:00.0/gfx": 13.65540186510355,
+            "0000:07:00.0/compute": 0.0
+          },
+          "rss_bytes": 212389888
+        },
+        {
+          "phase": "redraw",
+          "grid": [
+            "120",
+            "62"
+          ],
+          "wall_seconds": 8.02085444000113,
+          "cpu_seconds": 2.17,
+          "cpu_percent_one_core": 27.054474261219656,
+          "gpu_engine_seconds": {
+            "0000:07:00.0/gfx": 1.143472103,
+            "0000:07:00.0/compute": 0.0
+          },
+          "gpu_engine_percent": {
+            "0000:07:00.0/gfx": 14.256238054855396,
+            "0000:07:00.0/compute": 0.0
+          },
+          "rss_bytes": 212389888
+        },
+        {
+          "phase": "idle",
+          "grid": [
+            "120",
+            "62"
+          ],
+          "wall_seconds": 4.793447260999528,
+          "cpu_seconds": 0.0,
+          "cpu_percent_one_core": 0.0,
+          "gpu_engine_seconds": {
+            "0000:07:00.0/gfx": 0.0,
+            "0000:07:00.0/compute": 0.0
+          },
+          "gpu_engine_percent": {
+            "0000:07:00.0/gfx": 0.0,
+            "0000:07:00.0/compute": 0.0
+          },
+          "rss_bytes": 212389888
+        }
+      ]
+    },
+    "full-snacks-final": {
+      "phases": [
+        {
+          "phase": "snacks-grep",
+          "grid": [
+            "48",
+            "56"
+          ],
+          "wall_seconds": 8.150278862998675,
+          "cpu_seconds": 2.35,
+          "cpu_percent_one_core": 28.833369256464692,
+          "gpu_engine_seconds": {
+            "0000:07:00.0/gfx": 2.071681853
+          },
+          "gpu_engine_percent": {
+            "0000:07:00.0/gfx": 25.418539510411062
+          },
+          "rss_bytes": 207982592
+        },
+        {
+          "phase": "snacks-scroll",
+          "grid": [
+            "48",
+            "56"
+          ],
+          "wall_seconds": 7.968569575001311,
+          "cpu_seconds": 1.0100000000000002,
+          "cpu_percent_one_core": 12.674796781200648,
+          "gpu_engine_seconds": {
+            "0000:07:00.0/gfx": 0.856868972
+          },
+          "gpu_engine_percent": {
+            "0000:07:00.0/gfx": 10.753108998233966
+          },
+          "rss_bytes": 287485952
+        },
+        {
+          "phase": "idle",
+          "grid": [
+            "48",
+            "56"
+          ],
+          "wall_seconds": 3.9592397209999035,
+          "cpu_seconds": 0.040000000000000036,
+          "cpu_percent_one_core": 1.010294976276356,
+          "gpu_engine_seconds": {
+            "0000:07:00.0/gfx": 0.0
+          },
+          "gpu_engine_percent": {
+            "0000:07:00.0/gfx": 0.0
+          },
+          "rss_bytes": 287485952
+        }
+      ],
+      "frame_histogram_final": "frames=450 mean_us=5594.9 p95_us=8716.3 max_us=17612.8"
+    },
+    "full-seq-final": {
+      "phases": [
+        {
+          "phase": "seq-window",
+          "grid": [
+            "84",
+            "12"
+          ],
+          "wall_seconds": 8.262574276999658,
+          "cpu_seconds": 0.26,
+          "cpu_percent_one_core": 3.1467190645868826,
+          "gpu_engine_seconds": {
+            "0000:07:00.0/gfx": 0.04563025
+          },
+          "gpu_engine_percent": {
+            "0000:07:00.0/gfx": 0.5522522215264061
+          },
+          "rss_bytes": 202010624
+        },
+        {
+          "phase": "idle",
+          "grid": [
+            "84",
+            "12"
+          ],
+          "wall_seconds": 4.950092932002008,
+          "cpu_seconds": 0.050000000000000044,
+          "cpu_percent_one_core": 1.0100820466774172,
+          "gpu_engine_seconds": {
+            "0000:07:00.0/gfx": 0.0
+          },
+          "gpu_engine_percent": {
+            "0000:07:00.0/gfx": 0.0
+          },
+          "rss_bytes": 202010624
+        }
+      ],
+      "frame_histogram_final": "frames=28 mean_us=3879.8 p95_us=5890.0 max_us=10584.1"
+    }
+  }
+}

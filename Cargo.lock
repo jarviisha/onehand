@@ -4686,6 +4686,7 @@ dependencies = [
  "gpui",
  "gpui-component",
  "gpui-component-assets",
+ "gpui-terminal",
  "gpui_platform",
  "notify-rust",
  "onehand-core",

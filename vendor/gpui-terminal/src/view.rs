@@ -31,11 +31,10 @@
 //! window doing so, and a build log or a full-screen editor produces output far
 //! faster than a screen can show it.
 //!
-//! - **A batch is followed by a pause** ([`REPAINT_INTERVAL`]), so however fast
-//!   the child writes, the window is asked to redraw at most about once per
-//!   displayed frame; the bytes that arrive during the pause are absorbed into
-//!   the next batch and parsed, so nothing is dropped and the grid is only ever
-//!   behind by a frame. Idle stays push-based: with nothing queued the task is
+//! - **Parsing keeps up with pending output.** Each bounded batch yields the
+//!   foreground executor, without sleeping after requesting a repaint. A pause
+//!   there can leave the tail of one redraw queued until after the first frame,
+//!   forcing a second frame for bytes that were already available. Idle stays
 //!   parked on the channel, not on a timer.
 //! - **A grid nobody drew stops asking** ([`RepaintGate`]). A terminal whose
 //!   dock is closed still parses everything its child writes, and every
@@ -89,10 +88,8 @@ use std::thread;
 /// onehand patch: how many 4KB reads may sit between the PTY reader thread and
 /// the parser.
 ///
-/// Doubles as the batch cap on the consuming side, so one wake-up parses at
-/// most this much before yielding — enough that a burst is absorbed in a frame
-/// or two, small enough that the queue is bounded memory (~1MB) rather than
-/// however much a runaway command can produce.
+/// This bounds queued memory to about 1 MB; the parser has its own smaller
+/// per-update budget so it cannot hold the UI thread for the whole queue.
 const READ_QUEUE_CHUNKS: usize = 256;
 
 /// onehand patch: how much of that queue one parse may take at a time.
@@ -104,56 +101,33 @@ const READ_QUEUE_CHUNKS: usize = 256;
 /// can type through, and pausing between batches made the queue *more* likely
 /// to be full when the drain came.
 ///
-/// A quarter of the queue instead. Throughput is still far past anything a
-/// terminal produces — a batch this size every pause is megabytes a second —
-/// while the longest the thread can be held is a slice short enough that a
-/// keystroke landing in the middle of a build log is still answered in the same
-/// frame. The channel keeps its own, larger bound: that one is about how far the
-/// reader may run ahead of the parser, which is a different question.
+/// A quarter of the queue, followed by an executor yield. The channel keeps its
+/// own larger bound: how far the reader may run ahead of the parser is separate
+/// from how much foreground work one update may do.
 const PARSE_BATCH_CHUNKS: usize = 64;
 
-/// onehand patch: how long the reader waits after asking for a repaint before
-/// it parses the next batch.
-///
-/// Roughly half a frame at 60Hz. It is a floor on the gap between two repaints
-/// asked for by output, not a polling interval: it is awaited only after a batch
-/// that asked for one, so a terminal with nothing to say waits on the channel
-/// and not on the clock.
-///
-/// The number is a trade with one live case on each side. Longer coalesces a
-/// burst harder, and delays the echo of a keystroke typed while a command is
-/// still printing. Shorter is the reverse. Half a frame keeps the echo below
-/// what anyone reports as lag while still folding a build log's thousands of
-/// writes a second into one repaint each.
-const REPAINT_INTERVAL: std::time::Duration = std::time::Duration::from_millis(8);
-
-/// onehand patch: how long to wait after a batch before parsing the next one.
-///
-/// `Some` is the pacing: a batch that asked for a repaint holds the loop for the
-/// rest of the frame so a burst cannot ask again immediately, and the bytes that
-/// arrive meanwhile are absorbed into the batch after it.
-///
-/// `None` is a batch that asked for nothing, which is a grid nobody is drawing.
-/// Pacing that one would buy nothing — there is no repaint to space out — and
-/// would cost the child, which fills the queue and blocks. But it still yields
-/// (see the caller), because *not waiting* and *not letting go* are different
-/// things, and this runs on the main thread.
-///
-/// A function so the rule can be tested, since the half of it that matters is
-/// exactly the guarantee that a terminal with nothing to say waits on its
-/// channel rather than on a clock.
-fn pace_after(asked_for_repaint: bool) -> Option<std::time::Duration> {
-    asked_for_repaint.then_some(REPAINT_INTERVAL)
+/// onehand patch: collect already queued chunks before requesting a frame, with
+/// a fixed per-update parse budget. The tail stays queued when that budget is
+/// reached, and the foreground task yields before continuing it.
+fn take_batch(first: Vec<u8>, receiver: &flume::Receiver<Vec<u8>>) -> Vec<Vec<u8>> {
+    let mut batch = vec![first];
+    while batch.len() < PARSE_BATCH_CHUNKS {
+        match receiver.try_recv() {
+            Ok(bytes) => batch.push(bytes),
+            Err(_) => break,
+        }
+    }
+    batch
 }
 
 /// onehand patch: hand the main thread back once, without waiting for anything.
 ///
 /// The parse loop runs on the foreground executor, and `flume`'s receive
 /// completes without ever yielding when a message is already queued. So a child
-/// writing faster than the loop consumes — a build log into a terminal nobody is
-/// looking at, which is the case that asks for no repaint and therefore no pause
-/// — would be parsed in back-to-back batches with the main thread never handed
-/// back, and the window would stop answering the keyboard while it went on.
+/// writing faster than the loop consumes would otherwise be parsed in
+/// back-to-back batches with the main thread never handed back, and the window
+/// would stop answering the keyboard while it went on. This applies whether
+/// the grid asked for a repaint or is hidden behind another tab.
 ///
 /// A zero-length timer will not do it: gpui answers that with a task that is
 /// already complete, which is the thing being avoided.
@@ -192,19 +166,29 @@ fn typing_changes_the_view(term: &Term<GpuiEventProxy>) -> bool {
     term.grid().display_offset() != 0 || term.selection.is_some()
 }
 
+/// onehand patch: IMEs can resend the same composition, or clear an already
+/// empty one. Only a changed overlay needs a frame before the child's echo.
+fn update_preedit(preedit: &mut String, text: &str) -> bool {
+    if preedit == text {
+        return false;
+    }
+    text.clone_into(preedit);
+    true
+}
+
 /// onehand patch: whether output should ask the window to repaint at all.
 ///
 /// The rule is one sentence: **ask once, then wait to be drawn before asking
-/// again.** A grid that is on screen is drawn within the frame, so this lets
-/// every batch through; a grid that is not — its dock closed, its tab behind
+/// again.** Batches before that draw share its pending request. A grid that is
+/// not on screen — its dock closed, its tab behind
 /// another, its window minimized — is never drawn, so the first request is the
 /// last one until it comes back. There is no timer and nothing to cancel: being
 /// rendered is the signal, and a grid that returns to the screen is rendered by
 /// the act of returning.
 ///
-/// It cannot lose an update. The only requests it swallows are ones whose repaint
-/// would not have drawn this grid, and the frame that does draw it reads the grid
-/// as it stands then — which includes every byte parsed while nobody was looking.
+/// It cannot lose an update: the next frame that draws the grid reads its latest
+/// state, including batches parsed while a request was pending or the grid was
+/// hidden. Returning to the screen itself causes a render.
 ///
 /// **It fails towards doing nothing, which is the direction that matters.** What
 /// it saves depends on the host genuinely not rendering a grid that is off
@@ -719,7 +703,12 @@ impl TerminalView {
         let event_proxy = GpuiEventProxy::new(event_tx);
 
         // Create terminal state
-        let state = TerminalState::new(config.cols, config.rows, event_proxy);
+        let state = TerminalState::with_scrollback(
+            config.cols,
+            config.rows,
+            config.scrollback,
+            event_proxy,
+        );
 
         // Create renderer with font settings and color palette
         let renderer = TerminalRenderer::new(
@@ -768,13 +757,7 @@ impl TerminalView {
                         // chunk is one repaint per 4KB of output, which is how
                         // the UI fell behind a fast writer in the first place;
                         // the grid only has to be correct once per frame.
-                        let mut batch = vec![bytes];
-                        while let Ok(more) = bytes_rx.try_recv() {
-                            batch.push(more);
-                            if batch.len() >= PARSE_BATCH_CHUNKS {
-                                break;
-                            }
-                        }
+                        let batch = take_batch(bytes, &bytes_rx);
                         // Process bytes and notify the view
                         let result = this.update(cx, |view: &mut Self, cx: &mut Context<Self>| {
                             for bytes in &batch {
@@ -784,18 +767,18 @@ impl TerminalView {
                             // redrawing, so it is asked for only when this grid
                             // is somewhere it would be seen.
                             let asked = view.repaint.request();
+                            #[cfg(feature = "profiling")]
+                            crate::profiling::event("batch", batch.iter().map(Vec::len).sum(), asked);
                             if asked {
                                 cx.notify();
                             }
-                            asked
                         });
                         match result {
-                            // onehand patch: pace, or at least let go -- see
-                            // `pace_after` and `YieldOnce`.
-                            Ok(asked) => match pace_after(asked) {
-                                Some(gap) => cx.background_executor().timer(gap).await,
-                                None => YieldOnce(false).await,
-                            },
+                            // onehand patch: let the UI run, but do not leave
+                            // already available redraw tails behind an 8 ms
+                            // sleep. The gate coalesces requests until render;
+                            // parsing and display cadence are separate concerns.
+                            Ok(_) => YieldOnce(false).await,
                             // View was dropped, exit
                             Err(_) => break,
                         }
@@ -1104,6 +1087,8 @@ impl TerminalView {
     /// and one of them was always waste**. That is felt rather than measured: it
     /// is the ordinary path through a full-screen program.
     fn write_typed(&mut self, bytes: &[u8]) -> bool {
+        #[cfg(feature = "profiling")]
+        crate::profiling::event("input", bytes.len(), false);
         let changed = self.state.with_term_mut(|term| {
             let changed = typing_changes_the_view(term);
             term.scroll_display(Scroll::Bottom);
@@ -1563,6 +1548,10 @@ impl TerminalView {
     /// * `config` - The new configuration to apply
     /// * `cx` - The context for triggering a repaint
     pub fn update_config(&mut self, config: TerminalConfig, cx: &mut Context<Self>) {
+        // onehand patch: the configured bound must reach the backing grid.
+        if config.scrollback != self.config.scrollback {
+            self.state.set_scrollback(config.scrollback);
+        }
         // Update renderer with new font settings and palette
         self.renderer.font_family = config.font_family.clone();
         self.renderer.font_size = config.font_size;
@@ -1655,8 +1644,9 @@ impl EntityInputHandler for TerminalView {
     }
 
     fn unmark_text(&mut self, _window: &mut Window, cx: &mut Context<Self>) {
-        self.preedit.clear();
-        cx.notify();
+        if update_preedit(&mut self.preedit, "") {
+            cx.notify();
+        }
     }
 
     fn replace_text_in_range(
@@ -1670,14 +1660,17 @@ impl EntityInputHandler for TerminalView {
         // child's. Cleared first: a commit that left the preedit drawn would
         // paint the same syllable twice, once over the cursor and once in the
         // cell the child echoed it into.
-        self.preedit.clear();
+        let had_preedit = update_preedit(&mut self.preedit, "");
         // A terminal's Return is carriage return; a line feed here would ask
         // for a new line without asking to run the command.
         let bytes = text.replace("\r\n", "\r").replace('\n', "\r");
-        if !bytes.is_empty() {
-            self.write_typed(bytes.as_bytes());
+        let changed = !bytes.is_empty() && self.write_typed(bytes.as_bytes());
+        // onehand patch: committing text follows the keyboard's rule. The
+        // child's echo repaints; only removing a composition, selection, or
+        // scroll offset has anything new to draw before that echo arrives.
+        if had_preedit || changed {
+            cx.notify();
         }
-        cx.notify();
     }
 
     fn replace_and_mark_text_in_range(
@@ -1688,8 +1681,9 @@ impl EntityInputHandler for TerminalView {
         _window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        new_text.clone_into(&mut self.preedit);
-        cx.notify();
+        if update_preedit(&mut self.preedit, new_text) {
+            cx.notify();
+        }
     }
 
     fn bounds_for_range(
@@ -1718,6 +1712,8 @@ impl EntityInputHandler for TerminalView {
 
 impl Render for TerminalView {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        #[cfg(feature = "profiling")]
+        crate::profiling::event("render", 0, false);
         // onehand patch: being rendered is what earns the next request for one.
         // Recorded here rather than in the paint closure because a grid laid out
         // with no room to draw in is still a grid on screen, and one whose panel
@@ -1766,7 +1762,9 @@ impl Render for TerminalView {
 
         div()
             .size_full()
-            .bg(rgb(0x1e1e1e))
+            // onehand patch: the canvas paints an opaque background over its
+            // entire bounds, including padding. A second full-size quad here
+            // only adds overdraw, especially when Neovim fills the window.
             .track_focus(&self.focus_handle)
             .on_key_down(cx.listener(Self::on_key_down))
             // onehand patch: all three buttons, not just the left one. Only the
@@ -1956,11 +1954,24 @@ mod tests {
     // items this module actually needs keeps the glob out and the attribute
     // meaning what it says.
     use super::{
-        REPAINT_INTERVAL, RepaintGate, clipboard_text, focus_report, pace_after,
-        typing_changes_the_view,
+        PARSE_BATCH_CHUNKS, READ_QUEUE_CHUNKS, RepaintGate, YieldOnce, clipboard_text,
+        focus_report, take_batch, typing_changes_the_view, update_preedit,
     };
     use crate::event::GpuiEventProxy;
     use crate::terminal::TerminalState;
+
+    #[test]
+    fn ime_repaints_only_when_the_composition_changes() {
+        let mut preedit = String::new();
+        assert!(!update_preedit(&mut preedit, ""));
+        assert!(update_preedit(&mut preedit, "tiê"));
+        assert_eq!(preedit, "tiê");
+        assert!(!update_preedit(&mut preedit, "tiê"));
+        assert!(update_preedit(&mut preedit, "tiếng"));
+        assert!(update_preedit(&mut preedit, ""));
+        assert!(preedit.is_empty());
+        assert!(!update_preedit(&mut preedit, ""));
+    }
     use alacritty_terminal::grid::Scroll;
     use alacritty_terminal::index::{Column, Line, Point, Side};
     use alacritty_terminal::selection::{Selection, SelectionType};
@@ -2018,22 +2029,66 @@ mod tests {
         }
     }
 
-    // ── onehand patch: the pacing between one batch of output and the next ──
-
-    /// A batch that asked for a repaint holds the loop for the rest of the
-    /// frame, so a burst cannot ask for a second one inside the same frame.
+    // onehand patch: coalescing must not sleep with a redraw tail queued.
     #[test]
-    fn a_repaint_is_followed_by_the_rest_of_the_frame() {
-        assert_eq!(pace_after(true), Some(REPAINT_INTERVAL));
+    fn queued_redraw_tail_is_parsed_before_requesting_the_frame() {
+        let (tx, rx) = flume::bounded(READ_QUEUE_CHUNKS);
+        tx.send(b"\x1b[Hpartial".to_vec()).unwrap();
+        tx.send(b"\x1b[Hcomplete".to_vec()).unwrap();
+        let mut state = terminal();
+        let mut gate = RepaintGate::new();
+        for bytes in take_batch(rx.recv().unwrap(), &rx) {
+            state.process_bytes(&bytes);
+        }
+        assert!(gate.request());
+        let text: String = state.with_term(|term| {
+            (0..8).map(|col| term.grid()[Line(0)][Column(col)].c).collect()
+        });
+        assert_eq!(text, "complete");
+        assert!(rx.is_empty());
+        assert!(!gate.request());
     }
 
-    /// And a batch that asked for nothing waits for nothing. This is the
-    /// acceptance condition in one line: a terminal with nothing to say is
-    /// parked on its channel, never on a clock, so nothing here can wake a
-    /// window on a timer.
     #[test]
-    fn a_batch_that_asked_for_nothing_waits_for_nothing() {
-        assert_eq!(pace_after(false), None);
+    fn a_full_parse_budget_leaves_the_lossless_tail_for_the_next_yield() {
+        let (tx, rx) = flume::bounded(READ_QUEUE_CHUNKS);
+        let input: Vec<_> = (0..PARSE_BATCH_CHUNKS * 2 + 1).map(|i| i as u8).collect();
+        for byte in &input {
+            tx.send(vec![*byte]).unwrap();
+        }
+        drop(tx);
+        let mut output = Vec::new();
+        let mut sizes = Vec::new();
+        while let Ok(first) = rx.recv() {
+            let batch = take_batch(first, &rx);
+            sizes.push(batch.len());
+            output.extend(batch.into_iter().flatten());
+        }
+        assert_eq!(sizes, [PARSE_BATCH_CHUNKS, PARSE_BATCH_CHUNKS, 1]);
+        assert_eq!(output, input);
+    }
+
+    #[test]
+    fn every_batch_yields_and_reschedules_without_a_timer() {
+        use std::{
+            future::Future,
+            pin::pin,
+            sync::{Arc, atomic::{AtomicUsize, Ordering}},
+            task::{Context, Poll, Wake, Waker},
+        };
+        struct CountWakes(AtomicUsize);
+        impl Wake for CountWakes {
+            fn wake(self: Arc<Self>) {
+                self.0.fetch_add(1, Ordering::Relaxed);
+            }
+        }
+        let count = Arc::new(CountWakes(AtomicUsize::new(0)));
+        let waker = Waker::from(count.clone());
+        let mut cx = Context::from_waker(&waker);
+        let mut yielding = pin!(YieldOnce(false));
+        assert_eq!(yielding.as_mut().poll(&mut cx), Poll::Pending);
+        assert_eq!(count.0.load(Ordering::Relaxed), 1);
+        assert_eq!(yielding.as_mut().poll(&mut cx), Poll::Ready(()));
     }
 
     // ── onehand patch: what a keystroke has to redraw before the child answers ──

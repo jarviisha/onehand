@@ -125,6 +125,10 @@ jobs:
         run: |
           cargo test --locked -p onehand -p gpui-terminal \
             --config 'profile.dev.package."*".opt-level=0'
+      - name: Terminal profiling probe compiles
+        run: |
+          cargo check --locked -p onehand --example terminal_perf --features terminal-profiling \
+            --config 'profile.dev.package."*".opt-level=0'
 
   clippy:
     name: Clippy

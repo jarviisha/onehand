@@ -341,6 +341,9 @@ pub mod colors;
 pub mod event;
 pub mod input;
 pub mod mouse;
+// onehand patch: opt-in host-side stage measurements for the terminal probe.
+#[cfg(feature = "profiling")]
+pub mod profiling;
 pub mod render;
 pub mod terminal;
 pub mod view;

@@ -159,9 +159,24 @@ impl TerminalState {
     /// let terminal = TerminalState::new(80, 24, event_proxy);
     /// ```
     pub fn new(cols: usize, rows: usize, event_proxy: GpuiEventProxy) -> Self {
+        Self::with_scrollback(cols, rows, Config::default().scrolling_history, event_proxy)
+    }
+
+    /// onehand patch: apply the owner's history limit to the actual grid.
+    /// Keeping it only in `TerminalConfig` left every tab at alacritty's
+    /// default, regardless of the memory bound the host requested.
+    pub fn with_scrollback(
+        cols: usize,
+        rows: usize,
+        scrollback: usize,
+        event_proxy: GpuiEventProxy,
+    ) -> Self {
         // Create a default configuration
         // The Config struct controls various terminal behaviors like scrolling history
-        let config = Config::default();
+        let config = Config {
+            scrolling_history: scrollback,
+            ..Config::default()
+        };
 
         // Create dimensions for terminal initialization
         let dimensions = TermDimensions::new(cols, rows);
@@ -178,6 +193,16 @@ impl TerminalState {
             cols,
             rows,
         }
+    }
+
+    /// onehand patch: update both the active and saved primary-screen history.
+    pub fn set_scrollback(&mut self, scrollback: usize) {
+        self.with_term_mut(|term| {
+            term.set_options(Config {
+                scrolling_history: scrollback,
+                ..Config::default()
+            });
+        });
     }
 
     /// Process incoming bytes from the PTY.
@@ -202,6 +227,8 @@ impl TerminalState {
     /// terminal.process_bytes(b"Hello, world!\r\n");
     /// ```
     pub fn process_bytes(&mut self, bytes: &[u8]) {
+        #[cfg(feature = "profiling")]
+        let _span = crate::profiling::Span::new(crate::profiling::Stage::Parse, bytes.len());
         let mut term = self.term.lock();
         // The parser.advance method calls handler methods on the Term
         // The Term implements the Handler trait from the VTE crate
@@ -376,6 +403,32 @@ impl TerminalState {
 mod tests {
     use super::*;
     use std::sync::mpsc::channel;
+
+    // onehand patch: exercise the actual parser/grid, including backpressure-
+    // sized chunks and the primary history while the alternate screen is up.
+    #[test]
+    fn bounded_output_retains_the_latest_lines_with_the_requested_history() {
+        let (tx, _rx) = channel();
+        let mut terminal = TerminalState::with_scrollback(80, 24, 2000, GpuiEventProxy::new(tx));
+        let output: String = (1..=200_000).map(|n| format!("{n}\r\n")).collect();
+        for chunk in output.as_bytes().chunks(4096) {
+            terminal.process_bytes(chunk);
+        }
+        terminal.with_term(|term| {
+            assert_eq!(term.history_size(), 2000);
+            let row = &term.grid()[alacritty_terminal::index::Line(22)];
+            let text: String = (0..6)
+                .map(|col| row[alacritty_terminal::index::Column(col)].c)
+                .collect();
+            assert_eq!(text, "200000");
+        });
+        terminal.process_bytes(b"\x1b[?1049h");
+        terminal.set_scrollback(100);
+        terminal.process_bytes(b"\x1b[?1049l");
+        terminal.with_term(|term| assert_eq!(term.history_size(), 100));
+        terminal.set_scrollback(0);
+        terminal.with_term(|term| assert_eq!(term.history_size(), 0));
+    }
 
     #[test]
     fn test_terminal_creation() {

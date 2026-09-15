@@ -1371,13 +1371,12 @@ Listed because a missing feature nobody wrote down reads as a bug in the ones th
   before assuming the shaping is the cost**; the first pass over this found the allocations around it
   were.
 - **A repaint asked for by a terminal is the whole window redrawing, not the grid.** So the reader
-  task does not ask for one per read: it parses a batch, asks once, and then pauses for
-  `view::REPAINT_INTERVAL` (half a frame) before parsing again, absorbing whatever the child wrote
-  meanwhile into the next batch. Nothing is dropped and the grid is at most a frame behind; idle stays
-  push-based, because the pause is awaited only after a batch that asked for a repaint
-  (`view::pace_after`) and a terminal with nothing to say is parked on its channel. The other half is
+  task drains already queued reads with `view::take_batch`, asks once, and yields before continuing
+  the next bounded batch. It must not sleep after asking: the former 8 ms pause held the tail of a
+  Neovim redraw until after its first frame, forcing another frame for output already waiting in the
+  queue. Idle stays push-based, parked on the channel with no output timer. The other half is
   `view::RepaintGate`: **ask once, then wait to be drawn before asking again**. A grid on screen is
-  drawn within the frame so every batch gets its repaint, while one whose dock is closed is never
+  drawn within the frame; batches arriving before that draw share its request, while a closed dock is never
   drawn — which is what stops a `cargo build` running behind a closed terminal from repainting the
   conversation sixty times a second. Being rendered is the whole signal; there is no timer to cancel
   and a grid that comes back on screen re-arms itself by the act of returning. Being wrong about it
@@ -1387,7 +1386,7 @@ Listed because a missing feature nobody wrote down reads as a bug in the ones th
   executor. Two things follow. The drain has a bound of its own (`view::PARSE_BATCH_CHUNKS`) well
   under the channel's, because the channel's answers a different question — how far the reader may run
   ahead of the parser — and draining it whole meant a megabyte of escape sequences inside one update.
-  And the unpaced path still yields (`view::YieldOnce`): `flume`'s receive completes without touching
+  And every batch yields (`view::YieldOnce`): `flume`'s receive completes without touching
   the executor when a message is already queued, so a child outrunning the loop would otherwise be
   parsed in back-to-back batches with the keyboard never getting a turn. A zero-length timer does not
   do it — gpui answers that with an already-complete task.
@@ -1436,6 +1435,12 @@ Listed because a missing feature nobody wrote down reads as a bug in the ones th
   taken off screen owes the same call.
 - **Zoom factors must snap to the step.** Binary floating point does not round-trip `1.0 - 0.1 + 0.1`,
   so an unsnapped factor drifts and `Ctrl+0` becomes the only way back to 100%.
+- **Box-drawing strokes stay in the quad pass.** Straight segments use fill quads; rounded
+  corners use a transparent rounded outline clipped to the cell plus its existing overlap.
+  The corner is circular, with radius based on the smaller cell dimension. Its border widths
+  match snapped straight-stroke edges, including at fractional scale. Reintroducing `PathBuilder`
+  for these corners restores the intermediate GPU path passes that make rounded Neovim borders
+  expensive. Keep the parent clip and transparent interior so selection and cell backgrounds survive.
 - **`vendor/gpui-terminal` is a vendored render core plus the interaction layer upstream never had.**
   Scrollback, selection, copy/paste (`Ctrl+Shift+C/V` — plain Ctrl+C is SIGINT and Ctrl+V is
   literal-next), bracketed paste, copy-on-select, typing-snaps-to-bottom, mouse reporting and its

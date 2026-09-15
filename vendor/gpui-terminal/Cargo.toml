@@ -13,6 +13,10 @@ edition = "2024"
 license = "MIT OR Apache-2.0"
 description = "Terminal emulator component for gpui (vendored)"
 
+[features]
+# onehand patch: diagnostic counters are absent from normal builds.
+profiling = []
+
 [dependencies]
 # onehand patch: upstream takes `gpui` from crates.io. gpui-component takes it
 # from the Zed git repo *without* a rev, and cargo keys a git source by URL plus
