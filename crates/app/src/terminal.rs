@@ -446,13 +446,14 @@ impl TerminalPanel {
                     // shrinks and the controls the part that cannot, so they
                     // stay put at any count.
                     //
-                    // Past that the tabs narrow to their own floor and then the
-                    // box scrolls. Narrowing first, because a tab that is
-                    // present and short can still be aimed at while one scrolled
-                    // out of sight cannot; the floor, because below it a tab is
-                    // an icon and an ellipsis, and a strip of those says only
-                    // how many shells there are, which is what a strip is not
-                    // for.
+                    // **The box scrolls; the tabs inside it never narrow.** They
+                    // did for a while, down to a floor, on the reasoning that a
+                    // short tab can still be aimed at while a scrolled-out one
+                    // cannot -- and what that bought was every tab getting worse
+                    // the moment a fourth appeared, to spare the fourth a
+                    // gesture. A tab that is the size it needs is readable at
+                    // any count; the cost is a scroll, and it is paid by whoever
+                    // opened the shells.
                     .child(
                         div()
                             .id("terminal-tab-list")
@@ -474,19 +475,17 @@ impl TerminalPanel {
                             .h_flex()
                             .items_center()
                             .gap_1p5()
-                            // The whole tab, not the label: out of each of these
-                            // come the padding at both ends, the glyph, and the
-                            // width the ✕ holds whether or not it is drawn.
+                            // `flex_none` is the whole rule: a tab is the size
+                            // its own name needs and gives nothing back to the
+                            // row. What runs out of room is the box around them,
+                            // and a box that has run out of room scrolls.
                             //
-                            // The ceiling was 120px while a tab said `zsh`,
-                            // where nothing ever reached it; against a name
-                            // carrying the project it became the binding
-                            // constraint and cut every tab to `oneha…`. The
-                            // floor is what stops a strip of eight shells from
-                            // being eight identical slivers -- the tabs stop
-                            // narrowing there and the box around them scrolls
-                            // instead.
-                            .min_w(px(120.))
+                            // The cap is on the name and not on the tab count:
+                            // out of it come the padding at both ends, the
+                            // glyph, and the width the ✕ holds whether or not it
+                            // is drawn, so a project named at length ellipsizes
+                            // here rather than making one tab as wide as three.
+                            .flex_none()
                             .max_w(px(220.))
                             // 8px is what the grid's own inset is built on and
                             // cannot move on its own. The vertical stays tight:

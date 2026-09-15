@@ -906,12 +906,15 @@ status bar.
   **The tabs sit in a box of their own, and it is the only part of the row that gives way.** Flat
   beside the controls they pushed `+` and the way out past the panel's right edge at the fourth
   shell — the two controls wanted precisely when there are too many tabs were the two the tabs took
-  away. So the list is `flex_1` + `min_w_0` and the controls are `flex_none`. Past that a tab narrows
-  to a floor and only then does the list scroll: a short tab can still be aimed at where a scrolled-out
-  one cannot, and below the floor a tab is an icon and an ellipsis, which says how many shells there
-  are and nothing else. **The newest tab is not scrolled into view**, so past the floor a new shell
-  can be the active one with its tab off the end of the list — the grid is right, the strip is behind.
-  Fixing it means a `ScrollHandle` on the panel.
+  away. So the list is `flex_1` + `min_w_0` and the controls are `flex_none`. **The box scrolls and
+  the tabs inside it never narrow** — they did for a while, down to a floor, on the reasoning that a
+  short tab can still be aimed at where a scrolled-out one cannot, and what that bought was every tab
+  getting worse the moment a fourth appeared in order to spare the fourth a gesture. The cap that is
+  left is on the *name*, so a long project ellipsizes rather than making one tab as wide as three.
+  **The newest tab is not scrolled into view**, so past the width of the strip a new shell can be the
+  active one with its tab off the end of the list — the grid is right, the strip is behind. Fixing it
+  means a `ScrollHandle` on the panel, and `scroll_to_item` on a tab that has never been painted
+  needs deferring past the frame that first draws it.
   **The strip's right-hand end carries `+` and the way out.** The dock was openable from four places
   and closable from all four, every one of them outside the panel — so the one place a user is
   certainly looking when they want it gone was the one place that could not do it. It is a chevron
