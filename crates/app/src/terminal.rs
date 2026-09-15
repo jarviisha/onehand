@@ -441,7 +441,13 @@ impl TerminalPanel {
                     // the inset the grid below has to take too, or a shell's
                     // first character stops sitting under the tab naming it.
                     // Moving one of the three means moving all three.
-                    .p_2()
+                    //
+                    // Vertically it is tighter than horizontal, and deliberately
+                    // so: the rule underneath now carries the separation that
+                    // the gap used to have to carry alone, so the room that gap
+                    // needed is room this panel can put back into rows of shell.
+                    .px_2()
+                    .py_1()
                     // **The tabs live in a box of their own, and that box is
                     // what gives way.** Flat in the row with the controls, a
                     // fourth shell pushed `+` and the way out past the panel's
