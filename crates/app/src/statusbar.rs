@@ -96,7 +96,7 @@ pub fn status_bar(
         .gap_2()
         .flex_none()
         .w_full()
-        .h_6()
+        .h_7()
         .px_2()
         // A hairline, not a shadow and not a second fill: the bar is the same
         // surface as everything above it, held apart by one line.
