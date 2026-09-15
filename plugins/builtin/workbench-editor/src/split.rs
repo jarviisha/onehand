@@ -23,11 +23,22 @@ use gpui_component::{ActiveTheme, ResizableState, StyledExt, h_resizable, resiza
 
 /// Where the divider starts, and how far it can be dragged.
 ///
-/// The floor is what a nested path still reads at rather than a round number:
-/// below it the tree is a column of ellipses. The ceiling is there because the
-/// half being squeezed is the one with the long lines in it.
+/// **The floor is a budget, not a preference.** A dock clamps its own width at
+/// `gpui_base::PANEL_MIN_SIZE` — 100px, with no per-panel hook to raise it — so
+/// whatever floors the two halves declare have to *fit inside that*, minus the
+/// card's inset and border. They did not: 140px of tree against the library's
+/// default 100px floor for the other half is 240px of minimum inside a box that
+/// can be 82px wide, and the card clips what will not fit — so dragging the dock
+/// to its narrowest pushed the editor off the end and left the tree alone on
+/// screen, with nothing to say where the other half had gone.
+///
+/// 40px each is what fits. It is well under what either half is usable at, and
+/// that is the point: nothing stops at this number on the way to anywhere, and
+/// a drag that reaches it has already made the dock too narrow to read. The
+/// ceiling is the one that is a preference — the half being squeezed by a wide
+/// tree is the one with the long lines in it.
 const TREE_W: f32 = 200.;
-const TREE_MIN: f32 = 140.;
+const TREE_MIN: f32 = 40.;
 const TREE_MAX: f32 = 420.;
 
 pub(crate) struct CodeView {
@@ -73,6 +84,13 @@ impl Render for CodeView {
                             .child(self.files.clone()),
                     ),
             )
-            .child(resizable_panel().child(self.editor.clone()))
+            // The floor is named rather than left at the library's default,
+            // which is `PANEL_MIN_SIZE` — the dock's whole minimum width, spent
+            // by one half of what is inside it.
+            .child(
+                resizable_panel()
+                    .size_range(px(TREE_MIN)..px(f32::MAX))
+                    .child(self.editor.clone()),
+            )
     }
 }

@@ -350,7 +350,7 @@ pub(crate) fn reader(
                         // Virtualized: a long document draws the rows on screen
                         // rather than all of it.
                         .scrollable(true)
-                        .style(doc_style(rem)),
+                        .style(doc_style(rem, cx)),
                 )
                 .into_any_element(),
             None => div()
@@ -372,16 +372,19 @@ pub(crate) fn reader(
 /// into it by hand — that is what `rem` is, and why it is a parameter rather
 /// than a reading off the window. And the code block's text size is in rems,
 /// which the override *does* reach.
-fn doc_style(rem: gpui::Pixels) -> TextViewStyle {
-    // The fill is the library's, which is the well step. It reads against the
-    // panel around this document because the chrome that panel is drawn in
-    // stops half way to the well rather than landing on it -- which is what a
-    // block named its own fill to work around while the two were the same
-    // value.
+fn doc_style(rem: gpui::Pixels, cx: &App) -> TextViewStyle {
     let mut style = TextViewStyle::default().code_block(
         gpui::StyleRefinement::default()
             .p(gpui::rems(0.75))
-            .text_size(gpui::rems(0.8125)),
+            .text_size(gpui::rems(0.8125))
+            // **The fill is named here rather than left to the library**, whose
+            // default for a code block is the well step -- which is the value
+            // the Workbench panel around this document is itself drawn in, so a
+            // block would come out invisible with only its padding to say it
+            // was there. On a chrome panel the sunk thing is the reading
+            // surface: below the panel in the dark palette, above it in the
+            // light one, and a real step either way.
+            .bg(cx.theme().background),
     );
     style.heading_base_font_size = rem;
     style

@@ -54,24 +54,23 @@ pub fn action(id: impl Into<ElementId>) -> Button {
 /// the rail, a dialog — stays on the reading surface, so the step says "this is
 /// chrome" rather than merely "this is another panel".
 ///
-/// **Half a step off the reading surface, and half is the whole point.** It was
-/// the ramp's well step to begin with — the same fill a quoted command or a code
-/// block takes — and a *panel* drawn in it is a slab of that value the height of
-/// the window, sitting a gap away from the conversation. Two docks open and the
-/// window read as three separate applications rather than one with its furniture
-/// around the edges. Chrome has to be legible as not-the-conversation and no
-/// louder than that.
+/// **It is the ramp's well step, and it has to be: there is no room for a third
+/// surface between that and the reading surface.** A midpoint was tried, on the
+/// reasoning that a whole panel drawn in the fill a quoted command takes is a
+/// slab of it the height of the window. It measured 1.07 against the reading
+/// surface in both palettes, under the 1.14 floor the ramp's own tests hold
+/// every surface pair to — and the light palette has only 1.15 between white and
+/// the well to divide in the first place, so *no* value between them can clear
+/// that floor twice. Half a step is a step nobody can see, and a seam carried by
+/// one is a seam that is not drawn.
 ///
-/// So it is the midpoint, mixed in Oklab so the step is perceptual rather than
-/// arithmetic, and **derived rather than named**: the reading surface and the
-/// well are already tuned per palette, and a fixed value here would have to be
-/// tuned twice more and kept in step with both.
-///
-/// Landing *between* the two also gives it back what naming the well cost. A
-/// well drawn on chrome was drawn in the chrome's own value and disappeared, so
-/// anything sunk into one of these panels had to name a fill of its own; now the
-/// ordinary one still reads, and the component library's default for a code
-/// block is right again.
+/// What that costs is that anything **sunk into** a chrome panel cannot be the
+/// well, because the panel already is. The reading surface is what a well
+/// becomes there — below the panel in the dark palette, above it in the light
+/// one, and the same 1.15/1.19 apart either way, since it is the same pair of
+/// values read from the other end. The strips' hover fills and the Markdown
+/// mode's code blocks all take it for that reason, and `accent` (1.30/1.53 from
+/// here) is what a *selected* thing takes.
 ///
 /// Here rather than in the app for the reason [`action`] is: the Neovim mode
 /// draws a terminal grid and has to hand it the surface it is sitting on, and
@@ -79,8 +78,7 @@ pub fn action(id: impl Into<ElementId>) -> Button {
 /// a panel and the grid inside it to come to disagree about what colour the
 /// panel is, which is visible as a rectangle of the wrong shade behind a shell.
 pub fn chrome(cx: &App) -> Hsla {
-    let theme = cx.theme();
-    theme.background.mix_oklab(theme.muted, 0.5)
+    cx.theme().muted
 }
 
 /// Status colours used as ink on the app's normal surfaces.

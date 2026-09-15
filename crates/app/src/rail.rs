@@ -1315,6 +1315,13 @@ pub fn rail(
         // says where the seam is. Ruled as well, it was a line drawn along a
         // boundary that was not in doubt.
         //
+        // **What makes that safe to say is a number rather than a taste**: those
+        // two surfaces are the ramp's own reading surface and its well, a pair
+        // the ramp's tests hold at 1.14 or better in either palette. This edge
+        // and the transparent resize handle beside it were changed together and
+        // each could otherwise be read as leaning on the other; neither does --
+        // both lean on that step.
+        //
         // This has been both ways. While the rail was on the reading surface
         // there was nothing else marking that seam, so the border had to stay --
         // and before *that* the library's drag handle drew a rule hard against

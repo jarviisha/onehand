@@ -167,19 +167,21 @@ fn paint(colors: &mut ThemeConfigColors, ramp: &Ramp) {
     // because none of them is a new step:
     //
     // - The rail's own fill is no longer this: it asks for the chrome step by
-    //   name at its call site, the way the two docks do, because that value is
-    //   derived from two of the ramp's steps at the moment it is asked and a
-    //   token carrying it would be a second spelling that drifts. What this
-    //   token still decides is the fallback for anything in the library that
-    //   reads it without going through the rail, and the reading surface is the
-    //   right answer there.
+    //   name at its call site, the way the two docks do, because that is one
+    //   answer with one spelling and a token carrying it would be a second.
+    //   What this token still decides is the fallback for anything in the
+    //   library that reads it without going through the rail.
     // - Its ink is the ramp's quiet ink. A rail row is a name to aim at, not a
     //   sentence to read, and at prose strength a column of thirty of them
     //   out-shouted the conversation they exist to get you to.
-    // - A filled row takes the faintest step there is. Which row is selected is
-    //   carried by its ink and its weight instead, both of which the library
-    //   sets from the tokens below -- so the marked row stays the one loud thing
-    //   in the rail without the rail gaining a slab of colour to say so.
+    // - A filled row takes the **reading surface**, which is the only step that
+    //   reads against a rail drawn in the well. It was `hover`, the faintest
+    //   step there is, chosen while the rail itself sat on the reading surface
+    //   -- a pair 1.04 apart in the light palette once the rail moved, which is
+    //   a fill nobody can see. Stepping toward the conversation instead is the
+    //   same pair of values the ramp already asserts, read from the other end.
+    //   The library draws the hovered row at 0.8 of this and the selected one
+    //   at full, so the two stay apart without a second token.
     // - The guide line down an expanded project is the same hairline as any
     //   other.
     //
@@ -187,7 +189,7 @@ fn paint(colors: &mut ThemeConfigColors, ramp: &Ramp) {
     // ramp for one panel and having to keep the two in step by hand.
     set(&mut colors.sidebar, ramp.background);
     set(&mut colors.sidebar_foreground, ramp.well_ink);
-    set(&mut colors.sidebar_accent, ramp.hover);
+    set(&mut colors.sidebar_accent, ramp.background);
     set(&mut colors.sidebar_accent_foreground, ramp.selected_ink);
     set(&mut colors.sidebar_border, ramp.hairline);
     set(&mut colors.popover, ramp.floating);

@@ -186,16 +186,21 @@ One window hosts exactly one workspace. The frame is a navigation **rail** plus 
   conversation by the hairline down its edge alone, and with both docks a step
   off that surface it was the last piece of chrome still dressed as a place text
   is read. **The hairline goes with the change**: the fill is the edge, and a
-  rule beside it is a line drawn along a boundary that was not in doubt. Its
-  hover and selected fills are clear of that step in either palette, so a hovered
-  row and a marked one still read.
+  rule beside it is a line drawn along a boundary that was not in doubt — which
+  is safe to say because those two surfaces are the ramp's asserted pair, 1.15
+  apart at worst. Its own filled row moved to the reading surface for the mirror
+  of that reason: the step it used to take is 1.04 from the surface the rail now
+  sits on.
 - **Both docks are drawn as cards floating in their dock** — inset on all four
   sides, one border, one radius, and the **chrome** surface under them: the step
   that says a panel is *about* the work rather than part of it, which the status
-  bar takes too and nothing else does. That step is **half way** to the well and
-  not the well itself: a panel drawn in the fill a quoted command takes is a slab
-  of it the height of the window, and two docks open read as three applications
-  rather than one with its furniture round the edges. The inset is even on all four, since a
+  bar takes too and nothing else does. That step **is the well**, and has to be:
+  a midpoint was tried and measures 1.07 against the reading surface, under the
+  1.14 floor the ramp's tests hold every surface pair to — and the light palette
+  has only 1.15 between white and the well to divide, so nothing between them
+  clears that floor twice. What it costs is that a well drawn *on* chrome is the
+  panel's own value: the reading surface is what one becomes there, which is the
+  same asserted pair read from the other end. The inset is even on all four, since a
   card held off three and flush on the fourth reads as one that has slipped, and
   the gap belongs to the panel — a click in it is a click on that panel.
   **The change of surface alone was tried and is not enough.** A dock drawn edge

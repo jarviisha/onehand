@@ -631,19 +631,21 @@ enough**: a dock drawn edge to edge in a different fill reads as the window havi
 two regions meeting along a line, which is what the arrangement stops being the moment either dock
 closes and the conversation takes the space back.
 
-**`chrome` is half a step off the reading surface, and half is the point.** It was the ramp's well
-step to begin with — the same fill a quoted command takes — and a *panel* drawn in that is a slab of
-it the height of the window a gap away from the conversation: two docks open and the window read as
-three applications rather than one with its furniture round the edges. It is the Oklab midpoint
-between the reading surface and the well, derived rather than named because both ends are already
-tuned per palette. Landing between them also gives back what naming the well cost: a well drawn *on*
-chrome used to come out in the chrome's own value and disappear, so anything sunk into these panels
-had to name a fill of its own — the Markdown mode's code blocks did, and now take the component
-library's default again.
-**What the step costs**: a well drawn *on* chrome is drawn in the same value as the chrome and
-disappears, which is exactly the library's default for a Markdown code block — so the Markdown mode
-names a fill for its blocks instead, and on a chrome panel that fill is the reading surface itself
-(below the panel in the dark palette, above it in the light one, a visible step in both).
+**`chrome` is the ramp's well step, and it has to be — there is no room for a third surface.** A
+midpoint was tried, on the reasoning that a whole panel drawn in the fill a quoted command takes is a
+slab of it the height of the window. It measures **1.07** against the reading surface in both
+palettes, under the **1.14** floor the ramp's own tests hold every surface pair to — and the light
+palette has only 1.15 between white and the well to divide in the first place, so no value between
+them can clear that floor twice. Half a step is a step nobody can see, and a seam carried by one is a
+seam that is not drawn.
+**What it costs**: anything *sunk into* a chrome panel cannot be the well, because the panel already
+is. The reading surface is what a well becomes there — below the panel in the dark palette, above it
+in the light one, 1.15/1.19 apart either way since it is the same asserted pair read from the other
+end. Three places take it for that reason: the Markdown mode's code blocks (the component library's
+default for one is the well, so it names its own), and the hover fill on both tab strips. A
+*selected* thing takes `accent` instead, 1.30/1.53 from here. The rail's `sidebar_accent` moved the
+same way and for the same reason — it was `hover`, which is 1.04 from the well in the light palette
+and so a fill nobody could see once the rail moved onto it.
 
 - **Editor** (`Ctrl+Shift+E`): the project's file tree down the left, the buffers opened out of it on
   the right, one draggable divider between them. A quick editor, not an IDE: buffers in the plugin,
@@ -661,7 +663,13 @@ names a fill for its blocks instead, and on a chrome panel that fill is the read
   rather than nested containers — hundreds of nested rows are hundreds of wasted elements.
   **The divider's position is not persisted**: one number per window, back to its starting width on
   every launch, against another key in the workspace file for something a drag re-answers in a
-  second.
+  second. **Both halves declare a 40px floor, and that is a budget rather than a preference**: a dock
+  clamps its own width at `gpui_base::PANEL_MIN_SIZE` with no per-panel hook to raise it, so the two
+  floors have to fit inside 100px minus the card's inset and border. They did not — 140px of tree
+  against the library's default 100px floor for the other half is 240px of minimum inside a box that
+  can be 82px wide, and the card clips what will not fit, so dragging the dock to its narrowest
+  pushed the editor off the end and left the tree alone with nothing to say where the other half had
+  gone.
 - **Markdown** (`Ctrl+Shift+M`): the project's `.md` files on the left, the one being read rendered on
   the right. The index is the plugin's own (`onehand_workbench_markdown::index`) rather than core's,
   because nothing outside this mode wants a list of a project's documents — and it is a **walk of the
@@ -850,8 +858,11 @@ centre is the chat, right dock the Workbench, bottom dock the terminal.
   it** (`border_r_0`): the fill is the edge, and a rule beside it draws a line along a boundary that
   was not in doubt. That flag has been both ways — it had to be *on* while the rail was still on the
   reading surface, and off before that, when the library's drag handle ruled the same seam in the
-  same colour. Nothing else about the rail moves — `sidebar_accent` and the selected fill are well
-  clear of that step in either palette, so a hovered row and a marked one still read. It is **session-first**: every folder
+  same colour. **`sidebar_accent` moved with it**: it was the ramp's `hover` step, chosen while the
+  rail sat on the reading surface, and that is 1.04 from the well in the light palette — a filled row
+  nobody could see once the rail was drawn in it. It takes the reading surface now, which is the same
+  asserted pair read from the other end; the library draws a hovered row at 0.8 of that token and a
+  selected one at full, so the two stay apart without a second token. It is **session-first**: every folder
   row lists its sessions, each row selecting root *and* session in one click. A session row is named
   by its **conversation** (`Chat::conversation_title` — the first prompt, or a rename), falling back
   to the agent's name until it has been prompted; the agent's name rides in the suffix only where
@@ -977,6 +988,12 @@ centre is the chat, right dock the Workbench, bottom dock the terminal.
 - **A project row rolls up its sessions' signals** (`SessionSignal::most_urgent`, same rank as a
   single session's `pick`), so a collapsed project is not silent about an agent waiting or dead
   inside it.
+- **Closing the Workbench goes through one path.** `show_workbench`'s third state calls
+  `Shell::hide_workbench` rather than toggling the dock itself. It had its own copy, and the copy was
+  missing the half that breaks worst: the app-direction zoom belongs to the `DockArea` and knows
+  nothing about which docks are open, so `Ctrl+Shift+K` then `Ctrl+Shift+E` closed the dock and left
+  the panel filling the window with the rail gone and the caret in a composer no frame was drawing.
+  `set_terminal_visible` carries the same guard for the same reason.
 - **`Ctrl+Shift+B` hides the rail; it never narrows it.** An icon-width rail is ten identical folder
   icons, which is the one thing a session-first rail must not become. The way back is a button in the
   agent panel's header, shown only while the rail is hidden (`ChatPaneEvent::ShowRail`).

@@ -594,7 +594,17 @@ impl TerminalPanel {
                                 tab.bg(cx.theme().accent)
                                     .text_color(cx.theme().accent_foreground)
                             })
-                            .when(i != active, |tab| tab.hover(|tab| tab.bg(cx.theme().muted)))
+                            // **The reading surface, not the well.** The well
+                            // is what this strip is drawn in now, so a hover
+                            // fill taken from it was a fill nobody could see.
+                            // Sunk on a chrome panel means stepping back toward
+                            // the conversation's own surface -- darker here,
+                            // lighter in the light palette, and a real step in
+                            // both because it is the ramp's own pair read from
+                            // the other end.
+                            .when(i != active, |tab| {
+                                tab.hover(|tab| tab.bg(cx.theme().background))
+                            })
                             .child(
                                 Icon::new(IconName::SquareTerminal)
                                     .size_3()

@@ -530,11 +530,12 @@ fn mode_tab(
                 .text_color(cx.theme().accent_foreground)
         })
         // Muted until the pointer arrives, so three words in a row do not
-        // out-shout what is under them. The hover fill is the same one the
-        // terminal's tabs take.
+        // out-shout what is under them. The hover fill is the reading surface
+        // and not the well, for the reason the terminal's tabs take the same
+        // one: the well is what this strip is drawn in.
         .when(!selected, |tab| {
             tab.text_color(cx.theme().muted_foreground)
-                .hover(|tab| tab.bg(cx.theme().muted))
+                .hover(|tab| tab.bg(cx.theme().background))
         })
         .child(label)
         .on_click(cx.listener(move |panel: &mut Workbench, _, _, cx| {

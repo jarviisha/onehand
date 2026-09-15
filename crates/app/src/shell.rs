@@ -2042,15 +2042,15 @@ impl Shell {
         let showing = self.workbench.read(cx).mode() == mode;
         let focused = self.workbench.focus_handle(cx).contains_focused(window, cx);
         if open && showing && focused {
-            self.dock.update(cx, |dock, cx| {
-                dock.toggle_dock(DockPlacement::Right, window, cx)
-            });
-            // The caret is inside the panel being closed, and a closed dock
-            // draws none of its content -- so leaving focus there would leave
-            // the window pointing at an element no frame contains, which is a
-            // window no shortcut reaches.
-            self.chat
-                .update(cx, |pane, cx| pane.reclaim_focus(window, cx));
+            // Through the one closing path rather than toggling the dock here.
+            // It had its own copy, and the copy was missing the half that
+            // matters least often and breaks worst: a Workbench blown up to the
+            // whole frame stays blown up when its dock is closed, because the
+            // zoom is the `DockArea`'s and knows nothing about which docks are
+            // open -- so `Ctrl+Shift+K` then `Ctrl+Shift+E` left the panel
+            // filling the window with the rail gone and the caret in a composer
+            // no frame was drawing.
+            self.hide_workbench(window, cx);
             return;
         }
         self.workbench
@@ -2065,11 +2065,13 @@ impl Shell {
         cx.notify();
     }
 
-    /// Take the Workbench dock off screen, which is what its strip asks for.
+    /// Take the Workbench dock off screen: the one closing path, used by the
+    /// strip's button and by the third state of [`Self::show_workbench`].
     ///
-    /// Not a toggle: the button is drawn only where the panel already shows,
-    /// while [`Self::show_workbench`] is three-state and would *focus* the
-    /// Workbench rather than close it whenever the caret was elsewhere.
+    /// Not a toggle, which is why `show_workbench` cannot simply call itself:
+    /// the strip's button is drawn only where the panel already shows, while
+    /// that one is three-state and would *focus* the Workbench rather than
+    /// close it whenever the caret was elsewhere.
     fn hide_workbench(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         // A maximized panel cannot be left blown up over a dock that is no
         // longer open, and the way back out of that is the button that just
@@ -3420,11 +3422,12 @@ fn apply_appearance(choice: Appearance, window: Option<&mut Window>, cx: &mut Ap
     // The library paints a permanent 1px rule in the hairline colour down the
     // seam of every resizable split — between the rail and the docks, and
     // between the conversation and each dock. Every panel on the other side of
-    // one of those seams already carries an edge of its own: the rail is a
-    // sidebar with a border, the Workbench is a card with four, the file tree
-    // inside it has one down its right. So the rule was a second line a gap
-    // away from a first, which reads as a seam that could not decide where it
-    // was.
+    // one of those seams already marks it: the two docks are cards with four
+    // borders each, and the rail is a change of surface — the reading surface
+    // against the well, a pair the ramp's own tests hold at 1.14 or better in
+    // either palette, which is what makes a fill an edge rather than a tint. So
+    // the rule was a second line beside a first, which reads as a seam that
+    // could not decide where it was.
     //
     // Only the *resting* colour goes. Dragging still paints `active_handle`,
     // which is the one moment the seam is the thing being looked at.
