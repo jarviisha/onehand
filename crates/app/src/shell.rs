@@ -698,6 +698,12 @@ impl Shell {
                     crate::terminal::TerminalPanelEvent::Hide => {
                         shell.set_terminal_visible(false, window, cx);
                     }
+                    // Named rather than focused: the button sits in the
+                    // terminal's own strip, and the caret when it is pressed
+                    // may be anywhere at all.
+                    crate::terminal::TerminalPanelEvent::ToggleMaximize => {
+                        shell.toggle_maximize_panel(FocusedPanel::Terminal, window, cx);
+                    }
                 }
             },
         )
@@ -2208,7 +2214,7 @@ impl Shell {
         // dock area would be left blown up over something that is no longer
         // mounted, and the key that undoes it is the same key that got here.
         if self.app_maximized == Some(FocusedPanel::Terminal) {
-            self.app_maximized = None;
+            self.set_app_maximized(None, cx);
             self.dock
                 .update(cx, |dock, cx| dock.set_zoomed_out(window, cx));
         }
@@ -2258,20 +2264,57 @@ impl Shell {
     /// whichever panel is focused: a maximized panel is the only thing on
     /// screen, so there is nothing else the key could mean.
     fn toggle_maximize(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if self.app_maximized.take().is_some() {
+        let panel = self.focused_panel(window, cx);
+        self.toggle_maximize_panel(panel, window, cx);
+    }
+
+    /// The same thing for a named panel rather than the focused one.
+    ///
+    /// Split out because a *control* cannot use the focused-panel rule the key
+    /// uses: the button lives in the terminal's own strip and says so, while
+    /// the caret at the moment it is pressed may be anywhere -- so routing it
+    /// through the key's path would blow up the conversation because that is
+    /// where the user happened to be typing.
+    ///
+    /// Restoring is still whatever is maximized, whoever asks: a maximized
+    /// panel is the only thing on screen, so there is nothing else the request
+    /// could mean.
+    fn toggle_maximize_panel(
+        &mut self,
+        panel: FocusedPanel,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if self.app_maximized.is_some() {
+            self.set_app_maximized(None, cx);
             self.dock
                 .update(cx, |dock, cx| dock.set_zoomed_out(window, cx));
             cx.notify();
             return;
         }
-        let panel = self.focused_panel(window, cx);
         self.dock.update(cx, |dock, cx| match panel {
             FocusedPanel::Chat => dock.set_zoomed_in(self.chat.clone(), window, cx),
             FocusedPanel::Workbench => dock.set_zoomed_in(self.workbench.clone(), window, cx),
             FocusedPanel::Terminal => dock.set_zoomed_in(self.terminal.clone(), window, cx),
         });
-        self.app_maximized = Some(panel);
+        self.set_app_maximized(Some(panel), cx);
         cx.notify();
+    }
+
+    /// Write the field, and tell the terminal, which draws the control that
+    /// toggles it and so has to know which way round it currently is.
+    ///
+    /// One setter because the field moves from three places -- the key, the
+    /// strip's button, and unmounting a maximized terminal -- and a push left
+    /// off one of them is a button whose icon says the opposite of what it
+    /// does. Guarded, because this is called on paths that run whether or not
+    /// anything changed and the panel notifying redraws the window.
+    fn set_app_maximized(&mut self, panel: Option<FocusedPanel>, cx: &mut Context<Self>) {
+        self.app_maximized = panel;
+        let terminal = panel == Some(FocusedPanel::Terminal);
+        self.terminal.update(cx, |terminal_panel, cx| {
+            terminal_panel.set_maximized(terminal, cx);
+        });
     }
 
     /// Step the focused panel's zoom.

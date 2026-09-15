@@ -952,9 +952,19 @@ status bar.
   tab — one name shared by the strip lights every tab's cross at once — and it is `invisible()`
   rather than absent, so the tab does not change width under the pointer. Only the Workbench keeps a tab group, because its modes really are
   sibling tabs. Two consequences for both bare panels: `zoomable` returns `None` (there is no tab bar
-  to put the content-direction maximize on — `Ctrl+Shift+K` still works), and each must call
+  to put the content-direction maximize on), and each must call
   `track_focus` itself (see the focus gotcha below). What the agent pane's tab bar used to carry moved
   into `ChatPane::header`.
+  **The terminal draws the *app* direction itself**, in its own strip beside `+` and the way out —
+  a different control from the one `zoomable` declines, since filling the frame and filling the dock
+  area are two things and only the second needs somewhere the library will draw it. It goes through
+  `TerminalPanelEvent::ToggleMaximize` to `Shell::toggle_maximize_panel`, which is the key's path
+  **with the panel named**: `Ctrl+Shift+K` maximizes whatever holds the caret, and a button sitting
+  in the terminal's strip that blew up the conversation because that is where the user was typing
+  would be lying about its own location. The icon is the *state* and not the action, so the panel is
+  told which way round it is (`set_maximized`, pushed by `Shell::set_app_maximized` — one setter,
+  because the field moves from three places and a push left off one of them is a button whose icon
+  says the opposite of what it does).
 - **`Root`'s overlay layers are the app's to mount.** `Root` stores dialogs, sheets and notifications
   but draws none of them — `Shell::render` calls `Root::render_{sheet,dialog,notification}_layer`.
   Forget that and `Dialog::trigger` opens into a list nobody reads, which is exactly what happened
@@ -1290,8 +1300,10 @@ Listed because a missing feature nobody wrote down reads as a bug in the ones th
   `stroke`** — `dash` is `minus` drawn again with `stroke="black"` written in, so it ignores
   `text_color` and comes out invisible on a dark panel while the identical `minus` beside it uses
   `currentColor`. Two names for one drawing is reason enough to check which; a colour baked into one
-  of them is reason enough to check every time. Bumping the `gpui-component` rev means
-  looking at the app's chrome afterwards.
+  of them is reason enough to check every time — `grep -l 'stroke="black"\|stroke="#'` over the
+  bundled set answers it in a second, and today finds exactly `dash.svg` and `resize-corner.svg`,
+  neither of which the app draws. Bumping the `gpui-component` rev means
+  looking at the app's chrome afterwards, and re-running that grep.
   `crate::icons` holds **only what that enum cannot draw**: a shape the bundled set has no drawing
   of at all, and a brand mark, which belongs to the product it stands for rather than to a
   general-purpose UI kit. Today it is five shapes and **no brand marks** — the one there was, for

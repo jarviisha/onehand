@@ -89,6 +89,13 @@ pub struct TerminalPanel {
     /// changing it re-measures the cell and resizes the PTY.
     zoom: crate::zoom::Zoom,
     terminal_theme: TerminalThemeKey,
+    /// Whether this panel is the one currently blown up to the whole frame.
+    ///
+    /// Pushed down by the shell, which owns the `DockArea` and the fact. Here
+    /// only because the strip draws the control that toggles it, and a toggle
+    /// that cannot see its own state draws the same icon in both — so pressing
+    /// it to restore looks like pressing it to maximize again.
+    maximized: bool,
 }
 
 impl TerminalPanel {
@@ -100,7 +107,20 @@ impl TerminalPanel {
             status: None,
             zoom: crate::zoom::Zoom::default(),
             terminal_theme: TerminalThemeKey::current(cx),
+            maximized: false,
         })
+    }
+
+    /// Take the shell's word for whether this panel fills the frame.
+    ///
+    /// Guarded on both sides: the shell pushes this from paths that run whether
+    /// or not anything changed, and a repaint here is the whole window.
+    pub fn set_maximized(&mut self, maximized: bool, cx: &mut Context<Self>) {
+        if self.maximized == maximized {
+            return;
+        }
+        self.maximized = maximized;
+        cx.notify();
     }
 
     pub fn set_root(&mut self, root: PathBuf, cx: &mut Context<Self>) {
@@ -283,9 +303,15 @@ impl Panel for TerminalPanel {
         "Terminal"
     }
 
-    /// No content-only maximize, because there is no tab bar to put the button
-    /// on: this panel is mounted bare, the way the conversation is. The app
-    /// direction still has its key.
+    /// No content-only maximize, because there is no tab bar to put the
+    /// library's button on: this panel is mounted bare, the way the
+    /// conversation is.
+    ///
+    /// The *app* direction is a different question and has an answer — the key,
+    /// and a button in the strip below, which is this panel's own chrome rather
+    /// than a tab bar it does not have. Filling the frame and filling the dock
+    /// area are two controls, and only one of them needs somewhere the library
+    /// will draw it.
     fn zoomable(&self, _: &App) -> Option<PanelControl> {
         None
     }
@@ -308,6 +334,18 @@ pub enum TerminalPanelEvent {
     /// through the three-state toggle would leave it focusing the terminal
     /// instead of closing it whenever the caret was somewhere else.
     Hide,
+    /// Fill the frame with this panel, or put it back.
+    ///
+    /// A toggle where [`Self::Hide`] is not, and for the opposite reason: this
+    /// button *is* drawn in both states, because a panel filling the frame
+    /// still shows the strip it was pressed from.
+    ///
+    /// It names this panel, which the key it shares an effect with does not —
+    /// `Ctrl+Shift+K` maximizes whatever holds the caret, and a control sitting
+    /// in the terminal's own strip that blew up the conversation instead
+    /// because that is where the user was typing would be a button lying about
+    /// its own location.
+    ToggleMaximize,
 }
 
 impl EventEmitter<TerminalPanelEvent> for TerminalPanel {}
@@ -594,6 +632,33 @@ impl TerminalPanel {
                     // panel -- so the one place a user is certainly looking when
                     // they want it gone was the one place that could not do it.
                     //
+                    // Between `+` and the way out, in the order a window's own
+                    // chrome puts them: what it does is between making a shell
+                    // and putting the panel away in how far it goes.
+                    //
+                    // **The icon is the state, not the action.** A toggle
+                    // drawing one glyph in both states says the same thing
+                    // about two opposite situations, and the one situation
+                    // where it matters is the one where the panel fills the
+                    // frame and the user is looking for the way back.
+                    .child({
+                        let full = self.maximized;
+                        crate::controls::action("maximize-terminal")
+                            .ghost()
+                            .small()
+                            .flex_none()
+                            .icon(Icon::new(match full {
+                                true => IconName::Minimize,
+                                false => IconName::Maximize,
+                            }))
+                            .tooltip(match full {
+                                true => "Back to the dock — Ctrl+Shift+K",
+                                false => "Fill the window — Ctrl+Shift+K",
+                            })
+                            .on_click(cx.listener(|_: &mut Self, _, _, cx| {
+                                cx.emit(TerminalPanelEvent::ToggleMaximize);
+                            }))
+                    })
                     // A minus, the mark a window's own chrome uses for the
                     // thing that goes away and comes back, rather than a ✕: the
                     // shells are not being ended, and the ✕ an inch to its left
