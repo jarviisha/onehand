@@ -901,8 +901,11 @@ status bar.
   wrong fit: **the thing to check first is whether the component's own choices are the ones you
   want**, since everything else it was holding here — the label, the glyph, the ellipsis, the
   accessible name, the ✕ — had already been written out at the call site to get the rest of the look.
-  No rule under the strip either: a border there is a seam, and there is nothing on the far side of
-  it to separate.
+  A hairline runs under the whole strip, spanning the panel rather than stopping under the tabs:
+  neither the strip nor the grid carries a fill, so the only thing telling the chrome from the shell
+  was the gap between them, and a gap reads as spacing where a line reads as an edge — which is what
+  the top of a terminal is. The rule the flat variants drop is the one the *component* drew, seated
+  under a filled bar and a raised plate; this is the same pixel doing a different job.
   **The tabs sit in a box of their own, and it is the only part of the row that gives way.** Flat
   beside the controls they pushed `+` and the way out past the panel's right edge at the fourth
   shell — the two controls wanted precisely when there are too many tabs were the two the tabs took

@@ -418,9 +418,14 @@ impl TerminalPanel {
                     .items_center()
                     .gap_1p5()
                     .w_full()
-                    // No border under this row, deliberately. A rule there is a
-                    // seam, and there is nothing on the far side of it to
-                    // separate: the tabs and the grid are one panel.
+                    // A hairline under the whole row, spanning the panel rather
+                    // than stopping under the tabs. With no fill behind the
+                    // strip and none behind the grid, the only thing that had
+                    // been telling the chrome from the shell was the gap, and a
+                    // gap reads as spacing rather than as an edge -- a line
+                    // reads as an edge, which is what the top of a terminal is.
+                    .border_b_1()
+                    .border_color(cx.theme().border)
                     //
                     // **This is the room around the tab, not inside it.** A tab
                     // is the one thing on this row carrying a fill, so it is the
