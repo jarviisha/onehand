@@ -3,7 +3,8 @@
 This is step 1 of the follow-up work in [PR #29](https://github.com/jarviisha/onehand/pull/29),
 after [controlled stage profiling](terminal-profiling.md) found more GPUI draws
 than the Neovim workload's nominal update rate. Curved-path rendering and row
-data caching are separate work and are not changed here.
+data caching are separate work and are not changed here. The subsequent
+[rounded-corner change](terminal-rounded-corners.md) covers step 2.
 
 ## Cause and change
 

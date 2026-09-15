@@ -2,7 +2,7 @@
 //!
 //! This module provides programmatic rendering for Unicode box-drawing characters
 //! (U+2500-U+257F) using GPUI geometry instead of font glyphs.
-//! onehand patch: straight strokes use quads; only rounded corners use paths.
+//! onehand patch: straight strokes and rounded corners use quads.
 //! This approach eliminates anti-aliasing artifacts and ensures perfect alignment
 //! at cell boundaries.
 //!
@@ -27,7 +27,7 @@
 //! }
 //! ```
 
-use gpui::{point, Bounds, Hsla, PathBuilder, Pixels, Point, Window, fill, px};
+use gpui::{point, size, Bounds, ContentMask, Edges, Hsla, Pixels, Point, Window, fill, outline, px};
 
 /// Calculate line thicknesses rounded to integer pixels to avoid aliasing.
 fn calculate_thickness(cell_width: Pixels) -> (Pixels, Pixels) {
@@ -707,7 +707,7 @@ fn draw_continuous_line(
 /// batch into an intermediate texture. Border/indent segments interleaved with
 /// text across a terminal can cause that work once per row. Quads stay in the
 /// main pass. Keep the stroke's center, thickness, butt ends and caller's overlap
-/// unchanged; rounded corners still use the curve path below.
+/// unchanged; rounded corners use a clipped border quad below.
 fn draw_line(
     from: Point<Pixels>,
     to: Point<Pixels>,
@@ -735,9 +735,11 @@ fn straight_line_bounds(from: Point<Pixels>, to: Point<Pixels>, thickness: Pixel
     }
 }
 
-/// Draws a rounded corner character with an actual curve.
-///
-/// Rounded corners: ╭ (U+256D), ╮ (U+256E), ╯ (U+256F), ╰ (U+2570)
+/// onehand patch: draw a quarter of a rounded outline in the main quad pass.
+/// A transparent interior preserves terminal backgrounds and selection. The
+/// mask cuts off the remote edges, intersects the parent's mask, and keeps the
+/// same 1 px overlap used by the adjacent straight strokes. GPUI anti-aliases
+/// the circular corner analytically, without an intermediate path texture.
 fn draw_rounded_corner(
     ch: char,
     bounds: Bounds<Pixels>,
@@ -747,69 +749,47 @@ fn draw_rounded_corner(
     color: Hsla,
     window: &mut Window,
 ) {
-    // Overlap to eliminate sub-pixel gaps
-    let overlap = px(1.0);
+    let (quad_bounds, radius) = rounded_corner_outline(ch, bounds, thickness);
+    // Match the actual snapped edges of the fill quads used for straight
+    // strokes. Rounding just thickness * scale can differ by a device pixel
+    // from rounding both stroke edges, notably at fractional desktop scales.
+    let half = thickness / 2.0;
+    let vertical = window.pixel_snap(cx + half) - window.pixel_snap(cx - half);
+    let horizontal = window.pixel_snap(cy + half) - window.pixel_snap(cy - half);
+    let quad = outline(quad_bounds, color, Default::default())
+        .corner_radii(radius)
+        .border_widths(Edges {
+            top: horizontal,
+            bottom: horizontal,
+            left: vertical,
+            right: vertical,
+        });
+    window.with_content_mask(Some(ContentMask { bounds: bounds.dilate(px(1.0)) }), |window| {
+        window.paint_quad(quad);
+    });
+}
 
-    let left = bounds.origin.x - overlap;
-    let right = bounds.origin.x + bounds.size.width + overlap;
-    let top = bounds.origin.y - overlap;
-    let bottom = bounds.origin.y + bounds.size.height + overlap;
-
-    // Radius scales with cell size - use about 40% of half-cell for a nice curve
-    let half_w = bounds.size.width / 2.0;
-    let half_h = bounds.size.height / 2.0;
-    let radius_x = half_w * 0.8;
-    let radius_y = half_h * 0.8;
-
-    let mut builder = PathBuilder::stroke(thickness);
-
-    match ch {
-        // ╭ Top-left corner: comes from bottom, curves to right
-        '\u{256D}' => {
-            // Start from bottom edge, go up to curve start
-            builder.move_to(point(cx, bottom));
-            builder.line_to(point(cx, cy + radius_y));
-            // Quadratic curve to the right
-            builder.curve_to(point(cx + radius_x, cy), point(cx, cy));
-            // Continue to right edge
-            builder.line_to(point(right, cy));
-        }
-        // ╮ Top-right corner: comes from left, curves to bottom
-        '\u{256E}' => {
-            // Start from left edge, go right to curve start
-            builder.move_to(point(left, cy));
-            builder.line_to(point(cx - radius_x, cy));
-            // Quadratic curve downward
-            builder.curve_to(point(cx, cy + radius_y), point(cx, cy));
-            // Continue to bottom edge
-            builder.line_to(point(cx, bottom));
-        }
-        // ╯ Bottom-right corner: comes from top, curves to left
-        '\u{256F}' => {
-            // Start from top edge, go down to curve start
-            builder.move_to(point(cx, top));
-            builder.line_to(point(cx, cy - radius_y));
-            // Quadratic curve to the left
-            builder.curve_to(point(cx - radius_x, cy), point(cx, cy));
-            // Continue to left edge
-            builder.line_to(point(left, cy));
-        }
-        // ╰ Bottom-left corner: comes from right, curves to top
-        '\u{2570}' => {
-            // Start from right edge, go left to curve start
-            builder.move_to(point(right, cy));
-            builder.line_to(point(cx + radius_x, cy));
-            // Quadratic curve upward
-            builder.curve_to(point(cx, cy - radius_y), point(cx, cy));
-            // Continue to top edge
-            builder.line_to(point(cx, top));
-        }
-        _ => return,
-    }
-
-    if let Ok(path) = builder.build() {
-        window.paint_path(path, color);
-    }
+// onehand patch: position an oversized outline so the cell contains only the
+// requested corner. Its midlines lie at the two outgoing cell edges plus the
+// overlap; the opposite borders are outside the mask. A circular centerline
+// radius of 40% of the smaller cell dimension replaces the former anisotropic
+// quadratic bend. Endpoints and light-stroke thickness remain unchanged.
+fn rounded_corner_outline(ch: char, bounds: Bounds<Pixels>, thickness: Pixels) -> (Bounds<Pixels>, Pixels) {
+    let half = thickness / 2.0;
+    let extent = size(
+        bounds.size.width + px(2.0) + thickness,
+        bounds.size.height + px(2.0) + thickness,
+    );
+    let center = bounds.center();
+    let rightward = matches!(ch, '╭' | '╰');
+    let downward = matches!(ch, '╭' | '╮');
+    debug_assert!(is_rounded_corner(ch));
+    let origin = point(
+        if rightward { center.x - half } else { center.x + half - extent.width },
+        if downward { center.y - half } else { center.y + half - extent.height },
+    );
+    let radius = bounds.size.width.min(bounds.size.height) * 0.4 + half;
+    (Bounds::new(origin, extent), radius)
 }
 
 #[cfg(test)]
@@ -826,6 +806,50 @@ mod tests {
         let vertical = straight_line_bounds(point(px(4.5), px(17.)), point(px(4.5), px(-1.)), px(2.));
         assert_eq!(vertical.origin, point(px(3.5), px(-1.)));
         assert_eq!(vertical.bottom_right(), point(px(5.5), px(17.)));
+    }
+
+    // onehand patch: check joins and masks for every orientation, including
+    // fractional cell origins and the small/large cells produced by zoom.
+    #[test]
+    fn rounded_outlines_preserve_stroke_edges_and_hide_remote_borders() {
+        for (width, height) in [(4.8, 9.0), (8.4, 16.0), (10.8, 21.0), (21.6, 42.0)] {
+            for (x, y) in [(0.0, 0.0), (13.37, 27.625)] {
+                let cell = Bounds::new(point(px(x), px(y)), size(px(width), px(height)));
+                let (thickness, _) = calculate_thickness(cell.size.width);
+                let center = cell.center();
+                let half = thickness / 2.0;
+                let clip = cell.dilate(px(1.0));
+                for ch in ['╭', '╮', '╯', '╰'] {
+                    let (outline, radius) = rounded_corner_outline(ch, cell, thickness);
+                    assert!(radius > thickness);
+                    assert!(radius < outline.size.width / 2.0);
+                    assert!(radius < outline.size.height / 2.0);
+                    let (outer_x, inner_x, remote_x) = if matches!(ch, '╭' | '╰') {
+                        (outline.left(), outline.left() + thickness, outline.right() - thickness)
+                    } else {
+                        (outline.right(), outline.right() - thickness, outline.left() + thickness)
+                    };
+                    let (outer_y, inner_y, remote_y) = if matches!(ch, '╭' | '╮') {
+                        (outline.top(), outline.top() + thickness, outline.bottom() - thickness)
+                    } else {
+                        (outline.bottom(), outline.bottom() - thickness, outline.top() + thickness)
+                    };
+                    let close = |a: Pixels, b: Pixels| assert!((f32::from(a - b)).abs() < 0.0001);
+                    close(outer_x.min(inner_x), center.x - half);
+                    close(outer_x.max(inner_x), center.x + half);
+                    close(outer_y.min(inner_y), center.y - half);
+                    close(outer_y.max(inner_y), center.y + half);
+                    assert!(remote_x < clip.left() || remote_x > clip.right());
+                    assert!(remote_y < clip.top() || remote_y > clip.bottom());
+                    // The outgoing ends are past the arc's tangents, so the
+                    // neighbor meets a straight stroke, never a curved edge.
+                    let tangent_x = if outer_x < inner_x { outer_x + radius } else { outer_x - radius };
+                    let tangent_y = if outer_y < inner_y { outer_y + radius } else { outer_y - radius };
+                    assert!(tangent_x > cell.left() && tangent_x < cell.right());
+                    assert!(tangent_y > cell.top() && tangent_y < cell.bottom());
+                }
+            }
+        }
     }
 
     #[test]

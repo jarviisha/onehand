@@ -7,7 +7,8 @@ alone could not identify the residual cost per update.
 
 The [subsequent coalescing change](terminal-coalescing.md) addresses the measured
 multipart-update frame overhead; the measurements below describe the preceding
-implementation.
+implementation. [Rounded-corner quad rendering](terminal-rounded-corners.md)
+then addresses the residual corner paths.
 
 ## Results and interpretation
 

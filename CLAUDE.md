@@ -1303,6 +1303,12 @@ Listed because a missing feature nobody wrote down reads as a bug in the ones th
   taken off screen owes the same call.
 - **Zoom factors must snap to the step.** Binary floating point does not round-trip `1.0 - 0.1 + 0.1`,
   so an unsnapped factor drifts and `Ctrl+0` becomes the only way back to 100%.
+- **Box-drawing strokes stay in the quad pass.** Straight segments use fill quads; rounded
+  corners use a transparent rounded outline clipped to the cell plus its existing overlap.
+  The corner is circular, with radius based on the smaller cell dimension. Its border widths
+  match snapped straight-stroke edges, including at fractional scale. Reintroducing `PathBuilder`
+  for these corners restores the intermediate GPU path passes that make rounded Neovim borders
+  expensive. Keep the parent clip and transparent interior so selection and cell backgrounds survive.
 - **`vendor/gpui-terminal` is a vendored render core plus the interaction layer upstream never had.**
   Scrollback, selection, copy/paste (`Ctrl+Shift+C/V` — plain Ctrl+C is SIGINT and Ctrl+V is
   literal-next), bracketed paste, copy-on-select, typing-snaps-to-bottom, mouse reporting and its
