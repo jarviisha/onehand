@@ -243,6 +243,21 @@ impl Panel for TerminalPanel {
 
 impl EventEmitter<PanelEvent> for TerminalPanel {}
 
+/// What this panel asks the shell for, having no way to do it itself.
+///
+/// Taking the dock off screen is the shell's: it owns the `DockArea`, and it is
+/// the half that files the open state under the project being left. One variant,
+/// because there is exactly one thing the strip cannot do from in here.
+pub enum TerminalPanelEvent {
+    /// Put the dock away. Not *toggle* — the button is drawn only where the
+    /// panel is already showing, so a press means one thing, and routing it
+    /// through the three-state toggle would leave it focusing the terminal
+    /// instead of closing it whenever the caret was somewhere else.
+    Hide,
+}
+
+impl EventEmitter<TerminalPanelEvent> for TerminalPanel {}
+
 impl Focusable for TerminalPanel {
     fn focus_handle(&self, _: &App) -> FocusHandle {
         self.focus_handle.clone()
@@ -308,29 +323,139 @@ impl TerminalPanel {
 
         let active = set.active;
         let body = set.tabs.get(active).map(|tab| tab.view().clone());
-        let labels: Vec<SharedString> = set.tabs.iter().map(PtyTab::label).collect();
+        // The project, then the shell. A tab is named by the PTY's program
+        // alone, which is the same word for every tab a root has open: three
+        // shells in one project came out three tabs reading `zsh`, and a strip
+        // whose tabs cannot be told apart is doing nothing that a count would
+        // not do. The project is what the two halves of the window this panel
+        // spans already disagree about, so it is the half worth saying.
+        //
+        // Composed here and not in `PtyTab::label`, which the Neovim mode also
+        // reads: that mode has one grid and no strip, so a name built to
+        // separate siblings would be a name with nothing to separate it from.
+        let project = self
+            .root
+            .as_deref()
+            .map(onehand_core::workspace::label_for)
+            .unwrap_or_default();
+        let labels: Vec<SharedString> = set
+            .tabs
+            .iter()
+            .map(|tab| match project.is_empty() {
+                true => tab.label(),
+                false => SharedString::from(format!("{project} — {}", tab.label())),
+            })
+            .collect();
 
         div()
             .size_full()
             .v_flex()
             .child(
+                // **Drawn here rather than with the library's `TabBar`, after
+                // trying it.** Every variant that component offers states more
+                // than this strip wants to say: the default fills the bar,
+                // raises a plate under the selected tab and rules a hairline
+                // under the lot; `pill` makes the selected tab a white capsule;
+                // `outline` rings it; `segmented` and `underline` each bring a
+                // border of their own. A terminal panel is one surface with
+                // rows of a shell on it, and the tabs are a label on that
+                // surface -- so what is wanted is a small filled rectangle and
+                // nothing else, and none of the five is that. The fill and the
+                // radius are not reachable from outside either: the component
+                // writes them into the same style refinement the call site
+                // does, and later.
+                //
+                // What that costs is nothing it was still holding. The label,
+                // the glyph, the ellipsis, the accessible name and the ✕ are
+                // all written out below already, so the trade was the whole
+                // component against its choice of selected fill.
+                //
+                // It is also, separately, not the *dock's* tab group: that one
+                // wraps the whole panel in a strip carrying the panel's title,
+                // which here would be one tab reading "Terminal" above the
+                // strip that already names every shell.
                 div()
                     .id("terminal-tabs")
                     .h_flex()
                     .items_center()
-                    .gap_1()
+                    .gap_1p5()
                     .w_full()
-                    .px_2()
-                    .py_1()
-                    .border_b_1()
-                    .border_color(cx.theme().border)
-                    .children(labels.into_iter().enumerate().map(|(i, label)| {
+                    // No border under this row, deliberately. A rule there is a
+                    // seam, and there is nothing on the far side of it to
+                    // separate: the tabs and the grid are one panel.
+                    //
+                    // **This is the room around the tab, not inside it.** A tab
+                    // is the one thing on this row carrying a fill, so it is the
+                    // one thing with an edge that can sit too near another: at
+                    // 4px it was almost touching the panel's left border and the
+                    // dock's top one, which reads as a chip wedged into a
+                    // corner. The padding here is what holds it off them, and it
+                    // is even on all four sides because all four are the same
+                    // kind of neighbour -- a frame edge.
+                    //
+                    // **The horizontal number is not free**: with each tab's own
+                    // 8px, a label starts 16px from the panel edge, and that is
+                    // the inset the grid below has to take too, or a shell's
+                    // first character stops sitting under the tab naming it.
+                    // Moving one of the three means moving all three.
+                    .p_2()
+                    // **The tabs live in a box of their own, and that box is
+                    // what gives way.** Flat in the row with the controls, a
+                    // fourth shell pushed `+` and the way out past the panel's
+                    // right edge -- the two controls somebody wants precisely
+                    // when there are too many tabs were the two the tabs took
+                    // away. `flex_1` + `min_w_0` makes this the one part that
+                    // shrinks and the controls the part that cannot, so they
+                    // stay put at any count.
+                    //
+                    // Past that the tabs narrow to their own floor and then the
+                    // box scrolls. Narrowing first, because a tab that is
+                    // present and short can still be aimed at while one scrolled
+                    // out of sight cannot; the floor, because below it a tab is
+                    // an icon and an ellipsis, and a strip of those says only
+                    // how many shells there are, which is what a strip is not
+                    // for.
+                    .child(
                         div()
-                            .id(("terminal-tab", i))
+                            .id("terminal-tab-list")
                             .h_flex()
                             .items_center()
-                            .gap_1()
-                            .flex_none()
+                            .gap_1p5()
+                            .flex_1()
+                            .min_w_0()
+                            .overflow_x_scroll()
+                            .children(labels.into_iter().enumerate().map(|(i, label)| {
+                                // The group the ✕ hovers off, one per tab: a single
+                                // name shared by the strip would light every tab's
+                                // close button the moment the pointer entered any of
+                                // them.
+                                let hovered = SharedString::from(format!("terminal-tab-{i}"));
+                                div()
+                            .id(("terminal-tab", i))
+                            .group(hovered.clone())
+                            .h_flex()
+                            .items_center()
+                            .gap_1p5()
+                            // The whole tab, not the label: out of each of these
+                            // come the padding at both ends, the glyph, and the
+                            // width the ✕ holds whether or not it is drawn.
+                            //
+                            // The ceiling was 120px while a tab said `zsh`,
+                            // where nothing ever reached it; against a name
+                            // carrying the project it became the binding
+                            // constraint and cut every tab to `oneha…`. The
+                            // floor is what stops a strip of eight shells from
+                            // being eight identical slivers -- the tabs stop
+                            // narrowing there and the box around them scrolls
+                            // instead.
+                            .min_w(px(120.))
+                            .max_w(px(220.))
+                            // 8px is what the grid's own inset is built on and
+                            // cannot move on its own. The vertical stays tight:
+                            // this is the fill's own shape, and a taller chip
+                            // is a louder tab, not a calmer strip -- the room
+                            // wanted between the tabs and the shell is room
+                            // *between* them, which is the strip's to give.
                             .px_2()
                             .py_0p5()
                             .rounded(cx.theme().radius)
@@ -340,29 +465,79 @@ impl TerminalPanel {
                                 tab.bg(cx.theme().accent)
                                     .text_color(cx.theme().accent_foreground)
                             })
-                            .child(div().max_w(px(120.)).truncate().child(label))
+                            .when(i != active, |tab| tab.hover(|tab| tab.bg(cx.theme().muted)))
+                            .child(
+                                Icon::new(IconName::SquareTerminal)
+                                    .size_3()
+                                    .flex_shrink_0()
+                                    .text_color(cx.theme().muted_foreground),
+                            )
+                            // `min_w_0` is what lets the text shrink far enough
+                            // to ellipsize at all, since a flex child's floor is
+                            // otherwise its own content.
+                            .child(div().min_w_0().truncate().child(label))
                             .on_click(cx.listener(move |panel: &mut Self, _, _, cx| {
                                 panel.select_tab(i, cx);
                             }))
+                            // **Shown on hover alone.** Drawn always, a strip of
+                            // three shells reads as three names and three
+                            // crosses, and the crosses are the same size and
+                            // weight as the one thing the strip is for. What it
+                            // costs is that nobody learns the control is there
+                            // by looking -- which is the trade every terminal
+                            // makes, because a tab is closed by someone who
+                            // already decided to close it. `invisible` rather
+                            // than absent, so a tab does not change width under
+                            // the pointer.
+                            //
+                            // Inside the tab, so `stop_propagation` is what
+                            // keeps the press that closes a shell from also
+                            // selecting the one it just closed.
                             .child(
-                                div()
-                                    .id(("terminal-tab-close", i))
-                                    .flex_none()
-                                    .text_color(cx.theme().muted_foreground)
-                                    .child(Icon::new(IconName::Close).size_3())
-                                    .on_click(cx.listener(move |panel: &mut Self, _, _, cx| {
-                                        panel.close_tab(i, cx);
-                                    })),
+                                crate::controls::action(("close-shell", i))
+                                    .ghost()
+                                    .xsmall()
+                                    .icon(Icon::new(IconName::Close))
+                                    .invisible()
+                                    .group_hover(hovered, |style| style.visible())
+                                    .on_click(cx.listener(
+                                        move |panel: &mut Self, _, _, cx: &mut Context<Self>| {
+                                            cx.stop_propagation();
+                                            panel.close_tab(i, cx);
+                                        },
+                                    )),
                             )
-                    }))
-                    .child(div().flex_1())
+                            })),
+                    )
                     .child(
                         crate::controls::action("add-shell")
                             .ghost()
                             .xsmall()
+                            .flex_none()
                             .icon(Icon::new(IconName::Plus))
+                            .tooltip("New shell in this project")
                             .on_click(cx.listener(|panel: &mut Self, _, window, cx| {
                                 panel.open_shell(window, cx);
+                            })),
+                    )
+                    // The way out, at the end of the row that is the only chrome
+                    // this panel has. The dock is opened from four places and
+                    // was closable from all four, every one of them outside the
+                    // panel -- so the one place a user is certainly looking when
+                    // they want it gone was the one place that could not do it.
+                    //
+                    // A chevron pointing down, which is where the panel goes,
+                    // rather than a ✕: the shells are not being ended, and the ✕
+                    // an inch to its left on every tab is.
+                    .child(
+                        crate::controls::action("hide-terminal")
+                            .ghost()
+                            .xsmall()
+                            .flex_none()
+                            .icon(Icon::new(IconName::ChevronDown))
+                            .tooltip("Hide the terminal — Ctrl+`")
+                            .on_click(cx.listener(|_: &mut Self, _, _, cx| {
+                                cx.emit(TerminalPanelEvent::Hide);
                             })),
                     ),
             )
@@ -373,15 +548,26 @@ impl TerminalPanel {
                     // The grid draws from its own top-left corner outward, so
                     // without this the first column sits against the panel edge
                     // and the last row against whatever is below it -- a hairline
-                    // or the status bar. Matching the tab strip's inset above
-                    // puts a shell's first character on the same column as the
-                    // tab that names it.
+                    // or the status bar.
+                    //
+                    // **The horizontal inset is the tab's, not a round number of
+                    // our own.** A tab's label starts 16px in from the panel
+                    // edge -- the strip's 8px and the tab's own 8px -- so that
+                    // is where a shell's first character goes and a tab sits
+                    // over the column it names. This number is downstream of the
+                    // two above it and moves whenever either does.
+                    //
+                    // Vertically the reference is the frame rather than the
+                    // strip, so it stays the smaller inset: this panel's job is
+                    // to show rows of a shell, and every 4px spent above the
+                    // first row is 4px not spent on one.
                     //
                     // Costs the shell a column and a row rather than being
                     // painted over them: the view measures its own bounds and
                     // reports the cell count back through the PTY resize, so what
                     // it lays out and what the child believes stay in step.
-                    .p_2()
+                    .px_4()
+                    .py_2()
                     .child(view)
                     .into_any_element()
             }))

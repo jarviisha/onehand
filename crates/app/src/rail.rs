@@ -31,7 +31,6 @@ use gpui::{
 use gpui_component::button::{Button, ButtonGroup, ButtonVariants as _};
 use gpui_component::menu::{DropdownMenu as _, PopupMenu, PopupMenuItem};
 use gpui_component::sidebar::{Sidebar, SidebarCollapsible, SidebarMenuItem};
-use gpui_component::spinner::Spinner;
 use gpui_component::tooltip::Tooltip;
 use gpui_component::{ActiveTheme, Icon, IconName, Selectable as _, Side, Sizable as _, StyledExt};
 use onehand_core::agent::Session;
@@ -435,12 +434,12 @@ pub(crate) fn signal_word(signal: SessionSignal) -> &'static str {
 
 /// The mark a signal draws on a row.
 ///
-/// **Four states, four shapes** — not four tints of one dot. Colour alone was
-/// the whole code before, which meant the rail could only be read by someone
-/// who had already learned it, and could not be read at all by someone who does
-/// not separate red from green: a busy session and a failed one were the same
-/// small circle. Now the shape carries the meaning and the colour reinforces
-/// it, and the tooltip says it outright.
+/// **The one state that is wrong takes a shape of its own.** A lost adapter is
+/// a triangle, because colour alone cannot be read at all by someone who does
+/// not separate red from green, and that is the mark it must never happen to.
+/// The other three are one dot in three tints, which is a code — so each one
+/// names itself in the tooltip, and the conversation header says the same word
+/// beside the name.
 ///
 /// **Nothing at all** for a session that is connected, idle and already read.
 /// That is the case that makes the other four legible — a rail where every row
@@ -450,8 +449,8 @@ pub(crate) fn signal_word(signal: SessionSignal) -> &'static str {
 /// same thing wherever it appears.
 ///
 /// Shared with the status bar, which says the same thing about the session on
-/// screen: a spinner on a rail row and a dot in the bar for one condition would
-/// be a code with two spellings, and only one of them ever learned.
+/// screen: two shapes for one condition would be a code with two spellings, and
+/// only one of them ever learned.
 pub(crate) fn signal_mark(signal: SessionSignal, cx: &App) -> impl IntoElement + use<> {
     let hint = signal_hint(signal);
     let theme = cx.theme();
@@ -470,10 +469,12 @@ pub(crate) fn signal_mark(signal: SessionSignal, cx: &App) -> impl IntoElement +
         .h_flex()
         .items_center()
         .map(|mark| match signal {
-            // The one state that *moves*, because it is the one state that
-            // resolves on its own. Motion says "still going" with no colour and
-            // no word.
-            SessionSignal::Busy => mark.child(Spinner::new().xsmall().color(warning)),
+            // A plain dot, not a spinner: this is a state a row carries for
+            // minutes at a time, and the only thing moving on an otherwise
+            // still rail pulls the eye for as long as it runs. The tooltip and
+            // the header's badge say "Working" in words; the dot only has to
+            // say the row is not idle.
+            SessionSignal::Busy => mark.child(dot(warning)),
             // The shape this app already uses for "something is wrong".
             SessionSignal::Lost => mark.child(
                 Icon::new(IconName::TriangleAlert)
@@ -535,7 +536,12 @@ fn session_menu(
             (shell.clone(), shell.clone(), shell.clone(), shell.clone());
         menu.item(
             crate::controls::menu_item("Rename…")
-                .icon(Icon::new(IconName::Replace))
+                // Not the bundled `replace`, which is a find-and-replace mark
+                // — two arrows around a letter, which reads as swapping this
+                // conversation for another one rather than as writing a new
+                // name on it. The bundled set has no pencil at all, which is
+                // why the shape is one of the app's own.
+                .icon(Icon::new(crate::icons::Icon::SquarePen))
                 .on_click(move |_, window, cx: &mut App| {
                     rename
                         .update(cx, |shell: &mut Shell, cx| {

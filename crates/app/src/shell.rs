@@ -687,6 +687,21 @@ impl Shell {
             shell.sync_panel_facts(cx);
         })
         .detach();
+        // The panel has one thing to ask for: its own dock taken off screen.
+        // It cannot do that itself -- the `DockArea` is here, and so is the
+        // rule that files the open state under the project being left.
+        cx.subscribe_in(
+            &terminal,
+            window,
+            |shell: &mut Self, _, event: &crate::terminal::TerminalPanelEvent, window, cx| {
+                match event {
+                    crate::terminal::TerminalPanelEvent::Hide => {
+                        shell.set_terminal_visible(false, window, cx);
+                    }
+                }
+            },
+        )
+        .detach();
 
         // Coming back to the window is the other moment everything on screen
         // may have gone stale: the agent kept working while the user was

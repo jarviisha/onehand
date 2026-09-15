@@ -220,7 +220,12 @@ pub fn status_bar(
             bar.child(
                 pressable("unsaved", cx)
                     .text_color(warning)
-                    .child(Icon::new(IconName::Replace).size_3())
+                    // A pencil, because what this cell counts is files that
+                    // have been *written in* and not yet saved. The bundled
+                    // `replace` that stood here is a find-and-replace mark, so
+                    // the one cell drawn in a colour was labelled with the
+                    // glyph for a different operation entirely.
+                    .child(Icon::new(crate::icons::Icon::SquarePen).size_3())
                     .child(format!(
                         "{unsaved} unsaved {}",
                         if unsaved == 1 { "file" } else { "files" }

@@ -766,11 +766,13 @@ status bar.
   by its **conversation** (`Chat::conversation_title` — the first prompt, or a rename), falling back
   to the agent's name until it has been prompted; the agent's name rides in the suffix only where
   more than one is configured. A trailing mark appears only while that session carries a signal, and
-  each of the four has a **shape** of its own rather than a tint of one shared dot: a spinner for
-  busy, a warning icon for a lost adapter, an accent dot for a parked question, a success dot for a
-  turn finished unseen. Every mark names itself in a tooltip (`rail::signal_hint`) — colour alone is
-  a code that has to be learned first and cannot be read at all by someone who does not separate red
-  from green.
+  **the one state that is wrong has a shape of its own**: a warning icon for a lost adapter, because
+  that is the mark that must not depend on colour. The other three are one dot in three tints — a
+  warning dot for busy, an accent dot for a parked question, a success dot for a turn finished
+  unseen. Busy is deliberately *not* a spinner: a session is busy for minutes at a time, and the one
+  moving thing on an otherwise still rail pulls the eye for as long as it runs. Every mark names
+  itself in a tooltip (`rail::signal_hint`) — colour alone is a code that has to be learned first
+  and cannot be read at all by someone who does not separate red from green.
   **The selected project row is marked whether or not it
   holds the session on screen**, only the selected project starts expanded, and a project with no
   sessions expands into a *Start a session* row rather than into nothing. Branch and
@@ -887,7 +889,45 @@ status bar.
   says it, and one tab that can never gain a sibling is not a tab. **The terminal's several tabs are
   its own**, drawn inside the panel with the shell labels, their ✕ and the `+`; the library tab group
   around it held exactly one panel and added a second strip saying "Terminal" over the strip that
-  already names every shell. Only the Workbench keeps a tab group, because its modes really are
+  already names every shell. **The strip is drawn here and not with the library's `TabBar`, and that
+  was tried before it was decided.** Every variant that component offers states more than this strip
+  wants to: the default is browser chrome (a filled bar, a raised plate under the selected tab, a
+  hairline ruled under the lot), `pill` makes the selected tab a capsule in the theme's strongest
+  fill, `outline` rings it, and `segmented` and `underline` each bring a border of their own. The
+  panel is one surface with a shell's rows on it and the tabs are a label on that surface, so what is
+  wanted is a small filled rectangle in `accent` and nothing else — which is none of the five, and is
+  not reachable from outside either, because the component writes the fill and the radius into the
+  same style refinement the call site does and writes them later. It was the right reach and the
+  wrong fit: **the thing to check first is whether the component's own choices are the ones you
+  want**, since everything else it was holding here — the label, the glyph, the ellipsis, the
+  accessible name, the ✕ — had already been written out at the call site to get the rest of the look.
+  No rule under the strip either: a border there is a seam, and there is nothing on the far side of
+  it to separate.
+  **The tabs sit in a box of their own, and it is the only part of the row that gives way.** Flat
+  beside the controls they pushed `+` and the way out past the panel's right edge at the fourth
+  shell — the two controls wanted precisely when there are too many tabs were the two the tabs took
+  away. So the list is `flex_1` + `min_w_0` and the controls are `flex_none`. Past that a tab narrows
+  to a floor and only then does the list scroll: a short tab can still be aimed at where a scrolled-out
+  one cannot, and below the floor a tab is an icon and an ellipsis, which says how many shells there
+  are and nothing else. **The newest tab is not scrolled into view**, so past the floor a new shell
+  can be the active one with its tab off the end of the list — the grid is right, the strip is behind.
+  Fixing it means a `ScrollHandle` on the panel.
+  **The strip's right-hand end carries `+` and the way out.** The dock was openable from four places
+  and closable from all four, every one of them outside the panel — so the one place a user is
+  certainly looking when they want it gone was the one place that could not do it. It is a chevron
+  pointing down, which is where the panel goes, and not a ✕: the shells are not being ended, and the
+  ✕ an inch to its left on every tab is. The panel asks rather than acts (`TerminalPanelEvent::Hide`,
+  one variant) because the `DockArea` is the shell's, and it asks to *hide* rather than to toggle —
+  the button is drawn only where the panel already shows, while `Shell::show_terminal` is three-state
+  and would focus the terminal instead of closing it whenever the caret was elsewhere.
+  **A tab is named `<project> — <shell>`**, composed in the panel rather than in `PtyTab::label`: the
+  PTY knows only its program, which is the same word for every tab a root has open, so three shells
+  in one project came out three tabs reading `zsh`. The Neovim mode reads that same label and is
+  deliberately left alone — it has one grid and no strip, so a name built to separate siblings has
+  nothing there to separate it from. `min_w_0` on the label is what lets it ellipsize at all, since a
+  flex child's floor is otherwise its own content. The ✕ shows on hover alone, off a group named per
+  tab — one name shared by the strip lights every tab's cross at once — and it is `invisible()`
+  rather than absent, so the tab does not change width under the pointer. Only the Workbench keeps a tab group, because its modes really are
   sibling tabs. Two consequences for both bare panels: `zoomable` returns `None` (there is no tab bar
   to put the content-direction maximize on — `Ctrl+Shift+K` still works), and each must call
   `track_focus` itself (see the focus gotcha below). What the agent pane's tab bar used to carry moved
