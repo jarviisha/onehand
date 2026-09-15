@@ -612,6 +612,14 @@ impl TerminalPanel {
                             )
                             })),
                     )
+                    // **Muted, like the conversation header's own controls.** The
+                    // library draws a ghost button in full foreground ink, which
+                    // on this strip is the brightest thing in the panel -- three
+                    // glyphs of chrome out-shouting the shell's own output an
+                    // inch below them. The hover fill is what brings the ink
+                    // back on the one about to be pressed, so nothing is lost by
+                    // resting them a tone down.
+                    //
                     // **A size up on the two controls, and it costs no height.**
                     // They are aimed at from across the panel while the ✕ is
                     // found by already being on the tab it belongs to, so the
@@ -625,6 +633,7 @@ impl TerminalPanel {
                             .ghost()
                             .small()
                             .flex_none()
+                            .text_color(cx.theme().muted_foreground)
                             .icon(Icon::new(IconName::Plus))
                             .tooltip("New shell in this project")
                             .on_click(cx.listener(|panel: &mut Self, _, window, cx| {
@@ -652,6 +661,7 @@ impl TerminalPanel {
                             .ghost()
                             .small()
                             .flex_none()
+                            .text_color(cx.theme().muted_foreground)
                             .icon(Icon::new(match full {
                                 true => IconName::Minimize,
                                 false => IconName::Maximize,
@@ -679,6 +689,7 @@ impl TerminalPanel {
                             .ghost()
                             .small()
                             .flex_none()
+                            .text_color(cx.theme().muted_foreground)
                             .icon(Icon::new(IconName::Minus))
                             .tooltip("Hide the terminal — Ctrl+`")
                             .on_click(cx.listener(|_: &mut Self, _, _, cx| {
