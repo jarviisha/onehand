@@ -7,8 +7,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 `onehand` is a Rust desktop GUI (**GPUI** + [gpui-component](https://github.com/longbridge/gpui-component))
 that hosts AI coding agents. The window is a left **navigation rail** (workspace, New session,
 projects/sessions and settings), a central **agent pane**, a right-hand **Workbench** (quick editor
-and file tree), a bottom **terminal** — the last two closed until asked for — and a **status bar**
-along the bottom of the frame. Work is organized as
+and file tree) and a bottom **terminal** — the last two closed until asked for. Work is organized as
 a tree: a *workspace* groups one or more *project roots*, and each root runs one or more *sessions* —
 a session is one agent bound to that root. A root can hold several concurrent sessions.
 
@@ -75,7 +74,7 @@ Tests are inline `#[cfg(test)]` modules — there is no `tests/` directory.
 | `crates/app` | `onehand` | the GPUI front end + the binary |
 | `crates/core` | `onehand-core` | GUI-free logic: config, the workspace tree, ACP, the chat model, the remote bridge, editor rules, completion, git status, worktree rules, the directory flatten |
 | `crates/plugin-api` | `onehand-plugin-api` | GUI-free plugin IDs, descriptors, capabilities and registration contract |
-| `crates/plugin-host` | `onehand-plugin-host` | the Workbench mode contract, the remote-channel factory type, and the two things a plugin cannot reach into the binary for: the button wrapper and status ink |
+| `crates/plugin-host` | `onehand-plugin-host` | the Workbench mode contract, the remote-channel factory type, and the three things a plugin cannot reach into the binary for: the button wrapper, status ink and the chrome surface |
 | `crates/terminal-ui` | `onehand-terminal-ui` | shared PTY/grid ownership used by the terminal dock and Neovim |
 | `plugins/builtin/*` | built-in plugins | Editor, Files, Markdown, Neovim and Telegram contributions compiled into the binary |
 | `vendor/gpui-terminal` | `gpui-terminal` | a vendored terminal grid + the interaction layer upstream never had |
@@ -215,8 +214,9 @@ module owns, and events cross to GPUI on a plain `futures` channel belonging to 
 ### Built-in plugins
 
 `crates/app/src/plugins.rs` is the composition root, and it is two ordered lists:
-the Workbench modes (Editor, Files, Markdown, Neovim, which is the order on the
-strip) and how a named remote channel is opened. Nothing registers, nothing is
+the Workbench modes (Editor, Markdown, Neovim, which is the order on the strip —
+Files is a mode too, composed inside the Editor rather than listed beside it)
+and how a named remote channel is opened. Nothing registers, nothing is
 sealed, and there is no capability declaration or API version — each was checking
 something the compiler checks harder. `impl WorkbenchMode` *is* the capability
 declaration and a mode that does not compile does not ship; this is one binary
@@ -264,6 +264,14 @@ does. A mode draws its own status line — a save conflict, a document that has
 outgrown the read's size bound, a Neovim that would not start — and a second copy
 of the derivation is a second place for a raw status fill to be used as ink,
 which is the mistake `crate::theme::status_ink` exists to prevent.
+
+**The chrome surface is there for the same reason**, and is the sharpest case of
+it: the Neovim mode hands a terminal grid the surface it is sitting on, because a
+grid fills every cell it has not been told otherwise about with its default
+background. A second copy of the answer is a panel and the shell inside it
+disagreeing about what colour the panel is, which shows up as a rectangle of the
+wrong shade behind a running program. `onehand_plugin_host::chrome` is the one
+definition and `crate::theme::chrome` is the app's name for it.
 
 **The button wrapper lives here, not in the app.** A built-in plugin draws
 buttons and cannot reach into the binary hosting it, so a copy in each half is
@@ -355,20 +363,18 @@ plus `sendMessage` and `answerCallbackQuery`. Everything that is not the wire is
   cannot reach one of them and miss another. Global rather than per window, because walking away from one
   window is walking away from all of them, and **not persisted** — a launch that came up believing the
   user was elsewhere would message somebody sitting in front of it about every turn. Thrown from the
-  status bar (`Shell::toggle_away`) or from the chat (`/away`, `/here`), both through
-  `remote::set_away`, since a mode with two setters is a mode that means two things. Two things that
-  setter owes, both because the switch has no other way home. **A dead channel clears it**: the status
-  bar draws the switch only while one is live and `/here` would arrive over the channel that just
-  died, so leaving it set is a mode with no exit short of a restart. And **coming back clears the badge
+  chat (`/away`, `/here`), both through
+  `remote::set_away`, since a mode with two setters is a mode that means two things. **There is no
+  switch at the keyboard any more** — it lived in the status bar, which is gone — so the chat
+  commands are the whole of the way in. Two things that setter owes. **A dead channel clears it**,
+  because `/here` would arrive over the channel that just died and leaving it set is a mode with no
+  exit short of a restart; that mattered while a switch could still be thrown at the window and
+  matters more now that one cannot. And **coming back clears the badge
   on what is on screen**, on the active window only — every turn is unwatched while away, including
   one that ended in the conversation being read, and `unseen` is otherwise cleared when a window
   *becomes* active, which never happens to one that was focused the whole time. That clearing is
-  **deferred**, and has to be: one of the two ways in is a click on the status bar, whose handler is
-  already holding the very shell it reaches into, and updating an entity that is already being updated
-  is a panic rather than an error — it would take the app down on the second press of a control whose
-  whole job is to be pressed twice. The switch is
-  drawn only where a channel is live, is an eye and its absence because that is literally the question
-  it answers, and is silent when off and named in the standing-condition colour when on.
+  **deferred**, and stays so: the clearing reaches into a shell a caller may already be holding, and
+  updating an entity that is already being updated is a panic rather than an error.
 - **In.** `/away` and `/here` set the presence fact above from wherever the user actually is —
   the point of having them, since the switch at the keyboard is no use to somebody who has already
   left. `/sessions` numbers every session across every window and says what each is doing, in the
@@ -598,20 +604,64 @@ renderer read `chat.items` / `chat.busy` without knowing where the model lives.
 
 ### Workbench
 
-[crates/app/src/workbench/](crates/app/src/workbench/) — one dock panel, four modes. **The panel
+[crates/app/src/workbench/](crates/app/src/workbench/) — one dock panel, three modes. **The panel
 draws none of them**: each is a crate implementing one trait, holding its own state and handing back
 its own view, and what is left here is the list, the active ID, the strip and the two facts the frame
 reads off the showing mode's declaration (see *Built-in plugins*).
 
-- **Editor**: a quick editor, not an IDE. Buffers here, rules in core (`onehand_core::editor`): the
-  size bound, the tab set, the **mtime guard**, labels, blocking read/save. Highlighting is
-  gpui-component's tree-sitter over a deliberately small grammar set (decision D3) — no LSP.
-  Reopening an already-open file **never reloads it**: a second click on a path must not discard what
-  the user just typed.
-- **Files**: the active root's tree, `tree::visible_rows` from core, bounded per directory and in
-  total, `.git` skipped. Rows carry git state as one-letter badges; a directory holding changes gets a
-  dot. Indentation is padding by depth, not nested containers — hundreds of nested rows are hundreds
-  of wasted elements.
+**The mode strip is the terminal's tab strip drawn again**: same padding and gap, and each mode is a
+chip rather than a library `Button` — `accent` with the ink that goes on it for the one showing,
+nothing until the pointer arrives for the rest, muted ink otherwise. As buttons the showing mode took
+`primary`, which is the theme's strongest fill and is reserved for the single most important action
+on a screen, spent here on a control that only says which of three views is up; and two rows of the
+same kind an inch apart then disagreed about what a selected tab looks like. No icon, unlike the
+terminal's tabs: those are all the same program and need the glyph to read as tabs at all, while
+these are three different things their names already tell apart. The chips are `flex_none` inside a
+`flex_1 min_w_0` box, so what gives way when a fourth mode arrives is the box and never the maximize
+and hide buttons at the other end.
+
+**It draws itself as a card floating in its dock**: inset on all four sides, one border, one radius,
+`overflow_hidden` so the strip's hairline and the file tree's own border stop at the rounded corners,
+and `crate::theme::chrome` under it — the step that says a panel is *about* the work rather than part
+of it. The terminal takes the same step, both through one function so the two cannot drift; everything else — the conversation, the rail, a dialog — stays on the reading surface.
+The inset is even on all four sides, since a card held off three and flush on the fourth reads as one
+that has slipped, and `track_focus` stays on the *outer* box so the gap belongs to the panel and a
+click landing in it is a click on the Workbench. **The change of surface alone was tried and is not
+enough**: a dock drawn edge to edge in a different fill reads as the window having been *divided*,
+two regions meeting along a line, which is what the arrangement stops being the moment either dock
+closes and the conversation takes the space back.
+
+**`chrome` is half a step off the reading surface, and half is the point.** It was the ramp's well
+step to begin with — the same fill a quoted command takes — and a *panel* drawn in that is a slab of
+it the height of the window a gap away from the conversation: two docks open and the window read as
+three applications rather than one with its furniture round the edges. It is the Oklab midpoint
+between the reading surface and the well, derived rather than named because both ends are already
+tuned per palette. Landing between them also gives back what naming the well cost: a well drawn *on*
+chrome used to come out in the chrome's own value and disappear, so anything sunk into these panels
+had to name a fill of its own — the Markdown mode's code blocks did, and now take the component
+library's default again.
+**What the step costs**: a well drawn *on* chrome is drawn in the same value as the chrome and
+disappears, which is exactly the library's default for a Markdown code block — so the Markdown mode
+names a fill for its blocks instead, and on a chrome panel that fill is the reading surface itself
+(below the panel in the dark palette, above it in the light one, a visible step in both).
+
+- **Editor** (`Ctrl+Shift+E`): the project's file tree down the left, the buffers opened out of it on
+  the right, one draggable divider between them. A quick editor, not an IDE: buffers in the plugin,
+  rules in core (`onehand_core::editor`) — the size bound, the tab set, the **mtime guard**, labels,
+  blocking read/save. Highlighting is gpui-component's tree-sitter over a deliberately small grammar
+  set (decision D3) — no LSP. Reopening an already-open file **never reloads it**: a second click on
+  a path must not discard what the user just typed.
+  **The tree is still `onehand-workbench-files`, its own crate and its own `WorkbenchMode`**, held
+  inside the Editor's `Mode` and forwarded to rather than copied in; `plugins.rs` lists the pair
+  once. They were two entries on the strip, and the strip is where that cost showed — picking a file
+  meant Files, reading it meant Editor, and the next file meant the strip again, which is a mode
+  switch per file in the panel opened to move between files. The tree itself is unchanged:
+  `tree::visible_rows` from core, bounded per directory and in total, `.git` skipped, git state as
+  one-letter badges with a dot on a directory holding changes, and indentation as padding by depth
+  rather than nested containers — hundreds of nested rows are hundreds of wasted elements.
+  **The divider's position is not persisted**: one number per window, back to its starting width on
+  every launch, against another key in the workspace file for something a drag re-answers in a
+  second.
 - **Markdown** (`Ctrl+Shift+M`): the project's `.md` files on the left, the one being read rendered on
   the right. The index is the plugin's own (`onehand_workbench_markdown::index`) rather than core's,
   because nothing outside this mode wants a list of a project's documents — and it is a **walk of the
@@ -687,6 +737,24 @@ an element tree:
 [crates/app/src/terminal.rs](crates/app/src/terminal.rs) over `vendor/gpui-terminal`. A tab per root,
 spawned lazily; dropping a tab drops its PTY, so the child dies with it and there is no separate
 shutdown to forget.
+
+**It is a card in its dock, the Workbench's shape exactly** — inset on all four sides, one border,
+one radius, `overflow_hidden` so the strip's hairline stops at the corners, `crate::theme::chrome`
+under it and `track_focus` on the outer box so the gap belongs to the panel. Two docks answering
+"where does this panel begin" differently would read as two separate decisions. **It is the one this
+costs something**: the grid measures its own bounds and resizes the PTY to match, so the inset is a
+column and a row of shell — paid once, since the inset is fixed while the dock is dragged.
+
+**The grid is drawn in that same chrome step**, and has to be told so rather than reading the theme:
+a terminal fills every cell it has not been told otherwise about with its palette's default
+background, so `terminal_palette` takes the surface as an argument and `spawn_pty` passes it through.
+Both callers hand it `chrome` — the terminal dock from the app, the Neovim mode from the plugin host
+— and the parameter is there so neither has to guess what the other did. Two consequences worth
+knowing: in the dark palette that value is also ANSI *black*, deliberately, since a program asking
+for black means "the background" and answering with the reading surface would put a dark plate behind
+the runs that asked to disappear; and `TerminalThemeKey` watches the chrome token even though it does
+not read it, or a change that moved that step and nothing else would leave every live grid painting
+the old surface.
 
 **Lazy about roots, not about the clock.** A launch restoring a saved layout used to mount the panel
 and stop, so a user who left the terminal open was met on the next launch by an empty dock asking
@@ -770,11 +838,20 @@ hard-coded to `None`.
 ### Window shell
 
 [crates/app/src/shell.rs](crates/app/src/shell.rs) owns the window: the rail plus a `DockArea` whose
-centre is the chat, right dock the Workbench, bottom dock the terminal — and, under both of them, the
-status bar.
+centre is the chat, right dock the Workbench, bottom dock the terminal.
 
 - The **rail** ([rail.rs](crates/app/src/rail.rs), gpui-component's `Sidebar`) is app chrome and
-  lives *outside* the dock, so a layout restore cannot lose it. It is **session-first**: every folder
+  lives *outside* the dock, so a layout restore cannot lose it. **It is drawn on
+  `crate::theme::chrome`**, the docks' own surface, asked for at the call site rather than through
+  the `sidebar` token: that value is derived from two ramp steps when it is asked, while the ramp
+  writes fixed values into token names, so a token carrying it would be a second spelling of one
+  answer and the two would drift the first time either end moved. The library applies the caller's
+  refinement after its own `bg`, which is what lets it win. **`Sidebar`'s right border goes off with
+  it** (`border_r_0`): the fill is the edge, and a rule beside it draws a line along a boundary that
+  was not in doubt. That flag has been both ways — it had to be *on* while the rail was still on the
+  reading surface, and off before that, when the library's drag handle ruled the same seam in the
+  same colour. Nothing else about the rail moves — `sidebar_accent` and the selected fill are well
+  clear of that step in either palette, so a hovered row and a marked one still read. It is **session-first**: every folder
   row lists its sessions, each row selecting root *and* session in one click. A session row is named
   by its **conversation** (`Chat::conversation_title` — the first prompt, or a rename), falling back
   to the agent's name until it has been prompted; the agent's name rides in the suffix only where
@@ -809,7 +886,14 @@ status bar.
   an untouched project follows the selection. A **folded project builds no session rows at all**,
   which is what keeps a workspace of ten roots cheap.
 - **The list is two tabs, not two stacked groups** (`rail::RailTab`, a segmented `TabBar` in the
-  header): *Projects* is the tree, *All sessions* is every session in the workspace, flat.
+  header): *Projects* is the tree, *All sessions* is every session in the workspace, flat. **The
+  selected half is `accent` with the ink that goes on it** — the same spelling the terminal's tabs
+  and the Workbench's mode chips use, so one condition keeps one code. It was the reading surface,
+  which worked while the rail was drawn in that surface too; once the rail moved to the chrome step
+  the plate became the one thing in the window painted a step *below* what it sits on, which is a
+  hole rather than a plate, and the `shadow_sm` under it could not say otherwise at that size. The
+  shadow went with the change: a fill that differs lifts by itself, and a drop shadow over a
+  near-black surface is invisible anyway.
   The flat list **sorts itself by what each session wants** — `rail::session_order`, which is
   `SessionSignal::rank` first and then recency, so a parked question or a dead adapter rises to the
   top and a session carrying no signal at all falls into the tail in most-recently-viewed order. That
@@ -896,10 +980,11 @@ status bar.
 - **`Ctrl+Shift+B` hides the rail; it never narrows it.** An icon-width rail is ten identical folder
   icons, which is the one thing a session-first rail must not become. The way back is a button in the
   agent panel's header, shown only while the rail is hidden (`ChatPaneEvent::ShowRail`).
-- **The agent pane and the terminal are bare `DockItem::panel`s, not tab groups.** `DockItem::tab`
+- **Every panel is a bare `DockItem::panel`; nothing in the window is a tab group.** `DockItem::tab`
   wraps its panel in a `TabPanel` whose title bar draws a tab carrying the panel's title — for the
   conversation that is the conversation's own name, printed directly above the header that already
-  says it, and one tab that can never gain a sibling is not a tab. **The terminal's several tabs are
+  says it, and for the Workbench the word *Workbench* printed over the strip naming its modes;
+  one tab that can never gain a sibling is not a tab. **The terminal's several tabs are
   its own**, drawn inside the panel with the shell labels, their ✕ and the `+`; the library tab group
   around it held exactly one panel and added a second strip saying "Terminal" over the strip that
   already names every shell. **The strip is drawn here and not with the library's `TabBar`, and that
@@ -950,7 +1035,7 @@ status bar.
   no `zsh 2` is a question about where the rest went. The project was tried in that name and is
   worse, not better: this panel draws one root's tabs and only ever that root's, so the project is
   constant on every tab **by construction**, repeated N times and first in line to be cut by the
-  width cap — and which project the terminal is on is already in the status bar, once. The Neovim
+  width cap — and which project the terminal is on is the project the whole window is on. The Neovim
   mode reads `PtyTab::label` too and is deliberately left alone — it has one grid and no strip, so a
   name built to separate siblings has nothing there to separate it from. `min_w_0` on the label is
   what lets it ellipsize at all, since a flex child's floor is otherwise its own content.
@@ -963,14 +1048,15 @@ status bar.
   grid about to be dropped, and the exit callback cannot cover it because a grid no longer drawn
   never runs one. The ✕ shows on hover alone, off a group named per
   tab — one name shared by the strip lights every tab's cross at once — and it is `invisible()`
-  rather than absent, so the tab does not change width under the pointer. Only the Workbench keeps a tab group, because its modes really are
-  sibling tabs. Two consequences for both bare panels: `zoomable` returns `None` (there is no tab bar
-  to put the content-direction maximize on), and each must call
-  `track_focus` itself (see the focus gotcha below). What the agent pane's tab bar used to carry moved
-  into `ChatPane::header`.
-  **The terminal draws the *app* direction itself**, in its own strip beside `+` and the way out —
-  a different control from the one `zoomable` declines, since filling the frame and filling the dock
-  area are two things and only the second needs somewhere the library will draw it. It goes through
+  rather than absent, so the tab does not change width under the pointer. Two consequences for every
+  panel: `zoomable` returns `None` (there is no tab bar for the library to draw a control in), and
+  each must call `track_focus` itself (see the focus gotcha below). What the agent pane's tab bar
+  used to carry moved into `ChatPane::header`, and what the Workbench's did moved to the right-hand
+  end of its mode strip.
+  **The terminal and the Workbench draw the *app* direction themselves**, each in its own strip
+  beside that panel's other chrome. The dock-only zoom `zoomable` used to ask the library for is
+  gone with the tab bars, and nothing replaces it: the conversation already fills everything right
+  of the rail whenever both docks are closed, which is the case it was for. It goes through
   `TerminalPanelEvent::ToggleMaximize` to `Shell::toggle_maximize_panel`, which is the key's path
   **with the panel named**: `Ctrl+Shift+K` maximizes whatever holds the caret, and a button sitting
   in the terminal's strip that blew up the conversation because that is where the user was typing
@@ -1020,29 +1106,20 @@ status bar.
   have to fit rather than by preference. The `ResizableState` is the shell's, not the element's: the
   width outlives frames the rail is not drawn in (hidden, or a panel maximized). Whether the rail is
   *showing* is deliberately not persisted — a workspace that reopened with no rail reads as broken.
-- **The status bar** ([statusbar.rs](crates/app/src/statusbar.rs)) is the frame's other piece of
-  chrome: one row under both the rail and the dock, so the frame is a column whose first child is
-  that pair. It goes with the rail when a panel is maximized in the app direction. It carries **only
-  what nothing else on screen carries** — the conversation's name and what it is doing belong to the
-  agent pane's header and are not repeated. Left: the active project (click copies its path), its
-  branch and change count from `GitStatus::label` (click re-reads status), and the running agent
-  behind the rail's own `signal_mark`, so one condition keeps one shape. Right: how many open buffers
-  are unsaved (click opens the editor, and it is the one cell drawn in a colour, because unsaved work
-  is a standing condition rather than news) and one cell per panel left off 100%. **The terminal is
-  not here** — it moved into the conversation header beside the Workbench button, because the two
-  docks the conversation sits between are one decision and the panel they take their space from is
-  where both belong.
-  **The pointer is the contract**: a cell lights on hover iff pressing it does something; the agent
-  cell is a reading and is drawn flat. The **away switch** sits at the right-hand end and is the one
-  cell that is a control before it is a reading — it appears only while a remote channel is live,
-  draws its icon alone while off, and takes a word and the standing-condition colour when on, because
-  that is the state worth saying out loud and the other is a switch waiting to be thrown.
-  Two things it must not do. **Zoom is read from the panels, not from focus** (`zoomed_panels`):
-  focus moves without telling the window, so a focus-derived factor would sit on screen stale with
-  nothing to admit it. And the two dock facts it draws (`PanelFacts`) reach it through observers
-  **guarded by comparison**, the same way the rail's rows are — the terminal notifies once per chunk
-  of output, so an unguarded observer would put a full window repaint in the output path of every
-  build.
+- **There is no status bar.** There was one — a row under the rail and the dock reading out the
+  project, its branch and change count, the running agent, how many buffers were unsaved and any
+  panel left off 100%. Every fact on it was either already said by something nearer to what it was
+  about (the project and its branch by the rail row naming them, the agent's condition by the same
+  `signal_mark` on that row and in the conversation header) or was chrome reporting on chrome, and
+  what it cost was a permanent strip across the bottom of every window in every project. What went
+  with it: `PanelFacts` and `panel_facts`, `zoomed_panels`, `reset_zoom`, and — the one real loss —
+  the **away switch**, which had no other home at the keyboard. `remote::set_away` is still reached
+  by `/away` and `/here` from a chat; `Shell::toggle_away` and `remote::broadcast` went, and
+  `Chats::everyone` went with them, since a list nothing outside core names is one core should not be
+  holding. What survived the cut is `Shell::sync_terminal_live`, which is now one fact with one
+  reader: the dot on the conversation header's terminal button, the only thing on screen that can say
+  a child process outlived a closed dock. It keeps the guard it had, on the pane's side, because it
+  runs on every chunk a build prints.
 - **Dialogs** ([dialogs.rs](crates/app/src/dialogs.rs)): Settings, the conversation rename and the
   worktree split. **Settings is a nav column and a page**, four pages wide: *Appearance* (the
   light/dark/system picker), *Workspace* (the name and the storage binding, then *New* / *Open
@@ -1078,7 +1155,7 @@ status bar.
 ### Keyboard, zoom, maximize
 
 App commands occupy an exact `Ctrl+Shift` namespace so plain Ctrl keys stay usable inside a PTY:
-`B` rail · `E` Workbench Files · `O` Workbench Editor · `M` Workbench Markdown ·
+`B` rail · `E` Workbench Editor, tree included · `M` Workbench Markdown ·
 `N` Workbench Neovim · `A` composer ·
 `F` find · `R` guarded restart ·
 `W` guarded close · `K` maximize. Plus `` Ctrl+` `` terminal, `Ctrl+S` save, `Ctrl+1…9` session by position, `Ctrl+Tab` session by recency,
@@ -1108,9 +1185,11 @@ panel's subtree, so everything sized in rems scales together — which is why si
 not pixels. The terminal is the exception: it is a measured glyph grid, so its zoom is a font size
 that re-measures the cell and resizes the PTY.
 
-**Maximize has two directions**: `Ctrl+Shift+K` fills the frame and hides the rail; the button in a
-panel's tab bar fills only the dock area and keeps it. Only the Workbench offers the second — the
-agent pane and the terminal are mounted bare and have no tab bar to put it on.
+**Maximize has one direction**: `Ctrl+Shift+K` fills the frame and hides the rail. The two dock
+panels each carry a button for it in their own strip, and that button **names its panel** rather
+than using the key's focused-panel rule — a control sitting in the terminal that blew up the
+conversation because that is where the user was typing would be lying about its own location. The
+library's dock-only zoom went with the tab bars that were the only place it could be drawn.
 
 Settings' Shortcuts page is the whole keymap, and a test (`dialogs::tests::keymap_and_help_agree`)
 fails if a binding is added without a row — a shortcut nobody can find is a shortcut nobody has.
@@ -1238,9 +1317,17 @@ the app's surface ramp written over it (`crate::theme::install`, run once before
 chosen); see the theme module for what is ours and what is inherited. `system` **keeps following** the desktop
 (each window observes its own appearance), which is also what settles the Linux startup race where the
 platform answers with its default until the desktop portal replies. An unrecognized value reads as
-`system` rather than failing the file, because the agent list is in that same file. Two things the
+`system` rather than failing the file, because the agent list is in that same file. Three things the
 switch has to repair: the resolved monospace family, since loading a mode re-applies a whole theme
-config over it, and every *other* window, since the mode is global while a refresh is per window. The
+config over it; **the resize handle's resting colour**, cleared to transparent so a dock draws no
+divider of its own (a panel on the far side of a seam already marks its own edge — each dock card's
+four borders, and at the rail a change of surface — so the library's rule was a second line beside a
+first; dragging still paints, which is the one moment the seam is what is being looked at).
+That write is on `gpui_base::Theme`, the layer *under* gpui-component, because that layer paints
+the handle and the component library re-exports no route to its theme global — hence the `gpui-base`
+dependency, same git source and rev so it is the crate already in the graph. It must come **after**
+`Theme::change`, which rebuilds the Base copy from scratch and would throw an earlier write away. And
+every *other* window, since the mode is global while a refresh is per window. The
 embedded terminal has its own ANSI palette and does not follow the mode. Declaration order matters —
 `appearance` is a bare TOML key, so it must be declared before the sections or saving the config fails
 outright.
@@ -1455,10 +1542,11 @@ Listed because a missing feature nobody wrote down reads as a bug in the ones th
   works without the panel adding it, and a panel that adds `track_focus` on top of that becomes
   doubly click-focusable. A `DockItem::Panel` renders bare, so nothing tracks it and
   `contains_focused` answers "no" however deep inside the pane the caret is — which silently points
-  the whole three-state panel keymap at the wrong panel. That is why `ChatPane::render` and
-  `TerminalPanel::render` — the two bare panels — track their own handles, and the Workbench, which
-  keeps its tab group, does not. Focus-on-click stays correct either way: gpui's handler runs in the
-  bubble phase and an inner focusable takes the click first and calls `prevent_default`.
+  the whole three-state panel keymap at the wrong panel. Every panel here renders bare, so
+  `ChatPane::render`, `TerminalPanel::render` and `Workbench::render` all track their own handles —
+  and one added later that forgets is a panel its own shortcut cannot find. Focus-on-click stays
+  correct either way: gpui's handler runs in the bubble phase and an inner focusable takes the click
+  first and calls `prevent_default`.
 - **A panel closed while it holds focus takes the whole keymap with it.** GPUI resolves a key along
   the path from the dispatch tree's root down to the *focused* node; with nothing focused that path is
   the root alone, and every `on_action` the shell hangs on its own frame sits below it, unreachable.

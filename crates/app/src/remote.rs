@@ -91,15 +91,6 @@ impl RemoteBridge {
         Self { live: None }
     }
 
-    /// Whether a channel is running.
-    ///
-    /// Read by the status bar, which offers the away switch only where there is
-    /// somewhere for the announcements to go — a control whose whole effect is
-    /// on a channel that does not exist is a control that does nothing.
-    pub fn is_live(&self) -> bool {
-        self.live.is_some()
-    }
-
     /// Stop using the channel.
     ///
     /// Called when the channel reports that it is not coming back. Ending the
@@ -255,10 +246,10 @@ fn receive(event: RemoteEvent, cx: &mut App) {
             eprintln!("onehand: the remote bridge stopped: {why}");
             cx.update_global::<Shared, _>(|shared, _| {
                 shared.remote.shut_down();
-                // **Away goes with it, and this is not tidying.** Both ways of
-                // turning it off need the channel: the status bar draws its
-                // switch only while one is live, and `/here` arrives over the
-                // one that just died. Left set, it is a mode with no way out
+                // **Away goes with it, and this is not tidying.** The only way
+                // of turning it off needs the channel: `/here` arrives over the
+                // one that just died, and there is no switch at the keyboard to
+                // fall back on. Left set, it is a mode with no way out
                 // short of restarting the app -- and one that goes on treating
                 // every window as unwatched, so a turn ending in the
                 // conversation being read still badges it and still interrupts
@@ -366,15 +357,13 @@ fn pointed_at(chat: &str, cx: &App) -> Option<u64> {
 /// Say whether the user is at the machine, and hand back the sentence that
 /// says so.
 ///
-/// **One function for both ways in**, the switch in the status bar and the
-/// command from the chat, because a mode with two setters is a mode that ends up
-/// meaning two things. What differs is only who is told: the caller from the
-/// window broadcasts the sentence, since the phone is where the consequences
-/// land; the caller from the chat returns it as its own reply, since saying it
-/// twice in the same conversation is once too many.
+/// **One function however it is reached**, because a mode with two setters is a
+/// mode that ends up meaning two things. Today that is `/away` and `/here` from
+/// a chat, which return the sentence as their own reply; a caller with nowhere
+/// to print it can drop it.
 ///
-/// Every window is refreshed rather than one: this is global, and the switch
-/// draws in each of their status bars.
+/// Every window is refreshed rather than one: presence is global, and each of
+/// them decides what to announce from it.
 pub fn set_away(away: bool, cx: &mut App) -> String {
     cx.update_global::<Shared, _>(|shared, _| shared.away = away);
     cx.refresh_windows();
@@ -395,14 +384,11 @@ pub fn set_away(away: bool, cx: &mut App) -> String {
             .filter(|w| cx.active_window() == Some(w.handle))
             .map(|w| w.shell.clone())
             .collect();
-        // **Deferred, and that is load-bearing.** One of the two ways in here is
-        // a click on the status bar, and a click handler is already holding the
-        // shell it was called on — the same shell this is about to reach into,
-        // since the switch that was clicked is drawn in the active window.
-        // Updating an entity that is already being updated is a panic, not a
-        // borrow error, so it takes the whole app down on the second press of a
-        // control whose entire job is to be pressed twice. Deferring runs this
-        // once that handler has let go, and costs a frame nobody can see.
+        // **Deferred, and that is load-bearing.** This reaches into the active
+        // window's shell, and a caller can already be holding it. Updating an
+        // entity that is already being updated is a panic, not a borrow error,
+        // so it would take the whole app down rather than fail. Deferring runs
+        // this once the caller has let go, and costs a frame nobody can see.
         cx.defer(move |cx| {
             for shell in active.into_iter().filter_map(|shell| shell.upgrade()) {
                 shell.update(cx, |shell, cx| shell.mark_active_seen(cx));
@@ -420,21 +406,6 @@ pub fn set_away(away: bool, cx: &mut App) -> String {
 /// Whether the user has said they are away.
 pub fn is_away(cx: &App) -> bool {
     Shared::global(cx).away
-}
-
-/// Say something to every chat allowed to hear it, with nothing to press.
-///
-/// For what is about the *bridge* rather than about a session — the away switch
-/// being thrown at the keyboard is the only thing so far. A session's own news
-/// goes through [`announce`], which names which session it is about.
-pub fn broadcast(text: String, cx: &App) {
-    let Some(everyone) = with_chats(cx, |chats| chats.everyone().to_vec()) else {
-        return;
-    };
-    let bridge = &Shared::global(cx).remote;
-    for chat in everyone {
-        bridge.send(Outbound::text(chat, text.clone()));
-    }
 }
 
 /// How many saved conversations one `/archive` offers.

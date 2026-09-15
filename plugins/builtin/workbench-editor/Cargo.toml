@@ -12,6 +12,10 @@ path = "src/lib.rs"
 onehand-plugin-api = { path = "../../../crates/plugin-api" }
 onehand-plugin-host = { path = "../../../crates/plugin-host" }
 onehand-core = { path = "../../../crates/core" }
+# The file tree is the left half of this mode. It stays a crate of its own,
+# implementing the same trait, and is composed here rather than copied: what
+# was two entries on the mode strip is one view with a divider down it.
+onehand-workbench-files = { path = "../workbench-files" }
 gpui = { git = "https://github.com/zed-industries/zed", features = ["profiler"] }
 gpui-component = { git = "https://github.com/longbridge/gpui-component", rev = "9e3a29dcbdebc318632bf68203f26c33e9f0e902", features = [
     "tree-sitter", "tree-sitter-rust", "tree-sitter-typescript", "tree-sitter-tsx",

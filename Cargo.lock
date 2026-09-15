@@ -4684,6 +4684,7 @@ dependencies = [
  "anyhow",
  "futures",
  "gpui",
+ "gpui-base",
  "gpui-component",
  "gpui-component-assets",
  "gpui-terminal",
@@ -4695,7 +4696,6 @@ dependencies = [
  "onehand-remote-telegram",
  "onehand-terminal-ui",
  "onehand-workbench-editor",
- "onehand-workbench-files",
  "onehand-workbench-markdown",
  "onehand-workbench-neovim",
  "rfd",
@@ -4765,6 +4765,7 @@ dependencies = [
  "onehand-core",
  "onehand-plugin-api",
  "onehand-plugin-host",
+ "onehand-workbench-files",
 ]
 
 [[package]]

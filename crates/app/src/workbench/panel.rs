@@ -21,11 +21,12 @@
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
     App, AppContext, Context, Entity, EventEmitter, FocusHandle, Focusable, InteractiveElement,
-    IntoElement, ParentElement, Render, SharedString, Styled, Window, div,
+    IntoElement, ParentElement, Render, SharedString, StatefulInteractiveElement, Styled, Window,
+    div,
 };
 use gpui_component::button::ButtonVariants as _;
 use gpui_component::dock::{Panel, PanelControl, PanelEvent};
-use gpui_component::{ActiveTheme, Sizable as _, StyledExt};
+use gpui_component::{ActiveTheme, Icon, IconName, Sizable as _, StyledExt};
 use onehand_core::gitstat::GitStatus;
 use onehand_plugin_api::{PluginId, WorkbenchModeSpec};
 use onehand_plugin_host::{Ask, Request, WorkbenchMode};
@@ -34,7 +35,6 @@ use std::path::{Path, PathBuf};
 use std::rc::Rc;
 
 pub const EDITOR_MODE: PluginId = onehand_workbench_editor::SPEC.id;
-pub const FILES_MODE: PluginId = onehand_workbench_files::SPEC.id;
 pub const MARKDOWN_MODE: PluginId = onehand_workbench_markdown::SPEC.id;
 pub const NEOVIM_MODE: PluginId = onehand_workbench_neovim::SPEC.id;
 
@@ -60,6 +60,14 @@ pub struct Workbench {
     /// sizes are per window here, and a zoom that reset itself on every root
     /// switch would be the odd one out.
     zoom: crate::zoom::Zoom,
+    /// Whether this panel is currently blown up to the whole frame.
+    ///
+    /// Pushed down from the shell, which owns the fact. The strip draws the
+    /// state and not the action, because one glyph for both says the same thing
+    /// about two opposite situations -- and the situation that matters is the
+    /// one where the panel fills the window and the user is looking for the way
+    /// back.
+    maximized: bool,
 }
 
 impl Workbench {
@@ -82,6 +90,7 @@ impl Workbench {
                 focus_handle: cx.focus_handle(),
                 root: None,
                 zoom,
+                maximized: false,
             }
         })
     }
@@ -189,9 +198,21 @@ impl Workbench {
         cx.notify();
     }
 
-    /// This panel's zoom, for the status bar to report.
+    /// This panel's zoom, which the shell reads to step it.
     pub fn zoom(&self) -> crate::zoom::Zoom {
         self.zoom
+    }
+
+    /// Tell the strip which way round the maximize is.
+    ///
+    /// Guarded, because the shell pushes this on paths that run whether or not
+    /// anything changed and a notify here redraws the window.
+    pub fn set_maximized(&mut self, maximized: bool, cx: &mut Context<Self>) {
+        if self.maximized == maximized {
+            return;
+        }
+        self.maximized = maximized;
+        cx.notify();
     }
 
     /// Put focus where the showing mode's work happens.
@@ -275,12 +296,15 @@ impl Panel for Workbench {
         "Workbench"
     }
 
-    /// The content-only maximize: the panel fills the frame right of the rail,
-    /// which stays. Put in the
-    /// toolbar rather than the overflow menu -- it is the direction reached
-    /// for most often, and the app direction already has a key.
+    /// No library maximize, because there is no tab bar to put it on: this
+    /// panel is mounted bare, the way the conversation and the terminal are.
+    ///
+    /// The tab group it used to keep drew a title bar over the mode strip --
+    /// one tab reading "Workbench" directly above four tabs naming the modes,
+    /// with the panel's controls stranded on the row that said the least. The
+    /// strip below is this panel's own chrome and is where they go.
     fn zoomable(&self, _: &App) -> Option<PanelControl> {
-        Some(PanelControl::Toolbar)
+        None
     }
 
     fn title(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
@@ -289,6 +313,22 @@ impl Panel for Workbench {
 }
 
 impl EventEmitter<PanelEvent> for Workbench {}
+
+/// What this panel asks the shell for, having no way to do either itself.
+///
+/// The `DockArea` is the shell's, and so is which panel is blown up to the
+/// frame. [`Self::Hide`] is not a toggle, because the control is drawn only
+/// where the panel already shows; [`Self::ToggleMaximize`] is, and it names
+/// *this* panel rather than the focused one -- the button sits in the
+/// Workbench's own strip, so routing it through the key's focused-panel rule
+/// would blow up the conversation whenever that was where the caret happened to
+/// be.
+pub enum WorkbenchEvent {
+    Hide,
+    ToggleMaximize,
+}
+
+impl EventEmitter<WorkbenchEvent> for Workbench {}
 
 impl Focusable for Workbench {
     fn focus_handle(&self, _: &App) -> FocusHandle {
@@ -300,19 +340,85 @@ impl Render for Workbench {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let showing = self.showing();
         let specs: Vec<WorkbenchModeSpec> = self.modes.iter().map(|item| item.spec()).collect();
+        let full = self.maximized;
         let strip = div()
             .h_flex()
             .items_center()
-            .gap_1()
+            // **The terminal strip's three numbers, and deliberately the same
+            // three.** Both are one row of chrome along the top of a dock,
+            // holding a row of chips at one end and a pair of icon buttons at
+            // the other, and two rows doing the same job an inch apart are read
+            // together -- so a strip that agreed with neither of them read as a
+            // panel that had been built by somebody else.
+            //
+            // The room is around the chip and not inside it, because a chip is
+            // the one thing on this row carrying a fill and so the one thing
+            // with an edge that can sit too near another.
+            .gap_1p5()
             .w_full()
             .px_2()
-            .py_1()
+            .py_1p5()
             .border_b_1()
             .border_color(cx.theme().border)
-            .children(
-                specs
-                    .into_iter()
-                    .map(|spec| mode_tab(spec.label, spec.id, showing.id, cx)),
+            // The modes are the row's own content and the only part of it that
+            // gives way: flat beside the controls, a fifth mode would push the
+            // way out past the panel's right edge -- the control wanted
+            // precisely when the strip is crowded is the one crowding takes
+            // away.
+            .child(
+                div()
+                    .h_flex()
+                    .items_center()
+                    .gap_1p5()
+                    .flex_1()
+                    .min_w_0()
+                    .children(
+                        specs
+                            .into_iter()
+                            .map(|spec| mode_tab(spec.label, spec.id, showing.id, cx)),
+                    ),
+            )
+            // Muted, like the terminal strip's pair and the conversation
+            // header's controls: the library draws a ghost button in full
+            // foreground ink, which on a chrome row is the brightest thing in
+            // the panel. The hover fill brings the ink back on the one about to
+            // be pressed.
+            .child(
+                crate::controls::action("maximize-workbench")
+                    .ghost()
+                    .small()
+                    .flex_none()
+                    .text_color(cx.theme().muted_foreground)
+                    .icon(Icon::new(match full {
+                        true => IconName::Minimize,
+                        false => IconName::Maximize,
+                    }))
+                    .tooltip(match full {
+                        true => "Back to the dock — Ctrl+Shift+K",
+                        false => "Fill the window — Ctrl+Shift+K",
+                    })
+                    .on_click(cx.listener(|_: &mut Self, _, _, cx| {
+                        cx.emit(WorkbenchEvent::ToggleMaximize);
+                    })),
+            )
+            // A minus, the mark a window's own chrome uses for the thing that
+            // goes away and comes back, and the same one the terminal's strip
+            // carries: nothing here is being closed, the dock is being put down.
+            //
+            // `Minus` and never `Dash`, which is the same drawing under another
+            // name with `stroke` written into it as literal black -- so it
+            // ignores `text_color` and comes out invisible on a dark panel.
+            .child(
+                crate::controls::action("hide-workbench")
+                    .ghost()
+                    .small()
+                    .flex_none()
+                    .text_color(cx.theme().muted_foreground)
+                    .icon(Icon::new(IconName::Minus))
+                    .tooltip("Hide the Workbench")
+                    .on_click(cx.listener(|_: &mut Self, _, _, cx| {
+                        cx.emit(WorkbenchEvent::Hide);
+                    })),
             );
 
         // The mode strip is chrome and keeps its size; only the work below it
@@ -331,7 +437,28 @@ impl Render for Workbench {
         };
         div()
             .size_full()
-            .v_flex()
+            // **A card floating in its dock, not the dock itself.** The inset is
+            // what makes it one: held off all four sides by the same amount,
+            // because a card inset on three and flush on the fourth reads as one
+            // that has slipped.
+            //
+            // The change of surface alone was tried and is not enough. A panel
+            // drawn edge to edge in a different fill reads as the window having
+            // been *divided* -- two regions meeting along a line, which is what
+            // the whole arrangement stops being the moment either dock closes
+            // and the conversation takes the space back. The gap is what says
+            // the dock is a thing put down on the window rather than a piece of
+            // it.
+            .p_2()
+            // Mounted bare, so nothing else tracks this handle. A `TabPanel`
+            // calls `track_focus` on the panel it holds, which is what normally
+            // makes `contains_focused` answer for a dock panel at all -- and
+            // without it the three-state panel keymap silently reads "the caret
+            // is not in the Workbench" however deep inside it the caret is.
+            //
+            // On the outer box and not the card, so the gap belongs to the
+            // panel: a click landing in it is a click on the Workbench.
+            .track_focus(&self.focus_handle)
             // A mode hosting a PTY takes the *terminal's* context while it is
             // showing, and it has to be that name and not one of its own:
             // `Ctrl+S` is bound `Shell && !Terminal` so that a program in a PTY
@@ -340,27 +467,76 @@ impl Render for Workbench {
             // Under any other mode this is the Workbench, which is what the save
             // is *for*.
             .key_context(showing.key_context)
-            .child(strip)
-            .child(body)
+            .child(
+                div()
+                    .size_full()
+                    .v_flex()
+                    .border_1()
+                    .border_color(cx.theme().border)
+                    .rounded(cx.theme().radius_lg)
+                    // The chrome surface, which is what the outline and the gap
+                    // cannot say by themselves: that this panel is *about* the
+                    // work rather than part of it. The terminal takes the same
+                    // step, both through one function so the two cannot drift.
+                    .bg(crate::theme::chrome(cx))
+                    // `overflow_hidden` is what the rounding needs: the strip's
+                    // hairline runs the full width and the file tree's own
+                    // border runs the full height, so without it both draw
+                    // straight through the corners the radius just cut.
+                    .overflow_hidden()
+                    .child(strip)
+                    .child(body),
+            )
     }
 }
 
+/// One mode's chip on the strip.
+///
+/// **The terminal's tab, drawn again with a word in it.** It was a library
+/// `Button` before -- `primary` for the showing mode, `ghost` for the rest --
+/// and that put the theme's strongest fill, the one reserved for the single
+/// most important action on a screen, behind a control that only says which of
+/// three views is up. Two rows of the same kind an inch apart then disagreed
+/// about what a selected tab looks like, which is a code with two spellings and
+/// only one of them ever learned.
+///
+/// So: the selected chip takes `accent` with the ink that goes on it, the rest
+/// take nothing until the pointer is over them, and the whole chip is smaller
+/// than a button of any size the component offers -- which is the other half of
+/// why this is a `div`. No icon, unlike the terminal's: those tabs are all the
+/// same program and need the glyph to read as tabs at all, while these are
+/// three different things already told apart by their names.
 fn mode_tab(
     label: &'static str,
     which: PluginId,
     active: PluginId,
     cx: &mut Context<Workbench>,
 ) -> impl IntoElement + use<> {
-    crate::controls::action(label)
-        .xsmall()
-        .map(|b| {
-            if which == active {
-                b.primary()
-            } else {
-                b.ghost()
-            }
+    let selected = which == active;
+    div()
+        .id(which.as_str())
+        .h_flex()
+        .items_center()
+        // A chip is the size its own word needs and gives nothing back to the
+        // row; what runs out of room is the box around them.
+        .flex_none()
+        .px_2()
+        .py_0p5()
+        .rounded(cx.theme().radius)
+        .text_xs()
+        .cursor_pointer()
+        .when(selected, |tab| {
+            tab.bg(cx.theme().accent)
+                .text_color(cx.theme().accent_foreground)
         })
-        .label(label)
+        // Muted until the pointer arrives, so three words in a row do not
+        // out-shout what is under them. The hover fill is the same one the
+        // terminal's tabs take.
+        .when(!selected, |tab| {
+            tab.text_color(cx.theme().muted_foreground)
+                .hover(|tab| tab.bg(cx.theme().muted))
+        })
+        .child(label)
         .on_click(cx.listener(move |panel: &mut Workbench, _, _, cx| {
             panel.set_mode(which, cx);
         }))

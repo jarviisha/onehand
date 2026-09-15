@@ -131,7 +131,7 @@ impl Drop for PtyTab {
 #[derive(Clone, Copy, PartialEq)]
 pub struct TerminalThemeKey {
     dark: bool,
-    colors: [gpui::Hsla; 17],
+    colors: [gpui::Hsla; 18],
 }
 
 impl TerminalThemeKey {
@@ -140,6 +140,13 @@ impl TerminalThemeKey {
         Self {
             dark: theme.mode.is_dark(),
             colors: [
+                // The well, which is half of the chrome step the panels hand in
+                // as the grid's surface -- the reading surface below being the
+                // other half, and already here. Neither is read in this file;
+                // they are watched because a key blind to one of them would let
+                // every live grid keep painting the old surface after a change
+                // that moved only that one.
+                theme.muted,
                 theme.background,
                 theme.foreground,
                 theme.muted_foreground,
@@ -216,13 +223,14 @@ pub fn spawn_pty(
     cwd: &PathBuf,
     program: Program,
     font_size: gpui::Pixels,
+    surface: gpui::Hsla,
     cx: &mut App,
     on_exit: impl Fn(&mut Window, &mut App) + 'static,
 ) -> Result<PtyTab, String> {
     let config = TerminalConfig {
         scrollback: SCROLLBACK,
         font_size,
-        colors: terminal_palette(cx),
+        colors: terminal_palette(surface, cx),
         font_family: cx.theme().mono_font_family.to_string(),
         ..TerminalConfig::default()
     };
@@ -344,17 +352,30 @@ pub fn spawn_pty(
 /// Build a terminal palette from the same active theme as the surrounding app.
 ///
 /// ANSI colours remain ANSI colours, but their normal/bright variants come from
-/// the theme's adaptive base scales. Default text, background and cursor use
-/// their exact semantic roles, which is what removes the vendored terminal's
-/// fixed light-on-charcoal palette from light mode.
-pub fn terminal_palette(cx: &App) -> ColorPalette {
+/// the theme's adaptive base scales. Default text and cursor use their exact
+/// semantic roles, which is what removes the vendored terminal's fixed
+/// light-on-charcoal palette from light mode.
+///
+/// **`surface` is passed in and not read from the theme**, because it is a fact
+/// about the panel rather than about the palette: a grid fills every cell it has
+/// not been told otherwise about with its default background, so that value has
+/// to be the one the panel around it is drawn in or the shell sits in a
+/// rectangle of a different shade. Both callers hand it the chrome step, which
+/// is what their panels use; the parameter is there so neither has to guess what
+/// the other did.
+///
+/// It is the *black* half of the ANSI pair in a dark palette, too, and
+/// deliberately still is: a program asking for black means "the background",
+/// and answering with the reading surface would put a dark plate behind exactly
+/// the runs that asked to disappear.
+pub fn terminal_palette(surface: gpui::Hsla, cx: &App) -> ColorPalette {
     fn rgb(color: gpui::Hsla) -> (u8, u8, u8) {
         let color = color.to_rgb();
         let c = |v: f32| (v.clamp(0., 1.) * 255.).round() as u8;
         (c(color.r), c(color.g), c(color.b))
     }
     let t = cx.theme();
-    let background = rgb(t.background);
+    let background = rgb(surface);
     let foreground = rgb(t.foreground);
     let muted = rgb(t.muted_foreground);
     let border = rgb(t.border);

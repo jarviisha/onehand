@@ -70,6 +70,7 @@ fn main() {
                             &std::env::current_dir().unwrap(),
                             Program::Shell,
                             px(14.),
+                            onehand_plugin_host::chrome(cx),
                             cx,
                             |_, cx| cx.quit(),
                         )

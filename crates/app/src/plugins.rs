@@ -19,8 +19,10 @@ use onehand_plugin_host::{Ask, RemoteChannelFactory, WorkbenchMode};
 /// showing the same one would be the same entity mounted twice.
 pub fn workbench_modes(ask: Ask, font_size: Pixels, cx: &mut App) -> Vec<Box<dyn WorkbenchMode>> {
     vec![
-        Box::new(onehand_workbench_editor::Mode::new(cx)),
-        Box::new(onehand_workbench_files::Mode::new(ask.clone(), cx)),
+        // The Editor is the file tree and the buffers together -- the Files
+        // plugin is still its own crate and still its own mode, composed inside
+        // this one rather than listed beside it.
+        Box::new(onehand_workbench_editor::Mode::new(ask.clone(), cx)),
         Box::new(onehand_workbench_markdown::Mode::new(ask.clone(), cx)),
         Box::new(onehand_workbench_neovim::Mode::new(ask, font_size, cx)),
     ]
@@ -54,7 +56,6 @@ mod tests {
     fn only_a_live_grid_takes_the_terminal_context_and_refuses_the_rem_scale() {
         let declared: Vec<WorkbenchModeSpec> = vec![
             onehand_workbench_editor::SPEC,
-            onehand_workbench_files::SPEC,
             onehand_workbench_markdown::SPEC,
             onehand_workbench_neovim::SPEC,
         ];

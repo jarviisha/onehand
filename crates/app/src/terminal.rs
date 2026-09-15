@@ -149,6 +149,7 @@ impl TerminalPanel {
             &root,
             Program::Shell,
             crate::zoom::term_font_size(self.zoom),
+            crate::theme::chrome(cx),
             cx,
             move |window, cx| {
                 let _ = panel.update(cx, |panel: &mut Self, cx| panel.reap(window, cx));
@@ -270,7 +271,7 @@ impl TerminalPanel {
             return;
         }
         self.terminal_theme = current;
-        let colors = terminal_palette(cx);
+        let colors = terminal_palette(crate::theme::chrome(cx), cx);
         for set in self.shells.values() {
             for tab in &set.tabs {
                 tab.set_palette(colors.clone(), cx);
@@ -369,6 +370,18 @@ impl Render for TerminalPanel {
         self.sync_theme(cx);
         div()
             .size_full()
+            // **A card floating in its dock, the Workbench's shape exactly.**
+            // Two docks answering "where does this panel begin" differently
+            // would read as two separate decisions rather than one.
+            //
+            // It costs the shell a column and a row, because the grid measures
+            // its own bounds and resizes the PTY to match and this is one more
+            // thing narrowing them. Paid once rather than growing with the
+            // panel, since the inset is fixed while the dock is dragged.
+            .p_2()
+            // On the outer box, so the gap around the card belongs to the panel:
+            // a click landing in it is a click on the terminal.
+            //
             // Tracked here because this panel is mounted bare. A `TabPanel` calls
             // `track_focus` on the panel it holds, which is what normally puts
             // that handle in the focus tree; without a tab group nothing does,
@@ -377,7 +390,23 @@ impl Render for TerminalPanel {
             // every "which panel is this" question at some other panel.
             .track_focus(&self.focus_handle)
             .key_context("Terminal")
-            .child(self.body(window, cx))
+            .child(
+                div()
+                    .size_full()
+                    .v_flex()
+                    .border_1()
+                    .border_color(cx.theme().border)
+                    .rounded(cx.theme().radius_lg)
+                    // The chrome surface, as the Workbench takes it, and the
+                    // grid below is handed the same value as its own background
+                    // -- so a shell is the card rather than a plate laid on it.
+                    .bg(crate::theme::chrome(cx))
+                    // The strip's hairline runs the full width of the panel, so
+                    // without this it draws straight through the corners the
+                    // radius just cut.
+                    .overflow_hidden()
+                    .child(self.body(window, cx)),
+            )
     }
 }
 
@@ -412,7 +441,7 @@ impl TerminalPanel {
         // root's tabs and only ever that root's, so the part of the name
         // carrying the project was constant by construction, repeated on every
         // tab, and first in line to be cut by the width cap. Which project the
-        // terminal is on is already in the status bar, once.
+        // terminal is on is the project the whole window is on.
         //
         // Composed here and not in `PtyTab::label`, which the Neovim mode also
         // reads: that mode has one grid and no strip, so a name built to
@@ -703,8 +732,7 @@ impl TerminalPanel {
                     .min_h_0()
                     // The grid draws from its own top-left corner outward, so
                     // without this the first column sits against the panel edge
-                    // and the last row against whatever is below it -- a hairline
-                    // or the status bar.
+                    // and the last row against the card's own border below it.
                     //
                     // **The horizontal inset is the tab's, not a round number of
                     // our own.** A tab's label starts 16px in from the panel

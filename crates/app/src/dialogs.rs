@@ -866,13 +866,8 @@ pub const SHORTCUTS: &[Shortcut] = &[
         keys: &["ctrl-shift-b"],
     },
     Shortcut {
-        label: "Ctrl+Shift+O",
-        what: "Workbench — Editor",
-        keys: &["ctrl-shift-o"],
-    },
-    Shortcut {
         label: "Ctrl+Shift+E",
-        what: "Workbench — Files",
+        what: "Workbench — Editor, with the project's file tree",
         keys: &["ctrl-shift-e"],
     },
     Shortcut {

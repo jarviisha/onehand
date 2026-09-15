@@ -1,8 +1,8 @@
 //! What the app hands its built-in plugins, and what they hand back.
 //!
-//! Two things a plugin needs that it cannot reach into the binary for — a
-//! button that answers the pointer, and the derivation of status ink — plus the
-//! Workbench mode contract itself.
+//! The things a plugin needs that it cannot reach into the binary for — a
+//! button that answers the pointer, the derivation of status ink, and the chrome
+//! surface a panel is drawn on — plus the Workbench mode contract itself.
 
 // Nothing here is `pub` unless the binary names it: `dead_code` stops at a
 // `pub` item in a library, so one that lost its last caller looks exactly like
@@ -44,6 +44,43 @@ pub type RemoteChannelFactory = fn(String) -> Box<dyn onehand_core::remote::type
 /// against.
 pub fn action(id: impl Into<ElementId>) -> Button {
     Button::new(id).cursor_pointer()
+}
+
+/// The surface the app's own furniture sits on, as opposed to the one text is
+/// read on.
+///
+/// The two dock cards take it, and they are the things in the window that are
+/// *about* the work rather than part of it. Everything else — the conversation,
+/// the rail, a dialog — stays on the reading surface, so the step says "this is
+/// chrome" rather than merely "this is another panel".
+///
+/// **Half a step off the reading surface, and half is the whole point.** It was
+/// the ramp's well step to begin with — the same fill a quoted command or a code
+/// block takes — and a *panel* drawn in it is a slab of that value the height of
+/// the window, sitting a gap away from the conversation. Two docks open and the
+/// window read as three separate applications rather than one with its furniture
+/// around the edges. Chrome has to be legible as not-the-conversation and no
+/// louder than that.
+///
+/// So it is the midpoint, mixed in Oklab so the step is perceptual rather than
+/// arithmetic, and **derived rather than named**: the reading surface and the
+/// well are already tuned per palette, and a fixed value here would have to be
+/// tuned twice more and kept in step with both.
+///
+/// Landing *between* the two also gives it back what naming the well cost. A
+/// well drawn on chrome was drawn in the chrome's own value and disappeared, so
+/// anything sunk into one of these panels had to name a fill of its own; now the
+/// ordinary one still reads, and the component library's default for a code
+/// block is right again.
+///
+/// Here rather than in the app for the reason [`action`] is: the Neovim mode
+/// draws a terminal grid and has to hand it the surface it is sitting on, and
+/// it cannot reach into the binary hosting it. A second copy is two places for
+/// a panel and the grid inside it to come to disagree about what colour the
+/// panel is, which is visible as a rectangle of the wrong shade behind a shell.
+pub fn chrome(cx: &App) -> Hsla {
+    let theme = cx.theme();
+    theme.background.mix_oklab(theme.muted, 0.5)
 }
 
 /// Status colours used as ink on the app's normal surfaces.

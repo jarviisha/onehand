@@ -368,7 +368,7 @@ impl Render for EditorView {
             .filter(|buffers| !buffers.tabs.files.is_empty());
 
         let body = match open {
-            None => hint("Open a file from a tool card or the Files tab", cx),
+            None => hint("Open a file from the tree, or from a tool card", cx),
             Some(buffers) => {
                 let active = buffers.tabs.active_file().map(|f| f.uid);
                 let buffer = active.and_then(|uid| buffers.buffer(uid)).cloned();

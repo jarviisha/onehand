@@ -373,6 +373,11 @@ pub(crate) fn reader(
 /// than a reading off the window. And the code block's text size is in rems,
 /// which the override *does* reach.
 fn doc_style(rem: gpui::Pixels) -> TextViewStyle {
+    // The fill is the library's, which is the well step. It reads against the
+    // panel around this document because the chrome that panel is drawn in
+    // stops half way to the well rather than landing on it -- which is what a
+    // block named its own fill to work around while the two were the same
+    // value.
     let mut style = TextViewStyle::default().code_block(
         gpui::StyleRefinement::default()
             .p(gpui::rems(0.75))
