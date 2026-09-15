@@ -916,16 +916,33 @@ status bar.
   and closable from all four, every one of them outside the panel — so the one place a user is
   certainly looking when they want it gone was the one place that could not do it. It is a chevron
   pointing down, which is where the panel goes, and not a ✕: the shells are not being ended, and the
-  ✕ an inch to its left on every tab is. The panel asks rather than acts (`TerminalPanelEvent::Hide`,
+  ✕ an inch to its left on every tab is. **The strip is drawn whether or not there are any shells**,
+  which is what an early return on the empty set got wrong: the way out lives on that row, so closing
+  the last shell took it away and left an open dock with no control inside it to close — the exact
+  state the chevron exists for, reached with the ✕ an inch away from it. The one case with no strip is
+  having no project root, where there is no shell to start and nowhere to start it.
+  The panel asks rather than acts (`TerminalPanelEvent::Hide`,
   one variant) because the `DockArea` is the shell's, and it asks to *hide* rather than to toggle —
   the button is drawn only where the panel already shows, while `Shell::show_terminal` is three-state
   and would focus the terminal instead of closing it whenever the caret was elsewhere.
-  **A tab is named `<project> — <shell>`**, composed in the panel rather than in `PtyTab::label`: the
-  PTY knows only its program, which is the same word for every tab a root has open, so three shells
-  in one project came out three tabs reading `zsh`. The Neovim mode reads that same label and is
-  deliberately left alone — it has one grid and no strip, so a name built to separate siblings has
-  nothing there to separate it from. `min_w_0` on the label is what lets it ellipsize at all, since a
-  flex child's floor is otherwise its own content. The ✕ shows on hover alone, off a group named per
+  **A tab is named `<shell> <n>`, and numbered only where there is more than one**, composed in the
+  panel rather than in `PtyTab::label`: the PTY knows only its program, which is the same word for
+  every tab a root has open, so three shells came out three tabs reading `zsh` — while `zsh 1` beside
+  no `zsh 2` is a question about where the rest went. The project was tried in that name and is
+  worse, not better: this panel draws one root's tabs and only ever that root's, so the project is
+  constant on every tab **by construction**, repeated N times and first in line to be cut by the
+  width cap — and which project the terminal is on is already in the status bar, once. The Neovim
+  mode reads `PtyTab::label` too and is deliberately left alone — it has one grid and no strip, so a
+  name built to separate siblings has nothing there to separate it from. `min_w_0` on the label is
+  what lets it ellipsize at all, since a flex child's floor is otherwise its own content.
+  **Closing a tab keeps the selection on the same shell**, which is `selection_after`: the index
+  loses one step per tab dropped *ahead* of it, and the clamp is only for the selected tab going
+  itself. Clamping alone keeps a number rather than a shell — three tabs with the middle one on
+  screen, close the first, and the panel silently swaps to the third, which reads as a misclick. It
+  is one pure function because both `close_tab` and `reap` had written the arithmetic out and both
+  had it wrong. `close_tab` also takes a `Window`, and must: the ✕ is pressed with the caret in the
+  grid about to be dropped, and the exit callback cannot cover it because a grid no longer drawn
+  never runs one. The ✕ shows on hover alone, off a group named per
   tab — one name shared by the strip lights every tab's cross at once — and it is `invisible()`
   rather than absent, so the tab does not change width under the pointer. Only the Workbench keeps a tab group, because its modes really are
   sibling tabs. Two consequences for both bare panels: `zoomable` returns `None` (there is no tab bar

@@ -33,6 +33,51 @@ struct RootShells {
     active: usize,
 }
 
+impl RootShells {
+    /// Drop every tab `goes` answers true for, and keep the selection on the
+    /// same *shell* it was on.
+    ///
+    /// **One function because the index arithmetic is the whole thing, and it
+    /// was wrong in both places that had written it out.** Clamping the old
+    /// index into the shorter list keeps a number, not a shell: with three tabs
+    /// and the middle one selected, closing the *first* left the index at 1 and
+    /// the panel showing the third — the one shell the user had not been
+    /// looking at and had not asked to close. What the index has to lose is one
+    /// step per tab removed ahead of it, and the clamp is only for the case
+    /// where the selected tab is itself among them.
+    ///
+    /// Answers whether anything went, since both callers have work to do only
+    /// then.
+    fn drop_where(&mut self, mut goes: impl FnMut(usize, &mut PtyTab) -> bool) -> bool {
+        let mut dropped = Vec::new();
+        let mut ix = 0;
+        self.tabs.retain_mut(|tab| {
+            let drop = goes(ix, tab);
+            if drop {
+                dropped.push(ix);
+            }
+            ix += 1;
+            !drop
+        });
+        if dropped.is_empty() {
+            return false;
+        }
+        self.active = selection_after(self.active, &dropped, self.tabs.len());
+        true
+    }
+}
+
+/// Where the selection lands once `dropped` have gone and `left` remain.
+///
+/// Separate and pure because it is the rule rather than the removal, and a rule
+/// about which tab the user is looking at is exactly the kind that regresses in
+/// silence -- nothing crashes, the panel simply shows a different shell than the
+/// one it was showing, which reads as having clicked something.
+fn selection_after(active: usize, dropped: &[usize], left: usize) -> usize {
+    let ahead = dropped.iter().filter(|&&ix| ix < active).count();
+    (active - ahead).min(left.saturating_sub(1))
+}
+
 pub struct TerminalPanel {
     focus_handle: FocusHandle,
     root: Option<PathBuf>,
@@ -115,12 +160,7 @@ impl TerminalPanel {
         let held_focus = self.focus_handle.contains_focused(window, cx);
         let mut removed = false;
         for set in self.shells.values_mut() {
-            let before = set.tabs.len();
-            set.tabs.retain_mut(|tab| !tab.finished());
-            if set.tabs.len() != before {
-                set.active = set.active.min(set.tabs.len().saturating_sub(1));
-                removed = true;
-            }
+            removed |= set.drop_where(|_, tab| tab.finished());
         }
         if !removed {
             return;
@@ -131,13 +171,27 @@ impl TerminalPanel {
         cx.notify();
     }
 
-    pub fn close_tab(&mut self, idx: usize, cx: &mut Context<Self>) {
-        if let Some(set) = self.root.as_ref().and_then(|r| self.shells.get_mut(r))
-            && idx < set.tabs.len()
-        {
-            // Dropping the tab drops its PTY, which ends the child.
-            set.tabs.remove(idx);
-            set.active = set.active.min(set.tabs.len().saturating_sub(1));
+    /// Close one tab, ending its shell.
+    ///
+    /// Takes the window for the same reason [`Self::reap`] does, and it is not
+    /// optional here: the ✕ is pressed with the caret in the very grid about to
+    /// be dropped, and a focused entity that leaves the frame leaves the window
+    /// pointing at a node no frame contains — which takes every shortcut with
+    /// it, including the one that would reopen this panel. The exit callback
+    /// cannot cover it, because a grid that is no longer drawn never runs one.
+    /// Asked *before* the drop, since a handle that is not on screen cannot
+    /// answer, and only acted on when focus was inside this panel to begin
+    /// with.
+    pub fn close_tab(&mut self, idx: usize, window: &mut Window, cx: &mut Context<Self>) {
+        let held_focus = self.focus_handle.contains_focused(window, cx);
+        // Dropping the tab drops its PTY, which ends the child.
+        let closed = self
+            .root
+            .as_ref()
+            .and_then(|r| self.shells.get_mut(r))
+            .is_some_and(|set| set.drop_where(|i, _| i == idx));
+        if closed && held_focus {
+            self.focus_active(window, cx);
         }
         cx.notify();
     }
@@ -292,58 +346,42 @@ impl TerminalPanel {
         // that has simply never had a terminal opened -- which is every project
         // on the first frame after a restored layout reopens this dock -- that
         // it is not a project at all, and hide the button that would start one.
-        let Some(set) = self.active_set().filter(|set| !set.tabs.is_empty()) else {
-            if self.root.is_none() {
-                return hint("No project root", cx).into_any_element();
-            }
-            return div()
-                .size_full()
-                .v_flex()
-                .items_center()
-                .justify_center()
-                .gap_2()
-                .child(
-                    crate::controls::action("new-shell")
-                        .primary()
-                        .icon(Icon::new(IconName::SquareTerminal))
-                        .label("New terminal")
-                        .on_click(cx.listener(|panel: &mut Self, _, window, cx| {
-                            panel.open_shell(window, cx);
-                        })),
-                )
-                .children(self.status.clone().map(|status| {
-                    div()
-                        .text_xs()
-                        .text_color(crate::theme::status_ink(cx).danger)
-                        .child(status)
-                        .into_any_element()
-                }))
-                .into_any_element();
-        };
+        // Whether there *is* a root is a question about the selection, not the
+        // shell map, and it is the one case with nothing for a strip to sit
+        // over: no project means no shell to start and nowhere to start it.
+        if self.root.is_none() {
+            return hint("No project root", cx).into_any_element();
+        }
 
-        let active = set.active;
-        let body = set.tabs.get(active).map(|tab| tab.view().clone());
-        // The project, then the shell. A tab is named by the PTY's program
-        // alone, which is the same word for every tab a root has open: three
-        // shells in one project came out three tabs reading `zsh`, and a strip
-        // whose tabs cannot be told apart is doing nothing that a count would
-        // not do. The project is what the two halves of the window this panel
-        // spans already disagree about, so it is the half worth saying.
+        let set = self.active_set().filter(|set| !set.tabs.is_empty());
+        let active = set.map_or(0, |set| set.active);
+        let body = set
+            .and_then(|set| set.tabs.get(active))
+            .map(|tab| tab.view().clone());
+        // A tab is named by the PTY's program alone, which is the same word for
+        // every tab a root has open, so three shells came out three tabs
+        // reading `zsh`. **Numbered, and only where there is more than one**: a
+        // lone tab has nothing to be told apart from and `zsh 1` beside no
+        // `zsh 2` is a question about where the rest went.
+        //
+        // Not the project, which was tried and is the same word on every tab
+        // for a stronger reason than the shell is -- this panel draws one
+        // root's tabs and only ever that root's, so the part of the name
+        // carrying the project was constant by construction, repeated on every
+        // tab, and first in line to be cut by the width cap. Which project the
+        // terminal is on is already in the status bar, once.
         //
         // Composed here and not in `PtyTab::label`, which the Neovim mode also
         // reads: that mode has one grid and no strip, so a name built to
         // separate siblings would be a name with nothing to separate it from.
-        let project = self
-            .root
-            .as_deref()
-            .map(onehand_core::workspace::label_for)
-            .unwrap_or_default();
-        let labels: Vec<SharedString> = set
-            .tabs
+        let empty = body.is_none();
+        let tabs = set.map_or(&[][..], |set| set.tabs.as_slice());
+        let labels: Vec<SharedString> = tabs
             .iter()
-            .map(|tab| match project.is_empty() {
-                true => tab.label(),
-                false => SharedString::from(format!("{project} — {}", tab.label())),
+            .enumerate()
+            .map(|(i, tab)| match tabs.len() {
+                1 => tab.label(),
+                _ => SharedString::from(format!("{} {}", tab.label(), i + 1)),
             })
             .collect();
 
@@ -501,9 +539,12 @@ impl TerminalPanel {
                                     .invisible()
                                     .group_hover(hovered, |style| style.visible())
                                     .on_click(cx.listener(
-                                        move |panel: &mut Self, _, _, cx: &mut Context<Self>| {
+                                        move |panel: &mut Self,
+                                              _,
+                                              window: &mut Window,
+                                              cx: &mut Context<Self>| {
                                             cx.stop_propagation();
-                                            panel.close_tab(i, cx);
+                                            panel.close_tab(i, window, cx);
                                         },
                                     )),
                             )
@@ -571,6 +612,38 @@ impl TerminalPanel {
                     .child(view)
                     .into_any_element()
             }))
+            // No shells on this root. **The strip above stays**, and that is the
+            // whole point of putting this here rather than returning early: the
+            // way out of the dock lives on that row, so closing the last shell
+            // used to take it away and leave an open panel with no control
+            // inside it to close -- the state the chevron was added for, reached
+            // by using the ✕ beside it.
+            .when(empty, |panel| {
+                panel.child(
+                    div()
+                        .flex_1()
+                        .min_h_0()
+                        .v_flex()
+                        .items_center()
+                        .justify_center()
+                        .gap_2()
+                        .child(
+                            crate::controls::action("new-shell")
+                                .primary()
+                                .icon(Icon::new(IconName::SquareTerminal))
+                                .label("New terminal")
+                                .on_click(cx.listener(|panel: &mut Self, _, window, cx| {
+                                    panel.open_shell(window, cx);
+                                })),
+                        )
+                        .children(self.status.clone().map(|status| {
+                            div()
+                                .text_xs()
+                                .text_color(crate::theme::status_ink(cx).danger)
+                                .child(status)
+                        })),
+                )
+            })
             .into_any_element()
     }
 }
@@ -583,4 +656,64 @@ fn hint(text: &'static str, cx: &App) -> impl IntoElement + use<> {
         .justify_center()
         .text_color(cx.theme().muted_foreground)
         .child(text)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::selection_after;
+
+    /// Closing a tab ahead of the selected one must move the selection back by
+    /// one, not leave the index where it was.
+    ///
+    /// This is the case clamping got wrong and nothing caught: three shells with
+    /// the middle one on screen, close the first, and an index of 1 now names
+    /// the *third* — so the panel silently swapped to the one shell the user had
+    /// neither been reading nor asked to close.
+    #[test]
+    fn selection_follows_its_own_tab() {
+        assert_eq!(
+            selection_after(1, &[0], 2),
+            0,
+            "closing ahead pulls it back"
+        );
+        assert_eq!(
+            selection_after(1, &[2], 2),
+            1,
+            "closing behind moves nothing"
+        );
+        assert_eq!(
+            selection_after(2, &[0, 1], 1),
+            0,
+            "two ahead, two steps back"
+        );
+    }
+
+    /// The selected tab going itself falls to whatever took its place, and to
+    /// the last tab when it was the last.
+    #[test]
+    fn closing_the_selected_tab_falls_to_a_neighbour() {
+        assert_eq!(
+            selection_after(1, &[1], 2),
+            1,
+            "the tab that shifted up into it"
+        );
+        assert_eq!(
+            selection_after(2, &[2], 2),
+            1,
+            "nothing after it, so the one before"
+        );
+        assert_eq!(
+            selection_after(0, &[0], 0),
+            0,
+            "the last tab leaves nothing to select"
+        );
+    }
+
+    /// A sweep is the same rule: what matters is how many went *ahead* of the
+    /// selection, not how many went.
+    #[test]
+    fn a_sweep_counts_only_what_was_ahead() {
+        assert_eq!(selection_after(3, &[0, 4], 3), 2);
+        assert_eq!(selection_after(3, &[4, 5], 4), 3);
+    }
 }
