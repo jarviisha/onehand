@@ -442,12 +442,14 @@ impl TerminalPanel {
                     // first character stops sitting under the tab naming it.
                     // Moving one of the three means moving all three.
                     //
-                    // Vertically it is tighter than horizontal, and deliberately
-                    // so: the rule underneath now carries the separation that
-                    // the gap used to have to carry alone, so the room that gap
-                    // needed is room this panel can put back into rows of shell.
-                    .px_2()
-                    .py_1()
+                    // Vertically 8px, and it was tried at 4 on the reasoning
+                    // that the rule underneath had taken over the separating so
+                    // the gap could shrink. The rule separates; it does not hold
+                    // the tabs off anything. At 4px the chips sit against their
+                    // own row's edges again, which is the crowding this padding
+                    // was put here to answer and which a hairline does not
+                    // touch.
+                    .p_2()
                     // **The tabs live in a box of their own, and that box is
                     // what gives way.** Flat in the row with the controls, a
                     // fourth shell pushed `+` and the way out past the panel's
@@ -501,16 +503,16 @@ impl TerminalPanel {
                             // 8px is what the grid's own inset is built on and
                             // cannot move on its own.
                             //
-                            // **Vertically there is no padding, and removing it
-                            // is not what sets the height.** A tab is as tall as
-                            // the tallest thing in it, and that is the ✕ below,
-                            // whose box the component sizes off `xsmall` -- so
-                            // the chip stayed the same height however little
-                            // padding it was given. The pair has to move
-                            // together, and this is the half that costs nothing:
-                            // the fill still clears the text on its own line
-                            // height.
+                            // **A tab is as tall as the tallest thing in it, and
+                            // that is the ✕ below**, whose box the component
+                            // sizes off `xsmall`. So this padding is not the
+                            // height and taking it away does not shorten the
+                            // chip -- it only stops the fill from clearing the
+                            // text, which is the one thing a fill is for. Both
+                            // were cut once, to 16px, and the tab stopped
+                            // reading as something you press.
                             .px_2()
+                            .py_0p5()
                             .rounded(cx.theme().radius)
                             .text_xs()
                             .cursor_pointer()
@@ -551,16 +553,6 @@ impl TerminalPanel {
                                     .ghost()
                                     .xsmall()
                                     .icon(Icon::new(IconName::Close))
-                                    // The tab's floor, so it is set here rather
-                                    // than left at what `xsmall` picks: an icon
-                                    // button is a square of the size's own
-                                    // choosing, 20px, and a chip cannot be
-                                    // shorter than the thing inside it. 16px is
-                                    // what a close button on a tab is elsewhere,
-                                    // and it lands after the size match in the
-                                    // component's own refinement order, so it
-                                    // takes rather than being overwritten.
-                                    .size_4()
                                     .invisible()
                                     .group_hover(hovered, |style| style.visible())
                                     .on_click(cx.listener(
