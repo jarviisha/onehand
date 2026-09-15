@@ -643,9 +643,8 @@ is. The reading surface is what a well becomes there — below the panel in the 
 in the light one, 1.15/1.19 apart either way since it is the same asserted pair read from the other
 end. Three places take it for that reason: the Markdown mode's code blocks (the component library's
 default for one is the well, so it names its own), and the hover fill on both tab strips. A
-*selected* thing takes `accent` instead, 1.30/1.53 from here. The rail's `sidebar_accent` moved the
-same way and for the same reason — it was `hover`, which is 1.04 from the well in the light palette
-and so a fill nobody could see once the rail moved onto it.
+*selected* thing takes `accent` instead, 1.30/1.53 from here. The rail's filled row is the exception
+and has a ramp step of its own (`marked`) — see the rail, below.
 
 - **Editor** (`Ctrl+Shift+E`): the project's file tree down the left, the buffers opened out of it on
   the right, one draggable divider between them. A quick editor, not an IDE: buffers in the plugin,
@@ -858,11 +857,14 @@ centre is the chat, right dock the Workbench, bottom dock the terminal.
   it** (`border_r_0`): the fill is the edge, and a rule beside it draws a line along a boundary that
   was not in doubt. That flag has been both ways — it had to be *on* while the rail was still on the
   reading surface, and off before that, when the library's drag handle ruled the same seam in the
-  same colour. **`sidebar_accent` moved with it**: it was the ramp's `hover` step, chosen while the
-  rail sat on the reading surface, and that is 1.04 from the well in the light palette — a filled row
-  nobody could see once the rail was drawn in it. It takes the reading surface now, which is the same
-  asserted pair read from the other end; the library draws a hovered row at 0.8 of that token and a
-  selected one at full, so the two stay apart without a second token. It is **session-first**: every folder
+  same colour. **`sidebar_accent` is a ramp step of its own** (`marked`), because none of the others
+  fits a filled row on a rail drawn in the well: `hover` is 1.04 from it in the light palette, a fill
+  nobody can see, and the reading surface is 1.19 in the dark one, which punches a near-black hole
+  through the panel rather than lifting a row out of it. `marked` is 1.12 either way and lifts in
+  both. It can afford to be quieter than a *surface* pair because a row has ink at full strength and
+  a weight beside it, so the fill is the third thing saying which row it is — which is what the test's
+  separate `ROW` floor records. The library draws a hovered row at 0.8 of that token and a selected
+  one at full, so the two stay apart without a second token. It is **session-first**: every folder
   row lists its sessions, each row selecting root *and* session in one click. A session row is named
   by its **conversation** (`Chat::conversation_title` — the first prompt, or a rename), falling back
   to the agent's name until it has been prompted; the agent's name rides in the suffix only where

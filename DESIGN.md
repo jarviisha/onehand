@@ -188,9 +188,10 @@ One window hosts exactly one workspace. The frame is a navigation **rail** plus 
   is read. **The hairline goes with the change**: the fill is the edge, and a
   rule beside it is a line drawn along a boundary that was not in doubt — which
   is safe to say because those two surfaces are the ramp's asserted pair, 1.15
-  apart at worst. Its own filled row moved to the reading surface for the mirror
-  of that reason: the step it used to take is 1.04 from the surface the rail now
-  sits on.
+  apart at worst. Its own **marked row is a ramp step of its own**, quieter than
+  any surface pair and lifting rather than sinking: the faintest existing step is
+  1.04 against the rail's new surface and the reading surface is 1.19, a hole
+  punched through the panel rather than a row raised out of it.
 - **Both docks are drawn as cards floating in their dock** — inset on all four
   sides, one border, one radius, and the **chrome** surface under them: the step
   that says a panel is *about* the work rather than part of it, which the status

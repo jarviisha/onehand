@@ -72,6 +72,21 @@ struct Ramp {
     /// telling them where Enter will land.
     selected: &'static str,
     selected_ink: &'static str,
+    /// A filled row *on chrome*: the rail's selected project or session.
+    ///
+    /// Its own step because none of the others fits. The rail is drawn in the
+    /// well, and against the well `hover` is 1.04 apart in the light palette —
+    /// a fill nobody can see — while the reading surface is 1.19 in the dark
+    /// one, which punches a near-black hole through a panel rather than lifting
+    /// a row out of it. This sits between, and it lifts: lighter than the rail
+    /// in the dark palette, lighter again in the light one, because a selected
+    /// row reads as raised and a hole reads as damage.
+    ///
+    /// It can afford to be quiet where a *surface* could not. A region has only
+    /// its fill to be found by; a row has ink at full strength and a weight the
+    /// library sets from the same token pair, so the fill is the third thing
+    /// saying it and not the only one.
+    marked: &'static str,
     /// Every hairline and card border.
     hairline: &'static str,
     /// A control floating over the transcript: the composer, the completion
@@ -97,6 +112,8 @@ const LIGHT: Ramp = Ramp {
     hover: "#ebebeb",
     selected: "#d3d3d3",
     selected_ink: "#171717",
+    // 1.12 against the well the rail is drawn in.
+    marked: "#fcfcfc",
     hairline: "#dcdcdc",
     floating: "#ffffff",
 };
@@ -129,6 +146,10 @@ const DARK: Ramp = Ramp {
     hover: "#232323",
     selected: "#3d3d3d",
     selected_ink: "#f0f0f0",
+    // 1.12 against the well, the same step the light palette takes, and on the
+    // same side of it: up from the rail rather than down toward the near-black
+    // reading surface.
+    marked: "#272727",
     hairline: "#333333",
     floating: "#1e1e1e",
 };
@@ -174,14 +195,14 @@ fn paint(colors: &mut ThemeConfigColors, ramp: &Ramp) {
     // - Its ink is the ramp's quiet ink. A rail row is a name to aim at, not a
     //   sentence to read, and at prose strength a column of thirty of them
     //   out-shouted the conversation they exist to get you to.
-    // - A filled row takes the **reading surface**, which is the only step that
-    //   reads against a rail drawn in the well. It was `hover`, the faintest
-    //   step there is, chosen while the rail itself sat on the reading surface
-    //   -- a pair 1.04 apart in the light palette once the rail moved, which is
-    //   a fill nobody can see. Stepping toward the conversation instead is the
-    //   same pair of values the ramp already asserts, read from the other end.
-    //   The library draws the hovered row at 0.8 of this and the selected one
-    //   at full, so the two stay apart without a second token.
+    // - A filled row takes `marked`, which is the one step here that is the
+    //   rail's own. It was `hover`, chosen while the rail sat on the reading
+    //   surface and 1.04 from the well once the rail moved onto it; then the
+    //   reading surface, which reads at 1.19 in the dark palette and punches a
+    //   near-black hole through the panel rather than lifting a row out of it.
+    //   `marked` is 1.12 either way and lifts in both. The library draws a
+    //   hovered row at 0.8 of this token and a selected one at full, so the two
+    //   stay apart without a second token.
     // - The guide line down an expanded project is the same hairline as any
     //   other.
     //
@@ -189,7 +210,7 @@ fn paint(colors: &mut ThemeConfigColors, ramp: &Ramp) {
     // ramp for one panel and having to keep the two in step by hand.
     set(&mut colors.sidebar, ramp.background);
     set(&mut colors.sidebar_foreground, ramp.well_ink);
-    set(&mut colors.sidebar_accent, ramp.background);
+    set(&mut colors.sidebar_accent, ramp.marked);
     set(&mut colors.sidebar_accent_foreground, ramp.selected_ink);
     set(&mut colors.sidebar_border, ramp.hairline);
     set(&mut colors.popover, ramp.floating);
@@ -268,6 +289,17 @@ mod tests {
     /// The smallest ratio at which a fill still reads as a region of its own
     /// rather than as an artefact of the display.
     const STEP: f32 = 1.14;
+
+    /// The same question for a *row* rather than a region, which is a lower
+    /// floor on purpose.
+    ///
+    /// A region has only its fill to be found by. A marked row has ink at full
+    /// strength and a weight to go with it, so the fill is the third thing
+    /// saying which row it is and not the only one — and it is read at a glance
+    /// down a column of thirty, where the loud answer is worse than the quiet
+    /// one. Below this it stops being a fill at all: `hover` against the well is
+    /// 1.04, which is what the rail drew for a while and nobody could see.
+    const ROW: f32 = 1.10;
 
     /// Relative luminance, as the contrast ratio defines it.
     fn luminance(color: Hsla) -> f32 {
@@ -352,6 +384,22 @@ mod tests {
             theme.border,
             theme.background,
             STEP,
+        );
+        // The rail is drawn in the well (`onehand_plugin_host::chrome`), so its
+        // marked row is measured against *that* and not against the reading
+        // surface. Both of these have been wrong: the fill was invisible when it
+        // was `hover`, and shouted when it was the reading surface.
+        check(
+            "a marked row against the rail it sits in",
+            theme.sidebar_accent,
+            theme.muted,
+            ROW,
+        );
+        check(
+            "the ink on a marked row",
+            theme.sidebar_accent_foreground,
+            theme.sidebar_accent,
+            AA,
         );
         check(
             "a floating control against the surface",
