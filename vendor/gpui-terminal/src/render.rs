@@ -57,9 +57,9 @@
 //!
 //! What this buys is the count: a screen of code costs a handful of shaping
 //! calls per row instead of one per visible character, and each of those calls
-//! is a hash into gpui's line-layout cache that a row nobody touched hits on
-//! every frame. See [`split_row_runs`], and [`ascii_glyph`] for the single-glyph
-//! run that still allocates nothing.
+//! can use gpui's line-layout cache on a miss. The visible-row cache retains
+//! the shaped result while the cells and render settings remain unchanged,
+//! avoiding even that lookup on a hit. See [`split_row_runs`] and [`ascii_glyph`].
 //!
 //! # Cell Dimensions
 //!
@@ -92,14 +92,17 @@ use crate::event::GpuiEventProxy;
 use alacritty_terminal::grid::{Dimensions, Row};
 use alacritty_terminal::index::{Column, Line};
 use alacritty_terminal::term::cell::{Cell, Flags};
-use alacritty_terminal::term::color::Colors;
+use alacritty_terminal::term::color::{Colors, COUNT as COLOR_SLOTS};
 use alacritty_terminal::term::{Term, TermMode};
-use alacritty_terminal::vte::ansi::{Color, NamedColor};
+use alacritty_terminal::vte::ansi::{Color, NamedColor, Rgb};
 use gpui::{
     App, Bounds, Edges, Font, FontFeatures, FontStyle, FontWeight, Hsla, Pixels, Point,
-    SharedString, Size, StrikethroughStyle, TextRun, UnderlineStyle, Window, px, quad,
+    SharedString, ShapedLine, Size, StrikethroughStyle, TextRun, UnderlineStyle, Window, WindowTextSystem, px, quad,
     transparent_black,
 };
+// onehand patch: renderer clones share one visible-row cache.
+use std::sync::{Arc, Weak};
+use parking_lot::Mutex;
 
 /// onehand patch: one `SharedString` per printable ASCII character, made once.
 ///
@@ -327,13 +330,11 @@ struct GlyphRun {
     text: String,
 }
 
-/// onehand patch: the runs of one row, in a buffer that outlives the row.
+/// onehand patch: reusable run buffers for one visible row slot.
 ///
-/// Held across the whole frame and reset per row rather than rebuilt, because
-/// the `String` inside each run is the allocation this pass exists to avoid: a
-/// grid is forty rows and a frame is however often the child writes. `len` is
-/// how many of `runs` this row is using — the rest keep their capacity for the
-/// row after it.
+/// The cache keeps these across frames and resets them only when the row
+/// changes. `len` counts active runs; unused buffers keep their capacity for
+/// the next change to this slot, without retaining shaped lines for old text.
 #[derive(Default)]
 struct RowRuns {
     runs: Vec<GlyphRun>,
@@ -463,6 +464,143 @@ impl BackgroundRect {
     }
 }
 
+// onehand patch: one visible grid of CPU-side render data. No pixels, cursor,
+// selection, preedit or absolute positions are cached. Comparing complete rows
+// observes edits through both the parser and the public mutable-grid API without
+// consuming damage state that another terminal consumer might have reset.
+#[derive(Default)]
+struct RowCache {
+    key: Option<RowCacheKey>,
+    owner: Weak<WindowTextSystem>,
+    rows: Vec<CachedRow>,
+    spanned: Vec<bool>,
+}
+
+#[derive(PartialEq)]
+struct RowCacheKey {
+    rows: usize,
+    cols: usize,
+    font_family: String,
+    font_size: Pixels,
+    cell_width: Pixels,
+    cell_height: Pixels,
+    line_height: f32,
+    scale: f32,
+    palette: ColorPalette,
+    colors: [Option<Rgb>; COLOR_SLOTS],
+}
+
+impl RowCacheKey {
+    fn new(renderer: &TerminalRenderer, rows: usize, cols: usize, colors: &Colors, scale: f32) -> Self {
+        Self {
+            rows, cols, font_family: renderer.font_family.clone(),
+            font_size: renderer.font_size, cell_width: renderer.cell_width,
+            cell_height: renderer.cell_height, line_height: renderer.line_height_multiplier,
+            scale, palette: renderer.palette.clone(), colors: std::array::from_fn(|i| colors[i]),
+        }
+    }
+}
+
+#[derive(Default)]
+struct CachedRow {
+    cells: Option<Row<Cell>>,
+    backgrounds: Vec<BackgroundRect>,
+    boxes: Vec<BoxCommand>,
+    runs: RowRuns,
+    shaped: Option<Vec<CachedRun>>,
+    previous: Vec<CachedRun>,
+}
+
+struct CachedRun {
+    start_col: usize,
+    style: RunStyle,
+    line: ShapedLine,
+}
+
+impl CachedRun {
+    // onehand patch: a run's position may change without changing its layout.
+    // Font metrics and scale are covered by the enclosing row cache key.
+    fn matches(&self, run: &GlyphRun) -> bool {
+        self.style == run.style && self.line.text.as_ref() == run.text
+    }
+}
+
+// Keep box commands in column coordinates so moving the canvas or scrolling
+// cannot replay geometry at an old window position.
+#[derive(Debug, PartialEq)]
+enum BoxCommand {
+    Horizontal { start: usize, end: usize, weight: box_drawing::LineWeight, color: Hsla },
+    Cell { col: usize, ch: char, vertical_only: bool, color: Hsla },
+}
+
+impl RowCache {
+    fn prepare(&mut self, key: RowCacheKey) {
+        if self.key.as_ref() != Some(&key) {
+            self.rows.clear();
+            self.rows.resize_with(key.rows, CachedRow::default);
+            self.spanned.resize(key.cols, false);
+            self.key = Some(key);
+        }
+    }
+
+    fn row(&mut self, renderer: &TerminalRenderer, index: usize, row: &Row<Cell>, colors: &Colors) -> &mut CachedRow {
+        let cached = &mut self.rows[index];
+        let reused = cached.cells.as_ref() == Some(row);
+        #[cfg(feature = "profiling")]
+        crate::profiling::row_cache(reused);
+        if !reused {
+            // Text-only changes (relative line numbers, counters, scrolling
+            // plain text) need not rebuild identical backgrounds or borders.
+            let (backgrounds_changed, boxes_changed) = cached.cells.as_ref()
+                .map_or((true, true), |old| row_paint_changes(old, row));
+            if backgrounds_changed {
+                #[cfg(feature = "profiling")]
+                let backgrounds = crate::profiling::Span::new(crate::profiling::Stage::Backgrounds, row.len());
+                cached.backgrounds.clear();
+                renderer.collect_backgrounds(index, (0..row.len()).map(|col| (col, &row[Column(col)])), colors, &mut cached.backgrounds);
+                TerminalRenderer::merge_in_place(&mut cached.backgrounds);
+                #[cfg(feature = "profiling")]
+                drop(backgrounds);
+            }
+            if boxes_changed {
+                #[cfg(feature = "profiling")]
+                let boxes = crate::profiling::Span::new(crate::profiling::Stage::Boxes, row.len());
+                renderer.collect_box_drawing(row, colors, &mut self.spanned, &mut cached.boxes);
+                #[cfg(feature = "profiling")]
+                drop(boxes);
+            }
+            #[cfg(feature = "profiling")]
+            let _runs = crate::profiling::Span::new(crate::profiling::Stage::Runs, row.len());
+            split_row_runs(&renderer.palette, (0..row.len()).map(|col| &row[Column(col)]), colors, &mut cached.runs);
+            if let Some(cells) = &mut cached.cells {
+                cells[..].clone_from_slice(&row[..]);
+            } else {
+                cached.cells = Some(row.clone());
+            }
+            if let Some(shaped) = cached.shaped.take() {
+                cached.previous = shaped;
+            }
+        }
+        cached
+    }
+}
+
+// onehand patch: invalidate each cached paint layer by the cell properties it
+// reads. Colours are also invalidated globally by RowCacheKey. Text styling
+// remains conservative; changed rows always rebuild their glyph runs.
+fn row_paint_changes(old: &Row<Cell>, new: &Row<Cell>) -> (bool, bool) {
+    let mut backgrounds = false;
+    let mut boxes = false;
+    for (old, new) in old[..].iter().zip(&new[..]) {
+        backgrounds |= old.bg != new.bg || old.fg != new.fg || old.flags != new.flags;
+        boxes |= (old.c != new.c || old.fg != new.fg)
+            && (box_drawing::is_box_drawing_char(old.c) || box_drawing::is_box_drawing_char(new.c));
+        if backgrounds && boxes { break; }
+    }
+    (backgrounds, boxes)
+}
+
+
 /// Terminal renderer with font settings and cell dimensions.
 ///
 /// This struct manages the rendering of terminal content, including text,
@@ -528,6 +666,10 @@ pub struct TerminalRenderer {
     /// other fields rather than a setting: anything that could set it out of
     /// step with them would make the grid lay out at a size it never measured.
     measured_for: Option<(String, Pixels, f32)>,
+
+    // onehand patch: paint closures clone the renderer; their row cache must
+    // survive those clones without cloning the retained grid or shaped lines.
+    rows: Arc<Mutex<RowCache>>,
 }
 
 impl TerminalRenderer {
@@ -572,6 +714,7 @@ impl TerminalRenderer {
             line_height_multiplier,
             palette,
             measured_for: None,
+            rows: Arc::new(Mutex::new(RowCache::default())),
         }
     }
 
@@ -774,8 +917,8 @@ impl TerminalRenderer {
 
     /// onehand patch: the same rule, writing into a buffer the caller keeps.
     ///
-    /// What [`Self::layout_backgrounds`] does, minus the `Vec` — the paint runs
-    /// this once per row per frame, and a grid is forty rows.
+    /// What [`Self::layout_backgrounds`] does, minus the `Vec`. Cached rows call
+    /// this only when their background inputs change.
     fn collect_backgrounds<'a>(
         &self,
         row: usize,
@@ -931,19 +1074,14 @@ impl TerminalRenderer {
         let display_offset = grid.display_offset() as i32;
         let selection = term.selection.as_ref().and_then(|s| s.to_range(term));
 
-        // onehand patch: the buffers the row loop reuses.
-        //
-        // Each was allocated fresh per row per frame, so a forty-row grid paid
-        // a hundred and twenty allocations a frame before drawing anything —
-        // and a modal editor redraws the whole grid on every keystroke. The row
-        // of cells that used to be *cloned* into a `Vec` is gone entirely: the
-        // grid row is borrowed instead, so a screen of two thousand cells is no
-        // longer copied to be looked at.
-        let mut backgrounds: Vec<BackgroundRect> = Vec::with_capacity(num_cols);
-        let mut spanned = vec![false; num_cols];
-        let mut runs = RowRuns::default();
-        // The four faces, made once for the whole grid rather than once per
-        // character -- see `font_variants`.
+        // onehand patch: the cache belongs to this window's text system. A
+        // renderer moved to another window rebuilds its font-dependent data.
+        let mut cache = self.rows.lock();
+        let owner = Arc::downgrade(window.text_system());
+        if !cache.owner.ptr_eq(&owner) {
+            *cache = RowCache { owner, ..RowCache::default() };
+        }
+        cache.prepare(RowCacheKey::new(self, num_lines, num_cols, colors, window.scale_factor()));
         let fonts = self.font_variants();
 
         // Iterate over visible lines
@@ -951,22 +1089,12 @@ impl TerminalRenderer {
             let line = Line(line_idx as i32 - display_offset);
             let row = &grid[line];
 
-            // Lay the row out for backgrounds. onehand patch: into a buffer the
-            // frame owns, over borrowed cells. The row used to be cloned once to
-            // be collected and a second time to be handed over.
-            backgrounds.clear();
+            let cached = cache.row(self, line_idx, row, colors);
             #[cfg(feature = "profiling")]
             let background_span = crate::profiling::Span::new(crate::profiling::Stage::Backgrounds, num_cols);
-            self.collect_backgrounds(
-                line_idx,
-                (0..num_cols).map(|col| (col, &row[Column(col)])),
-                colors,
-                &mut backgrounds,
-            );
-            Self::merge_in_place(&mut backgrounds);
 
             // Paint backgrounds
-            for bg_rect in &backgrounds {
+            for bg_rect in &cached.backgrounds {
                 // Skip if it's the default background color
                 if bg_rect.color == default_bg {
                     continue;
@@ -1042,23 +1170,11 @@ impl TerminalRenderer {
             drop(background_span);
             #[cfg(feature = "profiling")]
             let boxes_span = crate::profiling::Span::new(crate::profiling::Stage::Boxes, num_cols);
-            self.paint_box_drawing(origin, line_idx, row, colors, &mut spanned, window);
+            self.paint_box_commands(origin, line_idx, &cached.boxes, window);
             #[cfg(feature = "profiling")]
             drop(boxes_span);
 
-            // onehand patch: the glyphs, as runs rather than one call per
-            // visible character -- see `split_row_runs`.
-            #[cfg(feature = "profiling")]
-            let runs_span = crate::profiling::Span::new(crate::profiling::Stage::Runs, num_cols);
-            split_row_runs(
-                &self.palette,
-                (0..num_cols).map(|col| &row[Column(col)]),
-                colors,
-                &mut runs,
-            );
-            #[cfg(feature = "profiling")]
-            drop(runs_span);
-            self.paint_row_runs(origin, line_idx, &runs, &fonts, window, cx);
+            self.paint_row_runs(origin, line_idx, cached, &fonts, window, cx);
         }
 
         #[cfg(feature = "profiling")]
@@ -1075,23 +1191,19 @@ impl TerminalRenderer {
     /// out as a row of dashes with a gap at each cell boundary, and the cells
     /// that span covered are then drawn again for their *vertical* parts alone.
     ///
-    /// `spanned` is the frame's buffer rather than this row's, and it is a
+    /// `spanned` is shared scratch space for changed rows, and it is a
     /// column-indexed `Vec<bool>` where it used to be a `HashSet<usize>` — the
     /// question asked of it is "was this column covered", forty times a row, and
     /// hashing an integer to answer it is work with nothing to show for it.
-    fn paint_box_drawing(
+    fn collect_box_drawing(
         &self,
-        origin: Point<Pixels>,
-        line_idx: usize,
         row: &Row<Cell>,
         colors: &Colors,
         spanned: &mut [bool],
-        window: &mut Window,
+        out: &mut Vec<BoxCommand>,
     ) {
         let num_cols = row.len();
-        let y_base = origin.y + self.cell_height * (line_idx as f32);
-        // Vertically centred, which is where a horizontal line belongs.
-        let cy = y_base + self.cell_height / 2.0;
+        out.clear();
 
         spanned.fill(false);
 
@@ -1123,19 +1235,7 @@ impl TerminalRenderer {
                 next += 1;
             }
 
-            // Draw the horizontal span
-            let start_x = origin.x + self.cell_width * (start_col as f32);
-            let end_x = origin.x + self.cell_width * ((end_col + 1) as f32);
-
-            box_drawing::draw_horizontal_span(
-                start_x,
-                end_x,
-                cy,
-                weight,
-                self.cell_width,
-                fg_color,
-                window,
-            );
+            out.push(BoxCommand::Horizontal { start: start_col, end: end_col + 1, weight, color: fg_color });
 
             // Mark these columns as having horizontal drawn
             spanned[start_col..=end_col].fill(true);
@@ -1153,28 +1253,32 @@ impl TerminalRenderer {
                 continue;
             }
 
-            let x = origin.x + self.cell_width * (col as f32);
-            let fg_color = self.palette.resolve(cell.fg, colors);
-            let cell_bounds = Bounds {
-                origin: Point { x, y: y_base },
-                size: Size {
-                    width: self.cell_width,
-                    height: self.cell_height,
-                },
-            };
+            out.push(BoxCommand::Cell {
+                col, ch, vertical_only: spanned[col], color: self.palette.resolve(cell.fg, colors),
+            });
+        }
+    }
 
-            if spanned[col] {
-                // Horizontal already drawn, just draw vertical components
-                box_drawing::draw_vertical_components(
-                    ch,
-                    cell_bounds,
-                    fg_color,
-                    self.cell_width,
-                    window,
-                );
-            } else {
-                // Not part of a horizontal span, draw the whole character
-                box_drawing::draw_box_character(ch, cell_bounds, fg_color, self.cell_width, window);
+    // onehand patch: cached commands still submit primitives every frame;
+    // their coordinates are derived from the current origin and metrics.
+    fn paint_box_commands(&self, origin: Point<Pixels>, line_idx: usize, commands: &[BoxCommand], window: &mut Window) {
+        let y = origin.y + self.cell_height * line_idx as f32;
+        for command in commands {
+            match *command {
+                BoxCommand::Horizontal { start, end, weight, color } => {
+                    box_drawing::draw_horizontal_span(origin.x + self.cell_width * start as f32,
+                        origin.x + self.cell_width * end as f32, y + self.cell_height / 2.0,
+                        weight, self.cell_width, color, window);
+                }
+                BoxCommand::Cell { col, ch, vertical_only, color } => {
+                    let bounds = Bounds { origin: Point { x: origin.x + self.cell_width * col as f32, y },
+                        size: Size { width: self.cell_width, height: self.cell_height } };
+                    if vertical_only {
+                        box_drawing::draw_vertical_components(ch, bounds, color, self.cell_width, window);
+                    } else {
+                        box_drawing::draw_box_character(ch, bounds, color, self.cell_width, window);
+                    }
+                }
             }
         }
     }
@@ -1189,60 +1293,80 @@ impl TerminalRenderer {
     /// letting the font's accumulated advances decide, so a character that fell
     /// through to a fallback face lands on its cell like every other one.
     ///
-    /// **What makes an untouched row cheap is gpui's, not ours**, and the
-    /// dependency is worth naming rather than assuming: `shape_line` goes
-    /// through `LineLayoutCache`, which carries entries from the previous frame
-    /// into the current one on a hit, keyed by the text, the size, the resolved
-    /// faces and the forced width. So a row nobody wrote to shapes nothing on
-    /// the second frame and every frame after it — the call is a hash and an
-    /// `Arc` clone. Batching is what makes that lookup cheap enough to matter:
-    /// it is paid per run rather than per character. If that cache ever stops
-    /// promoting across frames, this pass silently goes back to reshaping every
-    /// visible row on every frame, with nothing here to say so.
+    /// onehand patch: shaped lines are owned by the visible-row cache. Only
+    /// changed runs call into GPUI's layout cache; unchanged runs submit their
+    /// retained lines at the current origin. Scale, font, palette, dimensions
+    /// and window changes invalidate the cache before it can be reused.
     fn paint_row_runs(
         &self,
         origin: Point<Pixels>,
         line_idx: usize,
-        runs: &RowRuns,
+        cached: &mut CachedRow,
         fonts: &[Font; 4],
         window: &mut Window,
         cx: &mut App,
     ) {
         let y = origin.y + self.glyph_baseline(line_idx);
 
-        for run in runs.drawable() {
-            #[cfg(feature = "profiling")]
-            let shape_span = crate::profiling::Span::new(crate::profiling::Stage::Shape, run.text.len());
-            // onehand patch: a run one ASCII character long is the common case
-            // in a column of tool output, and the table answers it without
-            // allocating at all.
-            let text: SharedString = match run.text.chars().next() {
-                Some(ch) if ch.len_utf8() == run.text.len() => ascii_glyph(ch),
-                _ => SharedString::from(run.text.clone()),
-            };
+        if cached.shaped.is_none() {
+            let mut lines = std::mem::take(&mut cached.previous);
+            lines.reserve(cached.runs.len.saturating_sub(lines.len()));
+            // Keep stable text within a changed row (for example, code beside
+            // relative line numbers). Otherwise skipping GPUI lookups on row
+            // hits lets its two-frame cache evict layouts we need on a miss.
+            let mut used = 0;
+            for (index, run) in cached.runs.drawable().enumerate() {
+                used += 1;
+                if let Some(old) = lines.get_mut(index) {
+                    if old.matches(run) {
+                        old.start_col = run.start_col;
+                        continue;
+                    }
+                }
+                #[cfg(feature = "profiling")]
+                let shape_span = crate::profiling::Span::new(crate::profiling::Stage::Shape, run.text.len());
+                // onehand patch: a run one ASCII character long is the common case
+                // in a column of tool output, and the table answers it without
+                // allocating at all.
+                let text: SharedString = match run.text.chars().next() {
+                    Some(ch) if ch.len_utf8() == run.text.len() => ascii_glyph(ch),
+                    _ => SharedString::from(run.text.clone()),
+                };
 
-            let text_run = TextRun {
-                len: text.len(),
-                font: fonts[run.style.font].clone(),
-                color: run.style.color,
-                background_color: None,
-                // onehand patch: every underline the protocol has, in the
-                // colour the program chose for it, plus the strikethrough
-                // that used to be hard-coded away.
-                underline: run.style.underline,
-                strikethrough: run.style.strikethrough,
-            };
+                let text_run = TextRun {
+                    len: text.len(),
+                    font: fonts[run.style.font].clone(),
+                    color: run.style.color,
+                    background_color: None,
+                    // onehand patch: every underline the protocol has, in the
+                    // colour the program chose for it, plus the strikethrough
+                    // that used to be hard-coded away.
+                    underline: run.style.underline,
+                    strikethrough: run.style.strikethrough,
+                };
 
-            let shaped = window.text_system().shape_line(
-                text,
-                self.font_size,
-                &[text_run],
-                Some(self.cell_width),
-            );
+                let shaped = window.text_system().shape_line(
+                    text,
+                    self.font_size,
+                    &[text_run],
+                    Some(self.cell_width),
+                );
+                #[cfg(feature = "profiling")]
+                drop(shape_span);
+                let line = CachedRun { start_col: run.start_col, style: run.style, line: shaped };
+                if let Some(old) = lines.get_mut(index) {
+                    *old = line;
+                } else {
+                    lines.push(line);
+                }
+            }
+            lines.truncate(used);
+            cached.shaped = Some(lines);
+        }
+        for run in cached.shaped.as_ref().unwrap() {
+            let shaped = &run.line;
             #[cfg(feature = "profiling")]
-            drop(shape_span);
-            #[cfg(feature = "profiling")]
-            let _glyphs = crate::profiling::Span::new(crate::profiling::Stage::Glyphs, run.text.len());
+            let _glyphs = crate::profiling::Span::new(crate::profiling::Stage::Glyphs, shaped.text.len());
 
             // Paint at exact cell position (ignore errors)
             // onehand patch: gpui grew `TextAlign` + a wrap-width argument
@@ -1582,6 +1706,188 @@ impl TerminalRenderer {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // onehand patch: use retained shaped markers to observe invalidation without
+    // depending on a GPU window or a particular installed font.
+    fn cache_renderer() -> TerminalRenderer {
+        TerminalRenderer::new("monospace".into(), px(14.0), 1.0, ColorPalette::default())
+    }
+
+    fn cache_row(text: &str) -> Row<Cell> {
+        let mut row = Row::<Cell>::new(text.chars().count().max(1));
+        for (col, ch) in text.chars().enumerate() {
+            row[Column(col)].c = ch;
+        }
+        row
+    }
+
+    #[test]
+    fn row_cache_reuses_layouts_and_rebuilds_only_changed_rows() {
+        let renderer = cache_renderer();
+        let colors = Colors::default();
+        let mut cache = RowCache::default();
+        cache.prepare(RowCacheKey::new(&renderer, 2, 4, &colors, 1.0));
+        let mut first = cache_row("abcd");
+        let second = cache_row("efgh");
+        for (index, row) in [(0, &first), (1, &second)] {
+            cache.row(&renderer, index, row, &colors).shaped = Some(Vec::new());
+        }
+        cache.prepare(RowCacheKey::new(&renderer, 2, 4, &colors, 1.0));
+        assert!(cache.row(&renderer, 0, &first, &colors).shaped.is_some());
+        first[Column(1)].c = 'X';
+        assert!(cache.row(&renderer, 0, &first, &colors).shaped.is_none());
+        assert_eq!(cache.rows[0].runs.drawable().next().unwrap().text, "aXcd");
+        assert!(cache.row(&renderer, 1, &second, &colors).shaped.is_some());
+    }
+
+    #[test]
+    fn row_cache_observes_style_changes_and_copy_on_write_cell_extras() {
+        let renderer = cache_renderer();
+        let colors = Colors::default();
+        let mut cache = RowCache::default();
+        cache.prepare(RowCacheKey::new(&renderer, 1, 4, &colors, 1.0));
+        let mut row = cache_row("abcd");
+        let changes: [fn(&mut Cell); 5] = [
+            |c| c.flags.insert(Flags::BOLD | Flags::UNDERLINE),
+            |c| c.fg = Color::Indexed(2),
+            |c| c.bg = Color::Indexed(3),
+            |c| c.set_underline_color(Some(Color::Indexed(4))),
+            |c| c.push_zerowidth('\u{301}'),
+        ];
+        for change in changes {
+            cache.row(&renderer, 0, &row, &colors).shaped = Some(Vec::new());
+            change(&mut row[Column(0)]);
+            assert!(cache.row(&renderer, 0, &row, &colors).shaped.is_none());
+        }
+        assert_eq!(cache.rows[0].cells.as_ref(), Some(&row));
+    }
+
+    #[test]
+    fn row_cache_tracks_background_and_box_changes_independently_of_text() {
+        let original = cache_row("1 abc");
+        let mut changed = original.clone();
+        changed[Column(0)].c = '2';
+        assert_eq!(row_paint_changes(&original, &changed), (false, false));
+        changed[Column(0)].flags.insert(Flags::INVERSE);
+        assert_eq!(row_paint_changes(&original, &changed), (true, false));
+        changed[Column(2)].c = '│';
+        assert_eq!(row_paint_changes(&original, &changed), (true, true));
+        let mut recolored = changed.clone();
+        recolored[Column(2)].fg = Color::Indexed(3);
+        assert_eq!(row_paint_changes(&changed, &recolored), (true, true));
+        let mut removed = recolored.clone();
+        removed[Column(2)].c = 'a';
+        assert_eq!(row_paint_changes(&recolored, &removed), (false, true));
+
+        let renderer = cache_renderer();
+        let colors = Colors::default();
+        let mut cache = RowCache::default();
+        cache.prepare(RowCacheKey::new(&renderer, 1, 5, &colors, 1.0));
+        cache.row(&renderer, 0, &recolored, &colors);
+        assert!(!cache.rows[0].boxes.is_empty());
+        cache.row(&renderer, 0, &removed, &colors);
+        assert!(cache.rows[0].boxes.is_empty());
+        assert_eq!(cache.rows[0].cells.as_ref(), Some(&removed));
+    }
+
+    #[test]
+    fn changed_row_keeps_stable_run_candidates_but_rejects_new_text_and_style() {
+        let renderer = cache_renderer();
+        let colors = Colors::default();
+        let mut row = cache_row("1 code");
+        row[Column(0)].fg = Color::Indexed(3);
+        let mut cache = RowCache::default();
+        cache.prepare(RowCacheKey::new(&renderer, 1, 6, &colors, 1.0));
+        let cached = cache.row(&renderer, 0, &row, &colors);
+        cached.shaped = Some(cached.runs.drawable().map(|run| {
+            let mut line = ShapedLine::default();
+            line.text = run.text.clone().into();
+            CachedRun { start_col: run.start_col, style: run.style, line }
+        }).collect());
+        row[Column(0)].c = '2';
+        let cached = cache.row(&renderer, 0, &row, &colors);
+        let runs: Vec<_> = cached.runs.drawable().collect();
+        assert_eq!(runs.len(), 2);
+        assert!(cached.shaped.is_none());
+        assert!(!cached.previous[0].matches(runs[0]));
+        assert!(cached.previous[1].matches(runs[1]));
+        let mut moved = GlyphRun { start_col: 10, style: runs[1].style, text: runs[1].text.clone() };
+        assert!(cached.previous[1].matches(&moved));
+        moved.style.font = (moved.style.font + 1) % 4;
+        assert!(!cached.previous[1].matches(&moved));
+    }
+
+    #[test]
+    fn row_cache_invalidates_all_rows_for_metrics_palette_and_osc_changes() {
+        let renderer = cache_renderer();
+        let colors = Colors::default();
+        let row = cache_row("abcd");
+        let changes: [fn(&mut RowCacheKey); 10] = [
+            |k| k.font_family = "other".into(),
+            |k| k.font_size = px(18.0),
+            |k| k.cell_width += px(0.5),
+            |k| k.cell_height += px(1.0),
+            |k| k.line_height = 1.2,
+            |k| k.scale = 1.25,
+            |k| k.palette = ColorPalette::builder().background(1, 2, 3).build(),
+            |k| k.colors[NamedColor::Foreground as usize] = Some(Rgb { r: 1, g: 2, b: 3 }),
+            |k| k.cols = 5,
+            |k| k.rows = 3,
+        ];
+        for change in changes {
+            let mut cache = RowCache::default();
+            cache.prepare(RowCacheKey::new(&renderer, 2, 4, &colors, 1.0));
+            for index in 0..2 {
+                cache.row(&renderer, index, &row, &colors).shaped = Some(Vec::new());
+            }
+            let mut key = RowCacheKey::new(&renderer, 2, 4, &colors, 1.0);
+            change(&mut key);
+            cache.prepare(key);
+            assert!(cache.rows.iter().all(|r| r.cells.is_none() && r.shaped.is_none()));
+        }
+    }
+
+    #[test]
+    fn row_cache_scrolls_replaces_and_shrinks_without_retaining_old_rows() {
+        let renderer = cache_renderer();
+        let colors = Colors::default();
+        let mut cache = RowCache::default();
+        cache.prepare(RowCacheKey::new(&renderer, 2, 4, &colors, 1.0));
+        let first = cache_row("abcd");
+        let mut second = cache_row("╭──╮");
+        second[Column(0)].bg = Color::Indexed(3);
+        cache.row(&renderer, 0, &first, &colors).shaped = Some(Vec::new());
+        cache.row(&renderer, 1, &second, &colors).shaped = Some(Vec::new());
+        // The viewport changed: row slots now point at different buffer rows.
+        assert!(cache.row(&renderer, 0, &second, &colors).shaped.is_none());
+        assert!(cache.row(&renderer, 1, &first, &colors).shaped.is_none());
+        assert_eq!(cache.rows[0].cells.as_ref(), Some(&second));
+        assert!(!cache.rows[0].boxes.is_empty());
+        assert!(cache.rows[1].boxes.is_empty());
+        assert!(cache.rows[0].backgrounds.iter().all(|b| b.row == 0));
+        cache.prepare(RowCacheKey::new(&renderer, 1, 2, &colors, 1.0));
+        assert_eq!(cache.rows.len(), 1);
+        assert_eq!(cache.spanned.len(), 2);
+        assert!(cache.rows[0].cells.is_none());
+    }
+
+    #[test]
+    fn renderer_clones_share_rows_but_changed_configuration_invalidates_them() {
+        let renderer = cache_renderer();
+        let mut clone = renderer.clone();
+        assert!(Arc::ptr_eq(&renderer.rows, &clone.rows));
+        let colors = Colors::default();
+        let row = cache_row("abcd");
+        {
+            let mut cache = renderer.rows.lock();
+            cache.prepare(RowCacheKey::new(&renderer, 1, 4, &colors, 1.0));
+            cache.row(&renderer, 0, &row, &colors).shaped = Some(Vec::new());
+        }
+        assert!(clone.rows.lock().rows[0].shaped.is_some());
+        clone.font_size = px(18.0);
+        clone.rows.lock().prepare(RowCacheKey::new(&clone, 1, 4, &colors, 1.0));
+        assert!(renderer.rows.lock().rows[0].shaped.is_none());
+    }
 
     #[test]
     fn test_renderer_creation() {

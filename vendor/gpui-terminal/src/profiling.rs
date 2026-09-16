@@ -109,3 +109,26 @@ impl Drop for Span {
         SAMPLES.set(samples);
     }
 }
+
+// onehand patch: count actual row preparation separately from per-frame paint
+// work. These counters contain no terminal contents and add no work when the
+// profiling feature is disabled.
+#[derive(Clone, Copy, Default)]
+pub struct RowCacheSample {
+    pub reused: u64,
+    pub rebuilt: u64,
+}
+
+thread_local! {
+    static ROWS: Cell<RowCacheSample> = const { Cell::new(RowCacheSample { reused: 0, rebuilt: 0 }) };
+}
+
+pub(crate) fn row_cache(reused: bool) {
+    let mut sample = ROWS.get();
+    if reused { sample.reused += 1; } else { sample.rebuilt += 1; }
+    ROWS.set(sample);
+}
+
+pub fn row_cache_snapshot() -> RowCacheSample {
+    ROWS.get()
+}

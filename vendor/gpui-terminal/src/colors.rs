@@ -88,7 +88,8 @@ use gpui::Hsla;
 ///     .foreground(0xeb, 0xdb, 0xb2)
 ///     .build();
 /// ```
-#[derive(Debug, Clone)]
+// onehand patch: compare the complete palette when validating cached row data.
+#[derive(Debug, Clone, PartialEq)]
 pub struct ColorPalette {
     /// The 16 standard ANSI colors (black, red, green, yellow, blue, magenta, cyan, white,
     /// and their bright variants)

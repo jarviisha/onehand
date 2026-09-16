@@ -1502,15 +1502,21 @@ Listed because a missing feature nobody wrote down reads as a bug in the ones th
   turns a cost a shell hides into typing latency. The paint is now per *run* rather than per
   character: `render::split_row_runs` groups the cells of a row that share a face, a colour and a
   decoration, and each group is one `shape_line` — a row of source costs a handful instead of eighty,
-  and gpui's own line-layout cache then hits on every row nobody touched. Three hazards make batching
+  and a visible-row cache retains those shaped lines until the cells or rendering settings change.
+  Three hazards make batching
   wrong in a cell grid, and each has an answer: shaping asks for a **forced cell width** so gpui snaps
   every base glyph to its own column, `TerminalRenderer::face` builds the faces with **contextual
   alternates off** so no font can fuse two cells into one ligature glyph, and a **double-width
   character is a run of its own**. Under that, the per-glyph allocations still matter and are still
-  gone — the text (`render::ascii_glyph`), the `Font` (`TerminalRenderer::font_variants`), and per row
-  a `Vec`, a `HashSet` and a row of cells that was *cloned* out of the grid to be read. **Measure
-  before assuming the shaping is the cost**; the first pass over this found the allocations around it
-  were.
+  gone — the text (`render::ascii_glyph`) and the `Font` (`TerminalRenderer::font_variants`).
+  `render::RowCache` compares complete visible rows, then snapshots and rebuilds backgrounds,
+  box commands and runs only for changed inputs. Changed rows retain shaped runs whose text and
+  style still match, updating their vector in place. It also observes direct mutable-grid edits without
+  consuming shared damage flags. Renderer clones share this bounded visible-grid cache; font,
+  metrics, scale, palette, OSC colours, dimensions or window changes invalidate it. Selection,
+  preedit and cursor remain live overlays. This saves CPU assembly and layout lookups, but GPUI
+  still submits every visible primitive on each frame. **Measure before assuming shaping is the
+  cost**; the original pass found allocations around it, and later profiling justified row caching.
 - **A repaint asked for by a terminal is the whole window redrawing, not the grid.** So the reader
   task drains already queued reads with `view::take_batch`, asks once, and yields before continuing
   the next bounded batch. It must not sleep after asking: the former 8 ms pause held the tail of a

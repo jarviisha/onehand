@@ -1,5 +1,5 @@
--- Deterministic dense-grid workload: 500 cursor, scroll and redraw updates
--- at a nominal 16 ms cadence, then idle. PERF_PHASE receives the phase and
+-- Deterministic dense-grid workload: configurable cursor, scroll and redraw
+-- updates (defaults: 500 each at 16 ms), then idle. PERF_PHASE receives the phase and
 -- measured columns/rows so an external sampler can delimit each interval.
 vim.o.swapfile = false
 vim.o.shadafile = 'NONE'
