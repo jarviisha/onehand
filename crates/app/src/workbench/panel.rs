@@ -438,9 +438,9 @@ impl Render for Workbench {
         div()
             .size_full()
             // **A card floating in its dock, not the dock itself.** The inset is
-            // what makes it one: held off all four sides by the same amount,
-            // because a card inset on three and flush on the fourth reads as one
-            // that has slipped.
+            // what makes it one: held off every side but the seam, which is the
+            // edge the dock is resized from and the one place the gap is the
+            // neighbour's to draw rather than this panel's.
             //
             // The change of surface alone was tried and is not enough. A panel
             // drawn edge to edge in a different fill reads as the window having
@@ -449,7 +449,20 @@ impl Render for Workbench {
             // and the conversation takes the space back. The gap is what says
             // the dock is a thing put down on the window rather than a piece of
             // it.
-            .p_2()
+            //
+            // **Flush on the seam, because there the border has to be the
+            // grip.** The dock's resize grip is a fixed band a few pixels either
+            // side of the dock's own edge, and it cannot be moved from here --
+            // so an inset on that side puts the one line a user reads as
+            // draggable outside the only place dragging works, and the panel is
+            // resized from a strip of apparently empty surface while the border
+            // does nothing. Nothing is lost by closing it up: what sits on the
+            // other side is the conversation, drawn on the same reading surface
+            // this gap was showing, so the card still stands off its neighbour
+            // by whatever that neighbour keeps clear.
+            .pt_2()
+            .pr_2()
+            .pb_2()
             // Mounted bare, so nothing else tracks this handle. A `TabPanel`
             // calls `track_focus` on the panel it holds, which is what normally
             // makes `contains_focused` answer for a dock panel at all -- and

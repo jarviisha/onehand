@@ -620,13 +620,20 @@ these are three different things their names already tell apart. The chips are `
 `flex_1 min_w_0` box, so what gives way when a fourth mode arrives is the box and never the maximize
 and hide buttons at the other end.
 
-**It draws itself as a card floating in its dock**: inset on all four sides, one border, one radius,
-`overflow_hidden` so the strip's hairline and the file tree's own border stop at the rounded corners,
-and `crate::theme::chrome` under it — the step that says a panel is *about* the work rather than part
-of it. The terminal takes the same step, both through one function so the two cannot drift; everything else — the conversation, the rail, a dialog — stays on the reading surface.
-The inset is even on all four sides, since a card held off three and flush on the fourth reads as one
-that has slipped, and `track_focus` stays on the *outer* box so the gap belongs to the panel and a
-click landing in it is a click on the Workbench. **The change of surface alone was tried and is not
+**It draws itself as a card floating in its dock**: inset on every side but the seam, one border, one
+radius, `overflow_hidden` so the strip's hairline and the file tree's own border stop at the rounded
+corners, and `crate::theme::chrome` under it — the step that says a panel is *about* the work rather
+than part of it. The terminal takes the same step, both through one function so the two cannot drift;
+everything else — the conversation, the rail, a dialog — stays on the reading surface.
+**The seam is flush, and that is the resize grip's doing**: the dock's grip is a fixed band a few
+pixels either side of the dock's own edge and there is no hook to move it, so an inset there leaves
+the one line a user reads as draggable sitting outside the only place a drag is taken — the panel
+resized from a strip of apparently empty surface while the border did nothing. Flush, the border *is*
+the grip. It costs nothing to look at, because what is on the other side is the conversation on the
+same reading surface the gap was showing: the card still stands off its neighbour by whatever that
+neighbour keeps clear. The other three stay inset, since a card held off nothing reads as part of the
+window, and `track_focus` stays on the *outer* box so the gap belongs to the panel and a click
+landing in it is a click on the Workbench. **The change of surface alone was tried and is not
 enough**: a dock drawn edge to edge in a different fill reads as the window having been *divided*,
 two regions meeting along a line, which is what the arrangement stops being the moment either dock
 closes and the conversation takes the space back.
@@ -745,12 +752,18 @@ an element tree:
 spawned lazily; dropping a tab drops its PTY, so the child dies with it and there is no separate
 shutdown to forget.
 
-**It is a card in its dock, the Workbench's shape exactly** — inset on all four sides, one border,
-one radius, `overflow_hidden` so the strip's hairline stops at the corners, `crate::theme::chrome`
-under it and `track_focus` on the outer box so the gap belongs to the panel. Two docks answering
-"where does this panel begin" differently would read as two separate decisions. **It is the one this
-costs something**: the grid measures its own bounds and resizes the PTY to match, so the inset is a
-column and a row of shell — paid once, since the inset is fixed while the dock is dragged.
+**It is a card in its dock, the Workbench's shape exactly** — inset on every side but the seam, which
+here is the top, one border, one radius, `overflow_hidden` so the strip's hairline stops at the
+corners, `crate::theme::chrome` under it and `track_focus` on the outer box so the gap belongs to the
+panel. Two docks answering "where does this panel begin" differently would read as two separate
+decisions, and that includes which side is flush: each is flush against its own dock's resize grip,
+for the reason given there. **Its right edge stays inset although a grip runs down that too** — the
+Workbench's dock is a sibling of this whole column, so its grip is the height of the window and
+passes this panel as well; but the border that seam moves is the Workbench card's, flush against it
+and the thing a user aims at, and a second flush edge here would leave the two cards' borders
+touching with no gap between them. **It is the one this costs something**: the grid measures its own
+bounds and resizes the PTY to match, so the inset is a column of cells and half a row — paid once,
+since the inset is fixed while the dock is dragged.
 
 **The grid is drawn in that same chrome step**, and has to be told so rather than reading the theme:
 a terminal fills every cell it has not been told otherwise about with its palette's default

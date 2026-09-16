@@ -370,15 +370,36 @@ impl Render for TerminalPanel {
         self.sync_theme(cx);
         div()
             .size_full()
-            // **A card floating in its dock, the Workbench's shape exactly.**
-            // Two docks answering "where does this panel begin" differently
-            // would read as two separate decisions rather than one.
+            // **A card floating in its dock, the Workbench's shape exactly**:
+            // inset on every side but the seam it is dragged by, which here is
+            // the top. Two docks answering "where does this panel begin"
+            // differently would read as two separate decisions rather than one,
+            // and that holds for which side is flush as much as for the gap.
             //
-            // It costs the shell a column and a row, because the grid measures
-            // its own bounds and resizes the PTY to match and this is one more
-            // thing narrowing them. Paid once rather than growing with the
-            // panel, since the inset is fixed while the dock is dragged.
-            .p_2()
+            // Flush there for the reason the Workbench is: the dock's resize
+            // grip is a fixed band a few pixels either side of the dock's own
+            // edge and cannot be moved from here, so an inset leaves the border
+            // a user aims at sitting outside the only place a drag is taken.
+            // The conversation above is on the same reading surface the gap was
+            // showing, so closing it up costs nothing to look at -- the card
+            // stands off that conversation exactly as far as it keeps its own
+            // content clear.
+            //
+            // **The right edge is left inset although a grip runs down it too.**
+            // The Workbench's dock is a sibling of this whole column, so its
+            // grip is the full height of the window and passes this panel as
+            // well -- but the edge that seam moves is the Workbench card's own
+            // border, which is flush against it and is what a user aims at. A
+            // second flush edge here would put two borders against each other
+            // with no gap between the two cards.
+            //
+            // It costs the shell a column of cells and half a row, because the
+            // grid measures its own bounds and resizes the PTY to match and
+            // this is one more thing narrowing them. Paid once rather than
+            // growing with the panel, since the inset is fixed while the dock
+            // is dragged.
+            .px_2()
+            .pb_2()
             // On the outer box, so the gap around the card belongs to the panel:
             // a click landing in it is a click on the terminal.
             //
