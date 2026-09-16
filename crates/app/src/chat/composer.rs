@@ -987,8 +987,6 @@ impl Composer {
             crate::theme::status_ink(cx).danger,
             cx.theme().radius,
         );
-        let over = self.attachments.len().saturating_sub(MAX_TRAY_CHIPS);
-
         Some(
             div()
                 .id("attachments")
@@ -1082,12 +1080,25 @@ impl Composer {
                             }
                         }),
                 )
-                .when(over > 0, |tray| {
+                // **Offered from the second attachment, not from the
+                // thirteenth.** The count was the wrong thing to gate on: this
+                // row scrolls sideways, so two files with long names on a narrow
+                // panel already push a chip past the edge — and until the
+                // thirteenth arrived there was no way at all to reach the list
+                // that shows what is staged, which is the one place a chip
+                // scrolled out of sight can still be found and removed. One
+                // attachment is the case that needs nothing, because the single
+                // chip beside this is already the whole list.
+                .when(self.attachments.len() > 1, |tray| {
                     tray.child(
                         crate::controls::action("all-attachments")
                             .ghost()
                             .xsmall()
                             .flex_none()
+                            // At the height every other control in the composer
+                            // stands at, since it now sits beside chips far more
+                            // often than it used to.
+                            .h(CHIP_H)
                             .label(format!("View all {}", self.attachments.len()))
                             .tooltip("Review or remove staged attachments")
                             .on_click(cx.listener(|composer: &mut Self, _, window, cx| {
@@ -1102,10 +1113,6 @@ impl Composer {
     /// something to dismiss.
     pub fn overlay_open(&self) -> bool {
         self.overlay.is_some()
-    }
-
-    pub fn completion_open(&self) -> bool {
-        self.overlay == Some(Overlay::Completion)
     }
 
     /// Popups that belong above the whole card. Option pickers are anchored by
@@ -1343,22 +1350,36 @@ impl Composer {
                         }))
                         .when(selected.is_none(), |list| {
                             list.child(notice(cx).text_sm().child("No matches"))
-                        })
-                        .when(capped > 0, |list| {
-                            list.child(
-                                notice(cx)
-                                    .text_xs()
-                                    .child(format!("{capped} more — keep typing to narrow them")),
-                            )
-                        })
-                        .when(overlay == Overlay::Completion, |list| {
-                            list.child(
-                                notice(cx)
-                                    .text_xs()
-                                    .child("↑↓ Navigate · Enter Select · Esc Close"),
-                            )
                         }),
-                ),
+                )
+                // **Outside the scrolling box, and that is the whole point of
+                // them.** Both are sentences about the list rather than choices
+                // in it, and both appear only once the list is long — so held
+                // among the rows they were scrolled out of sight in exactly the
+                // case that produced them. The count of what is being held back
+                // sat past the fiftieth row, so nothing ever said a query had
+                // been narrowed at all; and the line naming the keys that walk
+                // the list went away the moment the list was long enough to
+                // need walking. Out here the surface holds them against its own
+                // edge and nothing the list does to its offset can move them.
+                //
+                // Tab is named beside Enter because both are bound to take the
+                // highlighted row, and a line that lists the keys is read as the
+                // complete set.
+                .when(capped > 0, |popup| {
+                    popup.child(
+                        notice(cx)
+                            .text_xs()
+                            .child(format!("{capped} more — keep typing to narrow them")),
+                    )
+                })
+                .when(overlay == Overlay::Completion, |popup| {
+                    popup.child(
+                        notice(cx)
+                            .text_xs()
+                            .child("↑↓ Navigate · Tab or Enter Select · Esc Close"),
+                    )
+                }),
         )
     }
 
@@ -1600,7 +1621,22 @@ where
     F: Fn(&mut Composer, &mut Window, &mut Context<Composer>) + 'static,
 {
     chip(id, false, cx)
-        .child(icon.size_3())
+        // **Wider than the chip's own inset, and the icon a step up with it.**
+        // A selector chip is padded to sit close around a word, which is the
+        // right inset for a control whose width is set by what is in it. These
+        // three hold one glyph each, so that same inset left a target about two
+        // thirds the width of a pointer-sized one — the narrowest thing in the
+        // window, on the row a user reaches for most often after the field
+        // itself. The glyph grows too, or a wider box around the same small mark
+        // reads as padding somebody forgot to trim rather than as a bigger
+        // button.
+        //
+        // The height stays the row's, deliberately: `CHIP_H` is what every
+        // control here and every row of the lists they open stand at, so raising
+        // it for three buttons would either break that or grow the whole
+        // composer to make one target square.
+        .px_2()
+        .child(icon.size_3p5())
         .tooltip(hint)
         .on_click(cx.listener(move |composer: &mut Composer, _, window, cx| {
             on_click(composer, window, cx);
@@ -1673,7 +1709,13 @@ fn option_anchor(
             gpui::deferred(
                 div()
                     .absolute()
-                    .bottom(rems(2.))
+                    // Lifted by the chip's own height plus the gap the row keeps
+                    // between controls, rather than by a number that happens to
+                    // clear it today: written out flat, moving `CHIP_H` left the
+                    // list either overlapping the button that opened it or
+                    // floating clear of it, with nothing in either place saying
+                    // the two were meant to touch.
+                    .bottom(CHIP_H + rems(0.25))
                     .when(align_end, |anchor| anchor.right_0())
                     .when(!align_end, |anchor| anchor.left_0())
                     .child(popup),

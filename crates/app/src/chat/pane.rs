@@ -3542,7 +3542,6 @@ impl ChatPane {
     ) -> impl IntoElement + use<> {
         let pinned = self.pinned(session, window, cx);
         let pane = cx.entity();
-        let completion_popup = self.composer.read(cx).completion_open();
 
         div()
             .absolute()
@@ -3572,21 +3571,24 @@ impl ChatPane {
             // closed, so every `@` typed shoved the conversation up and every
             // completion dropped it back. The popup is transient chrome; it may
             // cover the transcript, but it must not move it.
+            // **One width for everything that opens here, and that is now all
+            // of it.** Both lists this path carries want the reading column:
+            // completion rows are paths, and the attachment manager's are file
+            // names with a size after them. The branch that used to push the
+            // other one against the right-hand edge was written for the mode and
+            // model lists, which are anchored to their own chips inside the card
+            // and never reach this code at all -- so it was left holding the
+            // attachment manager, which is `w_full` and therefore had nothing
+            // for a right alignment to do. A rule that cannot move anything is
+            // read, on the next visit, as a rule that is working.
             .children(
                 self.composer
                     .update(cx, |composer, cx| composer.detached_popup(session, cx))
                     .map(|popup| {
-                        let column = div().w_full().max_w(CONTENT_COLUMN).mx_auto();
-                        div().w_full().px_4().child(if completion_popup {
-                            column.child(popup)
-                        } else {
-                            // Option lists and attachment management are opened by
-                            // controls on the card's right-hand side. Keeping
-                            // their compact surface on that edge preserves the
-                            // spatial relationship to the trigger; completion
-                            // stays full-width for long paths.
-                            column.child(div().h_flex().justify_end().child(popup))
-                        })
+                        div()
+                            .w_full()
+                            .px_4()
+                            .child(div().w_full().max_w(CONTENT_COLUMN).mx_auto().child(popup))
                     }),
             )
             .child(
