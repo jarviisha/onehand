@@ -82,10 +82,24 @@ pub(super) fn options_rows(session: &Entity<ChatSession>, cx: &App) -> Vec<Row> 
         .map(|(_, option)| option)
         .flat_map(|option| {
             option.choices.iter().map(move |choice| Row {
-                // Lead with the group so every row is self-explanatory in the
-                // flat popup: `Model · GPT-5`, `Effort · High`, and so on.
-                label: SharedString::from(format!("{} · {}", option.name, choice.name)),
-                detail: None,
+                // **The choice leads and the group follows it, quietly.** This
+                // list is flat across every group the agent advertises, so each
+                // row does have to name which setting it belongs to — but led
+                // with, the group was the first thing read on every row and the
+                // same word several rows running, in the one position the eye
+                // lands on. What is being picked is the choice.
+                //
+                // The group goes in the detail slot the completion rows already
+                // use for a candidate's folder, which is muted and set against
+                // the row's far end: adjacent rows sharing a setting line their
+                // tags up into a column that can be read down, where the prefix
+                // form had to be read across. It is also what makes several rows
+                // marked in force at once read correctly — one per group is the
+                // truth here, and until each said which group, three rows in
+                // primary weight in one list read as three answers to one
+                // question.
+                label: SharedString::from(choice.name.clone()),
+                detail: Some(SharedString::from(option.name.clone())),
                 checked: option.current.as_ref() == Some(&choice.value),
                 pick: Pick::Config {
                     config_id: option.id.clone(),
