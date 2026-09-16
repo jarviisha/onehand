@@ -192,8 +192,9 @@ One window hosts exactly one workspace. The frame is a navigation **rail** plus 
   any surface pair and lifting rather than sinking: the faintest existing step is
   1.04 against the rail's new surface and the reading surface is 1.19, a hole
   punched through the panel rather than a row raised out of it.
-- **Both docks are drawn as cards floating in their dock** — inset on all four
-  sides, one border, one radius, and the **chrome** surface under them: the step
+- **Both docks are drawn as cards floating in their dock** — inset on every side
+  but the seam, one border, one radius, and the **chrome** surface under them:
+  the step
   that says a panel is *about* the work rather than part of it, which the status
   bar takes too and nothing else does. That step **is the well**, and has to be:
   a midpoint was tried and measures 1.07 against the reading surface, under the
@@ -201,17 +202,23 @@ One window hosts exactly one workspace. The frame is a navigation **rail** plus 
   has only 1.15 between white and the well to divide, so nothing between them
   clears that floor twice. What it costs is that a well drawn *on* chrome is the
   panel's own value: the reading surface is what one becomes there, which is the
-  same asserted pair read from the other end. The inset is even on all four, since a
-  card held off three and flush on the fourth reads as one that has slipped, and
-  the gap belongs to the panel — a click in it is a click on that panel.
+  same asserted pair read from the other end. **The seam is flush and the rest
+  are inset** — the Workbench's left edge, the terminal's top, each being the
+  edge that dock is dragged by: the resize grip is a fixed band a few pixels
+  either side of the dock's own edge, so a card held off there leaves the one
+  line a user reads as draggable outside the only place a drag is taken, and the
+  panel is resized from a strip of apparently empty surface. Flush, the border
+  is the grip — and nothing is lost, because the reading surface on the other
+  side of that seam is what the gap was showing. The gap on the other three
+  belongs to the panel — a click in it is a click on that panel.
   **The change of surface alone was tried and is not enough.** A dock drawn edge
   to edge in a different fill reads as the window having been *divided*, two
   regions meeting along a line — which is what the arrangement stops being the
   moment either dock closes and the conversation takes the space back. The gap is
   what says a dock is something put down on the window rather than a piece of it.
   The terminal is the one this costs something: its grid measures its own bounds
-  and resizes the PTY to match, so the inset is a column and a row of shell. Paid
-  once rather than growing with the panel.
+  and resizes the PTY to match, so the inset is a column of cells and half a
+  row. Paid once rather than growing with the panel.
 - **A terminal grid is drawn in the surface of the panel holding it**, in the
   dock and in the Neovim mode alike, so a shell is that panel rather than a plate
   laid on it. It has to be *told* which surface that is — a grid fills every cell
