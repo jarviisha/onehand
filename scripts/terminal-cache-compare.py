@@ -77,12 +77,17 @@ def main():
                 window = client(proc.pid)
                 if not window or not window['visible'] or window['hidden']:
                     raise RuntimeError('comparison window is not visible')
+                if json.loads(hypr('activewindow', '-j')).get('address') != window['address']:
+                    raise RuntimeError('comparison window lost focus; run is invalid')
                 x, y = window['at']
                 w, h = window['size']
                 if [w, h] != [round(896 * scale), round(320 * scale)]:
                     raise RuntimeError('comparison window changed size')
                 path = args.output / f'{args.name}-{case:02}.png'
                 subprocess.run(['grim', '-g', f'{x},{y} {w}x{h}', str(path)], check=True)
+                if json.loads(hypr('activewindow', '-j')).get('address') != window['address']:
+                    path.unlink()
+                    raise RuntimeError('comparison window lost focus during capture; run is invalid')
                 im = Image.open(path).convert('RGB')
                 inset, half, bottom = round(8 * scale), round(448 * scale), round(312 * scale)
                 left = im.crop((inset, inset, half - inset, bottom))
