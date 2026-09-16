@@ -152,6 +152,25 @@ fn highlight(selected: usize, rows: usize) -> Option<usize> {
     (rows > 0).then(|| selected.min(rows - 1))
 }
 
+/// The next row in the direction asked for that can actually be taken, so a
+/// heading is passed through rather than landed on and one press moves the
+/// highlight by one *choice*.
+///
+/// Bounded by the list's own length. A list of nothing but headings cannot
+/// happen — a group is built from its choices — but a walk that trusts that
+/// spins forever the day it stops being true, with no frame left to say so in.
+fn next_walkable(walkable: &[bool], from: usize, delta: isize) -> Option<usize> {
+    let len = walkable.len() as isize;
+    let mut at = from as isize;
+    for _ in 0..walkable.len() {
+        at = (at + delta).rem_euclid(len);
+        if walkable[at as usize] {
+            return Some(at as usize);
+        }
+    }
+    None
+}
+
 /// A candidate path split into the part that is read first and the part that
 /// tells two of the same name apart.
 ///
@@ -366,25 +385,32 @@ impl Composer {
         match self.overlay.clone() {
             None => false,
             Some(Overlay::Completion) => self.accept(session, window, cx),
+            // A highlight resting on a heading settles nothing, so Enter there
+            // closes the list rather than reaching for the nearest choice --
+            // which is the same answer this already gives an empty list, and for
+            // the same reason: guessing which of the rows around it was meant is
+            // how a key comes to change a setting nobody named.
             Some(Overlay::Mode) => {
                 let rows = mode_rows(session, cx);
-                let Some(row) =
-                    highlight(self.selected, rows.len()).and_then(|row| rows.into_iter().nth(row))
+                let Some(pick) = highlight(self.selected, rows.len())
+                    .and_then(|row| rows.into_iter().nth(row))
+                    .and_then(|row| row.pick)
                 else {
                     self.close_overlay(cx);
                     return true;
                 };
-                self.apply_pick(&row.pick, session, window, cx)
+                self.apply_pick(&pick, session, window, cx)
             }
             Some(Overlay::Options) => {
                 let rows = options_rows(session, cx);
-                let Some(row) =
-                    highlight(self.selected, rows.len()).and_then(|row| rows.into_iter().nth(row))
+                let Some(pick) = highlight(self.selected, rows.len())
+                    .and_then(|row| rows.into_iter().nth(row))
+                    .and_then(|row| row.pick)
                 else {
                     self.close_overlay(cx);
                     return true;
                 };
-                self.apply_pick(&row.pick, session, window, cx)
+                self.apply_pick(&pick, session, window, cx)
             }
             Some(Overlay::Attachments) => {
                 self.close_overlay(cx);
@@ -437,9 +463,9 @@ impl Composer {
     /// at all on a list opened with the mouse, which is every list of the
     /// agent's own options.
     ///
-    /// The list opens on the first value already in force. The Options popup is
-    /// intentionally flat: model, effort and remaining agent options are all
-    /// visible and directly selectable without entering another screen.
+    /// The list opens on the first value already in force. Model, effort and
+    /// every remaining agent option stay on one screen, grouped under a heading
+    /// each and directly selectable without stepping into a second.
     fn toggle_picker(
         &mut self,
         target: Overlay,
@@ -452,7 +478,14 @@ impl Composer {
             Overlay::Options => options_rows(session, cx),
             _ => return,
         };
-        self.selected = rows.iter().position(|row| row.checked).unwrap_or(0);
+        // The fallback is the first row that can be *taken*, not the first row:
+        // a grouped list opens on a heading otherwise, which is a highlight on
+        // something Enter does nothing to, in the one frame most people see.
+        self.selected = rows
+            .iter()
+            .position(|row| row.checked)
+            .or_else(|| rows.iter().position(|row| row.pick.is_some()))
+            .unwrap_or(0);
         self.overlay = (self.overlay.as_ref() != Some(&target)).then_some(target);
         self.reveal_selected();
         self.state.update(cx, |state, cx| state.focus(window, cx));
@@ -527,14 +560,21 @@ impl Composer {
         )
     }
 
-    /// How many rows the open list has, which is what walking it is bounded by.
-    fn row_count(&self, session: &Entity<ChatSession>, cx: &App) -> usize {
+    /// Which rows of the open list the keys may land on, one flag per row.
+    ///
+    /// A mask and no longer a count, because the two stopped being the same
+    /// question once a list could hold a heading: the index still addresses
+    /// every row, since that is what the highlight is drawn on and what the
+    /// scroll is asked for, but a heading is not one of the choices under it and
+    /// the walk has to step over it.
+    fn walkable(&self, session: &Entity<ChatSession>, cx: &App) -> Vec<bool> {
+        let taken = |rows: Vec<Row>| rows.iter().map(|row| row.pick.is_some()).collect();
         match &self.overlay {
-            None => 0,
-            Some(Overlay::Completion) => self.candidates(session, cx).len(),
-            Some(Overlay::Mode) => mode_rows(session, cx).len(),
-            Some(Overlay::Options) => options_rows(session, cx).len(),
-            Some(Overlay::Attachments) => 0,
+            None => Vec::new(),
+            Some(Overlay::Completion) => vec![true; self.candidates(session, cx).len()],
+            Some(Overlay::Mode) => taken(mode_rows(session, cx)),
+            Some(Overlay::Options) => taken(options_rows(session, cx)),
+            Some(Overlay::Attachments) => Vec::new(),
         }
     }
 
@@ -544,12 +584,14 @@ impl Composer {
     /// at the last row makes the user let go and reach for the other arrow to
     /// get back to a match they passed.
     fn step(&mut self, delta: isize, session: &Entity<ChatSession>, cx: &mut Context<Self>) {
-        let rows = self.row_count(session, cx);
-        let Some(from) = highlight(self.selected, rows) else {
+        let walkable = self.walkable(session, cx);
+        let Some(from) = highlight(self.selected, walkable.len()) else {
             return;
         };
-        let rows = rows as isize;
-        self.selected = ((from as isize + delta).rem_euclid(rows)) as usize;
+        let Some(to) = next_walkable(&walkable, from, delta) else {
+            return;
+        };
+        self.selected = to;
         self.reveal_selected();
         cx.notify();
     }
@@ -987,8 +1029,6 @@ impl Composer {
             crate::theme::status_ink(cx).danger,
             cx.theme().radius,
         );
-        let over = self.attachments.len().saturating_sub(MAX_TRAY_CHIPS);
-
         Some(
             div()
                 .id("attachments")
@@ -1082,12 +1122,25 @@ impl Composer {
                             }
                         }),
                 )
-                .when(over > 0, |tray| {
+                // **Offered from the second attachment, not from the
+                // thirteenth.** The count was the wrong thing to gate on: this
+                // row scrolls sideways, so two files with long names on a narrow
+                // panel already push a chip past the edge — and until the
+                // thirteenth arrived there was no way at all to reach the list
+                // that shows what is staged, which is the one place a chip
+                // scrolled out of sight can still be found and removed. One
+                // attachment is the case that needs nothing, because the single
+                // chip beside this is already the whole list.
+                .when(self.attachments.len() > 1, |tray| {
                     tray.child(
                         crate::controls::action("all-attachments")
                             .ghost()
                             .xsmall()
                             .flex_none()
+                            // At the height every other control in the composer
+                            // stands at, since it now sits beside chips far more
+                            // often than it used to.
+                            .h(CHIP_H)
                             .label(format!("View all {}", self.attachments.len()))
                             .tooltip("Review or remove staged attachments")
                             .on_click(cx.listener(|composer: &mut Self, _, window, cx| {
@@ -1102,10 +1155,6 @@ impl Composer {
     /// something to dismiss.
     pub fn overlay_open(&self) -> bool {
         self.overlay.is_some()
-    }
-
-    pub fn completion_open(&self) -> bool {
-        self.overlay == Some(Overlay::Completion)
     }
 
     /// Popups that belong above the whole card. Option pickers are anchored by
@@ -1176,7 +1225,7 @@ impl Composer {
                             label,
                             detail,
                             checked: false,
-                            pick: Pick::Complete,
+                            pick: Some(Pick::Complete),
                         }
                     })
                     .collect()
@@ -1256,8 +1305,22 @@ impl Composer {
                         // own handle is gone by the time a key arrives.
                         .track_scroll(&self.rows_scroll)
                         .children(rows.into_iter().enumerate().map(|(i, row)| {
+                            // **A heading is text, not a button that refuses.**
+                            // Built from the same shell and disabled it would
+                            // still be a control -- the row this list is drawn
+                            // in is the row a choice is drawn in, so the only
+                            // thing left saying the group name cannot be taken
+                            // is that nothing happens when it is. Plain text is
+                            // the answer the rest of the app gives: no hover
+                            // fill, no pointer, nothing promising a press.
+                            let Some(pick) = row.pick else {
+                                return notice(cx)
+                                    .text_xs()
+                                    .font_semibold()
+                                    .child(row.label)
+                                    .into_any_element();
+                            };
                             let session = session.clone();
-                            let pick = row.pick.clone();
                             crate::controls::action(("candidate", i))
                                 .ghost()
                                 // Not for the geometry, which is set outright
@@ -1340,25 +1403,40 @@ impl Composer {
                                     composer.select(i, cx);
                                     composer.apply_pick(&pick, &session, window, cx);
                                 }))
+                                .into_any_element()
                         }))
                         .when(selected.is_none(), |list| {
                             list.child(notice(cx).text_sm().child("No matches"))
-                        })
-                        .when(capped > 0, |list| {
-                            list.child(
-                                notice(cx)
-                                    .text_xs()
-                                    .child(format!("{capped} more — keep typing to narrow them")),
-                            )
-                        })
-                        .when(overlay == Overlay::Completion, |list| {
-                            list.child(
-                                notice(cx)
-                                    .text_xs()
-                                    .child("↑↓ Navigate · Enter Select · Esc Close"),
-                            )
                         }),
-                ),
+                )
+                // **Outside the scrolling box, and that is the whole point of
+                // them.** Both are sentences about the list rather than choices
+                // in it, and both appear only once the list is long — so held
+                // among the rows they were scrolled out of sight in exactly the
+                // case that produced them. The count of what is being held back
+                // sat past the fiftieth row, so nothing ever said a query had
+                // been narrowed at all; and the line naming the keys that walk
+                // the list went away the moment the list was long enough to
+                // need walking. Out here the surface holds them against its own
+                // edge and nothing the list does to its offset can move them.
+                //
+                // Tab is named beside Enter because both are bound to take the
+                // highlighted row, and a line that lists the keys is read as the
+                // complete set.
+                .when(capped > 0, |popup| {
+                    popup.child(
+                        notice(cx)
+                            .text_xs()
+                            .child(format!("{capped} more — keep typing to narrow them")),
+                    )
+                })
+                .when(overlay == Overlay::Completion, |popup| {
+                    popup.child(
+                        notice(cx)
+                            .text_xs()
+                            .child("↑↓ Navigate · Tab or Enter Select · Esc Close"),
+                    )
+                }),
         )
     }
 
@@ -1600,7 +1678,22 @@ where
     F: Fn(&mut Composer, &mut Window, &mut Context<Composer>) + 'static,
 {
     chip(id, false, cx)
-        .child(icon.size_3())
+        // **Wider than the chip's own inset, and the icon a step up with it.**
+        // A selector chip is padded to sit close around a word, which is the
+        // right inset for a control whose width is set by what is in it. These
+        // three hold one glyph each, so that same inset left a target about two
+        // thirds the width of a pointer-sized one — the narrowest thing in the
+        // window, on the row a user reaches for most often after the field
+        // itself. The glyph grows too, or a wider box around the same small mark
+        // reads as padding somebody forgot to trim rather than as a bigger
+        // button.
+        //
+        // The height stays the row's, deliberately: `CHIP_H` is what every
+        // control here and every row of the lists they open stand at, so raising
+        // it for three buttons would either break that or grow the whole
+        // composer to make one target square.
+        .px_2()
+        .child(icon.size_3p5())
         .tooltip(hint)
         .on_click(cx.listener(move |composer: &mut Composer, _, window, cx| {
             on_click(composer, window, cx);
@@ -1673,7 +1766,13 @@ fn option_anchor(
             gpui::deferred(
                 div()
                     .absolute()
-                    .bottom(rems(2.))
+                    // Lifted by the chip's own height plus the gap the row keeps
+                    // between controls, rather than by a number that happens to
+                    // clear it today: written out flat, moving `CHIP_H` left the
+                    // list either overlapping the button that opened it or
+                    // floating clear of it, with nothing in either place saying
+                    // the two were meant to touch.
+                    .bottom(CHIP_H + rems(0.25))
                     .when(align_end, |anchor| anchor.right_0())
                     .when(!align_end, |anchor| anchor.left_0())
                     .child(popup),
@@ -1758,7 +1857,7 @@ fn send_controls(
 
 #[cfg(test)]
 mod tests {
-    use super::{Draft, TriggerSpot, highlight, split_path, trigger_spot};
+    use super::{Draft, TriggerSpot, highlight, next_walkable, split_path, trigger_spot};
     use onehand_core::attachment::{AttachmentSource, StagedAttachment};
     use std::path::PathBuf;
 
@@ -1788,6 +1887,34 @@ mod tests {
             highlight(0, 0),
             None,
             "nothing to highlight, nothing to accept"
+        );
+    }
+
+    #[test]
+    fn walking_a_grouped_list_steps_over_its_headings() {
+        // `Model` · two models · `Effort` · two efforts.
+        let rows = [false, true, true, false, true, true];
+
+        assert_eq!(next_walkable(&rows, 1, 1), Some(2), "within a group");
+        assert_eq!(
+            next_walkable(&rows, 2, 1),
+            Some(4),
+            "the heading between two groups is passed through, not landed on"
+        );
+        assert_eq!(
+            next_walkable(&rows, 1, -1),
+            Some(5),
+            "wrapping backwards off the top skips the heading it wraps past"
+        );
+        assert_eq!(
+            next_walkable(&rows, 5, 1),
+            Some(1),
+            "and forwards off the bottom"
+        );
+        assert_eq!(
+            next_walkable(&[false, false], 0, 1),
+            None,
+            "a list with nothing to take stops rather than spinning"
         );
     }
 

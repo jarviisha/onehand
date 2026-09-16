@@ -13,7 +13,16 @@ pub(super) struct Row {
     pub(super) label: SharedString,
     pub(super) detail: Option<SharedString>,
     pub(super) checked: bool,
-    pub(super) pick: Pick,
+    /// What taking this row does, or `None` where it is a heading naming the
+    /// group under it.
+    ///
+    /// An `Option` rather than a variant of [`Pick`], because the difference is
+    /// structural and not another kind of picking: a heading is drawn as plain
+    /// text instead of a button, the keys step over it, and Enter on one settles
+    /// nothing. Carried as a variant, each of those three would have been a
+    /// match arm doing nothing, and the fourth place that forgot to write one
+    /// would have been a heading the user could click.
+    pub(super) pick: Option<Pick>,
 }
 
 #[derive(Clone)]
@@ -66,7 +75,7 @@ pub(super) fn mode_rows(session: &Entity<ChatSession>, cx: &App) -> Vec<Row> {
             label: SharedString::from(mode.name.clone()),
             detail: None,
             checked: chat.current_mode.as_ref() == Some(&mode.id),
-            pick: Pick::Mode(mode.id.clone()),
+            pick: Some(Pick::Mode(mode.id.clone())),
         })
         .collect()
 }
@@ -81,17 +90,36 @@ pub(super) fn options_rows(session: &Entity<ChatSession>, cx: &App) -> Vec<Row> 
         .into_iter()
         .map(|(_, option)| option)
         .flat_map(|option| {
-            option.choices.iter().map(move |choice| Row {
-                // Lead with the group so every row is self-explanatory in the
-                // flat popup: `Model · GPT-5`, `Effort · High`, and so on.
-                label: SharedString::from(format!("{} · {}", option.name, choice.name)),
+            // **Each group is announced once, and its choices then stand
+            // alone.** This list runs across every group the agent advertises —
+            // model, effort, and whatever else it offers — so a row has to be
+            // placeable in one of them. Naming the group on every row put the
+            // same word in the position the eye lands on, several rows running,
+            // ahead of the thing actually being picked; naming it once above
+            // them costs a row per group and says it in the place a reader
+            // already looks for it.
+            //
+            // It is also what makes several rows marked in force at once read
+            // correctly. One per group is the truth in this list, but the mark
+            // is weight and primary ink — a convention built for the mode
+            // picker, which is a list of a single choice — so three rows
+            // carrying it in one undivided column read as three answers to one
+            // question.
+            let heading = Row {
+                label: SharedString::from(option.name.clone()),
+                detail: None,
+                checked: false,
+                pick: None,
+            };
+            std::iter::once(heading).chain(option.choices.iter().map(move |choice| Row {
+                label: SharedString::from(choice.name.clone()),
                 detail: None,
                 checked: option.current.as_ref() == Some(&choice.value),
-                pick: Pick::Config {
+                pick: Some(Pick::Config {
                     config_id: option.id.clone(),
                     value: choice.value.clone(),
-                },
-            })
+                }),
+            }))
         })
         .collect()
 }
