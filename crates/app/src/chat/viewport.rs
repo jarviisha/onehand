@@ -129,6 +129,17 @@ pub struct Viewport {
     /// plan's length, and a plan belonging to one session with a scroll
     /// position belonging to another draws the right rows in the wrong place.
     list: Option<(ListState, usize)>,
+    /// The first run whose drawing changed in the last replan.
+    ///
+    /// A turn folds its settled steps into one strip as it goes, so the run
+    /// count *shrinks* mid-turn — and a shrink used to reset the list whole.
+    /// That throws away every measured row height and the scroll position on
+    /// every tool that finishes: the transcript jumps, the frame hitches while
+    /// the rows above are measured again, and the way-back pill flickers as the
+    /// anchor lands at the tail for one frame. The fold happens at the tail, so
+    /// naming where the plan actually diverged is what lets everything above it
+    /// be left alone.
+    changed_from: usize,
     /// Whether the list has been told to report its scrolling yet.
     ///
     /// The state is built lazily, on the first frame that draws a transcript,
@@ -197,7 +208,7 @@ impl Viewport {
         self.planned = Some(key);
         let addressed: Vec<(TranscriptItemId, &ChatItem)> = addressed(chat).collect();
 
-        self.plan = transcript::runs(&addressed)
+        let plan: Vec<RunPlan> = transcript::runs(&addressed)
             .into_iter()
             .map(|run| match run {
                 transcript::Run::Single(target) => RunPlan {
@@ -232,6 +243,23 @@ impl Viewport {
                 }
             })
             .collect();
+
+        // **Accumulated, never overwritten.** A replan can find a divergence the
+        // list is not told about in the same breath -- a lone step settling
+        // turns its run from a card into an index row without changing how many
+        // runs there are -- and that row stays stale until something else moves
+        // the count. Written fresh each time, the later replan's answer painted
+        // over the earlier one and the splice began past the row that had
+        // actually changed, leaving the list holding a tall card's height for a
+        // row now one line high.
+        let diverged = self
+            .plan
+            .iter()
+            .zip(plan.iter())
+            .position(|(was, now)| !draws_the_same(was, now))
+            .unwrap_or_else(|| self.plan.len().min(plan.len()));
+        self.changed_from = self.changed_from.min(diverged);
+        self.plan = plan;
 
         let newest = self
             .plan
@@ -452,14 +480,36 @@ impl Viewport {
         });
 
         let mut lost_position = false;
-        if count > *known {
-            // Growth is spliced rather than reset so the measurements already
-            // taken -- and the user's scroll position -- survive it.
-            state.splice(*known..*known, count - *known);
-        } else if count != *known {
-            state.reset(count);
-            lost_position = true;
+        let from = self.changed_from.min(count).min(*known);
+        if count != *known {
+            // **Spliced from where the plan actually diverged, never reset.** A
+            // turn shrinks its own layout as it goes -- each step that settles
+            // folds into the strip beside it -- so a shrink is the ordinary
+            // mid-turn case rather than the exceptional one. Reset whole, every
+            // finished tool cost the list every row height it had measured and
+            // the reader their place: the transcript jumped, the frame hitched
+            // re-measuring the conversation above, and the way back to the
+            // latest blinked on as the anchor landed past the tail for a frame.
+            // The fold is at the tail and everything above it is the same row
+            // it was, so naming the first run that changed is what leaves it
+            // alone. Growth is a special case of this: a pure append diverges
+            // at the old end, which is the empty splice it already did.
+            let anchor = state.logical_scroll_top().item_ix;
+            state.splice(from..*known, count - from);
+            // Only a reader sitting *inside* the replaced range has lost
+            // anything; one above it is still on the row they were on.
+            lost_position = anchor >= from;
+        } else if from < count {
+            // The same rows, one of them a different shape: a settled step that
+            // became an index row, a group opened. **Measured again rather than
+            // spliced** -- a splice says these are different rows and costs the
+            // reader whatever offset they held inside them, which is the same
+            // reason the streaming tail below is re-measured and not replaced.
+            state.remeasure_items(from..count);
         }
+        // Whatever diverged has now been told to the list, so the next replan
+        // starts its accumulation from nothing.
+        self.changed_from = count;
         *known = count;
 
         // The tail is the only run that changes shape in place, and only while
@@ -622,6 +672,19 @@ fn addressed(chat: &Chat) -> impl Iterator<Item = (TranscriptItemId, &ChatItem)>
                 .map(|(i, item)| (TranscriptItemId::Live(i), item)),
         )
         .filter(|(_, item)| !is_pinned(item))
+}
+
+/// Whether two runs at the same position draw the same row.
+///
+/// Everything that decides what the row *is*, which is what the list's cached
+/// height is a measurement of. The group is left out because it is a function
+/// of the members, and the summary is a function of their contents -- so a step
+/// that settles inside a strip changes the summary and is caught there.
+fn draws_the_same(was: &RunPlan, now: &RunPlan) -> bool {
+    was.members == now.members
+        && was.open == now.open
+        && was.kind == now.kind
+        && was.strip.as_ref().map(|s| &s.summary) == now.strip.as_ref().map(|s| &s.summary)
 }
 
 /// Whether an item is a blocking card still waiting on the user, and so is
@@ -1007,6 +1070,105 @@ mod tests {
             px(600.),
             "the chunk took the reader back to the top of the answer"
         );
+    }
+
+    /// A step settling folds two rows into one, and the reader above the fold
+    /// must not feel it.
+    ///
+    /// Told to reset, the list gave up every measured height and the scroll
+    /// position on *every* tool that finished -- which mid-turn is every few
+    /// seconds. It read as the panel flickering: the transcript jumped, the
+    /// frame hitched re-measuring what was above, and the way-back pill blinked
+    /// as the anchor landed past the tail for a frame.
+    #[test]
+    fn a_step_folding_at_the_tail_leaves_the_reader_where_they_were() {
+        let mut chat = chat();
+        chat.items
+            .push(read_with_status("Read src/c.rs", ToolStatus::InProgress));
+        chat.busy = true;
+
+        let mut viewport = Viewport::default();
+        viewport.replan(&chat, 0, |_| false);
+        let state = viewport.list_state(true, ROOM);
+        let count = state.item_count();
+
+        // Reading the answer at the top, well above the work going on below.
+        state.scroll_to(ListOffset {
+            item_ix: 0,
+            offset_in_item: px(120.),
+        });
+
+        // The tool settles and joins the strip above it: one row fewer.
+        chat.apply(onehand_core::acp::AcpEvent::ToolUpdate(
+            onehand_core::acp::ToolCallUpdate {
+                id: "Read src/c.rs".to_string(),
+                status: Some(ToolStatus::Completed),
+                title: None,
+                description: None,
+                content: None,
+            },
+        ));
+        viewport.replan(&chat, 0, |_| false);
+        let state = viewport.list_state(true, ROOM);
+
+        assert_eq!(state.item_count(), count - 1, "two rows became one");
+        let top = state.logical_scroll_top();
+        assert_eq!(
+            (top.item_ix, top.offset_in_item),
+            (0, px(120.)),
+            "a fold at the tail moved the reader at the top"
+        );
+    }
+
+    /// A step that settles on its own changes its row's shape without changing
+    /// how many rows there are, and the list has to be told either way.
+    ///
+    /// It was told neither: the note of where the plan diverged was only read
+    /// when the count moved, and was written over by the next replan. So a run
+    /// that turned from a tall card into a one-line index row kept the card's
+    /// measured height, and the splice that came later began past it -- the
+    /// content height stayed inflated, and scrolling up landed on the wrong row
+    /// and jumped when that row was finally measured again.
+    #[test]
+    fn a_row_that_changed_shape_is_told_to_the_list_too() {
+        let mut chat = chat();
+        chat.items.push(ChatItem::Agent(Md::parse("then this")));
+        chat.items
+            .push(read_with_status("Read src/c.rs", ToolStatus::InProgress));
+        chat.busy = true;
+
+        let mut viewport = Viewport::default();
+        viewport.replan(&chat, 0, |_| false);
+        let _ = viewport.list_state(true, ROOM);
+        // 0: answer · 1: the strip · 2: answer · 3: the running read.
+        assert_eq!(viewport.changed_from, 4, "nothing left to tell the list");
+
+        // The read settles with no foldable neighbour, so it stays one run and
+        // only its shape changes.
+        chat.apply(onehand_core::acp::AcpEvent::ToolUpdate(
+            onehand_core::acp::ToolCallUpdate {
+                id: "Read src/c.rs".to_string(),
+                status: Some(ToolStatus::Completed),
+                title: None,
+                description: None,
+                content: None,
+            },
+        ));
+        viewport.replan(&chat, 0, |_| false);
+        assert_eq!(viewport.changed_from, 3, "the row that changed shape");
+
+        // A later replan must not paint over a divergence still owed to the
+        // list -- the note is the earliest one, not the newest.
+        chat.items
+            .push(read_with_status("Read src/d.rs", ToolStatus::InProgress));
+        viewport.replan(&chat, 0, |_| false);
+        assert_eq!(
+            viewport.changed_from, 3,
+            "an append is not the whole answer"
+        );
+
+        let _ = viewport.list_state(true, ROOM);
+        assert_eq!(viewport.changed_from, 5, "told, and the note cleared");
     }
 
     /// The way back to the latest lands on the held question, and not on the
