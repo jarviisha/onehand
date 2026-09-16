@@ -7,14 +7,14 @@ use crate::chat::ChatPane;
 use crate::dialogs::{AgentDraft, DraftShift, SettingsPage};
 use crate::state::{OpenWindow, Shared, WorkspaceWindow};
 use crate::terminal::TerminalPanel;
-use crate::workbench::{EDITOR_MODE, FILES_MODE, MARKDOWN_MODE, NEOVIM_MODE, Workbench};
+use crate::workbench::{EDITOR_MODE, MARKDOWN_MODE, NEOVIM_MODE, Workbench};
 use gpui::{
     App, AppContext, BorrowAppContext, Context, Entity, Focusable as _, InteractiveElement,
     IntoElement, ParentElement, Render, SharedString, Styled, Window, WindowAppearance, div, px,
 };
 use gpui_component::button::ButtonVariants as _;
 use gpui_component::dialog::{DialogClose, DialogFooter};
-use gpui_component::dock::{DockArea, DockEvent, DockItem, DockPlacement, PanelStyle};
+use gpui_component::dock::{DockArea, DockEvent, DockItem, DockPlacement};
 use gpui_component::input::{InputEvent, InputState};
 use gpui_component::notification::Notification;
 use gpui_component::{
@@ -32,7 +32,6 @@ gpui::actions!(
     onehand,
     [
         ToggleRail,
-        ToggleFiles,
         ToggleMarkdown,
         ToggleWorkbench,
         SaveFile,
@@ -128,10 +127,13 @@ const WARM_DELAY: std::time::Duration = std::time::Duration::from_millis(500);
 pub fn init_keymap(cx: &mut App) {
     cx.bind_keys([
         gpui::KeyBinding::new("ctrl-shift-b", ToggleRail, None),
-        gpui::KeyBinding::new("ctrl-shift-e", ToggleFiles, None),
+        // The tree and the buffers are one mode, so they are one key. `E` and
+        // not `O`: it spells both halves of what it opens, and it is the one of
+        // the pair that was reached for to *find* a file, which is where this
+        // panel is opened from.
+        gpui::KeyBinding::new("ctrl-shift-e", ToggleWorkbench, None),
         // The document view, beside the file tree it is the reading half of.
         gpui::KeyBinding::new("ctrl-shift-m", ToggleMarkdown, None),
-        gpui::KeyBinding::new("ctrl-shift-o", ToggleWorkbench, None),
         // The outer terminal, and the one app command outside the `Ctrl+Shift`
         // namespace by necessity rather than by preference.
         //
@@ -297,19 +299,6 @@ impl FocusedPanel {
     }
 }
 
-/// What the status bar reads out of the two docks.
-///
-/// Both are facts a panel owns and nothing else on screen says: an unsaved
-/// buffer is a dot on one tab of a dock that may be closed, and a shell
-/// outliving a closed dock has no representation at all.
-#[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
-pub struct PanelFacts {
-    /// Open buffers on the active root carrying edits that are not on disk.
-    pub unsaved: usize,
-    /// Whether the active root has a shell running in the terminal dock.
-    pub terminal_live: bool,
-}
-
 /// A worktree being set up: which project is being split, where its second
 /// checkout goes, and how the last attempt went.
 ///
@@ -411,14 +400,6 @@ pub struct Shell {
     /// The rail's session rows as of the last repaint, so a chat notify that
     /// changes nothing the rail shows does not cost a rail rebuild.
     rail_sessions: Vec<(u64, RailSession)>,
-    /// What the status bar last read out of the two docks.
-    ///
-    /// The same guard the rail's rows get, and for a sharper reason: the
-    /// terminal notifies for every chunk a running command prints, so an
-    /// unguarded observer would put a whole window repaint -- rail rebuild
-    /// included -- in the output path of `cargo build`. Comparing the two facts
-    /// actually drawn is what keeps it out.
-    panels: PanelFacts,
     /// Which of the rail's two lists is showing.
     ///
     /// Not persisted: it is where the user is looking right now, and a launch
@@ -510,23 +491,11 @@ pub struct Shell {
 
 impl Shell {
     pub fn new(workspace: Workspace, window: &mut Window, cx: &mut Context<Self>) -> Self {
-        // `PanelStyle::TabBar` rather than the default `Auto`.
-        //
-        // `Auto` renders a dock holding a single panel with a "simple title"
-        // instead of a tab bar, and that path miscalculates its own height
-        // (`dock/tab_panel.rs:775`): `h(px(30.)) + py_2()` under taffy's default
-        // `BoxSizing::BorderBox` leaves a 14px content box for a
-        // `line_height(rems(1.0))` = 16px line, which its `overflow_hidden`
-        // then clips -- descenders come off every title ("Agent" lost the tail
-        // of its `g`). Not fixable from `Panel::title`: the clipping element is
-        // the parent of whatever that returns. The `TabBar` path sizes
-        // correctly, and onehand wants real tabs on two of these three docks
-        // anyway -- the Workbench's modes and the terminal's tab per project
-        // root.
-        let dock = cx.new(|cx| {
-            DockArea::new("onehand", Some(1), window, cx).panel_style(PanelStyle::TabBar)
-        });
-        let weak = dock.downgrade();
+        // No panel style is set, because none of the three docks is a tab group
+        // -- each is a bare `DockItem::panel` drawing its own chrome, so the
+        // library's tab bar is never built and the style that would shape it is
+        // never read.
+        let dock = cx.new(|cx| DockArea::new("onehand", Some(1), window, cx));
         let chat = ChatPane::new(window, cx);
         let workbench = Workbench::new(cx);
         let terminal = TerminalPanel::new(cx);
@@ -544,21 +513,20 @@ impl Shell {
         // it on the way in.
         let seed_root = workspace.active_root().map(|root| root.path.clone());
         dock.update(cx, |area, cx| {
-            // A bare panel, not a tab group. `DockItem::tab` wraps its panel in
-            // a `TabPanel`, whose title bar draws a tab carrying the panel's
+            // Bare panels, not tab groups. `DockItem::tab` wraps its panel in a
+            // `TabPanel`, whose title bar draws a tab carrying the panel's
             // title -- which for the conversation is the conversation's own
             // name, printed a second time directly above the header that says
-            // it. One tab that can never have a sibling is not a tab; it is a
-            // duplicate title with a chevron's worth of chrome around it. The
-            // Workbench and the terminal keep their tab groups, because theirs
-            // hold several tabs and switching between them is what a tab is
-            // for.
+            // it, and for the Workbench is the word "Workbench" printed over
+            // the strip naming its four modes. One tab that can never have a
+            // sibling is not a tab; it is a duplicate title with a chevron's
+            // worth of chrome around it.
             //
-            // What the tab bar was also carrying moves into the pane's own
-            // header, which is where the rest of the session's controls already
-            // live -- see `ChatPane::header`.
+            // What those title bars were also carrying moves into each panel's
+            // own chrome, which is where the rest of its controls already live
+            // -- `ChatPane::header` and the Workbench's mode strip.
             let center = DockItem::panel(std::sync::Arc::new(chat.clone()));
-            let workbench = DockItem::tab(workbench.clone(), &weak, window, cx);
+            let workbench = DockItem::panel(std::sync::Arc::new(workbench.clone()));
 
             area.set_center(center, window, cx);
             area.set_right_dock(
@@ -675,16 +643,16 @@ impl Shell {
         })
         .detach();
 
-        // The status bar reads two facts out of the docks that the docks have no
+        // The conversation header's terminal dot is a fact the docks have no
         // idea anyone outside them wants. Guarded the same way and for the same
         // reason as the rail's rows above -- more so for the terminal, which
         // notifies once per chunk of whatever is printing into it.
         cx.observe(&workbench, |shell: &mut Self, _, cx| {
-            shell.sync_panel_facts(cx);
+            shell.sync_terminal_live(cx);
         })
         .detach();
         cx.observe(&terminal, |shell: &mut Self, _, cx| {
-            shell.sync_panel_facts(cx);
+            shell.sync_terminal_live(cx);
         })
         .detach();
         // The panel has one thing to ask for: its own dock taken off screen.
@@ -703,6 +671,24 @@ impl Shell {
                     // may be anywhere at all.
                     crate::terminal::TerminalPanelEvent::ToggleMaximize => {
                         shell.toggle_maximize_panel(FocusedPanel::Terminal, window, cx);
+                    }
+                }
+            },
+        )
+        .detach();
+
+        // The same two, from the Workbench's mode strip. It is mounted bare
+        // too, so the library's own dock subscription never sees it -- and
+        // neither of these is the panel's to do: the `DockArea` is here.
+        cx.subscribe_in(
+            &workbench,
+            window,
+            |shell: &mut Self, _, event: &crate::workbench::WorkbenchEvent, window, cx| {
+                use crate::workbench::WorkbenchEvent as E;
+                match event {
+                    E::Hide => shell.hide_workbench(window, cx),
+                    E::ToggleMaximize => {
+                        shell.toggle_maximize_panel(FocusedPanel::Workbench, window, cx);
                     }
                 }
             },
@@ -809,7 +795,6 @@ impl Shell {
             _pending_warm: None,
             git_generation: 0,
             rail_sessions: Vec::new(),
-            panels: PanelFacts::default(),
             rail_tab: crate::rail::RailTab::Projects,
             folds: HashMap::new(),
             last_panel: FocusedPanel::Chat,
@@ -871,23 +856,6 @@ impl Shell {
         }
     }
 
-    /// What the status bar draws from the two docks.
-    ///
-    /// Read fresh at every repaint rather than served from [`Self::panels`]:
-    /// that copy exists only to decide whether a panel's notify was worth a
-    /// repaint, and a cached value would be one root switch behind.
-    pub fn panel_facts(&self, cx: &App) -> PanelFacts {
-        PanelFacts {
-            unsaved: self
-                .window
-                .workspace
-                .active_root()
-                .map(|root| self.workbench.read(cx).unsaved_in(&root.path, cx))
-                .unwrap_or(0),
-            terminal_live: self.terminal.read(cx).has_shell(),
-        }
-    }
-
     /// Tell the project page what the selected project is, beyond its name.
     ///
     /// Two facts its menu needs and cannot work out: pinning lives in the
@@ -908,46 +876,16 @@ impl Shell {
             .update(cx, |pane, cx| pane.set_project_facts(pinned, is_repo, cx));
     }
 
-    /// Repaint only if a panel's notify changed something drawn from it.
+    /// Tell the conversation header whether the active root has a shell alive.
     ///
-    /// Two readers now: the status bar, which is redrawn by this window's own
-    /// notify, and the conversation header's terminal button, which is a panel
-    /// of its own and has to be told. The push is guarded on the pane's side as
-    /// well, because this runs on every chunk a build prints into the terminal.
-    fn sync_panel_facts(&mut self, cx: &mut Context<Self>) {
-        let facts = self.panel_facts(cx);
-        let live = facts.terminal_live;
+    /// One fact and one reader: the terminal button's dot, which is the only
+    /// thing on screen that can say a child process outlived a closed dock. The
+    /// push is guarded on the pane's side, because this runs on every chunk a
+    /// build prints into the terminal.
+    fn sync_terminal_live(&mut self, cx: &mut Context<Self>) {
+        let live = self.terminal.read(cx).has_shell();
         self.chat
             .update(cx, |pane, cx| pane.set_terminal_live(live, cx));
-        if facts != self.panels {
-            self.panels = facts;
-            cx.notify();
-        }
-    }
-
-    /// Every panel currently being read at something other than 100%, with its
-    /// factor. Normally empty.
-    ///
-    /// Asked of the panels themselves rather than of whichever one holds focus.
-    /// Focus moves without telling the window, so a focus-derived reading would
-    /// sit on screen showing one panel's factor while another was in front, with
-    /// nothing to say it had gone stale — and the reason to show a factor at all
-    /// is that a panel left zoomed is easy to forget about.
-    pub fn zoomed_panels(&self, cx: &App) -> Vec<(FocusedPanel, f32)> {
-        [
-            (FocusedPanel::Chat, self.chat.read(cx).zoom()),
-            (FocusedPanel::Workbench, self.workbench.read(cx).zoom()),
-            (FocusedPanel::Terminal, self.terminal.read(cx).zoom()),
-        ]
-        .into_iter()
-        .map(|(panel, zoom)| (panel, zoom.factor()))
-        .filter(|(_, factor)| *factor != 1.0)
-        .collect()
-    }
-
-    /// Put one panel back to 100%, whether or not it holds focus.
-    pub fn reset_zoom(&mut self, panel: FocusedPanel, cx: &mut Context<Self>) {
-        self.zoom_panel(panel, ZoomStep::Reset, cx);
     }
 
     /// Read the dock's current geometry back out.
@@ -1142,7 +1080,7 @@ impl Shell {
         // not about the window, and the conversation header draws it. The
         // observers that normally push it only fire when a panel notifies, and
         // switching projects is a moment where nothing did.
-        self.sync_panel_facts(cx);
+        self.sync_terminal_live(cx);
         let Some((uid, spec)) = session else {
             // The other two panels have already followed the selection, so the
             // chat must not be the one panel still showing the root the user
@@ -2104,15 +2042,15 @@ impl Shell {
         let showing = self.workbench.read(cx).mode() == mode;
         let focused = self.workbench.focus_handle(cx).contains_focused(window, cx);
         if open && showing && focused {
-            self.dock.update(cx, |dock, cx| {
-                dock.toggle_dock(DockPlacement::Right, window, cx)
-            });
-            // The caret is inside the panel being closed, and a closed dock
-            // draws none of its content -- so leaving focus there would leave
-            // the window pointing at an element no frame contains, which is a
-            // window no shortcut reaches.
-            self.chat
-                .update(cx, |pane, cx| pane.reclaim_focus(window, cx));
+            // Through the one closing path rather than toggling the dock here.
+            // It had its own copy, and the copy was missing the half that
+            // matters least often and breaks worst: a Workbench blown up to the
+            // whole frame stays blown up when its dock is closed, because the
+            // zoom is the `DockArea`'s and knows nothing about which docks are
+            // open -- so `Ctrl+Shift+K` then `Ctrl+Shift+E` left the panel
+            // filling the window with the rail gone and the caret in a composer
+            // no frame was drawing.
+            self.hide_workbench(window, cx);
             return;
         }
         self.workbench
@@ -2124,6 +2062,36 @@ impl Shell {
         }
         self.workbench
             .update(cx, |panel, cx| panel.focus_active(window, cx));
+        cx.notify();
+    }
+
+    /// Take the Workbench dock off screen: the one closing path, used by the
+    /// strip's button and by the third state of [`Self::show_workbench`].
+    ///
+    /// Not a toggle, which is why `show_workbench` cannot simply call itself:
+    /// the strip's button is drawn only where the panel already shows, while
+    /// that one is three-state and would *focus* the Workbench rather than
+    /// close it whenever the caret was elsewhere.
+    fn hide_workbench(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        // A maximized panel cannot be left blown up over a dock that is no
+        // longer open, and the way back out of that is the button that just
+        // went away with it.
+        if self.app_maximized == Some(FocusedPanel::Workbench) {
+            self.set_app_maximized(None, cx);
+            self.dock
+                .update(cx, |dock, cx| dock.set_zoomed_out(window, cx));
+        }
+        self.dock.update(cx, |dock, cx| {
+            if dock.is_dock_open(DockPlacement::Right, cx) {
+                dock.toggle_dock(DockPlacement::Right, window, cx);
+            }
+        });
+        // The caret may be inside the panel going off screen, and a closed dock
+        // draws none of its content -- so leaving focus there leaves the window
+        // pointing at an element no frame contains, which is a window no
+        // shortcut reaches.
+        self.chat
+            .update(cx, |pane, cx| pane.reclaim_focus(window, cx));
         cx.notify();
     }
 
@@ -2343,19 +2311,24 @@ impl Shell {
         cx.notify();
     }
 
-    /// Write the field, and tell the terminal, which draws the control that
-    /// toggles it and so has to know which way round it currently is.
+    /// Write the field, and tell the two panels that draw a control toggling it
+    /// and so have to know which way round it currently is.
     ///
-    /// One setter because the field moves from three places -- the key, the
-    /// strip's button, and unmounting a maximized terminal -- and a push left
-    /// off one of them is a button whose icon says the opposite of what it
-    /// does. Guarded, because this is called on paths that run whether or not
-    /// anything changed and the panel notifying redraws the window.
+    /// One setter because the field moves from several places -- the key, each
+    /// strip's button, unmounting a maximized terminal, hiding a maximized
+    /// Workbench -- and a push left off one of them is a button whose icon says
+    /// the opposite of what it does. Guarded inside each panel, because this is
+    /// called on paths that run whether or not anything changed and a panel
+    /// notifying redraws the window.
     fn set_app_maximized(&mut self, panel: Option<FocusedPanel>, cx: &mut Context<Self>) {
         self.app_maximized = panel;
         let terminal = panel == Some(FocusedPanel::Terminal);
         self.terminal.update(cx, |terminal_panel, cx| {
             terminal_panel.set_maximized(terminal, cx);
+        });
+        let workbench = panel == Some(FocusedPanel::Workbench);
+        self.workbench.update(cx, |workbench_panel, cx| {
+            workbench_panel.set_maximized(workbench, cx);
         });
     }
 
@@ -2370,10 +2343,6 @@ impl Shell {
     }
 
     /// Step one named panel's zoom.
-    ///
-    /// The window notifies too, and not only the panel: the status bar says
-    /// which panel is off 100% and is drawn by the shell, so a step that told
-    /// only the panel would leave that reading a factor behind.
     fn zoom_panel(&mut self, panel: FocusedPanel, step: ZoomStep, cx: &mut Context<Self>) {
         match panel {
             FocusedPanel::Chat => self.chat.update(cx, |pane, cx| {
@@ -2810,20 +2779,6 @@ impl Shell {
 
     /// Open a recents row: read its config off the UI loop, then funnel into
     /// the single open path so dedup-focus applies here too.
-    /// Say whether the user is at the machine, from the switch in the status
-    /// bar.
-    ///
-    /// The rule itself is the bridge's, so the switch and the `/away` command
-    /// cannot come to different conclusions. What this adds is telling the
-    /// channel: the switch is thrown here and its whole effect is felt over
-    /// there, so the chat that is about to start speaking up — or stop — is owed
-    /// the sentence saying which.
-    pub fn toggle_away(&mut self, cx: &mut Context<Self>) {
-        let away = !crate::remote::is_away(cx);
-        let said = crate::remote::set_away(away, cx);
-        crate::remote::broadcast(said, cx);
-    }
-
     /// Forget the badge on the conversation this window is showing.
     ///
     /// A pass-through, for the bridge: coming back from away has to clear it,
@@ -3082,14 +3037,6 @@ impl Render for Shell {
         // nothing of it can catch a click along the edge.
         let rail = (self.app_maximized.is_none() && !self.rail_hidden)
             .then(|| crate::rail::rail(self, &self.window, window, cx));
-        // Gone for the same reason and in the same direction: maximizing a
-        // panel in the app direction means the frame *is* that panel, and a
-        // strip of chrome across the bottom is the one thing that would still
-        // not be it.
-        let status = self
-            .app_maximized
-            .is_none()
-            .then(|| crate::statusbar::status_bar(self, &self.window, cx));
         let dock = div().size_full().child(self.dock.clone());
         // With no rail there is no split to drag, so there is no split: an
         // `h_resizable` holding one panel would draw a handle against the
@@ -3119,13 +3066,10 @@ impl Render for Shell {
                 )
                 .into_any_element(),
         };
-        // The status bar sits under the rail *and* the dock, so the frame is a
-        // column: the two of them together are its first child, and the bar its
-        // second. `min_h_0` is what keeps the bar on screen -- without it the
-        // body takes its content's height as a floor and pushes a fixed-height
-        // strip off the bottom edge of a short window. The body sizes itself
-        // from here (both forms of it are `size_full`), so this wrapper sets no
-        // direction of its own.
+        // The rail and the dock are the whole frame now. `flex_1` + `min_h_0`
+        // is left as it is because the body still has to be allowed to shrink
+        // below its content rather than growing the window: both forms of it
+        // are `size_full`, so this wrapper sets no direction of its own.
         let body = div().flex_1().min_h_0().w_full().child(body);
         let frame = div()
             .size_full()
@@ -3134,11 +3078,6 @@ impl Render for Shell {
             .on_action(cx.listener(|shell: &mut Self, _: &ToggleRail, _, cx| {
                 shell.toggle_rail(cx);
             }))
-            .on_action(
-                cx.listener(|shell: &mut Self, _: &ToggleFiles, window, cx| {
-                    shell.show_workbench(FILES_MODE, window, cx);
-                }),
-            )
             .on_action(
                 cx.listener(|shell: &mut Self, _: &ToggleMarkdown, window, cx| {
                     shell.show_workbench(MARKDOWN_MODE, window, cx);
@@ -3224,8 +3163,7 @@ impl Render for Shell {
                     }
                 },
             ))
-            .child(body)
-            .children(status);
+            .child(body);
 
         // `Root` stores dialogs, sheets and notifications; it does not draw
         // them. Its own `render` puts up the view, the tooltip overlay and the
@@ -3479,6 +3417,26 @@ fn apply_appearance(choice: Appearance, window: Option<&mut Window>, cx: &mut Ap
     if let Some(family) = Shared::global(cx).mono_family.clone() {
         Theme::global_mut(cx).mono_font_family = family.into();
     }
+    // **A dock draws no divider; the thing inside it draws its own edge.**
+    //
+    // The library paints a permanent 1px rule in the hairline colour down the
+    // seam of every resizable split — between the rail and the docks, and
+    // between the conversation and each dock. Every panel on the other side of
+    // one of those seams already marks it: the two docks are cards with four
+    // borders each, and the rail is a change of surface — the reading surface
+    // against the well, a pair the ramp's own tests hold at 1.14 or better in
+    // either palette, which is what makes a fill an edge rather than a tint. So
+    // the rule was a second line beside a first, which reads as a seam that
+    // could not decide where it was.
+    //
+    // Only the *resting* colour goes. Dragging still paints `active_handle`,
+    // which is the one moment the seam is the thing being looked at.
+    //
+    // It has to be written here, after `Theme::change`: that call rebuilds the
+    // Base layer's copy of the theme from scratch, so anything written onto it
+    // beforehand is thrown away. This is the single place a mode is applied, at
+    // boot and on every change, which is what keeps one write enough.
+    gpui_base::Theme::global_mut(cx).resizable.handle = gpui::transparent_black();
     cx.refresh_windows();
 }
 

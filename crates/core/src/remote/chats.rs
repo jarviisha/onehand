@@ -231,16 +231,6 @@ impl Chats {
         !chat.is_empty() && self.allowed.iter().any(|allowed| allowed.trim() == chat)
     }
 
-    /// Every chat allowed to hear what is about the bridge rather than about a
-    /// session.
-    ///
-    /// The away switch thrown at the keyboard is the only such news today. It
-    /// has no session to be subscribed to, and a reader who has asked for
-    /// nothing yet is exactly who needs telling that the machine has been left.
-    pub fn everyone(&self) -> &[ChatId] {
-        &self.allowed
-    }
-
     /// The session `chat` has pointed itself at, if it has.
     pub fn bound(&self, chat: &str) -> Option<u64> {
         self.pointed.get(chat).copied()
@@ -934,21 +924,5 @@ mod tests {
             Some("saved 9".to_string())
         );
         assert!(chats.archive_at("7", 2).is_none(), "the old page is gone");
-    }
-
-    /// What is about the bridge rather than about a session goes to everyone
-    /// allowed — the away switch thrown at the keyboard is the whole of it
-    /// today. It has no session to be subscribed to, and a reader who has asked
-    /// for nothing yet is exactly who needs telling that the machine has been
-    /// left.
-    #[test]
-    fn news_about_the_bridge_reaches_chats_that_follow_nothing() {
-        let chats = allowing(&["7", "8"]);
-
-        assert_eq!(chats.everyone(), ["7".to_string(), "8".to_string()]);
-        assert!(
-            chats.audience_for(3).is_empty(),
-            "a session's own news still needs asking for"
-        );
     }
 }

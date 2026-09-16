@@ -51,9 +51,7 @@ One window hosts exactly one workspace. The frame is a navigation **rail** plus 
 │   session      │      └──────────────┘        │               │
 │                ├──────────────────────────────┴───────────────┤
 │ ⚙ settings     │        terminal (bottom dock, closed)        │
-├────────────────┴──────────────────────────────────────────────┤
-│ project · branch · agent                    unsaved · 120%    │
-└───────────────────────────────────────────────────────────────┘
+└────────────────┴──────────────────────────────────────────────┘
      rail                        DockArea
 ```
 
@@ -66,7 +64,10 @@ One window hosts exactly one workspace. The frame is a navigation **rail** plus 
   the pointer about to press it. Beside it, a **badge** carries what the session
   is doing: the rail's own signal mark plus a few words, colour in the mark and
   the words muted, so a routine *Working…* is not as loud as a dead agent.
-  A hairline under the row separates the chrome from the conversation.
+  **No hairline under the row.** A hairline is an edge between two surfaces and
+  there are not two here: the header and the transcript are one reading surface,
+  and what tells them apart is that one is a row of controls and the other is
+  prose — which the muted ink and the spacing already say.
   The right-hand end carries what is about the **window**, a size up and a tone
   down — big enough to aim at, muted enough not to out-shout the name: find, the
   terminal, the Workbench, the way back to a hidden rail, and last *Close
@@ -78,9 +79,9 @@ One window hosts exactly one workspace. The frame is a navigation **rail** plus 
   that says it. Every way back to something the window has put away is therefore
   offered from here. The rail's button appears only while the rail is gone,
   because a button that unhides what is already on screen does nothing; the two
-  docks' buttons stay, following the same three-state rule as their keys. The
-  Workbench keeps its tab group, because it holds several tabs and switching is
-  what a tab is for.
+  docks' buttons stay, following the same three-state rule as their keys. No
+  panel in the window keeps a tab group; the Workbench's mode strip and the
+  terminal's shell strip are each that panel's own chrome.
 - **A project with no conversation open gets a page, not a sentence.** Selecting
   a project that has no session — every freshly added one, and any whose last
   session was closed — fills the centre with that project's name, a *New
@@ -159,32 +160,82 @@ One window hosts exactly one workspace. The frame is a navigation **rail** plus 
   around it held one panel that could never gain a sibling and printed
   *Terminal* over the strip that already names every shell. Like the agent pane
   it is a bare `DockItem::panel`.
-- **Maximize has two directions.** The *content* direction is the dock's own zoom
-  (the button in a panel's tab bar) and keeps the rail. The *app* direction is
-  `Ctrl+Shift+K` and hides the rail too — the rail is what tells them apart.
-  Only the Workbench offers the content direction: the agent pane and the
-  terminal are mounted bare and have no tab bar to put the button on, and the
-  conversation already fills everything right of the rail whenever both docks
-  are closed.
+- **The Workbench has no library tab bar either**, and it is the one where the
+  duplication was loudest: a title bar reading *Workbench* sat directly over the
+  strip naming its modes, and the panel's own controls were stranded on the
+  row that said the least. The strip carries them now — the modes at the left
+  end, the maximize and the way out at the right — and the panel is a bare
+  `DockItem::panel` like the other two. **A mode is the terminal's own tab chip
+  with a word in it**: `accent` and the ink that goes on it for the one showing,
+  nothing until the pointer arrives for the rest. It was a library button before,
+  which spent `primary` — the fill reserved for the single most important action
+  on a screen — on saying which of three views is up, and left two strips an inch
+  apart disagreeing about what a selected tab looks like.
+- **A dock draws no divider; whatever is inside it draws its own edge.** The
+  library paints a permanent hairline down the seam of every resizable split,
+  which is a second line beside a panel that already marks its own edge — a seam
+  that cannot decide where it is. The resting colour is taken
+  off (dragging still paints, which is the one moment the seam is what is being
+  looked at). Nothing replaced it at the rail: that seam is a change of surface
+  now, so `Sidebar`'s own right border is switched off too. The two docks are
+  marked by their cards.
+- **The rail is drawn on the chrome surface too**, asked for by name at its call
+  site rather than through the sidebar token — that value is derived from two
+  ramp steps at the moment it is asked, and a token carrying it would be a second
+  spelling that drifts. It sat on the reading surface, held apart from the
+  conversation by the hairline down its edge alone, and with both docks a step
+  off that surface it was the last piece of chrome still dressed as a place text
+  is read. **The hairline goes with the change**: the fill is the edge, and a
+  rule beside it is a line drawn along a boundary that was not in doubt — which
+  is safe to say because those two surfaces are the ramp's asserted pair, 1.15
+  apart at worst. Its own **marked row is a ramp step of its own**, quieter than
+  any surface pair and lifting rather than sinking: the faintest existing step is
+  1.04 against the rail's new surface and the reading surface is 1.19, a hole
+  punched through the panel rather than a row raised out of it.
+- **Both docks are drawn as cards floating in their dock** — inset on all four
+  sides, one border, one radius, and the **chrome** surface under them: the step
+  that says a panel is *about* the work rather than part of it, which the status
+  bar takes too and nothing else does. That step **is the well**, and has to be:
+  a midpoint was tried and measures 1.07 against the reading surface, under the
+  1.14 floor the ramp's tests hold every surface pair to — and the light palette
+  has only 1.15 between white and the well to divide, so nothing between them
+  clears that floor twice. What it costs is that a well drawn *on* chrome is the
+  panel's own value: the reading surface is what one becomes there, which is the
+  same asserted pair read from the other end. The inset is even on all four, since a
+  card held off three and flush on the fourth reads as one that has slipped, and
+  the gap belongs to the panel — a click in it is a click on that panel.
+  **The change of surface alone was tried and is not enough.** A dock drawn edge
+  to edge in a different fill reads as the window having been *divided*, two
+  regions meeting along a line — which is what the arrangement stops being the
+  moment either dock closes and the conversation takes the space back. The gap is
+  what says a dock is something put down on the window rather than a piece of it.
+  The terminal is the one this costs something: its grid measures its own bounds
+  and resizes the PTY to match, so the inset is a column and a row of shell. Paid
+  once rather than growing with the panel.
+- **A terminal grid is drawn in the surface of the panel holding it**, in the
+  dock and in the Neovim mode alike, so a shell is that panel rather than a plate
+  laid on it. It has to be *told* which surface that is — a grid fills every cell
+  it was not told otherwise about with its palette's default background — so the
+  panel passes it in rather than the palette reading the theme and hoping the two
+  agree.
+- **Maximize has one direction.** `Ctrl+Shift+K` fills the frame and hides the
+  rail, and each dock's strip carries a button for the same thing on that panel,
+  named rather than focused: a control sitting inside the terminal cannot blow
+  up the conversation because that is where the caret happened to be. The
+  dock-only zoom the library draws in a tab bar is gone with the tab bars, and
+  nothing is lost by it — the conversation already fills everything right of the
+  rail whenever both docks are closed.
 - **No global top bar and no right toolbar.** Transient status is a toast;
   modals are `Dialog`s (workspace settings, agent manager, help).
-- **One row of chrome along the bottom: the status bar.** App chrome like the
-  rail, outside the dock and under both it and the rail, and gone with the rail
-  when a panel is maximized in the app direction. It carries **only what nothing
-  else on screen carries** — the conversation's own name and what it is doing
-  are the agent pane header's and are not repeated here. What is left is either
-  invisible while the rail is hidden (the active project, its branch and change
-  count, the running agent and its one signal) or invisible everywhere (how many
-  open buffers are unsaved, and any panel left at something other than 100%).
-  The terminal is **not** here: the two docks the conversation sits between are
-  one decision, so both are offered from the panel that gives up the space.
-  A cell shows the pointer and lights on hover **iff** pressing it does
-  something: the project copies its path, the git cell re-reads status, the
-  unsaved count opens the editor. The agent cell is a reading and is drawn flat. Zoom is read from the panels themselves
-  rather than from whichever holds focus, because focus moves without telling
-  the window and a stale factor has nothing on screen to admit it.
-  The session signal is drawn through the rail's own mark: one condition, one
-  shape, decided in one place.
+- **No status bar either.** There was one — a row under the rail and the dock
+  reading out the project, its branch, the running agent, unsaved buffers and any
+  panel left off 100% — and it is gone. Every fact on it was either already said
+  by something nearer to what it was about (the project and its branch by the
+  rail row that names them, the agent's condition by the same mark on that row
+  and in the conversation's own header) or was chrome reporting on chrome. What it
+  cost was a permanent strip across the bottom of every window in every project.
+  **The one thing that went with it** is the away switch, which had no other home
+  at the keyboard; `/away` and `/here` over the remote bridge still set it.
 
 ---
 

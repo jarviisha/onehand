@@ -26,7 +26,6 @@ mod rail;
 mod remote;
 pub mod shell;
 mod state;
-mod statusbar;
 mod terminal;
 mod theme;
 mod workbench;

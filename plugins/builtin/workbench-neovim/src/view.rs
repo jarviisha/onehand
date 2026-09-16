@@ -102,6 +102,7 @@ impl NeovimView {
             &root,
             Program::Neovim,
             self.font_size,
+            onehand_plugin_host::chrome(cx),
             cx,
             move |window, cx| ask(&Request::Reap, window, cx),
         );
@@ -170,7 +171,7 @@ impl NeovimView {
             return;
         }
         self.theme = current;
-        let colors = terminal_palette(cx);
+        let colors = terminal_palette(onehand_plugin_host::chrome(cx), cx);
         for tab in self.tabs.values() {
             tab.set_palette(colors.clone(), cx);
         }

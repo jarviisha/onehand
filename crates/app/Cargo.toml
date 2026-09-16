@@ -28,8 +28,9 @@ onehand-plugin-api = { path = "../plugin-api" }
 onehand-plugin-host = { path = "../plugin-host" }
 onehand-terminal-ui = { path = "../terminal-ui" }
 onehand-remote-telegram = { path = "../../plugins/builtin/remote-telegram" }
+# No `workbench-files`: the file tree is the left half of the Editor mode and
+# reaches the binary through that crate, which composes it.
 onehand-workbench-editor = { path = "../../plugins/builtin/workbench-editor" }
-onehand-workbench-files = { path = "../../plugins/builtin/workbench-files" }
 onehand-workbench-markdown = { path = "../../plugins/builtin/workbench-markdown" }
 onehand-workbench-neovim = { path = "../../plugins/builtin/workbench-neovim" }
 
@@ -54,6 +55,12 @@ gpui-component = { git = "https://github.com/longbridge/gpui-component", rev = "
     "tree-sitter-html",
 ] }
 gpui-component-assets = { git = "https://github.com/longbridge/gpui-component", rev = "9e3a29dcbdebc318632bf68203f26c33e9f0e902" }
+# The layer under gpui-component, named here for exactly one thing: a resize
+# handle is painted by *that* layer rather than by the component library, so the
+# colour it draws itself in lives on a theme global gpui-component re-exports no
+# route to. Same git source and the same rev, so this is the crate already in
+# the graph rather than a second copy of it — moving one rev means moving both.
+gpui-base = { git = "https://github.com/longbridge/gpui-component", rev = "9e3a29dcbdebc318632bf68203f26c33e9f0e902" }
 
 # gpui deliberately carries NO rev here. Upstream gpui-component declares it as
 # a revless Zed git dependency, and cargo keys git sources by URL *plus* rev --

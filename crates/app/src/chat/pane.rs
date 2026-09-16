@@ -625,11 +625,6 @@ impl ChatPane {
         &mut self.zoom
     }
 
-    /// This pane's zoom, for the status bar to report.
-    pub fn zoom(&self) -> crate::zoom::Zoom {
-        self.zoom
-    }
-
     /// Put the caret in the composer.
     pub fn focus_composer(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.composer
@@ -2376,8 +2371,13 @@ impl ChatPane {
             .w_full()
             .px_4()
             .py_2()
-            .border_b_1()
-            .border_color(cx.theme().border)
+            // **No rule under it.** A hairline is an edge between two surfaces,
+            // and there are not two here: the header and the transcript are one
+            // reading surface, and what separates them is that one is a row of
+            // controls and the other is prose -- which the muted ink and the
+            // spacing already say. The panels either side of this one now draw
+            // their own edges and nothing else does, so a line across the top of
+            // the conversation was the last one left marking an inside.
             .text_color(cx.theme().muted_foreground)
             .child(self.title_control(title, busy, archive, cx))
             .children(badge.map(|(signal, text)| status_badge(signal, text, cx)))
@@ -2416,12 +2416,11 @@ impl ChatPane {
             // session — offering it there too would be saying one thing twice
             // within an inch of itself.
             .when(live, |header| header.child(self.history_control(cx)))
-            // Beside the Workbench button rather than in the status bar, where
-            // it used to be: both are docks this panel is sitting between, and
-            // a closed one leaves nothing on screen at all -- no edge, no strip,
-            // no name -- so the route to it belongs with the panel that took the
-            // space. Which mode it opens on and whether a second press closes it
-            // are the shell's rules.
+            // Beside the Workbench button: both are docks this panel is
+            // sitting between, and a closed one leaves nothing on screen at all
+            // -- no edge, no strip, no name -- so the route to it belongs with
+            // the panel that took the space. Which mode it opens on and whether
+            // a second press closes it are the shell's rules.
             .child(self.terminal_control(cx))
             // The Workbench closed leaves nothing on screen at all -- no strip,
             // no edge, no name -- so without this the file tree and the editor

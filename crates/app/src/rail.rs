@@ -448,9 +448,9 @@ pub(crate) fn signal_word(signal: SessionSignal) -> &'static str {
 /// The tints follow the transcript's conventions, so the same colour means the
 /// same thing wherever it appears.
 ///
-/// Shared with the status bar, which says the same thing about the session on
-/// screen: two shapes for one condition would be a code with two spellings, and
-/// only one of them ever learned.
+/// Shared with the conversation header's badge, which says the same thing about
+/// the session on screen: two shapes for one condition would be a code with two
+/// spellings, and only one of them ever learned.
 pub(crate) fn signal_mark(signal: SessionSignal, cx: &App) -> impl IntoElement + use<> {
     let hint = signal_hint(signal);
     let theme = cx.theme();
@@ -1291,13 +1291,43 @@ pub fn rail(
         // collapse the rail at all, it hides it.
         .collapsible(SidebarCollapsible::None)
         .w_full()
-        // One hairline down the rail's edge, not two. `Sidebar` draws a 1px
-        // right border of its own, and the split it sits in draws a 1px drag
-        // handle hard against it in the same border colour -- so the edge read
-        // as a 2px rule that no single declaration accounted for. The handle is
-        // the one to keep: it is the affordance, it brightens while the rail is
-        // being dragged, and it is drawn whenever the rail is, since a hidden
-        // rail takes the whole split with it.
+        // **The docks' surface, asked for by name rather than through the
+        // sidebar token.** The rail sat on the reading surface, separated from
+        // the conversation by the hairline down its edge alone; with both docks
+        // now drawn a step off that surface it was the one piece of chrome still
+        // pretending to be a place text is read.
+        //
+        // Set here and not in the ramp because `chrome` is derived from two of
+        // the ramp's own steps at the moment it is asked, while the ramp writes
+        // fixed values into token names -- so a token carrying it would be a
+        // second spelling of one answer, and the two would drift the first time
+        // either end moved. The library applies the caller's refinement after
+        // its own `bg`, which is what lets this win.
+        //
+        // Nothing else about the rail moves with it: `sidebar_accent` and the
+        // selected fill are both well clear of this step in either palette, so a
+        // hovered row and a marked one still read.
+        .bg(crate::theme::chrome(cx))
+        // **No line down the rail's edge, because the fill is the edge.**
+        // `Sidebar` draws a 1px right border of its own and this turns it off:
+        // the rail is on the chrome surface and the conversation beside it is
+        // on the reading surface, and a surface that changes at a seam already
+        // says where the seam is. Ruled as well, it was a line drawn along a
+        // boundary that was not in doubt.
+        //
+        // **What makes that safe to say is a number rather than a taste**: those
+        // two surfaces are the ramp's own reading surface and its well, a pair
+        // the ramp's tests hold at 1.14 or better in either palette. This edge
+        // and the transparent resize handle beside it were changed together and
+        // each could otherwise be read as leaning on the other; neither does --
+        // both lean on that step.
+        //
+        // This has been both ways. While the rail was on the reading surface
+        // there was nothing else marking that seam, so the border had to stay --
+        // and before *that* the library's drag handle drew a rule hard against
+        // it in the same colour, which read as a 2px edge no single declaration
+        // accounted for. The handle is drawn in nothing at rest now; it is still
+        // the affordance and still brightens under a drag.
         .border_r_0()
         // Not `SidebarHeader`: it carries a hover highlight of its own, so the
         // workspace identity lit up on hover as though it were a control. Its
@@ -1771,18 +1801,27 @@ fn new_session_menu(
 /// stretch — so *Projects* came out two thirds the width of *All sessions*, both
 /// against the left edge of a bar as wide as the rail.
 ///
-/// So the colours are the library's own segmented pair, and the two halves are
+/// So the track is the library's own segmented fill and the two halves are
 /// `flex_1`. Nothing else here is invented: the fills come from the theme, the
 /// radius is the theme's, and the pointer is the same promise every other
 /// clickable in this file makes.
 fn tab_bar(active: RailTab, cx: &mut Context<Shell>) -> impl IntoElement + use<> {
     let theme = cx.theme();
-    let (track, plate, radius) = (
-        theme.tokens.tab_bar_segmented,
-        theme.tokens.background,
-        theme.radius,
-    );
-    let (ink, ink_on) = (theme.muted_foreground, theme.foreground);
+    // **The selected half is `accent`, not the reading surface.**
+    //
+    // It was `background`, on the reasoning that a raised plate is drawn in the
+    // surface the control sits on -- which was true while the rail was drawn in
+    // that surface too. The rail is on the chrome step now, so the plate became
+    // the one thing in the window painted a step *below* what it sits on: a hole
+    // rather than a plate, and at this size the shadow under it is not enough to
+    // say which.
+    //
+    // `accent` is the app's own "this one, among several", and it is what the
+    // terminal's tabs and the Workbench's mode chips already use. Three places
+    // that mean the same thing now spell it the same way, which is the point --
+    // a code learned once.
+    let (track, plate, radius) = (theme.tokens.tab_bar_segmented, theme.accent, theme.radius);
+    let (ink, ink_on) = (theme.muted_foreground, theme.accent_foreground);
 
     div()
         .h_flex()
@@ -1803,7 +1842,11 @@ fn tab_bar(active: RailTab, cx: &mut Context<Shell>) -> impl IntoElement + use<>
                 .cursor_pointer()
                 .text_xs()
                 .text_color(if on { ink_on } else { ink })
-                .when(on, |half| half.bg(plate).shadow_sm())
+                // No shadow under it. It was there to lift a plate drawn in the
+                // same value as its surroundings; a fill that differs does the
+                // lifting by itself, and a drop shadow over a near-black surface
+                // is invisible anyway.
+                .when(on, |half| half.bg(plate))
                 .on_click(cx.listener(move |shell: &mut Shell, _, _, cx| {
                     shell.set_rail_tab(tab, cx);
                 }))

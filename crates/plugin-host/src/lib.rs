@@ -1,8 +1,8 @@
 //! What the app hands its built-in plugins, and what they hand back.
 //!
-//! Two things a plugin needs that it cannot reach into the binary for — a
-//! button that answers the pointer, and the derivation of status ink — plus the
-//! Workbench mode contract itself.
+//! The things a plugin needs that it cannot reach into the binary for — a
+//! button that answers the pointer, the derivation of status ink, and the chrome
+//! surface a panel is drawn on — plus the Workbench mode contract itself.
 
 // Nothing here is `pub` unless the binary names it: `dead_code` stops at a
 // `pub` item in a library, so one that lost its last caller looks exactly like
@@ -44,6 +44,41 @@ pub type RemoteChannelFactory = fn(String) -> Box<dyn onehand_core::remote::type
 /// against.
 pub fn action(id: impl Into<ElementId>) -> Button {
     Button::new(id).cursor_pointer()
+}
+
+/// The surface the app's own furniture sits on, as opposed to the one text is
+/// read on.
+///
+/// The two dock cards take it, and they are the things in the window that are
+/// *about* the work rather than part of it. Everything else — the conversation,
+/// the rail, a dialog — stays on the reading surface, so the step says "this is
+/// chrome" rather than merely "this is another panel".
+///
+/// **It is the ramp's well step, and it has to be: there is no room for a third
+/// surface between that and the reading surface.** A midpoint was tried, on the
+/// reasoning that a whole panel drawn in the fill a quoted command takes is a
+/// slab of it the height of the window. It measured 1.07 against the reading
+/// surface in both palettes, under the 1.14 floor the ramp's own tests hold
+/// every surface pair to — and the light palette has only 1.15 between white and
+/// the well to divide in the first place, so *no* value between them can clear
+/// that floor twice. Half a step is a step nobody can see, and a seam carried by
+/// one is a seam that is not drawn.
+///
+/// What that costs is that anything **sunk into** a chrome panel cannot be the
+/// well, because the panel already is. The reading surface is what a well
+/// becomes there — below the panel in the dark palette, above it in the light
+/// one, and the same 1.15/1.19 apart either way, since it is the same pair of
+/// values read from the other end. The strips' hover fills and the Markdown
+/// mode's code blocks all take it for that reason, and `accent` (1.30/1.53 from
+/// here) is what a *selected* thing takes.
+///
+/// Here rather than in the app for the reason [`action`] is: the Neovim mode
+/// draws a terminal grid and has to hand it the surface it is sitting on, and
+/// it cannot reach into the binary hosting it. A second copy is two places for
+/// a panel and the grid inside it to come to disagree about what colour the
+/// panel is, which is visible as a rectangle of the wrong shade behind a shell.
+pub fn chrome(cx: &App) -> Hsla {
+    cx.theme().muted
 }
 
 /// Status colours used as ink on the app's normal surfaces.
