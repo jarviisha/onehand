@@ -92,6 +92,8 @@ rfd = "0.15"
 notify-rust = "4"
 
 [dev-dependencies]
+# Native renderer comparison fixture: selection and scroll transitions.
+alacritty_terminal = "0.25.1"
 gpui-terminal = { path = "../../vendor/gpui-terminal" }
 # Reads the pinned icon manifest in the registry consistency test.
 toml = "0.8"

@@ -1,11 +1,13 @@
 -- Real Snacks Grep with repeated queries, then result-list movement.
--- Loaded into nvim --clean; no user init.lua or background plugins are run.
+-- Uses --clean by default; PERF_USER_NVIM_CONFIG=1 preserves the user's setup.
 vim.o.swapfile = false
 vim.o.shadafile = 'NONE'
 vim.o.termguicolors = true
 vim.o.guicursor = 'a:block-blinkon0'
 vim.opt.rtp:append(assert(os.getenv('PERF_SNACKS_RTP'), 'set PERF_SNACKS_RTP to the installed snacks.nvim directory'))
-require('snacks').setup({ picker = { enabled = true } })
+if vim.env.PERF_USER_NVIM_CONFIG ~= '1' then
+  require('snacks').setup({ picker = { enabled = true } })
+end
 local function phase(name)
   vim.fn.writefile({name, tostring(vim.o.columns), tostring(vim.o.lines)}, os.getenv('PERF_PHASE'))
 end
