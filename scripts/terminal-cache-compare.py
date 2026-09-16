@@ -2,7 +2,7 @@
 """Compare retained and fresh terminal renderers in an isolated Hyprland window.
 
 Requires the terminal_cache example, grim and Pillow. Captures only its own
-client area, checks all 14 transitions, and restores the previous focus. Do
+client area, checks all 17 cases, and restores the previous focus. Do
 not run alongside performance measurements. A one-step RGB tolerance allows
 position-dependent 8-bit rounding; larger differences fail the comparison.
 """
@@ -62,7 +62,7 @@ def main():
             hypr('dispatch', 'movewindowpixel', f"exact {monitor['x'] + 10} {monitor['y'] + 60},{address}")
             hypr('dispatch', 'focuswindow', address)
             time.sleep(2)
-            for case in range(14):
+            for case in range(17):
                 step.write_text(str(case))
                 deadline = time.monotonic() + 5
                 while True:
@@ -88,7 +88,8 @@ def main():
                 left = im.crop((inset, inset, half - inset, bottom))
                 right = im.crop((half + inset, inset, 2 * half - inset, bottom))
                 diff = ImageChops.difference(left, right)
-                values = [max(pixel) for pixel in diff.getdata()]
+                pixels = getattr(diff, 'get_flattened_data', diff.getdata)()
+                values = [max(pixel) for pixel in pixels]
                 results.append({'case': case, 'different_pixels': sum(v > 0 for v in values),
                                 'max_channel_difference': max(values),
                                 'pixels_over_tolerance_1': sum(v > 1 for v in values),
@@ -96,7 +97,7 @@ def main():
             (args.output / f'{args.name}.json').write_text(json.dumps(results, indent=2) + '\n')
             if any(r['pixels_over_tolerance_1'] for r in results):
                 raise RuntimeError('retained and fresh renderers differ; see captured images')
-            print(f'{args.name}: all 14 cases agree within one RGB step')
+            print(f'{args.name}: all 17 cases agree within one RGB step')
         finally:
             proc.terminate()
             try:

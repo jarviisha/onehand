@@ -1510,7 +1510,8 @@ Listed because a missing feature nobody wrote down reads as a bug in the ones th
   character is a run of its own**. Under that, the per-glyph allocations still matter and are still
   gone — the text (`render::ascii_glyph`) and the `Font` (`TerminalRenderer::font_variants`).
   `render::RowCache` compares complete visible rows, then snapshots and rebuilds backgrounds,
-  box commands and runs only for changed slots. It also observes direct mutable-grid edits without
+  box commands and runs only for changed inputs. Changed rows retain shaped runs whose text and
+  style still match, updating their vector in place. It also observes direct mutable-grid edits without
   consuming shared damage flags. Renderer clones share this bounded visible-grid cache; font,
   metrics, scale, palette, OSC colours, dimensions or window changes invalidate it. Selection,
   preedit and cursor remain live overlays. This saves CPU assembly and layout lookups, but GPUI

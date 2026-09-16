@@ -1,0 +1,6001 @@
+{
+  "metadata": {
+    "date": "2026-09-16",
+    "baseline_commit": "b394d8e3c450165eb30fa879bfbbeacf6b7cc2e6",
+    "kernel": "7.2.6-arch2-1",
+    "cpu": "AMD Ryzen 7 PRO 4750U with Radeon Graphics",
+    "rustc": "rustc 1.96.0 (ac68faa20 2026-05-25)",
+    "neovim": "NVIM v0.12.5",
+    "snacks_commit": "ad9ede6a9cddf16cedbd31b8932d6dcdee9b716e",
+    "nvim_lua_tree_sha256": "3a21a3468ecc6ce00b7a787dfdd36891ed52b73fa43c75e45f60530045637add",
+    "nvim_lazy_lock_sha256": "101de915950bb706f2eaa590eae6fe5cf53ed6bc0671aff4914568621bf8bb28",
+    "project_rs_tree_sha256": "c207f927497e3ffe33683bc9adf2ab7146bfadfeb49646c049fde44ddfa9d9a6",
+    "renderer_source_sha256": "477858070e9bf27f75c33b10816d09039f57ff35661293d33869a88d0a01a9a4",
+    "binary_sha256": {
+      "before": "8538ba8fd08ca454b0b1ebe29be10b2599a728f188bd5fbf2ebfb0e46c7f2a66",
+      "after": "f8a49b7a2ecbc11aa2d922d882236b1ee854d41005f3a008c76cdbda6df18d80"
+    },
+    "implementation_base_commit": "6e2dc41682b82511f1fdacf9833b1b3a3a4fa4fa",
+    "candidate_source_sha256": {
+      "vendor/gpui-terminal/src/render.rs": "477858070e9bf27f75c33b10816d09039f57ff35661293d33869a88d0a01a9a4",
+      "vendor/gpui-terminal/src/profiling.rs": "8fbbdbd40772381774d1f52745ea5be6adf25afb5018a3c2455bf2510dcacb6c",
+      "vendor/gpui-terminal/src/colors.rs": "0b9f6447743c849f6d6f9f4ad0c6f3c3ad93af72728ac6c63ef915a44d14f107"
+    }
+  },
+  "runs": {
+    "before-replay20": [
+      {
+        "name": "before-replay20",
+        "host": "probe",
+        "workload": "replay",
+        "hz": 20,
+        "border": "rounded",
+        "window": {
+          "at": [
+            10,
+            60
+          ],
+          "size": [
+            960,
+            1000
+          ],
+          "monitor": 0,
+          "mapped": true,
+          "visible": true,
+          "hidden": false,
+          "workspace": {
+            "id": 1,
+            "name": "1"
+          }
+        },
+        "monitor": {
+          "name": "eDP-1",
+          "width": 1920,
+          "height": 1080,
+          "scale": 1,
+          "refreshRate": 60.049
+        },
+        "app": null,
+        "user_nvim_config": false,
+        "invalid": [],
+        "phases": {
+          "warmup": {
+            "wall_seconds": 4.38422065299892,
+            "cpu_seconds": 0.04000000000000001,
+            "cpu_percent_one_core": 0.912362838595703,
+            "gpu_engine_seconds": {
+              "0000:07:00.0/gfx": 0.002552645
+            },
+            "gpu_engine_percent": {
+              "0000:07:00.0/gfx": 0.058223460953178194
+            },
+            "rss_bytes": 112631808,
+            "grid": [
+              "113",
+              "32"
+            ],
+            "steady": {
+              "wall_seconds": 2.3052497700009553,
+              "cpu_seconds": 0.03,
+              "cpu_percent_one_core": 1.3013774208070983,
+              "gpu_engine_seconds": {
+                "0000:07:00.0/gfx": 0.002552645
+              },
+              "gpu_engine_percent": {
+                "0000:07:00.0/gfx": 0.11073181887787119
+              },
+              "rss_bytes": 112631808,
+              "gpu_clock_mhz": {
+                "0000:07:00.0": {
+                  "min": 400,
+                  "median": 400,
+                  "max": 1475
+                }
+              }
+            },
+            "profile": {
+              "wall_seconds": 1.977792101999512,
+              "frames": 1.0,
+              "draw_ns": 11145216.0,
+              "stages": {
+                "parse": {
+                  "calls": 2,
+                  "ns": 138149,
+                  "units": 6182
+                },
+                "paint": {
+                  "calls": 1,
+                  "ns": 10421937,
+                  "units": 1
+                },
+                "backgrounds": {
+                  "calls": 62,
+                  "ns": 495451,
+                  "units": 7068
+                },
+                "boxes": {
+                  "calls": 62,
+                  "ns": 372845,
+                  "units": 7068
+                },
+                "runs": {
+                  "calls": 62,
+                  "ns": 333399,
+                  "units": 7068
+                },
+                "shape": {
+                  "calls": 96,
+                  "ns": 3353398,
+                  "units": 3648
+                },
+                "glyphs": {
+                  "calls": 96,
+                  "ns": 5819406,
+                  "units": 3648
+                },
+                "cursor": {
+                  "calls": 1,
+                  "ns": 932,
+                  "units": 1
+                }
+              }
+            }
+          },
+          "small": {
+            "wall_seconds": 7.9721296790012275,
+            "cpu_seconds": 0.6799999999999999,
+            "cpu_percent_one_core": 8.529715739460881,
+            "gpu_engine_seconds": {
+              "0000:07:00.0/gfx": 0.149538436
+            },
+            "gpu_engine_percent": {
+              "0000:07:00.0/gfx": 1.875765222358182
+            },
+            "rss_bytes": 113549312,
+            "grid": [
+              "114",
+              "62"
+            ],
+            "steady": {
+              "wall_seconds": 5.916716255997017,
+              "cpu_seconds": 0.52,
+              "cpu_percent_one_core": 8.788658734022317,
+              "gpu_engine_seconds": {
+                "0000:07:00.0/gfx": 0.111877177
+              },
+              "gpu_engine_percent": {
+                "0000:07:00.0/gfx": 1.8908660168823281
+              },
+              "rss_bytes": 113549312,
+              "gpu_clock_mhz": {
+                "0000:07:00.0": {
+                  "min": 200,
+                  "median": 400,
+                  "max": 1600
+                }
+              }
+            },
+            "profile": {
+              "wall_seconds": 4.988000162997196,
+              "frames": 96.0,
+              "draw_ns": 282878976.0,
+              "stages": {
+                "parse": {
+                  "calls": 100,
+                  "ns": 459361,
+                  "units": 900
+                },
+                "paint": {
+                  "calls": 96,
+                  "ns": 221446645,
+                  "units": 96
+                },
+                "backgrounds": {
+                  "calls": 5952,
+                  "ns": 44369686,
+                  "units": 678528
+                },
+                "boxes": {
+                  "calls": 5952,
+                  "ns": 29904482,
+                  "units": 678528
+                },
+                "runs": {
+                  "calls": 5952,
+                  "ns": 31440458,
+                  "units": 678528
+                },
+                "shape": {
+                  "calls": 9216,
+                  "ns": 18941014,
+                  "units": 350208
+                },
+                "glyphs": {
+                  "calls": 9216,
+                  "ns": 92545265,
+                  "units": 350208
+                },
+                "cursor": {
+                  "calls": 96,
+                  "ns": 46118,
+                  "units": 96
+                }
+              }
+            }
+          },
+          "full": {
+            "wall_seconds": 7.945007654001529,
+            "cpu_seconds": 0.7100000000000001,
+            "cpu_percent_one_core": 8.936429402209654,
+            "gpu_engine_seconds": {
+              "0000:07:00.0/gfx": 0.139975659
+            },
+            "gpu_engine_percent": {
+              "0000:07:00.0/gfx": 1.7618064713820736
+            },
+            "rss_bytes": 113549312,
+            "grid": [
+              "114",
+              "62"
+            ],
+            "steady": {
+              "wall_seconds": 5.927467092002189,
+              "cpu_seconds": 0.53,
+              "cpu_percent_one_core": 8.94142458783311,
+              "gpu_engine_seconds": {
+                "0000:07:00.0/gfx": 0.100897504
+              },
+              "gpu_engine_percent": {
+                "0000:07:00.0/gfx": 1.7022026851256409
+              },
+              "rss_bytes": 113549312,
+              "gpu_clock_mhz": {
+                "0000:07:00.0": {
+                  "min": 200,
+                  "median": 400,
+                  "max": 1600
+                }
+              }
+            },
+            "profile": {
+              "wall_seconds": 5.040508548001526,
+              "frames": 101.0,
+              "draw_ns": 288404480.0,
+              "stages": {
+                "parse": {
+                  "calls": 207,
+                  "ns": 12152726,
+                  "units": 613400
+                },
+                "paint": {
+                  "calls": 101,
+                  "ns": 226069575,
+                  "units": 101
+                },
+                "backgrounds": {
+                  "calls": 6262,
+                  "ns": 45861093,
+                  "units": 713868
+                },
+                "boxes": {
+                  "calls": 6262,
+                  "ns": 30779398,
+                  "units": 713868
+                },
+                "runs": {
+                  "calls": 6262,
+                  "ns": 32946615,
+                  "units": 713868
+                },
+                "shape": {
+                  "calls": 9696,
+                  "ns": 18724543,
+                  "units": 368448
+                },
+                "glyphs": {
+                  "calls": 9696,
+                  "ns": 93233406,
+                  "units": 368448
+                },
+                "cursor": {
+                  "calls": 101,
+                  "ns": 44622,
+                  "units": 101
+                }
+              }
+            }
+          },
+          "idle": {
+            "wall_seconds": 3.9381079699996917,
+            "cpu_seconds": 0.030000000000000027,
+            "cpu_percent_one_core": 0.7617871381013044,
+            "gpu_engine_seconds": {
+              "0000:07:00.0/gfx": 0.0
+            },
+            "gpu_engine_percent": {
+              "0000:07:00.0/gfx": 0.0
+            },
+            "rss_bytes": 113549312,
+            "grid": [
+              "114",
+              "62"
+            ],
+            "steady": {
+              "wall_seconds": 1.899720460001845,
+              "cpu_seconds": 0.020000000000000018,
+              "cpu_percent_one_core": 1.0527864715412178,
+              "gpu_engine_seconds": {
+                "0000:07:00.0/gfx": 0.0
+              },
+              "gpu_engine_percent": {
+                "0000:07:00.0/gfx": 0.0
+              },
+              "rss_bytes": 113549312,
+              "gpu_clock_mhz": {
+                "0000:07:00.0": {
+                  "min": 200,
+                  "median": 400,
+                  "max": 1600
+                }
+              }
+            },
+            "profile": {
+              "wall_seconds": 1.0010904590017162,
+              "frames": 0.0,
+              "draw_ns": 0.0,
+              "stages": {
+                "parse": {
+                  "calls": 0,
+                  "ns": 0,
+                  "units": 0
+                },
+                "paint": {
+                  "calls": 0,
+                  "ns": 0,
+                  "units": 0
+                },
+                "backgrounds": {
+                  "calls": 0,
+                  "ns": 0,
+                  "units": 0
+                },
+                "boxes": {
+                  "calls": 0,
+                  "ns": 0,
+                  "units": 0
+                },
+                "runs": {
+                  "calls": 0,
+                  "ns": 0,
+                  "units": 0
+                },
+                "shape": {
+                  "calls": 0,
+                  "ns": 0,
+                  "units": 0
+                },
+                "glyphs": {
+                  "calls": 0,
+                  "ns": 0,
+                  "units": 0
+                },
+                "cursor": {
+                  "calls": 0,
+                  "ns": 0,
+                  "units": 0
+                }
+              }
+            }
+          }
+        },
+        "events": [
+          {
+            "phase": "small",
+            "updates": 160,
+            "bytes": 1440,
+            "payload_sha256": "f6a13210f034ef4cf703387e43a4c31532c762a2dc347a1dd364ff72a44a456d",
+            "hz": 20.0,
+            "elapsed_seconds": 8.000280858002952,
+            "max_deadline_lateness_ms": 0.673067999741761
+          },
+          {
+            "phase": "full",
+            "updates": 160,
+            "bytes": 981440,
+            "payload_sha256": "dcd84454fa3b765b29dc63a90456cf3ec6ff54ffeccb306bc8d166bc093458fe",
+            "hz": 20.0,
+            "elapsed_seconds": 8.000089764002041,
+            "max_deadline_lateness_ms": 0.6529220008815173
+          }
+        ],
+        "binary_sha256": "8538ba8fd08ca454b0b1ebe29be10b2599a728f188bd5fbf2ebfb0e46c7f2a66",
+        "last_parse_bytes": 989062,
+        "idle_frame_samples": [
+          {
+            "sample_s": 22.042,
+            "frames": 325.0
+          },
+          {
+            "sample_s": 23.043,
+            "frames": 325.0
+          },
+          {
+            "sample_s": 24.044,
+            "frames": 325.0
+          },
+          {
+            "sample_s": 25.044,
+            "frames": 325.0
+          }
+        ]
+      }
+    ],
+    "after-replay20": [
+      {
+        "name": "after-replay20",
+        "host": "probe",
+        "workload": "replay",
+        "hz": 20,
+        "border": "rounded",
+        "window": {
+          "at": [
+            10,
+            60
+          ],
+          "size": [
+            960,
+            1000
+          ],
+          "monitor": 0,
+          "mapped": true,
+          "visible": true,
+          "hidden": false,
+          "workspace": {
+            "id": 1,
+            "name": "1"
+          }
+        },
+        "monitor": {
+          "name": "eDP-1",
+          "width": 1920,
+          "height": 1080,
+          "scale": 1,
+          "refreshRate": 60.049
+        },
+        "app": null,
+        "user_nvim_config": false,
+        "invalid": [],
+        "phases": {
+          "warmup": {
+            "wall_seconds": 4.46916859400153,
+            "cpu_seconds": 0.05,
+            "cpu_percent_one_core": 1.1187763215536208,
+            "gpu_engine_seconds": {
+              "0000:07:00.0/gfx": 0.000812481
+            },
+            "gpu_engine_percent": {
+              "0000:07:00.0/gfx": 0.01817969009024415
+            },
+            "rss_bytes": 112386048,
+            "grid": [
+              "114",
+              "32"
+            ],
+            "steady": {
+              "wall_seconds": 2.3785076919994026,
+              "cpu_seconds": 0.039999999999999994,
+              "cpu_percent_one_core": 1.6817267454945881,
+              "gpu_engine_seconds": {
+                "0000:07:00.0/gfx": 0.000812481
+              },
+              "gpu_engine_percent": {
+                "0000:07:00.0/gfx": 0.034159275697654715
+              },
+              "rss_bytes": 112254976,
+              "gpu_clock_mhz": {
+                "0000:07:00.0": {
+                  "min": 400,
+                  "median": 400.0,
+                  "max": 1600
+                }
+              }
+            },
+            "profile": {
+              "wall_seconds": 0.9963155059995188,
+              "frames": 0.0,
+              "draw_ns": 0.0,
+              "stages": {
+                "parse": {
+                  "calls": 0,
+                  "ns": 0,
+                  "units": 0
+                },
+                "paint": {
+                  "calls": 0,
+                  "ns": 0,
+                  "units": 0
+                },
+                "backgrounds": {
+                  "calls": 0,
+                  "ns": 0,
+                  "units": 0
+                },
+                "boxes": {
+                  "calls": 0,
+                  "ns": 0,
+                  "units": 0
+                },
+                "runs": {
+                  "calls": 0,
+                  "ns": 0,
+                  "units": 0
+                },
+                "shape": {
+                  "calls": 0,
+                  "ns": 0,
+                  "units": 0
+                },
+                "glyphs": {
+                  "calls": 0,
+                  "ns": 0,
+                  "units": 0
+                },
+                "cursor": {
+                  "calls": 0,
+                  "ns": 0,
+                  "units": 0
+                }
+              },
+              "cache": {
+                "reused": 0,
+                "rebuilt": 0
+              }
+            }
+          },
+          "small": {
+            "wall_seconds": 7.950265776999004,
+            "cpu_seconds": 0.5499999999999999,
+            "cpu_percent_one_core": 6.918007717316956,
+            "gpu_engine_seconds": {
+              "0000:07:00.0/gfx": 0.184523524
+            },
+            "gpu_engine_percent": {
+              "0000:07:00.0/gfx": 2.3209730237427646
+            },
+            "rss_bytes": 114352128,
+            "grid": [
+              "114",
+              "62"
+            ],
+            "steady": {
+              "wall_seconds": 5.93248357399716,
+              "cpu_seconds": 0.39,
+              "cpu_percent_one_core": 6.573975218564788,
+              "gpu_engine_seconds": {
+                "0000:07:00.0/gfx": 0.13601234
+              },
+              "gpu_engine_percent": {
+                "0000:07:00.0/gfx": 2.2926711604589958
+              },
+              "rss_bytes": 114352128,
+              "gpu_clock_mhz": {
+                "0000:07:00.0": {
+                  "min": 200,
+                  "median": 400.0,
+                  "max": 1600
+                }
+              }
+            },
+            "profile": {
+              "wall_seconds": 4.989021583998692,
+              "frames": 100.0,
+              "draw_ns": 194543104.0,
+              "stages": {
+                "parse": {
+                  "calls": 100,
+                  "ns": 482703,
+                  "units": 900
+                },
+                "paint": {
+                  "calls": 100,
+                  "ns": 137618965,
+                  "units": 100
+                },
+                "backgrounds": {
+                  "calls": 6200,
+                  "ns": 4612751,
+                  "units": 706800
+                },
+                "boxes": {
+                  "calls": 6200,
+                  "ns": 23028767,
+                  "units": 706800
+                },
+                "runs": {
+                  "calls": 100,
+                  "ns": 868322,
+                  "units": 11400
+                },
+                "shape": {
+                  "calls": 100,
+                  "ns": 8336191,
+                  "units": 3800
+                },
+                "glyphs": {
+                  "calls": 9600,
+                  "ns": 87718104,
+                  "units": 364800
+                },
+                "cursor": {
+                  "calls": 100,
+                  "ns": 37184,
+                  "units": 100
+                }
+              },
+              "cache": {
+                "reused": 6100,
+                "rebuilt": 100
+              }
+            }
+          },
+          "full": {
+            "wall_seconds": 7.937570838003012,
+            "cpu_seconds": 0.6000000000000001,
+            "cpu_percent_one_core": 7.558987658130333,
+            "gpu_engine_seconds": {
+              "0000:07:00.0/gfx": 0.182050394
+            },
+            "gpu_engine_percent": {
+              "0000:07:00.0/gfx": 2.293527802339607
+            },
+            "rss_bytes": 114352128,
+            "grid": [
+              "114",
+              "62"
+            ],
+            "steady": {
+              "wall_seconds": 5.833319603003474,
+              "cpu_seconds": 0.43999999999999995,
+              "cpu_percent_one_core": 7.5428748970560715,
+              "gpu_engine_seconds": {
+                "0000:07:00.0/gfx": 0.135916802
+              },
+              "gpu_engine_percent": {
+                "0000:07:00.0/gfx": 2.3300078043044103
+              },
+              "rss_bytes": 114352128,
+              "gpu_clock_mhz": {
+                "0000:07:00.0": {
+                  "min": 200,
+                  "median": 400,
+                  "max": 6784
+                }
+              }
+            },
+            "profile": {
+              "wall_seconds": 4.045212195000204,
+              "frames": 80.0,
+              "draw_ns": 172764672.0,
+              "stages": {
+                "parse": {
+                  "calls": 168,
+                  "ns": 10321369,
+                  "units": 490720
+                },
+                "paint": {
+                  "calls": 80,
+                  "ns": 122402587,
+                  "units": 80
+                },
+                "backgrounds": {
+                  "calls": 4960,
+                  "ns": 4036650,
+                  "units": 565440
+                },
+                "boxes": {
+                  "calls": 4960,
+                  "ns": 20794662,
+                  "units": 565440
+                },
+                "runs": {
+                  "calls": 80,
+                  "ns": 732886,
+                  "units": 9120
+                },
+                "shape": {
+                  "calls": 80,
+                  "ns": 7230608,
+                  "units": 3040
+                },
+                "glyphs": {
+                  "calls": 7680,
+                  "ns": 78109852,
+                  "units": 291840
+                },
+                "cursor": {
+                  "calls": 80,
+                  "ns": 31839,
+                  "units": 80
+                }
+              },
+              "cache": {
+                "reused": 4880,
+                "rebuilt": 80
+              }
+            }
+          },
+          "idle": {
+            "wall_seconds": 3.9886265360000834,
+            "cpu_seconds": 0.020000000000000018,
+            "cpu_percent_one_core": 0.501425736891793,
+            "gpu_engine_seconds": {
+              "0000:07:00.0/gfx": 0.0
+            },
+            "gpu_engine_percent": {
+              "0000:07:00.0/gfx": 0.0
+            },
+            "rss_bytes": 114352128,
+            "grid": [
+              "114",
+              "62"
+            ],
+            "steady": {
+              "wall_seconds": 1.9539870910011814,
+              "cpu_seconds": 0.020000000000000018,
+              "cpu_percent_one_core": 1.0235482154466253,
+              "gpu_engine_seconds": {
+                "0000:07:00.0/gfx": 0.0
+              },
+              "gpu_engine_percent": {
+                "0000:07:00.0/gfx": 0.0
+              },
+              "rss_bytes": 114352128,
+              "gpu_clock_mhz": {
+                "0000:07:00.0": {
+                  "min": 400,
+                  "median": 400.0,
+                  "max": 1350
+                }
+              }
+            },
+            "profile": {
+              "wall_seconds": 1.014424347999011,
+              "frames": 0.0,
+              "draw_ns": 0.0,
+              "stages": {
+                "parse": {
+                  "calls": 0,
+                  "ns": 0,
+                  "units": 0
+                },
+                "paint": {
+                  "calls": 0,
+                  "ns": 0,
+                  "units": 0
+                },
+                "backgrounds": {
+                  "calls": 0,
+                  "ns": 0,
+                  "units": 0
+                },
+                "boxes": {
+                  "calls": 0,
+                  "ns": 0,
+                  "units": 0
+                },
+                "runs": {
+                  "calls": 0,
+                  "ns": 0,
+                  "units": 0
+                },
+                "shape": {
+                  "calls": 0,
+                  "ns": 0,
+                  "units": 0
+                },
+                "glyphs": {
+                  "calls": 0,
+                  "ns": 0,
+                  "units": 0
+                },
+                "cursor": {
+                  "calls": 0,
+                  "ns": 0,
+                  "units": 0
+                }
+              },
+              "cache": {
+                "reused": 0,
+                "rebuilt": 0
+              }
+            }
+          }
+        },
+        "events": [
+          {
+            "phase": "small",
+            "updates": 160,
+            "bytes": 1440,
+            "payload_sha256": "f6a13210f034ef4cf703387e43a4c31532c762a2dc347a1dd364ff72a44a456d",
+            "hz": 20.0,
+            "elapsed_seconds": 8.000163437001902,
+            "max_deadline_lateness_ms": 0.555359001737088
+          },
+          {
+            "phase": "full",
+            "updates": 160,
+            "bytes": 981440,
+            "payload_sha256": "dcd84454fa3b765b29dc63a90456cf3ec6ff54ffeccb306bc8d166bc093458fe",
+            "hz": 20.0,
+            "elapsed_seconds": 8.000097503001598,
+            "max_deadline_lateness_ms": 0.4474119996302761
+          }
+        ],
+        "binary_sha256": "f8a49b7a2ecbc11aa2d922d882236b1ee854d41005f3a008c76cdbda6df18d80",
+        "last_parse_bytes": 989062,
+        "idle_frame_samples": [
+          {
+            "sample_s": 22.03,
+            "frames": 324.0
+          },
+          {
+            "sample_s": 23.031,
+            "frames": 324.0
+          },
+          {
+            "sample_s": 24.031,
+            "frames": 324.0
+          },
+          {
+            "sample_s": 25.032,
+            "frames": 324.0
+          }
+        ]
+      }
+    ],
+    "before-cursor20": [
+      {
+        "name": "before-cursor20",
+        "host": "probe",
+        "workload": "cursor",
+        "hz": 20,
+        "border": "rounded",
+        "window": {
+          "at": [
+            10,
+            60
+          ],
+          "size": [
+            960,
+            1000
+          ],
+          "monitor": 0,
+          "mapped": true,
+          "visible": true,
+          "hidden": false,
+          "workspace": {
+            "id": 1,
+            "name": "1"
+          }
+        },
+        "monitor": {
+          "name": "eDP-1",
+          "width": 1920,
+          "height": 1080,
+          "scale": 1,
+          "refreshRate": 60.049
+        },
+        "app": null,
+        "user_nvim_config": false,
+        "invalid": [],
+        "phases": {
+          "warmup": {
+            "wall_seconds": 2.3364862950002134,
+            "cpu_seconds": 0.020000000000000018,
+            "cpu_percent_one_core": 0.8559861892961881,
+            "gpu_engine_seconds": {
+              "0000:07:00.0/gfx": 0.0014691
+            },
+            "gpu_engine_percent": {
+              "0000:07:00.0/gfx": 0.06287646553475144
+            },
+            "rss_bytes": 120307712,
+            "grid": [
+              "114",
+              "65"
+            ],
+            "steady": {
+              "wall_seconds": 0.273388525001792,
+              "cpu_seconds": 0.0,
+              "cpu_percent_one_core": 0.0,
+              "gpu_engine_seconds": {
+                "0000:07:00.0/gfx": 0.0
+              },
+              "gpu_engine_percent": {
+                "0000:07:00.0/gfx": 0.0
+              },
+              "rss_bytes": 120307712,
+              "gpu_clock_mhz": {
+                "0000:07:00.0": {
+                  "min": 200,
+                  "median": 400.0,
+                  "max": 1125
+                }
+              }
+            }
+          },
+          "cursor": {
+            "wall_seconds": 7.958907173000625,
+            "cpu_seconds": 0.8300000000000001,
+            "cpu_percent_one_core": 10.428567414577318,
+            "gpu_engine_seconds": {
+              "0000:07:00.0/gfx": 0.191103893
+            },
+            "gpu_engine_percent": {
+              "0000:07:00.0/gfx": 2.4011323269140608
+            },
+            "rss_bytes": 120307712,
+            "grid": [
+              "114",
+              "62"
+            ],
+            "steady": {
+              "wall_seconds": 5.912708469997597,
+              "cpu_seconds": 0.62,
+              "cpu_percent_one_core": 10.48588820412876,
+              "gpu_engine_seconds": {
+                "0000:07:00.0/gfx": 0.146980482
+              },
+              "gpu_engine_percent": {
+                "0000:07:00.0/gfx": 2.4858401652273536
+              },
+              "rss_bytes": 120307712,
+              "gpu_clock_mhz": {
+                "0000:07:00.0": {
+                  "min": 200,
+                  "median": 400.0,
+                  "max": 1600
+                }
+              }
+            },
+            "profile": {
+              "wall_seconds": 4.98855415199796,
+              "frames": 100.0,
+              "draw_ns": 359834624.0,
+              "stages": {
+                "parse": {
+                  "calls": 100,
+                  "ns": 2364803,
+                  "units": 50500
+                },
+                "paint": {
+                  "calls": 100,
+                  "ns": 277064495,
+                  "units": 100
+                },
+                "backgrounds": {
+                  "calls": 6200,
+                  "ns": 51669644,
+                  "units": 706800
+                },
+                "boxes": {
+                  "calls": 6200,
+                  "ns": 15883244,
+                  "units": 706800
+                },
+                "runs": {
+                  "calls": 6200,
+                  "ns": 43466316,
+                  "units": 706800
+                },
+                "shape": {
+                  "calls": 12100,
+                  "ns": 36712888,
+                  "units": 525600
+                },
+                "glyphs": {
+                  "calls": 12100,
+                  "ns": 124153791,
+                  "units": 525600
+                },
+                "cursor": {
+                  "calls": 100,
+                  "ns": 577474,
+                  "units": 100
+                }
+              }
+            }
+          },
+          "scroll": {
+            "wall_seconds": 7.980137154001568,
+            "cpu_seconds": 0.8400000000000001,
+            "cpu_percent_one_core": 10.526134874496357,
+            "gpu_engine_seconds": {
+              "0000:07:00.0/gfx": 0.180789696
+            },
+            "gpu_engine_percent": {
+              "0000:07:00.0/gfx": 2.2654961000180887
+            },
+            "rss_bytes": 120307712,
+            "grid": [
+              "114",
+              "62"
+            ],
+            "steady": {
+              "wall_seconds": 5.921994637999887,
+              "cpu_seconds": 0.6100000000000001,
+              "cpu_percent_one_core": 10.300583456894573,
+              "gpu_engine_seconds": {
+                "0000:07:00.0/gfx": 0.135452531
+              },
+              "gpu_engine_percent": {
+                "0000:07:00.0/gfx": 2.2872788524804903
+              },
+              "rss_bytes": 120307712,
+              "gpu_clock_mhz": {
+                "0000:07:00.0": {
+                  "min": 200,
+                  "median": 400.0,
+                  "max": 1600
+                }
+              }
+            },
+            "profile": {
+              "wall_seconds": 5.022652165996988,
+              "frames": 99.0,
+              "draw_ns": 347099136.0,
+              "stages": {
+                "parse": {
+                  "calls": 100,
+                  "ns": 2558376,
+                  "units": 55822
+                },
+                "paint": {
+                  "calls": 99,
+                  "ns": 267726583,
+                  "units": 99
+                },
+                "backgrounds": {
+                  "calls": 6138,
+                  "ns": 48676015,
+                  "units": 699732
+                },
+                "boxes": {
+                  "calls": 6138,
+                  "ns": 14440568,
+                  "units": 699732
+                },
+                "runs": {
+                  "calls": 6138,
+                  "ns": 40512949,
+                  "units": 699732
+                },
+                "shape": {
+                  "calls": 11979,
+                  "ns": 39656071,
+                  "units": 524424
+                },
+                "glyphs": {
+                  "calls": 11979,
+                  "ns": 119037138,
+                  "units": 524424
+                },
+                "cursor": {
+                  "calls": 99,
+                  "ns": 1102218,
+                  "units": 99
+                }
+              }
+            }
+          },
+          "redraw": {
+            "wall_seconds": 7.9376859799995145,
+            "cpu_seconds": 0.8699999999999999,
+            "cpu_percent_one_core": 10.960373113677306,
+            "gpu_engine_seconds": {
+              "0000:07:00.0/gfx": 0.176217928
+            },
+            "gpu_engine_percent": {
+              "0000:07:00.0/gfx": 2.22001636804497
+            },
+            "rss_bytes": 120307712,
+            "grid": [
+              "114",
+              "62"
+            ],
+            "steady": {
+              "wall_seconds": 5.913376633001462,
+              "cpu_seconds": 0.6600000000000001,
+              "cpu_percent_one_core": 11.16113586130574,
+              "gpu_engine_seconds": {
+                "0000:07:00.0/gfx": 0.132581086
+              },
+              "gpu_engine_percent": {
+                "0000:07:00.0/gfx": 2.242053808311303
+              },
+              "rss_bytes": 120307712,
+              "gpu_clock_mhz": {
+                "0000:07:00.0": {
+                  "min": 400,
+                  "median": 400.0,
+                  "max": 1600
+                }
+              }
+            },
+            "profile": {
+              "wall_seconds": 5.014568866001355,
+              "frames": 99.0,
+              "draw_ns": 377955328.0,
+              "stages": {
+                "parse": {
+                  "calls": 302,
+                  "ns": 19373380,
+                  "units": 941985
+                },
+                "paint": {
+                  "calls": 99,
+                  "ns": 288508969,
+                  "units": 99
+                },
+                "backgrounds": {
+                  "calls": 6138,
+                  "ns": 51393516,
+                  "units": 699732
+                },
+                "boxes": {
+                  "calls": 6138,
+                  "ns": 15379803,
+                  "units": 699732
+                },
+                "runs": {
+                  "calls": 6138,
+                  "ns": 44214838,
+                  "units": 699732
+                },
+                "shape": {
+                  "calls": 11979,
+                  "ns": 43365646,
+                  "units": 534006
+                },
+                "glyphs": {
+                  "calls": 11979,
+                  "ns": 128355564,
+                  "units": 534006
+                },
+                "cursor": {
+                  "calls": 99,
+                  "ns": 1136258,
+                  "units": 99
+                }
+              }
+            }
+          },
+          "idle": {
+            "wall_seconds": 3.9449088700021093,
+            "cpu_seconds": 0.029999999999999805,
+            "cpu_percent_one_core": 0.7604738408059541,
+            "gpu_engine_seconds": {
+              "0000:07:00.0/gfx": 0.0
+            },
+            "gpu_engine_percent": {
+              "0000:07:00.0/gfx": 0.0
+            },
+            "rss_bytes": 120307712,
+            "grid": [
+              "114",
+              "62"
+            ],
+            "steady": {
+              "wall_seconds": 1.9003693420017953,
+              "cpu_seconds": 0.020000000000000018,
+              "cpu_percent_one_core": 1.052426997108498,
+              "gpu_engine_seconds": {
+                "0000:07:00.0/gfx": 0.0
+              },
+              "gpu_engine_percent": {
+                "0000:07:00.0/gfx": 0.0
+              },
+              "rss_bytes": 120307712,
+              "gpu_clock_mhz": {
+                "0000:07:00.0": {
+                  "min": 400,
+                  "median": 400,
+                  "max": 1600
+                }
+              }
+            },
+            "profile": {
+              "wall_seconds": 0.9486382040013268,
+              "frames": 0.0,
+              "draw_ns": 0.0,
+              "stages": {
+                "parse": {
+                  "calls": 0,
+                  "ns": 0,
+                  "units": 0
+                },
+                "paint": {
+                  "calls": 0,
+                  "ns": 0,
+                  "units": 0
+                },
+                "backgrounds": {
+                  "calls": 0,
+                  "ns": 0,
+                  "units": 0
+                },
+                "boxes": {
+                  "calls": 0,
+                  "ns": 0,
+                  "units": 0
+                },
+                "runs": {
+                  "calls": 0,
+                  "ns": 0,
+                  "units": 0
+                },
+                "shape": {
+                  "calls": 0,
+                  "ns": 0,
+                  "units": 0
+                },
+                "glyphs": {
+                  "calls": 0,
+                  "ns": 0,
+                  "units": 0
+                },
+                "cursor": {
+                  "calls": 0,
+                  "ns": 0,
+                  "units": 0
+                }
+              }
+            }
+          }
+        },
+        "events": [],
+        "binary_sha256": "8538ba8fd08ca454b0b1ebe29be10b2599a728f188bd5fbf2ebfb0e46c7f2a66",
+        "last_parse_bytes": 1729266,
+        "idle_frame_samples": [
+          {
+            "sample_s": 28.044,
+            "frames": 486.0
+          },
+          {
+            "sample_s": 29.045,
+            "frames": 486.0
+          },
+          {
+            "sample_s": 30.045,
+            "frames": 486.0
+          },
+          {
+            "sample_s": 31.046,
+            "frames": 486.0
+          }
+        ]
+      }
+    ],
+    "after-cursor20": [
+      {
+        "name": "after-cursor20",
+        "host": "probe",
+        "workload": "cursor",
+        "hz": 20,
+        "border": "rounded",
+        "window": {
+          "at": [
+            10,
+            60
+          ],
+          "size": [
+            960,
+            1000
+          ],
+          "monitor": 0,
+          "mapped": true,
+          "visible": true,
+          "hidden": false,
+          "workspace": {
+            "id": 1,
+            "name": "1"
+          }
+        },
+        "monitor": {
+          "name": "eDP-1",
+          "width": 1920,
+          "height": 1080,
+          "scale": 1,
+          "refreshRate": 60.049
+        },
+        "app": null,
+        "user_nvim_config": false,
+        "invalid": [],
+        "phases": {
+          "warmup": {
+            "wall_seconds": 2.313392151998414,
+            "cpu_seconds": 0.020000000000000018,
+            "cpu_percent_one_core": 0.8645313326027799,
+            "gpu_engine_seconds": {
+              "0000:07:00.0/gfx": 0.001074943
+            },
+            "gpu_engine_percent": {
+              "0000:07:00.0/gfx": 0.046466095213101466
+            },
+            "rss_bytes": 118820864,
+            "grid": [
+              "114",
+              "65"
+            ],
+            "steady": {
+              "wall_seconds": 0.22881047400005627,
+              "cpu_seconds": 0.0,
+              "cpu_percent_one_core": 0.0,
+              "gpu_engine_seconds": {
+                "0000:07:00.0/gfx": 0.0
+              },
+              "gpu_engine_percent": {
+                "0000:07:00.0/gfx": 0.0
+              },
+              "rss_bytes": 118820864,
+              "gpu_clock_mhz": {
+                "0000:07:00.0": {
+                  "min": 400,
+                  "median": 400,
+                  "max": 1112
+                }
+              }
+            }
+          },
+          "cursor": {
+            "wall_seconds": 7.981287684000563,
+            "cpu_seconds": 0.7,
+            "cpu_percent_one_core": 8.770514580037416,
+            "gpu_engine_seconds": {
+              "0000:07:00.0/gfx": 0.189598968
+            },
+            "gpu_engine_percent": {
+              "0000:07:00.0/gfx": 2.3755435902914965
+            },
+            "rss_bytes": 118820864,
+            "grid": [
+              "114",
+              "62"
+            ],
+            "steady": {
+              "wall_seconds": 5.922581672002707,
+              "cpu_seconds": 0.53,
+              "cpu_percent_one_core": 8.948800191400007,
+              "gpu_engine_seconds": {
+                "0000:07:00.0/gfx": 0.136273173
+              },
+              "gpu_engine_percent": {
+                "0000:07:00.0/gfx": 2.3009082955190308
+              },
+              "rss_bytes": 118820864,
+              "gpu_clock_mhz": {
+                "0000:07:00.0": {
+                  "min": 400,
+                  "median": 400.0,
+                  "max": 1600
+                }
+              }
+            },
+            "profile": {
+              "wall_seconds": 4.988974771000358,
+              "frames": 100.0,
+              "draw_ns": 277980672.0,
+              "stages": {
+                "parse": {
+                  "calls": 100,
+                  "ns": 2277864,
+                  "units": 50500
+                },
+                "paint": {
+                  "calls": 100,
+                  "ns": 191424565,
+                  "units": 100
+                },
+                "backgrounds": {
+                  "calls": 6400,
+                  "ns": 7553559,
+                  "units": 729600
+                },
+                "boxes": {
+                  "calls": 6200,
+                  "ns": 12234347,
+                  "units": 706800
+                },
+                "runs": {
+                  "calls": 300,
+                  "ns": 2139753,
+                  "units": 34200
+                },
+                "shape": {
+                  "calls": 300,
+                  "ns": 26449315,
+                  "units": 11800
+                },
+                "glyphs": {
+                  "calls": 12100,
+                  "ns": 127396501,
+                  "units": 525600
+                },
+                "cursor": {
+                  "calls": 100,
+                  "ns": 603427,
+                  "units": 100
+                }
+              },
+              "cache": {
+                "reused": 5900,
+                "rebuilt": 300
+              }
+            }
+          },
+          "scroll": {
+            "wall_seconds": 7.95213897999929,
+            "cpu_seconds": 0.7599999999999999,
+            "cpu_percent_one_core": 9.557177030123633,
+            "gpu_engine_seconds": {
+              "0000:07:00.0/gfx": 0.192028317
+            },
+            "gpu_engine_percent": {
+              "0000:07:00.0/gfx": 2.414800816270658
+            },
+            "rss_bytes": 118820864,
+            "grid": [
+              "114",
+              "62"
+            ],
+            "steady": {
+              "wall_seconds": 5.923687451999285,
+              "cpu_seconds": 0.6000000000000001,
+              "cpu_percent_one_core": 10.128826087836487,
+              "gpu_engine_seconds": {
+                "0000:07:00.0/gfx": 0.140775841
+              },
+              "gpu_engine_percent": {
+                "0000:07:00.0/gfx": 2.3764900180965354
+              },
+              "rss_bytes": 118820864,
+              "gpu_clock_mhz": {
+                "0000:07:00.0": {
+                  "min": 400,
+                  "median": 400,
+                  "max": 1600
+                }
+              }
+            },
+            "profile": {
+              "wall_seconds": 4.035636278000311,
+              "frames": 80.0,
+              "draw_ns": 281750016.0,
+              "stages": {
+                "parse": {
+                  "calls": 80,
+                  "ns": 2092227,
+                  "units": 44540
+                },
+                "paint": {
+                  "calls": 80,
+                  "ns": 211869567,
+                  "units": 80
+                },
+                "backgrounds": {
+                  "calls": 5019,
+                  "ns": 5057947,
+                  "units": 572166
+                },
+                "boxes": {
+                  "calls": 4960,
+                  "ns": 9717427,
+                  "units": 565440
+                },
+                "runs": {
+                  "calls": 4300,
+                  "ns": 35144958,
+                  "units": 490200
+                },
+                "shape": {
+                  "calls": 8500,
+                  "ns": 37956586,
+                  "units": 371280
+                },
+                "glyphs": {
+                  "calls": 9680,
+                  "ns": 104765458,
+                  "units": 422660
+                },
+                "cursor": {
+                  "calls": 80,
+                  "ns": 921297,
+                  "units": 80
+                }
+              },
+              "cache": {
+                "reused": 660,
+                "rebuilt": 4300
+              }
+            }
+          },
+          "redraw": {
+            "wall_seconds": 7.958598053002788,
+            "cpu_seconds": 0.8400000000000001,
+            "cpu_percent_one_core": 10.554622741414454,
+            "gpu_engine_seconds": {
+              "0000:07:00.0/gfx": 0.172998962
+            },
+            "gpu_engine_percent": {
+              "0000:07:00.0/gfx": 2.1737366411503505
+            },
+            "rss_bytes": 118820864,
+            "grid": [
+              "114",
+              "62"
+            ],
+            "steady": {
+              "wall_seconds": 5.9170147470031225,
+              "cpu_seconds": 0.6200000000000001,
+              "cpu_percent_one_core": 10.478256798565877,
+              "gpu_engine_seconds": {
+                "0000:07:00.0/gfx": 0.122739857
+              },
+              "gpu_engine_percent": {
+                "0000:07:00.0/gfx": 2.074354421072989
+              },
+              "rss_bytes": 118820864,
+              "gpu_clock_mhz": {
+                "0000:07:00.0": {
+                  "min": 200,
+                  "median": 400.0,
+                  "max": 1600
+                }
+              }
+            },
+            "profile": {
+              "wall_seconds": 4.959487262000039,
+              "frames": 100.0,
+              "draw_ns": 336842752.0,
+              "stages": {
+                "parse": {
+                  "calls": 301,
+                  "ns": 19930115,
+                  "units": 941985
+                },
+                "paint": {
+                  "calls": 100,
+                  "ns": 250720652,
+                  "units": 100
+                },
+                "backgrounds": {
+                  "calls": 6200,
+                  "ns": 5284152,
+                  "units": 706800
+                },
+                "boxes": {
+                  "calls": 6200,
+                  "ns": 11217443,
+                  "units": 706800
+                },
+                "runs": {
+                  "calls": 6100,
+                  "ns": 46604141,
+                  "units": 695400
+                },
+                "shape": {
+                  "calls": 12100,
+                  "ns": 41892235,
+                  "units": 539400
+                },
+                "glyphs": {
+                  "calls": 12100,
+                  "ns": 121947690,
+                  "units": 539400
+                },
+                "cursor": {
+                  "calls": 100,
+                  "ns": 1091049,
+                  "units": 100
+                }
+              },
+              "cache": {
+                "reused": 100,
+                "rebuilt": 6100
+              }
+            }
+          },
+          "idle": {
+            "wall_seconds": 3.9523646399975405,
+            "cpu_seconds": 0.029999999999999805,
+            "cpu_percent_one_core": 0.7590392773076341,
+            "gpu_engine_seconds": {
+              "0000:07:00.0/gfx": 0.0
+            },
+            "gpu_engine_percent": {
+              "0000:07:00.0/gfx": 0.0
+            },
+            "rss_bytes": 118820864,
+            "grid": [
+              "114",
+              "62"
+            ],
+            "steady": {
+              "wall_seconds": 1.9216423710022354,
+              "cpu_seconds": 0.009999999999999787,
+              "cpu_percent_one_core": 0.5203881924597797,
+              "gpu_engine_seconds": {
+                "0000:07:00.0/gfx": 0.0
+              },
+              "gpu_engine_percent": {
+                "0000:07:00.0/gfx": 0.0
+              },
+              "rss_bytes": 118820864,
+              "gpu_clock_mhz": {
+                "0000:07:00.0": {
+                  "min": 200,
+                  "median": 400,
+                  "max": 1600
+                }
+              }
+            },
+            "profile": {
+              "wall_seconds": 1.0160544760001358,
+              "frames": 0.0,
+              "draw_ns": 0.0,
+              "stages": {
+                "parse": {
+                  "calls": 0,
+                  "ns": 0,
+                  "units": 0
+                },
+                "paint": {
+                  "calls": 0,
+                  "ns": 0,
+                  "units": 0
+                },
+                "backgrounds": {
+                  "calls": 0,
+                  "ns": 0,
+                  "units": 0
+                },
+                "boxes": {
+                  "calls": 0,
+                  "ns": 0,
+                  "units": 0
+                },
+                "runs": {
+                  "calls": 0,
+                  "ns": 0,
+                  "units": 0
+                },
+                "shape": {
+                  "calls": 0,
+                  "ns": 0,
+                  "units": 0
+                },
+                "glyphs": {
+                  "calls": 0,
+                  "ns": 0,
+                  "units": 0
+                },
+                "cursor": {
+                  "calls": 0,
+                  "ns": 0,
+                  "units": 0
+                }
+              },
+              "cache": {
+                "reused": 0,
+                "rebuilt": 0
+              }
+            }
+          }
+        },
+        "events": [],
+        "binary_sha256": "f8a49b7a2ecbc11aa2d922d882236b1ee854d41005f3a008c76cdbda6df18d80",
+        "last_parse_bytes": 1729266,
+        "idle_frame_samples": [
+          {
+            "sample_s": 28.049,
+            "frames": 486.0
+          },
+          {
+            "sample_s": 29.05,
+            "frames": 486.0
+          },
+          {
+            "sample_s": 30.05,
+            "frames": 486.0
+          },
+          {
+            "sample_s": 31.051,
+            "frames": 486.0
+          }
+        ]
+      }
+    ],
+    "before-cursor40": [
+      {
+        "name": "before-cursor40",
+        "host": "probe",
+        "workload": "cursor",
+        "hz": 40,
+        "border": "rounded",
+        "window": {
+          "at": [
+            10,
+            60
+          ],
+          "size": [
+            960,
+            1000
+          ],
+          "monitor": 0,
+          "mapped": true,
+          "visible": true,
+          "hidden": false,
+          "workspace": {
+            "id": 1,
+            "name": "1"
+          }
+        },
+        "monitor": {
+          "name": "eDP-1",
+          "width": 1920,
+          "height": 1080,
+          "scale": 1,
+          "refreshRate": 60.049
+        },
+        "app": null,
+        "user_nvim_config": false,
+        "invalid": [],
+        "phases": {
+          "warmup": {
+            "wall_seconds": 2.3159820289984054,
+            "cpu_seconds": 0.010000000000000009,
+            "cpu_percent_one_core": 0.431782279602779,
+            "gpu_engine_seconds": {
+              "0000:07:00.0/gfx": 0.00130325
+            },
+            "gpu_engine_percent": {
+              "0000:07:00.0/gfx": 0.05627202558923212
+            },
+            "rss_bytes": 120020992,
+            "grid": [
+              "114",
+              "65"
+            ],
+            "steady": {
+              "wall_seconds": 0.22110413599875756,
+              "cpu_seconds": 0.0,
+              "cpu_percent_one_core": 0.0,
+              "gpu_engine_seconds": {
+                "0000:07:00.0/gfx": 0.0
+              },
+              "gpu_engine_percent": {
+                "0000:07:00.0/gfx": 0.0
+              },
+              "rss_bytes": 120020992,
+              "gpu_clock_mhz": {
+                "0000:07:00.0": {
+                  "min": 200,
+                  "median": 400,
+                  "max": 400
+                }
+              }
+            }
+          },
+          "cursor": {
+            "wall_seconds": 8.005033552999521,
+            "cpu_seconds": 1.61,
+            "cpu_percent_one_core": 20.112345430416415,
+            "gpu_engine_seconds": {
+              "0000:07:00.0/gfx": 0.365363447
+            },
+            "gpu_engine_percent": {
+              "0000:07:00.0/gfx": 4.564171337709094
+            },
+            "rss_bytes": 118054912,
+            "grid": [
+              "114",
+              "62"
+            ],
+            "steady": {
+              "wall_seconds": 5.899163466998289,
+              "cpu_seconds": 1.19,
+              "cpu_percent_one_core": 20.17235166743931,
+              "gpu_engine_seconds": {
+                "0000:07:00.0/gfx": 0.25664829
+              },
+              "gpu_engine_percent": {
+                "0000:07:00.0/gfx": 4.3505878661571
+              },
+              "rss_bytes": 118054912,
+              "gpu_clock_mhz": {
+                "0000:07:00.0": {
+                  "min": 200,
+                  "median": 400.0,
+                  "max": 1600
+                }
+              }
+            },
+            "profile": {
+              "wall_seconds": 3.9631909870004165,
+              "frames": 154.0,
+              "draw_ns": 574805504.0,
+              "stages": {
+                "parse": {
+                  "calls": 160,
+                  "ns": 3777564,
+                  "units": 80800
+                },
+                "paint": {
+                  "calls": 154,
+                  "ns": 439377198,
+                  "units": 154
+                },
+                "backgrounds": {
+                  "calls": 9548,
+                  "ns": 82054333,
+                  "units": 1088472
+                },
+                "boxes": {
+                  "calls": 9548,
+                  "ns": 25553955,
+                  "units": 1088472
+                },
+                "runs": {
+                  "calls": 9548,
+                  "ns": 68415368,
+                  "units": 1088472
+                },
+                "shape": {
+                  "calls": 18634,
+                  "ns": 57466282,
+                  "units": 809424
+                },
+                "glyphs": {
+                  "calls": 18634,
+                  "ns": 197724441,
+                  "units": 809424
+                },
+                "cursor": {
+                  "calls": 154,
+                  "ns": 961427,
+                  "units": 154
+                }
+              }
+            }
+          },
+          "scroll": {
+            "wall_seconds": 7.9748330199981865,
+            "cpu_seconds": 1.6,
+            "cpu_percent_one_core": 20.0631160049087,
+            "gpu_engine_seconds": {
+              "0000:07:00.0/gfx": 0.375280045
+            },
+            "gpu_engine_percent": {
+              "0000:07:00.0/gfx": 4.705804423226473
+            },
+            "rss_bytes": 118054912,
+            "grid": [
+              "114",
+              "62"
+            ],
+            "steady": {
+              "wall_seconds": 5.9311306580020755,
+              "cpu_seconds": 1.24,
+              "cpu_percent_one_core": 20.906637730649805,
+              "gpu_engine_seconds": {
+                "0000:07:00.0/gfx": 0.274300345
+              },
+              "gpu_engine_percent": {
+                "0000:07:00.0/gfx": 4.624756405086499
+              },
+              "rss_bytes": 118054912,
+              "gpu_clock_mhz": {
+                "0000:07:00.0": {
+                  "min": 200,
+                  "median": 400.0,
+                  "max": 1600
+                }
+              }
+            },
+            "profile": {
+              "wall_seconds": 4.98555982200196,
+              "frames": 194.0,
+              "draw_ns": 776122368.0,
+              "stages": {
+                "parse": {
+                  "calls": 200,
+                  "ns": 5569037,
+                  "units": 112830
+                },
+                "paint": {
+                  "calls": 194,
+                  "ns": 595139318,
+                  "units": 194
+                },
+                "backgrounds": {
+                  "calls": 12028,
+                  "ns": 105784446,
+                  "units": 1371192
+                },
+                "boxes": {
+                  "calls": 12028,
+                  "ns": 31962499,
+                  "units": 1371192
+                },
+                "runs": {
+                  "calls": 12028,
+                  "ns": 90136469,
+                  "units": 1371192
+                },
+                "shape": {
+                  "calls": 23474,
+                  "ns": 90498793,
+                  "units": 1041780
+                },
+                "glyphs": {
+                  "calls": 23474,
+                  "ns": 264876194,
+                  "units": 1041780
+                },
+                "cursor": {
+                  "calls": 194,
+                  "ns": 2406021,
+                  "units": 194
+                }
+              }
+            }
+          },
+          "redraw": {
+            "wall_seconds": 7.9665213039988885,
+            "cpu_seconds": 1.6399999999999997,
+            "cpu_percent_one_core": 20.58614968087492,
+            "gpu_engine_seconds": {
+              "0000:07:00.0/gfx": 0.349528309
+            },
+            "gpu_engine_percent": {
+              "0000:07:00.0/gfx": 4.387464687059207
+            },
+            "rss_bytes": 117792768,
+            "grid": [
+              "114",
+              "62"
+            ],
+            "steady": {
+              "wall_seconds": 5.9507690940008615,
+              "cpu_seconds": 1.2400000000000002,
+              "cpu_percent_one_core": 20.837642671265456,
+              "gpu_engine_seconds": {
+                "0000:07:00.0/gfx": 0.256049551
+              },
+              "gpu_engine_percent": {
+                "0000:07:00.0/gfx": 4.302797620867709
+              },
+              "rss_bytes": 118054912,
+              "gpu_clock_mhz": {
+                "0000:07:00.0": {
+                  "min": 200,
+                  "median": 400.0,
+                  "max": 1600
+                }
+              }
+            },
+            "profile": {
+              "wall_seconds": 5.005657421999786,
+              "frames": 194.0,
+              "draw_ns": 711792640.0,
+              "stages": {
+                "parse": {
+                  "calls": 609,
+                  "ns": 40016844,
+                  "units": 1883956
+                },
+                "paint": {
+                  "calls": 194,
+                  "ns": 547608052,
+                  "units": 194
+                },
+                "backgrounds": {
+                  "calls": 12028,
+                  "ns": 98144520,
+                  "units": 1371192
+                },
+                "boxes": {
+                  "calls": 12028,
+                  "ns": 29287203,
+                  "units": 1371192
+                },
+                "runs": {
+                  "calls": 12028,
+                  "ns": 84353612,
+                  "units": 1371192
+                },
+                "shape": {
+                  "calls": 23474,
+                  "ns": 79527311,
+                  "units": 1046436
+                },
+                "glyphs": {
+                  "calls": 23474,
+                  "ns": 245341830,
+                  "units": 1046436
+                },
+                "cursor": {
+                  "calls": 194,
+                  "ns": 2022656,
+                  "units": 194
+                }
+              }
+            }
+          },
+          "idle": {
+            "wall_seconds": 3.9749293530003342,
+            "cpu_seconds": 0.03000000000000025,
+            "cpu_percent_one_core": 0.7547303948271638,
+            "gpu_engine_seconds": {
+              "0000:07:00.0/gfx": 0.0
+            },
+            "gpu_engine_percent": {
+              "0000:07:00.0/gfx": 0.0
+            },
+            "rss_bytes": 117792768,
+            "grid": [
+              "114",
+              "62"
+            ],
+            "steady": {
+              "wall_seconds": 1.9215563569996448,
+              "cpu_seconds": 0.019999999999999574,
+              "cpu_percent_one_core": 1.0408229728545646,
+              "gpu_engine_seconds": {
+                "0000:07:00.0/gfx": 0.0
+              },
+              "gpu_engine_percent": {
+                "0000:07:00.0/gfx": 0.0
+              },
+              "rss_bytes": 117792768,
+              "gpu_clock_mhz": {
+                "0000:07:00.0": {
+                  "min": 200,
+                  "median": 400,
+                  "max": 1600
+                }
+              }
+            },
+            "profile": {
+              "wall_seconds": 1.0102123579999898,
+              "frames": 0.0,
+              "draw_ns": 0.0,
+              "stages": {
+                "parse": {
+                  "calls": 0,
+                  "ns": 0,
+                  "units": 0
+                },
+                "paint": {
+                  "calls": 0,
+                  "ns": 0,
+                  "units": 0
+                },
+                "backgrounds": {
+                  "calls": 0,
+                  "ns": 0,
+                  "units": 0
+                },
+                "boxes": {
+                  "calls": 0,
+                  "ns": 0,
+                  "units": 0
+                },
+                "runs": {
+                  "calls": 0,
+                  "ns": 0,
+                  "units": 0
+                },
+                "shape": {
+                  "calls": 0,
+                  "ns": 0,
+                  "units": 0
+                },
+                "glyphs": {
+                  "calls": 0,
+                  "ns": 0,
+                  "units": 0
+                },
+                "cursor": {
+                  "calls": 0,
+                  "ns": 0,
+                  "units": 0
+                }
+              }
+            }
+          }
+        },
+        "events": [],
+        "binary_sha256": "8538ba8fd08ca454b0b1ebe29be10b2599a728f188bd5fbf2ebfb0e46c7f2a66",
+        "last_parse_bytes": 3407504,
+        "idle_frame_samples": [
+          {
+            "sample_s": 28.048,
+            "frames": 940.0
+          },
+          {
+            "sample_s": 29.049,
+            "frames": 940.0
+          },
+          {
+            "sample_s": 30.05,
+            "frames": 940.0
+          },
+          {
+            "sample_s": 31.05,
+            "frames": 940.0
+          }
+        ]
+      }
+    ],
+    "after-cursor40": [
+      {
+        "name": "after-cursor40",
+        "host": "probe",
+        "workload": "cursor",
+        "hz": 40,
+        "border": "rounded",
+        "window": {
+          "at": [
+            10,
+            60
+          ],
+          "size": [
+            960,
+            1000
+          ],
+          "monitor": 0,
+          "mapped": true,
+          "visible": true,
+          "hidden": false,
+          "workspace": {
+            "id": 1,
+            "name": "1"
+          }
+        },
+        "monitor": {
+          "name": "eDP-1",
+          "width": 1920,
+          "height": 1080,
+          "scale": 1,
+          "refreshRate": 60.049
+        },
+        "app": null,
+        "user_nvim_config": false,
+        "invalid": [],
+        "phases": {
+          "warmup": {
+            "wall_seconds": 2.3644065580010647,
+            "cpu_seconds": 0.01999999999999999,
+            "cpu_percent_one_core": 0.8458782155006603,
+            "gpu_engine_seconds": {
+              "0000:07:00.0/gfx": 0.00129662
+            },
+            "gpu_engine_percent": {
+              "0000:07:00.0/gfx": 0.05483913058912333
+            },
+            "rss_bytes": 119508992,
+            "grid": [
+              "114",
+              "65"
+            ],
+            "steady": {
+              "wall_seconds": 0.28041089099860983,
+              "cpu_seconds": 0.0,
+              "cpu_percent_one_core": 0.0,
+              "gpu_engine_seconds": {
+                "0000:07:00.0/gfx": 0.0
+              },
+              "gpu_engine_percent": {
+                "0000:07:00.0/gfx": 0.0
+              },
+              "rss_bytes": 119508992,
+              "gpu_clock_mhz": {
+                "0000:07:00.0": {
+                  "min": 400,
+                  "median": 400.0,
+                  "max": 600
+                }
+              }
+            }
+          },
+          "cursor": {
+            "wall_seconds": 7.997038411998801,
+            "cpu_seconds": 1.34,
+            "cpu_percent_one_core": 16.7562031212637,
+            "gpu_engine_seconds": {
+              "0000:07:00.0/gfx": 0.302251486
+            },
+            "gpu_engine_percent": {
+              "0000:07:00.0/gfx": 3.7795427560595454
+            },
+            "rss_bytes": 119508992,
+            "grid": [
+              "114",
+              "62"
+            ],
+            "steady": {
+              "wall_seconds": 5.9492537139994965,
+              "cpu_seconds": 1.0100000000000002,
+              "cpu_percent_one_core": 16.976919266753022,
+              "gpu_engine_seconds": {
+                "0000:07:00.0/gfx": 0.212172338
+              },
+              "gpu_engine_percent": {
+                "0000:07:00.0/gfx": 3.566368963231914
+              },
+              "rss_bytes": 119508992,
+              "gpu_clock_mhz": {
+                "0000:07:00.0": {
+                  "min": 200,
+                  "median": 400.0,
+                  "max": 1600
+                }
+              }
+            },
+            "profile": {
+              "wall_seconds": 5.009106744000746,
+              "frames": 195.0,
+              "draw_ns": 566149120.0,
+              "stages": {
+                "parse": {
+                  "calls": 199,
+                  "ns": 4966797,
+                  "units": 100497
+                },
+                "paint": {
+                  "calls": 195,
+                  "ns": 390257060,
+                  "units": 195
+                },
+                "backgrounds": {
+                  "calls": 12472,
+                  "ns": 15438875,
+                  "units": 1421808
+                },
+                "boxes": {
+                  "calls": 12090,
+                  "ns": 25430282,
+                  "units": 1378260
+                },
+                "runs": {
+                  "calls": 573,
+                  "ns": 4306983,
+                  "units": 65322
+                },
+                "shape": {
+                  "calls": 573,
+                  "ns": 52660711,
+                  "units": 22538
+                },
+                "glyphs": {
+                  "calls": 23595,
+                  "ns": 261262864,
+                  "units": 1024920
+                },
+                "cursor": {
+                  "calls": 195,
+                  "ns": 1276461,
+                  "units": 195
+                }
+              },
+              "cache": {
+                "reused": 11517,
+                "rebuilt": 573
+              }
+            }
+          },
+          "scroll": {
+            "wall_seconds": 7.965284446003352,
+            "cpu_seconds": 1.3800000000000001,
+            "cpu_percent_one_core": 17.325181659927118,
+            "gpu_engine_seconds": {
+              "0000:07:00.0/gfx": 0.351721012
+            },
+            "gpu_engine_percent": {
+              "0000:07:00.0/gfx": 4.415674222111163
+            },
+            "rss_bytes": 119508992,
+            "grid": [
+              "114",
+              "62"
+            ],
+            "steady": {
+              "wall_seconds": 5.916051583000808,
+              "cpu_seconds": 1.05,
+              "cpu_percent_one_core": 17.748323949998536,
+              "gpu_engine_seconds": {
+                "0000:07:00.0/gfx": 0.266465001
+              },
+              "gpu_engine_percent": {
+                "0000:07:00.0/gfx": 4.504102056271127
+              },
+              "rss_bytes": 119508992,
+              "gpu_clock_mhz": {
+                "0000:07:00.0": {
+                  "min": 400,
+                  "median": 400,
+                  "max": 1600
+                }
+              }
+            },
+            "profile": {
+              "wall_seconds": 5.026446898998984,
+              "frames": 193.0,
+              "draw_ns": 635344896.0,
+              "stages": {
+                "parse": {
+                  "calls": 198,
+                  "ns": 5316419,
+                  "units": 111701
+                },
+                "paint": {
+                  "calls": 193,
+                  "ns": 478535859,
+                  "units": 193
+                },
+                "backgrounds": {
+                  "calls": 12025,
+                  "ns": 10967764,
+                  "units": 1370850
+                },
+                "boxes": {
+                  "calls": 11966,
+                  "ns": 21756349,
+                  "units": 1364124
+                },
+                "runs": {
+                  "calls": 11773,
+                  "ns": 89135439,
+                  "units": 1342122
+                },
+                "shape": {
+                  "calls": 23353,
+                  "ns": 78860489,
+                  "units": 1036348
+                },
+                "glyphs": {
+                  "calls": 23353,
+                  "ns": 232666193,
+                  "units": 1036348
+                },
+                "cursor": {
+                  "calls": 193,
+                  "ns": 2033492,
+                  "units": 193
+                }
+              },
+              "cache": {
+                "reused": 193,
+                "rebuilt": 11773
+              }
+            }
+          },
+          "redraw": {
+            "wall_seconds": 8.022294561000308,
+            "cpu_seconds": 1.67,
+            "cpu_percent_one_core": 20.816986802236865,
+            "gpu_engine_seconds": {
+              "0000:07:00.0/gfx": 0.349875477
+            },
+            "gpu_engine_percent": {
+              "0000:07:00.0/gfx": 4.361289333613969
+            },
+            "rss_bytes": 119508992,
+            "grid": [
+              "114",
+              "62"
+            ],
+            "steady": {
+              "wall_seconds": 5.979821704997448,
+              "cpu_seconds": 1.23,
+              "cpu_percent_one_core": 20.569175147347053,
+              "gpu_engine_seconds": {
+                "0000:07:00.0/gfx": 0.258054256
+              },
+              "gpu_engine_percent": {
+                "0000:07:00.0/gfx": 4.315417226977508
+              },
+              "rss_bytes": 119508992,
+              "gpu_clock_mhz": {
+                "0000:07:00.0": {
+                  "min": 400,
+                  "median": 400,
+                  "max": 1600
+                }
+              }
+            },
+            "profile": {
+              "wall_seconds": 5.025158060998365,
+              "frames": 194.0,
+              "draw_ns": 702259200.0,
+              "stages": {
+                "parse": {
+                  "calls": 605,
+                  "ns": 40900848,
+                  "units": 1874536
+                },
+                "paint": {
+                  "calls": 194,
+                  "ns": 523350678,
+                  "units": 194
+                },
+                "backgrounds": {
+                  "calls": 12028,
+                  "ns": 11404611,
+                  "units": 1371192
+                },
+                "boxes": {
+                  "calls": 12028,
+                  "ns": 23962714,
+                  "units": 1371192
+                },
+                "runs": {
+                  "calls": 11834,
+                  "ns": 97089235,
+                  "units": 1349076
+                },
+                "shape": {
+                  "calls": 23474,
+                  "ns": 87237821,
+                  "units": 1046436
+                },
+                "glyphs": {
+                  "calls": 23474,
+                  "ns": 254909496,
+                  "units": 1046436
+                },
+                "cursor": {
+                  "calls": 194,
+                  "ns": 2278458,
+                  "units": 194
+                }
+              },
+              "cache": {
+                "reused": 194,
+                "rebuilt": 11834
+              }
+            }
+          },
+          "idle": {
+            "wall_seconds": 3.9350698749985895,
+            "cpu_seconds": 0.03000000000000025,
+            "cpu_percent_one_core": 0.762375280566295,
+            "gpu_engine_seconds": {
+              "0000:07:00.0/gfx": 0.0
+            },
+            "gpu_engine_percent": {
+              "0000:07:00.0/gfx": 0.0
+            },
+            "rss_bytes": 119508992,
+            "grid": [
+              "114",
+              "62"
+            ],
+            "steady": {
+              "wall_seconds": 1.9107763460015121,
+              "cpu_seconds": 0.010000000000000675,
+              "cpu_percent_one_core": 0.5233474875762755,
+              "gpu_engine_seconds": {
+                "0000:07:00.0/gfx": 0.0
+              },
+              "gpu_engine_percent": {
+                "0000:07:00.0/gfx": 0.0
+              },
+              "rss_bytes": 119508992,
+              "gpu_clock_mhz": {
+                "0000:07:00.0": {
+                  "min": 400,
+                  "median": 400,
+                  "max": 1600
+                }
+              }
+            },
+            "profile": {
+              "wall_seconds": 1.0171787449980911,
+              "frames": 0.0,
+              "draw_ns": 0.0,
+              "stages": {
+                "parse": {
+                  "calls": 0,
+                  "ns": 0,
+                  "units": 0
+                },
+                "paint": {
+                  "calls": 0,
+                  "ns": 0,
+                  "units": 0
+                },
+                "backgrounds": {
+                  "calls": 0,
+                  "ns": 0,
+                  "units": 0
+                },
+                "boxes": {
+                  "calls": 0,
+                  "ns": 0,
+                  "units": 0
+                },
+                "runs": {
+                  "calls": 0,
+                  "ns": 0,
+                  "units": 0
+                },
+                "shape": {
+                  "calls": 0,
+                  "ns": 0,
+                  "units": 0
+                },
+                "glyphs": {
+                  "calls": 0,
+                  "ns": 0,
+                  "units": 0
+                },
+                "cursor": {
+                  "calls": 0,
+                  "ns": 0,
+                  "units": 0
+                }
+              },
+              "cache": {
+                "reused": 0,
+                "rebuilt": 0
+              }
+            }
+          }
+        },
+        "events": [],
+        "binary_sha256": "f8a49b7a2ecbc11aa2d922d882236b1ee854d41005f3a008c76cdbda6df18d80",
+        "last_parse_bytes": 3407504,
+        "idle_frame_samples": [
+          {
+            "sample_s": 28.054,
+            "frames": 941.0
+          },
+          {
+            "sample_s": 29.055,
+            "frames": 941.0
+          },
+          {
+            "sample_s": 30.055,
+            "frames": 941.0
+          },
+          {
+            "sample_s": 31.056,
+            "frames": 941.0
+          }
+        ]
+      }
+    ],
+    "before-app-seq": [
+      {
+        "name": "before-app-seq",
+        "host": "probe",
+        "workload": "seq",
+        "hz": 20,
+        "border": "rounded",
+        "window": {
+          "at": [
+            10,
+            60
+          ],
+          "size": [
+            960,
+            1000
+          ],
+          "monitor": 0,
+          "mapped": true,
+          "visible": true,
+          "hidden": false,
+          "workspace": {
+            "id": 1,
+            "name": "1"
+          }
+        },
+        "monitor": {
+          "name": "eDP-1",
+          "width": 1920,
+          "height": 1080,
+          "scale": 1,
+          "refreshRate": 60.049
+        },
+        "app": "terminal",
+        "user_nvim_config": false,
+        "invalid": [],
+        "phases": {
+          "startup": {
+            "wall_seconds": 1.4185945659992285,
+            "cpu_seconds": 0.03,
+            "cpu_percent_one_core": 2.1147691327062588,
+            "gpu_engine_seconds": {
+              "0000:07:00.0/gfx": 0.001980011
+            },
+            "gpu_engine_percent": {
+              "0000:07:00.0/gfx": 0.13957553817396173
+            },
+            "rss_bytes": 119304192,
+            "grid": []
+          },
+          "warmup": {
+            "wall_seconds": 2.9346566189997247,
+            "cpu_seconds": 0.04000000000000001,
+            "cpu_percent_one_core": 1.3630214772327938,
+            "gpu_engine_seconds": {
+              "0000:07:00.0/gfx": 0.0
+            },
+            "gpu_engine_percent": {
+              "0000:07:00.0/gfx": 0.0
+            },
+            "rss_bytes": 119435264,
+            "grid": [
+              "80",
+              "10"
+            ],
+            "steady": {
+              "wall_seconds": 0.8879298049978388,
+              "cpu_seconds": 0.010000000000000009,
+              "cpu_percent_one_core": 1.1262151516610424,
+              "gpu_engine_seconds": {
+                "0000:07:00.0/gfx": 0.0
+              },
+              "gpu_engine_percent": {
+                "0000:07:00.0/gfx": 0.0
+              },
+              "rss_bytes": 119435264,
+              "gpu_clock_mhz": {
+                "0000:07:00.0": {
+                  "min": 400,
+                  "median": 400,
+                  "max": 1600
+                }
+              }
+            }
+          },
+          "seq-window": {
+            "wall_seconds": 8.037223604002065,
+            "cpu_seconds": 0.21,
+            "cpu_percent_one_core": 2.612842572843592,
+            "gpu_engine_seconds": {
+              "0000:07:00.0/gfx": 0.004264141
+            },
+            "gpu_engine_percent": {
+              "0000:07:00.0/gfx": 0.053054900673370695
+            },
+            "rss_bytes": 123760640,
+            "grid": [
+              "80",
+              "10"
+            ],
+            "steady": {
+              "wall_seconds": 5.992664050001622,
+              "cpu_seconds": 0.06,
+              "cpu_percent_one_core": 1.0012241550564438,
+              "gpu_engine_seconds": {
+                "0000:07:00.0/gfx": 0.0
+              },
+              "gpu_engine_percent": {
+                "0000:07:00.0/gfx": 0.0
+              },
+              "rss_bytes": 123760640,
+              "gpu_clock_mhz": {
+                "0000:07:00.0": {
+                  "min": 200,
+                  "median": 400,
+                  "max": 1600
+                }
+              }
+            },
+            "profile": {
+              "wall_seconds": 5.001948013999936,
+              "frames": 0.0,
+              "draw_ns": 0.0,
+              "stages": {
+                "parse": {
+                  "calls": 0,
+                  "ns": 0,
+                  "units": 0
+                },
+                "paint": {
+                  "calls": 0,
+                  "ns": 0,
+                  "units": 0
+                },
+                "backgrounds": {
+                  "calls": 0,
+                  "ns": 0,
+                  "units": 0
+                },
+                "boxes": {
+                  "calls": 0,
+                  "ns": 0,
+                  "units": 0
+                },
+                "runs": {
+                  "calls": 0,
+                  "ns": 0,
+                  "units": 0
+                },
+                "shape": {
+                  "calls": 0,
+                  "ns": 0,
+                  "units": 0
+                },
+                "glyphs": {
+                  "calls": 0,
+                  "ns": 0,
+                  "units": 0
+                },
+                "cursor": {
+                  "calls": 0,
+                  "ns": 0,
+                  "units": 0
+                }
+              }
+            }
+          },
+          "idle": {
+            "wall_seconds": 4.960590294002031,
+            "cpu_seconds": 0.04999999999999999,
+            "cpu_percent_one_core": 1.0079445597524188,
+            "gpu_engine_seconds": {
+              "0000:07:00.0/gfx": 0.0
+            },
+            "gpu_engine_percent": {
+              "0000:07:00.0/gfx": 0.0
+            },
+            "rss_bytes": 123760640,
+            "grid": [
+              "80",
+              "10"
+            ],
+            "steady": {
+              "wall_seconds": 2.953145029998268,
+              "cpu_seconds": 0.030000000000000027,
+              "cpu_percent_one_core": 1.0158661256138044,
+              "gpu_engine_seconds": {
+                "0000:07:00.0/gfx": 0.0
+              },
+              "gpu_engine_percent": {
+                "0000:07:00.0/gfx": 0.0
+              },
+              "rss_bytes": 123760640,
+              "gpu_clock_mhz": {
+                "0000:07:00.0": {
+                  "min": 400,
+                  "median": 400.0,
+                  "max": 1600
+                }
+              }
+            },
+            "profile": {
+              "wall_seconds": 1.952357693000522,
+              "frames": 0.0,
+              "draw_ns": 0.0,
+              "stages": {
+                "parse": {
+                  "calls": 0,
+                  "ns": 0,
+                  "units": 0
+                },
+                "paint": {
+                  "calls": 0,
+                  "ns": 0,
+                  "units": 0
+                },
+                "backgrounds": {
+                  "calls": 0,
+                  "ns": 0,
+                  "units": 0
+                },
+                "boxes": {
+                  "calls": 0,
+                  "ns": 0,
+                  "units": 0
+                },
+                "runs": {
+                  "calls": 0,
+                  "ns": 0,
+                  "units": 0
+                },
+                "shape": {
+                  "calls": 0,
+                  "ns": 0,
+                  "units": 0
+                },
+                "glyphs": {
+                  "calls": 0,
+                  "ns": 0,
+                  "units": 0
+                },
+                "cursor": {
+                  "calls": 0,
+                  "ns": 0,
+                  "units": 0
+                }
+              }
+            }
+          }
+        },
+        "events": [],
+        "binary_sha256": "8538ba8fd08ca454b0b1ebe29be10b2599a728f188bd5fbf2ebfb0e46c7f2a66",
+        "last_parse_bytes": 1488913,
+        "idle_frame_samples": [
+          {
+            "sample_s": 12.007,
+            "frames": 7.0
+          },
+          {
+            "sample_s": 13.008,
+            "frames": 7.0
+          },
+          {
+            "sample_s": 14.009,
+            "frames": 7.0
+          },
+          {
+            "sample_s": 15.009,
+            "frames": 7.0
+          },
+          {
+            "sample_s": 16.01,
+            "frames": 7.0
+          }
+        ]
+      }
+    ],
+    "after-app-seq": [
+      {
+        "name": "after-app-seq",
+        "host": "probe",
+        "workload": "seq",
+        "hz": 20,
+        "border": "rounded",
+        "window": {
+          "at": [
+            10,
+            60
+          ],
+          "size": [
+            960,
+            1000
+          ],
+          "monitor": 0,
+          "mapped": true,
+          "visible": true,
+          "hidden": false,
+          "workspace": {
+            "id": 1,
+            "name": "1"
+          }
+        },
+        "monitor": {
+          "name": "eDP-1",
+          "width": 1920,
+          "height": 1080,
+          "scale": 1,
+          "refreshRate": 60.049
+        },
+        "app": "terminal",
+        "user_nvim_config": false,
+        "invalid": [],
+        "phases": {
+          "startup": {
+            "wall_seconds": 1.423691243002395,
+            "cpu_seconds": 0.03,
+            "cpu_percent_one_core": 2.1071984636734564,
+            "gpu_engine_seconds": {
+              "0000:07:00.0/gfx": 0.001203576
+            },
+            "gpu_engine_percent": {
+              "0000:07:00.0/gfx": 0.08453911660380814
+            },
+            "rss_bytes": 117248000,
+            "grid": []
+          },
+          "warmup": {
+            "wall_seconds": 2.9130972620005195,
+            "cpu_seconds": 0.03,
+            "cpu_percent_one_core": 1.0298317324083446,
+            "gpu_engine_seconds": {
+              "0000:07:00.0/gfx": 0.0
+            },
+            "gpu_engine_percent": {
+              "0000:07:00.0/gfx": 0.0
+            },
+            "rss_bytes": 117379072,
+            "grid": [
+              "80",
+              "10"
+            ],
+            "steady": {
+              "wall_seconds": 0.8230776339987642,
+              "cpu_seconds": 0.010000000000000009,
+              "cpu_percent_one_core": 1.2149522216290745,
+              "gpu_engine_seconds": {
+                "0000:07:00.0/gfx": 0.0
+              },
+              "gpu_engine_percent": {
+                "0000:07:00.0/gfx": 0.0
+              },
+              "rss_bytes": 117379072,
+              "gpu_clock_mhz": {
+                "0000:07:00.0": {
+                  "min": 400,
+                  "median": 400.0,
+                  "max": 1412
+                }
+              }
+            }
+          },
+          "seq-window": {
+            "wall_seconds": 8.066133573000116,
+            "cpu_seconds": 0.2,
+            "cpu_percent_one_core": 2.479502703370334,
+            "gpu_engine_seconds": {
+              "0000:07:00.0/gfx": 0.002344914
+            },
+            "gpu_engine_percent": {
+              "0000:07:00.0/gfx": 0.02907110301085472
+            },
+            "rss_bytes": 121966592,
+            "grid": [
+              "80",
+              "10"
+            ],
+            "steady": {
+              "wall_seconds": 6.058280651999667,
+              "cpu_seconds": 0.06,
+              "cpu_percent_one_core": 0.9903800012994727,
+              "gpu_engine_seconds": {
+                "0000:07:00.0/gfx": 0.0
+              },
+              "gpu_engine_percent": {
+                "0000:07:00.0/gfx": 0.0
+              },
+              "rss_bytes": 121966592,
+              "gpu_clock_mhz": {
+                "0000:07:00.0": {
+                  "min": 200,
+                  "median": 400.0,
+                  "max": 1600
+                }
+              }
+            },
+            "profile": {
+              "wall_seconds": 5.010600008001347,
+              "frames": 0.0,
+              "draw_ns": 0.0,
+              "stages": {
+                "parse": {
+                  "calls": 0,
+                  "ns": 0,
+                  "units": 0
+                },
+                "paint": {
+                  "calls": 0,
+                  "ns": 0,
+                  "units": 0
+                },
+                "backgrounds": {
+                  "calls": 0,
+                  "ns": 0,
+                  "units": 0
+                },
+                "boxes": {
+                  "calls": 0,
+                  "ns": 0,
+                  "units": 0
+                },
+                "runs": {
+                  "calls": 0,
+                  "ns": 0,
+                  "units": 0
+                },
+                "shape": {
+                  "calls": 0,
+                  "ns": 0,
+                  "units": 0
+                },
+                "glyphs": {
+                  "calls": 0,
+                  "ns": 0,
+                  "units": 0
+                },
+                "cursor": {
+                  "calls": 0,
+                  "ns": 0,
+                  "units": 0
+                }
+              },
+              "cache": {
+                "reused": 0,
+                "rebuilt": 0
+              }
+            }
+          },
+          "idle": {
+            "wall_seconds": 4.917873202000919,
+            "cpu_seconds": 0.040000000000000036,
+            "cpu_percent_one_core": 0.8133597259832841,
+            "gpu_engine_seconds": {
+              "0000:07:00.0/gfx": 0.0
+            },
+            "gpu_engine_percent": {
+              "0000:07:00.0/gfx": 0.0
+            },
+            "rss_bytes": 121966592,
+            "grid": [
+              "80",
+              "10"
+            ],
+            "steady": {
+              "wall_seconds": 2.901023388996691,
+              "cpu_seconds": 0.030000000000000027,
+              "cpu_percent_one_core": 1.0341178259295394,
+              "gpu_engine_seconds": {
+                "0000:07:00.0/gfx": 0.0
+              },
+              "gpu_engine_percent": {
+                "0000:07:00.0/gfx": 0.0
+              },
+              "rss_bytes": 121966592,
+              "gpu_clock_mhz": {
+                "0000:07:00.0": {
+                  "min": 200,
+                  "median": 400,
+                  "max": 1537
+                }
+              }
+            },
+            "profile": {
+              "wall_seconds": 2.0105234750008094,
+              "frames": 0.0,
+              "draw_ns": 0.0,
+              "stages": {
+                "parse": {
+                  "calls": 0,
+                  "ns": 0,
+                  "units": 0
+                },
+                "paint": {
+                  "calls": 0,
+                  "ns": 0,
+                  "units": 0
+                },
+                "backgrounds": {
+                  "calls": 0,
+                  "ns": 0,
+                  "units": 0
+                },
+                "boxes": {
+                  "calls": 0,
+                  "ns": 0,
+                  "units": 0
+                },
+                "runs": {
+                  "calls": 0,
+                  "ns": 0,
+                  "units": 0
+                },
+                "shape": {
+                  "calls": 0,
+                  "ns": 0,
+                  "units": 0
+                },
+                "glyphs": {
+                  "calls": 0,
+                  "ns": 0,
+                  "units": 0
+                },
+                "cursor": {
+                  "calls": 0,
+                  "ns": 0,
+                  "units": 0
+                }
+              },
+              "cache": {
+                "reused": 0,
+                "rebuilt": 0
+              }
+            }
+          }
+        },
+        "events": [],
+        "binary_sha256": "f8a49b7a2ecbc11aa2d922d882236b1ee854d41005f3a008c76cdbda6df18d80",
+        "last_parse_bytes": 1488913,
+        "idle_frame_samples": [
+          {
+            "sample_s": 12.014,
+            "frames": 7.0
+          },
+          {
+            "sample_s": 13.015,
+            "frames": 7.0
+          },
+          {
+            "sample_s": 14.015,
+            "frames": 7.0
+          },
+          {
+            "sample_s": 15.016,
+            "frames": 7.0
+          },
+          {
+            "sample_s": 16.017,
+            "frames": 7.0
+          }
+        ]
+      }
+    ],
+    "before-app-nvim": [
+      {
+        "name": "before-app-nvim",
+        "host": "probe",
+        "workload": "cursor",
+        "hz": 20,
+        "border": "rounded",
+        "window": {
+          "at": [
+            10,
+            60
+          ],
+          "size": [
+            960,
+            1000
+          ],
+          "monitor": 0,
+          "mapped": true,
+          "visible": true,
+          "hidden": false,
+          "workspace": {
+            "id": 1,
+            "name": "1"
+          }
+        },
+        "monitor": {
+          "name": "eDP-1",
+          "width": 1920,
+          "height": 1080,
+          "scale": 1,
+          "refreshRate": 60.049
+        },
+        "app": "neovim",
+        "user_nvim_config": true,
+        "invalid": [],
+        "phases": {
+          "startup": {
+            "wall_seconds": 1.4248528880016238,
+            "cpu_seconds": 0.04999999999999999,
+            "cpu_percent_one_core": 3.5091342005226727,
+            "gpu_engine_seconds": {
+              "0000:07:00.0/gfx": 0.003985199
+            },
+            "gpu_engine_percent": {
+              "0000:07:00.0/gfx": 0.27969196213577513
+            },
+            "rss_bytes": 120426496,
+            "grid": []
+          },
+          "warmup": {
+            "wall_seconds": 2.93508131300041,
+            "cpu_seconds": 0.060000000000000026,
+            "cpu_percent_one_core": 2.04423638058138,
+            "gpu_engine_seconds": {
+              "0000:07:00.0/gfx": 0.007342304
+            },
+            "gpu_engine_percent": {
+              "0000:07:00.0/gfx": 0.250156749234803
+            },
+            "rss_bytes": 123408384,
+            "grid": [
+              "45",
+              "58"
+            ],
+            "steady": {
+              "wall_seconds": 0.8369607109998469,
+              "cpu_seconds": 0.010000000000000009,
+              "cpu_percent_one_core": 1.1947992144163906,
+              "gpu_engine_seconds": {
+                "0000:07:00.0/gfx": 0.0
+              },
+              "gpu_engine_percent": {
+                "0000:07:00.0/gfx": 0.0
+              },
+              "rss_bytes": 123146240,
+              "gpu_clock_mhz": {
+                "0000:07:00.0": {
+                  "min": 200,
+                  "median": 400.0,
+                  "max": 600
+                }
+              }
+            }
+          },
+          "cursor": {
+            "wall_seconds": 7.991193750996899,
+            "cpu_seconds": 1.13,
+            "cpu_percent_one_core": 14.140565667789405,
+            "gpu_engine_seconds": {
+              "0000:07:00.0/gfx": 0.209979716
+            },
+            "gpu_engine_percent": {
+              "0000:07:00.0/gfx": 2.6276389053113007
+            },
+            "rss_bytes": 123408384,
+            "grid": [
+              "45",
+              "58"
+            ],
+            "steady": {
+              "wall_seconds": 5.909818822998204,
+              "cpu_seconds": 0.8300000000000001,
+              "cpu_percent_one_core": 14.044423777765145,
+              "gpu_engine_seconds": {
+                "0000:07:00.0/gfx": 0.151748585
+              },
+              "gpu_engine_percent": {
+                "0000:07:00.0/gfx": 2.5677366691761625
+              },
+              "rss_bytes": 123408384,
+              "gpu_clock_mhz": {
+                "0000:07:00.0": {
+                  "min": 400,
+                  "median": 400.0,
+                  "max": 1600
+                }
+              }
+            },
+            "profile": {
+              "wall_seconds": 4.99858088900146,
+              "frames": 100.0,
+              "draw_ns": 509784064.0,
+              "stages": {
+                "parse": {
+                  "calls": 100,
+                  "ns": 3155850,
+                  "units": 76250
+                },
+                "paint": {
+                  "calls": 100,
+                  "ns": 121814507,
+                  "units": 100
+                },
+                "backgrounds": {
+                  "calls": 5800,
+                  "ns": 23160467,
+                  "units": 261000
+                },
+                "boxes": {
+                  "calls": 5800,
+                  "ns": 13036186,
+                  "units": 261000
+                },
+                "runs": {
+                  "calls": 5800,
+                  "ns": 14685812,
+                  "units": 261000
+                },
+                "shape": {
+                  "calls": 11600,
+                  "ns": 12341040,
+                  "units": 171800
+                },
+                "glyphs": {
+                  "calls": 11600,
+                  "ns": 54145424,
+                  "units": 171800
+                },
+                "cursor": {
+                  "calls": 100,
+                  "ns": 643956,
+                  "units": 100
+                }
+              }
+            }
+          },
+          "scroll": {
+            "wall_seconds": 7.952407814002072,
+            "cpu_seconds": 1.0999999999999999,
+            "cpu_percent_one_core": 13.832288606517297,
+            "gpu_engine_seconds": {
+              "0000:07:00.0/gfx": 0.188565162
+            },
+            "gpu_engine_percent": {
+              "0000:07:00.0/gfx": 2.3711706744715353
+            },
+            "rss_bytes": 123408384,
+            "grid": [
+              "45",
+              "58"
+            ],
+            "steady": {
+              "wall_seconds": 5.885264463999192,
+              "cpu_seconds": 0.81,
+              "cpu_percent_one_core": 13.763187787989118,
+              "gpu_engine_seconds": {
+                "0000:07:00.0/gfx": 0.145352123
+              },
+              "gpu_engine_percent": {
+                "0000:07:00.0/gfx": 2.4697636595455457
+              },
+              "rss_bytes": 123408384,
+              "gpu_clock_mhz": {
+                "0000:07:00.0": {
+                  "min": 400,
+                  "median": 400,
+                  "max": 1600
+                }
+              }
+            },
+            "profile": {
+              "wall_seconds": 4.986025505000725,
+              "frames": 100.0,
+              "draw_ns": 506573824.0,
+              "stages": {
+                "parse": {
+                  "calls": 100,
+                  "ns": 3590056,
+                  "units": 79515
+                },
+                "paint": {
+                  "calls": 100,
+                  "ns": 130361722,
+                  "units": 100
+                },
+                "backgrounds": {
+                  "calls": 5800,
+                  "ns": 23393006,
+                  "units": 261000
+                },
+                "boxes": {
+                  "calls": 5800,
+                  "ns": 13068118,
+                  "units": 261000
+                },
+                "runs": {
+                  "calls": 5800,
+                  "ns": 14656512,
+                  "units": 261000
+                },
+                "shape": {
+                  "calls": 11600,
+                  "ns": 19184792,
+                  "units": 172734
+                },
+                "glyphs": {
+                  "calls": 11600,
+                  "ns": 55384064,
+                  "units": 172734
+                },
+                "cursor": {
+                  "calls": 100,
+                  "ns": 825087,
+                  "units": 100
+                }
+              }
+            }
+          },
+          "redraw": {
+            "wall_seconds": 7.97583792399746,
+            "cpu_seconds": 0.9900000000000002,
+            "cpu_percent_one_core": 12.412488937636486,
+            "gpu_engine_seconds": {
+              "0000:07:00.0/gfx": 0.255591088
+            },
+            "gpu_engine_percent": {
+              "0000:07:00.0/gfx": 3.204567224604518
+            },
+            "rss_bytes": 123408384,
+            "grid": [
+              "45",
+              "58"
+            ],
+            "steady": {
+              "wall_seconds": 5.934244102001685,
+              "cpu_seconds": 0.73,
+              "cpu_percent_one_core": 12.301482504802307,
+              "gpu_engine_seconds": {
+                "0000:07:00.0/gfx": 0.202725501
+              },
+              "gpu_engine_percent": {
+                "0000:07:00.0/gfx": 3.416197539491483
+              },
+              "rss_bytes": 123408384,
+              "gpu_clock_mhz": {
+                "0000:07:00.0": {
+                  "min": 200,
+                  "median": 400,
+                  "max": 1600
+                }
+              }
+            },
+            "profile": {
+              "wall_seconds": 5.038226556000154,
+              "frames": 99.0,
+              "draw_ns": 460801024.0,
+              "stages": {
+                "parse": {
+                  "calls": 100,
+                  "ns": 2930743,
+                  "units": 67594
+                },
+                "paint": {
+                  "calls": 99,
+                  "ns": 115055903,
+                  "units": 99
+                },
+                "backgrounds": {
+                  "calls": 5742,
+                  "ns": 20535863,
+                  "units": 258390
+                },
+                "boxes": {
+                  "calls": 5742,
+                  "ns": 11460977,
+                  "units": 258390
+                },
+                "runs": {
+                  "calls": 5742,
+                  "ns": 13008128,
+                  "units": 258390
+                },
+                "shape": {
+                  "calls": 11484,
+                  "ns": 17258666,
+                  "units": 171072
+                },
+                "glyphs": {
+                  "calls": 11484,
+                  "ns": 48690817,
+                  "units": 171072
+                },
+                "cursor": {
+                  "calls": 99,
+                  "ns": 715968,
+                  "units": 99
+                }
+              }
+            }
+          },
+          "idle": {
+            "wall_seconds": 3.9368091959986486,
+            "cpu_seconds": 0.040000000000000036,
+            "cpu_percent_one_core": 1.0160512742313195,
+            "gpu_engine_seconds": {
+              "0000:07:00.0/gfx": 0.0
+            },
+            "gpu_engine_percent": {
+              "0000:07:00.0/gfx": 0.0
+            },
+            "rss_bytes": 123408384,
+            "grid": [
+              "45",
+              "58"
+            ],
+            "steady": {
+              "wall_seconds": 1.8690797880008176,
+              "cpu_seconds": 0.020000000000000018,
+              "cpu_percent_one_core": 1.0700452772747693,
+              "gpu_engine_seconds": {
+                "0000:07:00.0/gfx": 0.0
+              },
+              "gpu_engine_percent": {
+                "0000:07:00.0/gfx": 0.0
+              },
+              "rss_bytes": 123408384,
+              "gpu_clock_mhz": {
+                "0000:07:00.0": {
+                  "min": 400,
+                  "median": 400.0,
+                  "max": 1600
+                }
+              }
+            },
+            "profile": {
+              "wall_seconds": 1.027806905000034,
+              "frames": 0.0,
+              "draw_ns": 0.0,
+              "stages": {}
+            }
+          }
+        },
+        "events": [],
+        "binary_sha256": "8538ba8fd08ca454b0b1ebe29be10b2599a728f188bd5fbf2ebfb0e46c7f2a66",
+        "last_parse_bytes": 388764,
+        "idle_frame_samples": [
+          {
+            "sample_s": 28.037,
+            "frames": 499.0
+          },
+          {
+            "sample_s": 29.038,
+            "frames": 499.0
+          },
+          {
+            "sample_s": 30.039,
+            "frames": 499.0
+          },
+          {
+            "sample_s": 31.04,
+            "frames": 499.0
+          }
+        ]
+      }
+    ],
+    "after-app-nvim": [
+      {
+        "name": "after-app-nvim",
+        "host": "probe",
+        "workload": "cursor",
+        "hz": 20,
+        "border": "rounded",
+        "window": {
+          "at": [
+            10,
+            60
+          ],
+          "size": [
+            960,
+            1000
+          ],
+          "monitor": 0,
+          "mapped": true,
+          "visible": true,
+          "hidden": false,
+          "workspace": {
+            "id": 1,
+            "name": "1"
+          }
+        },
+        "monitor": {
+          "name": "eDP-1",
+          "width": 1920,
+          "height": 1080,
+          "scale": 1,
+          "refreshRate": 60.049
+        },
+        "app": "neovim",
+        "user_nvim_config": true,
+        "invalid": [],
+        "phases": {
+          "startup": {
+            "wall_seconds": 1.5389919410008588,
+            "cpu_seconds": 0.04000000000000001,
+            "cpu_percent_one_core": 2.5991039286395905,
+            "gpu_engine_seconds": {
+              "0000:07:00.0/gfx": 0.004023675
+            },
+            "gpu_engine_percent": {
+              "0000:07:00.0/gfx": 0.26144873750172254
+            },
+            "rss_bytes": 118095872,
+            "grid": []
+          },
+          "warmup": {
+            "wall_seconds": 2.9789095199994335,
+            "cpu_seconds": 0.07000000000000003,
+            "cpu_percent_one_core": 2.3498531771456204,
+            "gpu_engine_seconds": {
+              "0000:07:00.0/gfx": 0.007576879
+            },
+            "gpu_engine_percent": {
+              "0000:07:00.0/gfx": 0.2543507598713989
+            },
+            "rss_bytes": 121208832,
+            "grid": [
+              "45",
+              "58"
+            ],
+            "steady": {
+              "wall_seconds": 0.9091248820004694,
+              "cpu_seconds": 0.010000000000000009,
+              "cpu_percent_one_core": 1.0999588943155607,
+              "gpu_engine_seconds": {
+                "0000:07:00.0/gfx": 0.0
+              },
+              "gpu_engine_percent": {
+                "0000:07:00.0/gfx": 0.0
+              },
+              "rss_bytes": 121208832,
+              "gpu_clock_mhz": {
+                "0000:07:00.0": {
+                  "min": 200,
+                  "median": 400.0,
+                  "max": 1600
+                }
+              }
+            }
+          },
+          "cursor": {
+            "wall_seconds": 7.953032676003204,
+            "cpu_seconds": 1.05,
+            "cpu_percent_one_core": 13.202510825438699,
+            "gpu_engine_seconds": {
+              "0000:07:00.0/gfx": 0.209236007
+            },
+            "gpu_engine_percent": {
+              "0000:07:00.0/gfx": 2.630895854751493
+            },
+            "rss_bytes": 121208832,
+            "grid": [
+              "45",
+              "58"
+            ],
+            "steady": {
+              "wall_seconds": 5.8567029559999355,
+              "cpu_seconds": 0.79,
+              "cpu_percent_one_core": 13.488817956708555,
+              "gpu_engine_seconds": {
+                "0000:07:00.0/gfx": 0.148797551
+              },
+              "gpu_engine_percent": {
+                "0000:07:00.0/gfx": 2.540636807396275
+              },
+              "rss_bytes": 121208832,
+              "gpu_clock_mhz": {
+                "0000:07:00.0": {
+                  "min": 200,
+                  "median": 400.0,
+                  "max": 1600
+                }
+              }
+            },
+            "profile": {
+              "wall_seconds": 5.022723333000613,
+              "frames": 100.0,
+              "draw_ns": 481860608.0,
+              "stages": {
+                "parse": {
+                  "calls": 100,
+                  "ns": 3051049,
+                  "units": 76250
+                },
+                "paint": {
+                  "calls": 100,
+                  "ns": 105955249,
+                  "units": 100
+                },
+                "backgrounds": {
+                  "calls": 6000,
+                  "ns": 6407064,
+                  "units": 270000
+                },
+                "boxes": {
+                  "calls": 5800,
+                  "ns": 11081952,
+                  "units": 261000
+                },
+                "runs": {
+                  "calls": 5400,
+                  "ns": 15550694,
+                  "units": 243000
+                },
+                "shape": {
+                  "calls": 5400,
+                  "ns": 6981219,
+                  "units": 9000
+                },
+                "glyphs": {
+                  "calls": 11600,
+                  "ns": 52727930,
+                  "units": 171800
+                },
+                "cursor": {
+                  "calls": 100,
+                  "ns": 657925,
+                  "units": 100
+                }
+              },
+              "cache": {
+                "reused": 400,
+                "rebuilt": 5400
+              }
+            }
+          },
+          "scroll": {
+            "wall_seconds": 7.942712460000621,
+            "cpu_seconds": 1.04,
+            "cpu_percent_one_core": 13.093763688883667,
+            "gpu_engine_seconds": {
+              "0000:07:00.0/gfx": 0.21180213
+            },
+            "gpu_engine_percent": {
+              "0000:07:00.0/gfx": 2.6666221529059793
+            },
+            "rss_bytes": 121208832,
+            "grid": [
+              "45",
+              "58"
+            ],
+            "steady": {
+              "wall_seconds": 5.926739676997386,
+              "cpu_seconds": 0.75,
+              "cpu_percent_one_core": 12.654512276131658,
+              "gpu_engine_seconds": {
+                "0000:07:00.0/gfx": 0.158751125
+              },
+              "gpu_engine_percent": {
+                "0000:07:00.0/gfx": 2.6785574135496155
+              },
+              "rss_bytes": 121208832,
+              "gpu_clock_mhz": {
+                "0000:07:00.0": {
+                  "min": 200,
+                  "median": 400.0,
+                  "max": 1600
+                }
+              }
+            },
+            "profile": {
+              "wall_seconds": 5.02195976800067,
+              "frames": 100.0,
+              "draw_ns": 461925376.0,
+              "stages": {
+                "parse": {
+                  "calls": 99,
+                  "ns": 3406983,
+                  "units": 78716
+                },
+                "paint": {
+                  "calls": 100,
+                  "ns": 106784921,
+                  "units": 100
+                },
+                "backgrounds": {
+                  "calls": 5814,
+                  "ns": 5321807,
+                  "units": 261630
+                },
+                "boxes": {
+                  "calls": 5800,
+                  "ns": 10343852,
+                  "units": 261000
+                },
+                "runs": {
+                  "calls": 5400,
+                  "ns": 14134482,
+                  "units": 243000
+                },
+                "shape": {
+                  "calls": 5493,
+                  "ns": 13094168,
+                  "units": 146544
+                },
+                "glyphs": {
+                  "calls": 11600,
+                  "ns": 49413166,
+                  "units": 172727
+                },
+                "cursor": {
+                  "calls": 100,
+                  "ns": 750701,
+                  "units": 100
+                }
+              },
+              "cache": {
+                "reused": 400,
+                "rebuilt": 5400
+              }
+            }
+          },
+          "redraw": {
+            "wall_seconds": 7.999120807999134,
+            "cpu_seconds": 1.0700000000000003,
+            "cpu_percent_one_core": 13.376470060684651,
+            "gpu_engine_seconds": {
+              "0000:07:00.0/gfx": 0.206431409
+            },
+            "gpu_engine_percent": {
+              "0000:07:00.0/gfx": 2.580676226236867
+            },
+            "rss_bytes": 121208832,
+            "grid": [
+              "45",
+              "58"
+            ],
+            "steady": {
+              "wall_seconds": 5.962868533999426,
+              "cpu_seconds": 0.8199999999999998,
+              "cpu_percent_one_core": 13.751770566875267,
+              "gpu_engine_seconds": {
+                "0000:07:00.0/gfx": 0.151151199
+              },
+              "gpu_engine_percent": {
+                "0000:07:00.0/gfx": 2.534873914092813
+              },
+              "rss_bytes": 121208832,
+              "gpu_clock_mhz": {
+                "0000:07:00.0": {
+                  "min": 200,
+                  "median": 400.0,
+                  "max": 1600
+                }
+              }
+            },
+            "profile": {
+              "wall_seconds": 4.9921772759989835,
+              "frames": 100.0,
+              "draw_ns": 513625088.0,
+              "stages": {
+                "parse": {
+                  "calls": 100,
+                  "ns": 2778600,
+                  "units": 67594
+                },
+                "paint": {
+                  "calls": 100,
+                  "ns": 117011012,
+                  "units": 100
+                },
+                "backgrounds": {
+                  "calls": 5800,
+                  "ns": 5861345,
+                  "units": 261000
+                },
+                "boxes": {
+                  "calls": 5800,
+                  "ns": 11072645,
+                  "units": 261000
+                },
+                "runs": {
+                  "calls": 5400,
+                  "ns": 15537239,
+                  "units": 243000
+                },
+                "shape": {
+                  "calls": 5500,
+                  "ns": 14418000,
+                  "units": 156900
+                },
+                "glyphs": {
+                  "calls": 11600,
+                  "ns": 53941750,
+                  "units": 172800
+                },
+                "cursor": {
+                  "calls": 100,
+                  "ns": 867070,
+                  "units": 100
+                }
+              },
+              "cache": {
+                "reused": 400,
+                "rebuilt": 5400
+              }
+            }
+          },
+          "idle": {
+            "wall_seconds": 3.9260847339974134,
+            "cpu_seconds": 0.03999999999999959,
+            "cpu_percent_one_core": 1.0188267118543026,
+            "gpu_engine_seconds": {
+              "0000:07:00.0/gfx": 0.0
+            },
+            "gpu_engine_percent": {
+              "0000:07:00.0/gfx": 0.0
+            },
+            "rss_bytes": 121208832,
+            "grid": [
+              "45",
+              "58"
+            ],
+            "steady": {
+              "wall_seconds": 1.8698753120006586,
+              "cpu_seconds": 0.020000000000000018,
+              "cpu_percent_one_core": 1.0695900347815799,
+              "gpu_engine_seconds": {
+                "0000:07:00.0/gfx": 0.0
+              },
+              "gpu_engine_percent": {
+                "0000:07:00.0/gfx": 0.0
+              },
+              "rss_bytes": 121208832,
+              "gpu_clock_mhz": {
+                "0000:07:00.0": {
+                  "min": 200,
+                  "median": 400.0,
+                  "max": 1600
+                }
+              }
+            },
+            "profile": {
+              "wall_seconds": 0.9565589980011282,
+              "frames": 0.0,
+              "draw_ns": 0.0,
+              "stages": {
+                "parse": {
+                  "calls": 0,
+                  "ns": 0,
+                  "units": 0
+                },
+                "paint": {
+                  "calls": 0,
+                  "ns": 0,
+                  "units": 0
+                },
+                "backgrounds": {
+                  "calls": 0,
+                  "ns": 0,
+                  "units": 0
+                },
+                "boxes": {
+                  "calls": 0,
+                  "ns": 0,
+                  "units": 0
+                },
+                "runs": {
+                  "calls": 0,
+                  "ns": 0,
+                  "units": 0
+                },
+                "shape": {
+                  "calls": 0,
+                  "ns": 0,
+                  "units": 0
+                },
+                "glyphs": {
+                  "calls": 0,
+                  "ns": 0,
+                  "units": 0
+                },
+                "cursor": {
+                  "calls": 0,
+                  "ns": 0,
+                  "units": 0
+                }
+              },
+              "cache": {
+                "reused": 0,
+                "rebuilt": 0
+              }
+            }
+          }
+        },
+        "events": [],
+        "binary_sha256": "f8a49b7a2ecbc11aa2d922d882236b1ee854d41005f3a008c76cdbda6df18d80",
+        "last_parse_bytes": 388764,
+        "idle_frame_samples": [
+          {
+            "sample_s": 28.043,
+            "frames": 497.0
+          },
+          {
+            "sample_s": 29.044,
+            "frames": 497.0
+          },
+          {
+            "sample_s": 30.044,
+            "frames": 497.0
+          },
+          {
+            "sample_s": 31.045,
+            "frames": 497.0
+          }
+        ]
+      }
+    ],
+    "before-app-snacks": [
+      {
+        "name": "before-app-snacks",
+        "host": "probe",
+        "workload": "snacks",
+        "hz": 20,
+        "border": "rounded",
+        "window": {
+          "at": [
+            10,
+            60
+          ],
+          "size": [
+            960,
+            1001
+          ],
+          "monitor": 0,
+          "mapped": true,
+          "visible": true,
+          "hidden": false,
+          "workspace": {
+            "id": 1,
+            "name": "1"
+          }
+        },
+        "monitor": {
+          "name": "eDP-1",
+          "width": 1920,
+          "height": 1080,
+          "scale": 1,
+          "refreshRate": 60.049
+        },
+        "app": "neovim",
+        "user_nvim_config": true,
+        "invalid": [],
+        "phases": {
+          "startup": {
+            "wall_seconds": 1.3842280899989419,
+            "cpu_seconds": 0.04000000000000001,
+            "cpu_percent_one_core": 2.8896971741146062,
+            "gpu_engine_seconds": {
+              "0000:07:00.0/gfx": 0.003352266
+            },
+            "gpu_engine_percent": {
+              "0000:07:00.0/gfx": 0.24217583967701178
+            },
+            "rss_bytes": 120979456,
+            "grid": []
+          },
+          "warmup": {
+            "wall_seconds": 4.9831799659987155,
+            "cpu_seconds": 0.09999999999999998,
+            "cpu_percent_one_core": 2.0067507230788575,
+            "gpu_engine_seconds": {
+              "0000:07:00.0/gfx": 0.018004109
+            },
+            "gpu_engine_percent": {
+              "0000:07:00.0/gfx": 0.36129758754140573
+            },
+            "rss_bytes": 124600320,
+            "grid": [
+              "45",
+              "58"
+            ],
+            "steady": {
+              "wall_seconds": 2.9389573959997506,
+              "cpu_seconds": 0.060000000000000026,
+              "cpu_percent_one_core": 2.0415403122776374,
+              "gpu_engine_seconds": {
+                "0000:07:00.0/gfx": 0.012662892
+              },
+              "gpu_engine_percent": {
+                "0000:07:00.0/gfx": 0.4308634081336331
+              },
+              "rss_bytes": 124600320,
+              "gpu_clock_mhz": {
+                "0000:07:00.0": {
+                  "min": 200,
+                  "median": 400.0,
+                  "max": 1600
+                }
+              }
+            },
+            "profile": {
+              "wall_seconds": 1.9809130479989108,
+              "frames": 5.0,
+              "draw_ns": 30172160.0,
+              "stages": {
+                "parse": {
+                  "calls": 15,
+                  "ns": 938290,
+                  "units": 44508
+                },
+                "paint": {
+                  "calls": 5,
+                  "ns": 15266552,
+                  "units": 5
+                },
+                "backgrounds": {
+                  "calls": 290,
+                  "ns": 459128,
+                  "units": 13050
+                },
+                "boxes": {
+                  "calls": 290,
+                  "ns": 1288881,
+                  "units": 13050
+                },
+                "runs": {
+                  "calls": 290,
+                  "ns": 354701,
+                  "units": 13050
+                },
+                "shape": {
+                  "calls": 1357,
+                  "ns": 2848463,
+                  "units": 7012
+                },
+                "glyphs": {
+                  "calls": 1357,
+                  "ns": 10066313,
+                  "units": 7012
+                },
+                "cursor": {
+                  "calls": 5,
+                  "ns": 30426,
+                  "units": 5
+                }
+              }
+            }
+          },
+          "snacks-grep": {
+            "wall_seconds": 7.939940646003379,
+            "cpu_seconds": 1.48,
+            "cpu_percent_one_core": 18.639937828061317,
+            "gpu_engine_seconds": {
+              "0000:07:00.0/gfx": 0.477102625
+            },
+            "gpu_engine_percent": {
+              "0000:07:00.0/gfx": 6.008894099733009
+            },
+            "rss_bytes": 124600320,
+            "grid": [
+              "45",
+              "58"
+            ],
+            "steady": {
+              "wall_seconds": 5.844844183000532,
+              "cpu_seconds": 1.06,
+              "cpu_percent_one_core": 18.135641717925733,
+              "gpu_engine_seconds": {
+                "0000:07:00.0/gfx": 0.371546545
+              },
+              "gpu_engine_percent": {
+                "0000:07:00.0/gfx": 6.356825492125632
+              },
+              "rss_bytes": 124600320,
+              "gpu_clock_mhz": {
+                "0000:07:00.0": {
+                  "min": 200,
+                  "median": 400.0,
+                  "max": 1600
+                }
+              }
+            },
+            "profile": {
+              "wall_seconds": 5.029082326000207,
+              "frames": 154.0,
+              "draw_ns": 695501824.0,
+              "stages": {
+                "parse": {
+                  "calls": 498,
+                  "ns": 22416360,
+                  "units": 1165006
+                },
+                "paint": {
+                  "calls": 154,
+                  "ns": 226818893,
+                  "units": 154
+                },
+                "backgrounds": {
+                  "calls": 8932,
+                  "ns": 13358944,
+                  "units": 401940
+                },
+                "boxes": {
+                  "calls": 8932,
+                  "ns": 31526860,
+                  "units": 401940
+                },
+                "runs": {
+                  "calls": 8932,
+                  "ns": 10935508,
+                  "units": 401940
+                },
+                "shape": {
+                  "calls": 51269,
+                  "ns": 64083661,
+                  "units": 255231
+                },
+                "glyphs": {
+                  "calls": 51269,
+                  "ns": 99343912,
+                  "units": 255231
+                },
+                "cursor": {
+                  "calls": 154,
+                  "ns": 617486,
+                  "units": 154
+                }
+              }
+            }
+          },
+          "snacks-scroll": {
+            "wall_seconds": 7.977319021003495,
+            "cpu_seconds": 1.0099999999999998,
+            "cpu_percent_one_core": 12.660895187227302,
+            "gpu_engine_seconds": {
+              "0000:07:00.0/gfx": 0.205279162
+            },
+            "gpu_engine_percent": {
+              "0000:07:00.0/gfx": 2.5732851031721333
+            },
+            "rss_bytes": 124600320,
+            "grid": [
+              "45",
+              "58"
+            ],
+            "steady": {
+              "wall_seconds": 5.918351456999517,
+              "cpu_seconds": 0.8200000000000001,
+              "cpu_percent_one_core": 13.855209612977653,
+              "gpu_engine_seconds": {
+                "0000:07:00.0/gfx": 0.154351375
+              },
+              "gpu_engine_percent": {
+                "0000:07:00.0/gfx": 2.608012993507706
+              },
+              "rss_bytes": 124600320,
+              "gpu_clock_mhz": {
+                "0000:07:00.0": {
+                  "min": 200,
+                  "median": 400.0,
+                  "max": 1600
+                }
+              }
+            },
+            "profile": {
+              "wall_seconds": 5.013163834999432,
+              "frames": 92.0,
+              "draw_ns": 569479168.0,
+              "stages": {
+                "parse": {
+                  "calls": 249,
+                  "ns": 17053707,
+                  "units": 739475
+                },
+                "paint": {
+                  "calls": 92,
+                  "ns": 237057543,
+                  "units": 92
+                },
+                "backgrounds": {
+                  "calls": 5336,
+                  "ns": 11185567,
+                  "units": 240120
+                },
+                "boxes": {
+                  "calls": 5336,
+                  "ns": 29663880,
+                  "units": 240120
+                },
+                "runs": {
+                  "calls": 5336,
+                  "ns": 11024532,
+                  "units": 240120
+                },
+                "shape": {
+                  "calls": 35802,
+                  "ns": 67886431,
+                  "units": 164551
+                },
+                "glyphs": {
+                  "calls": 35802,
+                  "ns": 109492911,
+                  "units": 164551
+                },
+                "cursor": {
+                  "calls": 92,
+                  "ns": 746185,
+                  "units": 92
+                }
+              }
+            }
+          },
+          "idle": {
+            "wall_seconds": 3.9517003700020723,
+            "cpu_seconds": 0.040000000000000036,
+            "cpu_percent_one_core": 1.012222492971527,
+            "gpu_engine_seconds": {
+              "0000:07:00.0/gfx": 0.0
+            },
+            "gpu_engine_percent": {
+              "0000:07:00.0/gfx": 0.0
+            },
+            "rss_bytes": 124600320,
+            "grid": [
+              "45",
+              "58"
+            ],
+            "steady": {
+              "wall_seconds": 1.922319952998805,
+              "cpu_seconds": 0.010000000000000231,
+              "cpu_percent_one_core": 0.5202047653097657,
+              "gpu_engine_seconds": {
+                "0000:07:00.0/gfx": 0.0
+              },
+              "gpu_engine_percent": {
+                "0000:07:00.0/gfx": 0.0
+              },
+              "rss_bytes": 124600320,
+              "gpu_clock_mhz": {
+                "0000:07:00.0": {
+                  "min": 200,
+                  "median": 400,
+                  "max": 1600
+                }
+              }
+            },
+            "profile": {
+              "wall_seconds": 1.0150493660003121,
+              "frames": 0.0,
+              "draw_ns": 0.0,
+              "stages": {
+                "parse": {
+                  "calls": 0,
+                  "ns": 0,
+                  "units": 0
+                },
+                "paint": {
+                  "calls": 0,
+                  "ns": 0,
+                  "units": 0
+                },
+                "backgrounds": {
+                  "calls": 0,
+                  "ns": 0,
+                  "units": 0
+                },
+                "boxes": {
+                  "calls": 0,
+                  "ns": 0,
+                  "units": 0
+                },
+                "runs": {
+                  "calls": 0,
+                  "ns": 0,
+                  "units": 0
+                },
+                "shape": {
+                  "calls": 0,
+                  "ns": 0,
+                  "units": 0
+                },
+                "glyphs": {
+                  "calls": 0,
+                  "ns": 0,
+                  "units": 0
+                },
+                "cursor": {
+                  "calls": 0,
+                  "ns": 0,
+                  "units": 0
+                }
+              }
+            }
+          }
+        },
+        "events": [],
+        "binary_sha256": "8538ba8fd08ca454b0b1ebe29be10b2599a728f188bd5fbf2ebfb0e46c7f2a66",
+        "last_parse_bytes": 2900577,
+        "idle_frame_samples": [
+          {
+            "sample_s": 22.013,
+            "frames": 398.0
+          },
+          {
+            "sample_s": 23.014,
+            "frames": 398.0
+          },
+          {
+            "sample_s": 24.015,
+            "frames": 398.0
+          },
+          {
+            "sample_s": 25.016,
+            "frames": 398.0
+          }
+        ]
+      },
+      {
+        "name": "before-app-snacks-r2",
+        "host": "probe",
+        "workload": "snacks",
+        "hz": 20,
+        "border": "rounded",
+        "window": {
+          "at": [
+            10,
+            60
+          ],
+          "size": [
+            960,
+            1000
+          ],
+          "monitor": 0,
+          "mapped": true,
+          "visible": true,
+          "hidden": false,
+          "workspace": {
+            "id": 1,
+            "name": "1"
+          }
+        },
+        "monitor": {
+          "name": "eDP-1",
+          "width": 1920,
+          "height": 1080,
+          "scale": 1,
+          "refreshRate": 60.049
+        },
+        "app": "neovim",
+        "user_nvim_config": true,
+        "invalid": [],
+        "phases": {
+          "startup": {
+            "wall_seconds": 1.3741276580003614,
+            "cpu_seconds": 0.03999999999999998,
+            "cpu_percent_one_core": 2.9109376968809593,
+            "gpu_engine_seconds": {
+              "0000:07:00.0/gfx": 0.002668055
+            },
+            "gpu_engine_percent": {
+              "0000:07:00.0/gfx": 0.19416354692129326
+            },
+            "rss_bytes": 120516608,
+            "grid": []
+          },
+          "warmup": {
+            "wall_seconds": 4.984604437002417,
+            "cpu_seconds": 0.1,
+            "cpu_percent_one_core": 2.0061772456338947,
+            "gpu_engine_seconds": {
+              "0000:07:00.0/gfx": 0.01706151
+            },
+            "gpu_engine_percent": {
+              "0000:07:00.0/gfx": 0.34228413138155145
+            },
+            "rss_bytes": 125673472,
+            "grid": [
+              "45",
+              "58"
+            ],
+            "steady": {
+              "wall_seconds": 2.931989368000359,
+              "cpu_seconds": 0.06,
+              "cpu_percent_one_core": 2.0463921409415105,
+              "gpu_engine_seconds": {
+                "0000:07:00.0/gfx": 0.010643277
+              },
+              "gpu_engine_percent": {
+                "0000:07:00.0/gfx": 0.3630053067777256
+              },
+              "rss_bytes": 125673472,
+              "gpu_clock_mhz": {
+                "0000:07:00.0": {
+                  "min": 200,
+                  "median": 400.0,
+                  "max": 1600
+                }
+              }
+            },
+            "profile": {
+              "wall_seconds": 2.04045740699803,
+              "frames": 5.0,
+              "draw_ns": 21166080.0,
+              "stages": {
+                "parse": {
+                  "calls": 13,
+                  "ns": 993937,
+                  "units": 41100
+                },
+                "paint": {
+                  "calls": 5,
+                  "ns": 8551749,
+                  "units": 5
+                },
+                "backgrounds": {
+                  "calls": 290,
+                  "ns": 383202,
+                  "units": 13050
+                },
+                "boxes": {
+                  "calls": 290,
+                  "ns": 996062,
+                  "units": 13050
+                },
+                "runs": {
+                  "calls": 290,
+                  "ns": 275176,
+                  "units": 13050
+                },
+                "shape": {
+                  "calls": 1172,
+                  "ns": 1591383,
+                  "units": 6091
+                },
+                "glyphs": {
+                  "calls": 1172,
+                  "ns": 5099772,
+                  "units": 6091
+                },
+                "cursor": {
+                  "calls": 5,
+                  "ns": 35547,
+                  "units": 5
+                }
+              }
+            }
+          },
+          "snacks-grep": {
+            "wall_seconds": 7.9467673860017385,
+            "cpu_seconds": 1.9,
+            "cpu_percent_one_core": 23.9090929394367,
+            "gpu_engine_seconds": {
+              "0000:07:00.0/gfx": 0.5295033
+            },
+            "gpu_engine_percent": {
+              "0000:07:00.0/gfx": 6.663128216546544
+            },
+            "rss_bytes": 125804544,
+            "grid": [
+              "45",
+              "58"
+            ],
+            "steady": {
+              "wall_seconds": 5.847137097996892,
+              "cpu_seconds": 1.38,
+              "cpu_percent_one_core": 23.60129370786875,
+              "gpu_engine_seconds": {
+                "0000:07:00.0/gfx": 0.411754553
+              },
+              "gpu_engine_percent": {
+                "0000:07:00.0/gfx": 7.041985609351602
+              },
+              "rss_bytes": 125804544,
+              "gpu_clock_mhz": {
+                "0000:07:00.0": {
+                  "min": 200,
+                  "median": 400.0,
+                  "max": 1600
+                }
+              }
+            },
+            "profile": {
+              "wall_seconds": 4.008014007999009,
+              "frames": 156.0,
+              "draw_ns": 812579840.0,
+              "stages": {
+                "parse": {
+                  "calls": 404,
+                  "ns": 18105773,
+                  "units": 919431
+                },
+                "paint": {
+                  "calls": 156,
+                  "ns": 284055776,
+                  "units": 156
+                },
+                "backgrounds": {
+                  "calls": 9048,
+                  "ns": 16554933,
+                  "units": 407160
+                },
+                "boxes": {
+                  "calls": 9048,
+                  "ns": 41092193,
+                  "units": 407160
+                },
+                "runs": {
+                  "calls": 9048,
+                  "ns": 14385060,
+                  "units": 407160
+                },
+                "shape": {
+                  "calls": 53262,
+                  "ns": 72862733,
+                  "units": 257889
+                },
+                "glyphs": {
+                  "calls": 53262,
+                  "ns": 129679090,
+                  "units": 257889
+                },
+                "cursor": {
+                  "calls": 156,
+                  "ns": 525220,
+                  "units": 156
+                }
+              }
+            }
+          },
+          "snacks-scroll": {
+            "wall_seconds": 7.9289548650012875,
+            "cpu_seconds": 0.9300000000000002,
+            "cpu_percent_one_core": 11.729162491579514,
+            "gpu_engine_seconds": {
+              "0000:07:00.0/gfx": 0.171854885
+            },
+            "gpu_engine_percent": {
+              "0000:07:00.0/gfx": 2.167434270039474
+            },
+            "rss_bytes": 125804544,
+            "grid": [
+              "45",
+              "58"
+            ],
+            "steady": {
+              "wall_seconds": 5.9126552710004034,
+              "cpu_seconds": 0.7600000000000002,
+              "cpu_percent_one_core": 12.853785062145363,
+              "gpu_engine_seconds": {
+                "0000:07:00.0/gfx": 0.143329904
+              },
+              "gpu_engine_percent": {
+                "0000:07:00.0/gfx": 2.424120761834116
+              },
+              "rss_bytes": 125804544,
+              "gpu_clock_mhz": {
+                "0000:07:00.0": {
+                  "min": 200,
+                  "median": 400,
+                  "max": 1600
+                }
+              }
+            },
+            "profile": {
+              "wall_seconds": 4.963569865001773,
+              "frames": 88.0,
+              "draw_ns": 533888000.0,
+              "stages": {
+                "parse": {
+                  "calls": 231,
+                  "ns": 15204244,
+                  "units": 691439
+                },
+                "paint": {
+                  "calls": 88,
+                  "ns": 211069920,
+                  "units": 88
+                },
+                "backgrounds": {
+                  "calls": 5104,
+                  "ns": 10830764,
+                  "units": 229680
+                },
+                "boxes": {
+                  "calls": 5104,
+                  "ns": 27655737,
+                  "units": 229680
+                },
+                "runs": {
+                  "calls": 5104,
+                  "ns": 10148786,
+                  "units": 229680
+                },
+                "shape": {
+                  "calls": 31596,
+                  "ns": 63033343,
+                  "units": 158031
+                },
+                "glyphs": {
+                  "calls": 31596,
+                  "ns": 92804940,
+                  "units": 158031
+                },
+                "cursor": {
+                  "calls": 88,
+                  "ns": 281023,
+                  "units": 88
+                }
+              }
+            }
+          },
+          "idle": {
+            "wall_seconds": 3.9606493979990773,
+            "cpu_seconds": 0.04999999999999982,
+            "cpu_percent_one_core": 1.2624192392606084,
+            "gpu_engine_seconds": {
+              "0000:07:00.0/gfx": 0.001349763
+            },
+            "gpu_engine_percent": {
+              "0000:07:00.0/gfx": 0.03407933559284245
+            },
+            "rss_bytes": 125804544,
+            "grid": [
+              "45",
+              "58"
+            ],
+            "steady": {
+              "wall_seconds": 1.9522552409980563,
+              "cpu_seconds": 0.020000000000000018,
+              "cpu_percent_one_core": 1.0244562073643284,
+              "gpu_engine_seconds": {
+                "0000:07:00.0/gfx": 0.001349763
+              },
+              "gpu_engine_percent": {
+                "0000:07:00.0/gfx": 0.06913865419103483
+              },
+              "rss_bytes": 125804544,
+              "gpu_clock_mhz": {
+                "0000:07:00.0": {
+                  "min": 200,
+                  "median": 400.0,
+                  "max": 1600
+                }
+              }
+            },
+            "profile": {
+              "wall_seconds": 1.005898385999899,
+              "frames": 1.0,
+              "draw_ns": 6002688.0,
+              "stages": {
+                "parse": {
+                  "calls": 0,
+                  "ns": 0,
+                  "units": 0
+                },
+                "paint": {
+                  "calls": 1,
+                  "ns": 1828738,
+                  "units": 1
+                },
+                "backgrounds": {
+                  "calls": 58,
+                  "ns": 110927,
+                  "units": 2610
+                },
+                "boxes": {
+                  "calls": 58,
+                  "ns": 292788,
+                  "units": 2610
+                },
+                "runs": {
+                  "calls": 58,
+                  "ns": 112689,
+                  "units": 2610
+                },
+                "shape": {
+                  "calls": 389,
+                  "ns": 265198,
+                  "units": 1955
+                },
+                "glyphs": {
+                  "calls": 389,
+                  "ns": 974154,
+                  "units": 1955
+                },
+                "cursor": {
+                  "calls": 1,
+                  "ns": 3937,
+                  "units": 1
+                }
+              }
+            }
+          }
+        },
+        "events": [],
+        "binary_sha256": "8538ba8fd08ca454b0b1ebe29be10b2599a728f188bd5fbf2ebfb0e46c7f2a66",
+        "last_parse_bytes": 2848748,
+        "idle_frame_samples": [
+          {
+            "sample_s": 22.044,
+            "frames": 447.0
+          },
+          {
+            "sample_s": 23.044,
+            "frames": 447.0
+          },
+          {
+            "sample_s": 24.045,
+            "frames": 448.0
+          },
+          {
+            "sample_s": 25.046,
+            "frames": 448.0
+          }
+        ]
+      }
+    ],
+    "after-app-snacks": [
+      {
+        "name": "after-app-snacks",
+        "host": "probe",
+        "workload": "snacks",
+        "hz": 20,
+        "border": "rounded",
+        "window": {
+          "at": [
+            10,
+            60
+          ],
+          "size": [
+            960,
+            1000
+          ],
+          "monitor": 0,
+          "mapped": true,
+          "visible": true,
+          "hidden": false,
+          "workspace": {
+            "id": 1,
+            "name": "1"
+          }
+        },
+        "monitor": {
+          "name": "eDP-1",
+          "width": 1920,
+          "height": 1080,
+          "scale": 1,
+          "refreshRate": 60.049
+        },
+        "app": "neovim",
+        "user_nvim_config": true,
+        "invalid": [],
+        "phases": {
+          "startup": {
+            "wall_seconds": 1.431296568000107,
+            "cpu_seconds": 0.04000000000000001,
+            "cpu_percent_one_core": 2.794668896320376,
+            "gpu_engine_seconds": {
+              "0000:07:00.0/gfx": 0.005010875
+            },
+            "gpu_engine_percent": {
+              "0000:07:00.0/gfx": 0.350093412646234
+            },
+            "rss_bytes": 118431744,
+            "grid": []
+          },
+          "warmup": {
+            "wall_seconds": 4.959047895001277,
+            "cpu_seconds": 0.11000000000000001,
+            "cpu_percent_one_core": 2.2181677275365717,
+            "gpu_engine_seconds": {
+              "0000:07:00.0/gfx": 0.020924478
+            },
+            "gpu_engine_percent": {
+              "0000:07:00.0/gfx": 0.42194547104680896
+            },
+            "rss_bytes": 122449920,
+            "grid": [
+              "45",
+              "58"
+            ],
+            "steady": {
+              "wall_seconds": 2.9020562680016155,
+              "cpu_seconds": 0.04999999999999999,
+              "cpu_percent_one_core": 1.722916283578143,
+              "gpu_engine_seconds": {
+                "0000:07:00.0/gfx": 0.010835522
+              },
+              "gpu_engine_percent": {
+                "0000:07:00.0/gfx": 0.3733739458973842
+              },
+              "rss_bytes": 122449920,
+              "gpu_clock_mhz": {
+                "0000:07:00.0": {
+                  "min": 200,
+                  "median": 400.0,
+                  "max": 1600
+                }
+              }
+            },
+            "profile": {
+              "wall_seconds": 1.9733899029997701,
+              "frames": 4.0,
+              "draw_ns": 24778752.0,
+              "stages": {
+                "parse": {
+                  "calls": 15,
+                  "ns": 806827,
+                  "units": 43791
+                },
+                "paint": {
+                  "calls": 4,
+                  "ns": 12037846,
+                  "units": 4
+                },
+                "backgrounds": {
+                  "calls": 345,
+                  "ns": 186614,
+                  "units": 15525
+                },
+                "boxes": {
+                  "calls": 290,
+                  "ns": 954605,
+                  "units": 13050
+                },
+                "runs": {
+                  "calls": 113,
+                  "ns": 193531,
+                  "units": 5085
+                },
+                "shape": {
+                  "calls": 332,
+                  "ns": 2052772,
+                  "units": 1821
+                },
+                "glyphs": {
+                  "calls": 1051,
+                  "ns": 7924415,
+                  "units": 5593
+                },
+                "cursor": {
+                  "calls": 4,
+                  "ns": 17372,
+                  "units": 4
+                }
+              },
+              "cache": {
+                "reused": 119,
+                "rebuilt": 113
+              }
+            }
+          },
+          "snacks-grep": {
+            "wall_seconds": 7.926382996000029,
+            "cpu_seconds": 1.18,
+            "cpu_percent_one_core": 14.886991968410753,
+            "gpu_engine_seconds": {
+              "0000:07:00.0/gfx": 0.33715661
+            },
+            "gpu_engine_percent": {
+              "0000:07:00.0/gfx": 4.253599784039489
+            },
+            "rss_bytes": 123760640,
+            "grid": [
+              "45",
+              "58"
+            ],
+            "steady": {
+              "wall_seconds": 5.83471959599774,
+              "cpu_seconds": 0.8999999999999999,
+              "cpu_percent_one_core": 15.424905776403458,
+              "gpu_engine_seconds": {
+                "0000:07:00.0/gfx": 0.247597554
+              },
+              "gpu_engine_percent": {
+                "0000:07:00.0/gfx": 4.243521045464409
+              },
+              "rss_bytes": 123760640,
+              "gpu_clock_mhz": {
+                "0000:07:00.0": {
+                  "min": 200,
+                  "median": 400.0,
+                  "max": 1600
+                }
+              }
+            },
+            "profile": {
+              "wall_seconds": 4.974131817998568,
+              "frames": 110.0,
+              "draw_ns": 598755328.0,
+              "stages": {
+                "parse": {
+                  "calls": 505,
+                  "ns": 21832887,
+                  "units": 1153447
+                },
+                "paint": {
+                  "calls": 110,
+                  "ns": 204451008,
+                  "units": 110
+                },
+                "backgrounds": {
+                  "calls": 9533,
+                  "ns": 5800033,
+                  "units": 428985
+                },
+                "boxes": {
+                  "calls": 6403,
+                  "ns": 24856572,
+                  "units": 288135
+                },
+                "runs": {
+                  "calls": 3500,
+                  "ns": 6818017,
+                  "units": 157500
+                },
+                "shape": {
+                  "calls": 12440,
+                  "ns": 60817800,
+                  "units": 60519
+                },
+                "glyphs": {
+                  "calls": 36292,
+                  "ns": 85504420,
+                  "units": 182439
+                },
+                "cursor": {
+                  "calls": 110,
+                  "ns": 860746,
+                  "units": 110
+                }
+              },
+              "cache": {
+                "reused": 2880,
+                "rebuilt": 3500
+              }
+            }
+          },
+          "snacks-scroll": {
+            "wall_seconds": 7.964316262001375,
+            "cpu_seconds": 1.0899999999999999,
+            "cpu_percent_one_core": 13.686046160679343,
+            "gpu_engine_seconds": {
+              "0000:07:00.0/gfx": 0.224265989
+            },
+            "gpu_engine_percent": {
+              "0000:07:00.0/gfx": 2.815885025435235
+            },
+            "rss_bytes": 124153856,
+            "grid": [
+              "45",
+              "58"
+            ],
+            "steady": {
+              "wall_seconds": 5.958313432001887,
+              "cpu_seconds": 0.8399999999999999,
+              "cpu_percent_one_core": 14.097949186230958,
+              "gpu_engine_seconds": {
+                "0000:07:00.0/gfx": 0.175844741
+              },
+              "gpu_engine_percent": {
+                "0000:07:00.0/gfx": 2.951250265814219
+              },
+              "rss_bytes": 124153856,
+              "gpu_clock_mhz": {
+                "0000:07:00.0": {
+                  "min": 0,
+                  "median": 400,
+                  "max": 1600
+                }
+              }
+            },
+            "profile": {
+              "wall_seconds": 4.996740201997454,
+              "frames": 92.0,
+              "draw_ns": 590094336.0,
+              "stages": {
+                "parse": {
+                  "calls": 240,
+                  "ns": 15978242,
+                  "units": 709229
+                },
+                "paint": {
+                  "calls": 92,
+                  "ns": 233160094,
+                  "units": 92
+                },
+                "backgrounds": {
+                  "calls": 8023,
+                  "ns": 6108662,
+                  "units": 361035
+                },
+                "boxes": {
+                  "calls": 5344,
+                  "ns": 27520196,
+                  "units": 240480
+                },
+                "runs": {
+                  "calls": 4490,
+                  "ns": 11463841,
+                  "units": 202050
+                },
+                "shape": {
+                  "calls": 10312,
+                  "ns": 66402783,
+                  "units": 44122
+                },
+                "glyphs": {
+                  "calls": 33829,
+                  "ns": 100665939,
+                  "units": 162456
+                },
+                "cursor": {
+                  "calls": 92,
+                  "ns": 752077,
+                  "units": 92
+                }
+              },
+              "cache": {
+                "reused": 846,
+                "rebuilt": 4490
+              }
+            }
+          },
+          "idle": {
+            "wall_seconds": 3.958166626001912,
+            "cpu_seconds": 0.050000000000000266,
+            "cpu_percent_one_core": 1.2632110955496727,
+            "gpu_engine_seconds": {
+              "0000:07:00.0/gfx": 0.0
+            },
+            "gpu_engine_percent": {
+              "0000:07:00.0/gfx": 0.0
+            },
+            "rss_bytes": 124153856,
+            "grid": [
+              "45",
+              "58"
+            ],
+            "steady": {
+              "wall_seconds": 1.913619175000349,
+              "cpu_seconds": 0.020000000000000018,
+              "cpu_percent_one_core": 1.0451400289713533,
+              "gpu_engine_seconds": {
+                "0000:07:00.0/gfx": 0.0
+              },
+              "gpu_engine_percent": {
+                "0000:07:00.0/gfx": 0.0
+              },
+              "rss_bytes": 124153856,
+              "gpu_clock_mhz": {
+                "0000:07:00.0": {
+                  "min": 400,
+                  "median": 400,
+                  "max": 741
+                }
+              }
+            },
+            "profile": {
+              "wall_seconds": 1.0089386209983786,
+              "frames": 0.0,
+              "draw_ns": 0.0,
+              "stages": {
+                "parse": {
+                  "calls": 0,
+                  "ns": 0,
+                  "units": 0
+                },
+                "paint": {
+                  "calls": 0,
+                  "ns": 0,
+                  "units": 0
+                },
+                "backgrounds": {
+                  "calls": 0,
+                  "ns": 0,
+                  "units": 0
+                },
+                "boxes": {
+                  "calls": 0,
+                  "ns": 0,
+                  "units": 0
+                },
+                "runs": {
+                  "calls": 0,
+                  "ns": 0,
+                  "units": 0
+                },
+                "shape": {
+                  "calls": 0,
+                  "ns": 0,
+                  "units": 0
+                },
+                "glyphs": {
+                  "calls": 0,
+                  "ns": 0,
+                  "units": 0
+                },
+                "cursor": {
+                  "calls": 0,
+                  "ns": 0,
+                  "units": 0
+                }
+              },
+              "cache": {
+                "reused": 0,
+                "rebuilt": 0
+              }
+            }
+          }
+        },
+        "events": [],
+        "binary_sha256": "f8a49b7a2ecbc11aa2d922d882236b1ee854d41005f3a008c76cdbda6df18d80",
+        "last_parse_bytes": 2873137,
+        "idle_frame_samples": [
+          {
+            "sample_s": 22.018,
+            "frames": 332.0
+          },
+          {
+            "sample_s": 23.019,
+            "frames": 332.0
+          },
+          {
+            "sample_s": 24.019,
+            "frames": 332.0
+          },
+          {
+            "sample_s": 25.02,
+            "frames": 332.0
+          }
+        ]
+      },
+      {
+        "name": "after-app-snacks-r2",
+        "host": "probe",
+        "workload": "snacks",
+        "hz": 20,
+        "border": "rounded",
+        "window": {
+          "at": [
+            10,
+            60
+          ],
+          "size": [
+            960,
+            1000
+          ],
+          "monitor": 0,
+          "mapped": true,
+          "visible": true,
+          "hidden": false,
+          "workspace": {
+            "id": 1,
+            "name": "1"
+          }
+        },
+        "monitor": {
+          "name": "eDP-1",
+          "width": 1920,
+          "height": 1080,
+          "scale": 1,
+          "refreshRate": 60.049
+        },
+        "app": "neovim",
+        "user_nvim_config": true,
+        "invalid": [],
+        "phases": {
+          "startup": {
+            "wall_seconds": 1.3749486839988094,
+            "cpu_seconds": 0.020000000000000018,
+            "cpu_percent_one_core": 1.4545997412669502,
+            "gpu_engine_seconds": {
+              "0000:07:00.0/gfx": 0.002740929
+            },
+            "gpu_engine_percent": {
+              "0000:07:00.0/gfx": 0.19934773071155387
+            },
+            "rss_bytes": 118603776,
+            "grid": []
+          },
+          "warmup": {
+            "wall_seconds": 4.943945854996855,
+            "cpu_seconds": 0.14,
+            "cpu_percent_one_core": 2.8317462226755934,
+            "gpu_engine_seconds": {
+              "0000:07:00.0/gfx": 0.013864527
+            },
+            "gpu_engine_percent": {
+              "0000:07:00.0/gfx": 0.28043444258166983
+            },
+            "rss_bytes": 123035648,
+            "grid": [
+              "45",
+              "58"
+            ],
+            "steady": {
+              "wall_seconds": 2.8690331780017004,
+              "cpu_seconds": 0.07,
+              "cpu_percent_one_core": 2.4398463056030413,
+              "gpu_engine_seconds": {
+                "0000:07:00.0/gfx": 0.009599291
+              },
+              "gpu_engine_percent": {
+                "0000:07:00.0/gfx": 0.33458278118226453
+              },
+              "rss_bytes": 123035648,
+              "gpu_clock_mhz": {
+                "0000:07:00.0": {
+                  "min": 200,
+                  "median": 400,
+                  "max": 1600
+                }
+              }
+            },
+            "profile": {
+              "wall_seconds": 0.9827744710019033,
+              "frames": 1.0,
+              "draw_ns": 3953664.0,
+              "stages": {
+                "parse": {
+                  "calls": 0,
+                  "ns": 0,
+                  "units": 0
+                },
+                "paint": {
+                  "calls": 1,
+                  "ns": 240760,
+                  "units": 1
+                },
+                "backgrounds": {
+                  "calls": 58,
+                  "ns": 13445,
+                  "units": 2610
+                },
+                "boxes": {
+                  "calls": 58,
+                  "ns": 23435,
+                  "units": 2610
+                },
+                "runs": {
+                  "calls": 0,
+                  "ns": 0,
+                  "units": 0
+                },
+                "shape": {
+                  "calls": 0,
+                  "ns": 0,
+                  "units": 0
+                },
+                "glyphs": {
+                  "calls": 65,
+                  "ns": 136242,
+                  "units": 152
+                },
+                "cursor": {
+                  "calls": 1,
+                  "ns": 3056,
+                  "units": 1
+                }
+              },
+              "cache": {
+                "reused": 58,
+                "rebuilt": 0
+              }
+            }
+          },
+          "snacks-grep": {
+            "wall_seconds": 7.990626308001083,
+            "cpu_seconds": 1.6699999999999997,
+            "cpu_percent_one_core": 20.89948817063081,
+            "gpu_engine_seconds": {
+              "0000:07:00.0/gfx": 0.516037953
+            },
+            "gpu_engine_percent": {
+              "0000:07:00.0/gfx": 6.458041373844335
+            },
+            "rss_bytes": 124411904,
+            "grid": [
+              "45",
+              "58"
+            ],
+            "steady": {
+              "wall_seconds": 5.904441489998135,
+              "cpu_seconds": 1.2600000000000002,
+              "cpu_percent_one_core": 21.339867659530288,
+              "gpu_engine_seconds": {
+                "0000:07:00.0/gfx": 0.391958758
+              },
+              "gpu_engine_percent": {
+                "0000:07:00.0/gfx": 6.63837144739195
+              },
+              "rss_bytes": 124411904,
+              "gpu_clock_mhz": {
+                "0000:07:00.0": {
+                  "min": 200,
+                  "median": 400.0,
+                  "max": 1600
+                }
+              }
+            },
+            "profile": {
+              "wall_seconds": 5.014821296001173,
+              "frames": 169.0,
+              "draw_ns": 802763776.0,
+              "stages": {
+                "parse": {
+                  "calls": 511,
+                  "ns": 22460015,
+                  "units": 1157385
+                },
+                "paint": {
+                  "calls": 169,
+                  "ns": 260527471,
+                  "units": 169
+                },
+                "backgrounds": {
+                  "calls": 14016,
+                  "ns": 7111358,
+                  "units": 630720
+                },
+                "boxes": {
+                  "calls": 9827,
+                  "ns": 33805651,
+                  "units": 442215
+                },
+                "runs": {
+                  "calls": 4746,
+                  "ns": 8798109,
+                  "units": 213570
+                },
+                "shape": {
+                  "calls": 14660,
+                  "ns": 67982128,
+                  "units": 71068
+                },
+                "glyphs": {
+                  "calls": 57208,
+                  "ns": 116546179,
+                  "units": 282022
+                },
+                "cursor": {
+                  "calls": 169,
+                  "ns": 533603,
+                  "units": 169
+                }
+              },
+              "cache": {
+                "reused": 5056,
+                "rebuilt": 4746
+              }
+            }
+          },
+          "snacks-scroll": {
+            "wall_seconds": 7.94342178199804,
+            "cpu_seconds": 1.12,
+            "cpu_percent_one_core": 14.09971710854163,
+            "gpu_engine_seconds": {
+              "0000:07:00.0/gfx": 0.216363007
+            },
+            "gpu_engine_percent": {
+              "0000:07:00.0/gfx": 2.7238010637976893
+            },
+            "rss_bytes": 125067264,
+            "grid": [
+              "45",
+              "58"
+            ],
+            "steady": {
+              "wall_seconds": 5.881185133999679,
+              "cpu_seconds": 0.8500000000000001,
+              "cpu_percent_one_core": 14.452869287961553,
+              "gpu_engine_seconds": {
+                "0000:07:00.0/gfx": 0.170980731
+              },
+              "gpu_engine_percent": {
+                "0000:07:00.0/gfx": 2.907249595180136
+              },
+              "rss_bytes": 125067264,
+              "gpu_clock_mhz": {
+                "0000:07:00.0": {
+                  "min": 200,
+                  "median": 400,
+                  "max": 1600
+                }
+              }
+            },
+            "profile": {
+              "wall_seconds": 4.9716666499989515,
+              "frames": 91.0,
+              "draw_ns": 598505472.0,
+              "stages": {
+                "parse": {
+                  "calls": 247,
+                  "ns": 16452776,
+                  "units": 721577
+                },
+                "paint": {
+                  "calls": 91,
+                  "ns": 253513776,
+                  "units": 91
+                },
+                "backgrounds": {
+                  "calls": 7707,
+                  "ns": 6156771,
+                  "units": 346815
+                },
+                "boxes": {
+                  "calls": 5284,
+                  "ns": 29660325,
+                  "units": 237780
+                },
+                "runs": {
+                  "calls": 4634,
+                  "ns": 12752947,
+                  "units": 208530
+                },
+                "shape": {
+                  "calls": 10134,
+                  "ns": 72049444,
+                  "units": 43175
+                },
+                "glyphs": {
+                  "calls": 35706,
+                  "ns": 110791799,
+                  "units": 163564
+                },
+                "cursor": {
+                  "calls": 91,
+                  "ns": 844622,
+                  "units": 91
+                }
+              },
+              "cache": {
+                "reused": 644,
+                "rebuilt": 4634
+              }
+            }
+          },
+          "idle": {
+            "wall_seconds": 3.9390328510016843,
+            "cpu_seconds": 0.040000000000000036,
+            "cpu_percent_one_core": 1.0154776949836342,
+            "gpu_engine_seconds": {
+              "0000:07:00.0/gfx": 0.0
+            },
+            "gpu_engine_percent": {
+              "0000:07:00.0/gfx": 0.0
+            },
+            "rss_bytes": 125067264,
+            "grid": [
+              "45",
+              "58"
+            ],
+            "steady": {
+              "wall_seconds": 1.8901150890014833,
+              "cpu_seconds": 0.020000000000000018,
+              "cpu_percent_one_core": 1.0581366243981307,
+              "gpu_engine_seconds": {
+                "0000:07:00.0/gfx": 0.0
+              },
+              "gpu_engine_percent": {
+                "0000:07:00.0/gfx": 0.0
+              },
+              "rss_bytes": 125067264,
+              "gpu_clock_mhz": {
+                "0000:07:00.0": {
+                  "min": 400,
+                  "median": 400.0,
+                  "max": 1600
+                }
+              }
+            },
+            "profile": {
+              "wall_seconds": 1.0311858200002462,
+              "frames": 0.0,
+              "draw_ns": 0.0,
+              "stages": {
+                "parse": {
+                  "calls": 0,
+                  "ns": 0,
+                  "units": 0
+                },
+                "paint": {
+                  "calls": 0,
+                  "ns": 0,
+                  "units": 0
+                },
+                "backgrounds": {
+                  "calls": 0,
+                  "ns": 0,
+                  "units": 0
+                },
+                "boxes": {
+                  "calls": 0,
+                  "ns": 0,
+                  "units": 0
+                },
+                "runs": {
+                  "calls": 0,
+                  "ns": 0,
+                  "units": 0
+                },
+                "shape": {
+                  "calls": 0,
+                  "ns": 0,
+                  "units": 0
+                },
+                "glyphs": {
+                  "calls": 0,
+                  "ns": 0,
+                  "units": 0
+                },
+                "cursor": {
+                  "calls": 0,
+                  "ns": 0,
+                  "units": 0
+                }
+              },
+              "cache": {
+                "reused": 0,
+                "rebuilt": 0
+              }
+            }
+          }
+        },
+        "events": [],
+        "binary_sha256": "f8a49b7a2ecbc11aa2d922d882236b1ee854d41005f3a008c76cdbda6df18d80",
+        "last_parse_bytes": 2922084,
+        "idle_frame_samples": [
+          {
+            "sample_s": 22.014,
+            "frames": 419.0
+          },
+          {
+            "sample_s": 23.015,
+            "frames": 419.0
+          },
+          {
+            "sample_s": 24.015,
+            "frames": 419.0
+          },
+          {
+            "sample_s": 25.016,
+            "frames": 419.0
+          }
+        ]
+      }
+    ]
+  },
+  "excluded_runs": [],
+  "visual_comparison": {
+    "visual-wayland": [
+      {
+        "case": 0,
+        "different_pixels": 0,
+        "max_channel_difference": 0,
+        "pixels_over_tolerance_1": 0,
+        "compared_pixels": 131328,
+        "window_size": [
+          896,
+          320
+        ]
+      },
+      {
+        "case": 1,
+        "different_pixels": 0,
+        "max_channel_difference": 0,
+        "pixels_over_tolerance_1": 0,
+        "compared_pixels": 131328,
+        "window_size": [
+          896,
+          320
+        ]
+      },
+      {
+        "case": 2,
+        "different_pixels": 0,
+        "max_channel_difference": 0,
+        "pixels_over_tolerance_1": 0,
+        "compared_pixels": 131328,
+        "window_size": [
+          896,
+          320
+        ]
+      },
+      {
+        "case": 3,
+        "different_pixels": 0,
+        "max_channel_difference": 0,
+        "pixels_over_tolerance_1": 0,
+        "compared_pixels": 131328,
+        "window_size": [
+          896,
+          320
+        ]
+      },
+      {
+        "case": 4,
+        "different_pixels": 0,
+        "max_channel_difference": 0,
+        "pixels_over_tolerance_1": 0,
+        "compared_pixels": 131328,
+        "window_size": [
+          896,
+          320
+        ]
+      },
+      {
+        "case": 5,
+        "different_pixels": 0,
+        "max_channel_difference": 0,
+        "pixels_over_tolerance_1": 0,
+        "compared_pixels": 131328,
+        "window_size": [
+          896,
+          320
+        ]
+      },
+      {
+        "case": 6,
+        "different_pixels": 0,
+        "max_channel_difference": 0,
+        "pixels_over_tolerance_1": 0,
+        "compared_pixels": 131328,
+        "window_size": [
+          896,
+          320
+        ]
+      },
+      {
+        "case": 7,
+        "different_pixels": 0,
+        "max_channel_difference": 0,
+        "pixels_over_tolerance_1": 0,
+        "compared_pixels": 131328,
+        "window_size": [
+          896,
+          320
+        ]
+      },
+      {
+        "case": 8,
+        "different_pixels": 0,
+        "max_channel_difference": 0,
+        "pixels_over_tolerance_1": 0,
+        "compared_pixels": 131328,
+        "window_size": [
+          896,
+          320
+        ]
+      },
+      {
+        "case": 9,
+        "different_pixels": 0,
+        "max_channel_difference": 0,
+        "pixels_over_tolerance_1": 0,
+        "compared_pixels": 131328,
+        "window_size": [
+          896,
+          320
+        ]
+      },
+      {
+        "case": 10,
+        "different_pixels": 0,
+        "max_channel_difference": 0,
+        "pixels_over_tolerance_1": 0,
+        "compared_pixels": 131328,
+        "window_size": [
+          896,
+          320
+        ]
+      },
+      {
+        "case": 11,
+        "different_pixels": 0,
+        "max_channel_difference": 0,
+        "pixels_over_tolerance_1": 0,
+        "compared_pixels": 131328,
+        "window_size": [
+          896,
+          320
+        ]
+      },
+      {
+        "case": 12,
+        "different_pixels": 0,
+        "max_channel_difference": 0,
+        "pixels_over_tolerance_1": 0,
+        "compared_pixels": 131328,
+        "window_size": [
+          896,
+          320
+        ]
+      },
+      {
+        "case": 13,
+        "different_pixels": 0,
+        "max_channel_difference": 0,
+        "pixels_over_tolerance_1": 0,
+        "compared_pixels": 131328,
+        "window_size": [
+          896,
+          320
+        ]
+      },
+      {
+        "case": 14,
+        "different_pixels": 0,
+        "max_channel_difference": 0,
+        "pixels_over_tolerance_1": 0,
+        "compared_pixels": 131328,
+        "window_size": [
+          896,
+          320
+        ]
+      },
+      {
+        "case": 15,
+        "different_pixels": 0,
+        "max_channel_difference": 0,
+        "pixels_over_tolerance_1": 0,
+        "compared_pixels": 131328,
+        "window_size": [
+          896,
+          320
+        ]
+      },
+      {
+        "case": 16,
+        "different_pixels": 0,
+        "max_channel_difference": 0,
+        "pixels_over_tolerance_1": 0,
+        "compared_pixels": 131328,
+        "window_size": [
+          896,
+          320
+        ]
+      }
+    ],
+    "visual-x11": [
+      {
+        "case": 0,
+        "different_pixels": 0,
+        "max_channel_difference": 0,
+        "pixels_over_tolerance_1": 0,
+        "compared_pixels": 205200,
+        "window_size": [
+          1120,
+          400
+        ]
+      },
+      {
+        "case": 1,
+        "different_pixels": 0,
+        "max_channel_difference": 0,
+        "pixels_over_tolerance_1": 0,
+        "compared_pixels": 205200,
+        "window_size": [
+          1120,
+          400
+        ]
+      },
+      {
+        "case": 2,
+        "different_pixels": 0,
+        "max_channel_difference": 0,
+        "pixels_over_tolerance_1": 0,
+        "compared_pixels": 205200,
+        "window_size": [
+          1120,
+          400
+        ]
+      },
+      {
+        "case": 3,
+        "different_pixels": 0,
+        "max_channel_difference": 0,
+        "pixels_over_tolerance_1": 0,
+        "compared_pixels": 205200,
+        "window_size": [
+          1120,
+          400
+        ]
+      },
+      {
+        "case": 4,
+        "different_pixels": 0,
+        "max_channel_difference": 0,
+        "pixels_over_tolerance_1": 0,
+        "compared_pixels": 205200,
+        "window_size": [
+          1120,
+          400
+        ]
+      },
+      {
+        "case": 5,
+        "different_pixels": 0,
+        "max_channel_difference": 0,
+        "pixels_over_tolerance_1": 0,
+        "compared_pixels": 205200,
+        "window_size": [
+          1120,
+          400
+        ]
+      },
+      {
+        "case": 6,
+        "different_pixels": 0,
+        "max_channel_difference": 0,
+        "pixels_over_tolerance_1": 0,
+        "compared_pixels": 205200,
+        "window_size": [
+          1120,
+          400
+        ]
+      },
+      {
+        "case": 7,
+        "different_pixels": 0,
+        "max_channel_difference": 0,
+        "pixels_over_tolerance_1": 0,
+        "compared_pixels": 205200,
+        "window_size": [
+          1120,
+          400
+        ]
+      },
+      {
+        "case": 8,
+        "different_pixels": 0,
+        "max_channel_difference": 0,
+        "pixels_over_tolerance_1": 0,
+        "compared_pixels": 205200,
+        "window_size": [
+          1120,
+          400
+        ]
+      },
+      {
+        "case": 9,
+        "different_pixels": 0,
+        "max_channel_difference": 0,
+        "pixels_over_tolerance_1": 0,
+        "compared_pixels": 205200,
+        "window_size": [
+          1120,
+          400
+        ]
+      },
+      {
+        "case": 10,
+        "different_pixels": 0,
+        "max_channel_difference": 0,
+        "pixels_over_tolerance_1": 0,
+        "compared_pixels": 205200,
+        "window_size": [
+          1120,
+          400
+        ]
+      },
+      {
+        "case": 11,
+        "different_pixels": 0,
+        "max_channel_difference": 0,
+        "pixels_over_tolerance_1": 0,
+        "compared_pixels": 205200,
+        "window_size": [
+          1120,
+          400
+        ]
+      },
+      {
+        "case": 12,
+        "different_pixels": 0,
+        "max_channel_difference": 0,
+        "pixels_over_tolerance_1": 0,
+        "compared_pixels": 205200,
+        "window_size": [
+          1120,
+          400
+        ]
+      },
+      {
+        "case": 13,
+        "different_pixels": 0,
+        "max_channel_difference": 0,
+        "pixels_over_tolerance_1": 0,
+        "compared_pixels": 205200,
+        "window_size": [
+          1120,
+          400
+        ]
+      },
+      {
+        "case": 14,
+        "different_pixels": 0,
+        "max_channel_difference": 0,
+        "pixels_over_tolerance_1": 0,
+        "compared_pixels": 205200,
+        "window_size": [
+          1120,
+          400
+        ]
+      },
+      {
+        "case": 15,
+        "different_pixels": 0,
+        "max_channel_difference": 0,
+        "pixels_over_tolerance_1": 0,
+        "compared_pixels": 205200,
+        "window_size": [
+          1120,
+          400
+        ]
+      },
+      {
+        "case": 16,
+        "different_pixels": 0,
+        "max_channel_difference": 0,
+        "pixels_over_tolerance_1": 0,
+        "compared_pixels": 205200,
+        "window_size": [
+          1120,
+          400
+        ]
+      }
+    ]
+  }
+}

@@ -85,6 +85,8 @@ def main():
     parser.add_argument('--monitor', default='eDP-1', help='Hyprland monitor name for the isolated window')
     parser.add_argument('--border', choices=('text', 'straight', 'rounded'), default='straight')
     args = parser.parse_args()
+    # Children change cwd to the project root in full-application cases.
+    args.output = args.output.resolve()
     args.output.mkdir(parents=True, exist_ok=True)
     phase_path = args.output / f'{args.name}.phase'
     log_path = args.output / f'{args.name}.log'
@@ -99,6 +101,8 @@ def main():
                PERF_HZ=str(args.hz), PERF_BORDER=args.border,
                PERF_INTERVAL_MS=str(1000 // args.hz), PERF_TICKS=str(args.hz * 8),
                PERF_GUIDES='1', SHELL=str(SCRIPTS / 'terminal-perf-workload.sh'))
+    for controlled in ('PERF_APP', 'PERF_USER_NVIM_CONFIG', 'ONEHAND_TERMINAL_TRACE'):
+        env.pop(controlled, None)
     if args.app:
         if args.host != 'probe' or args.project is None:
             parser.error('--app requires --host probe and --project')
@@ -162,6 +166,12 @@ def main():
                     or not expected['mapped'] or not expected['visible']
                     or any(abs(a - b) > 1 for a, b in zip(expected['size'], (960, 1000)))):
                 raise RuntimeError(f'benchmark window is not ready: {expected}')
+            right = monitor['x'] + monitor['width'] / monitor['scale']
+            bottom = monitor['y'] + monitor['height'] / monitor['scale']
+            if (expected['at'][0] < monitor['x'] or expected['at'][1] < monitor['y']
+                    or expected['at'][0] + expected['size'][0] > right
+                    or expected['at'][1] + expected['size'][1] > bottom):
+                raise RuntimeError('benchmark client area is clipped by the monitor')
             deadline = time.monotonic() + 150
             previous_profile = None
             next_geometry = 0
@@ -226,6 +236,7 @@ def main():
             events_path = phase_path.with_suffix('.events.json')
             result = {'name': args.name, 'host': args.host, 'workload': args.workload,
                       'hz': args.hz, 'border': args.border, 'window': expected,
+                      'monitor': {key: monitor[key] for key in ('name', 'width', 'height', 'scale', 'refreshRate')},
                       'app': args.app, 'user_nvim_config': args.user_nvim_config,
                       'invalid': sorted(set(invalid)), 'phases': phases,
                       'events': json.loads(events_path.read_text()) if events_path.exists() else [],

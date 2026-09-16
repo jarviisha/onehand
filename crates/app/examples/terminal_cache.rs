@@ -90,6 +90,15 @@ impl Comparison {
                 .state
                 .process_bytes(b"\x1b[?1049h\x1b[2J\x1b[Halternate screen"),
             13 => self.state.process_bytes(b"\x1b[?1049l"),
+            14 => self
+                .state
+                .process_bytes(b"\x1b[1;1H\x1b[0;31m1 \x1b[0mstable text\x1b[K"),
+            15 => self
+                .state
+                .process_bytes(b"\x1b[1;1H\x1b[31m123 \x1b[0mstable text\x1b[K"),
+            16 => self
+                .state
+                .process_bytes(b"\x1b[1;1H\x1b[31m123 \x1b[0;4:3mstable text\x1b[0m\x1b[K"),
             _ => {}
         }
         self.case = case;
@@ -153,7 +162,7 @@ fn main() {
                             .ok()
                             .and_then(|s| s.trim().parse::<usize>().ok())
                             .unwrap_or(0)
-                            .min(13);
+                            .min(16);
                         if window
                             .update(cx, |view, _, cx| {
                                 if next > view.case {

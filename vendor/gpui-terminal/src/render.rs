@@ -100,6 +100,9 @@ use gpui::{
     SharedString, ShapedLine, Size, StrikethroughStyle, TextRun, UnderlineStyle, Window, WindowTextSystem, px, quad,
     transparent_black,
 };
+// onehand patch: renderer clones share one visible-row cache.
+use std::sync::{Arc, Weak};
+use parking_lot::Mutex;
 
 /// onehand patch: one `SharedString` per printable ASCII character, made once.
 ///
@@ -128,9 +131,6 @@ fn ascii_glyph(ch: char) -> SharedString {
     }
     SharedString::from(ch.to_string())
 }
-
-use std::sync::{Arc, Weak};
-use parking_lot::Mutex;
 
 /// Background rectangle to paint.
 ///
@@ -507,7 +507,22 @@ struct CachedRow {
     backgrounds: Vec<BackgroundRect>,
     boxes: Vec<BoxCommand>,
     runs: RowRuns,
-    shaped: Option<Vec<(usize, ShapedLine)>>,
+    shaped: Option<Vec<CachedRun>>,
+    previous: Vec<CachedRun>,
+}
+
+struct CachedRun {
+    start_col: usize,
+    style: RunStyle,
+    line: ShapedLine,
+}
+
+impl CachedRun {
+    // onehand patch: a run's position may change without changing its layout.
+    // Font metrics and scale are covered by the enclosing row cache key.
+    fn matches(&self, run: &GlyphRun) -> bool {
+        self.style == run.style && self.line.text.as_ref() == run.text
+    }
 }
 
 // Keep box commands in column coordinates so moving the canvas or scrolling
@@ -562,7 +577,9 @@ impl RowCache {
             } else {
                 cached.cells = Some(row.clone());
             }
-            cached.shaped = None;
+            if let Some(shaped) = cached.shaped.take() {
+                cached.previous = shaped;
+            }
         }
         cached
     }
@@ -900,8 +917,8 @@ impl TerminalRenderer {
 
     /// onehand patch: the same rule, writing into a buffer the caller keeps.
     ///
-    /// What [`Self::layout_backgrounds`] does, minus the `Vec` — the paint runs
-    /// this once per row per frame, and a grid is forty rows.
+    /// What [`Self::layout_backgrounds`] does, minus the `Vec`. Cached rows call
+    /// this only when their background inputs change.
     fn collect_backgrounds<'a>(
         &self,
         row: usize,
@@ -1277,7 +1294,7 @@ impl TerminalRenderer {
     /// through to a fallback face lands on its cell like every other one.
     ///
     /// onehand patch: shaped lines are owned by the visible-row cache. Only
-    /// changed rows call into GPUI's layout cache; unchanged rows submit their
+    /// changed runs call into GPUI's layout cache; unchanged runs submit their
     /// retained lines at the current origin. Scale, font, palette, dimensions
     /// and window changes invalidate the cache before it can be reused.
     fn paint_row_runs(
@@ -1292,8 +1309,20 @@ impl TerminalRenderer {
         let y = origin.y + self.glyph_baseline(line_idx);
 
         if cached.shaped.is_none() {
-            let mut lines = Vec::new();
-            for run in cached.runs.drawable() {
+            let mut lines = std::mem::take(&mut cached.previous);
+            lines.reserve(cached.runs.len.saturating_sub(lines.len()));
+            // Keep stable text within a changed row (for example, code beside
+            // relative line numbers). Otherwise skipping GPUI lookups on row
+            // hits lets its two-frame cache evict layouts we need on a miss.
+            let mut used = 0;
+            for (index, run) in cached.runs.drawable().enumerate() {
+                used += 1;
+                if let Some(old) = lines.get_mut(index) {
+                    if old.matches(run) {
+                        old.start_col = run.start_col;
+                        continue;
+                    }
+                }
                 #[cfg(feature = "profiling")]
                 let shape_span = crate::profiling::Span::new(crate::profiling::Stage::Shape, run.text.len());
                 // onehand patch: a run one ASCII character long is the common case
@@ -1324,11 +1353,18 @@ impl TerminalRenderer {
                 );
                 #[cfg(feature = "profiling")]
                 drop(shape_span);
-                lines.push((run.start_col, shaped));
+                let line = CachedRun { start_col: run.start_col, style: run.style, line: shaped };
+                if let Some(old) = lines.get_mut(index) {
+                    *old = line;
+                } else {
+                    lines.push(line);
+                }
             }
+            lines.truncate(used);
             cached.shaped = Some(lines);
         }
-        for (start_col, shaped) in cached.shaped.as_ref().unwrap() {
+        for run in cached.shaped.as_ref().unwrap() {
+            let shaped = &run.line;
             #[cfg(feature = "profiling")]
             let _glyphs = crate::profiling::Span::new(crate::profiling::Stage::Glyphs, shaped.text.len());
 
@@ -1338,7 +1374,7 @@ impl TerminalRenderer {
             // laid out on the cell lattice and there is nothing to wrap.
             let _ = shaped.paint(
                 Point {
-                    x: origin.x + self.cell_width * (*start_col as f32),
+                    x: origin.x + self.cell_width * (run.start_col as f32),
                     y,
                 },
                 self.cell_height,
@@ -1752,6 +1788,33 @@ mod tests {
         cache.row(&renderer, 0, &removed, &colors);
         assert!(cache.rows[0].boxes.is_empty());
         assert_eq!(cache.rows[0].cells.as_ref(), Some(&removed));
+    }
+
+    #[test]
+    fn changed_row_keeps_stable_run_candidates_but_rejects_new_text_and_style() {
+        let renderer = cache_renderer();
+        let colors = Colors::default();
+        let mut row = cache_row("1 code");
+        row[Column(0)].fg = Color::Indexed(3);
+        let mut cache = RowCache::default();
+        cache.prepare(RowCacheKey::new(&renderer, 1, 6, &colors, 1.0));
+        let cached = cache.row(&renderer, 0, &row, &colors);
+        cached.shaped = Some(cached.runs.drawable().map(|run| {
+            let mut line = ShapedLine::default();
+            line.text = run.text.clone().into();
+            CachedRun { start_col: run.start_col, style: run.style, line }
+        }).collect());
+        row[Column(0)].c = '2';
+        let cached = cache.row(&renderer, 0, &row, &colors);
+        let runs: Vec<_> = cached.runs.drawable().collect();
+        assert_eq!(runs.len(), 2);
+        assert!(cached.shaped.is_none());
+        assert!(!cached.previous[0].matches(runs[0]));
+        assert!(cached.previous[1].matches(runs[1]));
+        let mut moved = GlyphRun { start_col: 10, style: runs[1].style, text: runs[1].text.clone() };
+        assert!(cached.previous[1].matches(&moved));
+        moved.style.font = (moved.style.font + 1) % 4;
+        assert!(!cached.previous[1].matches(&moved));
     }
 
     #[test]
