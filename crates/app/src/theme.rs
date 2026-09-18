@@ -278,6 +278,41 @@ fn temper(base: Hsla, neutral: Hsla) -> Hsla {
     base.mix_oklab(neutral, 0.70)
 }
 
+/// The step between prose and meta ink.
+///
+/// **Why two steps are not enough in one place.** A completion row stacks three
+/// kinds of text and they are not equal: the name, which is what the row is;
+/// the detail lying on the same line beside it — a folder, a description, a
+/// type icon — which is context for that name; and the label naming the run of
+/// rows the whole thing sits in.
+///
+/// The name has to be at full strength, because a list is read as a column of
+/// names and everything else second. The label has to be at the bottom, because
+/// it is found when looked for and ignored the rest of the time. That leaves
+/// the detail, and it can be at neither end: level with the name it competes
+/// with the thing it is describing, and down at the label it is the same ink as
+/// a heading two lines up while sitting immediately beside a name at full
+/// strength — a gap that reads as the row trailing off.
+///
+/// So it sits here, and this step is what makes the row three things in order
+/// rather than two things and a repeat.
+///
+/// (The run of a name a query matched is *not* one of these. It has nowhere
+/// above full strength to go, so it is carried by weight instead — which is
+/// why four roles fit in three inks.)
+///
+/// Derived rather than named as a ramp step, for the reason [`hue_ink`] is
+/// derived: both palettes get it from values they already hold, so there is no
+/// second ramp to keep in step by hand and no library token borrowed for a
+/// meaning it does not have.
+pub(crate) fn meta_ink(cx: &App) -> Hsla {
+    between(cx.theme().foreground, cx.theme().muted_foreground)
+}
+
+fn between(prose: Hsla, meta: Hsla) -> Hsla {
+    prose.mix_oklab(meta, 0.5)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -609,6 +644,103 @@ mod tests {
                     );
                 }
             }
+        }
+    }
+
+    /// The middle ink step has to read, and has to be *in the middle*.
+    ///
+    /// Both halves are the whole of what it is for. A completion row spends the
+    /// two ends of the ramp on saying which characters matched a query, and
+    /// this is the third value the description beside that name is drawn in —
+    /// so a step landing on either end would make the description
+    /// indistinguishable from one half of the name, which is the state it
+    /// exists to prevent. And it is small text on a floating card, so it owes
+    /// the same legibility every other ink here does.
+    #[test]
+    fn the_middle_ink_reads_and_stays_between_the_two_it_divides() {
+        for (name, ramp, mode) in [
+            ("light", &LIGHT, ThemeMode::Light),
+            ("dark", &DARK, ThemeMode::Dark),
+        ] {
+            let theme = resolve(ramp, mode);
+            let middle = between(theme.foreground, theme.muted_foreground);
+
+            let ratio = contrast(middle, theme.popover);
+            assert!(
+                ratio >= AA,
+                "{name}: the middle ink on a floating card is {ratio:.2}, under {AA}"
+            );
+
+            let (prose, meta) = (
+                contrast(theme.foreground, theme.popover),
+                contrast(theme.muted_foreground, theme.popover),
+            );
+            assert!(
+                ratio < prose && ratio > meta,
+                "{name}: the middle ink is not between prose ({prose:.2}) and meta ({meta:.2}), it is {ratio:.2}"
+            );
+        }
+    }
+
+    /// A selected row drawn at partial opacity still has to be a selected row.
+    ///
+    /// **The one fill in the completion popup that carries meaning** — it says
+    /// where `Enter` will land, with no ring, no bar and no mark beside it. It
+    /// is drawn under 1.0 alpha because at full strength it read as a text
+    /// field holding the caret rather than as a row picked out of a list, and
+    /// thinning it is what takes that weight off.
+    ///
+    /// What that must not do is walk it into the hover step. A row can be
+    /// hovered and selected at once, and the reader has to be able to see which
+    /// of the two fills is telling them what the keyboard is pointing at. So
+    /// the comparison here is against the *composited* colour rather than
+    /// against `accent`, because the token the fill came from is no longer the
+    /// colour on the glass.
+    ///
+    /// **The light palette is what this is really guarding.** It has about 1.15
+    /// between white and the well to divide among every step, so its selected
+    /// and hover fills start far closer together than the dark palette's, and
+    /// thinning the selected one closes that gap several times faster. A number
+    /// chosen by eye in dark mode is a selection nobody can find in light mode.
+    #[test]
+    fn the_selection_stays_clear_of_hover() {
+        /// What the compositor puts on the glass for `fill` over `under`.
+        fn over(fill: Hsla, alpha: f32, under: Hsla) -> Hsla {
+            let (fill, under) = (gpui::Rgba::from(fill), gpui::Rgba::from(under));
+            let mix = |a: f32, b: f32| b + (a - b) * alpha;
+            gpui::Rgba {
+                r: mix(fill.r, under.r),
+                g: mix(fill.g, under.g),
+                b: mix(fill.b, under.b),
+                a: 1.,
+            }
+            .into()
+        }
+
+        for (name, ramp, mode) in [
+            ("light", &LIGHT, ThemeMode::Light),
+            ("dark", &DARK, ThemeMode::Dark),
+        ] {
+            let theme = resolve(ramp, mode);
+            let drawn = over(
+                theme.accent,
+                crate::chat::composer::SELECTED_ALPHA,
+                theme.popover,
+            );
+
+            let apart = contrast(drawn, theme.list_hover);
+            assert!(
+                apart >= ROW,
+                "{name}: the drawn selection is {apart:.2} from hover, which is not a difference"
+            );
+            assert!(
+                contrast(drawn, theme.popover) >= ROW,
+                "{name}: the drawn selection does not lift off the card it is on"
+            );
+            assert!(
+                contrast(theme.accent_foreground, drawn) >= AA,
+                "{name}: the ink on the drawn selection is not readable"
+            );
         }
     }
 

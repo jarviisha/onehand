@@ -9,11 +9,34 @@ use gpui::{App, Entity, ParentElement, SharedString, Styled, div};
 use gpui_component::{Icon, IconName, StyledExt};
 use onehand_core::chat::SubmitBlock;
 
+#[derive(Default)]
 pub(super) struct Row {
     pub(super) label: SharedString,
     pub(super) detail: Option<SharedString>,
     pub(super) checked: bool,
     pub(super) pick: Pick,
+    /// What kind of thing this row offers, where the words alone do not say.
+    ///
+    /// Only the `@` list sets it: a file, a folder and something the session
+    /// already touched are three different offers that read as one column of
+    /// paths, and the folder is the one that must not be mistaken — accepting
+    /// it inserts a listing where the reader was expecting a file. A settings
+    /// choice leaves it empty, because there the rows are all the same kind of
+    /// thing and an icon per row would be a second alphabet for a column of
+    /// four words.
+    pub(super) mark: Option<IconName>,
+    /// Where the query matched the label, and the detail.
+    ///
+    /// **The whole of how a row says why it is in the list**, drawn as the two
+    /// ends of the ink ramp and nothing else — no second hue, no weight, no
+    /// rule under the letters. The affordance has to survive a reader who does
+    /// not separate colours, and it has to not compete with the one fill in
+    /// this popup that means something, which is the row about to be taken.
+    ///
+    /// Byte ranges into the string as drawn, computed in core against the same
+    /// text. At most one of the two is ever set.
+    pub(super) label_span: Option<std::ops::Range<usize>>,
+    pub(super) detail_span: Option<std::ops::Range<usize>>,
     /// The heading this row opens, where it is the first of its group.
     ///
     /// **Carried by the row rather than being a row of its own.** One flat list
@@ -28,9 +51,25 @@ pub(super) struct Row {
 
 #[derive(Clone)]
 pub(super) enum Pick {
-    Complete,
+    /// Take this completion: the string that replaces the trigger and its
+    /// query. Carried on the row rather than looked up again by index, because
+    /// what a mention row *says* and what it *inserts* are no longer the same
+    /// text — a row reading `composer.rs` inserts a whole path, and a folder
+    /// row inserts a trailing slash that appears nowhere in its own label.
+    Complete(SharedString),
     Mode(String),
-    Config { config_id: String, value: String },
+    Config {
+        config_id: String,
+        value: String,
+    },
+}
+
+/// Written out rather than derived: `#[default]` only reaches unit variants,
+/// and the completion arm carries the string it would insert.
+impl Default for Pick {
+    fn default() -> Self {
+        Self::Complete(SharedString::default())
+    }
 }
 
 /// The mode in force, as the chip says it.
@@ -217,6 +256,7 @@ fn rows_of(option: &onehand_core::acp::ConfigOption) -> Vec<Row> {
                 value: choice.value.clone(),
             },
             group: (i == 0).then(|| SharedString::from(option.name.clone())),
+            ..Row::default()
         })
         .collect()
 }
@@ -265,6 +305,7 @@ pub(super) fn mode_rows(session: &Entity<ChatSession>, cx: &App) -> Vec<Row> {
             // the other is a difference that says something, and there is
             // nothing here for it to say.
             group: (i == 0).then(|| SharedString::from("Mode")),
+            ..Row::default()
         })
         .collect()
 }

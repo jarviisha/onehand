@@ -47,6 +47,13 @@ use presentation::{
     options_rows, segmented_group,
 };
 
+/// Paths the `@` list offers from what this session already touched.
+///
+/// Small on purpose. This group exists because the file somebody wants next is
+/// usually the one that was just written, and that claim is only true of the
+/// last few — a long recency list is the project's own file list again, in a
+/// worse order and under a heading promising something it no longer delivers.
+const MAX_ARTIFACTS: usize = 8;
 /// Rows drawn in the completion popup. The list scrolls past this; the cap is
 /// what keeps a 10 000-file repo from building 10 000 elements (bounded rendering).
 const MAX_COMPLETION_ROWS: usize = 50;
@@ -62,6 +69,23 @@ const POPUP_MIN_H: Rems = rems(9.);
 /// run out of window rather than as one sized to its contents, and there is
 /// nothing above it to say whether anything was cut.
 const POPUP_HEADROOM: Rems = rems(1.);
+/// How many choices a list shows before the rest are behind a scroll.
+///
+/// **A reach rather than a fit.** The panel bound below answers a different
+/// question — where the window ends — and on a maximized one it answers it
+/// thirty rows up, which is a column of candidates taller than the reader's
+/// span of attention and anchored at the end furthest from the text being
+/// typed. Past about this many the list stops being something taken in at a
+/// glance and becomes something searched, and the query in the field is the
+/// better tool for that than the eye is.
+///
+/// Twelve, and the scroll for the rest. Eight was the floor of that reasoning
+/// and turned out to be under it in the case the list was built for: the `@`
+/// list is three groups deep, and each one spends a row on its own heading, so
+/// eight rows of box held five or six actual candidates spread across two
+/// headings — a list that scrolled almost as soon as it opened, which is the
+/// one thing a short list is supposed to avoid.
+const POPUP_MAX_ROWS: f32 = 12.;
 
 /// How tall a list may grow, given the panel it is opening inside.
 ///
@@ -72,17 +96,105 @@ const POPUP_HEADROOM: Rems = rems(1.);
 /// would be drawn over the header or off the window entirely, with nothing on
 /// screen saying so.
 ///
-/// It is the panel's own height and not a constant, because a constant is a
-/// guess about a panel that is dragged: fifteen rems was most of a short pane
-/// and a third of a tall one, so the same list scrolled on a maximized window
-/// with room to spare beneath it.
+/// **Two bounds, and the smaller wins.** The panel's own height is one, and it
+/// is not a constant because a constant is a guess about a panel that is
+/// dragged: fifteen rems was most of a short pane and a third of a tall one, so
+/// the same list scrolled on a maximized window with room to spare beneath it.
+/// [`POPUP_MAX_ROWS`] is the other, and it is a constant precisely because it
+/// is *not* about the window — it is about how many rows are worth reading
+/// before the query does the narrowing instead. Without it a maximized window
+/// draws every one of the fifty rows the list is capped at building.
+///
+/// The footer rides inside this: the two sentences under the list are held out
+/// of the scroll, so a bound measured in rows alone would be over by their
+/// height every time one appeared.
 ///
 /// The floor is what is left when the panel is too short for any of that: a
 /// squeezed pane scrolls its list, which is honest, but it is never reduced to
 /// one row and a scrollbar.
 pub fn popup_room(panel: gpui::Pixels, reserved: gpui::Pixels, rem: gpui::Pixels) -> gpui::Pixels {
-    (panel - reserved - POPUP_HEADROOM.to_pixels(rem)).max(POPUP_MIN_H.to_pixels(rem))
+    let row = POPUP_ROW_H.to_pixels(rem);
+    let rows = row * POPUP_MAX_ROWS + CHIP_H.to_pixels(rem);
+    let room = (panel - reserved - POPUP_HEADROOM.to_pixels(rem))
+        .min(rows)
+        .max(POPUP_MIN_H.to_pixels(rem));
+    // **Cut back to a whole number of rows.** A bound taken straight from the
+    // panel lands wherever the panel happens to end, which is usually part-way
+    // through a row — and a row sliced through its middle at the top of a
+    // scrolling list does not read as "there is more above", it reads as a
+    // drawing that went wrong. Rounded down, the cut always falls in the gap
+    // between two rows, where it says the same thing and says it on purpose.
+    //
+    // The remainder is the chrome the list is not: a heading standing among the
+    // rows and the footer pinned under them are neither of them a row, so what
+    // is floored is the room itself and the fit is exact only where the rows
+    // are the only thing in it. That is the common case and the one the
+    // half-row was ugliest in.
+    (room / row).floor().max(1.) * row
 }
+/// How tall a row in the popup stands.
+///
+/// **Split from the height of the composer's own controls, which it used to
+/// share.** That sharing was right while the popup was a short list of choices
+/// opened from a chip: the rows were the chip's own values and standing at the
+/// chip's height said so. It stopped being right once the list became something
+/// *scanned* — fifty paths, three groups, a second column of prose — because a
+/// row you read is not a row you press, and at the control height a full list
+/// is a dense block with no space between one line and the next for the eye to
+/// find its place again.
+///
+/// A third more than the height a composer chip takes. The extra is all
+/// breathing room: the text is the same size, so what this buys is the gap
+/// above and below it, which is the whole of what makes a long column
+/// scannable.
+///
+/// The headings and the footer sentences stay at the control height — they are
+/// labels rather than rows, and a heading as tall as the things under it reads
+/// as one of them.
+pub(super) const POPUP_ROW_H: Rems = rems(2.);
+/// How the label over a run of rows is lettered, and how tall its line stands.
+///
+/// A step under the smallest size anything else in this popup is set at. The
+/// two values move together on purpose: shrinking the text and leaving the line
+/// at a row's height gives the space back to nobody, and shrinking the line
+/// without the text crowds a word that is still row-sized.
+const GROUP_LABEL_TEXT: Rems = rems(0.6875);
+const GROUP_LABEL_H: Rems = rems(1.125);
+/// How much of the selected fill is let through.
+///
+/// **The fill is the only thing saying where `Enter` will land**, so this is the
+/// one value here that cannot simply be tuned down until it looks calm. Full
+/// strength it was a slab of mid-grey the width of the popup with a small
+/// radius on it, which reads as a text field that has the caret rather than as
+/// a row that is picked out — and a row that looks like an input in a list you
+/// are arrowing through is saying the wrong thing about what the keyboard is
+/// doing.
+///
+/// What bounds it from below is the hover step. A row can be hovered and
+/// selected at once, and if those two fills converge the reader cannot tell
+/// which of them is telling them where Enter goes. **The light palette is what
+/// sets this number**, not the dark one: there is only 1.15 between white and
+/// the well to divide up in the first place, so the selected fill and the hover
+/// fill start much closer together there and thinning the selected one closes
+/// the gap far faster. `theme::tests::the_selection_stays_clear_of_hover`
+/// holds it, blending the fill the way the compositor does rather than
+/// asserting on the token it came from.
+pub(crate) const SELECTED_ALPHA: f32 = 0.75;
+/// The leading column every popup row's name stands in.
+///
+/// **A constant and not the widest name in the list**, which was the obvious
+/// alternative and is the wrong one here: the list is refiltered on every
+/// keystroke, so a column measured from its contents is a column that changes
+/// width while the query is being typed — and the detail beside it, the thing
+/// this column exists to give a stable left edge, would move on every letter.
+/// Measuring it would trade a column that is occasionally too narrow for one
+/// that is never still.
+///
+/// Wide enough for the names it actually holds: a slash command is a word, and
+/// a filename here has already had its folder split off into the column beside
+/// it. What overruns is clipped, which costs that one row the tail of its name
+/// and costs the column nothing.
+const NAME_COLUMN: Rems = rems(14.);
 /// How much room either option action may take before its current value truncates.
 const OPTION_MAX_W: Rems = rems(9.);
 /// How much of an attachment's name is shown before it truncates.
@@ -211,21 +323,6 @@ fn highlight(selected: usize, rows: usize) -> Option<usize> {
     (rows > 0).then(|| selected.min(rows - 1))
 }
 
-/// A candidate path split into the part that is read first and the part that
-/// tells two of the same name apart.
-///
-/// The row has one line and paths are longer than it. Printed whole and
-/// truncated, what goes missing is the tail -- which is the filename, the one
-/// piece of the path the query was typed against. Leading with the name and
-/// letting the folder be the part that gets cut keeps the row answering the
-/// question it was opened to answer.
-fn split_path(candidate: &str) -> (&str, Option<&str>) {
-    match candidate.rsplit_once('/') {
-        Some((parent, name)) if !name.is_empty() => (name, Some(parent)),
-        _ => (candidate, None),
-    }
-}
-
 /// Where a trigger typed from the toolbar belongs in the buffer.
 #[derive(Debug, PartialEq, Eq)]
 enum TriggerSpot {
@@ -294,6 +391,31 @@ pub struct Composer {
     /// Row highlighted in the popup. Reset whenever the trigger changes so a
     /// stale index cannot survive into a different candidate list.
     selected: usize,
+    /// How many rows the open popup stood at when it opened, so it does not
+    /// resize under the hand that is aiming at it.
+    ///
+    /// **A popup that grows upward moves every row when it changes size.** The
+    /// list is anchored above the composer, so shrinking it walks the whole
+    /// block down toward the field — including the highlighted row, which is
+    /// the one thing on screen the user is currently pointing at. Two ordinary
+    /// events do that. Typing narrows the query, which is the common one: a
+    /// list of eight becomes a list of two and the row under the pointer is
+    /// somewhere else by the time the click lands. And the `@` candidates are
+    /// scanned off the UI loop at session start, so a mention typed in the
+    /// first moments of a conversation opens on nothing and is filled in a
+    /// frame later — growing from one row to eight under a reader who has just
+    /// started reading it.
+    ///
+    /// So the floor is taken once, when the popup opens, and held until it
+    /// closes. It is a floor and not a fixed height: deleting back to a shorter
+    /// query still lets the list grow again, which is the direction that does
+    /// not move a row out from under anybody — the block extends away from the
+    /// composer, and the rows already drawn stay where they are.
+    ///
+    /// In rows rather than pixels, because a panel's zoom overrides the rem
+    /// base for its subtree and a height snapshotted in pixels would be the one
+    /// thing in the popup that did not scale with the text it is completing.
+    opened_rows: Option<usize>,
     /// Files staged with 📎, sent with the next prompt.
     pub attachments: Vec<StagedAttachment>,
     /// The popup's scroll, so the highlight can be kept on screen.
@@ -344,6 +466,7 @@ impl Composer {
             trigger: None,
             overlay: None,
             selected: 0,
+            opened_rows: None,
             attachments: Vec::new(),
             rows_scroll: gpui::ScrollHandle::new(),
             feedback: None,
@@ -359,7 +482,7 @@ impl Composer {
         self.state
             .update(cx, |state, cx| state.set_value("", window, cx));
         self.trigger = None;
-        self.overlay = None;
+        self.set_overlay(None);
         self.selected = 0;
         self.attachments.clear();
         self.feedback = None;
@@ -477,7 +600,7 @@ impl Composer {
         // thing the user does is keep writing the message.
         self.state.update(cx, |state, cx| state.focus(window, cx));
         match pick {
-            Pick::Complete => self.accept(session, window, cx),
+            Pick::Complete(_) => self.accept(session, window, cx),
             Pick::Mode(id) => {
                 let id = id.clone();
                 session.update(cx, |session, cx| {
@@ -522,17 +645,35 @@ impl Composer {
             return;
         };
         self.selected = rows.iter().position(|row| row.checked).unwrap_or(0);
-        self.overlay = (self.overlay.as_ref() != Some(&target)).then_some(target);
+        self.set_overlay((self.overlay.as_ref() != Some(&target)).then_some(target));
         self.reveal_selected();
         self.state.update(cx, |state, cx| state.focus(window, cx));
         cx.notify();
     }
 
     fn toggle_attachments(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        self.overlay = (self.overlay != Some(Overlay::Attachments)).then_some(Overlay::Attachments);
+        self.set_overlay(
+            (self.overlay != Some(Overlay::Attachments)).then_some(Overlay::Attachments),
+        );
         self.selected = 0;
         self.state.update(cx, |state, cx| state.focus(window, cx));
         cx.notify();
+    }
+
+    /// Open, close or swap the popup, and retire the height snapshot with it.
+    ///
+    /// **Guarded on the value actually changing, which is the whole of why this
+    /// is a method.** One of the callers runs on every keystroke — the trigger
+    /// is recomputed per edit and re-asserts `Completion` each time — so a
+    /// setter that cleared the snapshot on every assignment would retake it on
+    /// every letter typed, which is the state the snapshot exists to prevent,
+    /// reached by the code meant to prevent it.
+    fn set_overlay(&mut self, next: Option<Overlay>) {
+        if self.overlay == next {
+            return;
+        }
+        self.overlay = next;
+        self.opened_rows = None;
     }
 
     /// Keep the highlighted row on screen.
@@ -559,48 +700,136 @@ impl Composer {
         }
         self.trigger = next;
         // Typing dismisses a selector: the user has moved on to the prompt.
-        self.overlay = self.trigger.is_some().then_some(Overlay::Completion);
+        self.set_overlay(self.trigger.is_some().then_some(Overlay::Completion));
         cx.notify();
     }
 
-    /// Candidates for the live trigger, drawn from the session the agent
-    /// advertised them on.
-    fn candidates(&self, session: &Entity<ChatSession>, cx: &App) -> Vec<SharedString> {
-        self.matches(session, cx).0
-    }
-
-    /// The candidates that will be drawn, and how many matched in total.
+    /// The rows the `@` or `/` list draws, and how many matches were held back.
     ///
-    /// Both, because the list is capped and a capped list has to say so. Cut to
-    /// fifty rows with nothing admitting it, a query that matched four hundred
-    /// files reads as one that matched fifty -- and the file the user is
-    /// looking for is missing for no visible reason.
-    fn matches(&self, session: &Entity<ChatSession>, cx: &App) -> (Vec<SharedString>, usize) {
+    /// **One builder, read by three callers** — the drawing, the arrow keys'
+    /// bound, and Enter. They have to agree exactly: a row count taken from a
+    /// second filter is a walk that can run past the end of the list on screen,
+    /// and an insert value looked up by index in a third is the wrong file
+    /// accepted. What a row *says* and what it *inserts* stopped being the same
+    /// string once a mention led with its filename, so the insert rides on the
+    /// row rather than being derivable from it.
+    ///
+    /// The held-back count is returned because a capped list has to say so. Cut
+    /// with nothing admitting it, a query that matched four hundred files reads
+    /// as one that matched fifty, and the file the user is looking for is
+    /// missing for no visible reason.
+    fn matches(&self, session: &Entity<ChatSession>, cx: &App) -> (Vec<Row>, usize) {
         let Some(trigger) = &self.trigger else {
             return (Vec::new(), 0);
         };
         let chat = &session.read(cx).chat;
-        let pool: Vec<String> = match trigger.kind {
-            TriggerKind::File => chat.files.clone(),
-            TriggerKind::Command => chat.commands.iter().map(|c| c.name.clone()).collect(),
-        };
-        let matched = completion::filter(&pool, &trigger.query);
-        let total = matched.len();
-        (
-            matched
-                .into_iter()
-                .take(MAX_COMPLETION_ROWS)
-                .map(|c| SharedString::from(c.clone()))
-                .collect(),
-            total,
-        )
+        match trigger.kind {
+            TriggerKind::File => {
+                let folders = completion::folders(&chat.files);
+                let artifacts = chat.artifacts(MAX_ARTIFACTS);
+                let (found, held) = completion::mentions(
+                    &chat.files,
+                    &folders,
+                    &artifacts,
+                    &trigger.query,
+                    MAX_COMPLETION_ROWS,
+                );
+                // The heading is carried by the first row of each run rather
+                // than by a row of its own, so the index the arrows walk stays
+                // made entirely of things that can be taken.
+                let mut open: Option<completion::MentionKind> = None;
+                let rows = found
+                    .into_iter()
+                    .map(|m| {
+                        let heading = (open != Some(m.kind)).then(|| {
+                            open = Some(m.kind);
+                            SharedString::from(match m.kind {
+                                completion::MentionKind::File => "Files",
+                                completion::MentionKind::Folder => "Folders",
+                                completion::MentionKind::Artifact => "This session",
+                            })
+                        });
+                        Row {
+                            label: SharedString::from(m.name),
+                            // The folder's weight rides with its parent in the
+                            // one trailing column, because they answer the same
+                            // question — which of the several folders with this
+                            // name, and how much am I about to hand over.
+                            // Read before the two are consumed below: whether
+                            // a folder's weight went in front of the parent is
+                            // what decides if a span into that parent still
+                            // points at the characters it was found in.
+                            detail_span: m.parent_span.clone().filter(|_| m.note.is_none()),
+                            detail: match (m.parent, m.note) {
+                                (Some(parent), Some(note)) => {
+                                    Some(SharedString::from(format!("{note} · {parent}")))
+                                }
+                                (parent, note) => parent.or(note).map(SharedString::from),
+                            },
+                            pick: Pick::Complete(SharedString::from(m.insert)),
+                            // Two glyphs for three groups, and deliberately:
+                            // an artifact *is* a file, and the one distinction
+                            // the icon has to carry is the folder — accepting
+                            // one inserts a listing where the reader was
+                            // expecting a file to be read. That this file is
+                            // also a recent one is said by the heading over it,
+                            // which is where a fact about a whole run of rows
+                            // belongs. A third shape invented for it would be
+                            // one chosen for a category rather than for a thing.
+                            mark: Some(match m.kind {
+                                completion::MentionKind::Folder => IconName::Folder,
+                                _ => IconName::File,
+                            }),
+                            label_span: m.name_span,
+                            group: heading,
+                            checked: false,
+                        }
+                    })
+                    .collect();
+                (rows, held)
+            }
+            TriggerKind::Command => {
+                let (found, held) =
+                    completion::commands(&chat.commands, &trigger.query, MAX_COMPLETION_ROWS);
+                // The heading opens each run, as it does in the mention list,
+                // and for the same reason: hung off the first row of the run,
+                // the index the arrows walk stays made entirely of commands.
+                //
+                // The agent's own commands are the run with no namespace, and
+                // they lead. Their heading names the agent rather than saying
+                // "Commands", which every row under it is — two runs both
+                // labelled by what they contain would be one label repeated.
+                let mut open: Option<Option<String>> = None;
+                let rows = found
+                    .into_iter()
+                    .map(|c| {
+                        let heading = (open.as_ref() != Some(&c.namespace)).then(|| {
+                            open = Some(c.namespace.clone());
+                            c.namespace
+                                .clone()
+                                .map(SharedString::from)
+                                .unwrap_or_else(|| "Built in".into())
+                        });
+                        Row {
+                            label: SharedString::from(c.name),
+                            detail: c.summary.map(SharedString::from),
+                            pick: Pick::Complete(SharedString::from(c.insert)),
+                            label_span: c.name_span,
+                            group: heading,
+                            ..Row::default()
+                        }
+                    })
+                    .collect();
+                (rows, held)
+            }
+        }
     }
 
     /// How many rows the open list has, which is what walking it is bounded by.
     fn row_count(&self, session: &Entity<ChatSession>, cx: &App) -> usize {
         match &self.overlay {
             None => 0,
-            Some(Overlay::Completion) => self.candidates(session, cx).len(),
+            Some(Overlay::Completion) => self.matches(session, cx).0.len(),
             // The tray draws its own list and the arrows do not walk it.
             Some(Overlay::Attachments) => 0,
             Some(picker) => picker_rows(picker, session, cx).map_or(0, |rows| rows.len()),
@@ -631,9 +860,13 @@ impl Composer {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> bool {
-        let candidates = self.candidates(session, cx);
-        let Some(choice) =
-            highlight(self.selected, candidates.len()).and_then(|row| candidates.get(row).cloned())
+        let rows = self.matches(session, cx).0;
+        // The insert comes off the row rather than from its label: a mention
+        // row reads as a filename and inserts a whole path, and a folder row
+        // inserts a trailing slash that appears nowhere in what it says.
+        let Some(Pick::Complete(choice)) = highlight(self.selected, rows.len())
+            .and_then(|row| rows.into_iter().nth(row))
+            .map(|row| row.pick)
         else {
             return false;
         };
@@ -653,7 +886,7 @@ impl Composer {
             state.set_selected_range(next_caret..next_caret, cx);
         });
         self.trigger = None;
-        self.overlay = None;
+        self.set_overlay(None);
         self.selected = 0;
         cx.notify();
         true
@@ -1058,7 +1291,7 @@ impl Composer {
     fn unstage(&mut self, id: onehand_core::attachment::AttachmentId, cx: &mut Context<Self>) {
         self.attachments.retain(|a| a.id != id);
         if self.attachments.is_empty() && self.overlay == Some(Overlay::Attachments) {
-            self.overlay = None;
+            self.set_overlay(None);
         }
         cx.notify();
     }
@@ -1217,7 +1450,7 @@ impl Composer {
     /// by the popup's height the moment one opened and shrink again when it
     /// closed, so every `@` typed would shove the conversation up.
     pub fn detached_popup(
-        &self,
+        &mut self,
         session: &Entity<ChatSession>,
         room: gpui::Pixels,
         cx: &mut Context<Self>,
@@ -1226,7 +1459,7 @@ impl Composer {
     }
 
     pub fn close_overlay(&mut self, cx: &mut Context<Self>) {
-        self.overlay = None;
+        self.set_overlay(None);
         cx.notify();
     }
 
@@ -1245,7 +1478,7 @@ impl Composer {
 
     /// The open completion, settings, or attachment surface.
     fn popup(
-        &self,
+        &mut self,
         session: &Entity<ChatSession>,
         room: gpui::Pixels,
         cx: &mut Context<Self>,
@@ -1259,45 +1492,9 @@ impl Composer {
         let mut capped = 0usize;
         let rows: Vec<Row> = match &overlay {
             Overlay::Completion => {
-                let kind = self.trigger.as_ref().map(|trigger| trigger.kind);
-                let (values, total) = self.matches(session, cx);
-                capped = total.saturating_sub(values.len());
-                let chat = &session.read(cx).chat;
-                values
-                    .into_iter()
-                    .map(|value| {
-                        // What the row *says* is not what it inserts. A command
-                        // without its description is a name to guess at, and a
-                        // path truncated from the right hides the filename the
-                        // query was typed against -- which is the one part of
-                        // it the user is looking for.
-                        let (label, detail) = match kind {
-                            Some(TriggerKind::Command) => (
-                                value.clone(),
-                                chat.commands
-                                    .iter()
-                                    .find(|command| command.name == value.as_ref())
-                                    .map(|command| command.description.trim())
-                                    .filter(|description| !description.is_empty())
-                                    .map(SharedString::from),
-                            ),
-                            _ => {
-                                let (name, parent) = split_path(&value);
-                                (
-                                    SharedString::from(name.to_string()),
-                                    parent.map(|parent| SharedString::from(parent.to_string())),
-                                )
-                            }
-                        };
-                        Row {
-                            label,
-                            detail,
-                            checked: false,
-                            pick: Pick::Complete,
-                            group: None,
-                        }
-                    })
-                    .collect()
+                let (rows, held) = self.matches(session, cx);
+                capped = held;
+                rows
             }
             // Attachments returned above, so what is left is one of the three
             // settings lists and `picker_rows` has them all.
@@ -1318,7 +1515,32 @@ impl Composer {
             return None;
         }
         let selected = highlight(self.selected, rows.len());
-        let muted = cx.theme().muted_foreground;
+        // Taken on the frame the popup first draws, and held until it closes:
+        // the list never shrinks below the height the reader started reading.
+        // Capped on the way in, so a query that opened on fifty matches does
+        // not hold a floor taller than the popup is allowed to be.
+        let floor = *self
+            .opened_rows
+            .get_or_insert(rows.len().min(POPUP_MAX_ROWS as usize));
+        // Drawn *inside* the scroll, which is what makes this a floor on the
+        // list rather than a height on the popup. A `min_h` on the surface
+        // would win over the panel's own bound on a squeezed pane and push the
+        // two sentences under the list off the bottom -- and those two are the
+        // ones that only ever appear when the list is long, so the bound meant
+        // to keep the popup honest would be silencing it.
+        let filler = rows.len()..floor;
+        let title = popup_title(&overlay, self.trigger.as_ref().map(|t| t.kind), &rows);
+        // A list of one group is now named twice an inch apart — once on the
+        // pinned row and again on the first row under it. The heading is the
+        // one that goes: what it marks is a boundary between runs, and a list
+        // with one run has no boundary in it to mark.
+        let mut rows = rows;
+        if let Some(first) = rows
+            .first_mut()
+            .filter(|r| r.group.as_ref() == Some(&title))
+        {
+            first.group = None;
+        }
 
         Some(
             // The surface and the scrolling list are two boxes, and the inset
@@ -1338,6 +1560,16 @@ impl Composer {
                 // box — and the part left over is what would have grown past
                 // the top of the panel.
                 .max_h(room)
+                // **The popup's radius is the card's, not the rows'.** These
+                // two are one stack — the list sits directly over the box it
+                // completes, in the same width and on the same surface — and
+                // two boxes that agree about everything except how their
+                // corners are cut read as two things that failed to line up,
+                // which is what a mismatched radius looks like from a foot
+                // away. The rows keep the smaller radius, so the nesting runs
+                // the right way: a rounder box with rounder-still corners
+                // inside it is a box with something in it.
+                .rounded(cx.theme().radius_lg)
                 // **Every list takes the reading column**, which is the width of
                 // the card it opens over. A file candidate is a path and always
                 // needed it; a choice needs it too, now that a row carries the
@@ -1350,7 +1582,6 @@ impl Composer {
                 // overflows, so the column is the maximum without this naming
                 // it.
                 .w_full()
-                .rounded(cx.theme().radius)
                 .border_1()
                 // **A hairline is not enough here, and this is the one place
                 // that is true.** A floating control is told apart from the
@@ -1368,6 +1599,7 @@ impl Composer {
                 .bg(cx.theme().popover.alpha(1.))
                 .shadow_lg()
                 .p_1()
+                .child(popup_header(title, cx))
                 .child(
                     div()
                         .id("completion")
@@ -1402,7 +1634,7 @@ impl Composer {
                             });
                             let highlighted = Some(i) == selected;
                             let body = match overlay == Overlay::Completion {
-                                true => candidate_row(i, row, highlighted, muted, cx),
+                                true => candidate_row(i, row, highlighted, cx),
                                 false => choice_row(i, row, highlighted, cx),
                             }
                             // **The pointer moves the highlight, exactly as the
@@ -1432,7 +1664,50 @@ impl Composer {
                                 .v_flex()
                                 .w_full()
                                 .children(
-                                    heading.map(|heading| notice(cx).text_xs().child(heading)),
+                                    // Smaller than any row and a weight above
+                                    // them. A heading names a run of rows and
+                                    // is the one line here that can never be
+                                    // taken, so what tells it apart from a
+                                    // choice must not be a thing a choice could
+                                    // also be: it is the smallest text on the
+                                    // card, it is the only text never drawn on
+                                    // the selected fill, and it is separated by
+                                    // a rule. Size, not quietness, is what does
+                                    // the work — drawn dim it shared an ink
+                                    // with the rows it introduces.
+                                    //
+                                    // **The rule over it is the separator
+                                    // between one run and the next**, which is
+                                    // why it is drawn here rather than under
+                                    // the last row of the run above: a border
+                                    // under a row would have to know it was the
+                                    // last of its kind, and the heading already
+                                    // knows it is the first of the next. The
+                                    // topmost heading goes without, because the
+                                    // pinned header directly above it has a
+                                    // rule of its own and two hairlines with
+                                    // one label between them read as a box.
+                                    heading.map(|heading| {
+                                        group_label(&heading, cx).when(i > 0, |label| {
+                                            // Room on both sides of the rule,
+                                            // and more of it above than below.
+                                            // A separator with the label
+                                            // crowded against its underside is
+                                            // one the eye groups with the label
+                                            // instead of reading as the end of
+                                            // what came before; the gap is what
+                                            // makes it a boundary rather than a
+                                            // decoration on the heading. More
+                                            // above because that side is
+                                            // closing a run of rows and this
+                                            // side is only introducing one.
+                                            label
+                                                .border_t_1()
+                                                .border_color(cx.theme().border)
+                                                .mt_3()
+                                                .pt_2()
+                                        })
+                                    }),
                                 )
                                 .child(body.on_click(take))
                         }))
@@ -1441,7 +1716,8 @@ impl Composer {
                         // so there is nothing for it to be scrolled away behind.
                         .when(selected.is_none(), |list| {
                             list.child(notice(cx).text_sm().child("No matches"))
-                        }),
+                        })
+                        .children(filler.map(|_| div().h(POPUP_ROW_H).flex_none())),
                 )
                 // **Outside the scrolling box, and that is the whole point of
                 // them.** Both are sentences about the list rather than choices
@@ -1457,18 +1733,51 @@ impl Composer {
                 // Tab is named beside Enter because both are bound to take the
                 // highlighted row, and a line that lists the keys is read as the
                 // complete set.
-                .when(capped > 0, |popup| {
-                    popup.child(
-                        notice(cx)
-                            .text_xs()
-                            .child(format!("{capped} more — keep typing to narrow them")),
-                    )
-                })
+                //
+                // **A rule over them and not a gap**, for the reason the pinned
+                // header has one under it: what is above scrolls and what is
+                // below does not, and a boundary drawn in empty space reads as
+                // spacing rather than as an edge — which leaves the footer
+                // looking like the last row of the list, sitting under whatever
+                // half-row the scroll happened to stop on.
+                // The same condition the footer itself is drawn on, written
+                // once: a rule over a footer that is not there is a line under
+                // the list for no reason, and the two conditions drifting apart
+                // is exactly how that happens.
+                // **One row with the slack in the middle, not two stacked
+                // lines.** Stacked, these two spend a second line of the popup
+                // on chrome — and they read as a short list of their own under
+                // the rule, which is the one thing a footer must not look like
+                // directly beneath a list of choices. Side by side they are
+                // plainly a status line: the left end says something about
+                // *this* query and changes as it is typed, the right end names
+                // the keys and never changes at all.
+                //
+                // The keys go right because they are the fixed half. A reader
+                // who has learned them stops seeing that end of the row, which
+                // only works while it is always the same end.
                 .when(overlay == Overlay::Completion, |popup| {
                     popup.child(
-                        notice(cx)
-                            .text_xs()
-                            .child("↑↓ Navigate · Tab or Enter Select · Esc Close"),
+                        popup_footer(cx)
+                            .gap_2()
+                            .children((capped > 0).then(|| {
+                                div()
+                                    .flex_none()
+                                    .child(format!("{capped} more — keep typing to narrow them"))
+                            }))
+                            // The slack sits between them and never at either
+                            // end, so the keys stay against the right edge
+                            // whether or not there is a count to the left of
+                            // them — pushed by a missing count they would move
+                            // across the popup as a query narrowed.
+                            .child(div().flex_1())
+                            .child(
+                                div()
+                                    .flex_none()
+                                    .min_w_0()
+                                    .truncate()
+                                    .child("↑↓ Navigate · Tab or Enter Select · Esc Close"),
+                            ),
                     )
                 })
                 .children(segments.map(|segments| self.segment_rail(segments, session, cx))),
@@ -1615,14 +1924,6 @@ impl Composer {
             .w_full()
             .max_h(room)
             .overflow_y_scroll()
-            .child(
-                div()
-                    .h_flex()
-                    .px_2()
-                    .h(CHIP_H)
-                    .text_sm()
-                    .child(format!("Staged attachments · {}", self.attachments.len())),
-            )
             .children(
                 self.attachments
                     .iter()
@@ -1681,17 +1982,12 @@ impl Composer {
                             None => row.into_any_element(),
                         }
                     }),
-            )
-            .when(hidden > 0, |list| {
-                list.child(notice(cx).text_xs().child(format!(
-                    "{hidden} more — remove visible items to reveal them"
-                )))
-            });
+            );
 
         div()
             .v_flex()
             .w_full()
-            .rounded(cx.theme().radius)
+            .rounded(cx.theme().radius_lg)
             .border_1()
             // A step up rather than the hairline every other edge takes, for
             // the reason the option lists carry the same colour: this opens
@@ -1702,7 +1998,30 @@ impl Composer {
             .bg(cx.theme().popover.alpha(1.))
             .shadow_lg()
             .p_1()
+            // The same pinned row every other popup carries. This one is built
+            // by its own function rather than through `popup`, so leaving it
+            // out here would make the header a property of which overlay
+            // happened to be open rather than of the card they all share.
+            // The count rides in the pinned title rather than in a row of its
+            // own at the top of the list. That row said "Staged attachments"
+            // directly under a header already reading "Attachments" — one name
+            // twice within an inch — and it scrolled, so the half of it that
+            // was not a duplicate went away the moment the list was long enough
+            // to need it.
+            .child(popup_header(
+                format!("Attachments · {}", self.attachments.len()).into(),
+                cx,
+            ))
             .child(list)
+            // Pinned under the list and behind the same rule the completion
+            // popup's footer takes. Held among the rows it was scrolled out of
+            // sight in exactly the case that produced it: it only exists once
+            // there are more attachments than the manager draws.
+            .when(hidden > 0, |popup| {
+                popup.child(popup_footer(cx).child(format!(
+                    "{hidden} more — remove visible items to reveal them"
+                )))
+            })
     }
 }
 
@@ -1754,8 +2073,14 @@ fn popup_row(id: usize, highlighted: bool, cx: &App) -> Button {
         .px_2()
         .text_sm()
         .rounded(cx.theme().radius)
+        // No border and no ring, on either state. The library leaves a ghost
+        // button's border transparent already, so what is turned off here is
+        // the focus ring it would draw over the top — a second rectangle around
+        // the row, in a list where the keyboard is somewhere else entirely and
+        // an outline would be claiming otherwise.
+        .border_0()
         .when(highlighted, |el| {
-            el.bg(cx.theme().accent)
+            el.bg(cx.theme().accent.alpha(SELECTED_ALPHA))
                 .text_color(cx.theme().accent_foreground)
         })
 }
@@ -1767,27 +2092,162 @@ fn popup_row(id: usize, highlighted: bool, cx: &App) -> Button {
 /// is its folder, which is *where the name is* rather than something about it —
 /// stacked under the name it would double the height of a list whose whole job
 /// is to put fifty paths in front of somebody typing.
-fn candidate_row(id: usize, row: Row, highlighted: bool, muted: gpui::Hsla, cx: &App) -> Button {
+fn candidate_row(id: usize, row: Row, highlighted: bool, cx: &App) -> Button {
+    // **The name is one ink, and the match moved off the ramp onto weight.**
+    //
+    // There are four things to tell apart here and three ink steps to do it
+    // with, so something has to give, and the name is what cannot: a row is
+    // read as a name first and everything else second. Every arrangement that
+    // spent two ink steps on the name paid for the highlight by dimming the
+    // word carrying it — the match intact and the thing it was marking faded
+    // out. Drawn at one strength the name is finally as bright as it should
+    // have been, and the ramp has a step spare for the detail.
+    //
+    // So the matched run is bold rather than brighter. That is a rule this
+    // popup set out *not* to use — the match was to be carried by ink alone, no
+    // colour, no weight — and the reason it held was that ink was free to carry
+    // it. It is not any more. Weight is the next axis that is still not a hue,
+    // it survives a reader who does not separate colours, and it does not
+    // compete with the one fill here that means something.
+    //
+    // What is left below the name: the detail at the middle step, the run label
+    // at the bottom one. They are the safe pair to have adjacent, and the pair
+    // that could never share — the detail and the *name lying beside it on the
+    // same line* — is now two whole steps apart.
+    let lit = match highlighted {
+        true => cx.theme().accent_foreground,
+        false => cx.theme().foreground,
+    };
+    let quiet = match highlighted {
+        true => cx.theme().accent_foreground,
+        false => cx.theme().foreground,
+    };
+    // The middle step, for the detail and for the type icon. Both are context
+    // for the name rather than part of it, and both sit on the same line as it,
+    // so they take the step directly under it — far enough down that the name
+    // leads, not so far that a path is hard to read.
+    let second = match highlighted {
+        true => cx.theme().accent_foreground.alpha(0.75),
+        false => crate::theme::meta_ink(cx),
+    };
     popup_row(id, highlighted, cx)
-        .h(CHIP_H)
-        .label(row.label)
-        // **What makes the row read from the left.** The library centres a
-        // button's content and does it on a box the call site cannot reach, so
-        // no amount of justifying out here moves it. What does move it is
-        // giving the row something that takes the leftover width: the label is
-        // built `flex_none`, so everything spare lands on this and the words are
-        // pushed against the start. A row with a detail already has one doing
-        // that job, which is why this only appears where there is none.
-        .children(row.detail.is_none().then(|| div().flex_1()))
-        .children(row.detail.map(|detail| {
+        .h(POPUP_ROW_H)
+        // **The icon is what holds the name's left edge still.** Without it a
+        // row with no folder and a row with a long one start their names in
+        // different places, and the column a reader scans down stops being a
+        // column. It is drawn for every mention row and for none of the command
+        // rows, so neither list has a gap in it where the other has a glyph.
+        .children(
+            row.mark
+                .map(|mark| Icon::new(mark).size_3().flex_none().text_color(second)),
+        )
+        // **A column of a fixed width, not a box that fits its name.** The name
+        // is what the eye runs down, so it has to start at the same x on every
+        // row — which `flex_none` already gave — but so does the *detail*, and
+        // that is what a name-sized box cannot do: sized to its content, every
+        // row hands the detail a different left edge and the second column
+        // stops being a column at all.
+        //
+        // A name past the boundary is clipped rather than allowed to push, for
+        // the same reason. The row that is too long is one row; the column is
+        // every row.
+        .child(
+            div()
+                .flex_none()
+                .w(NAME_COLUMN)
+                .overflow_hidden()
+                .child(marked(&row.label, row.label_span, lit, quiet)),
+        )
+        // **The detail is set against the row's right edge, so every detail in
+        // the list ends at the same x.** The slack is between the two columns
+        // rather than after them.
+        //
+        // This is the opposite end to the one the name is pinned to, and both
+        // are pinned on purpose: the name column is fixed-width, so the detail
+        // starts no further left than that boundary however long a name is, and
+        // ends no further right than the row does however long a detail is. Two
+        // fixed edges with the give in the middle — which is the arrangement
+        // that keeps a ragged column from being ragged at *both* ends, which is
+        // what a content-sized name beside a right-set detail used to be.
+        .child(
             div()
                 .flex_1()
                 .min_w_0()
-                .truncate()
+                .h_flex()
+                .justify_end()
+                .overflow_hidden()
                 .text_xs()
-                .text_color(muted)
-                .child(detail)
-        }))
+                .children(
+                    row.detail
+                        .map(|detail| marked(&detail, row.detail_span, lit, second)),
+                ),
+        )
+}
+
+/// A string with the run the query matched drawn at full strength and the rest
+/// of it quiet.
+///
+/// **The only thing a row says about why it matched, and deliberately so.** The
+/// ink ramp is the one axis already being read; a hue, a weight or a rule under
+/// the letters would each add a second, and the popup has exactly one fill that
+/// already means something — the row about to be taken. A highlight that
+/// competed with it would leave two things on screen claiming to say where
+/// Enter lands.
+///
+/// It also has to survive a reader who does not separate colours, which is why
+/// the two steps are a lightness apart rather than two tints of anything.
+///
+/// Three spans and not one styled run, because the range is a byte range into
+/// this exact string: slicing is safe only because core found the range against
+/// the same text and on character boundaries.
+fn marked(
+    text: &SharedString,
+    at: Option<std::ops::Range<usize>>,
+    lit: gpui::Hsla,
+    quiet: gpui::Hsla,
+) -> gpui::Div {
+    let Some(at) = at.filter(|at| text.is_char_boundary(at.start) && text.is_char_boundary(at.end))
+    else {
+        // One text child, so the ellipsis the column needs is available: a
+        // string too long for its column ends in `…` at the column's own edge
+        // rather than at the popup's.
+        //
+        // **Not `w_full`.** A box told to fill its parent sits at both edges of
+        // it, so a detail set against the right edge of the row would be pushed
+        // back to the left one by its own width: the alignment undone by the
+        // thing being aligned. `min_w_0` lets it shrink to its text and still
+        // give way when the text is longer than the room.
+        return div()
+            .min_w_0()
+            .truncate()
+            .text_color(quiet)
+            .child(text.clone());
+    };
+    // Three children cannot share one ellipsis — the run that overflows is
+    // whichever one the boundary falls in, and gpui has no way to say "put the
+    // mark at the end of this box whichever child reaches it". So the split
+    // string clips instead, and the tail is the piece that takes it: the head
+    // and the lit run are the part answering why this row is here, and the tail
+    // is what is left over.
+    div()
+        .h_flex()
+        .min_w_0()
+        .overflow_hidden()
+        .text_color(quiet)
+        .child(div().flex_none().child(text[..at.start].to_string()))
+        .child(
+            div()
+                .flex_none()
+                // Weight and not a brighter ink, because the string around it
+                // is already at full strength — there is nothing above it on
+                // the ramp to step up to. `lit` and the ink either side of it
+                // are the same value on an unselected row and stay named apart
+                // so the selected row, where they are not, keeps working.
+                .font_semibold()
+                .text_color(lit)
+                .child(text[at.start..at.end].to_string()),
+        )
+        .child(div().min_w_0().truncate().child(text[at.end..].to_string()))
 }
 
 /// One value of an agent-advertised setting: its name, the agent's sentence
@@ -1827,7 +2287,7 @@ fn choice_row(id: usize, row: Row, highlighted: bool, cx: &App) -> Button {
         // The floor keeps a choice the agent sent no sentence for standing at
         // exactly the height every other one-line row in this popup does.
         .h_auto()
-        .min_h(CHIP_H)
+        .min_h(POPUP_ROW_H)
         .py_1()
         .child(
             div()
@@ -1847,19 +2307,170 @@ fn choice_row(id: usize, row: Row, highlighted: bool, cx: &App) -> Button {
         .children(checked.then(|| Icon::new(IconName::Check).size_4().flex_none()))
 }
 
-/// A row of the popup that is a sentence about the list rather than a choice
-/// in it — that it matched nothing, that it is holding some back, or which
-/// setting the choices under it belong to.
+/// The popup's bottom element: what the list is not saying about itself, held
+/// under the scroll with a rule over it.
 ///
-/// It stands at the rows' own height for the same reason they stand at one
-/// another's: these two appear at the top and bottom of a list of choices, and
-/// one of them taller than its neighbours reads as a row that can be taken.
+/// **The rule is carried by this row and not drawn as a line of its own**, and
+/// that is the whole reason this function exists. It *was* a bare `div` with a
+/// top border and nothing in it, which is a box of zero height — so what got
+/// laid out was a border on an element with no area, and nothing appeared. A
+/// separator with no thickness is indistinguishable from a separator that was
+/// never asked for, and from outside it reads as the footer having been left
+/// inside the list.
+///
+/// Hung off the row instead, the border is on the top edge of something that
+/// certainly has height, and the padding under it is what keeps the words off
+/// the line.
+///
+/// **One builder because two popups draw it.** A rule is exactly the kind of
+/// thing that drifts unnoticed: a pixel of margin different on one of them
+/// reads as one card being slightly wrong rather than as two cards disagreeing,
+/// so nobody goes looking for the second copy.
+fn popup_footer(cx: &App) -> gpui::Div {
+    notice(cx)
+        .w_full()
+        .flex_none()
+        .text_xs()
+        .mt_1()
+        .pt_2()
+        .border_t_1()
+        .border_color(cx.theme().border)
+}
+
+/// The popup's one pinned row: what this list is, held above the scroll.
+///
+/// **Outside the scrolling box, which is the whole of the point.** The headings
+/// inside the list belong to the runs of rows under them and travel with those
+/// rows, so walking a long list scrolls every one of them away and leaves a
+/// column of paths with nothing on screen saying what opened it or what the
+/// rows are. This one never moves.
+///
+/// **A rule under it and not a gap**, because a gap reads as spacing where a
+/// line reads as an edge — and an edge is what this is: the part that stays and
+/// the part that moves, which is a boundary the reader has to be able to see
+/// before they scroll rather than discover by scrolling. Drawn at hairline
+/// strength on the popup's own inset, so it stops a few pixels short of the
+/// card's border rather than colliding with it at the corners.
+fn popup_header(title: SharedString, cx: &App) -> gpui::Div {
+    notice(cx)
+        .w_full()
+        .flex_none()
+        .text_xs()
+        // The same treatment the run labels take, one size up: the quiet step
+        // and a weight, in the case it was written in. Left brighter or
+        // uppercase while those are neither, the popup's own title would be the
+        // loudest line on a card whose whole content is the rows under it.
+        .font_semibold()
+        .text_color(cx.theme().muted_foreground)
+        .border_b_1()
+        .border_color(cx.theme().border)
+        .pb_1()
+        .mb_1()
+        .child(title)
+}
+
+/// What the open popup is, as its pinned header says it.
+///
+/// **Derived from the list rather than looked up per overlay.** A table keyed
+/// on the overlay would be a second place naming every settings group, kept in
+/// step by hand with the headings the rows already carry — and it would be
+/// wrong first for the group this app does not know the name of, since what a
+/// config group is called is the agent's to choose and arrives over the wire.
+///
+/// So: a completion says what is being completed, because the trigger is the
+/// only thing that knows and a lone `@` is not self-explanatory. Anything else
+/// takes the name of its one group where it has one, and the general word where
+/// it holds several — a list of models and efforts under a heading reading
+/// `Model` would be naming a third of itself.
+fn popup_title(overlay: &Overlay, trigger: Option<TriggerKind>, rows: &[Row]) -> SharedString {
+    if overlay == &Overlay::Completion {
+        return match trigger {
+            Some(TriggerKind::Command) => "Run a command".into(),
+            _ => "Mention a file".into(),
+        };
+    }
+    let mut groups = rows.iter().filter_map(|row| row.group.clone());
+    match (groups.next(), groups.next()) {
+        (Some(only), None) => only,
+        _ => "Settings".into(),
+    }
+}
+
+/// The label opening one run of rows.
+///
+/// **Smaller than anything it introduces, and that is the point.** It stood at
+/// a row's own text size and a row's own height, which in a list of three runs
+/// put a line the same weight as a choice between every few choices — so the
+/// column a reader is scanning was interrupted three times by something that
+/// looked like part of it. A label is read once, on the way past; the rows
+/// under it are read one against another.
+///
+/// The height comes down with the size rather than being left at the row's, or
+/// the label would be a small word floating in a row-sized gap, which spends
+/// the space a shorter label was meant to give back.
+fn group_label(text: &str, cx: &App) -> gpui::Div {
+    div()
+        .h_flex()
+        .items_center()
+        .w_full()
+        .flex_none()
+        .px_2()
+        // **A floor rather than a height, because the rule needs room under
+        // it.** Set outright, the height leaves the label vertically centred in
+        // a box the rule is drawn on the edge of — so the words sit against the
+        // hairline with nothing between them, and the line stops reading as a
+        // separator and starts reading as an underline belonging to the label.
+        // A floor lets the padding below add to the box instead of being
+        // absorbed by it.
+        .min_h(GROUP_LABEL_H)
+        // Air under the label, so the run it names reads as belonging to it
+        // rather than as starting at it. Without this the first row sat as
+        // close to the heading as the second row sits to the first, which
+        // makes the heading one more line of the list rather than the thing
+        // introducing it.
+        .mb_1p5()
+        .text_size(GROUP_LABEL_TEXT)
+        // **The quietest step, and a weight to carry it.** A label has to be
+        // found when it is looked for and ignored the rest of the time, and
+        // those are not opposites: what makes it findable is that it is bold,
+        // set apart by a rule and smaller than everything around it, none of
+        // which a row can be. What would make it *loud* is ink, and that is the
+        // one axis it does not get — the rows are what the eye is running
+        // down, so the label has to sit under them.
+        //
+        // It can afford the bottom step where the rows could not because it is
+        // three other things at once. Sharing that step with the detail column
+        // costs nothing for the same reason: different column, different size,
+        // and only one of the two is bold.
+        .font_semibold()
+        .text_color(cx.theme().muted_foreground)
+        .child(text.to_string())
+}
+
+/// A line of the popup that is a sentence about the list rather than a choice
+/// in it: what the list is, that it matched nothing, that it is holding some
+/// back, which keys walk it.
+///
+/// **Deliberately shorter than a row.** It used to stand at exactly a row's
+/// height, on the reasoning that a sentence taller than its neighbours reads as
+/// a row that can be taken — which was the right worry and is now answered from
+/// the other side. Rows grew to be read rather than pressed, and everything
+/// here stayed where it was, so the sentences are now the shorter thing on the
+/// card and none of them can be mistaken for something that answers.
+///
+/// The label over a run of rows is no longer one of these. It is smaller again
+/// and carries the rule that separates one run from the next, so it has a
+/// builder of its own: see [`group_label`].
 fn notice(cx: &App) -> gpui::Div {
     div()
         .h_flex()
         .items_center()
         .px_2()
-        .h(CHIP_H)
+        // A floor rather than a height. Set outright it absorbs any padding a
+        // caller adds — the content stays centred in a box of exactly this
+        // size and the padding has nowhere to go — so the one caller that
+        // needs room under a rule would silently get none.
+        .min_h(CHIP_H)
         .text_color(cx.theme().muted_foreground)
 }
 
@@ -2235,7 +2846,7 @@ fn send_controls(
 
 #[cfg(test)]
 mod tests {
-    use super::{Draft, TriggerSpot, highlight, split_path, trigger_spot};
+    use super::{Draft, TriggerSpot, highlight, trigger_spot};
     use onehand_core::attachment::{AttachmentSource, StagedAttachment};
     use std::path::PathBuf;
 
@@ -2269,34 +2880,85 @@ mod tests {
     }
 
     #[test]
-    fn a_candidate_path_leads_with_its_filename() {
+    fn the_pinned_header_names_what_the_popup_is() {
+        use super::{Overlay, Row, popup_title};
+        use onehand_core::completion::TriggerKind;
+
+        let headed = |name: &str| Row {
+            group: Some(gpui::SharedString::from(name.to_string())),
+            ..Row::default()
+        };
+
+        // The trigger is the only thing that knows what a completion is for,
+        // and a lone `@` does not say it.
         assert_eq!(
-            split_path("crates/app/src/chat/composer.rs"),
-            ("composer.rs", Some("crates/app/src/chat"))
+            popup_title(&Overlay::Completion, Some(TriggerKind::File), &[]),
+            "Mention a file"
         );
-        assert_eq!(split_path("README.md"), ("README.md", None));
-        assert_eq!(split_path("crates/app/"), ("crates/app/", None));
+        assert_eq!(
+            popup_title(&Overlay::Completion, Some(TriggerKind::Command), &[]),
+            "Run a command"
+        );
+        // One group: the list takes its name, and the heading that repeated it
+        // is dropped by the caller.
+        assert_eq!(
+            popup_title(&Overlay::Mode, None, &[headed("Mode"), Row::default()]),
+            "Mode"
+        );
+        // Several: naming it after the first would be naming a third of it.
+        assert_eq!(
+            popup_title(
+                &Overlay::Options,
+                None,
+                &[headed("Model"), Row::default(), headed("Effort")]
+            ),
+            "Settings"
+        );
     }
 
     #[test]
     fn a_list_is_capped_by_the_panel_and_never_below_its_floor() {
-        use super::{POPUP_MIN_H, popup_room};
+        use super::{CHIP_H, POPUP_MAX_ROWS, POPUP_MIN_H, popup_room};
         use gpui::px;
 
         let rem = px(16.);
+        let row = super::POPUP_ROW_H.to_pixels(rem);
+        let cap = row * POPUP_MAX_ROWS + CHIP_H.to_pixels(rem);
+
+        // Every answer this gives is a whole number of rows: a row cut through
+        // its middle at the top of a scrolling list reads as a drawing that
+        // went wrong rather than as "there is more above".
+        for (panel, reserved) in [(800., 120.), (500., 300.), (200., 180.), (0., 400.)] {
+            let room = popup_room(px(panel), px(reserved), rem);
+            assert_eq!(
+                room % row,
+                px(0.),
+                "{panel}/{reserved} leaves a part-row at the fold"
+            );
+            assert!(
+                room > px(0.),
+                "{panel}/{reserved} produced nothing to draw into"
+            );
+        }
+
+        assert!(
+            cap < px(800. - 120. - 16.),
+            "the row cap has to be the binding one on a tall panel or it says nothing"
+        );
         assert_eq!(
             popup_room(px(800.), px(120.), rem),
-            px(800. - 120. - 16.),
-            "a tall panel hands the list everything the composer is not standing in"
+            (cap / row).floor() * row,
+            "a tall panel is bounded by the rows worth reading, not by the window"
+        );
+        assert_eq!(
+            popup_room(px(500.), px(300.), rem),
+            ((px(500. - 300. - 16.)) / row).floor() * row,
+            "a panel with less room than the cap hands over what it actually has"
         );
         assert_eq!(
             popup_room(px(200.), px(180.), rem),
-            POPUP_MIN_H.to_pixels(rem),
+            (POPUP_MIN_H.to_pixels(rem) / row).floor() * row,
             "a squeezed panel bottoms out rather than collapsing to one row"
-        );
-        assert!(
-            popup_room(px(0.), px(400.), rem) > px(0.),
-            "a panel measured before its first layout must not produce a negative cap"
         );
     }
 
