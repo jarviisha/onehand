@@ -21,7 +21,8 @@ pub use find::{compute_matches, export_markdown, item_search_text, TranscriptMat
 pub use model::{
     ApplyOutcome, AskItem, AskRow, Away, Chat, ChatItem, Link, Md, MdId, NoticeLevel, PermItem,
     PlanItem, QueuedPrompt, Selector, SelectorChoice, SubmitBlock, TermView, Thought, ToolItem,
-    TranscriptItemId, TurnAnswer, UserAsk, UserMsg, MAX_TERM_BYTES, MODE_SELECTOR,
+    TranscriptItemId, TurnAnswer, UserAsk, UserMsg, COMMAND_FOLD_LINES, MAX_TERM_BYTES,
+    MODE_SELECTOR,
 };
 pub use store::{
     commit, conv_dir, conversations_dir, delete, list_conversations, load, now_secs, ConfigPick,

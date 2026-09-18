@@ -65,10 +65,12 @@ pub struct PermItem {
 /// Eight is what leaves the header, the buttons and enough of a script to
 /// recognise it on one screen together.
 ///
-/// Private on purpose: the number is an input to the two rules below and
-/// nothing outside this file has an answer to give about it. What a caller
-/// wants is `is_long` or `shown_lines`, both of which have already applied it.
-const COMMAND_FOLD_LINES: usize = 8;
+/// Named outside this crate by the block that draws the fold: the collapsed
+/// box is this many rows tall, so a command of one very long line is held to
+/// the same height as one of eight short ones rather than filling the card. The
+/// rules below apply it to the agent's newlines; the height is the only thing
+/// that has to know the number itself.
+pub const COMMAND_FOLD_LINES: usize = 8;
 
 impl PermItem {
     /// The exact command, whatever the fold is doing to what is drawn.

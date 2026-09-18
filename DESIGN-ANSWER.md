@@ -1049,26 +1049,32 @@ A blocking card: the agent parks until it is answered.
   rows. What is held back scrolls **inside the well**, which means the well takes
   the wheel before the transcript behind it does; otherwise an opened command is
   a box that slides the conversation past while the reader is trying to read it.
-- **The fold counts lines; everything else counts height, and they are not the
-  same question.** Where the fold falls is decided by the newlines the agent
-  wrote, and that is deliberate: measured in drawn rows it would close a two-line
-  command on a narrow pane and leave a ten-line one open on a wide one, which is
-  a fold nobody can predict. But a single line three thousand characters long is
-  *one line* to that rule and a screenful to the reader — so hanging the rest of
-  the block off it took every affordance away in the one case where the text runs
-  past the bottom edge with nothing holding it back: no line numbers (there is
-  one line to number), no *Show all* (there are no lines to reveal), and, for a
-  while, no fade and no scrollbar either. A `curl` with a long URL was a box whose
-  content simply stopped at the edge, with nothing on screen admitting it.
-  So: **what says there is more below answers "is anything out of sight", not "is
-  this command long"** — lines behind the fold and a box scrolled short of its own
-  end are the same fact to a reader, and both draw the fade and a scrollbar. The
-  fade goes as soon as the end is reached, because a gradient laid over the last
+- **Every command is drawn the same way, whatever shape its text is.** A
+  numbered gutter, a Copy button on the surface, and — wherever anything is out
+  of sight — a fade and a control that opens it. Which card a permission got used
+  to be decided by whether the agent happened to put a newline in its command:
+  the gutter appeared past the second line, the fold past the eighth, and Copy
+  waited for the pointer below that. So a long `curl` and a `bash` script asking
+  for the same grant, an inch apart in one transcript, were two different-looking
+  cards — and the difference was not anything the reader had done.
+  **The fold slices lines; the box is bounded by height, and the two are not the
+  same question.** *Which* lines are drawn is decided by the newlines the agent
+  wrote, and that stays: measured in drawn rows it would close a two-line command
+  on a narrow pane and leave a ten-line one open on a wide one, a fold nobody can
+  predict. But that rule cannot bound one line three thousand characters long,
+  which is one line to it and a screenful to the reader — so the folded box is a
+  **height**, the height of the lines the fold would have shown. Every command
+  folds to the same box, and the control that opens it is offered on the same
+  terms: whenever anything is out of sight, by either route.
+  The count rides in the label only where lines are what is being held back —
+  *Show all · 200 lines* — because a single wrapped line has no second line to
+  promise and *Show all · 1 lines* counts the wrong thing and miscounts it.
+  The fade goes as soon as the end is reached, since a gradient laid over the last
   line of a command somebody is being asked to approve is the one place this
-  cannot be decorative. And **Copy is drawn outright wherever the well overflows**,
-  not only where the command has many lines: a single long line cannot be selected
-  out by dragging either, since the drag that would reach its end is the drag that
-  scrolls the box.
+  cannot be decorative. **The scrollbar waits for the block to be opened**: folded,
+  the way to the rest is the control at the corner, and a scrollbar beside it is a
+  second and quieter answer that moves the text without ever saying how much of it
+  there is.
 - **The header names what kind of work is being asked for**, taken from the
   tool call's own declared kind — read, edit, execute, fetch. The card needs one
   word of that sort: a heading that is a bare command says what *would* run
