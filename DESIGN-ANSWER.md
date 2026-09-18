@@ -30,10 +30,19 @@ block type the chat renders, how it folds, and how it behaves mid-stream.
 3. **One turn = many blocks.** An agent turn is prose + tool cards + process rows
    stacked on one shared left axis.
 
-The transcript runs in a centred **52rem reading column**. That is a maximum
+The transcript runs in a centred **64rem reading column**. That is a maximum
 rather than a fixed minimum: on a narrower panel the column contracts to the
-available width, minus equal padding on both sides. **The composer is capped
-narrower**, and its popups with it, because a message being written is not a
+available width, minus equal padding on both sides. **It is set by what the
+widest block holds, not by prose alone.** A column sized purely for reading
+sentences is the narrower number this used to be, and what that cost was
+everything in the transcript which is not a sentence: a unified diff wrapping
+its longest lines, a command well folding a path that would have fit, a tool
+card's header ellipsizing a file name whose tail is the part that identifies
+it. Those are the blocks somebody is reading the transcript *for* when
+something has gone wrong, and a cap tuned past them to keep paragraphs
+comfortable trades the case that matters for the case that was already fine.
+**The composer is capped narrower**, and its popups with it, because a message
+being written is not a
 message being read: the reading column is set by how far a line of prose can run
 before the eye loses its place coming back, while the composer holds a few lines
 at most and has its controls at the two ends of one row — at the full column
@@ -108,6 +117,29 @@ line stops clear of the box, and nothing is unreachable behind it. That rest is
 and a conversation that stops just short of it reads as one still trying to fit,
 the last line of the answer and the box it is answered in running together into
 one block.
+
+**Where it stops being drawn is the composer's own middle.** The overlay is
+transparent around its surfaces, so a row scrolled under it stayed visible in
+the strip above the card, at both sides of it and under it — a line of the
+conversation cut in two by a box resting on top of it, which reads as the card
+having been dropped on the text rather than as the text ending. Clipped at the
+middle it ends behind the card's opaque top half, so nothing is ever seen
+sliced: the cut itself is under a surface. The scroll is not shortened by this —
+the padding above still ends the conversation clear of the box, and nothing is
+unreachable behind it.
+
+**And it dissolves into that clip rather than stopping on it.** A clip on its
+own is a line: text at full strength for one row and gone the next. Behind the
+card that reads as occlusion, which is what it is; either side of the card, and
+in the gap above it, it reads as a rendering fault. So the conversation fades
+into the surface under it over the last few lines of prose before the cut — long
+enough that the eye never finds an edge, where a shorter run only blurs one.
+The fade is drawn **between the conversation and every control**, so what it
+takes is the transcript alone: the jump pill, the pinned cards and the composer
+all come after it, each carrying its own opaque surface. And it ends **at the
+clip**, not at the top of the composer, because the card is narrower than the
+panel — a fade stopping at the card's own edge would leave the strips either
+side of it showing full-strength text for the height of the card.
 
 **A question just asked goes to the top of the panel and stays there while it
 is answered.** The transcript scrolls so the new prompt rests on the same head

@@ -553,8 +553,26 @@ plus `sendMessage` and `answerCallbackQuery`. Everything that is not the wire is
 - `composer.rs` — the card the pane mounts: the input, `@`/`/` completion, attachments,
   agent-advertised selectors and Send. It draws itself and reports the send press as an event,
   because which of Send and Stop was pressed is a question about the turn, not about the click.
+  **Everything that floats over it is built here and drawn as one object** — the card, a parked
+  permission, a parked question, an adapter still connecting, a queued prompt — sharing one
+  surface, hairline, radius and shadow, because written out per card they had already come apart
+  and a permission parked above a queued prompt read as two unrelated things rather than as the
+  same interruption twice. The card is capped **narrower than the transcript's reading column**
+  (`COMPOSER_COLUMN`) and everything pinned above it takes that cap; the three settings lists the
+  chips open all come from `picker_rows`, one answer because opening a list, walking it and drawing
+  it each ask for it.
+  **Standing state is a bare strip under the card**, outside it: the project's branch on the left,
+  the permission mode on the right — left is the project, right is the turn. The branch is a
+  control rather than a label, emitting `ChatPaneEvent::Project` so the shell opens the same menu
+  the rail's project rows carry, branch rename included.
 - `pane.rs` — what the shell mounts: session switching, the resume picker, the project page, the find bar, unseen
   badges, and the run plan the virtualized list reads.
+  **The transcript stops being drawn at the composer's middle** and fades into the surface over the
+  last few lines before it (`SMOKE`): the overlay is transparent around its surfaces, so an unclipped
+  row stayed visible either side of the card and read as the card having been dropped on the text,
+  while an unfaded clip is a line — full-strength text for one row and gone the next. The fade is
+  drawn between the list and every control, so what it takes is the conversation alone, and it ends
+  at the clip rather than at the card, which is narrower than the panel.
   Its **header is the panel's only chrome** (the dock draws the conversation bare), and it is split by
   what a control is *about*. **The conversation's name is itself the menu** — full-strength ink and
   semibold against an otherwise muted row, with the hover background and a chevron whose space is held

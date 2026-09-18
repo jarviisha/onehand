@@ -49,6 +49,7 @@ One window hosts exactly one workspace. The frame is a navigation **rail** plus 
 │  project       │                              │    default)   │
 │   session      │      ┌── composer ──┐        │               │
 │   session      │      └──────────────┘        │               │
+│                │       ⑂ main    ▣ mode       │               │
 │                ├──────────────────────────────┴───────────────┤
 │ ⚙ settings     │        terminal (bottom dock, closed)        │
 └────────────────┴──────────────────────────────────────────────┘
@@ -82,6 +83,21 @@ One window hosts exactly one workspace. The frame is a navigation **rail** plus 
   docks' buttons stay, following the same three-state rule as their keys. No
   panel in the window keeps a tab group; the Workbench's mode strip and the
   terminal's shell strip are each that panel's own chrome.
+- **Standing state sits under the composer, outside its card.** A bare strip
+  with no chrome of its own carries the project's branch on the left and the
+  turn's permission mode on the right. The card is the message being written and
+  everything inside it acts on that message; neither of these does — the branch
+  holds across every session in the project, and the mode outlives the prompt in
+  the field — so a strip resting *under* the card says "this is the standing
+  state" where a fourth control inside the row would have said they were part of
+  what is being typed. **Left is the project, right is the turn**, which is the
+  whole of what says which kind a thing is. Both sides are pressable: the branch
+  is a control and not a label, opening the same kind of menu the rail's project
+  rows do — switch it, rename it, take it to a worktree — because a word that
+  answers *which branch* while refusing *and now what* is the one thing in the
+  row that stops short. Where there is neither — a project that is not a
+  repository, an agent advertising no modes — the strip is not drawn at all,
+  rather than ruled empty.
 - **A project with no conversation open gets a page, not a sentence.** Selecting
   a project that has no session — every freshly added one, and any whose last
   session was closed — fills the centre with that project's name, a *New
