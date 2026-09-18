@@ -572,6 +572,20 @@ impl ChatPane {
                         cx.emit(ChatPaneEvent::WorkTreeTouched);
                     }
                     ChatEvent::AwaitingUser(ask) => {
+                        // **An agent that has stopped outranks a list the user
+                        // left open.** The popup is drawn over the pinned
+                        // cards, so a card arriving while one is up would park
+                        // behind it — and this is the one moment nothing else
+                        // would say so: the desktop notification is withheld
+                        // precisely because the user is looking at this
+                        // conversation, which is exactly where the card now is
+                        // and exactly where they cannot see it.
+                        //
+                        // Only for a card that *arrives*. One already on screen
+                        // when the picker was opened is one the user saw and
+                        // chose to open a picker over.
+                        pane.composer
+                            .update(cx, |composer, cx| composer.close_overlay(cx));
                         pane.awaiting_user_detached(uid, *ask, &agent, &root_label, cx);
                     }
                     // Re-emitted rather than acted on: the transcript says what
@@ -3843,8 +3857,35 @@ impl ChatPane {
             // closed, so every `@` typed shoved the conversation up and every
             // completion dropped it back. The popup is transient chrome; it may
             // cover the transcript, but it must not move it.
-            .children(
-                self.composer
+            // **The popup and the pinned cards share one slot, and the popup
+            // is drawn over them.** Stacked in the column instead, the two were
+            // additive: a list at its full height plus a permission card
+            // carrying a long command plus the composer could outgrow the
+            // panel, and since the column is anchored at the bottom and grows
+            // up, what ran off the top was the popup — header, first rows and
+            // all, unreachable because the list scrolls inside itself. Sharing
+            // a slot makes the cost `max` rather than `sum`, so the list keeps
+            // its full height and nothing is pushed anywhere.
+            //
+            // The cards are what is in flow, so the slot is as tall as they
+            // are and the transcript's clearance is unchanged. The popup is
+            // absolute and anchored to the slot's bottom edge: with no card it
+            // sits exactly where it always did, directly above the composer,
+            // and with one it covers it and carries on upward.
+            //
+            // **The popup is the later child on purpose.** Paint order is what
+            // puts it over the card rather than under, and it is also what
+            // gives it the click: a list of choices opened over a card is the
+            // thing being aimed at.
+            //
+            // What this costs is that a card already on screen is hidden while
+            // a popup is open over it. That is the user's own doing — they
+            // opened the picker and can see they did. A card that *arrives*
+            // while one is open is the case that would be silent, and that is
+            // answered at the event instead: parking an ask closes the popup.
+            .children({
+                let popup = self
+                    .composer
                     .update(cx, |composer, cx| {
                         composer.detached_popup(session, room.popup, cx)
                     })
@@ -3863,55 +3904,66 @@ impl ChatPane {
                     // list came from.
                     .map(|popup| {
                         div()
-                            .w_full()
+                            .absolute()
+                            .bottom_0()
+                            .left_0()
+                            .right_0()
                             .px_4()
                             .child(div().w_full().max_w(COMPOSER_COLUMN).mx_auto().child(popup))
-                    }),
-            )
-            // **Outside the measured box, for the reason the popup is.** A
-            // parked card is a surface over the conversation, not a floor under
-            // it: measured, every card that arrives grows the transcript's
-            // bottom padding, and a list anchored at its tail answers that by
-            // shifting everything the user was reading upward -- at the exact
-            // moment their attention is being asked for, by a card that appeared
-            // because the agent chose to park and not because anybody pressed
-            // anything. What it costs is the last row or two of the
-            // conversation sitting behind the card while it is up, which the
-            // reader can scroll to and which comes back the moment the card is
-            // answered. The composer stays measured: it is there the whole time,
-            // and a transcript that ended behind the box being typed in would
-            // hide its own last line permanently.
-            .children((!pinned.is_empty()).then(|| {
-                div().w_full().px_4().child(
-                    div()
-                        .v_flex()
-                        .gap_2()
-                        .w_full()
-                        .max_w(COMPOSER_COLUMN)
-                        .mx_auto()
-                        // The composer's column, because while a card is pinned
-                        // it is part of that stack: these boxes sit directly on
-                        // the card, share its surface and its radius, and are
-                        // read as one object with it. A card an inch wider than
-                        // the box it rests on reads as two panels that failed to
-                        // line up.
-                        //
-                        // **Width follows where a card is, not what it is.**
-                        // Answered, it is drawn in the transcript and takes the
-                        // transcript's column like every block around it. That
-                        // was already half true -- a transcript row is inset
-                        // inside the reading column while a pinned card was not
-                        // -- so the rule that said the two must match was
-                        // describing something the layout had never quite done.
-                        //
-                        // The text size is still the transcript's, which is the
-                        // part that does have to hold: a question re-read in the
-                        // history has to be the same words at the same weight as
-                        // the question that stopped everything.
-                        .text_size(transcript::TEXT)
-                        .children(pinned),
-                )
-            }))
+                    });
+                // **Outside the measured box, for the reason the popup is.** A
+                // parked card is a surface over the conversation, not a floor
+                // under it: measured, every card that arrives grows the
+                // transcript's bottom padding, and a list anchored at its tail
+                // answers that by shifting everything the user was reading
+                // upward -- at the exact moment their attention is being asked
+                // for, by a card that appeared because the agent chose to park
+                // and not because anybody pressed anything. What it costs is
+                // the last row or two of the conversation sitting behind the
+                // card while it is up, which the reader can scroll to and which
+                // comes back the moment the card is answered. The composer
+                // stays measured: it is there the whole time, and a transcript
+                // that ended behind the box being typed in would hide its own
+                // last line permanently.
+                let cards = (!pinned.is_empty()).then(|| {
+                    div().w_full().px_4().child(
+                        div()
+                            .v_flex()
+                            .gap_2()
+                            .w_full()
+                            .max_w(COMPOSER_COLUMN)
+                            .mx_auto()
+                            // The composer's column, because while a card is
+                            // pinned it is part of that stack: these boxes sit
+                            // directly on the card, share its surface and its
+                            // radius, and are read as one object with it. A card
+                            // an inch wider than the box it rests on reads as
+                            // two panels that failed to line up.
+                            //
+                            // **Width follows where a card is, not what it is.**
+                            // Answered, it is drawn in the transcript and takes
+                            // the transcript's column like every block around
+                            // it. That was already half true -- a transcript row
+                            // is inset inside the reading column while a pinned
+                            // card was not -- so the rule that said the two must
+                            // match was describing something the layout had
+                            // never quite done.
+                            //
+                            // The text size is still the transcript's, which is
+                            // the part that does have to hold: a question
+                            // re-read in the history has to be the same words at
+                            // the same weight as the question that stopped
+                            // everything.
+                            .text_size(transcript::TEXT)
+                            .children(pinned),
+                    )
+                });
+                // Nothing at all rather than an empty box, so the column's own
+                // gap is not spent on a slot with no height and the composer
+                // does not drift down whenever neither is showing.
+                (popup.is_some() || cards.is_some())
+                    .then(|| div().relative().w_full().children(cards).children(popup))
+            })
             .child(
                 // What the transcript has to clear: the pinned cards and the
                 // composer, and the transparent space under them.
