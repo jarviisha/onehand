@@ -1086,8 +1086,6 @@ impl Composer {
             crate::theme::status_ink(cx).danger,
             cx.theme().radius,
         );
-        let over = self.attachments.len().saturating_sub(MAX_TRAY_CHIPS);
-
         Some(
             div()
                 .id("attachments")
@@ -1181,7 +1179,15 @@ impl Composer {
                             }
                         }),
                 )
-                .when(over > 0, |tray| {
+                // **Offered from the second attachment, not from the
+                // thirteenth.** The tray scrolls sideways, so two long names on
+                // a narrow panel already push a chip past the edge — and the
+                // list this opens is the one place a chip out there can still be
+                // found and taken off. Gated on the tray's own *chip cap*, the
+                // way back to a staged file nobody can see was itself invisible
+                // until there were twelve of them. One attachment needs nothing:
+                // the single chip beside the button is already the whole list.
+                .when(self.attachments.len() > 1, |tray| {
                     tray.child(
                         crate::controls::action("all-attachments")
                             .ghost()
@@ -1326,6 +1332,12 @@ impl Composer {
             // list does to its own offset can consume it.
             div()
                 .v_flex()
+                // **The whole popup is what the panel has to hold**, not the
+                // scrolling list alone. With the two sentences below held out
+                // of that list, a bound on the list is a bound on part of the
+                // box — and the part left over is what would have grown past
+                // the top of the panel.
+                .max_h(room)
                 // **Every list takes the reading column**, which is the width of
                 // the card it opens over. A file candidate is a path and always
                 // needed it; a choice needs it too, now that a row carries the
@@ -1361,7 +1373,14 @@ impl Composer {
                         .id("completion")
                         .v_flex()
                         .w_full()
-                        .max_h(room)
+                        // The bound is on the surface now, because what must
+                        // not outgrow the panel is the popup and not the list
+                        // inside it. `min_h_0` is what lets this shrink to
+                        // whatever the surface has left after the sentences
+                        // below: a flex child's floor is otherwise its own
+                        // content, so the box would push them off the bottom
+                        // instead of scrolling.
+                        .min_h_0()
                         .overflow_y_scroll()
                         // Held by the composer rather than by the element, so walking
                         // the list with the keys can scroll it: the handle is what
@@ -1417,24 +1436,41 @@ impl Composer {
                                 )
                                 .child(body.on_click(take))
                         }))
+                        // This one stays among the rows, because it stands *in
+                        // place of* them: an empty list is what it is reporting,
+                        // so there is nothing for it to be scrolled away behind.
                         .when(selected.is_none(), |list| {
                             list.child(notice(cx).text_sm().child("No matches"))
-                        })
-                        .when(capped > 0, |list| {
-                            list.child(
-                                notice(cx)
-                                    .text_xs()
-                                    .child(format!("{capped} more — keep typing to narrow them")),
-                            )
-                        })
-                        .when(overlay == Overlay::Completion, |list| {
-                            list.child(
-                                notice(cx)
-                                    .text_xs()
-                                    .child("↑↓ Navigate · Enter Select · Esc Close"),
-                            )
                         }),
                 )
+                // **Outside the scrolling box, and that is the whole point of
+                // them.** Both are sentences about the list rather than choices
+                // in it, and both appear only once the list is long -- so held
+                // among the rows they were scrolled out of sight in exactly the
+                // case that produced them. The count of what is being held back
+                // sat past the fiftieth row, so nothing ever said a query had
+                // been narrowed at all; and the line naming the keys that walk
+                // the list went away the moment the list was long enough to need
+                // walking. Out here the surface holds them against its own edge
+                // and nothing the list does to its own offset can move them.
+                //
+                // Tab is named beside Enter because both are bound to take the
+                // highlighted row, and a line that lists the keys is read as the
+                // complete set.
+                .when(capped > 0, |popup| {
+                    popup.child(
+                        notice(cx)
+                            .text_xs()
+                            .child(format!("{capped} more — keep typing to narrow them")),
+                    )
+                })
+                .when(overlay == Overlay::Completion, |popup| {
+                    popup.child(
+                        notice(cx)
+                            .text_xs()
+                            .child("↑↓ Navigate · Tab or Enter Select · Esc Close"),
+                    )
+                })
                 .children(segments.map(|segments| self.segment_rail(segments, session, cx))),
         )
     }

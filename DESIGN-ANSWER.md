@@ -287,6 +287,20 @@ capped list says what it is holding back: cut with nothing admitting it, a query
 that matched four hundred files reads as one that matched fifty, and the file
 the user is looking for is missing for no visible reason.
 
+**What the popup says *about* the list is held outside the part that scrolls.**
+The count of what is being held back and the line naming the keys are sentences
+about the list rather than rows in it, and both appear only once the list is
+long — so kept among the rows they were scrolled out of sight in precisely the
+case that produced them: the count sat past the fiftieth row, and the keys went
+away at the moment the list became long enough to need walking. Held against the
+surface's own edge, nothing the list does to its offset can move them. **The
+bound goes with them, onto the popup rather than onto the list**, or the part
+left outside is the part that grows past the top of the panel. *No matches* is
+the exception and stays among the rows, because it stands *in place of* them:
+there is nothing for it to be scrolled behind. The line naming the keys names
+**both** that take the highlighted row — `Tab` beside `Enter` — since a line
+listing the keys is read as the complete set.
+
 **Every popup is as wide as the card it opens over**, which is the composer's
 column and not the transcript's. A file candidate is a path and wants every inch
 of it; a choice wants it too, now that a row carries the agent's own sentence
@@ -412,6 +426,14 @@ hover and focus states that say which of the two the pointer is on. The tray is
 the bound is counted, not silently dropped. That count is a **View all** control
 which opens a scrollable manager where every staged item can be opened or
 removed; the rendering bound never makes an attachment unmanageable.
+
+**It is offered from the second attachment, not from the bound.** The tray
+scrolls sideways, so two long names on a narrow panel already carry a chip past
+the edge — and this list is the one place a chip out there can still be found and
+taken off. Gated on the rendering bound instead, the way back to a staged file
+nobody can see was itself invisible until there were a dozen of them, which is
+the same unreachability one step later. One attachment is offered nothing,
+because the single chip beside the button is already the whole list.
 
 **A chip is also the way to the file it names**, where there is one to go to.
 Three files called `main.rs` are three chips reading `main.rs`, and checking
