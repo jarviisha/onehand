@@ -227,12 +227,18 @@ fn rows_of(option: &onehand_core::acp::ConfigOption) -> Vec<Row> {
 /// its own control in the row now — the same setting said twice an inch apart
 /// is two places to read one fact and one of them will be a frame behind.
 ///
-/// `None` where there is nothing for the chip's list to hold. The chip exists
-/// to open that list, and effort is not in it, so an agent advertising effort
-/// and nothing else would leave a chip with an empty popup behind it.
+/// `None` where there is nothing for the chip's popup to hold at all.
+///
+/// **The rail counts as something to open.** Effort is drawn at the foot of
+/// that popup and nowhere else, so a chip withheld because the *list* above the
+/// rail is empty is effort made unreachable — which is exactly the shape an
+/// agent advertising effort and fast mode and nothing else has, since both of
+/// those are promoted out of the list and neither leaves a row behind. The
+/// popup itself already draws a rail with no rows above it; this is the control
+/// that opens it agreeing about when there is something to see.
 pub(super) fn options_action(session: &Entity<ChatSession>, cx: &App) -> Option<SharedString> {
     let options = &session.read(cx).chat.config_options;
-    if !options.iter().any(|option| listed(&option)) {
+    if !opens_onto_something(options) {
         return None;
     }
     let model = options
@@ -274,6 +280,24 @@ pub(super) fn mode_rows(session: &Entity<ChatSession>, cx: &App) -> Vec<Row> {
 ///
 /// One function because the list and the chip that opens it both ask, and the
 /// two disagreeing is a chip whose popup is empty.
+/// Whether the Options popup has anything in it at all.
+///
+/// **Rows or the rail, because the rail is inside that popup.** Effort is drawn
+/// at its foot and nowhere else, so a chip withheld on the strength of the list
+/// alone takes effort off the screen entirely -- which is precisely the shape of
+/// an agent advertising effort and fast mode and nothing more, both of them
+/// promoted out of the list and neither leaving a row behind.
+///
+/// One function because the chip and the popup both ask, and the two
+/// disagreeing is either a chip opening onto nothing or a setting with no way
+/// in.
+fn opens_onto_something(options: &[onehand_core::acp::ConfigOption]) -> bool {
+    options.iter().any(|option| listed(&option))
+        || options
+            .iter()
+            .any(|option| names(option, SEGMENTED_GROUP) && segments_of(option).is_some())
+}
+
 fn listed(option: &&onehand_core::acp::ConfigOption) -> bool {
     let promoted = (names(option, SEGMENTED_GROUP) && segments_of(option).is_some())
         || (names(option, CHIP_GROUP) && !option.choices.is_empty());
@@ -335,7 +359,9 @@ pub(super) fn composer_status(blocked: Option<SubmitBlock>, cx: &App) -> Option<
 
 #[cfg(test)]
 mod tests {
-    use super::{CHIP_GROUP, SEGMENTED_GROUP, config_rank, listed, names, segments_of};
+    use super::{
+        CHIP_GROUP, SEGMENTED_GROUP, config_rank, listed, names, opens_onto_something, segments_of,
+    };
     use onehand_core::acp::{ConfigChoice, ConfigOption};
 
     fn choice(value: &str) -> ConfigChoice {
@@ -407,6 +433,26 @@ mod tests {
             segments_of(&stale).expect("still a strip").current,
             None,
             "guessing at the nearest rung would report a setting nobody chose"
+        );
+    }
+
+    #[test]
+    fn a_rail_alone_is_still_worth_opening() {
+        let promoted = [
+            effort("effort", "Effort", &["low", "high"], Some("low")),
+            effort("fast", "Fast mode", &["on", "off"], Some("off")),
+        ];
+        assert!(
+            !promoted.iter().any(|option| listed(&option)),
+            "both are drawn by controls of their own, so neither is a row"
+        );
+        assert!(
+            opens_onto_something(&promoted),
+            "the rail lives in that popup, so withholding the chip hides effort entirely"
+        );
+        assert!(
+            !opens_onto_something(&[effort("fast", "Fast mode", &["on", "off"], Some("on"))]),
+            "the chip draws fast mode itself, so its popup would open onto nothing"
         );
     }
 

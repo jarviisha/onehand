@@ -2203,13 +2203,18 @@ impl ChatPane {
         let Some(chat) = self.active_chat(cx) else {
             return Vec::new();
         };
+        // A pinned card rests on the composer rather than inside the list, but
+        // what it must not outgrow is the same panel.
+        let well = self
+            .active_conversation()
+            .and_then(|conv| conv.viewport.well());
         let mut out: Vec<(usize, gpui::AnyElement)> = chat
             .pending_permissions()
             .into_iter()
             .map(|(idx, p)| {
                 (
                     idx,
-                    transcript::permission(session, p, TranscriptItemId::Live(idx), cx)
+                    transcript::permission(session, p, TranscriptItemId::Live(idx), well, cx)
                         .into_any_element(),
                 )
             })
@@ -3003,6 +3008,12 @@ impl ChatPane {
         let Some(chat) = self.active_chat(cx) else {
             return div().into_any_element();
         };
+        // What a block bounds itself against, measured on the panel rather than
+        // the window: a dock open makes half the window taller than the whole
+        // conversation.
+        let well = self
+            .active_conversation()
+            .and_then(|conv| conv.viewport.well());
 
         let body = |targets: &[TranscriptItemId]| -> Vec<gpui::AnyElement> {
             targets
@@ -3011,7 +3022,7 @@ impl ChatPane {
                     viewport::item(chat, target).map(|item| {
                         let find_emphasis =
                             self.find.as_ref().and_then(|find| find.emphasis(target));
-                        transcript::item(session, item, target, find_emphasis, window, cx)
+                        transcript::item(session, item, target, find_emphasis, well, window, cx)
                             .into_any_element()
                     })
                 })

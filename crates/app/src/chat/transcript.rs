@@ -356,6 +356,9 @@ pub fn item(
     it: &ChatItem,
     target: TranscriptItemId,
     find_emphasis: Option<bool>,
+    // The panel's own height, for the blocks that bound themselves against the
+    // room they have rather than against the window.
+    well: Option<gpui::Pixels>,
     window: &Window,
     cx: &App,
 ) -> impl IntoElement + use<> {
@@ -370,7 +373,7 @@ pub fn item(
         ChatItem::Thought(th) => thought(session, th, target, window, cx).into_any_element(),
         ChatItem::Tool(t) => tool(session, t, target, cx).into_any_element(),
         ChatItem::Plan(p) => plan(session, p, target, cx).into_any_element(),
-        ChatItem::Permission(p) => permission(session, p, target, cx).into_any_element(),
+        ChatItem::Permission(p) => permission(session, p, target, well, cx).into_any_element(),
         ChatItem::Ask(a) => ask(session, a, target, cx).into_any_element(),
         ChatItem::Notice { text, level } => notice(text, *level, cx).into_any_element(),
     };
@@ -1604,6 +1607,10 @@ struct CommandBlock {
     lines: Vec<SharedString>,
     /// Real lines behind the fold; zero when the block is whole.
     hidden: usize,
+    /// How tall the panel this is drawn in was last frame, which is what the
+    /// opened block is bounded against. `None` before the list has measured
+    /// itself, where the window is the only answer there is.
+    well: Option<gpui::Pixels>,
     /// Whether the command has more lines than the block draws unopened, which
     /// stays true once it has been opened and `hidden` has gone back to zero.
     /// Asked of the model rather than worked out from `hidden` here: where the
@@ -1625,7 +1632,27 @@ impl RenderOnce for CommandBlock {
         // that has no second line to be distinguished from.
         let gutter = (self.total > 1)
             .then(|| rems(MONO_ADVANCE * CODE_TEXT.0 * self.total.to_string().len() as f32));
-        let ceiling = window.viewport_size().height * COMMAND_OPEN_SHARE;
+        // **A share of the panel this is drawn in, not of the window.** What
+        // the bound is for is the card's own heading staying on screen with the
+        // command it belongs to, and the card is in the conversation -- so with
+        // a dock open, half the window is taller than the whole panel and an
+        // opened command pushes *Permission required* off the top, which is the
+        // one thing the share was put here to stop. The window is the fallback
+        // for the frame before the list has measured itself, where it is the
+        // only answer there is.
+        let ceiling =
+            self.well.unwrap_or_else(|| window.viewport_size().height) * COMMAND_OPEN_SHARE;
+        // The command scrolls inside a `gpui::list` row, so it needs a handle
+        // of its own and a mask over it: a bubble listener runs too late there,
+        // the transcript having already spent the same wheel delta scrolling
+        // itself. Without this an opened command is a box the wheel slides the
+        // conversation behind.
+        let scroll = window
+            .use_keyed_state(("perm-command-scroll-state", key), cx, |_, _| {
+                ScrollHandle::default()
+            })
+            .read(cx)
+            .clone();
 
         well(cx)
             .group(group.clone())
@@ -1650,6 +1677,7 @@ impl RenderOnce for CommandBlock {
                     // base64 blob is still a screenful of wrapped rows.
                     .max_h(ceiling)
                     .overflow_y_scroll()
+                    .track_scroll(&scroll)
                     .children(self.lines.into_iter().enumerate().map(|(n, line)| {
                         let row = div().h_flex().items_start().gap_3().w_full();
                         row.children(gutter.map(|width| {
@@ -1679,6 +1707,10 @@ impl RenderOnce for CommandBlock {
                         )
                     })),
             )
+            // Over the text and under the copy button, which is added after it:
+            // the mask takes the wheel in the capture phase and nothing else,
+            // so a press still reaches whatever is drawn on top of it.
+            .child(ScrollableMask::new(Axis::Vertical, &scroll).id(("perm-command-mask", key)))
             .child(
                 crate::controls::action(("perm-copy", key))
                     .ghost()
@@ -1787,6 +1819,7 @@ pub(super) fn permission(
     session: &Entity<ChatSession>,
     p: &PermItem,
     target: TranscriptItemId,
+    well: Option<gpui::Pixels>,
     cx: &App,
 ) -> impl IntoElement + use<> {
     let idx = live_index(target);
@@ -1800,6 +1833,7 @@ pub(super) fn permission(
             .map(|l| SharedString::from(l.to_string()))
             .collect(),
         hidden,
+        well,
         long: p.is_long(),
         total: p.command_lines().len().max(1),
         expanded: p.expanded,
@@ -1957,9 +1991,10 @@ fn permission_keys(
         pick(PermissionWeight::Deny),
     );
     let session = session.clone();
+    let card_focus = focus.clone();
     card.id(("perm-card", idx))
         .track_focus(&focus)
-        .on_key_down(move |event, _, cx| {
+        .on_key_down(move |event, window, cx| {
             let keystroke = &event.keystroke;
             // A modified key is somebody else's: Ctrl+1 switches sessions and
             // Shift+Enter is a newline in whatever holds the caret.
@@ -1967,7 +2002,21 @@ fn permission_keys(
                 return;
             }
             let chosen = match keystroke.key.as_str() {
-                "enter" => allow.as_deref(),
+                // **Only while the card itself holds the caret**, which is the
+                // question card's rule and matters more here. Every button in
+                // the footer is a library `Button`, and a focused one already
+                // turns Enter into its own click -- so answering here as well
+                // races it, and this listener runs first because a click is
+                // settled on the key going *up*. Somebody who has tabbed to
+                // Deny and pressed Enter would have granted the call: the grant
+                // lands, and Deny's own click arrives afterwards to find the
+                // permission already answered and is dropped. Unguarded, the
+                // key that means no is how yes gets said.
+                "enter" if card_focus.is_focused(window) => allow.as_deref(),
+                "enter" => None,
+                // Esc is safe in the other direction and needs no such guard:
+                // no button on this card denies by being focused, and the worst
+                // it can do is refuse a call twice.
                 "escape" => deny.as_deref(),
                 _ => None,
             };
@@ -2267,6 +2316,17 @@ fn ask_advance(session: &Entity<ChatSession>, idx: usize, field: usize, cx: &mut
     });
 }
 
+/// The highest row a single digit reaches, and so the last one that is offered
+/// a key at all.
+///
+/// **The handler reads one keystroke, not a typed number.** There is nowhere to
+/// hold a half-entered figure and nothing that could say when one had ended, so
+/// a row past the ninth has no key and must not be drawn carrying one. Printed
+/// anyway, `10` was a hint for a press that cannot be made — and worse than
+/// inert on the card that answers as soon as a row is taken, where reaching for
+/// it lands on `1` and commits the first choice instead.
+const ASK_KEY_ROWS: usize = 9;
+
 /// The key hint at the right-hand end of a row, and the number that reaches it.
 ///
 /// **A row a keyboard can reach says so on the row.** The hints at the foot of
@@ -2275,7 +2335,17 @@ fn ask_advance(session: &Entity<ChatSession>, idx: usize, field: usize, cx: &mut
 /// held off shrinking because it is two characters at most and the words beside
 /// it are the agent's -- a paragraph of description would otherwise squeeze the
 /// one part of the row that is fixed-length.
-fn ask_key_hint(n: usize, cx: &App) -> impl IntoElement + use<> {
+///
+/// `None` past the ninth row, which is a row with no key rather than a row with
+/// an unusable one: nothing is drawn, and the words beside it take the space.
+fn ask_key_hint(n: usize, cx: &App) -> Option<impl IntoElement + use<>> {
+    if n > ASK_KEY_ROWS {
+        return None;
+    }
+    Some(ask_key_mark(n, cx))
+}
+
+fn ask_key_mark(n: usize, cx: &App) -> impl IntoElement + use<> {
     div()
         .flex_none()
         .min_w(ASK_HINT_SIZE)
@@ -2590,7 +2660,7 @@ impl AskForm<'_> {
                             .w_full()
                             .child(ask_choice_mark(on, single, cx))
                             .child(words)
-                            .child(ask_key_hint(o + 1, cx)),
+                            .children(ask_key_hint(o + 1, cx)),
                     )
                     .on_click(move |_, window: &mut Window, cx: &mut App| {
                         ask_take(
@@ -2678,7 +2748,7 @@ impl AskForm<'_> {
                         .min_w_0()
                         .child(Input::new(&state).appearance(false)),
                 )
-                .child(ask_key_hint(self.a.row_count(self.active), cx)),
+                .children(ask_key_hint(self.a.row_count(self.active), cx)),
         )
     }
 
