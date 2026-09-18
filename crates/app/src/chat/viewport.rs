@@ -878,10 +878,12 @@ mod tests {
             req: PermissionRequest {
                 rpc_id: Default::default(),
                 tool_call_id: None,
+                kind: ToolKind::Execute,
                 title: "Run `rm -rf build`?".to_string(),
                 options: Vec::new(),
             },
             resolved: resolved.map(str::to_string),
+            expanded: false,
         })
     }
 

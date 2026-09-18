@@ -833,6 +833,82 @@ pub fn new_worktree(shell: &Shell, cx: &mut Context<Shell>) -> Dialog {
         }))
 }
 
+/// The rename-this-branch form.
+///
+/// One field and a sentence, where the worktree form beside it has a field, a
+/// derived folder and a picker — because this makes nothing and lands nowhere.
+/// The field opens on the name as it stands, so the part being kept does not
+/// have to be retyped to change the part that is not.
+pub fn rename_branch(shell: &Shell, cx: &mut Context<Shell>) -> Dialog {
+    let input = shell.branch_input().clone();
+    let Some(draft) = shell.branch_draft() else {
+        return Dialog::new(cx);
+    };
+    let (from, error, busy) = (draft.from.clone(), draft.error.clone(), draft.busy);
+    let (muted, danger) = (
+        cx.theme().muted_foreground,
+        crate::theme::status_ink(cx).danger,
+    );
+
+    Dialog::new(cx)
+        .close_button(false)
+        .content(move |content, _, _: &mut App| {
+            content.child(title_row("Rename branch")).child(
+                div()
+                    .v_flex()
+                    .gap_2()
+                    .w_full()
+                    .child(
+                        div()
+                            .text_sm()
+                            .text_color(muted)
+                            .child(format!("The branch checked out here is {from}.")),
+                    )
+                    .child(Input::new(&input))
+                    // git's own words where git refused, and the name rule's
+                    // where it never got that far. Shown against the name that
+                    // caused it, which is why the form is still up.
+                    .children(
+                        error
+                            .clone()
+                            .map(|why| div().text_xs().text_color(danger).child(why)),
+                    ),
+            )
+        })
+        .footer(
+            div()
+                .h_flex()
+                .gap_2()
+                .justify_end()
+                .child(
+                    crate::controls::action("cancel-branch-rename")
+                        .label("Cancel")
+                        .refuses(busy)
+                        .on_click(cx.listener(|shell: &mut Shell, _: &ClickEvent, _, cx| {
+                            shell.cancel_branch_rename(cx);
+                        })),
+                )
+                .child({
+                    let rename = crate::controls::action("commit-branch-rename")
+                        .primary()
+                        .label(if busy { "Renaming…" } else { "Rename" });
+                    match busy {
+                        true => crate::controls::resting(rename).disabled(true),
+                        false => rename.on_click(cx.listener(
+                            |shell: &mut Shell, _: &ClickEvent, _, cx| {
+                                shell.commit_branch_rename(cx);
+                            },
+                        )),
+                    }
+                }),
+        )
+        // Esc and the close button have to clear what is putting this on screen,
+        // or the dialog dismisses itself and the next frame renders it back.
+        .on_close(cx.listener(|shell: &mut Shell, _, _, cx| {
+            shell.cancel_branch_rename(cx);
+        }))
+}
+
 /// One row of the Help window's shortcut table.
 pub struct Shortcut {
     /// How the row is written for a human.

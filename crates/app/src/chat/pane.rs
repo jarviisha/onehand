@@ -53,10 +53,35 @@ const COMPOSER_REST: Rems = rems(1.5);
 /// The resting composer is about this tall; using zero until prepaint is what
 /// lets the initial transcript tail land behind it.
 const COMPOSER_MIN_H: Rems = rems(6.5);
-/// The shared reading column for transcript rows and the composer surfaces.
-/// `w_full` lets it shrink with a narrow panel; this cap keeps prose and machine
-/// output from stretching across the whole window on a wide one.
-const CONTENT_COLUMN: Rems = rems(52.);
+/// The reading column for transcript rows. `w_full` lets it shrink with a
+/// narrow panel; this cap keeps a line from stretching across the whole window
+/// on a wide one.
+///
+/// **Set by what the widest block holds, not by prose alone.** A column sized
+/// purely for reading sentences is the narrower number this used to be — and
+/// what it cost is everything in the transcript that is not a sentence: a
+/// unified diff wraps its longest lines, a command well folds a path that
+/// would have fit, and a tool card's header ellipsizes a file name whose tail
+/// is the part that identifies it. Those are the blocks the user is reading
+/// the transcript *for* when something has gone wrong, and a cap tuned past
+/// them to keep paragraphs comfortable trades the case that matters for the
+/// case that was already fine.
+const CONTENT_COLUMN: Rems = rems(64.);
+/// The narrower cap the composer and the surfaces that belong to it take.
+///
+/// **A message being written is not a message being read.** The transcript's
+/// column is set by how far a line of prose can run before the eye loses its
+/// place returning to the next one; the composer holds a few lines at most, and
+/// at the reading column its controls -- which sit at the two ends of one row --
+/// ended up a hand's width apart with nothing between them. Narrower, the row
+/// reads as one control strip and the card reads as a thing resting on the
+/// conversation rather than as its last paragraph.
+///
+/// The popup above it takes this too, since it opens over the card and is the
+/// same object. **Pinned cards do not**: a permission card is pinned here while
+/// it waits and drawn in the transcript once answered, and one card that
+/// changes width on being answered reads as two different cards.
+const COMPOSER_COLUMN: Rems = rems(44.);
 /// The space at a turn boundary — above a prompt, and between a prompt and the
 /// answer replying to it.
 ///
@@ -230,14 +255,31 @@ pub struct ChatPane {
     /// dock that may well be closed, which is the one thing the terminal button
     /// cannot say by being a button.
     terminal_live: bool,
+    /// The active project's branch and change count, as one line.
+    ///
+    /// Pushed by the shell like the two flags above, and for the same reason:
+    /// the sweep is the window's and this panel has no handle on it. The
+    /// sentence is `GitStatus::label`, core's own, because the rail prints the
+    /// same fact a few inches away and two spellings of one line is the kind of
+    /// difference a reader assumes means something.
+    ///
+    /// `None` on a project that is not a repository, which is not the same as a
+    /// repository with nothing changed -- that one has a branch to name.
+    git: Option<SharedString>,
     /// How tall the composer overlay measured, last time it was drawn.
     ///
     /// The composer floats over the transcript, so the transcript has to end
     /// above it or its last line is permanently behind the box the user types
     /// in — and how much room that takes is not knowable in advance: the field
-    /// grows with what is typed, the attachment tray appears and goes, and a
-    /// parked permission pins another card on top. So the overlay is measured
-    /// where it is drawn and the list is padded by what it measured.
+    /// grows with what is typed and the attachment tray appears and goes. So
+    /// the overlay is measured where it is drawn and the list is padded by
+    /// what it measured.
+    ///
+    /// **The pinned cards are deliberately not in it**, nor is the completion
+    /// popup. Both are surfaces that come and go over the conversation, and
+    /// measuring either means the transcript shifts under the reader's eye
+    /// every time one appears. The composer is measured because it is there
+    /// the whole time.
     ///
     /// A `Cell` rather than a plain field written through the entity: this is
     /// set during *prepaint*. A changed measurement schedules exactly one more
@@ -313,6 +355,7 @@ impl ChatPane {
                 pending_resume: None,
                 rail_hidden: false,
                 terminal_live: false,
+                git: None,
                 composer_h: Default::default(),
                 composer_drawn: false,
             }
@@ -1036,6 +1079,14 @@ impl ChatPane {
         }
         project.pinned = pinned;
         project.is_repo = is_repo;
+        cx.notify();
+    }
+
+    pub fn set_git(&mut self, line: Option<SharedString>, cx: &mut Context<Self>) {
+        if self.git == line {
+            return;
+        }
+        self.git = line;
         cx.notify();
     }
 
@@ -2121,7 +2172,10 @@ impl ChatPane {
         // A question's free-text box needs a window to be built and the session
         // never has one, so the card's own way to the screen is where it is
         // made. Before the cards are read, since the box is one of them.
-        session.update(cx, |s, cx| s.sync_ask_inputs(window, cx));
+        session.update(cx, |s, cx| {
+            s.sync_ask_inputs(window, cx);
+            s.sync_perm_focus(window, cx);
+        });
         let Some(chat) = self.active_chat(cx) else {
             return Vec::new();
         };
@@ -2180,18 +2234,12 @@ impl ChatPane {
         }
         let status = SharedString::from(chat.activity_status()?);
         Some(
-            div()
+            transcript::floating_card(cx)
                 .h_flex()
                 .items_center()
                 .gap_2()
-                .w_full()
                 .px_3()
                 .py_2()
-                .rounded(cx.theme().radius * 2.)
-                .border_1()
-                .border_color(cx.theme().border)
-                .bg(cx.theme().popover.alpha(1.))
-                .shadow_lg()
                 .text_sm()
                 .text_color(cx.theme().muted_foreground)
                 .child(Spinner::new().xsmall())
@@ -2209,18 +2257,12 @@ impl ChatPane {
         let line = SharedString::from(onehand_core::chat::first_line_trunc(&queued.text, 80));
         let count = queued.attachments.len();
         Some(
-            div()
+            transcript::floating_card(cx)
                 .h_flex()
                 .items_center()
                 .gap_2()
-                .w_full()
                 .px_3()
                 .py_2()
-                .rounded(cx.theme().radius * 2.)
-                .border_1()
-                .border_color(cx.theme().border)
-                .bg(cx.theme().popover.alpha(1.))
-                .shadow_lg()
                 .text_sm()
                 .child(Icon::new(IconName::Calendar).size_3())
                 .child(
@@ -2962,9 +3004,11 @@ impl ChatPane {
         );
         // Transcript rows are wider than the composer, but keep the same
         // inside inset as its visible curve so the two surfaces retain one
-        // spacing rhythm. Derive it from the exact composer radius so a theme
-        // change cannot make them drift apart.
-        let side_padding = cx.theme().radius * 2.;
+        // spacing rhythm. Read from the same token the composer rounds itself
+        // with, so a theme change cannot make them drift apart -- written out
+        // as arithmetic on the smaller step it already had, silently, the
+        // moment that card moved onto the theme's named card radius.
+        let side_padding = cx.theme().radius_lg;
 
         let Some(strip) = plan.strip.clone() else {
             return column(lead, side_padding, body(&plan.members)).into_any_element();
@@ -3159,11 +3203,95 @@ pub enum ProjectAction {
     TogglePin,
     /// Split it into a second checkout. Offered on repositories only.
     Worktree,
+    /// Rename the branch checked out in it. Offered on repositories only, for
+    /// the reason above and by the same fact: a project with no status from the
+    /// last sweep has no branch to rename.
+    RenameBranch,
     CopyPath,
     RefreshGit,
     /// Drop it from the workspace. The shell still guards this behind a second
     /// press while anything is running in it.
     Remove,
+}
+
+/// The branch line, as the control it is.
+///
+/// **A menu and not a label**, because everything the reader might do about
+/// what it says is a thing the shell already does: split this branch into a
+/// second checkout, rename it, or go and look again. Printed flat, the strip's
+/// one piece of project state was the one piece with no way to act on it, and
+/// both of those actions were reachable only from a rail row or a page that is
+/// not on screen while a conversation is.
+///
+/// Built by the pane rather than by the composer, which draws the rest of the
+/// strip: git is the project's and this panel is what talks to the shell about
+/// the project. The composer has no vocabulary for any of it.
+///
+/// Drawn to match the two setting chips beside it — same height, same inset,
+/// same muted ink, a mark then a word and no caret — so the strip stays one row
+/// of one kind of thing. It is the same reason the line was never a sentence in
+/// prose: what differs is which side of the row it is on.
+fn branch_control(
+    line: SharedString,
+    pane: Entity<ChatPane>,
+    cx: &mut Context<ChatPane>,
+) -> impl IntoElement + use<> {
+    let act = |action: ProjectAction, pane: Entity<ChatPane>| {
+        move |_: &gpui::ClickEvent, _: &mut Window, cx: &mut App| {
+            pane.update(cx, |_: &mut ChatPane, cx| {
+                cx.emit(ChatPaneEvent::Project(action));
+            });
+        }
+    };
+    let (worktree, rename, refresh) = (pane.clone(), pane.clone(), pane);
+
+    crate::controls::action("branch")
+        .ghost()
+        .xsmall()
+        .h_flex()
+        .items_center()
+        .gap_1()
+        .flex_shrink_1()
+        .min_w_0()
+        .h(super::composer::CHIP_H)
+        .px_1p5()
+        .rounded(cx.theme().radius)
+        .text_color(cx.theme().muted_foreground)
+        .child(Icon::new(crate::icons::Icon::GitBranch).size_3())
+        // The branch leads the line, so what the cap takes first is the change
+        // count behind it.
+        .child(
+            div()
+                .min_w_0()
+                .truncate()
+                .text_size(super::composer::CHIP_TEXT)
+                // Full strength, as every chip's value is: the muted ink on the
+                // button is what the mark beside this takes. A branch written a
+                // shade fainter than the setting at the other end of the strip
+                // reads as less certain rather than as a different kind of
+                // thing.
+                .text_color(cx.theme().foreground)
+                .child(line),
+        )
+        .tooltip("The branch checked out here")
+        .dropdown_menu_with_anchor(gpui::Anchor::BottomLeft, move |menu, _, _| {
+            menu.item(
+                crate::controls::menu_item("Rename branch…")
+                    .icon(Icon::new(crate::icons::Icon::SquarePen))
+                    .on_click(act(ProjectAction::RenameBranch, rename.clone())),
+            )
+            .item(
+                crate::controls::menu_item("New worktree…")
+                    .icon(Icon::new(crate::icons::Icon::GitBranch))
+                    .on_click(act(ProjectAction::Worktree, worktree.clone())),
+            )
+            .separator()
+            .item(
+                crate::controls::menu_item("Refresh Git status")
+                    .icon(Icon::new(IconName::Redo))
+                    .on_click(act(ProjectAction::RefreshGit, refresh.clone())),
+            )
+        })
 }
 
 /// What the pane asks the shell for. Kept tiny on purpose: the chat's job is
@@ -3435,16 +3563,36 @@ impl ChatPane {
         let this = cx.entity();
         let for_render = session.clone();
         let scrolled_up = away_from_tail(&list_state) && !holding;
-        // The field draws no ring of its own once the card is its border, so
-        // the card has to answer "does typing go here" -- with an app keymap
-        // that reaches over the terminal and a rail that can take focus, an
-        // input with no focused state is one the user has to test by typing.
-        let typing_here = self
-            .composer
-            .read(cx)
-            .state
-            .focus_handle(cx)
-            .contains_focused(window, cx);
+        // **Where the transcript stops being drawn: the composer's own middle.**
+        // The overlay is transparent around its surfaces, so a row scrolling
+        // under it stayed visible in the strip above the card, at both sides of
+        // it and under it -- a line of the conversation cut in two by a box
+        // resting on top of it, which reads as the card having been dropped on
+        // the text rather than as the text ending. Clipped here it ends behind
+        // the card's opaque top half, so nothing is ever seen sliced: the cut
+        // itself is under a surface. Half the overlay rather than half the card
+        // measured separately, which lands inside that half for every composer
+        // taller than its own status row plus its inset -- and the resting
+        // composer is four times that.
+        let cut = overlay_h / 2.;
+        // What the list is padded by, less the part of it the clip now stands
+        // for: the two together are the room the last row rests in, and paying
+        // both puts the conversation a composer's height off its own floor.
+        let tail_pad = (tail_room - cut).max(px(0.));
+        // How much room a composer popup has to open into: the well, less what
+        // the composer and its rest already stand in.
+        //
+        // **The list's own viewport is the measurement**, because the list is
+        // inside that well -- so the number is there for the asking and a second
+        // canvas measuring the same box would be a second answer to keep in
+        // step. It is last frame's, which is the frame the popup was opened
+        // from. The clip is added back because the popup opens into the *well*
+        // and the well is what the list stops short of.
+        let popup_room = super::composer::popup_room(
+            list_state.viewport_bounds().size.height + cut,
+            floor,
+            window.rem_size(),
+        );
         self.composer_drawn = true;
 
         div()
@@ -3458,20 +3606,31 @@ impl ChatPane {
                     .flex_1()
                     .min_h_0()
                     .child(
-                        // The list fills the well, so it clips exactly at the
-                        // header's rule rather than at an inset below it -- a
-                        // band of blank surface above a line of text sliced
-                        // in half reads as a rendering fault, not as a margin.
-                        // Its breathing room is *inside* the scroll instead:
-                        // padding on the list is part of what scrolls, which is
-                        // also how the transcript ends above the composer
-                        // floating over it.
-                        list(list_state, move |ix, window: &mut Window, cx: &mut App| {
-                            this.read(cx).run_element(ix, &for_render, window, cx)
-                        })
-                        .size_full()
-                        .pt(LIST_HEAD)
-                        .pb(tail_room),
+                        // The list runs to the well's top edge, so it clips
+                        // exactly at the header's rule rather than at an inset
+                        // below it -- a band of blank surface above a line of
+                        // text sliced in half reads as a rendering fault, not
+                        // as a margin. At the bottom it stops at the cut, and
+                        // that edge is under the composer where no slice shows.
+                        // Its breathing room is *inside* the scroll: padding on
+                        // the list is part of what scrolls, which is how the
+                        // transcript comes to rest above the composer rather
+                        // than merely disappearing behind it.
+                        div()
+                            .absolute()
+                            .top_0()
+                            .left_0()
+                            .right_0()
+                            .bottom(cut)
+                            .overflow_hidden()
+                            .child(
+                                list(list_state, move |ix, window: &mut Window, cx: &mut App| {
+                                    this.read(cx).run_element(ix, &for_render, window, cx)
+                                })
+                                .size_full()
+                                .pt(LIST_HEAD)
+                                .pb(tail_pad),
+                            ),
                     )
                     // Over the transcript rather than in a row of its own: a
                     // control that appears and disappears cannot own layout, or
@@ -3515,7 +3674,7 @@ impl ChatPane {
                                 ),
                         )
                     })
-                    .child(self.overlay(&session, measure, typing_here, blocked, window, cx)),
+                    .child(self.overlay(&session, measure, popup_room, blocked, window, cx)),
             )
             .into_any_element()
     }
@@ -3535,14 +3694,30 @@ impl ChatPane {
         &mut self,
         session: &Entity<ChatSession>,
         measure: std::rc::Rc<std::cell::Cell<gpui::Pixels>>,
-        typing_here: bool,
+        room: gpui::Pixels,
         blocked: Option<onehand_core::chat::SubmitBlock>,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> impl IntoElement + use<> {
         let pinned = self.pinned(session, window, cx);
+        let git = self
+            .git
+            .clone()
+            .map(|line| branch_control(line, cx.entity(), cx).into_any_element());
         let pane = cx.entity();
-        let completion_popup = self.composer.read(cx).completion_open();
+        // The field draws no ring of its own once the card is its border, so
+        // the card has to answer "does typing go here" -- with an app keymap
+        // that reaches over the terminal and a rail that can take focus, an
+        // input with no focused state is one the user has to test by typing.
+        //
+        // Asked here rather than handed in: it is a question about a window,
+        // and this is the innermost place holding one.
+        let typing_here = self
+            .composer
+            .read(cx)
+            .state
+            .focus_handle(cx)
+            .contains_focused(window, cx);
 
         div()
             .absolute()
@@ -3550,7 +3725,10 @@ impl ChatPane {
             .left_0()
             .right_0()
             .v_flex()
-            .gap_2()
+            // A step over the gap the cards keep between themselves: a pinned
+            // card and the composer are two objects and the cards in a stack
+            // are one, so the seam that has to read as a seam is this one.
+            .gap_2p5()
             .w_full()
             // Reading the conversation is a way of saying the popup is done
             // with. It hangs off this whole block rather than off the list, so
@@ -3574,21 +3752,73 @@ impl ChatPane {
             // cover the transcript, but it must not move it.
             .children(
                 self.composer
-                    .update(cx, |composer, cx| composer.detached_popup(session, cx))
+                    .update(cx, |composer, cx| {
+                        composer.detached_popup(session, room, cx)
+                    })
+                    // **Every overlay is the same card, in the same place.** The
+                    // option lists used to hang off the chip that opened them,
+                    // on the reasoning that keeping a compact surface against
+                    // its trigger says which control it belongs to. What it
+                    // cost is the thing a list of choices is for: sized to its
+                    // own rows and pinned to one end of the card, a model list
+                    // had no room for the sentence the agent sends about each
+                    // choice, and the rows it did fit were narrower than the
+                    // words in them. The card above the composer is the width
+                    // of the reading column, which is what every choice here
+                    // needs -- and the chip stays lit underneath for as long as
+                    // its list is open, which is what actually says where the
+                    // list came from.
                     .map(|popup| {
-                        let column = div().w_full().max_w(CONTENT_COLUMN).mx_auto();
-                        div().w_full().px_4().child(if completion_popup {
-                            column.child(popup)
-                        } else {
-                            // Option lists and attachment management are opened by
-                            // controls on the card's right-hand side. Keeping
-                            // their compact surface on that edge preserves the
-                            // spatial relationship to the trigger; completion
-                            // stays full-width for long paths.
-                            column.child(div().h_flex().justify_end().child(popup))
-                        })
+                        div()
+                            .w_full()
+                            .px_4()
+                            .child(div().w_full().max_w(COMPOSER_COLUMN).mx_auto().child(popup))
                     }),
             )
+            // **Outside the measured box, for the reason the popup is.** A
+            // parked card is a surface over the conversation, not a floor under
+            // it: measured, every card that arrives grows the transcript's
+            // bottom padding, and a list anchored at its tail answers that by
+            // shifting everything the user was reading upward -- at the exact
+            // moment their attention is being asked for, by a card that appeared
+            // because the agent chose to park and not because anybody pressed
+            // anything. What it costs is the last row or two of the
+            // conversation sitting behind the card while it is up, which the
+            // reader can scroll to and which comes back the moment the card is
+            // answered. The composer stays measured: it is there the whole time,
+            // and a transcript that ended behind the box being typed in would
+            // hide its own last line permanently.
+            .children((!pinned.is_empty()).then(|| {
+                div().w_full().px_4().child(
+                    div()
+                        .v_flex()
+                        .gap_2()
+                        .w_full()
+                        .max_w(COMPOSER_COLUMN)
+                        .mx_auto()
+                        // The composer's column, because while a card is pinned
+                        // it is part of that stack: these boxes sit directly on
+                        // the card, share its surface and its radius, and are
+                        // read as one object with it. A card an inch wider than
+                        // the box it rests on reads as two panels that failed to
+                        // line up.
+                        //
+                        // **Width follows where a card is, not what it is.**
+                        // Answered, it is drawn in the transcript and takes the
+                        // transcript's column like every block around it. That
+                        // was already half true -- a transcript row is inset
+                        // inside the reading column while a pinned card was not
+                        // -- so the rule that said the two must match was
+                        // describing something the layout had never quite done.
+                        //
+                        // The text size is still the transcript's, which is the
+                        // part that does have to hold: a question re-read in the
+                        // history has to be the same words at the same weight as
+                        // the question that stopped everything.
+                        .text_size(transcript::TEXT)
+                        .children(pinned),
+                )
+            }))
             .child(
                 // What the transcript has to clear: the pinned cards and the
                 // composer, and the transparent space under them.
@@ -3622,7 +3852,6 @@ impl ChatPane {
                     .child(
                         div()
                             .v_flex()
-                            .gap_2()
                             .w_full()
                             .px_4()
                             // Transparent spacing around the cards is what makes
@@ -3631,26 +3860,25 @@ impl ChatPane {
                             // surfaces below cover what sits directly behind
                             // them.
                             .pb_4()
-                            .children((!pinned.is_empty()).then(|| {
+                            .child(
                                 div()
                                     .v_flex()
-                                    .gap_2()
                                     .w_full()
-                                    .max_w(CONTENT_COLUMN)
+                                    .max_w(COMPOSER_COLUMN)
                                     .mx_auto()
-                                    // The same size the transcript is set at: a
-                                    // permission card is pinned here while it
-                                    // waits and drawn down there once answered,
-                                    // and one card that changes size on being
-                                    // answered reads as two different cards.
-                                    .text_size(transcript::TEXT)
-                                    .children(pinned)
-                            }))
-                            .child(div().w_full().max_w(CONTENT_COLUMN).mx_auto().child(
-                                self.composer.update(cx, |composer, cx| {
-                                    composer.card(session, blocked, typing_here, cx)
-                                }),
-                            )),
+                                    .child(self.composer.update(cx, |composer, cx| {
+                                        composer.card(session, blocked, typing_here, cx)
+                                    }))
+                                    // Under the card and inside the measured
+                                    // box, so the transcript ends above the
+                                    // strip rather than behind it: the height
+                                    // the conversation clears is whatever this
+                                    // whole overlay comes to, and the strip
+                                    // appears and disappears with the project.
+                                    .children(self.composer.update(cx, |composer, cx| {
+                                        composer.status_row(session, git, cx)
+                                    })),
+                            ),
                     ),
             )
     }
@@ -3709,9 +3937,9 @@ fn column(lead: Rems, side_padding: gpui::Pixels, content: Vec<gpui::AnyElement>
                 .min_w_0()
                 .max_w(CONTENT_COLUMN)
                 .mx_auto()
-                // Equal to the composer's visible corner radius. Even though
-                // the transcript and composer now share an outer cap, their
-                // content still keeps the same inset rhythm.
+                // Equal to the composer's visible corner radius, which is what
+                // keeps the inset rhythm shared now that the two no longer
+                // share an outer cap.
                 .px(side_padding)
                 .children(content),
         )

@@ -32,7 +32,7 @@ use super::parse;
 use super::terminal::{self, TermStream, TerminalRegistry};
 use super::types::{
     AcpEvent, AcpRequest, Attachment, ElicitChoice, ElicitField, ElicitKind, ElicitOutcome,
-    ElicitValue, Elicitation, Mode, PermissionOption, PermissionRequest,
+    ElicitValue, Elicitation, Mode, PermissionOption, PermissionRequest, ToolKind,
 };
 use crate::attachment::{inline_image_mime, MAX_INLINE_IMAGE_BYTES};
 use futures::channel::mpsc::Sender as EventTx;
@@ -659,6 +659,11 @@ fn parse_permission(rpc_id: Value, params: &Value) -> PermissionRequest {
         .and_then(|t| t.get("toolCallId"))
         .and_then(Value::as_str)
         .map(String::from);
+    let kind = tool_call
+        .and_then(|t| t.get("kind"))
+        .and_then(Value::as_str)
+        .map(ToolKind::parse)
+        .unwrap_or(ToolKind::Other);
     let title = tool_call
         .and_then(|t| t.get("title"))
         .and_then(Value::as_str)
@@ -692,6 +697,7 @@ fn parse_permission(rpc_id: Value, params: &Value) -> PermissionRequest {
     PermissionRequest {
         rpc_id,
         tool_call_id,
+        kind,
         title,
         options,
     }

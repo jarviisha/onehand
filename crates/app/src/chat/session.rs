@@ -168,6 +168,22 @@ pub struct ChatSession {
     /// One box per field, so moving between a form's questions does not rewrite
     /// one box under the user.
     ask_inputs: HashMap<(usize, usize), AskInput>,
+    /// The card of a parked question, keyed by its live item index.
+    ///
+    /// **What scopes the card's keyboard.** A question answers to number keys,
+    /// the arrows, Enter and Esc — every one of them a key somebody is as
+    /// likely to be typing into the composer an inch below — so the card takes
+    /// them only while the caret is inside it, and this is the handle that
+    /// answers "is it". Held here for the reason the boxes above are: it has to
+    /// outlive the frame, and the card is rebuilt on every one.
+    ask_focus: HashMap<usize, gpui::FocusHandle>,
+    /// The card of a parked permission, keyed by its live item index.
+    ///
+    /// The same thing the handles above are, for the same reason: Enter and
+    /// Esc settle a permission, and both are keys somebody is as likely to be
+    /// pressing in the composer an inch below, so the card answers them only
+    /// while it holds the caret.
+    perm_focus: HashMap<usize, gpui::FocusHandle>,
     /// Activity runs the user opened, keyed by the run's first item.
     ///
     /// **On the session, because a [`TranscriptItemId`] only means anything
@@ -243,6 +259,8 @@ impl ChatSession {
                 md: HashMap::new(),
                 images: RefCell::new(HashMap::new()),
                 ask_inputs: HashMap::new(),
+                ask_focus: HashMap::new(),
+                perm_focus: HashMap::new(),
                 activity_open: HashSet::new(),
                 folds_revision: 0,
                 _pump: cx.spawn(async move |session, cx| {
@@ -348,13 +366,30 @@ impl ChatSession {
             let typed = a.custom.get(field).cloned().unwrap_or_default();
             wanted.push((idx, field, hint, typed));
         }
-        if live.is_empty() && self.ask_inputs.is_empty() {
+        if live.is_empty() && self.ask_inputs.is_empty() && self.ask_focus.is_empty() {
             return;
         }
 
         // A question that has been answered keeps no box: the card it belonged
         // to is a record now and draws no controls at all.
         self.ask_inputs.retain(|(idx, _), _| live.contains(idx));
+        self.ask_focus.retain(|idx, _| live.contains(idx));
+        for idx in &live {
+            if self.ask_focus.contains_key(idx) {
+                continue;
+            }
+            let handle = cx.focus_handle();
+            // A card that has just stopped the turn is where the keyboard
+            // belongs -- but **only where the keyboard is nowhere**. Taking the
+            // caret out of a composer somebody is mid-sentence in is worse than
+            // a card that has to be clicked before its number keys work, and a
+            // question can park at any moment because the agent chose it, not
+            // because the user asked for it.
+            if window.focused(cx).is_none() {
+                window.focus(&handle, cx);
+            }
+            self.ask_focus.insert(*idx, handle);
+        }
 
         for (idx, field, hint, typed) in wanted {
             if self.ask_inputs.contains_key(&(idx, field)) {
@@ -403,6 +438,70 @@ impl ChatSession {
     /// [`Self::sync_ask_inputs`] has built one.
     pub fn ask_input(&self, idx: usize, field: usize) -> Option<&Entity<InputState>> {
         self.ask_inputs.get(&(idx, field)).map(|i| &i.state)
+    }
+
+    /// The card of the question at live index `idx`, for the keys it answers.
+    pub fn ask_focus(&self, idx: usize) -> Option<&gpui::FocusHandle> {
+        self.ask_focus.get(&idx)
+    }
+
+    /// Give every parked permission a handle to scope its keys to, and drop
+    /// the handles of the cards that have since been answered.
+    ///
+    /// Alongside [`Self::sync_ask_inputs`] rather than inside it: a permission
+    /// has no boxes to build, and the two lists are what the agent parked on
+    /// rather than one list with a flag.
+    pub fn sync_perm_focus(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let live: HashSet<usize> = self
+            .chat
+            .pending_permissions()
+            .into_iter()
+            .map(|(idx, _)| idx)
+            .collect();
+        if live.is_empty() && self.perm_focus.is_empty() {
+            return;
+        }
+        self.perm_focus.retain(|idx, _| live.contains(idx));
+        for idx in live {
+            if self.perm_focus.contains_key(&idx) {
+                continue;
+            }
+            let handle = cx.focus_handle();
+            // The card and never a button on it, so Enter lands on the card's
+            // own listener rather than on whichever grant happened to be
+            // focused -- and **only where the keyboard is nowhere**, because a
+            // permission parks when the agent chose to, not when the user
+            // asked, and taking the caret out of a half-typed prompt is worse
+            // than a card that has to be clicked before its keys work.
+            if window.focused(cx).is_none() {
+                window.focus(&handle, cx);
+            }
+            self.perm_focus.insert(idx, handle);
+        }
+    }
+
+    /// The card of the permission at live index `idx`, for Enter and Esc.
+    pub fn perm_focus(&self, idx: usize) -> Option<&gpui::FocusHandle> {
+        self.perm_focus.get(&idx)
+    }
+
+    /// Empty `field`'s free-text box — the model's slot and the widget showing
+    /// it, together.
+    ///
+    /// **Both, because they are cleared from two different directions.** The
+    /// model drops a typed answer by itself whenever a choice is picked, since
+    /// the two cannot both be the answer; and the widget's own `set_value`
+    /// raises no change event, so neither half tells the other. Cleared one at
+    /// a time, the box goes on showing words nothing will send — which is the
+    /// one thing a form must never do.
+    pub fn clear_ask_input(&mut self, idx: usize, field: usize, window: &mut Window, cx: &mut App) {
+        if let Some(a) = self.chat.ask_at_mut(idx) {
+            a.set_custom(field, String::new());
+        }
+        let state = self.ask_inputs.get(&(idx, field)).map(|i| i.state.clone());
+        if let Some(state) = state {
+            state.update(cx, |state, cx| state.set_value("", window, cx));
+        }
     }
 
     /// A cached handle for an inline image result.

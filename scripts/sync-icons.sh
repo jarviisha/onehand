@@ -69,6 +69,27 @@ awk '
 
 done
 
+# Apply the manifest's stroke overrides, before publishing and never by hand:
+# this script refetches from upstream, so a weight edited into a checked-in file
+# is one the next sync throws away without saying so.
+awk '
+    /^\[stroke\]$/ { in_stroke = 1; next }
+    in_stroke && /^\[/ { in_stroke = 0 }
+    in_stroke && /^[a-z0-9-]+[[:space:]]*=/ {
+        line = $0
+        gsub(/[[:space:]"]/, "", line)
+        split(line, pair, "=")
+        print pair[1] "\t" pair[2]
+    }
+' "$manifest" | while IFS=$'\t' read -r local_name width; do
+    target="$staged_dir/${local_name}.svg"
+    if [[ ! -f "$target" ]]; then
+        echo "stroke override names an icon the manifest does not fetch: $local_name" >&2
+        exit 1
+    fi
+    sed -i "s/stroke-width=\"[^\"]*\"/stroke-width=\"${width}\"/" "$target"
+done
+
 # Publish only after every source file has been downloaded.
 cp "$staged_dir"/*.svg "$icon_dir/"
 
