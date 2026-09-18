@@ -336,21 +336,6 @@ impl Viewport {
     /// under it. Padding draws nothing, so the room costs the reader nothing to
     /// look at, and it is gone the frame the answer is long enough to hold the
     /// position by itself.
-    /// How tall the region the transcript is drawn in measured last frame, or
-    /// `None` before it has been drawn at all.
-    ///
-    /// **The panel and not the window**, which is what anything inside a row
-    /// bounding itself against the space it has needs: with a dock open, half
-    /// the window is taller than the whole conversation. Last frame's, because
-    /// a row is built during the list's own layout — and a row is only ever
-    /// asked for after the frame that measured this one.
-    pub fn well(&self) -> Option<Pixels> {
-        self.list
-            .as_ref()
-            .map(|(state, _)| state.viewport_bounds().size.height)
-            .filter(|height| *height > px(0.))
-    }
-
     pub fn tail_room(&self, floor: Pixels) -> Pixels {
         let (Some(hold), Some((state, _))) = (&self.hold, &self.list) else {
             return floor;

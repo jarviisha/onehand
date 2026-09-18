@@ -92,6 +92,22 @@ const CONTENT_COLUMN: Rems = rems(64.);
 /// were already different objects and holding one width only made the pinned
 /// one wrong.
 const COMPOSER_COLUMN: Rems = rems(44.);
+/// The two measurements the composer's overlay is sized against, both read off
+/// the same frame and handed down together.
+///
+/// One value rather than two arguments, the way the transcript's own top room
+/// already is: they are taken in the same place from the same layout, and a
+/// caller that passed a fresh popup room beside a stale panel height would be
+/// sizing one half of the overlay against a frame the other half never saw.
+#[derive(Clone, Copy)]
+struct OverlayRoom {
+    /// How far a popup may open before it reaches the top of the panel.
+    popup: gpui::Pixels,
+    /// The panel's own height, for a card bounding itself against the space it
+    /// has. `None` before the list has measured itself once.
+    well: Option<gpui::Pixels>,
+}
+
 /// The space at a turn boundary — above a prompt, and between a prompt and the
 /// answer replying to it.
 ///
@@ -2190,6 +2206,9 @@ impl ChatPane {
     fn pinned(
         &self,
         session: &Entity<ChatSession>,
+        // A pinned card rests on the composer rather than inside the list, but
+        // what it must not outgrow is the same panel.
+        well: Option<gpui::Pixels>,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Vec<gpui::AnyElement> {
@@ -2203,11 +2222,6 @@ impl ChatPane {
         let Some(chat) = self.active_chat(cx) else {
             return Vec::new();
         };
-        // A pinned card rests on the composer rather than inside the list, but
-        // what it must not outgrow is the same panel.
-        let well = self
-            .active_conversation()
-            .and_then(|conv| conv.viewport.well());
         let mut out: Vec<(usize, gpui::AnyElement)> = chat
             .pending_permissions()
             .into_iter()
@@ -2996,6 +3010,17 @@ impl ChatPane {
         &self,
         ix: usize,
         session: &Entity<ChatSession>,
+        // What a block bounds itself against, measured on the panel rather than
+        // the window: with a dock open, half the window is taller than the whole
+        // conversation.
+        //
+        // **Handed in, never read here.** The list holds its own state mutably
+        // for as long as it is calling this, so asking it how tall its viewport
+        // is from inside is a second borrow and a panic -- which is a crash on
+        // the first frame of any conversation carrying a permission, not a rare
+        // race. The caller reads it before the list starts, which is the last
+        // moment it can be asked.
+        well: Option<gpui::Pixels>,
         window: &Window,
         cx: &App,
     ) -> gpui::AnyElement {
@@ -3008,13 +3033,6 @@ impl ChatPane {
         let Some(chat) = self.active_chat(cx) else {
             return div().into_any_element();
         };
-        // What a block bounds itself against, measured on the panel rather than
-        // the window: a dock open makes half the window taller than the whole
-        // conversation.
-        let well = self
-            .active_conversation()
-            .and_then(|conv| conv.viewport.well());
-
         let body = |targets: &[TranscriptItemId]| -> Vec<gpui::AnyElement> {
             targets
                 .iter()
@@ -3628,6 +3646,16 @@ impl ChatPane {
             floor,
             window.rem_size(),
         );
+        // What a block inside the conversation bounds itself against, read here
+        // and handed down rather than asked for where it is used.
+        //
+        // **This is the last moment it can be asked.** The list borrows its own
+        // state mutably for as long as it is building rows, so a row reaching
+        // back to ask how tall the viewport is panics -- and it is the rows of
+        // *this* list that want the answer. Read before the list starts, one
+        // value serves every row and the pinned cards above them alike.
+        let well = (list_state.viewport_bounds().size.height > px(0.))
+            .then(|| list_state.viewport_bounds().size.height);
         self.composer_drawn = true;
 
         div()
@@ -3660,7 +3688,7 @@ impl ChatPane {
                             .overflow_hidden()
                             .child(
                                 list(list_state, move |ix, window: &mut Window, cx: &mut App| {
-                                    this.read(cx).run_element(ix, &for_render, window, cx)
+                                    this.read(cx).run_element(ix, &for_render, well, window, cx)
                                 })
                                 .size_full()
                                 .pt(LIST_HEAD)
@@ -3729,7 +3757,17 @@ impl ChatPane {
                                 ),
                         )
                     })
-                    .child(self.overlay(&session, measure, popup_room, blocked, window, cx)),
+                    .child(self.overlay(
+                        &session,
+                        measure,
+                        OverlayRoom {
+                            popup: popup_room,
+                            well,
+                        },
+                        blocked,
+                        window,
+                        cx,
+                    )),
             )
             .into_any_element()
     }
@@ -3749,12 +3787,12 @@ impl ChatPane {
         &mut self,
         session: &Entity<ChatSession>,
         measure: std::rc::Rc<std::cell::Cell<gpui::Pixels>>,
-        room: gpui::Pixels,
+        room: OverlayRoom,
         blocked: Option<onehand_core::chat::SubmitBlock>,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> impl IntoElement + use<> {
-        let pinned = self.pinned(session, window, cx);
+        let pinned = self.pinned(session, room.well, window, cx);
         let git = self
             .git
             .clone()
@@ -3808,7 +3846,7 @@ impl ChatPane {
             .children(
                 self.composer
                     .update(cx, |composer, cx| {
-                        composer.detached_popup(session, room, cx)
+                        composer.detached_popup(session, room.popup, cx)
                     })
                     // **Every overlay is the same card, in the same place.** The
                     // option lists used to hang off the chip that opened them,
