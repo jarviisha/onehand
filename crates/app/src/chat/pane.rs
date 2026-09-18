@@ -94,6 +94,20 @@ const BLOCK_GAP: Rems = rems(0.75);
 /// The space between two collapsed history rows, which are an index and are
 /// read as one.
 const COMPACT_GAP: Rems = rems(0.25);
+/// How far above the clip the transcript dissolves into the surface under it.
+///
+/// **A gradient and not a second edge.** The clip at the composer's middle is
+/// what stops the conversation being drawn, and on its own it is a line: text
+/// at full strength for one row and gone the next, which reads as a rendering
+/// fault everywhere the composer's own card is not directly behind it — the
+/// strips at either side of the card, and the gap above it. Faded into it over
+/// this distance there is no line to see at all, and the conversation reads as
+/// running out under the box rather than as being cut off by it.
+///
+/// Set at a few lines of prose, which is what makes it a fade rather than a
+/// shadow: over a shorter run the eye still finds the edge, it is just a
+/// blurred one.
+const SMOKE: Rems = rems(7.);
 /// The transcript's own head start, inside the scroll rather than around it.
 ///
 /// Named because it is read twice: it is the padding the list draws with, and
@@ -3632,6 +3646,26 @@ impl ChatPane {
                                 .pb(tail_pad),
                             ),
                     )
+                    // The transcript dissolving into the surface it is drawn
+                    // on, right down to the clip. Between the list and every
+                    // control, so what fades is the conversation alone: the
+                    // jump pill, the pinned cards and the composer are all
+                    // drawn after this and each carries its own opaque
+                    // surface. It ends *at the clip* rather than at the top of
+                    // the composer, because the composer's card is narrower
+                    // than the panel -- a fade stopping at the card's own edge
+                    // would leave the strips either side of it showing full
+                    // strength text for the height of the card.
+                    .child(div().absolute().bottom(cut).left_0().right_0().h(SMOKE).bg(
+                        gpui::linear_gradient(
+                            180.,
+                            gpui::linear_color_stop(cx.theme().background.alpha(0.), 0.),
+                            // Solid a little before the end, so the last of
+                            // the text is gone by the time the clip takes
+                            // it rather than exactly as it does.
+                            gpui::linear_color_stop(cx.theme().background, 0.9),
+                        ),
+                    ))
                     // Over the transcript rather than in a row of its own: a
                     // control that appears and disappears cannot own layout, or
                     // the whole conversation shifts by its height every time the
