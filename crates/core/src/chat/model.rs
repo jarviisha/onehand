@@ -2544,6 +2544,57 @@ impl Chat {
             _ => false,
         })
     }
+
+    /// The paths this session has already touched, newest first.
+    ///
+    /// **What the `@` list offers above the project's own files**, and the
+    /// reason it is worth a group of its own: the file somebody wants to talk
+    /// about next is nearly always the file that was just written, and in a
+    /// repository of several thousand it is otherwise indistinguishable from
+    /// every other row — same shape, same sort, found only by remembering its
+    /// name well enough to type it. Here it is at the top of a list of four.
+    ///
+    /// Two sources, because they are the two ways a path enters a conversation:
+    /// a diff the agent produced, and a file the user attached to a prompt.
+    /// Both are already in the transcript, so this reads what is there rather
+    /// than keeping a second list beside it that could come to disagree.
+    ///
+    /// **Newest first and deduplicated to the newest mention**, which is the
+    /// order the question is asked in — "the one from just now" — and the
+    /// reason the walk runs backwards. A file edited five times is one row.
+    pub fn artifacts(&self, max: usize) -> Vec<String> {
+        let mut seen = std::collections::HashSet::new();
+        let mut out: Vec<String> = Vec::new();
+        for item in self.items.iter().rev() {
+            let paths: Vec<&str> = match item {
+                ChatItem::Tool(tool) => tool
+                    .call
+                    .content
+                    .iter()
+                    .filter_map(|section| match section {
+                        crate::acp::ToolContent::Diff { path, .. } => Some(path.as_str()),
+                        _ => None,
+                    })
+                    .collect(),
+                ChatItem::User(msg) => msg
+                    .attachments
+                    .iter()
+                    .filter_map(|a| a.path.to_str())
+                    .collect(),
+                _ => continue,
+            };
+            for path in paths {
+                if out.len() >= max {
+                    return out;
+                }
+                if seen.insert(path) {
+                    out.push(path.to_string());
+                }
+            }
+        }
+        out
+    }
+
     /// The end of what the agent said **in the turn that just ended**, for
     /// anything that has to say what a turn came to somewhere the transcript is
     /// not.
