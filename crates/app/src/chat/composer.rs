@@ -47,13 +47,16 @@ use presentation::{
     options_rows, segmented_group,
 };
 
-/// Paths the `@` list offers from what this session already touched.
+/// How far back through the transcript the `@` list looks for paths this
+/// session has touched.
 ///
-/// Small on purpose. This group exists because the file somebody wants next is
-/// usually the one that was just written, and that claim is only true of the
-/// last few — a long recency list is the project's own file list again, in a
-/// worse order and under a heading promising something it no longer delivers.
-const MAX_ARTIFACTS: usize = 8;
+/// **A bound on the walk and not on the list.** How many of them are *drawn* is
+/// decided after the query has narrowed them, where the count of what was held
+/// back can be reported; cut to the display size here instead, a query aimed at
+/// something older found nothing in that group and nothing anywhere said a
+/// bound had bitten. This number only stops the walk growing with a
+/// conversation that has run all day.
+const MAX_ARTIFACT_SCAN: usize = 200;
 /// Rows drawn in the completion popup. The list scrolls past this; the cap is
 /// what keeps a 10 000-file repo from building 10 000 elements (bounded rendering).
 const MAX_COMPLETION_ROWS: usize = 50;
@@ -86,6 +89,15 @@ const POPUP_HEADROOM: Rems = rems(1.);
 /// headings — a list that scrolled almost as soon as it opened, which is the
 /// one thing a short list is supposed to avoid.
 const POPUP_MAX_ROWS: f32 = 12.;
+/// What the popup spends on itself, outside the box that scrolls.
+///
+/// The pinned title and — on a completion — the footer under the rule. Named
+/// so the height budget can subtract them: the thing that has to come out a
+/// whole number of rows is the *viewport*, and the viewport is the surface less
+/// this. Floored on the surface instead, the fold landed wherever the chrome
+/// happened to leave it, which is exactly the half-row the flooring exists to
+/// prevent.
+const POPUP_CHROME_H: Rems = rems(4.25);
 
 /// How tall a list may grow, given the panel it is opening inside.
 ///
@@ -114,23 +126,27 @@ const POPUP_MAX_ROWS: f32 = 12.;
 /// one row and a scrollbar.
 pub fn popup_room(panel: gpui::Pixels, reserved: gpui::Pixels, rem: gpui::Pixels) -> gpui::Pixels {
     let row = POPUP_ROW_H.to_pixels(rem);
-    let rows = row * POPUP_MAX_ROWS + CHIP_H.to_pixels(rem);
+    let chrome = POPUP_CHROME_H.to_pixels(rem);
+    let rows = row * POPUP_MAX_ROWS + chrome;
     let room = (panel - reserved - POPUP_HEADROOM.to_pixels(rem))
         .min(rows)
         .max(POPUP_MIN_H.to_pixels(rem));
-    // **Cut back to a whole number of rows.** A bound taken straight from the
-    // panel lands wherever the panel happens to end, which is usually part-way
-    // through a row — and a row sliced through its middle at the top of a
-    // scrolling list does not read as "there is more above", it reads as a
-    // drawing that went wrong. Rounded down, the cut always falls in the gap
-    // between two rows, where it says the same thing and says it on purpose.
+    // **Cut back so the scrolling box is a whole number of rows.** A bound
+    // taken straight from the panel lands wherever the panel happens to end,
+    // which is usually part-way through a row — and a row sliced through its
+    // middle at the top of a scrolling list does not read as "there is more
+    // above", it reads as a drawing that went wrong.
     //
-    // The remainder is the chrome the list is not: a heading standing among the
-    // rows and the footer pinned under them are neither of them a row, so what
-    // is floored is the room itself and the fit is exact only where the rows
-    // are the only thing in it. That is the common case and the one the
-    // half-row was ugliest in.
-    (room / row).floor().max(1.) * row
+    // The flooring is on the *viewport* and not on the surface, which is the
+    // whole of the difference: the surface also carries the pinned title and
+    // the footer, so a surface that is a whole number of rows leaves a viewport
+    // that is not. Take the chrome off, floor, put it back.
+    //
+    // A heading standing among the rows is still not a row, so a list with
+    // groups in it can still fold mid-heading. That one is bounded by how much
+    // a heading is: it is shorter than a row, and it is never the thing at the
+    // fold twice running.
+    ((room - chrome) / row).floor().max(1.) * row + chrome
 }
 /// How tall a row in the popup stands.
 ///
@@ -415,7 +431,13 @@ pub struct Composer {
     /// In rows rather than pixels, because a panel's zoom overrides the rem
     /// base for its subtree and a height snapshotted in pixels would be the one
     /// thing in the popup that did not scale with the text it is completing.
-    opened_rows: Option<usize>,
+    ///
+    /// **Rows and headings counted apart**, because they are not the same
+    /// height. Held as one number, a query that narrowed until a whole group
+    /// stopped matching still shrank the popup by that group's label — the
+    /// filler replaced the rows it lost and had nothing to say about the line
+    /// above them.
+    opened_rows: Option<(usize, usize)>,
     /// Files staged with 📎, sent with the next prompt.
     pub attachments: Vec<StagedAttachment>,
     /// The popup's scroll, so the highlight can be kept on screen.
@@ -726,7 +748,7 @@ impl Composer {
         match trigger.kind {
             TriggerKind::File => {
                 let folders = completion::folders(&chat.files);
-                let artifacts = chat.artifacts(MAX_ARTIFACTS);
+                let artifacts = chat.artifacts(MAX_ARTIFACT_SCAN);
                 let (found, held) = completion::mentions(
                     &chat.files,
                     &folders,
@@ -737,17 +759,14 @@ impl Composer {
                 // The heading is carried by the first row of each run rather
                 // than by a row of its own, so the index the arrows walk stays
                 // made entirely of things that can be taken.
-                let mut open: Option<completion::MentionKind> = None;
+                let mut runs = Runs::default();
                 let rows = found
                     .into_iter()
                     .map(|m| {
-                        let heading = (open != Some(m.kind)).then(|| {
-                            open = Some(m.kind);
-                            SharedString::from(match m.kind {
-                                completion::MentionKind::File => "Files",
-                                completion::MentionKind::Folder => "Folders",
-                                completion::MentionKind::Artifact => "This session",
-                            })
+                        let heading = runs.opening(match m.kind {
+                            completion::MentionKind::File => "Files",
+                            completion::MentionKind::Folder => "Folders",
+                            completion::MentionKind::Artifact => "This session",
                         });
                         Row {
                             label: SharedString::from(m.name),
@@ -799,17 +818,11 @@ impl Composer {
                 // they lead. Their heading names the agent rather than saying
                 // "Commands", which every row under it is — two runs both
                 // labelled by what they contain would be one label repeated.
-                let mut open: Option<Option<String>> = None;
+                let mut runs = Runs::default();
                 let rows = found
                     .into_iter()
                     .map(|c| {
-                        let heading = (open.as_ref() != Some(&c.namespace)).then(|| {
-                            open = Some(c.namespace.clone());
-                            c.namespace
-                                .clone()
-                                .map(SharedString::from)
-                                .unwrap_or_else(|| "Built in".into())
-                        });
+                        let heading = runs.opening(c.namespace.as_deref().unwrap_or("Built in"));
                         Row {
                             label: SharedString::from(c.name),
                             detail: c.summary.map(SharedString::from),
@@ -1519,9 +1532,21 @@ impl Composer {
         // the list never shrinks below the height the reader started reading.
         // Capped on the way in, so a query that opened on fifty matches does
         // not hold a floor taller than the popup is allowed to be.
-        let floor = *self
-            .opened_rows
-            .get_or_insert(rows.len().min(POPUP_MAX_ROWS as usize));
+        // **The candidate source may not have arrived yet.** `@` files are
+        // scanned off the UI loop when the session opens, so a mention typed in
+        // the first moments of a conversation has an empty list to snapshot —
+        // and a floor taken from that is zero, which is the popup growing from
+        // nothing a frame later, the one thing the snapshot exists to prevent.
+        // Waiting on an empty source, it opens at its full height instead.
+        let pending = matches!(
+            self.trigger.as_ref().map(|trigger| trigger.kind),
+            Some(TriggerKind::File)
+        ) && session.read(cx).chat.files.is_empty();
+        let headings = rows.iter().filter(|row| row.group.is_some()).count();
+        let (floor, label_floor) = *self.opened_rows.get_or_insert(match pending {
+            true => (POPUP_MAX_ROWS as usize, 0),
+            false => (rows.len().min(POPUP_MAX_ROWS as usize), headings),
+        });
         // Drawn *inside* the scroll, which is what makes this a floor on the
         // list rather than a height on the popup. A `min_h` on the surface
         // would win over the panel's own bound on a squeezed pane and push the
@@ -1529,6 +1554,7 @@ impl Composer {
         // ones that only ever appear when the list is long, so the bound meant
         // to keep the popup honest would be silencing it.
         let filler = rows.len()..floor;
+        let label_filler = headings..label_floor;
         let title = popup_title(&overlay, self.trigger.as_ref().map(|t| t.kind), &rows);
         // A list of one group is now named twice an inch apart — once on the
         // pinned row and again on the first row under it. The heading is the
@@ -1715,9 +1741,25 @@ impl Composer {
                         // place of* them: an empty list is what it is reporting,
                         // so there is nothing for it to be scrolled away behind.
                         .when(selected.is_none(), |list| {
-                            list.child(notice(cx).text_sm().child("No matches"))
+                            // **Naming the query is what makes this an answer
+                            // rather than a shrug.** A bare "No matches" leaves
+                            // the reader checking their own typing against a
+                            // popup that is not showing it — and the query is
+                            // exactly what they cannot see, because it is in
+                            // the field behind the card. Said back, a typo
+                            // answers itself.
+                            let query = self
+                                .trigger
+                                .as_ref()
+                                .map(|trigger| trigger.query.clone())
+                                .unwrap_or_default();
+                            list.child(notice(cx).text_sm().child(match query.is_empty() {
+                                true => "Nothing to complete".to_string(),
+                                false => format!("No matches for \u{201c}{query}\u{201d}"),
+                            }))
                         })
-                        .children(filler.map(|_| div().h(POPUP_ROW_H).flex_none())),
+                        .children(filler.map(|_| div().h(POPUP_ROW_H).flex_none()))
+                        .children(label_filler.map(|_| div().h(GROUP_LABEL_H).flex_none())),
                 )
                 // **Outside the scrolling box, and that is the whole point of
                 // them.** Both are sentences about the list rather than choices
@@ -2114,11 +2156,7 @@ fn candidate_row(id: usize, row: Row, highlighted: bool, cx: &App) -> Button {
     // at the bottom one. They are the safe pair to have adjacent, and the pair
     // that could never share — the detail and the *name lying beside it on the
     // same line* — is now two whole steps apart.
-    let lit = match highlighted {
-        true => cx.theme().accent_foreground,
-        false => cx.theme().foreground,
-    };
-    let quiet = match highlighted {
+    let name_ink = match highlighted {
         true => cx.theme().accent_foreground,
         false => cx.theme().foreground,
     };
@@ -2156,7 +2194,7 @@ fn candidate_row(id: usize, row: Row, highlighted: bool, cx: &App) -> Button {
                 .flex_none()
                 .w(NAME_COLUMN)
                 .overflow_hidden()
-                .child(marked(&row.label, row.label_span, lit, quiet)),
+                .child(marked(&row.label, row.label_span, name_ink, None)),
         )
         // **The detail is set against the row's right edge, so every detail in
         // the list ends at the same x.** The slack is between the two columns
@@ -2179,23 +2217,24 @@ fn candidate_row(id: usize, row: Row, highlighted: bool, cx: &App) -> Button {
                 .text_xs()
                 .children(
                     row.detail
-                        .map(|detail| marked(&detail, row.detail_span, lit, second)),
+                        .map(|detail| marked(&detail, row.detail_span, second, Some(name_ink))),
                 ),
         )
 }
 
-/// A string with the run the query matched drawn at full strength and the rest
-/// of it quiet.
+/// A string with the run the query matched picked out of the rest of it.
 ///
-/// **The only thing a row says about why it matched, and deliberately so.** The
-/// ink ramp is the one axis already being read; a hue, a weight or a rule under
-/// the letters would each add a second, and the popup has exactly one fill that
-/// already means something — the row about to be taken. A highlight that
-/// competed with it would leave two things on screen claiming to say where
-/// Enter lands.
+/// **Weight always, ink only where there is room for it.** This started as ink
+/// alone — matched at full strength, the rest a step down — and that held while
+/// the ramp had a step to spare. It stopped holding when the name went to full
+/// strength: there is nothing above full strength to climb to, so ink can say
+/// nothing there and `lit` is `None`. A detail still has room, because it sits
+/// a step below the name, so its matched run climbs *and* takes the weight.
 ///
-/// It also has to survive a reader who does not separate colours, which is why
-/// the two steps are a lightness apart rather than two tints of anything.
+/// What weight buys is what the ink was chosen for in the first place: it is
+/// not a hue, so it survives a reader who does not separate colours, and it
+/// does not compete with the one fill in this popup that means something — the
+/// row about to be taken.
 ///
 /// Three spans and not one styled run, because the range is a byte range into
 /// this exact string: slicing is safe only because core found the range against
@@ -2203,8 +2242,8 @@ fn candidate_row(id: usize, row: Row, highlighted: bool, cx: &App) -> Button {
 fn marked(
     text: &SharedString,
     at: Option<std::ops::Range<usize>>,
-    lit: gpui::Hsla,
-    quiet: gpui::Hsla,
+    base: gpui::Hsla,
+    lit: Option<gpui::Hsla>,
 ) -> gpui::Div {
     let Some(at) = at.filter(|at| text.is_char_boundary(at.start) && text.is_char_boundary(at.end))
     else {
@@ -2220,7 +2259,7 @@ fn marked(
         return div()
             .min_w_0()
             .truncate()
-            .text_color(quiet)
+            .text_color(base)
             .child(text.clone());
     };
     // Three children cannot share one ellipsis — the run that overflows is
@@ -2233,18 +2272,24 @@ fn marked(
         .h_flex()
         .min_w_0()
         .overflow_hidden()
-        .text_color(quiet)
+        .text_color(base)
         .child(div().flex_none().child(text[..at.start].to_string()))
         .child(
             div()
                 .flex_none()
-                // Weight and not a brighter ink, because the string around it
-                // is already at full strength — there is nothing above it on
-                // the ramp to step up to. `lit` and the ink either side of it
-                // are the same value on an unselected row and stay named apart
-                // so the selected row, where they are not, keeps working.
+                // Weight, and an ink only where there is one above the base
+                // to step up to. In a name there is not — the name is already
+                // at full strength — so `lit` is `None` there and weight is the
+                // whole of the affordance. In a detail there is, because the
+                // detail sits a step down, so the matched run climbs to the
+                // name's own ink *and* takes the weight.
+                //
+                // Written as an `Option` rather than two colours because two
+                // colours that had to be equal is what this was: the caller
+                // passed the same value twice and the comment here claimed a
+                // step between them that was not drawn.
                 .font_semibold()
-                .text_color(lit)
+                .text_color(lit.unwrap_or(base))
                 .child(text[at.start..at.end].to_string()),
         )
         .child(div().min_w_0().truncate().child(text[at.end..].to_string()))
@@ -2393,6 +2438,28 @@ fn popup_title(overlay: &Overlay, trigger: Option<TriggerKind>, rows: &[Row]) ->
     match (groups.next(), groups.next()) {
         (Some(only), None) => only,
         _ => "Settings".into(),
+    }
+}
+
+/// Which run the list is in, so a heading is emitted once per run.
+///
+/// **One walker for both lists.** Each of them wrote this out — remember the
+/// run, compare, set and emit — once per trigger kind, in one function, and
+/// they had already come to disagree about the type they remembered it as: one
+/// held the kind, the other a nested `Option` whose inner value was the
+/// namespace. What both actually need is the heading's own text, which is the
+/// only thing either of them does with it.
+#[derive(Default)]
+struct Runs(Option<SharedString>);
+
+impl Runs {
+    /// The heading, where `name` opens a run this has not seen.
+    fn opening(&mut self, name: &str) -> Option<SharedString> {
+        (self.0.as_deref() != Some(name)).then(|| {
+            let name = SharedString::from(name.to_string());
+            self.0 = Some(name.clone());
+            name
+        })
     }
 }
 
@@ -2918,26 +2985,29 @@ mod tests {
 
     #[test]
     fn a_list_is_capped_by_the_panel_and_never_below_its_floor() {
-        use super::{CHIP_H, POPUP_MAX_ROWS, POPUP_MIN_H, popup_room};
+        use super::{POPUP_MAX_ROWS, POPUP_MIN_H, popup_room};
         use gpui::px;
 
         let rem = px(16.);
         let row = super::POPUP_ROW_H.to_pixels(rem);
-        let cap = row * POPUP_MAX_ROWS + CHIP_H.to_pixels(rem);
+        let chrome = super::POPUP_CHROME_H.to_pixels(rem);
+        let cap = row * POPUP_MAX_ROWS + chrome;
 
-        // Every answer this gives is a whole number of rows: a row cut through
-        // its middle at the top of a scrolling list reads as a drawing that
-        // went wrong rather than as "there is more above".
+        // **Measured on the scrolling box and not on the surface**, which is
+        // the whole point: the surface also carries the pinned title and the
+        // footer, so a surface that came out a whole number of rows left a
+        // viewport that did not, and the fold landed mid-row anyway. This
+        // assertion used to be on the surface and passed while that was true.
         for (panel, reserved) in [(800., 120.), (500., 300.), (200., 180.), (0., 400.)] {
             let room = popup_room(px(panel), px(reserved), rem);
             assert_eq!(
-                room % row,
+                (room - chrome) % row,
                 px(0.),
                 "{panel}/{reserved} leaves a part-row at the fold"
             );
             assert!(
-                room > px(0.),
-                "{panel}/{reserved} produced nothing to draw into"
+                room > chrome,
+                "{panel}/{reserved} left no room for a single row"
             );
         }
 
@@ -2947,17 +3017,17 @@ mod tests {
         );
         assert_eq!(
             popup_room(px(800.), px(120.), rem),
-            (cap / row).floor() * row,
+            ((cap - chrome) / row).floor() * row + chrome,
             "a tall panel is bounded by the rows worth reading, not by the window"
         );
         assert_eq!(
             popup_room(px(500.), px(300.), rem),
-            ((px(500. - 300. - 16.)) / row).floor() * row,
+            ((px(500. - 300. - 16.) - chrome) / row).floor() * row + chrome,
             "a panel with less room than the cap hands over what it actually has"
         );
         assert_eq!(
             popup_room(px(200.), px(180.), rem),
-            (POPUP_MIN_H.to_pixels(rem) / row).floor() * row,
+            ((POPUP_MIN_H.to_pixels(rem) - chrome) / row).floor() * row + chrome,
             "a squeezed panel bottoms out rather than collapsing to one row"
         );
     }

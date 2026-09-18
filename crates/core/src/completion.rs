@@ -87,7 +87,7 @@ pub fn filter<'a>(candidates: &'a [String], query: &str) -> Vec<&'a String> {
 /// the original, and slicing at it is a panic. Rare enough never to be seen in
 /// testing and certain to arrive eventually, since the haystack here is a
 /// filename somebody else chose.
-pub fn span(haystack: &str, needle: &str) -> Option<std::ops::Range<usize>> {
+pub(crate) fn span(haystack: &str, needle: &str) -> Option<std::ops::Range<usize>> {
     fn lower(c: char) -> char {
         c.to_lowercase().next().unwrap_or(c)
     }
@@ -176,7 +176,7 @@ pub fn folders(files: &[String]) -> Vec<(String, usize)> {
 /// a first sentence is already joining two statements that could stand apart.
 /// A colon is not, because the clause after it is usually the content —
 /// `Triggers on: chart, graph` cut at the colon says `Triggers on`.
-pub fn summary(description: &str) -> &str {
+pub(crate) fn summary(description: &str) -> &str {
     let description = description.trim();
     let end = description
         .match_indices(". ")
@@ -278,10 +278,6 @@ pub fn commands(
     let mut namespaces: Vec<Option<String>> = matched.iter().map(|c| c.namespace.clone()).collect();
     namespaces.sort();
     namespaces.dedup();
-    debug_assert!(
-        namespaces.first().map(Option::is_none).unwrap_or(true) || !namespaces.contains(&None),
-        "unprefixed commands have to lead the list"
-    );
 
     let mut rows = Vec::new();
     let mut held = 0usize;
@@ -383,6 +379,17 @@ impl Mention {
 /// A group that matched nothing contributes no rows, and therefore no heading:
 /// the heading belongs to the row under it, so an empty group cannot leave one
 /// behind.
+/// Rows the artifact run shows before the rest are counted rather than drawn.
+///
+/// **Small on purpose, and counted rather than cut off upstream.** The claim
+/// this group makes is "the thing that just happened", and it is only true of
+/// the last few — a long recency list is the project's own file list again, in
+/// a worse order and under a heading promising something it no longer delivers.
+/// But the cut has to happen *after* the query has been applied and where the
+/// count of what was held back can be reported, or a query aimed at something
+/// older finds nothing here and nothing says why.
+const ARTIFACT_ROWS: usize = 8;
+
 pub fn mentions(
     files: &[String],
     folders: &[(String, usize)],
@@ -393,9 +400,9 @@ pub fn mentions(
     let mut rows = Vec::new();
     let mut held = 0usize;
 
-    let mut take = |matched: Vec<Mention>| {
-        held += matched.len().saturating_sub(per_group);
-        rows.extend(matched.into_iter().take(per_group));
+    let mut take = |matched: Vec<Mention>, cap: usize| {
+        held += matched.len().saturating_sub(cap);
+        rows.extend(matched.into_iter().take(cap));
     };
 
     take(
@@ -403,17 +410,19 @@ pub fn mentions(
             .into_iter()
             .map(|path| Mention::new(MentionKind::File, path, path.clone(), None).lit(query))
             .collect(),
+        per_group,
     );
-    let names: Vec<String> = folders.iter().map(|(dir, _)| dir.clone()).collect();
+    // Filtered where the counts already are. Copying the names out to reuse
+    // `filter` meant cloning every one of them and then walking back into the
+    // slice per match to recover the count it had been separated from -- two
+    // costs for the convenience of one call, on the one group whose rows carry
+    // a second fact about themselves.
+    let q = query.to_lowercase();
     take(
-        filter(&names, query)
-            .into_iter()
-            .map(|dir| {
-                let n = folders
-                    .iter()
-                    .find(|(name, _)| name == dir)
-                    .map(|(_, n)| *n)
-                    .unwrap_or(0);
+        folders
+            .iter()
+            .filter(|(dir, _)| q.is_empty() || dir.to_lowercase().contains(&q))
+            .map(|(dir, n)| {
                 Mention::new(
                     MentionKind::Folder,
                     dir,
@@ -429,12 +438,14 @@ pub fn mentions(
                 .lit(query)
             })
             .collect(),
+        per_group,
     );
     take(
         filter(artifacts, query)
             .into_iter()
             .map(|path| Mention::new(MentionKind::Artifact, path, path.clone(), None).lit(query))
             .collect(),
+        per_group.min(ARTIFACT_ROWS),
     );
 
     (rows, held)
@@ -806,6 +817,24 @@ mod tests {
         let all = vec![cmd("compact", "   ")];
         let (rows, _) = commands(&all, "", 10);
         assert_eq!(rows[0].summary, None);
+    }
+
+    /// The artifact run is short by design, but the cut has to happen *after*
+    /// the query and has to be counted. Cut upstream instead, a query aimed at
+    /// something older found nothing in this group and the held-back count —
+    /// the only thing on screen that ever says a bound bit — could not see it.
+    #[test]
+    fn an_artifact_older_than_the_run_is_counted_and_still_reachable() {
+        let artifacts: Vec<String> = (0..20).map(|i| format!("src/touched{i}.rs")).collect();
+        let (rows, held) = mentions(&[], &[], &artifacts, "", 50);
+        assert_eq!(rows.len(), ARTIFACT_ROWS, "the run stays short");
+        assert_eq!(held, 20 - ARTIFACT_ROWS, "and says how much it is holding");
+
+        // Narrowed onto one the run would not have reached, it is found.
+        let (rows, held) = mentions(&[], &[], &artifacts, "touched19", 50);
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].name, "touched19.rs");
+        assert_eq!(held, 0);
     }
 
     #[test]
