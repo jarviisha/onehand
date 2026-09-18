@@ -1653,6 +1653,25 @@ impl RenderOnce for CommandBlock {
             })
             .read(cx)
             .clone();
+        // **Whether the *box* ran out of height, which is not the question the
+        // fold asks.** The fold counts the newlines the agent wrote, and that
+        // is right for a fold: measured in drawn rows instead it would close a
+        // two-line command on a narrow pane and leave a ten-line one open on a
+        // wide one, which is a fold nobody can predict. But a single line three
+        // thousand characters long answers *no* to that question and fills the
+        // well anyway -- so every affordance hung off the fold went away in the
+        // one case where the text runs past the bottom edge with nothing
+        // holding it back. One line, one `curl`, no gutter to number, no lines
+        // held back to unfold, and the reader with no way to tell that what
+        // they can see is not all of it.
+        //
+        // Last frame's, like everything else measured here. The first frame of
+        // a command draws without these and the second has them, which is a
+        // frame nobody can see.
+        let overflows = scroll.max_offset().y > gpui::px(0.);
+        // Text out of sight *below what is drawn*, by either route: lines the
+        // fold is holding back, or a box scrolled somewhere above its own end.
+        let more_below = folded || scroll.max_offset().y - scroll.offset().y.abs() > gpui::px(1.);
 
         well(cx)
             .group(group.clone())
@@ -1720,11 +1739,16 @@ impl RenderOnce for CommandBlock {
                     .size(COPY_SIZE)
                     .icon(Icon::new(IconName::Copy).size(COPY_ICON))
                     .tooltip("Copy the whole command")
-                    // Always there on a command long enough that somebody
-                    // would want it elsewhere; on a one-line command it is one
-                    // more thing beside the text, so it waits to be reached
-                    // for.
-                    .when(!long, |copy| {
+                    // Always there on a command somebody would want elsewhere,
+                    // which is either one with more lines than the block draws
+                    // *or* one the block has run out of height for. The second
+                    // is the case that most needs it and had it least: a single
+                    // line long enough to scroll cannot be selected out by
+                    // dragging either, since the drag that would reach its end
+                    // is the one that scrolls the box. On a command that fits
+                    // whole, the button is one more thing beside the text and
+                    // waits to be reached for.
+                    .when(!long && !overflows, |copy| {
                         copy.invisible()
                             .group_hover(group.clone(), |style| style.visible())
                     })
@@ -1734,57 +1758,70 @@ impl RenderOnce for CommandBlock {
                         ));
                     }),
             )
+            // **What says the command does not end where the box does**, and it
+            // answers that question rather than the fold's. Lines held back
+            // behind a fold and a box scrolled short of its own end are the
+            // same fact to a reader, and the second of them used to draw
+            // nothing at all -- the justification being that a scrollbar was
+            // already saying it, which was true of the blocking body beside
+            // this and never of this. It goes as soon as the end is reached, so
+            // it is never a gradient laid over the last line of a command
+            // somebody is being asked to approve.
+            .when(more_below, |block| {
+                block.child(
+                    div()
+                        .absolute()
+                        .bottom_0()
+                        .left_0()
+                        .right_0()
+                        .h(FOLD_ROW + FOLD_ROW)
+                        .bg(gpui::linear_gradient(
+                            180.,
+                            gpui::linear_color_stop(cx.theme().muted.alpha(0.), 0.),
+                            gpui::linear_color_stop(cx.theme().muted, 0.75),
+                        )),
+                )
+            })
+            // Drawn over the fade rather than under it, and only where there is
+            // something to drag: the one affordance that says how much is out
+            // of sight rather than only that something is.
+            .when(overflows, |block| {
+                block.child(Scrollbar::vertical(&scroll).mode(ScrollbarMode::Always))
+            })
             // Nothing is being held back and nothing has been opened: no
             // control, because a fold that reveals nothing is a button that
-            // has to be pressed to learn it does nothing.
+            // has to be pressed to learn it does nothing. It stays on the
+            // fold's own question -- a command of one long line has no lines to
+            // reveal, so a *Show all* on it would open onto what is already
+            // there.
             .when(long, |block| {
-                block
-                    // What says the command does not end where the box does.
-                    // Only under a fold: an opened block scrolls, and a fade
-                    // over a scrolled region says "there is more" in the one
-                    // place the scrollbar is already saying it.
-                    .when(folded, |block| {
-                        block.child(
-                            div()
-                                .absolute()
-                                .bottom_0()
-                                .left_0()
-                                .right_0()
-                                .h(FOLD_ROW + FOLD_ROW)
-                                .bg(gpui::linear_gradient(
-                                    180.,
-                                    gpui::linear_color_stop(cx.theme().muted.alpha(0.), 0.),
-                                    gpui::linear_color_stop(cx.theme().muted, 0.75),
-                                )),
-                        )
-                    })
-                    .child(
-                        crate::controls::action(("perm-fold", key))
-                            .ghost()
-                            .absolute()
-                            .bottom(BLOCK_INSET)
-                            .right(BLOCK_INSET)
-                            .h(FOLD_ROW)
-                            .px_2()
-                            .rounded(cx.theme().radius)
-                            // On its own plate, because it sits over the end of
-                            // the command: the fade underneath it is the text
-                            // it would otherwise be read against.
-                            .bg(cx.theme().muted)
-                            .label(match self.expanded {
-                                true => "Show less".to_string(),
-                                false => format!("Show all · {} lines", self.total),
-                            })
-                            .on_click({
-                                let (session, target) = (self.session, self.target);
-                                move |_, _, cx: &mut App| {
-                                    session.update(cx, |s, cx| {
-                                        s.chat.toggle_permission(target);
-                                        cx.notify();
-                                    });
-                                }
-                            }),
-                    )
+                block.child(
+                    crate::controls::action(("perm-fold", key))
+                        .ghost()
+                        .absolute()
+                        .bottom(BLOCK_INSET)
+                        .right(BLOCK_INSET)
+                        .h(FOLD_ROW)
+                        .px_2()
+                        .rounded(cx.theme().radius)
+                        // On its own plate, because it sits over the end of
+                        // the command: the fade underneath it is the text
+                        // it would otherwise be read against.
+                        .bg(cx.theme().muted)
+                        .label(match self.expanded {
+                            true => "Show less".to_string(),
+                            false => format!("Show all · {} lines", self.total),
+                        })
+                        .on_click({
+                            let (session, target) = (self.session, self.target);
+                            move |_, _, cx: &mut App| {
+                                session.update(cx, |s, cx| {
+                                    s.chat.toggle_permission(target);
+                                    cx.notify();
+                                });
+                            }
+                        }),
+                )
             })
     }
 }
