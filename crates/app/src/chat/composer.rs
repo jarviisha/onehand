@@ -2135,11 +2135,16 @@ fn send_controls(
     // running -- a Stop that disappeared the instant somebody started typing
     // would be gone at exactly the moment they had most to say about the turn.
     //
-    // They are never one button wearing two faces. The tint and the shape are
-    // the whole of what tells them apart now that Stop carries no word, and two
-    // presses a thumb-width apart is the arrangement that makes that safe: the
-    // arrow starts something, the pause ends something, and neither is ever
-    // where the other just was.
+    // They are never one button wearing two faces, and never on screen
+    // together: Send is drawn only with no turn running and Stop only while one
+    // is. They do share a place, though -- the trailing end of the row is the
+    // turn's own control whichever of them is in it -- so what tells them apart
+    // is the tint, the glyph, and Queue arriving *labelled* beside Stop the
+    // moment there is a draft. The cost is real and is taken knowingly: press
+    // that same spot twice quickly and the second press stops the turn the
+    // first one started. A slot reserved so neither ever moves spends a fixed
+    // inch of a row that runs out of width before anything else in the card
+    // does, and spends it on the state that is idle most of the time.
     if blocked == Some(SubmitBlock::Busy) {
         return div()
             .h_flex()

@@ -255,8 +255,20 @@ pause in the danger tint, and no word, the tint carrying what the word did — a
 there at every moment the work is running: it is the one control in this app
 that throws running work away, and one that vanished as soon as somebody started
 typing would be gone at exactly the moment they had most to say about the turn.
-The two are never one button wearing two faces; the arrow starts something, the
-pause ends something, and neither is ever where the other just was. Otherwise
+**They are never one button wearing two faces**, which is the rule that holds:
+the arrow starts something and the pause ends something, they carry different
+tints, and they are never on screen together — Send is drawn only when no turn
+is running, and Stop only while one is. What is *not* claimed is that they stand
+in different places. The trailing end of the row is the turn's own control
+whichever of them is there, and Stop takes the slot the arrow was in a moment
+earlier. The cost of that is stated rather than designed away: somebody who
+sends and then presses the same spot again stops the turn they just started.
+Three things stand between them — the tint, the glyph, and Queue arriving
+*labelled* beside Stop the moment there is a draft, so the pair mid-turn is
+never two wordless buttons a thumb-width apart. The alternative, a reserved
+empty slot so that neither control ever moves, spends a fixed inch of a row that
+already runs out of width before anything else in the card does, and spends it
+on the state that is idle most of the time. Otherwise
 Send is disabled with the reason on it — an
 empty buffer, a staged file that could not be read (named), an agent not
 connected. Actionable blockers are also written inline under the controls, so
@@ -1004,6 +1016,13 @@ A blocking card: the agent parks until it is answered.
 
 - A `warning` icon and a short heading; the agent-authored command sits in a
   bounded mono well.
+- **The header names what kind of work is being asked for**, taken from the
+  tool call's own declared kind — read, edit, execute, fetch. The card needs one
+  word of that sort: a heading that is a bare command says what *would* run
+  without saying that it would be run at all, and the protocol carries no tool
+  name to fall back on. A kind this build does not recognise prints **nothing**
+  rather than a word invented for it, because the one thing worse than an
+  unlabelled grant is a mislabelled one.
 - Actions split across the footer: Deny is a quiet ghost, "Always allow" a
   neutral outline, "Allow once" the one `primary` action.
 - **Unanswered, it is pinned above the composer, not left in the transcript.**
@@ -1026,14 +1045,18 @@ The agent *asking*, which is not the same as asking permission — Claude Code's
 - **A multi-question form is tabbed**, one question at a time: stacking every
   question made the card taller than the pane and pushed the top of it off
   screen. The tab strip scrolls horizontally.
-- **The tabs are numbered, and the number replaces the tick.** A strip of titles
-  says these are three things; a strip of numbered titles says they are three
-  things in an order, with a first and a last — the only question a reader
-  partway through a form actually has. The circle is filled at full strength for
-  the question that is open and quietly for one already answered, so what is
-  left to do reads as the circles that are *not* filled. The tick that used to
-  mark an answered tab is gone with it: it wanted the same 1rem the number now
-  holds, and two marks in one circle is neither.
+- **The tabs are numbered, and the number is the point until the question has an
+  answer.** A strip of titles says these are three things; a strip of *numbered*
+  titles says they are three things in an order, with a first and a last — the
+  only question a reader partway through a form actually has. Once a question is
+  answered its number has done that job, and **a tick replaces it**: what is
+  left to do is then readable as the tabs still carrying digits, without
+  counting anything. The two never show together, because one circle holds one
+  mark — which is the whole reason this is a replacement and not a badge added
+  beside the number.
+  The circle is filled at full strength for the question that is open, quietly
+  for one already answered, and not at all for one still waiting, so the two
+  marks are never the only thing separating the three states.
 - **The open tab is underlined, not filled.** A filled tab in a strip whose tabs
   each already carry a filled circle is two fills arguing about which one means
   *here*; the rule lands on the strip's own hairline and reads as the one
@@ -1052,6 +1075,24 @@ The agent *asking*, which is not the same as asking permission — Claude Code's
   two land within a shade of each other in the dark palette and the ring is
   painted onto its own background. A mark that disappears under the pointer
   disappears exactly when it is being aimed at.
+- **A choice whose label says it throws work away is drawn in the danger tint.**
+  The protocol carries no flag for this — a form's choices arrive as a bare enum
+  of strings, and nothing on the wire separates *Leave them* from *Drop them*.
+  The one place the difference is written down is the wording the agent chose
+  for the person reading it, so the test is the label's own words: *delete*,
+  *drop*, *remove*, *destroy*, *erase*, *wipe*, *discard*, *purge*, *overwrite*,
+  matched whole rather than as substrings so *undropped* and *removable* are not
+  read as warnings.
+  **A heuristic is affordable here only because it decides a colour and never an
+  answer.** A false positive tints a harmless option and costs a moment's
+  hesitation; a false negative draws a destructive one exactly as plainly as it
+  would be drawn with no rule at all. Neither can pick anything on the user's
+  behalf: the choices keep the agent's own order, nothing is pre-selected on the
+  strength of the test, and no row is disabled by it. That is the line — a
+  heuristic may change how a row *reads*, never what a press *does*.
+  Its stated limit: the words are English. An agent answering in another
+  language gets no tint, which is the same as having no rule — the failure is
+  silence, not a wrong colour.
 - **The free-text answer is drawn as one more row of the list**, with a pencil
   at its head — because that is what it is, the answer under the last of the
   agent's. Bare, it read as a field left over from somewhere else. The row is
