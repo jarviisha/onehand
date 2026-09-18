@@ -2402,19 +2402,30 @@ fn ask_choice_mark(on: bool, single: bool, cx: &App) -> impl IntoElement + use<>
 /// handle rather than bound as app actions — a binding would reach over the
 /// composer exactly the way the panel shortcuts are meant to, which is the
 /// opposite of what a form wants.
-fn ask_form(
-    card: gpui::Div,
-    session: &Entity<ChatSession>,
-    a: &AskItem,
-    target: TranscriptItemId,
+/// The four parts of a question card are drawn against the same five facts:
+/// which session it belongs to, the item, where it is in the transcript, which
+/// question of the form is open, and whether the card is the quick kind that
+/// commits on the click itself.
+///
+/// Held together rather than threaded through four signatures, which is what
+/// they were when this was one function: the same five arguments in the same
+/// order at every call, and a fifth part added later would have taken them
+/// again. Everything else each part needs is derived from these inside it.
+struct AskForm<'a> {
+    session: &'a Entity<ChatSession>,
+    a: &'a AskItem,
     idx: usize,
-    cx: &App,
-) -> gpui::AnyElement {
-    let quick = a.is_quick();
-    let active = a.active_field();
-    let multi_field = a.req.fields.len() > 1;
+    /// The question the strip has open, and the one every row below it answers.
+    active: usize,
+    /// A one-question single-select: it answers on the click and carries no
+    /// footer to hunt for.
+    quick: bool,
+}
 
-    let tabs = multi_field.then(|| {
+impl AskForm<'_> {
+    /// The strip of questions across the top, on a form that has more than one.
+    fn tabs(&self, cx: &App) -> gpui::Stateful<gpui::Div> {
+        let (session, a, idx, active) = (self.session, self.a, self.idx, self.active);
         div()
             .id(("ask-tabs", idx))
             .h_flex()
@@ -2484,152 +2495,406 @@ fn ask_form(
                         });
                     })
             }))
-    });
+    }
 
-    let field = a.req.fields.get(active);
-    let single = matches!(field.map(|f| &f.kind), Some(ElicitKind::Select(_)));
-    // **The question, above the choices that answer it.** On a multi-question
-    // form the tab carries the field's heading and nothing else said what was
-    // actually being asked -- a strip reading "Migration", "Also generate",
-    // "Anything else" over three unexplained options is a form answered by
-    // guessing. The description is the question and the title is the tab's
-    // word for it, so the description leads and the title stands in where the
-    // agent sent only one of the two.
-    //
-    // A single-question form is the exception and prints nothing here: its
-    // question *is* the card's heading, so a second copy under it asks twice.
-    let question = multi_field
-        .then(|| field.and_then(|f| f.description.clone().or_else(|| f.title.clone())))
-        .flatten();
-    let choices = field
-        .map(|field| match &field.kind {
-            ElicitKind::Select(c) | ElicitKind::MultiSelect(c) => c.clone(),
-            ElicitKind::Text => Vec::new(),
-        })
-        .unwrap_or_default();
-    let picked = a.picked.get(active).cloned().unwrap_or_default();
-    let cursor = a.cursor_row(active);
+    /// The open question's choices, one row each.
+    fn choice_rows(&self, cx: &App) -> Vec<gpui::AnyElement> {
+        let (session, a, idx, active, quick) =
+            (self.session, self.a, self.idx, self.active, self.quick);
+        let field = a.req.fields.get(active);
+        let single = matches!(field.map(|f| &f.kind), Some(ElicitKind::Select(_)));
+        let choices = field
+            .map(|field| match &field.kind {
+                ElicitKind::Select(c) | ElicitKind::MultiSelect(c) => c.clone(),
+                ElicitKind::Text => Vec::new(),
+            })
+            .unwrap_or_default();
+        let picked = a.picked.get(active).cloned().unwrap_or_default();
+        let cursor = a.cursor_row(active);
 
-    let rows = choices
-        .into_iter()
-        .enumerate()
-        .map(|(o, choice)| {
-            let session = session.clone();
-            let on = picked.contains(&o);
-            // The one thing on this card that has to be *read* before anything
-            // can happen, so it is set at the size everything else meant to be
-            // read is, with its description tight underneath rather than a line
-            // away: the two are one answer, and spaced apart the description
-            // reads as belonging to whichever row it is nearer.
-            let destructive = choice.is_destructive();
-            let mut words = div().v_flex().gap_0p5().flex_1().min_w_0().child(
-                div()
-                    .w_full()
-                    .when(destructive, |label| {
-                        label.text_color(crate::theme::status_ink(cx).danger)
-                    })
-                    .child(choice.label.clone()),
-            );
-            if let Some(description) = choice.description.clone() {
-                words = words.child(
+        choices
+            .into_iter()
+            .enumerate()
+            .map(|(o, choice)| {
+                let session = session.clone();
+                let on = picked.contains(&o);
+                // The one thing on this card that has to be *read* before anything
+                // can happen, so it is set at the size everything else meant to be
+                // read is, with its description tight underneath rather than a line
+                // away: the two are one answer, and spaced apart the description
+                // reads as belonging to whichever row it is nearer.
+                let destructive = choice.is_destructive();
+                let mut words = div().v_flex().gap_0p5().flex_1().min_w_0().child(
                     div()
                         .w_full()
-                        .text_size(WORK_TEXT)
-                        .text_color(cx.theme().muted_foreground)
-                        .child(description),
+                        .when(destructive, |label| {
+                            label.text_color(crate::theme::status_ink(cx).danger)
+                        })
+                        .child(choice.label.clone()),
                 );
-            }
-            grows(crate::controls::action(("ask-choice", o)))
-                .ghost()
-                .px_3()
-                .py_2()
+                if let Some(description) = choice.description.clone() {
+                    words = words.child(
+                        div()
+                            .w_full()
+                            .text_size(WORK_TEXT)
+                            .text_color(cx.theme().muted_foreground)
+                            .child(description),
+                    );
+                }
+                grows(crate::controls::action(("ask-choice", o)))
+                    .ghost()
+                    .px_3()
+                    .py_2()
+                    .w_full()
+                    .min_h(ASK_ROW_MIN)
+                    .rounded(cx.theme().radius_lg)
+                    .border_1()
+                    // **A taken choice is named by its border, and a destructive
+                    // one by the danger step of that same border.** Taking it is
+                    // still one press, so the tint is not a refusal -- it is the
+                    // one row on the card that cannot be pressed a second time to
+                    // undo, and the only place to say so is the row itself.
+                    .border_color(match (on, destructive) {
+                        (true, true) => crate::theme::status_ink(cx).danger,
+                        (true, false) => cx.theme().primary,
+                        // The keyboard's own position, which has to be visible
+                        // without being an answer: an arrow press moves this and
+                        // settles nothing, so it is the hairline lifted to full
+                        // ink rather than a third colour.
+                        (false, _) if cursor == Some(onehand_core::chat::AskRow::Choice(o)) => {
+                            cx.theme().ring
+                        }
+                        (false, _) => cx.theme().border,
+                    })
+                    // **One child, holding the row's own layout.** A `Button` wraps
+                    // whatever the call site gives it in a content box of the
+                    // library's own -- centred, with the gap its `Size` chose -- so
+                    // a flex written out here lands on a box with exactly one thing
+                    // in it and decides nothing at all. That is why the mark sat a
+                    // quarter-rem from the words it belongs to while this said
+                    // `gap_2p5`, and why aligning it to the top of a two-line
+                    // choice did nothing either.
+                    // **The mark and the hint sit on the row's middle, not on its
+                    // first line.** Both are one shape against a text column that
+                    // is one line or three depending on what the agent wrote, so
+                    // pinned to the top they line up with the label on a
+                    // described choice and with nothing at all on a bare one --
+                    // the column of marks down the left comes out ragged for a
+                    // reason that is about the wording rather than about the
+                    // control.
+                    .child(
+                        div()
+                            .h_flex()
+                            .items_center()
+                            .gap_3()
+                            .w_full()
+                            .child(ask_choice_mark(on, single, cx))
+                            .child(words)
+                            .child(ask_key_hint(o + 1, cx)),
+                    )
+                    .on_click(move |_, window: &mut Window, cx: &mut App| {
+                        ask_take(
+                            &session,
+                            idx,
+                            active,
+                            onehand_core::chat::AskRow::Choice(o),
+                            quick,
+                            window,
+                            cx,
+                        );
+                    })
+                    .into_any_element()
+            })
+            .collect::<Vec<_>>()
+    }
+
+    /// The question itself, above the choices that answer it.
+    ///
+    /// On a multi-question form the tab carries the field's heading and nothing
+    /// else said what was actually being asked -- a strip reading "Migration",
+    /// "Also generate", "Anything else" over three unexplained options is a
+    /// form answered by guessing. The description is the question and the title
+    /// is the tab's word for it, so the description leads and the title stands
+    /// in where the agent sent only one of the two.
+    ///
+    /// A single-question form is the exception and prints nothing here: its
+    /// question *is* the card's heading, so a second copy under it asks twice.
+    fn question(&self) -> Option<String> {
+        let field = self.a.req.fields.get(self.active)?;
+        (self.a.req.fields.len() > 1)
+            .then(|| field.description.clone().or_else(|| field.title.clone()))
+            .flatten()
+    }
+
+    /// The free-text box, where the question offers one.
+    ///
+    /// The choices above it are what the agent thought of; this is the answer
+    /// it did not, and a form that shows only the first is a question the user
+    /// cannot actually answer.
+    fn custom_row(&self, cx: &App) -> Option<gpui::Div> {
+        let state = self
+            .a
+            .has_custom(self.active)
+            .then(|| {
+                self.session
+                    .read(cx)
+                    .ask_input(self.idx, self.active)
+                    .cloned()
+            })
+            .flatten()?;
+        let cursor = self.a.cursor_row(self.active);
+        Some(
+            div()
+                .h_flex()
+                .items_center()
+                .gap_3()
                 .w_full()
-                .min_h(ASK_ROW_MIN)
+                .px_3()
+                .min_h(ASK_CUSTOM_ROW_MIN)
                 .rounded(cx.theme().radius_lg)
                 .border_1()
-                // **A taken choice is named by its border, and a destructive
-                // one by the danger step of that same border.** Taking it is
-                // still one press, so the tint is not a refusal -- it is the
-                // one row on the card that cannot be pressed a second time to
-                // undo, and the only place to say so is the row itself.
-                .border_color(match (on, destructive) {
-                    (true, true) => crate::theme::status_ink(cx).danger,
-                    (true, false) => cx.theme().primary,
-                    // The keyboard's own position, which has to be visible
-                    // without being an answer: an arrow press moves this and
-                    // settles nothing, so it is the hairline lifted to full
-                    // ink rather than a third colour.
-                    (false, _) if cursor == Some(onehand_core::chat::AskRow::Choice(o)) => {
-                        cx.theme().ring
-                    }
-                    (false, _) => cx.theme().border,
+                // **Dashed** rather than solid, which is the one thing that
+                // separates it from the rows above without taking it out of
+                // the list: the agent's wording is fixed and this line is not
+                // yet written.
+                .border_dashed()
+                .border_color(match cursor == Some(onehand_core::chat::AskRow::Custom) {
+                    true => cx.theme().ring,
+                    false => cx.theme().border,
                 })
-                // **One child, holding the row's own layout.** A `Button` wraps
-                // whatever the call site gives it in a content box of the
-                // library's own -- centred, with the gap its `Size` chose -- so
-                // a flex written out here lands on a box with exactly one thing
-                // in it and decides nothing at all. That is why the mark sat a
-                // quarter-rem from the words it belongs to while this said
-                // `gap_2p5`, and why aligning it to the top of a two-line
-                // choice did nothing either.
-                // **The mark and the hint sit on the row's middle, not on its
-                // first line.** Both are one shape against a text column that
-                // is one line or three depending on what the agent wrote, so
-                // pinned to the top they line up with the label on a
-                // described choice and with nothing at all on a bare one --
-                // the column of marks down the left comes out ragged for a
-                // reason that is about the wording rather than about the
-                // control.
+                .child(
+                    Icon::new(crate::icons::Icon::SquarePen)
+                        .size_4()
+                        .flex_none()
+                        .text_color(cx.theme().muted_foreground),
+                )
+                // The row is the border, so the field inside it draws none: two
+                // rings around one input read as two inputs, and the inner one
+                // lands a hair inside the outer with the gap between them
+                // reading as a mistake.
                 .child(
                     div()
-                        .h_flex()
-                        .items_center()
-                        .gap_3()
-                        .w_full()
-                        .child(ask_choice_mark(on, single, cx))
-                        .child(words)
-                        .child(ask_key_hint(o + 1, cx)),
+                        .flex_1()
+                        .min_w_0()
+                        .child(Input::new(&state).appearance(false)),
                 )
-                .on_click(move |_, window: &mut Window, cx: &mut App| {
-                    ask_take(
-                        &session,
-                        idx,
-                        active,
-                        onehand_core::chat::AskRow::Choice(o),
-                        quick,
-                        window,
-                        cx,
-                    );
-                })
-                .into_any_element()
-        })
-        .collect::<Vec<_>>();
+                .child(ask_key_hint(self.a.row_count(self.active), cx)),
+        )
+    }
 
-    // The forward button is about *this* question: a form is walked through one
-    // at a time, so arming Submit off an answer three tabs back would offer to
-    // send while the question on screen is blank.
-    let can_advance = a.field_answered(active);
-    let last = a.is_last(active);
-    // The free-text box, where the question offers one. The choices above it
-    // are what the agent thought of; this is the answer it did not, and a form
-    // that shows only the first is a question the user cannot actually answer.
-    let custom = a
-        .has_custom(active)
-        .then(|| session.read(cx).ask_input(idx, active).cloned())
-        .flatten();
-    let custom_hint = a.row_count(active);
-    let typed = a.custom.get(active).is_some_and(|c| !c.trim().is_empty());
+    /// The strip that closes the card: what the keyboard can do, then Skip and
+    /// the forward button.
+    fn footer(&self, cx: &App) -> gpui::Div {
+        let (session, idx, active, quick) = (self.session, self.idx, self.active, self.quick);
+        // The forward button is about *this* question: a form is walked through
+        // one at a time, so arming Submit off an answer three tabs back would
+        // offer to send while the question on screen is blank.
+        let can_advance = self.a.field_answered(active);
+        let last = self.a.is_last(active);
 
+        div()
+            // **A strip of its own, over a rule that spans the card.** The
+            // buttons here end the block everything is waiting on, and left
+            // inside the body's padding they read as the last row of the
+            // list rather than as what closes it. The rule is the same
+            // pixel the tab strip's is, for the same reason: it is where a
+            // region ends.
+            .child(div().w_full().h_px().bg(cx.theme().border))
+            .child(
+                div()
+                    .h_flex()
+                    .items_center()
+                    .justify_between()
+                    .gap_2()
+                    .w_full()
+                    .px_4()
+                    .py_2p5()
+                    // What the keyboard can do, said where the keyboard's
+                    // work ends. The numbers are on the rows themselves --
+                    // this is the walk, which has nowhere else to be named.
+                    .child(
+                        div()
+                            .flex_1()
+                            .min_w_0()
+                            .truncate()
+                            .text_xs()
+                            .text_color(cx.theme().muted_foreground)
+                            .child(match quick {
+                                true => "Enter choose",
+                                false => "↑↓ move · Enter choose · Esc skip",
+                            }),
+                    )
+                    .child(
+                        div()
+                            .h_flex()
+                            .items_center()
+                            .gap_2()
+                            .flex_none()
+                            .children((!quick).then(|| {
+                                crate::controls::action(("ask-skip", idx))
+                                    .secondary()
+                                    .small()
+                                    .label("Skip")
+                                    .on_click({
+                                        let session = session.clone();
+                                        move |_, window: &mut Window, cx: &mut App| {
+                                            ask_skip(&session, idx, active, window, cx);
+                                        }
+                                    })
+                            }))
+                            .child(
+                                crate::controls::action(("ask-submit", idx))
+                                    .primary()
+                                    .small()
+                                    .map(|submit| match can_advance {
+                                        true => submit,
+                                        // Nothing is picked yet, so the
+                                        // pointer would be promising a
+                                        // press that does nothing.
+                                        false => crate::controls::resting(submit),
+                                    })
+                                    .disabled(!can_advance)
+                                    .label(match last {
+                                        false => "Next →",
+                                        true => "Submit",
+                                    })
+                                    .on_click({
+                                        let session = session.clone();
+                                        move |_, _, cx: &mut App| {
+                                            ask_advance(&session, idx, active, cx);
+                                        }
+                                    }),
+                            ),
+                    ),
+            )
+    }
+
+    /// The card's own key handling, hung on the focus handle it was built with.
+    ///
+    /// Separate from the boxes above because it answers a different question:
+    /// those say what the form looks like, this says what a keystroke landing
+    /// anywhere on it means.
+    fn keys(&self, body: gpui::Div, focus: gpui::FocusHandle) -> gpui::Stateful<gpui::Div> {
+        let (idx, active, quick) = (self.idx, self.active, self.quick);
+        let session = self.session.clone();
+        let card = focus.clone();
+        body.id(("ask-card", idx))
+            .track_focus(&focus)
+            .on_key_down(move |event, window, cx| {
+                let keystroke = &event.keystroke;
+                // A modified key is somebody else's: Ctrl+1 switches sessions and
+                // Shift+Enter is a newline in whatever holds the caret.
+                if keystroke.modifiers.modified() {
+                    return;
+                }
+                let session = session.clone();
+                // **The free-text box takes every key while it has the caret.** It
+                // is inside the card, so a key press there reaches this listener on
+                // its way out -- and the answers this card is shortest about are
+                // digits, which is exactly what somebody writing their own answer
+                // types. Unguarded, a "1" in that box jumps to the first choice and
+                // empties the line being written.
+                let typing = session
+                    .read(cx)
+                    .ask_input(idx, active)
+                    .map(|state| state.read(cx).focus_handle(cx))
+                    .is_some_and(|handle| handle.is_focused(window));
+                if typing {
+                    return;
+                }
+                match keystroke.key.as_str() {
+                    "up" | "down" => {
+                        let delta = if keystroke.key == "up" { -1 } else { 1 };
+                        // The walk takes the caret back off whichever row was last
+                        // clicked, or the cursor and the focus point at two
+                        // different rows and Enter answers the one the eye is not
+                        // on.
+                        window.focus(&card, cx);
+                        session.update(cx, |s, cx| {
+                            if let Some(item) = s.chat.ask_at_mut(idx) {
+                                item.move_cursor(active, delta);
+                            }
+                            cx.notify();
+                        });
+                    }
+                    // **Only where the card itself holds the caret.** A choice row
+                    // is a library `Button`, and a focused one already turns Enter
+                    // into its own click -- so answering here as well is two
+                    // answers, which on a multi-select is the choice toggled on and
+                    // straight back off. The row that has the caret settles itself;
+                    // this is the walk's Enter, for the cursor the arrows moved.
+                    "enter" if card.is_focused(window) => {
+                        let row = session
+                            .read(cx)
+                            .chat
+                            .ask_at(idx)
+                            .and_then(|item| item.cursor_row(active));
+                        if let Some(row) = row {
+                            ask_take(&session, idx, active, row, quick, window, cx);
+                        }
+                    }
+                    "enter" => {}
+                    // Esc passes on this question rather than refusing the whole
+                    // form: the card is walked one question at a time, and the key
+                    // that means "not this one" has to mean it at the same scale
+                    // the Skip button beside it does.
+                    "escape" if !quick => ask_skip(&session, idx, active, window, cx),
+                    // A number jumps to the row carrying it, the typed answer's box
+                    // included -- and a number nobody offered does nothing at all,
+                    // which is `row` refusing rather than rounding to the nearest.
+                    key => {
+                        let Some(n) = key.parse::<usize>().ok().filter(|&n| n >= 1) else {
+                            return;
+                        };
+                        let row = session
+                            .read(cx)
+                            .chat
+                            .ask_at(idx)
+                            .and_then(|item| item.row(active, n - 1));
+                        if let Some(row) = row {
+                            ask_take(&session, idx, active, row, quick, window, cx);
+                        }
+                    }
+                }
+            })
+    }
+}
+
+/// The question card: the strip of questions, the open one's choices, the box
+/// for an answer nobody offered, and what closes it.
+///
+/// Assembly only. Each part is built by [`AskForm`], because a card that draws
+/// four separable regions in one function is one where a change to any of them
+/// is read against the other three.
+fn ask_form(
+    card: gpui::Div,
+    session: &Entity<ChatSession>,
+    a: &AskItem,
+    target: TranscriptItemId,
+    idx: usize,
+    cx: &App,
+) -> gpui::AnyElement {
+    let form = AskForm {
+        session,
+        a,
+        idx,
+        active: a.active_field(),
+        quick: a.is_quick(),
+    };
+    let multi_field = a.req.fields.len() > 1;
+    let rows = form.choice_rows(cx);
     // The quick card commits on a click and deliberately carries no footer to
     // hunt for -- but typing is not a click, so the footer appears the moment
     // there are words with no other way out. Skip is not added with it:
     // refusing the whole question is a thing that card has never offered, and
     // writing an answer is not the moment to start.
-    let footer = !quick || typed;
-    let focus = session.read(cx).ask_focus(idx).cloned();
+    let typed = a
+        .custom
+        .get(form.active)
+        .is_some_and(|c| !c.trim().is_empty());
 
     let body = card
-        .children(tabs)
+        .children(multi_field.then(|| form.tabs(cx)))
         // The strip's rule spans the card and not just the tabs: the tabs are a
         // label on the body below them, and it is the body that has an edge.
         .when(multi_field, |card| {
@@ -2643,7 +2908,7 @@ fn ask_form(
                 .px_4()
                 .pt_3p5()
                 .pb_4()
-                .children(question.map(|line| {
+                .children(form.question().map(|line| {
                     div()
                         .w_full()
                         .text_sm()
@@ -2656,213 +2921,25 @@ fn ask_form(
                 // on the card beside the footer rather than inside the region
                 // that can be scrolled away from.
                 .children((!rows.is_empty()).then(|| BlockingBody::new(target, rows).flush()))
-                // Drawn as one more row of the list it follows, because that is
-                // what it is: the answer under the last of the agent's. Bare,
-                // it read as a field that had been left over from somewhere
-                // else -- and **dashed** rather than solid, which is the one
-                // thing that separates it from the rows above without taking it
-                // out of the list: the agent's wording is fixed and this line
-                // is not yet written.
-                .children(custom.map(|state| {
-                    div()
-                        .h_flex()
-                        .items_center()
-                        .gap_3()
-                        .w_full()
-                        .px_3()
-                        .min_h(ASK_CUSTOM_ROW_MIN)
-                        .rounded(cx.theme().radius_lg)
-                        .border_1()
-                        .border_dashed()
-                        .border_color(match cursor == Some(onehand_core::chat::AskRow::Custom) {
-                            true => cx.theme().ring,
-                            false => cx.theme().border,
-                        })
-                        .child(
-                            Icon::new(crate::icons::Icon::SquarePen)
-                                .size_4()
-                                .flex_none()
-                                .text_color(cx.theme().muted_foreground),
-                        )
-                        // The row is the border, so the field inside it draws
-                        // none: two rings around one input read as two inputs,
-                        // and the inner one lands a hair inside the outer with
-                        // the gap between them reading as a mistake.
-                        .child(
-                            div()
-                                .flex_1()
-                                .min_w_0()
-                                .child(Input::new(&state).appearance(false)),
-                        )
-                        .child(ask_key_hint(custom_hint, cx))
-                })),
+                .children(form.custom_row(cx)),
         )
-        .when(footer, |card| {
-            card
-                // **A strip of its own, over a rule that spans the card.** The
-                // buttons here end the block everything is waiting on, and left
-                // inside the body's padding they read as the last row of the
-                // list rather than as what closes it. The rule is the same
-                // pixel the tab strip's is, for the same reason: it is where a
-                // region ends.
-                .child(div().w_full().h_px().bg(cx.theme().border))
-                .child(
-                    div()
-                        .h_flex()
-                        .items_center()
-                        .justify_between()
-                        .gap_2()
-                        .w_full()
-                        .px_4()
-                        .py_2p5()
-                        // What the keyboard can do, said where the keyboard's
-                        // work ends. The numbers are on the rows themselves --
-                        // this is the walk, which has nowhere else to be named.
-                        .child(
-                            div()
-                                .flex_1()
-                                .min_w_0()
-                                .truncate()
-                                .text_xs()
-                                .text_color(cx.theme().muted_foreground)
-                                .child(match quick {
-                                    true => "Enter choose",
-                                    false => "↑↓ move · Enter choose · Esc skip",
-                                }),
-                        )
-                        .child(
-                            div()
-                                .h_flex()
-                                .items_center()
-                                .gap_2()
-                                .flex_none()
-                                .children((!quick).then(|| {
-                                    crate::controls::action(("ask-skip", idx))
-                                        .secondary()
-                                        .small()
-                                        .label("Skip")
-                                        .on_click({
-                                            let session = session.clone();
-                                            move |_, window: &mut Window, cx: &mut App| {
-                                                ask_skip(&session, idx, active, window, cx);
-                                            }
-                                        })
-                                }))
-                                .child(
-                                    crate::controls::action(("ask-submit", idx))
-                                        .primary()
-                                        .small()
-                                        .map(|submit| match can_advance {
-                                            true => submit,
-                                            // Nothing is picked yet, so the
-                                            // pointer would be promising a
-                                            // press that does nothing.
-                                            false => crate::controls::resting(submit),
-                                        })
-                                        .disabled(!can_advance)
-                                        .label(match last {
-                                            false => "Next →",
-                                            true => "Submit",
-                                        })
-                                        .on_click({
-                                            let session = session.clone();
-                                            move |_, _, cx: &mut App| {
-                                                ask_advance(&session, idx, active, cx);
-                                            }
-                                        }),
-                                ),
-                        ),
-                )
+        .when(!form.quick || typed, |card| {
+            // **A strip of its own, over a rule that spans the card.** The
+            // buttons there end the block everything is waiting on, and left
+            // inside the body's padding they read as the last row of the list
+            // rather than as what closes it. The rule is the same pixel the tab
+            // strip's is, for the same reason: it is where a region ends.
+            card.child(div().w_full().h_px().bg(cx.theme().border))
+                .child(form.footer(cx))
         });
 
     // No handle means no card on screen to hold the keys -- the boxes and the
     // handle are built in the same pass, so this is only ever the frame a
     // question first appears in.
-    let Some(focus) = focus else {
-        return body.into_any_element();
-    };
-    let session = session.clone();
-    let card = focus.clone();
-    body.id(("ask-card", idx))
-        .track_focus(&focus)
-        .on_key_down(move |event, window, cx| {
-            let keystroke = &event.keystroke;
-            // A modified key is somebody else's: Ctrl+1 switches sessions and
-            // Shift+Enter is a newline in whatever holds the caret.
-            if keystroke.modifiers.modified() {
-                return;
-            }
-            let session = session.clone();
-            // **The free-text box takes every key while it has the caret.** It
-            // is inside the card, so a key press there reaches this listener on
-            // its way out -- and the answers this card is shortest about are
-            // digits, which is exactly what somebody writing their own answer
-            // types. Unguarded, a "1" in that box jumps to the first choice and
-            // empties the line being written.
-            let typing = session
-                .read(cx)
-                .ask_input(idx, active)
-                .map(|state| state.read(cx).focus_handle(cx))
-                .is_some_and(|handle| handle.is_focused(window));
-            if typing {
-                return;
-            }
-            match keystroke.key.as_str() {
-                "up" | "down" => {
-                    let delta = if keystroke.key == "up" { -1 } else { 1 };
-                    // The walk takes the caret back off whichever row was last
-                    // clicked, or the cursor and the focus point at two
-                    // different rows and Enter answers the one the eye is not
-                    // on.
-                    window.focus(&card, cx);
-                    session.update(cx, |s, cx| {
-                        if let Some(item) = s.chat.ask_at_mut(idx) {
-                            item.move_cursor(active, delta);
-                        }
-                        cx.notify();
-                    });
-                }
-                // **Only where the card itself holds the caret.** A choice row
-                // is a library `Button`, and a focused one already turns Enter
-                // into its own click -- so answering here as well is two
-                // answers, which on a multi-select is the choice toggled on and
-                // straight back off. The row that has the caret settles itself;
-                // this is the walk's Enter, for the cursor the arrows moved.
-                "enter" if card.is_focused(window) => {
-                    let row = session
-                        .read(cx)
-                        .chat
-                        .ask_at(idx)
-                        .and_then(|item| item.cursor_row(active));
-                    if let Some(row) = row {
-                        ask_take(&session, idx, active, row, quick, window, cx);
-                    }
-                }
-                "enter" => {}
-                // Esc passes on this question rather than refusing the whole
-                // form: the card is walked one question at a time, and the key
-                // that means "not this one" has to mean it at the same scale
-                // the Skip button beside it does.
-                "escape" if !quick => ask_skip(&session, idx, active, window, cx),
-                // A number jumps to the row carrying it, the typed answer's box
-                // included -- and a number nobody offered does nothing at all,
-                // which is `row` refusing rather than rounding to the nearest.
-                key => {
-                    let Some(n) = key.parse::<usize>().ok().filter(|&n| n >= 1) else {
-                        return;
-                    };
-                    let row = session
-                        .read(cx)
-                        .chat
-                        .ask_at(idx)
-                        .and_then(|item| item.row(active, n - 1));
-                    if let Some(row) = row {
-                        ask_take(&session, idx, active, row, quick, window, cx);
-                    }
-                }
-            }
-        })
-        .into_any_element()
+    match session.read(cx).ask_focus(idx).cloned() {
+        Some(focus) => form.keys(body, focus).into_any_element(),
+        None => body.into_any_element(),
+    }
 }
 
 // ── notice ──────────────────────────────────────────────────────────────────

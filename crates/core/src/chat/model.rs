@@ -77,18 +77,24 @@ impl PermItem {
     /// purpose -- reading a long command elsewhere is the reason somebody
     /// reaches for it -- so a copy that stopped where the fold does would hand
     /// back a script that runs to a different end than the one approved.
+    ///
+    /// It is also the one place that says *which field of the request is the
+    /// command*. The protocol calls it a title, which is a word for a heading
+    /// and not for a script somebody is about to approve; every rule below
+    /// reads it through here rather than reaching past to the field, so the
+    /// three of them cannot come to disagree about what they are measuring.
     pub fn command(&self) -> &str {
         &self.req.title
     }
 
     /// The command's own lines, in the agent's order and wording.
     pub fn command_lines(&self) -> Vec<&str> {
-        self.req.title.lines().collect()
+        self.command().lines().collect()
     }
 
     /// Whether there is more command than the block draws unopened.
     pub fn is_long(&self) -> bool {
-        self.req.title.lines().count() > COMMAND_FOLD_LINES
+        self.command().lines().count() > COMMAND_FOLD_LINES
     }
 
     /// The lines the block draws now, and how many are held back behind the

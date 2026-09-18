@@ -305,34 +305,104 @@ impl FocusedPanel {
 /// The branch name is not here — it lives in an `InputState` the shell keeps
 /// across dialogs, the way the conversation rename does, so the field and its
 /// change subscription are built once instead of per opening.
-/// A `git branch -m` waiting on a name.
+/// What every form here that runs git and waits for it keeps.
 ///
-/// Its own state and not a second `WorktreeDraft`: that one carries a folder to
-/// land in and a repository top to land beside, neither of which a rename has,
-/// and a shared struct would be two forms keeping each other's fields blank.
-pub struct BranchDraft {
-    /// The project whose branch is being renamed, held by path for the reason
-    /// the worktree form holds one: it outlives its own frames, and a project
-    /// removed underneath it must not hand its index to whichever project
-    /// slides into the slot.
+/// **The three facts, not the whole form.** The two forms below are genuinely
+/// different — a rename has no folder to land in and no repository top to land
+/// beside — so one struct for both would be two forms keeping each other's
+/// fields blank. What they do share is the part that has nothing to do with
+/// either: which project it is about, what went wrong, and whether git is still
+/// working. Written out twice, those three drifted in their wording while
+/// meaning the same thing, and the three moves made on them — open, refuse,
+/// start — were written out twice with them.
+pub struct Draft {
+    /// The project the form is about, held by path rather than by index: a
+    /// draft outlives its own frames, and a project removed underneath it must
+    /// not hand its index — and with it an operation on the wrong repository —
+    /// to whichever project slides into that slot.
     pub root: PathBuf,
-    /// What the branch is called now, which is what the form is about and what
-    /// its field opens on.
-    pub from: String,
     /// What is wrong: the name rule that refused, or git's own words. Cleared
     /// by the next keystroke, because the reader has started answering it.
     pub error: Option<String>,
-    /// A `git branch -m` in flight. Short, but a button with no answer at all
-    /// reads as a press that missed.
+    /// Git in flight. Even a short one needs this: a button with no answer at
+    /// all reads as a press that missed.
     pub busy: bool,
 }
 
+impl Draft {
+    fn new(root: PathBuf) -> Self {
+        Self {
+            root,
+            error: None,
+            busy: false,
+        }
+    }
+
+    /// The complaint, and the form left up to carry it — which is the whole
+    /// reason these forms do not close on the press: this is the one place it
+    /// can be shown against the name that caused it.
+    fn refuse(&mut self, why: impl Into<String>) {
+        self.busy = false;
+        self.error = Some(why.into());
+    }
+
+    /// Handed to git. The last complaint goes with it, or a failed attempt's
+    /// words sit over the attempt now running.
+    fn start(&mut self) {
+        self.error = None;
+        self.busy = true;
+    }
+}
+
+/// The complaint goes, because the keystroke that arrived is the reader
+/// answering it: it was about a name that is already being replaced.
+fn answered<D: std::ops::DerefMut<Target = Draft>>(slot: &mut Option<D>) {
+    if let Some(draft) = slot {
+        draft.error = None;
+    }
+}
+
+/// Put a form away, unless git is mid-anything: a draft that vanished while its
+/// own operation was running would take with it the only thing that can report
+/// how it went. `true` where there was something to dismiss and it went.
+fn dismiss<D: std::ops::Deref<Target = Draft>>(
+    slot: &mut Option<D>,
+    cx: &mut Context<Shell>,
+) -> bool {
+    if slot.as_ref().is_some_and(|draft| draft.busy) {
+        return false;
+    }
+    if slot.take().is_some() {
+        cx.notify();
+        return true;
+    }
+    false
+}
+
+/// A `git branch -m` waiting on a name.
+pub struct BranchDraft {
+    pub form: Draft,
+    /// What the branch is called now, which is what the form is about and what
+    /// its field opens on.
+    pub from: String,
+}
+
+impl std::ops::Deref for BranchDraft {
+    type Target = Draft;
+
+    fn deref(&self) -> &Draft {
+        &self.form
+    }
+}
+
+impl std::ops::DerefMut for BranchDraft {
+    fn deref_mut(&mut self) -> &mut Draft {
+        &mut self.form
+    }
+}
+
 pub struct WorktreeDraft {
-    /// The project being split, held by path rather than by index: this
-    /// outlives its own frames, and a project removed underneath it must not
-    /// hand its index -- and with it a worktree of the wrong repository -- to
-    /// whichever project slides into that slot.
-    pub root: PathBuf,
+    pub form: Draft,
     /// That project's label, for saying out loud what is being split.
     pub label: String,
     /// The repository the project sits in, which is what git will actually
@@ -349,14 +419,20 @@ pub struct WorktreeDraft {
     /// A folder the user chose to put the worktree under. `None` ⇒ beside the
     /// repository it came from, which is what `onehand_core::worktree` decides.
     pub parent: Option<PathBuf>,
-    /// What is wrong: the name rule that refused, or git's own words about the
-    /// attempt. Cleared by the next keystroke, because the reader has already
-    /// started answering it.
-    pub error: Option<String>,
-    /// A `git worktree add` in flight. It clones a working tree, which on a
-    /// large repository is long enough that a button with no answer reads as a
-    /// press that missed.
-    pub busy: bool,
+}
+
+impl std::ops::Deref for WorktreeDraft {
+    type Target = Draft;
+
+    fn deref(&self) -> &Draft {
+        &self.form
+    }
+}
+
+impl std::ops::DerefMut for WorktreeDraft {
+    fn deref_mut(&mut self) -> &mut Draft {
+        &mut self.form
+    }
 }
 
 pub struct Shell {
@@ -791,9 +867,7 @@ impl Shell {
             window,
             |shell: &mut Self, _, event: &InputEvent, _, cx| {
                 if matches!(event, InputEvent::Change) {
-                    if let Some(draft) = shell.worktree_draft.as_mut() {
-                        draft.error = None;
-                    }
+                    answered(&mut shell.worktree_draft);
                     cx.notify();
                 }
             },
@@ -809,9 +883,7 @@ impl Shell {
             window,
             |shell: &mut Self, _, event: &InputEvent, _, cx| {
                 if matches!(event, InputEvent::Change) {
-                    if let Some(draft) = shell.branch_draft.as_mut() {
-                        draft.error = None;
-                    }
+                    answered(&mut shell.branch_draft);
                     cx.notify();
                 }
             },
@@ -1313,12 +1385,10 @@ impl Shell {
         self.worktree_branch
             .update(cx, |state, cx| state.set_value("", window, cx));
         self.worktree_draft = Some(WorktreeDraft {
-            root: root.clone(),
+            form: Draft::new(root.clone()),
             label,
             top: None,
             parent: None,
-            error: None,
-            busy: false,
         });
         self.worktree_branch.focus_handle(cx).focus(window, cx);
         cx.notify();
@@ -1382,10 +1452,8 @@ impl Shell {
         self.branch_input
             .update(cx, |state, cx| state.set_value(&from, window, cx));
         self.branch_draft = Some(BranchDraft {
-            root,
+            form: Draft::new(root),
             from,
-            error: None,
-            busy: false,
         });
         self.branch_input.focus_handle(cx).focus(window, cx);
         cx.notify();
@@ -1401,14 +1469,7 @@ impl Shell {
 
     /// Put the form away, unless git is mid-rename.
     pub fn cancel_branch_rename(&mut self, cx: &mut Context<Self>) -> bool {
-        if self.branch_draft.as_ref().is_some_and(|draft| draft.busy) {
-            return false;
-        }
-        if self.branch_draft.take().is_some() {
-            cx.notify();
-            return true;
-        }
-        false
+        dismiss(&mut self.branch_draft, cx)
     }
 
     /// Rename the branch, and leave the form up until git answers.
@@ -1438,13 +1499,13 @@ impl Shell {
         }
         if let Err(why) = worktree::validate_branch(&name) {
             if let Some(draft) = self.branch_draft.as_mut() {
-                draft.error = Some(why.to_string());
+                draft.refuse(why.to_string());
             }
             cx.notify();
             return;
         }
         if let Some(draft) = self.branch_draft.as_mut() {
-            draft.busy = true;
+            draft.start();
         }
         cx.notify();
 
@@ -1479,8 +1540,7 @@ impl Shell {
                         }
                         Err(why) => {
                             if let Some(draft) = shell.branch_draft.as_mut() {
-                                draft.busy = false;
-                                draft.error = Some(why);
+                                draft.refuse(why);
                             }
                         }
                     }
@@ -1559,12 +1619,7 @@ impl Shell {
     /// would leave that checkout to finish into a workspace with nowhere to put
     /// it -- a folder that appeared on disk, on a branch, belonging to nothing.
     pub fn cancel_worktree(&mut self, cx: &mut Context<Self>) {
-        if self.worktree_draft.as_ref().is_some_and(|draft| draft.busy) {
-            return;
-        }
-        if self.worktree_draft.take().is_some() {
-            cx.notify();
-        }
+        dismiss(&mut self.worktree_draft, cx);
     }
 
     /// Create the worktree, then adopt it as a project root of its own.
@@ -1589,7 +1644,7 @@ impl Shell {
         let branch = self.worktree_branch.read(cx).value().trim().to_string();
         if let Err(why) = worktree::validate_branch(&branch) {
             if let Some(draft) = self.worktree_draft.as_mut() {
-                draft.error = Some(why.to_string());
+                draft.refuse(why.to_string());
             }
             cx.notify();
             return;
@@ -1602,7 +1657,7 @@ impl Shell {
         };
         let root = draft.root.clone();
         let top = draft.top.clone();
-        draft.busy = true;
+        draft.start();
         cx.notify();
 
         cx.spawn(async move |shell, cx| {
@@ -1649,8 +1704,7 @@ impl Shell {
                         }
                         Err(why) => {
                             if let Some(draft) = shell.worktree_draft.as_mut() {
-                                draft.busy = false;
-                                draft.error = Some(why);
+                                draft.refuse(why);
                             }
                         }
                     }
