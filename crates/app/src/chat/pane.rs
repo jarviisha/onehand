@@ -78,9 +78,19 @@ const CONTENT_COLUMN: Rems = rems(64.);
 /// conversation rather than as its last paragraph.
 ///
 /// The popup above it takes this too, since it opens over the card and is the
-/// same object. **Pinned cards do not**: a permission card is pinned here while
-/// it waits and drawn in the transcript once answered, and one card that
-/// changes width on being answered reads as two different cards.
+/// same object. **So does anything pinned above it** — a parked permission, a
+/// parked question, an adapter still connecting, a queued prompt: while a card
+/// is pinned it rests directly on the composer, shares its surface and its
+/// radius, and is read as one object with it, so a card an inch wider than the
+/// box under it reads as two panels that failed to line up.
+///
+/// **Width follows where a card is, not what it is.** Answered, that same
+/// permission is drawn in the transcript and takes the reading column like
+/// every block around it. The rule it replaced said the two widths must match
+/// so a card did not appear to change on being answered — but a transcript row
+/// is inset inside the reading column while a pinned card never was, so the two
+/// were already different objects and holding one width only made the pinned
+/// one wrong.
 const COMPOSER_COLUMN: Rems = rems(44.);
 /// The space at a turn boundary — above a prompt, and between a prompt and the
 /// answer replying to it.

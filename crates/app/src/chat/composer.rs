@@ -160,6 +160,24 @@ pub enum Overlay {
     Attachments,
 }
 
+/// The rows of a settings list, and `None` for an overlay that is not one.
+///
+/// **One answer, because three places ask it.** Opening a list seeds the
+/// highlight from its rows, walking one is bounded by how many it has, and
+/// drawing it needs the rows themselves — written out per site, the three had
+/// already begun to differ in which overlays they recognised, and a list whose
+/// count comes from one rule and whose rows come from another highlights a row
+/// that is not there. The match is exhaustive on purpose: a fourth overlay is a
+/// decision about all three at once, so it should not compile until it is made.
+fn picker_rows(overlay: &Overlay, session: &Entity<ChatSession>, cx: &App) -> Option<Vec<Row>> {
+    match overlay {
+        Overlay::Mode => Some(mode_rows(session, cx)),
+        Overlay::Options => Some(options_rows(session, cx)),
+        Overlay::Fast => Some(fast_rows(session, cx)),
+        Overlay::Completion | Overlay::Attachments => None,
+    }
+}
+
 /// Everything the user has composed and not sent: the prompt text and whatever
 /// is staged to go with it.
 ///
@@ -500,11 +518,8 @@ impl Composer {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let rows = match &target {
-            Overlay::Mode => mode_rows(session, cx),
-            Overlay::Options => options_rows(session, cx),
-            Overlay::Fast => fast_rows(session, cx),
-            _ => return,
+        let Some(rows) = picker_rows(&target, session, cx) else {
+            return;
         };
         self.selected = rows.iter().position(|row| row.checked).unwrap_or(0);
         self.overlay = (self.overlay.as_ref() != Some(&target)).then_some(target);
@@ -586,10 +601,9 @@ impl Composer {
         match &self.overlay {
             None => 0,
             Some(Overlay::Completion) => self.candidates(session, cx).len(),
-            Some(Overlay::Mode) => mode_rows(session, cx).len(),
-            Some(Overlay::Fast) => fast_rows(session, cx).len(),
-            Some(Overlay::Options) => options_rows(session, cx).len(),
+            // The tray draws its own list and the arrows do not walk it.
             Some(Overlay::Attachments) => 0,
+            Some(picker) => picker_rows(picker, session, cx).map_or(0, |rows| rows.len()),
         }
     }
 
@@ -872,10 +886,17 @@ impl Composer {
     /// state" where a fourth control inside the row would have said they were
     /// part of what is being typed.
     ///
-    /// **Left is what is true, right is what can be changed.** The branch is
-    /// read and never pressed; the permission mode is changed between one
-    /// prompt and the next. Which side a thing is on is the whole of what says
-    /// which kind it is.
+    /// **Left is the project, right is the turn.** The branch is about the
+    /// repository the whole window is on; the permission mode is about the
+    /// prompt about to be sent. Which side a thing is on is the whole of what
+    /// says which kind it is.
+    ///
+    /// Both sides are pressable. The branch is a control and not a label,
+    /// because everything a reader might want to do about the branch they are
+    /// reading — switch it, rename it, take it to a worktree — is a thing they
+    /// have to leave for the rail to reach otherwise, and a word that answers
+    /// "which branch" while refusing "and now what" is the one place in this
+    /// row that stops short.
     ///
     /// Nothing at all where there is neither: on a project that is not a
     /// repository, with an agent advertising no modes, an empty rule of blank
@@ -1272,10 +1293,9 @@ impl Composer {
                     })
                     .collect()
             }
-            Overlay::Mode => mode_rows(session, cx),
-            Overlay::Options => options_rows(session, cx),
-            Overlay::Fast => fast_rows(session, cx),
-            Overlay::Attachments => unreachable!("handled above"),
+            // Attachments returned above, so what is left is one of the three
+            // settings lists and `picker_rows` has them all.
+            picker => picker_rows(picker, session, cx).unwrap_or_default(),
         };
         // A trigger that matches nothing still has to say so. Vanishing reads
         // as completion being broken, which is the opposite of the truth: the

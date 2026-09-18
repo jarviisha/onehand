@@ -1604,6 +1604,12 @@ struct CommandBlock {
     lines: Vec<SharedString>,
     /// Real lines behind the fold; zero when the block is whole.
     hidden: usize,
+    /// Whether the command has more lines than the block draws unopened, which
+    /// stays true once it has been opened and `hidden` has gone back to zero.
+    /// Asked of the model rather than worked out from `hidden` here: where the
+    /// fold falls is a rule about the command, and a second spelling of it at
+    /// this call site is a second place for it to move.
+    long: bool,
     total: usize,
     expanded: bool,
 }
@@ -1613,7 +1619,7 @@ impl RenderOnce for CommandBlock {
         let key = fold_key(self.target);
         let group = SharedString::from(format!("perm-command-{key}"));
         let folded = self.hidden > 0;
-        let long = folded || self.expanded;
+        let long = self.long;
         // A gutter only where there is more than one real line to tell apart.
         // On a single line the number is a column of chrome beside a command
         // that has no second line to be distinguished from.
@@ -1794,6 +1800,7 @@ pub(super) fn permission(
             .map(|l| SharedString::from(l.to_string()))
             .collect(),
         hidden,
+        long: p.is_long(),
         total: p.command_lines().len().max(1),
         expanded: p.expanded,
     };
@@ -2189,7 +2196,7 @@ fn ask_take(
                 window.focus(&handle, cx);
                 session.update(cx, |s, cx| {
                     if let Some(item) = s.chat.ask_at_mut(idx) {
-                        item.cursor = item.rows(field).saturating_sub(1);
+                        item.cursor = item.row_count(field).saturating_sub(1);
                     }
                     cx.notify();
                 });
@@ -2610,7 +2617,7 @@ fn ask_form(
         .has_custom(active)
         .then(|| session.read(cx).ask_input(idx, active).cloned())
         .flatten();
-    let custom_hint = a.rows(active);
+    let custom_hint = a.row_count(active);
     let typed = a.custom.get(active).is_some_and(|c| !c.trim().is_empty());
 
     // The quick card commits on a click and deliberately carries no footer to

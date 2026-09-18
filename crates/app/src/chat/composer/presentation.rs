@@ -66,6 +66,14 @@ pub(super) fn mode_action(session: &Entity<ChatSession>, cx: &App) -> Option<Sha
 /// anything, and the strip is an improvement this app is guessing at.
 const SEGMENTED_GROUP: &str = "effort";
 
+/// The group the trigger promises, and so the group that leads the list.
+///
+/// Named beside the other two rather than spelled at each call site: the chip
+/// letters this group's value and the sort puts it first, and those two coming
+/// to disagree about which group is meant is a chip naming one setting over a
+/// list led by another.
+const LEAD_GROUP: &str = "model";
+
 /// Whether a config group is the one the caller means, by the agent's id or by
 /// its label.
 ///
@@ -229,7 +237,7 @@ pub(super) fn options_action(session: &Entity<ChatSession>, cx: &App) -> Option<
     }
     let model = options
         .iter()
-        .find(|option| names(option, "model"))
+        .find(|option| names(option, LEAD_GROUP))
         .and_then(in_force)
         .map(|choice| SharedString::from(choice.name.clone()));
     Some(model.unwrap_or_else(|| SharedString::from("Model")))
@@ -282,17 +290,23 @@ pub(super) fn options_rows(session: &Entity<ChatSession>, cx: &App) -> Vec<Row> 
         .collect();
     // The trigger promises Model, so Model leads. Preserve the agent's own
     // order within everything after it.
-    options.sort_by_key(|(index, option)| config_rank(&option.id, &option.name, *index));
+    options.sort_by_key(|(index, option)| config_rank(option, *index));
     options
         .into_iter()
         .flat_map(|(_, option)| rows_of(option))
         .collect()
 }
 
-fn config_rank(id: &str, name: &str, index: usize) -> (u8, usize) {
-    let rank = if id.eq_ignore_ascii_case("model") || name.eq_ignore_ascii_case("model") {
+/// Where a group sits in the list, and its own place within its rank.
+///
+/// Asked through `names` and the two group constants rather than by matching
+/// the strings here: the id and the label are both unpromised, and a rank that
+/// recognised a group the rest of this file does not is a list whose order
+/// disagrees with what it drew.
+fn config_rank(option: &onehand_core::acp::ConfigOption, index: usize) -> (u8, usize) {
+    let rank = if names(option, LEAD_GROUP) {
         0
-    } else if id.eq_ignore_ascii_case("effort") || name.eq_ignore_ascii_case("effort") {
+    } else if names(option, SEGMENTED_GROUP) {
         1
     } else {
         2
@@ -399,9 +413,9 @@ mod tests {
     #[test]
     fn model_then_effort_lead_the_combined_popup() {
         let mut groups = [
-            config_rank("agent", "Sub-agent", 0),
-            config_rank("effort", "Effort", 1),
-            config_rank("model", "Model", 2),
+            config_rank(&effort("agent", "Sub-agent", &[], None), 0),
+            config_rank(&effort("effort", "Effort", &[], None), 1),
+            config_rank(&effort("model", "Model", &[], None), 2),
         ];
         groups.sort();
         assert_eq!(groups, [(0, 2), (1, 1), (2, 0)]);

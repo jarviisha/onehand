@@ -64,7 +64,11 @@ pub struct PermItem {
 ///
 /// Eight is what leaves the header, the buttons and enough of a script to
 /// recognise it on one screen together.
-pub const COMMAND_FOLD_LINES: usize = 8;
+///
+/// Private on purpose: the number is an input to the two rules below and
+/// nothing outside this file has an answer to give about it. What a caller
+/// wants is `is_long` or `shown_lines`, both of which have already applied it.
+const COMMAND_FOLD_LINES: usize = 8;
 
 impl PermItem {
     /// The exact command, whatever the fold is doing to what is drawn.
@@ -210,7 +214,7 @@ impl AskItem {
 
     /// How many rows `field` offers the keyboard: the agent's choices, plus the
     /// free-text box where the form has one.
-    pub fn rows(&self, field: usize) -> usize {
+    pub fn row_count(&self, field: usize) -> usize {
         let choices = self
             .req
             .fields
@@ -225,7 +229,7 @@ impl AskItem {
         let choices = self.req.fields.get(field)?.kind.choices().len();
         if n < choices {
             Some(AskRow::Choice(n))
-        } else if n < self.rows(field) {
+        } else if n < self.row_count(field) {
             Some(AskRow::Custom)
         } else {
             None
@@ -235,13 +239,16 @@ impl AskItem {
     /// The row the keyboard is on, clamped — a cursor left past the end of a
     /// shorter question lands on its last row rather than on nothing.
     pub fn cursor_row(&self, field: usize) -> Option<AskRow> {
-        self.row(field, self.cursor.min(self.rows(field).saturating_sub(1)))
+        self.row(
+            field,
+            self.cursor.min(self.row_count(field).saturating_sub(1)),
+        )
     }
 
     /// Walk the cursor, wrapping at both ends: a list this short is one the eye
     /// holds whole, so stopping at the bottom only costs presses.
     pub fn move_cursor(&mut self, field: usize, delta: isize) {
-        let rows = self.rows(field);
+        let rows = self.row_count(field);
         if rows == 0 {
             return;
         }
@@ -3383,11 +3390,11 @@ mod tests {
     fn the_cursor_walks_the_choices_and_the_typed_answer_as_one_list() {
         let mut a = ask_item();
         // Two choices and an "Other" box.
-        assert_eq!(a.rows(0), 3);
+        assert_eq!(a.row_count(0), 3);
         assert_eq!(a.row(0, 2), Some(AskRow::Custom));
         assert_eq!(a.row(0, 3), None, "a number nobody offered names nothing");
         // The second field has no "Other" box, so it is choices alone.
-        assert_eq!(a.rows(1), 2);
+        assert_eq!(a.row_count(1), 2);
         assert_eq!(a.row(1, 2), None);
 
         assert_eq!(a.cursor_row(0), Some(AskRow::Choice(0)));
