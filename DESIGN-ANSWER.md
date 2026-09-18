@@ -1016,6 +1016,17 @@ A blocking card: the agent parks until it is answered.
 
 - A `warning` icon and a short heading; the agent-authored command sits in a
   bounded mono well.
+- **The well is bounded against the panel it is drawn in, not the window.** The
+  bound is there so the heading stays on screen with the command it belongs to —
+  a grant read without the sentence saying what is being granted is not a grant
+  anybody gave — and with a dock open half the window is taller than the whole
+  conversation, so a share of the window pushes *Permission required* off the top
+  instead of holding it there. It is bounded whether or not it has been opened:
+  the fold counts the agent's own newlines and says nothing about how tall they
+  draw, so eight real lines of a base64 blob is still a screenful of wrapped
+  rows. What is held back scrolls **inside the well**, which means the well takes
+  the wheel before the transcript behind it does; otherwise an opened command is
+  a box that slides the conversation past while the reader is trying to read it.
 - **The header names what kind of work is being asked for**, taken from the
   tool call's own declared kind — read, edit, execute, fetch. The card needs one
   word of that sort: a heading that is a bare command says what *would* run
@@ -1030,6 +1041,22 @@ A blocking card: the agent parks until it is answered.
   screens ago is still the only reason nothing is happening, and hunting for it
   is not a thing to ask of someone who is already waiting. The transcript leaves
   the card out entirely while it is pinned, so it is never on screen twice.
+- **`Enter` allows once and `Esc` denies — and which option either means is the
+  option's own weight, never its place in the list.** An agent is free to send
+  its grants in any order, so a key answering by position would grant *always*
+  on a card that happened to list it first. A weight no card offers is no key at
+  all, since there is nothing to send. Both are taken on the card's own handle
+  rather than bound as app actions: each is a key somebody is as likely to be
+  pressing in the composer an inch below.
+  **`Enter` answers only while the card itself holds the caret.** Every button
+  in the footer is a button, a focused one already turns `Enter` into its own
+  click, and a click settles on the key going *up* — so a card that also answered
+  on the way down would beat it. Somebody who has tabbed to *Deny* and pressed
+  `Enter` would have granted the call: the grant lands first, and Deny's own
+  click arrives afterwards to find the permission answered and is dropped. On
+  this card above all others, the key that means no must not be how yes gets
+  said. `Esc` needs no such guard and carries none — nothing here denies by
+  being focused, and the worst it can do is refuse a call twice.
 - Resolved → the controls drop, the card leaves the pin and takes the place it
   always had in the transcript, as an audit trail rather than a live control.
 - Several parked cards — a permission and a question at once — pin in the order
@@ -1098,6 +1125,27 @@ The agent *asking*, which is not the same as asking permission — Claude Code's
   agent's. Bare, it read as a field left over from somewhere else. The row is
   the border and the field inside it draws none: two rings around one input read
   as two inputs.
+- **The keyboard has a walk and a jump, and the row says which key reaches it.**
+  The arrows move a cursor and settle nothing, `Enter` takes what the cursor is
+  on, `Esc` passes on this question at the same scale the *Skip* beside it does
+  — and a digit jumps straight to the row carrying it, the free-text box
+  included. The walk is named once at the foot of the card; the jump is named on
+  each row, because a jump has to be to something the reader can already see a
+  name for.
+  **Only the first nine rows carry one.** A keystroke is read whole and there is
+  nowhere to hold a half-entered figure, so nothing past the ninth has a key —
+  and a row drawn with a `10` on it is worse than one drawn with nothing: it is
+  a press that cannot be made, and on the card that answers the moment a row is
+  taken, reaching for it lands on `1` and commits the first choice instead. A
+  tenth row is a row without a key, not a row with an unusable one. A digit
+  nobody offered does nothing at all, rather than rounding to the nearest row.
+  **`Enter` answers only while the card itself holds the caret.** A choice row
+  is a button, and a focused button already turns `Enter` into its own click —
+  so answering here as well is two answers, which on a multi-select is the
+  choice toggled on and straight back off. The row that has the caret settles
+  itself; this is the walk's `Enter`, for the cursor the arrows moved. The
+  free-text box takes every key while it has the caret, digits first of all,
+  since they are exactly what somebody writing their own answer types.
 - **The primary action says which one it is.** With a later question still open
   it is *Next →* and moves the form on; on the last it is *Submit*. A Submit on
   question one of three reads as an answer thrown away early.
