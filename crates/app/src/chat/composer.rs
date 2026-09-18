@@ -32,6 +32,7 @@ use gpui::{
 };
 use gpui_component::button::{Button, ButtonVariants as _};
 use gpui_component::input::{InputEvent, Textarea, TextareaState};
+use gpui_component::menu::DropdownMenu as _;
 use gpui_component::{
     ActiveTheme, Disableable as _, Icon, IconName, Selectable as _, Sizable as _, StyledExt,
 };
@@ -42,31 +43,48 @@ use onehand_core::completion::{self, ActiveTrigger, TriggerKind};
 
 mod presentation;
 use presentation::{
-    Pick, Row, composer_status, mode_action, mode_rows, options_action, options_rows,
+    Pick, Row, composer_status, fast_action, fast_rows, mode_action, mode_rows, options_action,
+    options_rows, segmented_group,
 };
 
 /// Rows drawn in the completion popup. The list scrolls past this; the cap is
 /// what keeps a 10 000-file repo from building 10 000 elements (bounded rendering).
 const MAX_COMPLETION_ROWS: usize = 50;
-/// How far the popup may grow before it scrolls instead.
+/// The least room a list is ever given, however short the panel is.
 ///
 /// Rems, like every other size here: a panel's zoom overrides the rem base for
 /// its whole subtree, so a popup measured in pixels is the one thing on screen
 /// that does not grow with the text it is completing.
+const POPUP_MIN_H: Rems = rems(9.);
+/// What a list leaves between itself and the top of the panel.
 ///
-/// Sized to keep roughly eight choices visible at the composer's control scale.
-const POPUP_MAX_H: Rems = rems(15.);
+/// A card that grows until it touches the header's rule reads as one that has
+/// run out of window rather than as one sized to its contents, and there is
+/// nothing above it to say whether anything was cut.
+const POPUP_HEADROOM: Rems = rems(1.);
+
+/// How tall a list may grow, given the panel it is opening inside.
+///
+/// **A cap and not a size.** A list shorter than this draws whole and does not
+/// scroll, which is the point: a popup that scrolled with four choices in it
+/// hid the fourth behind a gesture nobody needed to make. What the cap is for
+/// is the other end — a list must not grow past the panel, where its top rows
+/// would be drawn over the header or off the window entirely, with nothing on
+/// screen saying so.
+///
+/// It is the panel's own height and not a constant, because a constant is a
+/// guess about a panel that is dragged: fifteen rems was most of a short pane
+/// and a third of a tall one, so the same list scrolled on a maximized window
+/// with room to spare beneath it.
+///
+/// The floor is what is left when the panel is too short for any of that: a
+/// squeezed pane scrolls its list, which is honest, but it is never reduced to
+/// one row and a scrollbar.
+pub fn popup_room(panel: gpui::Pixels, reserved: gpui::Pixels, rem: gpui::Pixels) -> gpui::Pixels {
+    (panel - reserved - POPUP_HEADROOM.to_pixels(rem)).max(POPUP_MIN_H.to_pixels(rem))
+}
 /// How much room either option action may take before its current value truncates.
 const OPTION_MAX_W: Rems = rems(9.);
-/// How narrow a selector's list of choices may get.
-///
-/// A selector's popup is sized by its own rows rather than stretched across the
-/// reading column, and three words like *Ask*, *Code* and *Plan* would size it
-/// to about an inch — narrower than the chip that opened it, which reads as a
-/// second, smaller control rather than as that chip's choices. This is a step
-/// clear of the compact control for that reason, and it is a floor and not a width:
-/// a longer choice still widens the list up to the column it sits in.
-const SELECTOR_MIN_W: Rems = rems(12.);
 /// How much of an attachment's name is shown before it truncates.
 const ATTACHMENT_MAX_W: Rems = rems(10.);
 /// Attachment chips drawn before the tray starts counting instead.
@@ -80,7 +98,7 @@ const MAX_ATTACHMENT_MANAGER_ROWS: usize = 100;
 /// The smallest named reading size. These controls should remain quieter than
 /// the prompt without falling below the rest of the app's type ladder. It is
 /// still a rem, so panel zoom carries it like everything else.
-const CHIP_TEXT: Rems = rems(0.75);
+pub(super) const CHIP_TEXT: Rems = rems(0.75);
 /// How tall every control in the composer's row stands, and every row of the
 /// list a control opens.
 ///
@@ -90,8 +108,10 @@ const CHIP_TEXT: Rems = rems(0.75);
 /// holding only an icon is as tall as the icon (0.75rem). Left to themselves
 /// they came out about seven pixels apart on the same row.
 ///
-/// The value gives the icon-only actions a deliberate desktop target while
-/// keeping the metadata row subordinate to the prompt.
+/// The value is the floor a pointer target can stand at and still be aimed for
+/// without care, and it keeps the metadata row subordinate to the prompt. It
+/// does not go lower: what makes this row compact is the card's inset and the
+/// gaps, which cost nothing to give back, where the target does not.
 ///
 /// **The popup's rows take it too**, so the choices behind a chip stand as tall
 /// as the chip. They are library buttons, and a button nobody gives a size to
@@ -100,7 +120,21 @@ const CHIP_TEXT: Rems = rems(0.75);
 /// list stopped being as wide as the reading column. The two notice rows in
 /// that list are plain text and take it as well, or a list saying it has
 /// nothing stands taller than the same list saying anything.
-const CHIP_H: Rems = rems(1.75);
+pub(super) const CHIP_H: Rems = rems(1.5);
+/// How big the glyph in an icon-only composer action is drawn.
+///
+/// A step up from the 0.75rem the row's *text* is set at, and deliberately not
+/// the same number. A word is read, so it can be small and still legible; a
+/// glyph is aimed at and recognised by its shape, and at the text's own size
+/// the `+` was a faint mark the eye had to hunt for beside a chip carrying a
+/// whole model name.
+///
+/// It stays **under the chip's height** with room either side, so this is the
+/// glyph growing inside a target that does not move: the row's height is set by
+/// `CHIP_H` and every control in it stands at that whether it holds a word or a
+/// drawing. The last step this can take before the two numbers meet and the
+/// icon starts deciding the row.
+const ACTION_ICON: Rems = rems(1.25);
 
 /// What is showing above the composer. Mutually exclusive **by construction**:
 /// one `Option` makes that structural, where a flag per overlay needs a
@@ -114,9 +148,34 @@ pub enum Overlay {
     /// Model, effort, and every other agent-advertised config choice in one
     /// directly selectable list.
     Options,
+    /// The one config group given a chip of its own on the strip below the
+    /// card. A picker like the two above and not a switch: two rows name both
+    /// values and tick the one in force, where a switch shows a position and
+    /// leaves the reader to work out which way round it is -- and the agent's
+    /// own sentence about each value, which is where a setting that refuses to
+    /// stay put says why, has somewhere to go.
+    Fast,
     /// All staged attachments, including the entries hidden by the compact
     /// tray's rendering bound.
     Attachments,
+}
+
+/// The rows of a settings list, and `None` for an overlay that is not one.
+///
+/// **One answer, because three places ask it.** Opening a list seeds the
+/// highlight from its rows, walking one is bounded by how many it has, and
+/// drawing it needs the rows themselves — written out per site, the three had
+/// already begun to differ in which overlays they recognised, and a list whose
+/// count comes from one rule and whose rows come from another highlights a row
+/// that is not there. The match is exhaustive on purpose: a fourth overlay is a
+/// decision about all three at once, so it should not compile until it is made.
+fn picker_rows(overlay: &Overlay, session: &Entity<ChatSession>, cx: &App) -> Option<Vec<Row>> {
+    match overlay {
+        Overlay::Mode => Some(mode_rows(session, cx)),
+        Overlay::Options => Some(options_rows(session, cx)),
+        Overlay::Fast => Some(fast_rows(session, cx)),
+        Overlay::Completion | Overlay::Attachments => None,
+    }
 }
 
 /// Everything the user has composed and not sent: the prompt text and whatever
@@ -211,9 +270,11 @@ fn trigger_spot(ch: char, text: &str, caret: usize) -> TriggerSpot {
 /// frame after it ended, the button that said Stop must not cancel anything.
 pub enum ComposerEvent {
     SendPressed,
-    /// Stop is deliberately separate from Send/Queue. While a turn is live,
-    /// clicking the primary action queues the draft; only this explicit danger
-    /// action cancels work already in flight.
+    /// Stop and Send/Queue are one button at two moments of a running turn,
+    /// but they stay two *events*: which of them a press meant is decided
+    /// where the composer's contents are known, and a single variant would
+    /// leave the pane to work it out again from a draft that may have changed
+    /// in the meantime.
     StopPressed,
     /// Show a staged file, so the one of three files called `main.rs` that is
     /// actually attached can be checked before the prompt goes. Asked for
@@ -366,6 +427,16 @@ impl Composer {
         match self.overlay.clone() {
             None => false,
             Some(Overlay::Completion) => self.accept(session, window, cx),
+            Some(Overlay::Fast) => {
+                let rows = fast_rows(session, cx);
+                let Some(row) =
+                    highlight(self.selected, rows.len()).and_then(|row| rows.into_iter().nth(row))
+                else {
+                    self.close_overlay(cx);
+                    return true;
+                };
+                self.apply_pick(&row.pick, session, window, cx)
+            }
             Some(Overlay::Mode) => {
                 let rows = mode_rows(session, cx);
                 let Some(row) =
@@ -447,10 +518,8 @@ impl Composer {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let rows = match &target {
-            Overlay::Mode => mode_rows(session, cx),
-            Overlay::Options => options_rows(session, cx),
-            _ => return,
+        let Some(rows) = picker_rows(&target, session, cx) else {
+            return;
         };
         self.selected = rows.iter().position(|row| row.checked).unwrap_or(0);
         self.overlay = (self.overlay.as_ref() != Some(&target)).then_some(target);
@@ -532,9 +601,9 @@ impl Composer {
         match &self.overlay {
             None => 0,
             Some(Overlay::Completion) => self.candidates(session, cx).len(),
-            Some(Overlay::Mode) => mode_rows(session, cx).len(),
-            Some(Overlay::Options) => options_rows(session, cx).len(),
+            // The tray draws its own list and the arrows do not walk it.
             Some(Overlay::Attachments) => 0,
+            Some(picker) => picker_rows(picker, session, cx).map_or(0, |rows| rows.len()),
         }
     }
 
@@ -649,54 +718,41 @@ impl Composer {
     ) -> impl IntoElement + use<> {
         let (step_down, step_up, take_row) = (session.clone(), session.clone(), session.clone());
         let tray = self.tray(cx).map(IntoElement::into_any_element);
-        let mode = mode_action(session, cx);
         let options = options_action(session, cx);
-        let mode_open = self.overlay == Some(Overlay::Mode);
         let options_open = self.overlay == Some(Overlay::Options);
-        let mode_popup = mode_open.then(|| self.popup(session, cx)).flatten();
-        let options_popup = options_open.then(|| self.popup(session, cx)).flatten();
-        let mode_control = mode.map(|label| {
-            option_anchor(
-                option_action(
-                    "mode-selector",
-                    label,
-                    Overlay::Mode,
-                    mode_open,
-                    session,
-                    cx,
-                ),
-                mode_popup,
-                false,
-            )
-            .into_any_element()
-        });
+        let fast_open = self.overlay == Some(Overlay::Fast);
+        let fast = fast_action(session, cx)
+            .map(|label| status_action(Overlay::Fast, label, fast_open, session, cx));
         let options_control = options.map(|label| {
-            option_anchor(
-                option_action(
-                    "model-selector",
-                    label,
-                    Overlay::Options,
-                    options_open,
-                    session,
-                    cx,
-                ),
-                options_popup,
-                true,
-            )
-            .into_any_element()
+            option_action("model-selector", label, options_open, session, cx).into_any_element()
         });
 
         div()
             .v_flex()
-            .gap_2()
+            // The card's own inset, and the gap between the prompt and the row
+            // of controls under it. Both a step tighter than the app's ordinary
+            // panel inset, because this card is not a panel: it holds exactly
+            // two things, and every rem of air around them is taken off the
+            // conversation above rather than out of unused space. What the
+            // inset still has to do is keep the caret and the controls clear of
+            // the border the focus ring is drawn on, which one step does.
+            .gap_1()
             .w_full()
-            .p_3()
+            .p_1p5()
             // A floating input needs its own opaque elevation: using the
             // reading surface here makes transcript content behind it visually
             // bleed into the card.
             .bg(cx.theme().popover.alpha(1.))
             .shadow_lg()
-            .rounded(cx.theme().radius * 2.)
+            // `radius_lg`: the theme's named step for a card, which is what the
+            // Workbench and the terminal round their own dock cards at. This is
+            // a card in the same sense — a bordered surface floating on the
+            // reading one — so it takes the value rather than a second answer
+            // arithmetic on `radius` happened to land near. The doubled step it
+            // had is the transcript's, for a block the width of the reading
+            // column, and one window drawing its floating surfaces at two
+            // different corners is a difference nobody chose.
+            .rounded(cx.theme().radius_lg)
             .border_1()
             .border_color(if typing_here {
                 cx.theme().ring
@@ -771,44 +827,9 @@ impl Composer {
                     .items_center()
                     .gap_2()
                     .w_full()
-                    .child(
-                        div()
-                            .h_flex()
-                            .items_center()
-                            .gap_2()
-                            .flex_none()
-                            .child(action(
-                                "attach",
-                                Icon::new(crate::icons::Icon::Paperclip),
-                                "Attach a file",
-                                cx,
-                                |composer, _, cx| composer.attach(cx),
-                            ))
-                            // The two triggers, insertable from code. On Linux
-                            // with a Vietnamese IME a typed `/` can never reach
-                            // the composer, which makes the slash-command popup
-                            // unreachable by keyboard -- these are the way in.
-                            //
-                            // Which is also why each has to draw the character
-                            // it types and not a stand-in for it: for the user
-                            // who cannot type the character, the button is the
-                            // only thing on screen naming it, and nothing else
-                            // here says what a mention or a slash command is.
-                            .child(action(
-                                "mention",
-                                Icon::new(crate::icons::Icon::AtSign),
-                                "Mention a file",
-                                cx,
-                                |composer, window, cx| composer.insert_trigger('@', window, cx),
-                            ))
-                            .child(action(
-                                "command",
-                                Icon::new(crate::icons::Icon::SquareSlash),
-                                "Run a slash command",
-                                cx,
-                                |composer, window, cx| composer.insert_trigger('/', window, cx),
-                            )),
-                    )
+                    // What goes *into* the prompt, at the start of the row: the
+                    // two ways a file joins it, the slash commands, and what
+                    // will answer it. The right-hand end is the turn itself.
                     .child(
                         div()
                             .h_flex()
@@ -816,21 +837,29 @@ impl Composer {
                             .gap_2()
                             .flex_1()
                             .min_w_0()
-                            .children(mode_control)
+                            .child(add_menu(cx))
+                            // Ahead of the model rather than after it, because
+                            // it is read as a qualifier of the name beside it --
+                            // and because the model chip is the one thing on
+                            // this row that truncates, so anything standing
+                            // after it would be the thing pushed off the end.
+                            .children(fast)
                             .children(options_control),
                     )
                     .child(
-                        send_controls(
-                            blocked.clone(),
-                            !self.text(cx).trim().is_empty() || !self.attachments.is_empty(),
-                            cx.listener(|_: &mut Self, _, _, cx| {
-                                cx.emit(ComposerEvent::SendPressed);
-                            }),
-                            cx.listener(|_: &mut Self, _, _, cx| {
-                                cx.emit(ComposerEvent::StopPressed);
-                            }),
-                        )
-                        .flex_none(),
+                        div().h_flex().items_center().gap_2().child(
+                            send_controls(
+                                blocked.clone(),
+                                !self.text(cx).trim().is_empty() || !self.attachments.is_empty(),
+                                cx.listener(|_: &mut Self, _, _, cx| {
+                                    cx.emit(ComposerEvent::SendPressed);
+                                }),
+                                cx.listener(|_: &mut Self, _, _, cx| {
+                                    cx.emit(ComposerEvent::StopPressed);
+                                }),
+                            )
+                            .flex_none(),
+                        ),
                     ),
             )
             .children(composer_status(blocked, cx).map(IntoElement::into_any_element))
@@ -844,6 +873,76 @@ impl Composer {
                     .child(message)
                     .into_any_element()
             }))
+    }
+
+    /// The bare strip under the card: what the project is, and what the turn
+    /// will be taken under.
+    ///
+    /// **Outside the card, and with no chrome of its own.** The card is the
+    /// message being written and everything inside it acts on that message;
+    /// these two facts do not. The branch is about the project and holds across
+    /// every session in it, and the two settings here outlive the prompt in the
+    /// field — so a strip resting under the card says "this is the standing
+    /// state" where a fourth control inside the row would have said they were
+    /// part of what is being typed.
+    ///
+    /// **Left is the project, right is the turn.** The branch is about the
+    /// repository the whole window is on; the permission mode is about the
+    /// prompt about to be sent. Which side a thing is on is the whole of what
+    /// says which kind it is.
+    ///
+    /// Both sides are pressable. The branch is a control and not a label,
+    /// because everything a reader might want to do about the branch they are
+    /// reading — switch it, rename it, take it to a worktree — is a thing they
+    /// have to leave for the rail to reach otherwise, and a word that answers
+    /// "which branch" while refusing "and now what" is the one place in this
+    /// row that stops short.
+    ///
+    /// Nothing at all where there is neither: on a project that is not a
+    /// repository, with an agent advertising no modes, an empty rule of blank
+    /// space under the composer would be chrome reporting that it has nothing
+    /// to report.
+    pub fn status_row(
+        &mut self,
+        session: &Entity<ChatSession>,
+        git: Option<gpui::AnyElement>,
+        cx: &mut Context<Self>,
+    ) -> Option<impl IntoElement + use<>> {
+        let mode_open = self.overlay == Some(Overlay::Mode);
+        let mode = mode_action(session, cx).map(|label| {
+            status_action(Overlay::Mode, label, mode_open, session, cx).into_any_element()
+        });
+        if git.is_none() && mode.is_none() {
+            return None;
+        }
+
+        Some(
+            div()
+                .h_flex()
+                .items_center()
+                .justify_between()
+                .gap_2()
+                .w_full()
+                // The card's own inset, so the branch lines up with the `+`
+                // above it and the controls with Send -- the strip is under the
+                // card rather than in it, and a column that did not line up
+                // would read as a second panel that had slipped.
+                .px_1p5()
+                .pt_1p5()
+                // Built by the pane and dropped in here: git is the project's,
+                // and the panel that talks to the shell about the project is
+                // the one that can offer to do anything about it. The composer
+                // decides only where on the row it goes.
+                .child(div().h_flex().items_center().min_w_0().children(git))
+                .child(
+                    div()
+                        .h_flex()
+                        .items_center()
+                        .gap_2()
+                        .flex_none()
+                        .children(mode),
+                ),
+        )
     }
 
     /// Stage paths that arrived from somewhere other than the picker.
@@ -987,8 +1086,6 @@ impl Composer {
             crate::theme::status_ink(cx).danger,
             cx.theme().radius,
         );
-        let over = self.attachments.len().saturating_sub(MAX_TRAY_CHIPS);
-
         Some(
             div()
                 .id("attachments")
@@ -1082,7 +1179,15 @@ impl Composer {
                             }
                         }),
                 )
-                .when(over > 0, |tray| {
+                // **Offered from the second attachment, not from the
+                // thirteenth.** The tray scrolls sideways, so two long names on
+                // a narrow panel already push a chip past the edge — and the
+                // list this opens is the one place a chip out there can still be
+                // found and taken off. Gated on the tray's own *chip cap*, the
+                // way back to a staged file nobody can see was itself invisible
+                // until there were twelve of them. One attachment needs nothing:
+                // the single chip beside the button is already the whole list.
+                .when(self.attachments.len() > 1, |tray| {
                     tray.child(
                         crate::controls::action("all-attachments")
                             .ghost()
@@ -1104,21 +1209,20 @@ impl Composer {
         self.overlay.is_some()
     }
 
-    pub fn completion_open(&self) -> bool {
-        self.overlay == Some(Overlay::Completion)
-    }
-
-    /// Popups that belong above the whole card. Option pickers are anchored by
-    /// their own buttons inside [`Self::card`] instead.
+    /// Whatever is open, as the card that sits above the composer.
+    ///
+    /// Every overlay comes through here. It is drawn by the pane and not by
+    /// [`Self::card`] because it must sit *outside* the box the transcript's
+    /// bottom clearance is measured from: measured, that clearance would grow
+    /// by the popup's height the moment one opened and shrink again when it
+    /// closed, so every `@` typed would shove the conversation up.
     pub fn detached_popup(
         &self,
         session: &Entity<ChatSession>,
+        room: gpui::Pixels,
         cx: &mut Context<Self>,
     ) -> Option<gpui::Div> {
-        match self.overlay {
-            Some(Overlay::Mode | Overlay::Options) => None,
-            _ => self.popup(session, cx),
-        }
+        self.popup(session, room, cx)
     }
 
     pub fn close_overlay(&mut self, cx: &mut Context<Self>) {
@@ -1126,16 +1230,29 @@ impl Composer {
         cx.notify();
     }
 
+    /// Put the highlight on a row.
+    ///
+    /// Guarded, because the pointer moving across a row calls this on every
+    /// mouse event it generates and an unguarded notify would redraw the panel
+    /// for each one.
     fn select(&mut self, row: usize, cx: &mut Context<Self>) {
+        if self.selected == row {
+            return;
+        }
         self.selected = row;
         cx.notify();
     }
 
     /// The open completion, settings, or attachment surface.
-    fn popup(&self, session: &Entity<ChatSession>, cx: &mut Context<Self>) -> Option<gpui::Div> {
+    fn popup(
+        &self,
+        session: &Entity<ChatSession>,
+        room: gpui::Pixels,
+        cx: &mut Context<Self>,
+    ) -> Option<gpui::Div> {
         let overlay = self.overlay.clone()?;
         if overlay == Overlay::Attachments {
-            return Some(self.attachments_popup(cx));
+            return Some(self.attachments_popup(room, cx));
         }
         // Set while the rows are built, because that is the only place both
         // halves of the count are in hand.
@@ -1177,20 +1294,27 @@ impl Composer {
                             detail,
                             checked: false,
                             pick: Pick::Complete,
+                            group: None,
                         }
                     })
                     .collect()
             }
-            Overlay::Mode => mode_rows(session, cx),
-            Overlay::Options => options_rows(session, cx),
-            Overlay::Attachments => unreachable!("handled above"),
+            // Attachments returned above, so what is left is one of the three
+            // settings lists and `picker_rows` has them all.
+            picker => picker_rows(picker, session, cx).unwrap_or_default(),
         };
         // A trigger that matches nothing still has to say so. Vanishing reads
         // as completion being broken, which is the opposite of the truth: the
         // popup is the only thing on screen that ever confirms the `@` or `/`
         // was understood at all. A selector with no choices has nothing to
-        // confirm, so that one stays away.
-        if rows.is_empty() && overlay != Overlay::Completion {
+        let segments = match overlay {
+            Overlay::Options => segmented_group(session, cx),
+            _ => None,
+        };
+        // confirm, so that one stays away -- unless the rail below the list is
+        // the whole of what it has, which is an agent offering effort and
+        // nothing else.
+        if rows.is_empty() && segments.is_none() && overlay != Overlay::Completion {
             return None;
         }
         let selected = highlight(self.selected, rows.len());
@@ -1208,23 +1332,24 @@ impl Composer {
             // list does to its own offset can consume it.
             div()
                 .v_flex()
-                // **The completion list takes the column; a selector takes its
-                // own rows.** A file candidate is a path and needs every inch
-                // of the width the reading column allows, so that list is the
-                // full one. A mode list is three short words, and stretched to
-                // the same 52rem it read as a panel that had opened over the
-                // conversation rather than as the choices behind the chip a
-                // finger-width below it.
+                // **The whole popup is what the panel has to hold**, not the
+                // scrolling list alone. With the two sentences below held out
+                // of that list, a bound on the list is a bound on part of the
+                // box — and the part left over is what would have grown past
+                // the top of the panel.
+                .max_h(room)
+                // **Every list takes the reading column**, which is the width of
+                // the card it opens over. A file candidate is a path and always
+                // needed it; a choice needs it too, now that a row carries the
+                // agent's own sentence about what the choice is for. Sized to
+                // its own rows instead, that sentence had nowhere to go and the
+                // names it belongs to were narrower than the words in them.
                 //
-                // Sized here and not capped, because the box it is dropped into
-                // is already the reading column: a flex child shrinks to its
-                // parent before it overflows, so the column remains the maximum
-                // without this having to name it.
-                .map(|popup| match &overlay {
-                    Overlay::Completion => popup.w_full(),
-                    Overlay::Mode | Overlay::Options => popup.min_w(SELECTOR_MIN_W),
-                    Overlay::Attachments => popup.w_full(),
-                })
+                // No cap, because the box this is dropped into is already the
+                // column: a flex child shrinks to its parent before it
+                // overflows, so the column is the maximum without this naming
+                // it.
+                .w_full()
                 .rounded(cx.theme().radius)
                 .border_1()
                 // **A hairline is not enough here, and this is the one place
@@ -1248,7 +1373,14 @@ impl Composer {
                         .id("completion")
                         .v_flex()
                         .w_full()
-                        .max_h(POPUP_MAX_H)
+                        // The bound is on the surface now, because what must
+                        // not outgrow the panel is the popup and not the list
+                        // inside it. `min_h_0` is what lets this shrink to
+                        // whatever the surface has left after the sentences
+                        // below: a flex child's floor is otherwise its own
+                        // content, so the box would push them off the bottom
+                        // instead of scrolling.
+                        .min_h_0()
                         .overflow_y_scroll()
                         // Held by the composer rather than by the element, so walking
                         // the list with the keys can scroll it: the handle is what
@@ -1258,111 +1390,218 @@ impl Composer {
                         .children(rows.into_iter().enumerate().map(|(i, row)| {
                             let session = session.clone();
                             let pick = row.pick.clone();
-                            crate::controls::action(("candidate", i))
-                                .ghost()
-                                // Not for the geometry, which is set outright
-                                // below and lands after the library's. This is
-                                // what the row's own `text_sm` could not do:
-                                // the library letters a button from its `Size`,
-                                // on the box holding the words and so closer to
-                                // them than anything the call site sets, and
-                                // with no size named that is a full 1rem -- so
-                                // these rows were reading a step larger than
-                                // the line right here asks for.
-                                .small()
-                                .h_flex()
-                                .gap_2()
-                                .w_full()
-                                .min_w_0()
-                                .overflow_hidden()
-                                .px_2()
-                                .h(CHIP_H)
-                                .text_sm()
-                                .rounded(cx.theme().radius)
-                                // **Two facts, two ways of drawing them.** Which
-                                // value is in force is a property of the setting
-                                // and outlives the popup; where the keyboard is
-                                // standing is a property of this moment. Drawn
-                                // the same way they cannot be told apart, and
-                                // the list opens *on* the current value, so the
-                                // one frame where they coincide is the frame
-                                // most people see.
-                                //
-                                // In force is **weight and ink**, in place of
-                                // the tick it replaces: a mark at the end of a
-                                // row pulls the words off the centre they are
-                                // otherwise set on, so the row that mattered
-                                // most was the one row sitting crooked.
-                                .when(row.checked, |el| {
-                                    el.font_semibold().text_color(cx.theme().primary)
-                                })
-                                // The keyboard's place is a **whisper of a
-                                // fill** -- present enough to follow while an
-                                // arrow key is held, faint enough that it is
-                                // not read as the answer. It was a full accent
-                                // slab, which is a lot of paint for a cursor
-                                // and buried the weight above it.
-                                .when(Some(i) == selected, |el| {
-                                    el.bg(cx.theme().accent.alpha(0.5))
-                                })
-                                .label(row.label)
-                                // **What makes the row read from the left.**
-                                // The library centres a button's content and
-                                // does it on a box the call site cannot reach,
-                                // so no amount of justifying out here moves it.
-                                // What does move it is giving the row something
-                                // that takes the leftover width: the label is
-                                // built `flex_none`, so everything spare lands
-                                // on this and the words are pushed against the
-                                // start. A row with a detail already has one
-                                // doing that job, which is why this only
-                                // appears where there is none.
-                                .children(row.detail.is_none().then(|| div().flex_1()))
-                                .children(row.detail.map(|detail| {
-                                    div()
-                                        .flex_1()
-                                        .min_w_0()
-                                        .truncate()
-                                        .text_xs()
-                                        // Muted on every row now. The fill under
-                                        // the keyboard's row is faint enough that
-                                        // the surface ink still reads against it,
-                                        // so there is no longer a row this has to
-                                        // fade from something else.
-                                        .text_color(muted)
-                                        .child(detail)
-                                }))
-                                // A click is a choice already made, so it takes the row
-                                // rather than only pointing at it. The highlight moves
-                                // first, so what was clicked is what gets taken and not
-                                // whatever the keyboard had left selected.
-                                .on_click(cx.listener(move |composer: &mut Self, _, window, cx| {
+                            let heading = row.group.clone();
+                            // A click is a choice already made, so it takes the
+                            // row rather than only pointing at it. The highlight
+                            // moves first, so what was clicked is what gets
+                            // taken and not whatever the keyboard had left
+                            // selected.
+                            let take = cx.listener(move |composer: &mut Self, _, window, cx| {
+                                composer.select(i, cx);
+                                composer.apply_pick(&pick, &session, window, cx);
+                            });
+                            let highlighted = Some(i) == selected;
+                            let body = match overlay == Overlay::Completion {
+                                true => candidate_row(i, row, highlighted, muted, cx),
+                                false => choice_row(i, row, highlighted, cx),
+                            }
+                            // **The pointer moves the highlight, exactly as the
+                            // arrows do.** One fill means one thing -- the row
+                            // about to be taken -- so it cannot be left behind
+                            // on the row the keyboard last stood on while the
+                            // pointer is somewhere else. It also settles what
+                            // `Enter` takes when the mouse has moved since:
+                            // what is lit.
+                            //
+                            // `on_mouse_move` rather than a hover style,
+                            // because the library gives a `Button` no hook to
+                            // set its own hover fill, and a second fill derived
+                            // from a different token an inch below the first is
+                            // the drift this list is being flattened to avoid.
+                            .on_mouse_move(cx.listener(
+                                move |composer: &mut Self, _, _, cx| {
                                     composer.select(i, cx);
-                                    composer.apply_pick(&pick, &session, window, cx);
-                                }))
+                                },
+                            ));
+                            // The heading rides *inside* the row's own box
+                            // rather than beside it in the list, so the index
+                            // the arrow keys walk still counts choices and
+                            // nothing else -- and so scrolling to a row brings
+                            // the heading that introduces it along.
+                            div()
+                                .v_flex()
+                                .w_full()
+                                .children(
+                                    heading.map(|heading| notice(cx).text_xs().child(heading)),
+                                )
+                                .child(body.on_click(take))
                         }))
+                        // This one stays among the rows, because it stands *in
+                        // place of* them: an empty list is what it is reporting,
+                        // so there is nothing for it to be scrolled away behind.
                         .when(selected.is_none(), |list| {
                             list.child(notice(cx).text_sm().child("No matches"))
-                        })
-                        .when(capped > 0, |list| {
-                            list.child(
-                                notice(cx)
-                                    .text_xs()
-                                    .child(format!("{capped} more — keep typing to narrow them")),
-                            )
-                        })
-                        .when(overlay == Overlay::Completion, |list| {
-                            list.child(
-                                notice(cx)
-                                    .text_xs()
-                                    .child("↑↓ Navigate · Enter Select · Esc Close"),
-                            )
                         }),
-                ),
+                )
+                // **Outside the scrolling box, and that is the whole point of
+                // them.** Both are sentences about the list rather than choices
+                // in it, and both appear only once the list is long -- so held
+                // among the rows they were scrolled out of sight in exactly the
+                // case that produced them. The count of what is being held back
+                // sat past the fiftieth row, so nothing ever said a query had
+                // been narrowed at all; and the line naming the keys that walk
+                // the list went away the moment the list was long enough to need
+                // walking. Out here the surface holds them against its own edge
+                // and nothing the list does to its own offset can move them.
+                //
+                // Tab is named beside Enter because both are bound to take the
+                // highlighted row, and a line that lists the keys is read as the
+                // complete set.
+                .when(capped > 0, |popup| {
+                    popup.child(
+                        notice(cx)
+                            .text_xs()
+                            .child(format!("{capped} more — keep typing to narrow them")),
+                    )
+                })
+                .when(overlay == Overlay::Completion, |popup| {
+                    popup.child(
+                        notice(cx)
+                            .text_xs()
+                            .child("↑↓ Navigate · Tab or Enter Select · Esc Close"),
+                    )
+                })
+                .children(segments.map(|segments| self.segment_rail(segments, session, cx))),
         )
     }
 
-    fn attachments_popup(&self, cx: &mut Context<Self>) -> gpui::Div {
+    /// A config group drawn as one rail of segments at the foot of the list.
+    ///
+    /// **A rail and not rows**, because effort is the one setting here whose
+    /// values are a ladder — less of a thing, then more of it — and three or
+    /// four words on one line say that, where a column of rows says only that
+    /// there are four of them.
+    ///
+    /// **Below the list and outside the scroll**, because it is not one of the
+    /// choices being scrolled through: it is a second setting, and a control
+    /// that scrolls away while the list above it is walked is one the reader
+    /// has to go looking for. The rule above it is what says the two are
+    /// different questions.
+    ///
+    /// **It does not close the popup**, unlike every row here, and that is the
+    /// difference between picking from a list and nudging a control. A row that
+    /// stayed open after being taken would leave the reader wondering whether
+    /// the click landed; a segment lights where it was pressed and says so
+    /// itself, and the next thing somebody does with a ladder is often try the
+    /// rung beside it.
+    ///
+    /// **The keyboard does not reach it.** The arrow keys walk the list and
+    /// `Enter` takes a row, both counting in an index this rail is not part of;
+    /// wiring it in means a second key model for a control holding several
+    /// values on one line.
+    fn segment_rail(
+        &self,
+        segments: presentation::Segments,
+        session: &Entity<ChatSession>,
+        cx: &mut Context<Self>,
+    ) -> gpui::Div {
+        let presentation::Segments {
+            name,
+            config_id,
+            choices,
+            current,
+        } = segments;
+        let session = session.clone();
+        let values: Vec<String> = choices.iter().map(|(_, value)| value.clone()).collect();
+        let labels: Vec<SharedString> = choices.into_iter().map(|(label, _)| label).collect();
+        let (fill, ink, radius) = (
+            cx.theme().accent,
+            cx.theme().accent_foreground,
+            cx.theme().radius,
+        );
+
+        // **Not a `ButtonGroup`**, which is the component for joining *bordered*
+        // buttons into one segmented block -- it hands each child the corners
+        // and edges of its place in the row, so the two ends round outward and
+        // everything between them stays square. That is exactly right for a
+        // joined block and exactly wrong here: flat, the only thing drawn is the
+        // fill under the rung in force, and a fill square on two sides reads as
+        // a rectangle laid over the words rather than as a rounded chip around
+        // one. A plain row of buttons has no such opinion, and it costs less
+        // than the component did -- each rung carries its own press instead of
+        // the group reporting an index for the row to look up.
+        let rail = div().h_flex().items_center().gap_1().flex_none().children(
+            labels.into_iter().enumerate().map(|(i, label)| {
+                let current = Some(i) == current;
+                let value = values.get(i).cloned().unwrap_or_default();
+                let config_id = config_id.clone();
+                let session = session.clone();
+                // Through the app's own wrapper, so a segment answers the
+                // pointer like every other control here -- the library's
+                // buttons draw the arrow, and a rail of six of them is six
+                // places for that to show.
+                crate::controls::action(("segment", i))
+                    .ghost()
+                    // The list's own size, so the rail letters at the step the
+                    // rows above it do. A step under that and it read as a
+                    // footnote on the list rather than as a setting beside it.
+                    .small()
+                    .h(CHIP_H)
+                    .px_2()
+                    .rounded(radius)
+                    .label(label)
+                    .selected(current)
+                    // The popup's one spelling for "in force", which is the
+                    // same one the rows above use. The library's own selected
+                    // fill for a ghost button is derived from a different
+                    // token, so the two would disagree an inch apart about what
+                    // being selected looks like.
+                    .when(current, |segment| segment.bg(fill).text_color(ink))
+                    .on_click(cx.listener(move |_: &mut Self, _, _, cx| {
+                        let (config_id, value) = (config_id.clone(), value.clone());
+                        session.update(cx, |session, cx| {
+                            session.chat.set_config_option(&config_id, &value);
+                            cx.notify();
+                        });
+                        // The rail is drawn by the composer, so the session's
+                        // own notify does not redraw it: without this the value
+                        // goes out and the rail keeps lighting the rung that
+                        // was in force before.
+                        cx.notify();
+                    }))
+            }),
+        );
+
+        div()
+            .h_flex()
+            .items_center()
+            .justify_between()
+            .gap_2()
+            .w_full()
+            .px_2()
+            // Deeper than a row of the list, on purpose. This block is a second
+            // setting sitting under the answer to the first, and at a row's own
+            // inset it read as one more entry in the list that happened to have
+            // buttons in it -- the rule above says they are different questions
+            // and the air is what makes the rule look deliberate.
+            .py_3()
+            .mt_1()
+            .border_t_1()
+            .border_color(cx.theme().border)
+            .child(
+                div()
+                    .flex_none()
+                    // The rows' own size too: the rail's label and the list's
+                    // headings are the same kind of word, and one of them a
+                    // step smaller reads as a caption on the other.
+                    .text_sm()
+                    .text_color(cx.theme().muted_foreground)
+                    .child(name),
+            )
+            .child(rail)
+    }
+
+    fn attachments_popup(&self, room: gpui::Pixels, cx: &mut Context<Self>) -> gpui::Div {
         let muted = cx.theme().muted_foreground;
         let danger = crate::theme::status_ink(cx).danger;
         let hidden = self
@@ -1374,7 +1613,7 @@ impl Composer {
             .id("attachment-manager")
             .v_flex()
             .w_full()
-            .max_h(POPUP_MAX_H)
+            .max_h(room)
             .overflow_y_scroll()
             .child(
                 div()
@@ -1474,8 +1713,143 @@ impl Render for Composer {
     }
 }
 
+/// The shell both kinds of popup row are built from.
+///
+/// **Two facts, two ways of drawing them.** Which value is in force is a
+/// property of the setting and outlives the popup; where the keyboard is
+/// standing is a property of this moment. Drawn the same way they cannot be
+/// told apart, and the list opens *on* the current value, so the one frame
+/// where they coincide is the frame most people see.
+///
+/// **One fill, and it means one thing: the row about to be taken.** It follows
+/// the pointer and the arrow keys alike -- whichever moved last -- so what is
+/// lit is always what `Enter` or a click would pick. The value already in force
+/// is said by the tick at the row's end and by nothing else.
+///
+/// The two were drawn apart once, a strong fill for the value in force and a
+/// faint one for the cursor. Which is readable standing still and unreadable in
+/// motion: a list opens *on* its current value, so the two coincide on the
+/// first frame, and walking away from that row left a second fill behind that
+/// looked exactly like a second candidate. A mark cannot be confused with a
+/// fill however the two move.
+///
+/// The fill is `accent` with the ink that goes on it, the one spelling a
+/// selected thing takes everywhere in this window -- a tab, a mode chip, a rail
+/// row.
+fn popup_row(id: usize, highlighted: bool, cx: &App) -> Button {
+    crate::controls::action(("candidate", id))
+        .ghost()
+        // Not for the geometry, which is set outright below and lands after the
+        // library's. This is what the row's own `text_sm` could not do: the
+        // library letters a button from its `Size`, on the box holding the
+        // words and so closer to them than anything the call site sets, and
+        // with no size named that is a full 1rem -- so these rows were reading
+        // a step larger than the line right here asks for.
+        .small()
+        .h_flex()
+        .gap_2()
+        .w_full()
+        .min_w_0()
+        .overflow_hidden()
+        .px_2()
+        .text_sm()
+        .rounded(cx.theme().radius)
+        .when(highlighted, |el| {
+            el.bg(cx.theme().accent)
+                .text_color(cx.theme().accent_foreground)
+        })
+}
+
+/// A completion candidate: the name, and the part that tells two of the same
+/// name apart beside it.
+///
+/// One line and side by side, unlike a choice below. A file candidate's detail
+/// is its folder, which is *where the name is* rather than something about it —
+/// stacked under the name it would double the height of a list whose whole job
+/// is to put fifty paths in front of somebody typing.
+fn candidate_row(id: usize, row: Row, highlighted: bool, muted: gpui::Hsla, cx: &App) -> Button {
+    popup_row(id, highlighted, cx)
+        .h(CHIP_H)
+        .label(row.label)
+        // **What makes the row read from the left.** The library centres a
+        // button's content and does it on a box the call site cannot reach, so
+        // no amount of justifying out here moves it. What does move it is
+        // giving the row something that takes the leftover width: the label is
+        // built `flex_none`, so everything spare lands on this and the words are
+        // pushed against the start. A row with a detail already has one doing
+        // that job, which is why this only appears where there is none.
+        .children(row.detail.is_none().then(|| div().flex_1()))
+        .children(row.detail.map(|detail| {
+            div()
+                .flex_1()
+                .min_w_0()
+                .truncate()
+                .text_xs()
+                .text_color(muted)
+                .child(detail)
+        }))
+}
+
+/// One value of an agent-advertised setting: its name, the agent's sentence
+/// about it underneath, and a tick where it is the one in force.
+///
+/// **Stacked, and that is the whole difference from a candidate.** A model's
+/// description is a sentence and the names it tells apart are two words each,
+/// so beside the name it either pushes the name off the row or truncates to the
+/// three words every model's description opens with. Under it, at the quieter
+/// size, the names stay a column that can be scanned and the sentences are
+/// there for the one being considered.
+///
+/// The tick comes back here because the objection to it does not hold in this
+/// shape: it used to pull a *centred* label off centre, and the content of this
+/// row is pinned to the start by a `flex_1` of its own. What the fill alone
+/// cannot do is survive a reader who does not separate its colour from the row
+/// above — so the answer is said twice, in the fill and in a mark.
+fn choice_row(id: usize, row: Row, highlighted: bool, cx: &App) -> Button {
+    let detail_ink = match highlighted {
+        // On the fill, the muted ink of an unlit row is close to unreadable;
+        // this is the same relationship one step down from the ink that belongs
+        // on this fill.
+        true => cx.theme().accent_foreground.alpha(0.75),
+        false => cx.theme().muted_foreground,
+    };
+    let checked = row.checked;
+    popup_row(id, highlighted, cx)
+        // **The height has to be taken back from the library, explicitly.** A
+        // `Button` writes a fixed height per size -- 1.5rem at this one -- and
+        // then wraps everything the call site gave it in a box set to the full
+        // height of that, centred. A second line does not make the button
+        // taller: it overflows the box it was centred in and is painted across
+        // the rows either side of it, which is two lines of one choice sitting
+        // on top of the next choice's name. Nothing about it looks like a
+        // height; it looks like the list has been drawn twice.
+        //
+        // The floor keeps a choice the agent sent no sentence for standing at
+        // exactly the height every other one-line row in this popup does.
+        .h_auto()
+        .min_h(CHIP_H)
+        .py_1()
+        .child(
+            div()
+                .v_flex()
+                .flex_1()
+                .min_w_0()
+                .child(div().w_full().truncate().child(row.label))
+                .children(row.detail.map(|detail| {
+                    div()
+                        .w_full()
+                        .truncate()
+                        .text_xs()
+                        .text_color(detail_ink)
+                        .child(detail)
+                })),
+        )
+        .children(checked.then(|| Icon::new(IconName::Check).size_4().flex_none()))
+}
+
 /// A row of the popup that is a sentence about the list rather than a choice
-/// in it — that it matched nothing, or that it is holding some back.
+/// in it — that it matched nothing, that it is holding some back, or which
+/// setting the choices under it belong to.
 ///
 /// It stands at the rows' own height for the same reason they stand at one
 /// another's: these two appear at the top and bottom of a list of choices, and
@@ -1583,40 +1957,147 @@ fn chip(id: impl Into<gpui::ElementId>, open: bool, cx: &App) -> Button {
         .when(open, |chip| chip.bg(open_fill))
 }
 
-/// One of the composer's own actions — attach, `@`, `/` — as an icon chip.
+/// The `+` menu: everything that can be put into the prompt from a control.
 ///
-/// Takes a built [`Icon`] rather than an `IconName`, because two of the three
-/// are drawn from the app's own registry: the bundled set has no at-sign and no
-/// slash, and these are the two buttons whose entire job is to say which
-/// character they type.
-fn action<F>(
-    id: &'static str,
-    icon: Icon,
-    hint: &'static str,
+/// Attaching a file, mentioning one and starting a slash command are three
+/// answers to one question — *put something in front of the agent* — and as
+/// three icons they took the row's whole left-hand end to say it three times.
+/// Behind one control they are what the `+` means, which is also the only thing
+/// a plus sign can mean here.
+///
+/// **Each row still draws the mark it stands for, and that is load-bearing.**
+/// With a Vietnamese input method on Linux a typed `@` or `/` can be swallowed
+/// before it reaches the composer, so these rows are the only route to either
+/// trigger — and for somebody who cannot type the character, the row is the
+/// only thing on screen naming it. A stand-in glyph would leave them with a
+/// menu entry about a character they have no way to see.
+///
+/// Anchored at the trigger's bottom, because the composer is at the foot of the
+/// window: a menu hung below it opens off the bottom of the frame.
+fn add_menu(cx: &mut Context<Composer>) -> impl IntoElement + use<> {
+    let composer = cx.entity();
+    chip("add", false, cx)
+        .child(Icon::new(crate::icons::Icon::PlusLight).size(ACTION_ICON))
+        .tooltip("Attach a file, mention one, or run a slash command")
+        .dropdown_menu_with_anchor(gpui::Anchor::BottomLeft, move |menu, _, _| {
+            let (attach, mention, command) = (composer.clone(), composer.clone(), composer.clone());
+            menu.item(
+                crate::controls::menu_item("Attach files…")
+                    .icon(Icon::new(crate::icons::Icon::Paperclip))
+                    .on_click(move |_, _, cx: &mut gpui::App| {
+                        attach.update(cx, |composer: &mut Composer, cx| composer.attach(cx));
+                    }),
+            )
+            .item(
+                crate::controls::menu_item("Mention a file")
+                    .icon(Icon::new(crate::icons::Icon::AtSign))
+                    .on_click(move |_, window: &mut Window, cx: &mut gpui::App| {
+                        mention.update(cx, |composer: &mut Composer, cx| {
+                            composer.insert_trigger('@', window, cx);
+                        });
+                    }),
+            )
+            .item(
+                crate::controls::menu_item("Run a slash command")
+                    .icon(Icon::new(crate::icons::Icon::SquareSlash))
+                    .on_click(move |_, window: &mut Window, cx: &mut gpui::App| {
+                        command.update(cx, |composer: &mut Composer, cx| {
+                            composer.insert_trigger('/', window, cx);
+                        });
+                    }),
+            )
+        })
+}
+
+/// A picker for a setting a turn is run under: a mark, the value in force, and
+/// its list.
+///
+/// Two of these, and they sit apart because the two questions do. Fast mode is
+/// in the card's own row, ahead of the model, because it is read as a qualifier
+/// of the name beside it -- the two were briefly one chip for that reason. The
+/// permission mode is on the strip below, with the branch, because what the
+/// agent may do without asking is standing state about the project and the
+/// session rather than about this message.
+///
+/// **Three things separate both from the Model chip**, which is the card's other
+/// picker.
+///
+/// They letter their value at **full strength, like every other chip**. The
+/// chip's own muted ink is what the *mark* takes, and the caret and the chrome
+/// with it -- what a chip is for is the value in it, and a chip standing beside
+/// another with its word a shade fainter reads as one that is somehow less
+/// settled rather than as one about a different question.
+///
+/// They draw **no caret**. Between the two chips and the branch's own mark that
+/// would be three small glyphs in a row an inch long, and the caret is the
+/// least of the three: a chip is the only thing near it with a hover fill and a
+/// pointer, so what can be pressed is already said twice.
+///
+/// They lead with the **mark of the setting**, which is what makes a value
+/// legible without reading it -- and it is the setting and not the value,
+/// because a mark per value would mean the app deciding what an agent-chosen
+/// word means. What the agent picked is the word right beside it.
+fn status_action(
+    target: Overlay,
+    label: SharedString,
+    open: bool,
+    session: &Entity<ChatSession>,
     cx: &mut Context<Composer>,
-    on_click: F,
-) -> impl IntoElement + use<F>
-where
-    F: Fn(&mut Composer, &mut Window, &mut Context<Composer>) + 'static,
-{
-    chip(id, false, cx)
-        .child(icon.size_3())
+) -> impl IntoElement + use<> {
+    // The id, the mark and the sentence are all per chip, so they are decided
+    // where the chip is decided. Handed in at the call site they were three
+    // things that had to agree with a fourth, in two places.
+    let (id, icon, hint) = match target {
+        Overlay::Fast => (
+            "fast-selector",
+            crate::icons::Icon::Zap,
+            "Choose how fast the agent answers",
+        ),
+        _ => (
+            "mode-selector",
+            crate::icons::Icon::Shield,
+            "Choose what the agent may do without asking",
+        ),
+    };
+    let session = session.clone();
+    chip(id, open, cx)
+        .max_w(OPTION_MAX_W)
+        .flex_shrink_1()
+        .min_w_0()
+        .child(Icon::new(icon).size_3())
+        // A child and not the button's `label`, for the reason the card's chip
+        // does the same: a label is wrapped in a box the library builds
+        // `flex_none`, so against the cap above it takes its whole natural
+        // width and the end of the word is clipped with nothing saying it was.
+        .child(
+            div()
+                .min_w_0()
+                .truncate()
+                .text_size(CHIP_TEXT)
+                .text_color(cx.theme().foreground)
+                .child(label),
+        )
         .tooltip(hint)
         .on_click(cx.listener(move |composer: &mut Composer, _, window, cx| {
-            on_click(composer, window, cx);
+            composer.toggle_picker(target.clone(), &session, window, cx);
         }))
 }
 
-/// One of the two option actions: Mode, or Model with the remaining config.
+/// The card's own picker: the model in force, and behind it every config group
+/// the strip below has not taken a chip of.
+///
+/// `detail` is the value that qualifies the one in the label — the effort a
+/// model is being run at — and is drawn in the chip's own muted ink while the
+/// label takes full strength. Two words at one weight read as one name.
 fn option_action(
     id: &'static str,
     label: SharedString,
-    target: Overlay,
     open: bool,
     session: &Entity<ChatSession>,
     cx: &mut Context<Composer>,
 ) -> impl IntoElement + use<> {
     let session = session.clone();
+    let fg = cx.theme().foreground;
     chip(id, open, cx)
         .max_w(OPTION_MAX_W)
         .flex_shrink_1()
@@ -1634,50 +2115,18 @@ fn option_action(
         // stateful-element method and this button is not one. So the name is
         // left to be read off the button's own text, which is the value; the
         // tooltip still says which setting the value belongs to.
-        .child(div().min_w_0().truncate().text_size(CHIP_TEXT).child(label))
+        .child(
+            div()
+                .min_w_0()
+                .truncate()
+                .text_size(CHIP_TEXT)
+                .text_color(fg)
+                .child(label),
+        )
         .dropdown_caret(true)
-        .tooltip(match &target {
-            Overlay::Mode => "Choose mode",
-            Overlay::Options => "Choose model, effort and other options",
-            _ => "Choose an option",
-        })
+        .tooltip("Choose model, effort and other options")
         .on_click(cx.listener(move |composer: &mut Composer, _, window, cx| {
-            composer.toggle_picker(target.clone(), &session, window, cx);
-        }))
-}
-
-/// Keep an option popup spatially attached to the button that opened it.
-/// Absolute positioning lets it overlap the transcript without contributing
-/// to the composer's measured height.
-fn option_anchor(
-    control: impl IntoElement,
-    popup: Option<gpui::Div>,
-    align_end: bool,
-) -> gpui::Div {
-    div()
-        .relative()
-        .flex_shrink_1()
-        .min_w_0()
-        .child(control)
-        .children(popup.map(|popup| {
-            // **Painted late, on purpose.** A div paints its background, then
-            // its children, and then its *border* -- the border last, over
-            // everything inside it. This popup is anchored to a button inside
-            // the composer card, so the card's own outline was being drawn
-            // straight across the list, which reads as the list being
-            // see-through when it is nothing of the kind. Deferring keeps the
-            // layout exactly where it is, next to the button that opened it,
-            // and moves only the painting to after every ancestor has finished.
-            // It is what the component library does for each of its own menus
-            // and dropdowns, and for this reason.
-            gpui::deferred(
-                div()
-                    .absolute()
-                    .bottom(rems(2.))
-                    .when(align_end, |anchor| anchor.right_0())
-                    .when(!align_end, |anchor| anchor.left_0())
-                    .child(popup),
-            )
+            composer.toggle_picker(Overlay::Options, &session, window, cx);
         }))
 }
 
@@ -1698,20 +2147,40 @@ fn send_controls(
 ) -> gpui::Div {
     use onehand_core::chat::SubmitBlock;
 
-    // Whichever of the three is showing, it stands at the row's height.
+    // Whichever of these is showing, it is the row's size and not the
+    // library's default.
     //
-    // These are library buttons with no size named, so they were taking the
-    // library's own -- a quarter of a rem taller than every control beside
-    // them. On a row this short that is not a subtle difference: the button sat
-    // proud of the line it is on, and being the loud one here is a job the
-    // primary fill already does on its own.
+    // **The size and the height both, and the size is the half that was
+    // missing.** With no size named these took the library's `Medium`, and the
+    // explicit height below only answered half of it: an icon-only button at
+    // that size is a *square* of 2rem, so pinning the height left a 2rem-wide
+    // box 1.5rem tall -- a lozenge beside a row of controls that are all as
+    // wide as what is in them. `Small` is the row's own height in both
+    // directions, so Send comes out a square the size of every chip beside it,
+    // and it takes the padding, the text and the glyph size down with it.
     //
-    // Only the height is shared. Everything else about it stays as it was,
-    // because it is the row's one primary action and is meant to look it.
+    // Nothing else changes: the primary fill is what says this is the row's
+    // one important action, and it never needed the extra quarter-inch to.
     fn control(id: &'static str) -> Button {
-        crate::controls::action(id).h(CHIP_H)
+        crate::controls::action(id).small().h(CHIP_H)
     }
 
+    // **Stop is always there while a turn runs, and Queue joins it once there
+    // is something to queue.** Stop is the one control in this app that throws
+    // running work away, and it is reachable at every moment the work is
+    // running -- a Stop that disappeared the instant somebody started typing
+    // would be gone at exactly the moment they had most to say about the turn.
+    //
+    // They are never one button wearing two faces, and never on screen
+    // together: Send is drawn only with no turn running and Stop only while one
+    // is. They do share a place, though -- the trailing end of the row is the
+    // turn's own control whichever of them is in it -- so what tells them apart
+    // is the tint, the glyph, and Queue arriving *labelled* beside Stop the
+    // moment there is a draft. The cost is real and is taken knowingly: press
+    // that same spot twice quickly and the second press stops the turn the
+    // first one started. A slot reserved so neither ever moves spends a fixed
+    // inch of a row that runs out of width before anything else in the card
+    // does, and spends it on the state that is idle most of the time.
     if blocked == Some(SubmitBlock::Busy) {
         return div()
             .h_flex()
@@ -1719,24 +2188,32 @@ fn send_controls(
             .children(has_draft.then(|| {
                 control("queue")
                     .primary()
-                    .icon(Icon::new(IconName::ArrowUp))
+                    .icon(Icon::new(crate::icons::Icon::ArrowUpLight))
                     .label("Queue")
                     .tooltip("Send this prompt when the current turn finishes")
                     .on_click(on_send)
             }))
             .child(
+                // The word is gone and the tint carries it: this is the one
+                // press here that ends something rather than starting it. It
+                // keeps the word's *place* though -- Queue is labelled, so the
+                // two are still told apart by more than colour.
                 control("stop")
                     .danger()
                     .icon(Icon::new(IconName::Pause))
-                    .label("Stop")
                     .tooltip("Stop the current turn")
                     .on_click(on_stop),
             );
     }
+    // The arrow alone. The word sat beside four other controls in a row that
+    // runs out of width before anything else in the card does, and it is the
+    // one control here whose meaning never changes -- so it is the one that can
+    // afford to be a glyph. Queue and Stop keep their words: they appear only
+    // mid-turn, they appear together, and which of the two a press lands on is
+    // exactly what a reader has to be sure of.
     let send = control("send")
         .primary()
-        .icon(Icon::new(IconName::ArrowUp))
-        .label("Send");
+        .icon(Icon::new(crate::icons::Icon::ArrowUpLight));
     match blocked {
         // No pointer over a button that refuses: the cursor is a promise a
         // press will do something, and this one is here to say it will not.
@@ -1799,6 +2276,28 @@ mod tests {
         );
         assert_eq!(split_path("README.md"), ("README.md", None));
         assert_eq!(split_path("crates/app/"), ("crates/app/", None));
+    }
+
+    #[test]
+    fn a_list_is_capped_by_the_panel_and_never_below_its_floor() {
+        use super::{POPUP_MIN_H, popup_room};
+        use gpui::px;
+
+        let rem = px(16.);
+        assert_eq!(
+            popup_room(px(800.), px(120.), rem),
+            px(800. - 120. - 16.),
+            "a tall panel hands the list everything the composer is not standing in"
+        );
+        assert_eq!(
+            popup_room(px(200.), px(180.), rem),
+            POPUP_MIN_H.to_pixels(rem),
+            "a squeezed panel bottoms out rather than collapsing to one row"
+        );
+        assert!(
+            popup_room(px(0.), px(400.), rem) > px(0.),
+            "a panel measured before its first layout must not produce a negative cap"
+        );
     }
 
     #[test]

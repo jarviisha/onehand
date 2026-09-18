@@ -35,16 +35,10 @@ trap cleanup EXIT
 staged_dir="$sync_tmp/staged"
 mkdir "$staged_dir"
 
-awk '
-    /^\[icons\]$/ { in_icons = 1; next }
-    in_icons && /^\[/ { in_icons = 0 }
-    in_icons && /^[a-z0-9-]+[[:space:]]*=/ {
-        line = $0
-        gsub(/[[:space:]"]/, "", line)
-        split(line, pair, "=")
-        print pair[1] "\t" pair[2]
-    }
-' "$manifest" | while IFS=$'\t' read -r local_name source_spec; do
+# Read through a redirection and never `awk | while`: a pipeline runs its right
+# side in a subshell, so the `exit 1` below would leave that subshell and this
+# script would carry on to publish whatever had been staged before the refusal.
+while IFS=$'\t' read -r local_name source_spec; do
     provider="${source_spec%%:*}"
     upstream_name="${source_spec#*:}"
     output="$staged_dir/${local_name}.svg"
@@ -67,7 +61,37 @@ awk '
             ;;
     esac
 
-done
+done < <(awk '
+    /^\[icons\]$/ { in_icons = 1; next }
+    in_icons && /^\[/ { in_icons = 0 }
+    in_icons && /^[a-z0-9-]+[[:space:]]*=/ {
+        line = $0
+        gsub(/[[:space:]"]/, "", line)
+        split(line, pair, "=")
+        print pair[1] "\t" pair[2]
+    }
+' "$manifest")
+
+# Apply the manifest's stroke overrides, before publishing and never by hand:
+# this script refetches from upstream, so a weight edited into a checked-in file
+# is one the next sync throws away without saying so.
+while IFS=$'\t' read -r local_name width; do
+    target="$staged_dir/${local_name}.svg"
+    if [[ ! -f "$target" ]]; then
+        echo "stroke override names an icon the manifest does not fetch: $local_name" >&2
+        exit 1
+    fi
+    sed -i "s/stroke-width=\"[^\"]*\"/stroke-width=\"${width}\"/" "$target"
+done < <(awk '
+    /^\[stroke\]$/ { in_stroke = 1; next }
+    in_stroke && /^\[/ { in_stroke = 0 }
+    in_stroke && /^[a-z0-9-]+[[:space:]]*=/ {
+        line = $0
+        gsub(/[[:space:]"]/, "", line)
+        split(line, pair, "=")
+        print pair[1] "\t" pair[2]
+    }
+' "$manifest")
 
 # Publish only after every source file has been downloaded.
 cp "$staged_dir"/*.svg "$icon_dir/"

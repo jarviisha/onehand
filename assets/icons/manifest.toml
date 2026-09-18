@@ -13,12 +13,32 @@ lucide_version = "1.34.0"
 #   * a glyph the bundled set holds no equivalent of at all, added one at a time
 #     with its reason written beside it. That is not a door back to a
 #     self-hosted UI set: when `IconName` already carries the shape, the entry
-#     does not belong here, whatever it would be named.
+#     does not belong here, whatever it would be named;
+#   * a shape the bundled set *does* draw, forked for its stroke weight alone,
+#     which is the one exception and is narrower than it looks. The weight lives
+#     in the file and no API reaches it, so an icon drawn much larger than the
+#     app draws icons anywhere else has no way to be lighter. Every such entry
+#     names the one place it is drawn, keeps the library's copy in use
+#     everywhere else, and is `-light` so nobody has to guess why two names
+#     exist for one drawing.
 # An entry is added when a call site needs it, never in advance. The registry
 # carries `allow(dead_code)` because it mirrors this table, so an abandoned
 # asset looks exactly like a curated one and nothing will ever ask about it —
 # a brand mark for the default agent sat here unused, in the binary, for
 # exactly that reason.
+
+# Stroke weight to rewrite into a Lucide icon after it is fetched, where the
+# upstream 2 is wrong for the size the app draws it at. Absent means untouched,
+# which is every icon that stands beside the library's own at the library's own
+# size. Brand marks are filled rather than stroked and never appear here.
+#
+# It is a table and not a per-file edit because `sync-icons.sh` refetches every
+# checked-in SVG from upstream: a weight edited into the file by hand is one the
+# next sync silently throws away.
+[stroke]
+plus-light = "1.5"
+arrow-up-light = "1.5"
+
 [icons]
 # The transcript's "Changed" activity group. The bundled set has no pencil of
 # any kind, and its nearest shape is `replace` — a find-and-replace mark, which
@@ -40,7 +60,7 @@ git-branch = "lucide:git-branch"
 # that says mail has arrived — the opposite direction from handing a file to the
 # agent.
 paperclip = "lucide:paperclip"
-# The composer's mention button, which inserts an `@`. The bundled set has no
+# The composer's *Mention a file* menu entry, which inserts an `@`. The bundled set has no
 # at-sign; the nearest mark it draws is `asterisk`, which is a different
 # character, and a button whose whole job is to say which character it types
 # cannot draw another one. This button is also the only route to a mention for
@@ -52,8 +72,25 @@ at-sign = "lucide:at-sign"
 # that is the ⌘ modifier key, which names a keystroke rather than the character
 # being typed, and on this app's platform it names one that does not exist.
 #
-# The enclosed form and not the bare `slash`: at the 0.75rem these buttons draw
-# at, a lone diagonal stroke has no weight beside the paperclip and the at-sign
-# either side of it and reads as a separator between them rather than as a
-# glyph of its own.
+# The enclosed form and not the bare `slash`: at icon size a lone diagonal
+# stroke has no weight beside the paperclip and the at-sign above it in the same
+# menu, and reads as a separator between the entries rather than as a glyph of
+# its own.
 square-slash = "lucide:square-slash"
+# The composer's `+`, which opens the attach-or-mention menu, and its Send
+# arrow. Both are shapes `IconName` already draws, forked for one reason: the
+# composer's action row letters its icons at 1.25rem where the rest of the app
+# draws them at about 0.75rem, and Lucide's stroke of 2 reads as a marker pen at
+# that size. The library's own copies stay in use at every other call site --
+# the rail's *New session*, the terminal's *New terminal* -- so the weight is
+# split by where a glyph is drawn rather than by which glyph it is.
+plus-light = "lucide:plus"
+arrow-up-light = "lucide:arrow-up"
+# The strip under the composer names two settings a turn is taken under, and
+# each chip leads with the mark of the setting it belongs to. The bundled set
+# has neither shape: its nearest thing to a bolt is `battery-charging`, which is
+# a battery and says "this is topping up" rather than "this runs fast", and it
+# draws no shield, lock or badge of any kind — its `circle-check` says an answer
+# was correct, not that permission is being asked for.
+zap = "lucide:zap"
+shield = "lucide:shield"

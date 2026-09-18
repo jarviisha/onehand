@@ -210,6 +210,35 @@ pub fn add_blocking(root: &Path, branch: &str, dir: &Path) -> Result<PathBuf, St
     Ok(std::fs::canonicalize(dir).unwrap_or_else(|_| dir.to_path_buf()))
 }
 
+/// Rename the branch that is checked out at `root`, in place.
+///
+/// **`-m` and never `-M`.** The forced form overwrites a branch that already
+/// carries the new name, which throws away whatever was on it -- and the whole
+/// of what the user asked for is that this branch be called something else. git
+/// refuses on the collision and its sentence says so, which is the answer.
+///
+/// The name goes through the same rule a new worktree's does: a branch is a
+/// branch whichever gesture made it, and a second spelling of what git will
+/// accept is a second place for the two to disagree.
+///
+/// Blocking, like every other call here, and git's own words are passed through
+/// for the same reason -- "a branch named x already exists" and "cannot rename
+/// a detached HEAD" are sentences worth showing, and nothing here could write
+/// them better.
+pub fn rename_branch_blocking(root: &Path, name: &str) -> Result<(), String> {
+    validate_branch(name).map_err(str::to_string)?;
+    let out = std::process::Command::new("git")
+        .arg("-C")
+        .arg(root)
+        .args(["branch", "-m", name])
+        .output()
+        .map_err(|err| format!("git could not be run: {err}"))?;
+    if !out.status.success() {
+        return Err(git_message(&out.stderr));
+    }
+    Ok(())
+}
+
 /// git's complaint, as a line to put in front of someone.
 ///
 /// `fatal:` and `error:` are stripped: they are the severity of a process that
@@ -232,7 +261,7 @@ fn git_message(stderr: &[u8]) -> String {
         .collect::<Vec<_>>()
         .join(" ");
     if out.is_empty() {
-        "git could not create the worktree.".to_string()
+        "git refused, and said nothing about why.".to_string()
     } else {
         out
     }
@@ -375,7 +404,9 @@ mod tests {
             git_message(b"fatal: '/a/b' already exists\nhint: use --force\n"),
             "'/a/b' already exists"
         );
-        assert_eq!(git_message(b""), "git could not create the worktree.");
+        // Two callers now, so the fallback cannot name one of the two things
+        // git was asked to do.
+        assert_eq!(git_message(b""), "git refused, and said nothing about why.");
     }
 
     /// The command itself, against a real repository: the argument order for a
@@ -430,5 +461,57 @@ mod tests {
         for dir in [&repo, &made, &spare] {
             let _ = std::fs::remove_dir_all(dir);
         }
+    }
+
+    /// The rename, against a real repository for the same reason: what it does
+    /// is one argument order, and the two failures worth having are both git's
+    /// rather than ours.
+    #[test]
+    fn rename_moves_the_checked_out_branch_and_refuses_a_collision() {
+        let git = |dir: &Path, args: &[&str]| {
+            std::process::Command::new("git")
+                .arg("-C")
+                .arg(dir)
+                .args(args)
+                .output()
+                .expect("git must be installed to run this test")
+        };
+        let head = |dir: &Path| {
+            let out = git(dir, &["branch", "--show-current"]);
+            String::from_utf8_lossy(&out.stdout).trim().to_string()
+        };
+
+        let repo = std::env::temp_dir().join(format!("onehand-rename-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&repo);
+        std::fs::create_dir_all(&repo).unwrap();
+        git(&repo, &["init", "-q", "-b", "main"]);
+        git(&repo, &["config", "user.email", "t@example.com"]);
+        git(&repo, &["config", "user.name", "T"]);
+        std::fs::write(repo.join("a.txt"), "x").unwrap();
+        git(&repo, &["add", "a.txt"]);
+        git(&repo, &["commit", "-qm", "one"]);
+
+        rename_branch_blocking(&repo, "trunk").unwrap();
+        assert_eq!(head(&repo), "trunk");
+
+        // A name the branch rule refuses never reaches git.
+        assert!(rename_branch_blocking(&repo, "  ").is_err());
+        assert_eq!(head(&repo), "trunk", "a refused name changes nothing");
+
+        // And `-m` rather than `-M`, so a name already taken is git's refusal
+        // and not a branch quietly destroyed.
+        git(&repo, &["branch", "keep"]);
+        let clash = rename_branch_blocking(&repo, "keep");
+        assert!(
+            clash.is_err(),
+            "renaming onto an existing branch must refuse"
+        );
+        assert_eq!(head(&repo), "trunk");
+        assert!(
+            branch_exists_blocking(&repo, "keep"),
+            "and must not destroy it"
+        );
+
+        let _ = std::fs::remove_dir_all(&repo);
     }
 }
