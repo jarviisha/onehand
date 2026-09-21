@@ -837,6 +837,56 @@ mod tests {
         assert_eq!(held, 0);
     }
 
+    /// **What lets the popup stand at one height.** It is sized once, from the
+    /// list with nothing typed, and then never resized while it is open — which
+    /// is only safe because no query can produce more rows, or more groups,
+    /// than an empty one. If that ever stopped holding, the popup would clip
+    /// rows it had no room for instead of growing, which is a worse failure
+    /// than the jitter it replaced.
+    #[test]
+    fn no_query_can_produce_more_than_an_empty_one() {
+        let files: Vec<String> = ["a/one.rs", "a/two.rs", "b/three.md", "readme.md"]
+            .iter()
+            .map(|s| s.to_string())
+            .collect();
+        let dirs = folders(&files);
+        let artifacts = vec!["a/one.rs".to_string()];
+        let groups = |rows: &[Mention]| {
+            let mut kinds: Vec<MentionKind> = rows.iter().map(|r| r.kind).collect();
+            kinds.dedup();
+            kinds.len()
+        };
+
+        let (all, _) = mentions(&files, &dirs, &artifacts, "", 50);
+        for query in ["", "a", "one", "md", "READ", "zzz", "/", "."] {
+            let (some, _) = mentions(&files, &dirs, &artifacts, query, 50);
+            assert!(
+                some.len() <= all.len(),
+                "{query:?} produced {} rows against {} unfiltered",
+                some.len(),
+                all.len()
+            );
+            assert!(
+                groups(&some) <= groups(&all),
+                "{query:?} produced more groups than an empty query"
+            );
+        }
+
+        let all_cmds = vec![
+            cmd("compact", ""),
+            cmd("ponytail:audit", ""),
+            cmd("ponytail:debt", ""),
+        ];
+        let (every, _) = commands(&all_cmds, "", 50);
+        for query in ["", "c", "pony", "audit", "zzz"] {
+            let (some, _) = commands(&all_cmds, query, 50);
+            assert!(
+                some.len() <= every.len(),
+                "{query:?} produced more command rows than an empty query"
+            );
+        }
+    }
+
     #[test]
     fn groups_that_match_nothing_contribute_no_rows() {
         let files = vec!["README.md".to_string()];

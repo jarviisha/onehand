@@ -426,7 +426,7 @@ pub struct Composer {
     /// Row highlighted in the popup. Reset whenever the trigger changes so a
     /// stale index cannot survive into a different candidate list.
     selected: usize,
-    /// How many rows the open popup stood at when it opened, so it does not
+    /// How tall the open popup stands, in rows and in headings, so it does not
     /// resize under the hand that is aiming at it.
     ///
     /// **A popup that grows upward moves every row when it changes size.** The
@@ -441,11 +441,14 @@ pub struct Composer {
     /// frame later — growing from one row to eight under a reader who has just
     /// started reading it.
     ///
-    /// So the floor is taken once, when the popup opens, and held until it
-    /// closes. It is a floor and not a fixed height: deleting back to a shorter
-    /// query still lets the list grow again, which is the direction that does
-    /// not move a row out from under anybody — the block extends away from the
-    /// composer, and the rows already drawn stay where they are.
+    /// So it is measured once, when the popup opens, and held until it closes —
+    /// and measured against an **empty** query, so it is the height of the list
+    /// rather than of whatever happens to match. Taken from what was on screen
+    /// it was a floor rather than a height, and held in one direction only:
+    /// narrowing was stable because the floor was already above it, while
+    /// deleting a character broadened the list and the popup grew. Growing is
+    /// the common one, and it is the one that moves a row out from under the
+    /// pointer.
     ///
     /// In rows rather than pixels, because a panel's zoom overrides the rem
     /// base for its subtree and a height snapshotted in pixels would be the one
@@ -745,6 +748,30 @@ impl Composer {
         cx.notify();
     }
 
+    /// How tall this list stands while it is open, in rows and in headings.
+    ///
+    /// **Measured against an empty query, not against what is typed.** The
+    /// height belongs to the *list* — which pool it is drawn from, how many
+    /// groups it has — and not to the query, which changes on every keystroke.
+    /// Taken from what is on screen instead, the popup was stable in one
+    /// direction and not the other: narrowing held, because the floor had
+    /// already been set higher, while deleting a character broadened the list
+    /// and it grew. Growing is the common one, and it moves every row under the
+    /// hand that is aiming at one.
+    ///
+    /// Against the full list the floor can never be exceeded, so the floor is
+    /// the height: filtered rows are a subset of unfiltered ones. A short list
+    /// keeps its own height rather than being padded to the cap — a three
+    /// command agent gets a three row popup, and it is the same three rows
+    /// high whatever is typed into it.
+    fn shape(&self, session: &Entity<ChatSession>, cx: &App) -> (usize, usize) {
+        let (all, _) = self.matches_for("", session, cx);
+        (
+            all.len().min(POPUP_MAX_ROWS as usize),
+            all.iter().filter(|row| row.group.is_some()).count(),
+        )
+    }
+
     /// The rows the `@` or `/` list draws, and how many matches were held back.
     ///
     /// **One builder, read by three callers** — the drawing, the arrow keys'
@@ -760,6 +787,25 @@ impl Composer {
     /// as one that matched fifty, and the file the user is looking for is
     /// missing for no visible reason.
     fn matches(&self, session: &Entity<ChatSession>, cx: &App) -> (Vec<Row>, usize) {
+        let query = self
+            .trigger
+            .as_ref()
+            .map(|t| t.query.as_str())
+            .unwrap_or("");
+        self.matches_for(query, session, cx)
+    }
+
+    /// The same list against a query that is not necessarily the one typed.
+    ///
+    /// The override exists for one caller: the popup asks what this list holds
+    /// with **nothing** typed, because that is the height it should stand at
+    /// for as long as it is open. See [`Self::shape`].
+    fn matches_for(
+        &self,
+        query: &str,
+        session: &Entity<ChatSession>,
+        cx: &App,
+    ) -> (Vec<Row>, usize) {
         let Some(trigger) = &self.trigger else {
             return (Vec::new(), 0);
         };
@@ -772,7 +818,7 @@ impl Composer {
                     &chat.files,
                     &folders,
                     &artifacts,
-                    &trigger.query,
+                    query,
                     MAX_COMPLETION_ROWS,
                 );
                 // The heading is carried by the first row of each run rather
@@ -828,7 +874,7 @@ impl Composer {
             }
             TriggerKind::Command => {
                 let (found, held) =
-                    completion::commands(&chat.commands, &trigger.query, MAX_COMPLETION_ROWS);
+                    completion::commands(&chat.commands, query, MAX_COMPLETION_ROWS);
                 // The heading opens each run, as it does in the mention list,
                 // and for the same reason: hung off the first row of the run,
                 // the index the arrows walk stays made entirely of commands.
@@ -1553,19 +1599,30 @@ impl Composer {
         // not hold a floor taller than the popup is allowed to be.
         // **The candidate source may not have arrived yet.** `@` files are
         // scanned off the UI loop when the session opens, so a mention typed in
-        // the first moments of a conversation has an empty list to snapshot —
-        // and a floor taken from that is zero, which is the popup growing from
-        // nothing a frame later, the one thing the snapshot exists to prevent.
-        // Waiting on an empty source, it opens at its full height instead.
+        // the first moments of a conversation has an empty pool to measure —
+        // and a height taken from that is zero, which is the popup growing from
+        // nothing a frame later. Waiting on an empty source it stands at its
+        // full height instead, and re-measures once the pool arrives.
         let pending = matches!(
             self.trigger.as_ref().map(|trigger| trigger.kind),
             Some(TriggerKind::File)
         ) && session.read(cx).chat.files.is_empty();
-        let headings = rows.iter().filter(|row| row.group.is_some()).count();
-        let (floor, label_floor) = *self.opened_rows.get_or_insert(match pending {
+        // Measured once, on the frame the popup opens, and held until it
+        // closes. Guarded rather than written through `get_or_insert`, whose
+        // argument is evaluated on every call — and the argument here builds
+        // the whole unfiltered list.
+        if self.opened_rows.is_none() && !pending {
+            self.opened_rows = Some(self.shape(session, cx));
+        }
+        // While the pool is still arriving there is nothing to measure, so the
+        // full height stands in and is **not** recorded — recorded, it would be
+        // the height for as long as the popup stayed open, and the list that
+        // landed a frame later would have been measured by its own absence.
+        let (floor, label_floor) = match pending {
             true => (POPUP_MAX_ROWS as usize, 0),
-            false => (rows.len().min(POPUP_MAX_ROWS as usize), headings),
-        });
+            false => self.opened_rows.unwrap_or_default(),
+        };
+        let headings = rows.iter().filter(|row| row.group.is_some()).count();
         // Drawn *inside* the scroll, which is what makes this a floor on the
         // list rather than a height on the popup. A `min_h` on the surface
         // would win over the panel's own bound on a squeezed pane and push the
