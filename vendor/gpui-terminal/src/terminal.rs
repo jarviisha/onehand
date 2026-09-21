@@ -126,12 +126,6 @@ pub struct TerminalState {
 
     /// VTE parser for converting byte streams into terminal actions.
     parser: Processor,
-
-    /// Number of columns in the terminal.
-    cols: usize,
-
-    /// Number of rows (lines) in the terminal.
-    rows: usize,
 }
 
 impl TerminalState {
@@ -190,8 +184,6 @@ impl TerminalState {
         Self {
             term: Arc::new(Mutex::new(term)),
             parser,
-            cols,
-            rows,
         }
     }
 
@@ -258,9 +250,6 @@ impl TerminalState {
     /// terminal.resize(120, 30);
     /// ```
     pub fn resize(&mut self, cols: usize, rows: usize) {
-        self.cols = cols;
-        self.rows = rows;
-
         let mut term = self.term.lock();
 
         // Create dimensions for the resize
@@ -369,13 +358,39 @@ impl TerminalState {
         f(&mut term)
     }
 
+    /// onehand patch: the size the grid is actually drawn at, as one answer.
+    ///
+    /// Read off the grid rather than off fields of our own. The render pass
+    /// resizes through [`Self::term_arc`] -- it holds the lock already, to
+    /// paint the frame it is measuring for -- so a copy kept here was only
+    /// ever right until the first time the panel changed size, and after that
+    /// it answered with whatever the constructor was handed. Every caller
+    /// wants the size the grid is actually drawn at: the pixel-to-cell
+    /// conversion clamps against it, so a stale 24 rows under a taller panel
+    /// pins every click below the 24th row onto that row, and a selection
+    /// stops following the pointer partway down the screen.
+    ///
+    /// Both numbers together, and under one lock, because both callers want
+    /// the pair: asking twice takes a mutex the paint holds while it draws,
+    /// twice, on a path a tracked pointer runs down once a frame.
+    ///
+    /// # Returns
+    ///
+    /// The current `(columns, rows)`.
+    pub fn size(&self) -> (usize, usize) {
+        self.with_term(|term| {
+            let grid = term.grid();
+            (grid.columns(), grid.screen_lines())
+        })
+    }
+
     /// Get the number of columns in the terminal.
     ///
     /// # Returns
     ///
     /// The current number of columns.
     pub fn cols(&self) -> usize {
-        self.cols
+        self.size().0
     }
 
     /// Get the number of rows in the terminal.
@@ -384,7 +399,7 @@ impl TerminalState {
     ///
     /// The current number of rows.
     pub fn rows(&self) -> usize {
-        self.rows
+        self.size().1
     }
 
     /// Get a cloned reference to the underlying terminal Arc.
@@ -474,6 +489,25 @@ mod tests {
             assert_eq!(grid.columns(), 120);
             assert_eq!(grid.screen_lines(), 30);
         });
+    }
+
+    /// onehand patch: the reason [`TerminalState::size`] reads off the grid.
+    ///
+    /// Resized here through the shared `Arc` and deliberately not through
+    /// [`TerminalState::resize`], because that is the route the render pass
+    /// takes and the route that used to leave the reported size behind.
+    #[test]
+    fn size_follows_a_resize_through_the_shared_grid() {
+        let (tx, _rx) = channel();
+        let event_proxy = GpuiEventProxy::new(tx);
+        let terminal = TerminalState::new(80, 24, event_proxy);
+
+        terminal
+            .term_arc()
+            .lock()
+            .resize(TermDimensions::new(100, 72));
+
+        assert_eq!(terminal.size(), (100, 72));
     }
 
     #[test]
