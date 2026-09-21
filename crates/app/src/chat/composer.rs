@@ -996,26 +996,17 @@ impl Composer {
                 // they lead. Their heading names the agent rather than saying
                 // "Commands", which every row under it is — two runs both
                 // labelled by what they contain would be one label repeated.
-                let mut runs = Runs::default();
-                let rows = found
-                    .into_iter()
-                    .map(|c| {
-                        let heading = runs.opening(c.namespace.as_deref().unwrap_or("Built in"));
-                        Row {
-                            label: SharedString::from(c.name),
-                            detail: c.summary.map(SharedString::from),
-                            pick: Pick::Complete(SharedString::from(c.insert)),
-                            label_span: c.name_span,
-                            group: heading,
-                            ..Row::default()
-                        }
-                    })
-                    .collect();
-                // The composer's own controls close the list, under a heading
-                // of their own. Last, because `/` has meant "something the
-                // agent offers" everywhere a user has met it before and that
-                // reading still leads.
-                let mut rows: Vec<Row> = rows;
+                // **The composer's own controls open the list.** They were at
+                // the foot of it, on the reasoning that `/` has meant "a
+                // command the agent offers" everywhere a user has met it
+                // before. What that reasoning missed is who is reading: the
+                // agent's list is long, arrives over the wire and changes
+                // between agents, while this one is five rows that are always
+                // the same and are the only way to reach a control without
+                // knowing which chip it sits behind. A fixed short run is
+                // something a hand learns the position of; put under a list of
+                // unknown length it is somewhere different every time.
+                let mut rows: Vec<Row> = Vec::new();
                 let mut own = act_rows(query, session, cx).into_iter();
                 if let Some(first) = own.next() {
                     rows.push(Row {
@@ -1024,6 +1015,27 @@ impl Composer {
                     });
                     rows.extend(own);
                 }
+                // The heading opens each run, as it does in the mention list,
+                // and for the same reason: hung off the first row of the run,
+                // the index the arrows walk stays made entirely of commands.
+                //
+                // The agent's own commands are the run with no namespace, and
+                // they lead the rest. Their heading names the agent rather than
+                // saying "Commands", which every row under it is — two runs
+                // both labelled by what they contain would be one label
+                // repeated.
+                let mut runs = Runs::default();
+                rows.extend(found.into_iter().map(|c| {
+                    let heading = runs.opening(c.namespace.as_deref().unwrap_or("Built in"));
+                    Row {
+                        label: SharedString::from(c.name),
+                        detail: c.summary.map(SharedString::from),
+                        pick: Pick::Complete(SharedString::from(c.insert)),
+                        label_span: c.name_span,
+                        group: heading,
+                        ..Row::default()
+                    }
+                }));
                 (rows, held)
             }
         }
