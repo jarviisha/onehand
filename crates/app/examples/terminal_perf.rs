@@ -122,6 +122,11 @@ fn sample_frames(handle: gpui::AnyWindowHandle, cx: &mut App) {
                         );
                     }
                     #[cfg(feature = "terminal-profiling")]
+                    {
+                        let rows = gpui_terminal::profiling::row_cache_snapshot();
+                        eprintln!("terminal_cache reused={} rebuilt={}", rows.reused, rows.rebuilt);
+                    }
+                    #[cfg(feature = "terminal-profiling")]
                     if let Some(collector) = frame_trace.as_mut() {
                         for event in collector.collect_unseen() {
                             if let gpui::profiler::FrameEvent::Present(present) = event

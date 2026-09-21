@@ -49,6 +49,7 @@ One window hosts exactly one workspace. The frame is a navigation **rail** plus 
 │  project       │                              │    default)   │
 │   session      │      ┌── composer ──┐        │               │
 │   session      │      └──────────────┘        │               │
+│                │       ⑂ main    ▣ mode       │               │
 │                ├──────────────────────────────┴───────────────┤
 │ ⚙ settings     │        terminal (bottom dock, closed)        │
 └────────────────┴──────────────────────────────────────────────┘
@@ -82,6 +83,21 @@ One window hosts exactly one workspace. The frame is a navigation **rail** plus 
   docks' buttons stay, following the same three-state rule as their keys. No
   panel in the window keeps a tab group; the Workbench's mode strip and the
   terminal's shell strip are each that panel's own chrome.
+- **Standing state sits under the composer, outside its card.** A bare strip
+  with no chrome of its own carries the project's branch on the left and the
+  turn's permission mode on the right. The card is the message being written and
+  everything inside it acts on that message; neither of these does — the branch
+  holds across every session in the project, and the mode outlives the prompt in
+  the field — so a strip resting *under* the card says "this is the standing
+  state" where a fourth control inside the row would have said they were part of
+  what is being typed. **Left is the project, right is the turn**, which is the
+  whole of what says which kind a thing is. Both sides are pressable: the branch
+  is a control and not a label, opening the same kind of menu the rail's project
+  rows do — switch it, rename it, take it to a worktree — because a word that
+  answers *which branch* while refusing *and now what* is the one thing in the
+  row that stops short. Where there is neither — a project that is not a
+  repository, an agent advertising no modes — the strip is not drawn at all,
+  rather than ruled empty.
 - **A project with no conversation open gets a page, not a sentence.** Selecting
   a project that has no session — every freshly added one, and any whose last
   session was closed — fills the centre with that project's name, a *New
@@ -370,7 +386,48 @@ something. A guard fails the build on a button built straight from the library.
 
 What the app *does* own, because it is onehand's and not a widget library's: the
 transcript block renderers (DESIGN-ANSWER.md), the icon registry (§6), the
-terminal panel over the vendored grid, and per-panel zoom.
+terminal panel over the vendored grid, per-panel zoom, and the composer's popup.
+
+**The composer's popup is one shell for every overlay** — the `@` list, the `/`
+list, the three settings pickers and the attachment tray. Same frame, same row
+height, same grouping, same keyboard model, same empty state; only the contents
+of a row differ. Two widgets here drift apart the first time either is touched.
+
+Its shape, and the reason for each part:
+
+- **A pinned title and a pinned footer**, outside the scroll, each ruled on the
+  edge facing the list. Held among the rows, the title scrolled away exactly
+  when the list was long enough to need it, and the footer sat under whatever
+  part-row the scroll stopped on.
+- **The whole-row bound is on the scrolling box**, not on the surface. The
+  surface also carries that chrome, so flooring there left the fold wherever the
+  chrome happened to put it — which is the part-row the flooring exists to
+  prevent.
+- **Height is measured once against an empty query** and held while the popup is
+  open. It belongs to the list, not to what is typed: taken from what was on
+  screen it held while a query narrowed and grew when a character was deleted,
+  and growth moves every row out from under the hand aiming at one.
+- **Rows are grouped under small labels** at the quiet step, carried by the
+  first row of their run rather than standing as rows themselves — so the index
+  the arrows walk is made only of things that can be taken, and a group that
+  matched nothing cannot leave a heading behind.
+- **Three ink steps for three kinds of text**: the name at full strength, its
+  detail a step below (`theme::meta_ink`), the run label at the quiet step. The
+  run a query matched is carried by *weight*, because a name at full strength
+  has nothing above it to climb to.
+- **A popup drawn over a parked card is lifted off it**, leaving the card's
+  bottom edge showing. Flush, the two share a width, a surface and an edge and
+  read as one tall panel; the usual cue is a drop shadow and the library's is
+  invisible on this palette (§4).
+- **A surface covering the conversation claims the wheel.** gpui's handler for a
+  scrolling box adjusts that box's offset and stops there — it never claims the
+  event — so without this the wheel travelled on to the transcript underneath
+  and moved the rows the surface is sitting on top of. The claim goes on the
+  *outer* surface, not on the box that scrolls, so the chrome and the inset
+  swallow it too; the inner box still scrolls, because bubble order runs the
+  deeper listener first. This binds the popup and a parked card. It does **not**
+  bind the composer, which is the one surface down here the transcript *clears*
+  rather than hides behind — nothing is underneath it to be moved out of sight.
 
 ---
 

@@ -13,6 +13,18 @@
 //! weight across the library's chrome and the app's, and an entry here that
 //! duplicates a shape the library already draws spends exactly that.
 //!
+//! **Which is what the `-light` entries spend, deliberately and once.** The
+//! stroke weight lives inside the file and no API reaches it, so a glyph drawn
+//! much larger than the app draws glyphs anywhere else cannot be made lighter
+//! without a second copy of it. The composer's action row is that place: it
+//! letters its icons at 1.25rem where the rest of the app draws them at about
+//! 0.75rem, and the upstream stroke of 2 reads as a marker pen at that size.
+//! What keeps the cost to one place is that the library's own copies stay in
+//! use at every other call site -- so the app carries two weights split by *how
+//! big a glyph is drawn*, which is a rule, rather than by which glyph it is,
+//! which would be taste. A third weight, or a `-light` entry whose call site is
+//! not drawn oversized, is the door reopening.
+//!
 //! The cost of leaning on the library's names is real and worth naming, since
 //! it is paid silently: the library **renames icons when it packages them**
 //! (its `close.svg` is Lucide's `x`, its `dash` is `minus`, and its `delete` is
@@ -86,12 +98,16 @@ impl IconNamed for Icon {
 }
 
 icons! {
+    ArrowUpLight => "arrow-up-light",
     AtSign => "at-sign",
     GitBranch => "git-branch",
     Paperclip => "paperclip",
+    PlusLight => "plus-light",
+    Shield => "shield",
     SquarePen => "square-pen",
     SquareSlash => "square-slash",
     Trash => "trash-2",
+    Zap => "zap",
 }
 
 #[cfg(test)]
@@ -119,6 +135,44 @@ mod tests {
         declared.sort_unstable();
         registered.sort_unstable();
         assert_eq!(registered, declared, "registry and manifest differ");
+    }
+
+    /// The stroke overrides are applied by the sync script, into files this
+    /// repo then ships. Nothing at build time reruns that script, so the shipped
+    /// bytes are the only evidence it ran -- and the one failure mode that
+    /// leaves no trace is a sync performed before the override existed, or a
+    /// weight edited back by hand. Read the files and check.
+    #[test]
+    fn every_stroke_override_names_a_fetched_icon_and_reached_its_file() {
+        let manifest = include_str!("../../../assets/icons/manifest.toml")
+            .parse::<toml::Value>()
+            .expect("icon manifest must be valid TOML");
+        let fetched = manifest["icons"]
+            .as_table()
+            .expect("icon manifest must contain an [icons] table");
+        let Some(strokes) = manifest.get("stroke").and_then(toml::Value::as_table) else {
+            return;
+        };
+        for (name, width) in strokes {
+            assert!(
+                fetched.contains_key(name),
+                "{name} has a stroke override but is not fetched"
+            );
+            let width = width
+                .as_str()
+                .expect("a stroke width is written as a string");
+            let icon = Icon::ALL
+                .iter()
+                .copied()
+                .find(|icon| icon.asset_name() == name)
+                .expect("registry and manifest agree, checked above");
+            let svg = embedded(&format!("onehand/icons/{name}.svg")).expect("embedded");
+            let svg = std::str::from_utf8(svg).expect("an SVG is text");
+            assert!(
+                svg.contains(&format!("stroke-width=\"{width}\"")),
+                "{icon:?} ships at a different weight than the manifest declares"
+            );
+        }
     }
 
     #[test]

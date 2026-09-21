@@ -305,12 +305,104 @@ impl FocusedPanel {
 /// The branch name is not here — it lives in an `InputState` the shell keeps
 /// across dialogs, the way the conversation rename does, so the field and its
 /// change subscription are built once instead of per opening.
-pub struct WorktreeDraft {
-    /// The project being split, held by path rather than by index: this
-    /// outlives its own frames, and a project removed underneath it must not
-    /// hand its index -- and with it a worktree of the wrong repository -- to
-    /// whichever project slides into that slot.
+/// What every form here that runs git and waits for it keeps.
+///
+/// **The three facts, not the whole form.** The two forms below are genuinely
+/// different — a rename has no folder to land in and no repository top to land
+/// beside — so one struct for both would be two forms keeping each other's
+/// fields blank. What they do share is the part that has nothing to do with
+/// either: which project it is about, what went wrong, and whether git is still
+/// working. Written out twice, those three drifted in their wording while
+/// meaning the same thing, and the three moves made on them — open, refuse,
+/// start — were written out twice with them.
+pub struct Draft {
+    /// The project the form is about, held by path rather than by index: a
+    /// draft outlives its own frames, and a project removed underneath it must
+    /// not hand its index — and with it an operation on the wrong repository —
+    /// to whichever project slides into that slot.
     pub root: PathBuf,
+    /// What is wrong: the name rule that refused, or git's own words. Cleared
+    /// by the next keystroke, because the reader has started answering it.
+    pub error: Option<String>,
+    /// Git in flight. Even a short one needs this: a button with no answer at
+    /// all reads as a press that missed.
+    pub busy: bool,
+}
+
+impl Draft {
+    fn new(root: PathBuf) -> Self {
+        Self {
+            root,
+            error: None,
+            busy: false,
+        }
+    }
+
+    /// The complaint, and the form left up to carry it — which is the whole
+    /// reason these forms do not close on the press: this is the one place it
+    /// can be shown against the name that caused it.
+    fn refuse(&mut self, why: impl Into<String>) {
+        self.busy = false;
+        self.error = Some(why.into());
+    }
+
+    /// Handed to git. The last complaint goes with it, or a failed attempt's
+    /// words sit over the attempt now running.
+    fn start(&mut self) {
+        self.error = None;
+        self.busy = true;
+    }
+}
+
+/// The complaint goes, because the keystroke that arrived is the reader
+/// answering it: it was about a name that is already being replaced.
+fn answered<D: std::ops::DerefMut<Target = Draft>>(slot: &mut Option<D>) {
+    if let Some(draft) = slot {
+        draft.error = None;
+    }
+}
+
+/// Put a form away, unless git is mid-anything: a draft that vanished while its
+/// own operation was running would take with it the only thing that can report
+/// how it went. `true` where there was something to dismiss and it went.
+fn dismiss<D: std::ops::Deref<Target = Draft>>(
+    slot: &mut Option<D>,
+    cx: &mut Context<Shell>,
+) -> bool {
+    if slot.as_ref().is_some_and(|draft| draft.busy) {
+        return false;
+    }
+    if slot.take().is_some() {
+        cx.notify();
+        return true;
+    }
+    false
+}
+
+/// A `git branch -m` waiting on a name.
+pub struct BranchDraft {
+    pub form: Draft,
+    /// What the branch is called now, which is what the form is about and what
+    /// its field opens on.
+    pub from: String,
+}
+
+impl std::ops::Deref for BranchDraft {
+    type Target = Draft;
+
+    fn deref(&self) -> &Draft {
+        &self.form
+    }
+}
+
+impl std::ops::DerefMut for BranchDraft {
+    fn deref_mut(&mut self) -> &mut Draft {
+        &mut self.form
+    }
+}
+
+pub struct WorktreeDraft {
+    pub form: Draft,
     /// That project's label, for saying out loud what is being split.
     pub label: String,
     /// The repository the project sits in, which is what git will actually
@@ -327,14 +419,20 @@ pub struct WorktreeDraft {
     /// A folder the user chose to put the worktree under. `None` ⇒ beside the
     /// repository it came from, which is what `onehand_core::worktree` decides.
     pub parent: Option<PathBuf>,
-    /// What is wrong: the name rule that refused, or git's own words about the
-    /// attempt. Cleared by the next keystroke, because the reader has already
-    /// started answering it.
-    pub error: Option<String>,
-    /// A `git worktree add` in flight. It clones a working tree, which on a
-    /// large repository is long enough that a button with no answer reads as a
-    /// press that missed.
-    pub busy: bool,
+}
+
+impl std::ops::Deref for WorktreeDraft {
+    type Target = Draft;
+
+    fn deref(&self) -> &Draft {
+        &self.form
+    }
+}
+
+impl std::ops::DerefMut for WorktreeDraft {
+    fn deref_mut(&mut self) -> &mut Draft {
+        &mut self.form
+    }
 }
 
 pub struct Shell {
@@ -385,6 +483,9 @@ pub struct Shell {
     /// The project being split onto a branch of its own, if that dialog is
     /// open. `Some` is what puts it on screen, the same as the rename above.
     worktree_draft: Option<WorktreeDraft>,
+    branch_draft: Option<BranchDraft>,
+    /// The field the new branch name is typed into.
+    branch_input: Entity<InputState>,
     /// The new branch's name field.
     worktree_branch: Entity<InputState>,
 
@@ -585,6 +686,7 @@ impl Shell {
                         match action {
                             P::TogglePin => shell.toggle_pin(root_idx, window, cx),
                             P::Worktree => shell.begin_worktree(root_idx, window, cx),
+                            P::RenameBranch => shell.begin_branch_rename(window, cx),
                             P::CopyPath => shell.copy_root_path(root_idx, window, cx),
                             P::RefreshGit => shell.refresh_git(cx),
                             P::Remove => shell.remove_root(root_idx, window, cx),
@@ -765,9 +867,23 @@ impl Shell {
             window,
             |shell: &mut Self, _, event: &InputEvent, _, cx| {
                 if matches!(event, InputEvent::Change) {
-                    if let Some(draft) = shell.worktree_draft.as_mut() {
-                        draft.error = None;
-                    }
+                    answered(&mut shell.worktree_draft);
+                    cx.notify();
+                }
+            },
+        )
+        .detach();
+
+        let branch_input =
+            cx.new(|cx| InputState::new(window, cx).placeholder("what the branch is for"));
+        // The complaint above the field is about a name the user has started
+        // replacing, so it goes on the first keystroke that replaces it.
+        cx.subscribe_in(
+            &branch_input,
+            window,
+            |shell: &mut Self, _, event: &InputEvent, _, cx| {
+                if matches!(event, InputEvent::Change) {
+                    answered(&mut shell.branch_draft);
                     cx.notify();
                 }
             },
@@ -786,6 +902,8 @@ impl Shell {
                 InputState::new(window, cx).placeholder("What this conversation is about")
             }),
             worktree_draft: None,
+            branch_draft: None,
+            branch_input,
             worktree_branch,
             dock,
             chat,
@@ -864,16 +982,18 @@ impl Shell {
     /// arriving at a project, pinning one, and a sweep landing — because the
     /// page is a separate panel and nothing about it is re-read per frame.
     fn sync_project_facts(&mut self, cx: &mut Context<Self>) {
-        let Some((pinned, is_repo)) = self
-            .window
-            .workspace
-            .active_root()
-            .map(|root| (root.pinned, self.window.git.contains_key(&root.path)))
-        else {
+        let Some(root) = self.window.workspace.active_root() else {
             return;
         };
-        self.chat
-            .update(cx, |pane, cx| pane.set_project_facts(pinned, is_repo, cx));
+        let status = self.window.git.get(&root.path);
+        let (pinned, is_repo) = (root.pinned, status.is_some());
+        // The same line the rail prints beside the project's name, from core's
+        // own rule rather than composed again here.
+        let line = status.map(|status| gpui::SharedString::from(status.label()));
+        self.chat.update(cx, |pane, cx| {
+            pane.set_project_facts(pinned, is_repo, cx);
+            pane.set_git(line, cx);
+        });
     }
 
     /// Tell the conversation header whether the active root has a shell alive.
@@ -1049,6 +1169,13 @@ impl Shell {
         // because asking to see a session in a project is asking to see the
         // project.
         self.reveal_root();
+        // Every arrival at a project passes through here, whether or not it has
+        // a session on it -- which is what the branch below cannot be, since it
+        // only runs where the project page is what is shown. The strip under
+        // the composer names the project's branch, so a switch that did not
+        // push would leave the previous project's branch under the new
+        // project's conversation until the next sweep landed.
+        self.sync_project_facts(cx);
         let Some(root) = self.window.workspace.active_root() else {
             // No roots at all. The pane has to be told, or removing the last
             // project leaves the centre of the window inviting the user to
@@ -1258,12 +1385,10 @@ impl Shell {
         self.worktree_branch
             .update(cx, |state, cx| state.set_value("", window, cx));
         self.worktree_draft = Some(WorktreeDraft {
-            root: root.clone(),
+            form: Draft::new(root.clone()),
             label,
             top: None,
             parent: None,
-            error: None,
-            busy: false,
         });
         self.worktree_branch.focus_handle(cx).focus(window, cx);
         cx.notify();
@@ -1294,6 +1419,132 @@ impl Shell {
                         draft.top = found;
                         cx.notify();
                     }
+                })
+                .ok();
+        })
+        .detach();
+    }
+
+    /// Open the rename-this-branch form on a project.
+    ///
+    /// Offered on repositories only, like the worktree form and decided the
+    /// same way -- by whether the last sweep found a status for this root, which
+    /// is also where the current name comes from. So it is reached with both
+    /// facts in hand and has no question of its own to ask git.
+    ///
+    /// The field opens on the **name as it is**, unlike the worktree form's,
+    /// which opens empty. That one is naming something that does not exist yet;
+    /// this one is editing something that does, and a blank field would make the
+    /// user retype the part they are keeping to change the part they are not.
+    pub fn begin_branch_rename(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(root) = self.window.workspace.active_root() else {
+            return;
+        };
+        let root = root.path.clone();
+        let Some(from) = self
+            .window
+            .git
+            .get(&root)
+            .map(|status| status.branch.clone())
+        else {
+            return;
+        };
+        self.branch_input
+            .update(cx, |state, cx| state.set_value(&from, window, cx));
+        self.branch_draft = Some(BranchDraft {
+            form: Draft::new(root),
+            from,
+        });
+        self.branch_input.focus_handle(cx).focus(window, cx);
+        cx.notify();
+    }
+
+    pub fn branch_draft(&self) -> Option<&BranchDraft> {
+        self.branch_draft.as_ref()
+    }
+
+    pub fn branch_input(&self) -> &Entity<InputState> {
+        &self.branch_input
+    }
+
+    /// Put the form away, unless git is mid-rename.
+    pub fn cancel_branch_rename(&mut self, cx: &mut Context<Self>) -> bool {
+        dismiss(&mut self.branch_draft, cx)
+    }
+
+    /// Rename the branch, and leave the form up until git answers.
+    ///
+    /// Up, for the reason the worktree form stays up: this is the one place the
+    /// complaint can be shown against the name that caused it, and a dialog that
+    /// closed on the press would have to report the failure as a toast about a
+    /// name the reader can no longer see.
+    ///
+    /// **A name that has not changed closes the form and does nothing.** git
+    /// accepts renaming a branch to what it is already called, so the check is
+    /// not about correctness -- it is that a sweep, a notification and a line in
+    /// the strip flashing for a no-op reads as something having happened.
+    pub fn commit_branch_rename(&mut self, cx: &mut Context<Self>) {
+        let Some(draft) = self.branch_draft.as_ref() else {
+            return;
+        };
+        if draft.busy {
+            return;
+        }
+        let (root, from) = (draft.root.clone(), draft.from.clone());
+        let name = self.branch_input.read(cx).value().trim().to_string();
+        if name == from {
+            self.branch_draft = None;
+            cx.notify();
+            return;
+        }
+        if let Err(why) = worktree::validate_branch(&name) {
+            if let Some(draft) = self.branch_draft.as_mut() {
+                draft.refuse(why.to_string());
+            }
+            cx.notify();
+            return;
+        }
+        if let Some(draft) = self.branch_draft.as_mut() {
+            draft.start();
+        }
+        cx.notify();
+
+        cx.spawn(async move |shell, cx| {
+            let done = {
+                let (root, name) = (root.clone(), name.clone());
+                cx.background_executor()
+                    .spawn(async move { worktree::rename_branch_blocking(&root, &name) })
+                    .await
+            };
+            shell
+                .update_in(cx, |shell: &mut Self, window, cx| {
+                    match done {
+                        Ok(()) => {
+                            // Only the form this was started from, for the
+                            // reason the worktree commit says: the form refuses
+                            // to close while it is working, so in every ordinary
+                            // case this is the one on screen -- and clearing
+                            // whatever happens to be there instead would throw
+                            // away a form somebody had since opened.
+                            shell
+                                .branch_draft
+                                .take_if(|draft| draft.root == root && draft.busy);
+                            // The strip, the rail and the file tree all read the
+                            // branch off the last sweep, so the rename is not on
+                            // screen anywhere until one runs.
+                            shell.refresh_git(cx);
+                            window.push_notification(
+                                Notification::info(format!("Renamed {from} to {name}")),
+                                cx,
+                            );
+                        }
+                        Err(why) => {
+                            if let Some(draft) = shell.branch_draft.as_mut() {
+                                draft.refuse(why);
+                            }
+                        }
+                    }
+                    cx.notify();
                 })
                 .ok();
         })
@@ -1368,12 +1619,7 @@ impl Shell {
     /// would leave that checkout to finish into a workspace with nowhere to put
     /// it -- a folder that appeared on disk, on a branch, belonging to nothing.
     pub fn cancel_worktree(&mut self, cx: &mut Context<Self>) {
-        if self.worktree_draft.as_ref().is_some_and(|draft| draft.busy) {
-            return;
-        }
-        if self.worktree_draft.take().is_some() {
-            cx.notify();
-        }
+        dismiss(&mut self.worktree_draft, cx);
     }
 
     /// Create the worktree, then adopt it as a project root of its own.
@@ -1398,7 +1644,7 @@ impl Shell {
         let branch = self.worktree_branch.read(cx).value().trim().to_string();
         if let Err(why) = worktree::validate_branch(&branch) {
             if let Some(draft) = self.worktree_draft.as_mut() {
-                draft.error = Some(why.to_string());
+                draft.refuse(why.to_string());
             }
             cx.notify();
             return;
@@ -1411,7 +1657,7 @@ impl Shell {
         };
         let root = draft.root.clone();
         let top = draft.top.clone();
-        draft.busy = true;
+        draft.start();
         cx.notify();
 
         cx.spawn(async move |shell, cx| {
@@ -1458,8 +1704,7 @@ impl Shell {
                         }
                         Err(why) => {
                             if let Some(draft) = shell.worktree_draft.as_mut() {
-                                draft.busy = false;
-                                draft.error = Some(why);
+                                draft.refuse(why);
                             }
                         }
                     }
@@ -3194,6 +3439,13 @@ impl Render for Shell {
                 self.worktree_draft
                     .is_some()
                     .then(|| crate::dialogs::new_worktree(self, cx)),
+            )
+            // And again for the same reason: the branch chip's menu is gone by
+            // the time this is on screen.
+            .children(
+                self.branch_draft
+                    .is_some()
+                    .then(|| crate::dialogs::rename_branch(self, cx)),
             )
             .children(sheet_layer)
             .children(dialog_layer)

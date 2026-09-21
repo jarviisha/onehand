@@ -1472,7 +1472,7 @@ fn workspace_identity(
 /// end throws away. Keeping the last characters and marking the cut with a
 /// leading `…` is what makes the line identify a folder rather than name the
 /// drive it happens to sit on.
-fn ellipsize_front(s: &str, max: usize) -> SharedString {
+pub(crate) fn ellipsize_front(s: &str, max: usize) -> SharedString {
     let count = s.chars().count();
     if count <= max {
         return SharedString::from(s.to_string());

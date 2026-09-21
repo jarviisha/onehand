@@ -12,6 +12,7 @@
 //! The caps below are correctness, not tuning.
 
 use super::session::ChatSession;
+use gpui::Focusable as _;
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
     App, Axis, ClickEvent, Entity, HighlightStyle, InteractiveElement, IntoElement, Length,
@@ -23,14 +24,15 @@ use gpui_component::button::{Button, ButtonVariants as _};
 use gpui_component::input::Input;
 use gpui_component::scroll::{ScrollableMask, Scrollbar, ScrollbarMode};
 use gpui_component::text::{TextView, TextViewStyle};
-use gpui_component::{ActiveTheme, Icon, IconName, Selectable as _, Sizable as _, StyledExt};
+use gpui_component::tooltip::Tooltip;
+use gpui_component::{ActiveTheme, Icon, IconName, Sizable as _, StyledExt};
 use onehand_core::acp::{
     ElicitKind, PermissionWeight, PlanStatus, ToolContent, ToolKind, ToolStatus,
 };
 use onehand_core::chat::activity;
 use onehand_core::chat::{
-    AskItem, ChatItem, Md, NoticeLevel, PermItem, PlanItem, Thought, ToolItem, TranscriptItemId,
-    TurnAnswer, UserMsg,
+    AskItem, COMMAND_FOLD_LINES, ChatItem, Md, NoticeLevel, PermItem, PlanItem, Thought, ToolItem,
+    TranscriptItemId, TurnAnswer, UserMsg,
 };
 use onehand_core::diff::Row as DiffRow;
 use std::path::Path;
@@ -132,6 +134,45 @@ const SECTION_TAG_W: Rems = rems(2.5);
 const ACTIVITY_DETAIL_INSET: Rems = rems(1.5);
 /// Width a question's tab label is elided at. Only a *tab* is ever elided.
 const ASK_TAB_W: Rems = rems(8.75);
+/// The numbered circle at the head of a question's tab.
+///
+/// Sized to the digit rather than to the row: a strip of four tabs carries four
+/// of these, and a circle as tall as the label beside it is a bullet the eye
+/// reads before the word it belongs to.
+const ASK_TAB_MARK: Rems = rems(1.125);
+/// The radio or checkbox at the head of a choice row, and the mark inside it
+/// once the choice is taken.
+///
+/// Two numbers because the inner one is not a fraction of the outer: the ring
+/// has a border of its own, and a dot derived from the outside measurement
+/// would grow into it at one size and float inside it at another.
+const ASK_CHOICE_MARK: Rems = rems(1.0);
+const ASK_CHOICE_DOT: Rems = rems(0.5);
+/// The ring around that mark, in pixels and not rems: it is a hairline's job
+/// done a touch heavier, and a hairline is the one measurement in the window
+/// that must not scale with a panel's zoom — doubled, it stops being a line.
+const ASK_MARK_RING: gpui::Pixels = gpui::px(1.5);
+/// The key-hint chip at the end of a choice row: a floor rather than a size, so
+/// a two-digit hint grows sideways instead of overrunning its border.
+const ASK_HINT_SIZE: Rems = rems(1.25);
+const ASK_HINT_PAD: Rems = rems(0.3125);
+/// The height a choice row stands at whatever it holds.
+///
+/// A floor, not a height. The label and the description under it are the
+/// agent's sentences, so the row grows with them; what this answers is the
+/// other end — a row whose label is one word, which shrink-wrapped is a target
+/// half the size of the one below it.
+const ASK_ROW_MIN: Rems = rems(3.25);
+/// The same floor for the free-text row, a step under it: that row is one line
+/// by construction, and standing it at a two-line height would leave a band of
+/// empty surface under an input that is nowhere near filling it.
+const ASK_CUSTOM_ROW_MIN: Rems = rems(2.75);
+/// The height of one tab, which is also the strip's.
+const ASK_TAB_H: Rems = rems(2.25);
+/// Leading for the question itself — looser than a control's and tighter than
+/// prose, because it is one sentence that has to be read once and is as long as
+/// the agent made it.
+const ASK_PROMPT_LEADING: f32 = 1.4;
 /// The marker a pending plan entry draws, in place of an icon.
 const PLAN_DOT: Rems = rems(0.3125);
 /// Height an attached image's preview is bounded to beside a prompt.
@@ -230,11 +271,34 @@ impl RenderOnce for ActivityDetail {
 struct BlockingBody {
     target: TranscriptItemId,
     children: Vec<gpui::AnyElement>,
+    /// Whether the rows are held off the right edge to leave the scrollbar
+    /// thumb a column of its own.
+    gutter: bool,
 }
 
 impl BlockingBody {
     fn new(target: TranscriptItemId, children: Vec<gpui::AnyElement>) -> Self {
-        Self { target, children }
+        Self {
+            target,
+            children,
+            gutter: true,
+        }
+    }
+
+    /// Give the gutter up, so these rows run to the same right edge as whatever
+    /// is drawn beside the box.
+    ///
+    /// **For the one caller whose list continues outside it.** A question's
+    /// free-text answer is the last row of its options and is drawn below this
+    /// box rather than inside it, because it is a control and must not scroll
+    /// away from the card that offers it -- so the gutter made four rows that
+    /// read as one list end at two different edges, which is a mistake rather
+    /// than a margin. What it costs is the case that gutter is for: a question
+    /// with enough options to scroll draws its thumb over the right-hand
+    /// border of a row, which is a hairline crossed rather than a row cut off.
+    fn flush(mut self) -> Self {
+        self.gutter = false;
+        self
     }
 }
 
@@ -257,7 +321,11 @@ impl RenderOnce for BlockingBody {
                 div()
                     .id(("blocking-body-scroll", key))
                     .v_flex()
-                    .gap_1()
+                    // Enough to read the rows as separate things. These are
+                    // bordered boxes, not lines of text, and a quarter-rem
+                    // between two borders is a gap the eye resolves as one
+                    // thick rule with a seam in it.
+                    .gap_2()
                     .w_full()
                     .max_h(MAX_BLOCKING_BODY_H)
                     .overflow_y_scroll()
@@ -266,7 +334,7 @@ impl RenderOnce for BlockingBody {
                     // of its own, so the body is held off the right edge: a
                     // choice's border running underneath the thumb reads as a
                     // row drawn wrong rather than as one that scrolls.
-                    .pr_2()
+                    .when(self.gutter, |body| body.pr_2())
                     .children(self.children),
             )
             // The mask takes vertical wheel input in the capture phase. A bubble
@@ -288,6 +356,9 @@ pub fn item(
     it: &ChatItem,
     target: TranscriptItemId,
     find_emphasis: Option<bool>,
+    // The panel's own height, for the blocks that bound themselves against the
+    // room they have rather than against the window.
+    well: Option<gpui::Pixels>,
     window: &Window,
     cx: &App,
 ) -> impl IntoElement + use<> {
@@ -302,7 +373,7 @@ pub fn item(
         ChatItem::Thought(th) => thought(session, th, target, window, cx).into_any_element(),
         ChatItem::Tool(t) => tool(session, t, target, cx).into_any_element(),
         ChatItem::Plan(p) => plan(session, p, target, cx).into_any_element(),
-        ChatItem::Permission(p) => permission(session, p, target, cx).into_any_element(),
+        ChatItem::Permission(p) => permission(session, p, target, well, cx).into_any_element(),
         ChatItem::Ask(a) => ask(session, a, target, cx).into_any_element(),
         ChatItem::Notice { text, level } => notice(text, *level, cx).into_any_element(),
     };
@@ -1438,76 +1509,658 @@ fn plan(
 /// height, and the padding is what a second line grows by rather than what a
 /// first line needs.
 fn grows(button: Button) -> Button {
-    button.h(Length::Auto).min_h(CONTROL_ROW).py_2()
+    button.small().h(Length::Auto).min_h(CONTROL_ROW).py_1p5()
 }
 
-/// The row a default-sized button is given by the component library.
+/// The floor a control on a blocking card stands at.
 ///
-/// Carried here as a number because the library hard-codes it in its own sizing
-/// branch and offers no way to ask for it — and it is worth matching exactly:
-/// these controls sit a few inches from buttons that kept the fixed row, and a
+/// Carried here as a number because the library hard-codes its row heights in a
+/// sizing branch and offers no way to ask for one — and it is worth matching
+/// exactly, because these controls sit a few inches from the composer's, and a
 /// floor a pixel or two off is a line of controls that no longer agree.
-const CONTROL_ROW: Rems = rems(2.);
+///
+/// It is the library's **small** row and not the default one it used to be. The
+/// composer's own controls all came down to that height, and a card floating an
+/// inch above them with buttons half a rem taller read as a dialog that had
+/// landed there rather than as the next thing in the same column. A blocking
+/// card is loud enough by being the thing everything is waiting on; it does not
+/// also need the biggest buttons on screen.
+const CONTROL_ROW: Rems = rems(1.5);
 
 // ── permission — blocking; the agent parks until answered ───────────────────
+
+/// The surface every card and strip that floats over the composer is built on.
+///
+/// **One function because there are four of them** — a parked permission, a
+/// parked question, an adapter still connecting, a prompt waiting its turn —
+/// and they arrive in one column, stacked, directly above the composer. Written
+/// out four times they came apart exactly where four copies do: two sat on the
+/// reading surface with a hairline and a single radius while the other two
+/// floated on the raised one with a shadow and a doubled radius, so a
+/// permission parked above a queued prompt read as two unrelated things rather
+/// than as the same kind of interruption twice.
+///
+/// It is the **composer's own treatment**, and has to be: these are the boxes
+/// that stack on top of that card and are read as one object with it. The
+/// radius is the theme's named card step for the same reason the composer takes
+/// it — one window drawing its floating surfaces at two corners is a difference
+/// nobody chose.
+///
+/// The shadow stays on a card **drawn back in the transcript once it has been
+/// answered**, which is deliberate and not an oversight. The same element is
+/// used in both places by design — one card that changed on being answered
+/// would read as two different cards — and what it carries into the history is
+/// the mark of the one block that stopped everything until somebody replied.
+pub(super) fn floating_card(cx: &App) -> gpui::Div {
+    div()
+        .w_full()
+        .rounded(cx.theme().radius_lg)
+        .border_1()
+        .border_color(cx.theme().border)
+        // Opaque, and not the reading surface: the transcript runs underneath
+        // these and text showing through a box that is asking a question is the
+        // one place in the app that cannot afford it.
+        .bg(cx.theme().popover.alpha(1.))
+        .shadow_lg()
+}
+
+/// How much of the window an opened command block may take before it scrolls
+/// inside itself.
+///
+/// **A share of the viewport and not a fixed height**, unlike every other
+/// bound in this file: the two things that must stay on screen whatever the
+/// command does are the heading that says what is being asked and the buttons
+/// that answer it, and what is left between them is whatever the window
+/// happens to be tall. A fixed rem bound picked for a laptop leaves half a
+/// large screen unused and pushes the buttons off a small one.
+const COMMAND_OPEN_SHARE: f32 = 0.5;
+/// The block's copy button, and the inset it keeps from the block's corner.
+const COPY_SIZE: Rems = rems(1.75);
+const COPY_ICON: Rems = rems(0.875);
+const BLOCK_INSET: Rems = rems(0.375);
+/// The fold control at the foot of a block, and the fade it sits on.
+const FOLD_ROW: Rems = rems(1.5);
+/// Roughly one mono character at the well's own size — what a line number's
+/// column is measured in, since the gutter has to be as wide as the largest
+/// number and no wider.
+const MONO_ADVANCE: f32 = 0.62;
+/// How tall the command block stands while it is folded.
+///
+/// **The fold is a height, and only then a line count.** Slicing the agent's
+/// newlines is what decides *which* lines are drawn, and it is the predictable
+/// rule for that -- but it cannot bound one line three thousand characters
+/// long, which wraps to a screenful and is still one line. Given the same
+/// height as eight short ones, every command folds to the same box whatever
+/// shape its text is, and the control that opens it is offered on the same
+/// terms.
+const FOLD_H: Rems = rems(CODE_TEXT.0 * CODE_LEADING * COMMAND_FOLD_LINES as f32);
+
+/// The command a permission is asking to run.
+///
+/// **An element of its own because it needs the window.** How far it may open
+/// is a share of the viewport, and the keys that answer the card hang off a
+/// focus handle the window owns — neither is reachable from a plain builder,
+/// and both belong to the one box that holds the command rather than to the
+/// pane four levels up.
+///
+/// What it draws is the agent's text and nothing else: the lines are the
+/// newlines the agent wrote, in the order it wrote them, wrapped where the box
+/// runs out rather than reflowed. A command edited on its way to the screen is
+/// a command approved in one form and run in another.
+#[derive(IntoElement)]
+struct CommandBlock {
+    session: Entity<ChatSession>,
+    target: TranscriptItemId,
+    /// The whole command, which is what Copy hands back whether or not the
+    /// block is folded.
+    command: SharedString,
+    lines: Vec<SharedString>,
+    /// Real lines behind the fold; zero when the block is whole.
+    hidden: usize,
+    /// How tall the panel this is drawn in was last frame, which is what the
+    /// opened block is bounded against. `None` before the list has measured
+    /// itself, where the window is the only answer there is.
+    well: Option<gpui::Pixels>,
+    /// Whether the command has more lines than the block draws unopened, which
+    /// stays true once it has been opened and `hidden` has gone back to zero.
+    /// Asked of the model rather than worked out from `hidden` here: where the
+    /// fold falls is a rule about the command, and a second spelling of it at
+    /// this call site is a second place for it to move.
+    long: bool,
+    total: usize,
+    expanded: bool,
+}
+
+impl RenderOnce for CommandBlock {
+    fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
+        let key = fold_key(self.target);
+        let folded = self.hidden > 0;
+        let long = self.long;
+        // **Always a gutter, on every command.** It was drawn only past the
+        // second line, on the reasoning that a single line has nothing to be
+        // told apart from -- which is true of the numbering and false of
+        // everything else the column does. A block with no gutter is a
+        // different-looking card, and which card a permission gets was decided
+        // by whether the agent happened to put a newline in it: two grants an
+        // inch apart in one transcript, drawn as two kinds of thing, neither of
+        // them the reader's doing. The width is the digits of the count, so the
+        // one-line case costs a single character.
+        let gutter = rems(MONO_ADVANCE * CODE_TEXT.0 * self.total.to_string().len() as f32);
+        // **A share of the panel this is drawn in, not of the window.** What
+        // the bound is for is the card's own heading staying on screen with the
+        // command it belongs to, and the card is in the conversation -- so with
+        // a dock open, half the window is taller than the whole panel and an
+        // opened command pushes *Permission required* off the top, which is the
+        // one thing the share was put here to stop. The window is the fallback
+        // for the frame before the list has measured itself, where it is the
+        // only answer there is.
+        let ceiling =
+            self.well.unwrap_or_else(|| window.viewport_size().height) * COMMAND_OPEN_SHARE;
+        // The command scrolls inside a `gpui::list` row, so it needs a handle
+        // of its own and a mask over it: a bubble listener runs too late there,
+        // the transcript having already spent the same wheel delta scrolling
+        // itself. Without this an opened command is a box the wheel slides the
+        // conversation behind.
+        let scroll = window
+            .use_keyed_state(("perm-command-scroll-state", key), cx, |_, _| {
+                ScrollHandle::default()
+            })
+            .read(cx)
+            .clone();
+        // **Whether the *box* ran out of height, which is not the question the
+        // fold asks.** The fold counts the newlines the agent wrote, and that
+        // is right for a fold: measured in drawn rows instead it would close a
+        // two-line command on a narrow pane and leave a ten-line one open on a
+        // wide one, which is a fold nobody can predict. But a single line three
+        // thousand characters long answers *no* to that question and fills the
+        // well anyway -- so every affordance hung off the fold went away in the
+        // one case where the text runs past the bottom edge with nothing
+        // holding it back. One line, one `curl`, no gutter to number, no lines
+        // held back to unfold, and the reader with no way to tell that what
+        // they can see is not all of it.
+        //
+        // Last frame's, like everything else measured here. The first frame of
+        // a command draws without these and the second has them, which is a
+        // frame nobody can see.
+        let overflows = scroll.max_offset().y > gpui::px(0.);
+        // Text out of sight *below what is drawn*, by either route: lines the
+        // fold is holding back, or a box scrolled somewhere above its own end.
+        let more_below = folded || scroll.max_offset().y - scroll.offset().y.abs() > gpui::px(1.);
+
+        well(cx)
+            .relative()
+            .rounded(cx.theme().radius)
+            .border_1()
+            .border_color(cx.theme().border)
+            .py_2p5()
+            .pl_3()
+            // The copy button's own column, kept clear of the text rather than
+            // laid over it: a button that covers the first line of a command
+            // covers the part of it somebody is most likely to be reading.
+            .pr(COPY_SIZE + BLOCK_INSET + BLOCK_INSET)
+            .child(
+                div()
+                    .id(("perm-command-scroll", key))
+                    .v_flex()
+                    .w_full()
+                    // **Folded, it is a height; opened, it is a share of the
+                    // panel.** Both are bounds on drawn rows rather than on the
+                    // agent's newlines, which is the only kind of bound that
+                    // holds for a command of one very long line -- eight real
+                    // lines of a base64 blob is still a screenful of wrapped
+                    // rows, and one line of it is too.
+                    .max_h(match self.expanded {
+                        true => ceiling,
+                        false => FOLD_H.to_pixels(window.rem_size()).min(ceiling),
+                    })
+                    .overflow_y_scroll()
+                    .track_scroll(&scroll)
+                    .children(self.lines.into_iter().enumerate().map(|(n, line)| {
+                        let row = div().h_flex().items_start().gap_3().w_full();
+                        row.child(
+                            div()
+                                .flex_none()
+                                .w(gutter)
+                                .text_right()
+                                // The numbers are a ruler and have to stay one
+                                // column: wrapped, they would renumber
+                                // themselves down the side of the command.
+                                .whitespace_nowrap()
+                                .text_color(cx.theme().muted_foreground)
+                                .child(format!("{}", n + 1)),
+                        )
+                        .child(
+                            div()
+                                .flex_1()
+                                .min_w_0()
+                                // A blank line in a script is a line, and an
+                                // empty box is no rows tall — which slides
+                                // every number after it up against the wrong
+                                // line of the command.
+                                .child(match line.is_empty() {
+                                    true => SharedString::from(" "),
+                                    false => line,
+                                }),
+                        )
+                    })),
+            )
+            // Over the text and under the copy button, which is added after it:
+            // the mask takes the wheel in the capture phase and nothing else,
+            // so a press still reaches whatever is drawn on top of it.
+            .child(ScrollableMask::new(Axis::Vertical, &scroll).id(("perm-command-mask", key)))
+            .child(
+                crate::controls::action(("perm-copy", key))
+                    .ghost()
+                    .absolute()
+                    .top(BLOCK_INSET)
+                    .right(BLOCK_INSET)
+                    .size(COPY_SIZE)
+                    .icon(Icon::new(IconName::Copy).size(COPY_ICON))
+                    .tooltip("Copy the whole command")
+                    // **Drawn on every command, never waiting to be hovered.**
+                    // It was hidden until the pointer arrived on anything short,
+                    // as one more thing beside a command that fits whole -- but
+                    // a control that appears under the pointer is a control
+                    // nobody finds who was not already reaching for it, and this
+                    // is the card where the text is most likely to be wanted
+                    // somewhere else: read elsewhere, pasted into a shell, kept
+                    // for the record of what was approved. A command that
+                    // scrolls cannot be selected out by dragging either, since
+                    // the drag that reaches its end is the drag that moves the
+                    // box.
+                    .on_click(move |_, _, cx: &mut App| {
+                        cx.write_to_clipboard(gpui::ClipboardItem::new_string(
+                            self.command.to_string(),
+                        ));
+                    }),
+            )
+            // **What says the command does not end where the box does**, and it
+            // answers that question rather than the fold's. Lines held back
+            // behind a fold and a box scrolled short of its own end are the
+            // same fact to a reader, and the second of them used to draw
+            // nothing at all -- the justification being that a scrollbar was
+            // already saying it, which was true of the blocking body beside
+            // this and never of this. It goes as soon as the end is reached, so
+            // it is never a gradient laid over the last line of a command
+            // somebody is being asked to approve.
+            .when(more_below, |block| {
+                block.child(
+                    div()
+                        .absolute()
+                        .bottom_0()
+                        .left_0()
+                        .right_0()
+                        .h(FOLD_ROW + FOLD_ROW)
+                        .bg(gpui::linear_gradient(
+                            180.,
+                            gpui::linear_color_stop(cx.theme().muted.alpha(0.), 0.),
+                            gpui::linear_color_stop(cx.theme().muted, 0.75),
+                        )),
+                )
+            })
+            // Drawn over the fade rather than under it, and **only once the
+            // block has been opened**. Folded, the way to the rest of the
+            // command is the control at the corner and the scrollbar would be a
+            // second, quieter answer to the same question -- one that moves the
+            // text without ever saying how much there is. Opened, it is the only
+            // thing that says how far this runs.
+            .when(overflows && self.expanded, |block| {
+                block.child(Scrollbar::vertical(&scroll).mode(ScrollbarMode::Always))
+            })
+            // **Offered wherever anything is out of sight, by either route.**
+            // Lines the fold is holding back and a box that has run out of
+            // height are the same fact to a reader, and gating this on the line
+            // count alone left a command of one very long line with no way to
+            // open it at all. Where nothing is hidden there is still no control,
+            // for the reason there never was: a fold that reveals nothing is a
+            // button that has to be pressed to learn it does nothing.
+            .when(
+                more_below || self.expanded && (long || overflows),
+                |block| {
+                    block.child(
+                        crate::controls::action(("perm-fold", key))
+                            .ghost()
+                            .absolute()
+                            .bottom(BLOCK_INSET)
+                            .right(BLOCK_INSET)
+                            .h(FOLD_ROW)
+                            .px_2()
+                            .rounded(cx.theme().radius)
+                            // On its own plate, because it sits over the end of
+                            // the command: the fade underneath it is the text
+                            // it would otherwise be read against.
+                            .bg(cx.theme().muted)
+                            // The count is what there is more *of*, so it is
+                            // said only where lines are what is being held
+                            // back. A single line that wraps to a screenful has
+                            // no second line to promise, and *Show all · 1
+                            // lines* counts the wrong thing and miscounts it.
+                            .label(match (self.expanded, self.total > 1) {
+                                (true, _) => "Show less".to_string(),
+                                (false, true) => format!("Show all · {} lines", self.total),
+                                (false, false) => "Show all".to_string(),
+                            })
+                            .on_click({
+                                let (session, target) = (self.session, self.target);
+                                move |_, _, cx: &mut App| {
+                                    session.update(cx, |s, cx| {
+                                        s.chat.toggle_permission(target);
+                                        cx.notify();
+                                    });
+                                }
+                            }),
+                    )
+                },
+            )
+    }
+}
+
+/// The path a permission's command would run in, shortened from the front.
+///
+/// **From the front, because a path is read from its tail**: the last
+/// components are what tell two checkouts of one project apart, and they are
+/// exactly what trimming the end throws away. The whole of it is in the
+/// tooltip, so the line identifies the directory and the hover confirms it.
+fn command_cwd(root: &Path) -> Option<(SharedString, SharedString)> {
+    let full = root.to_string_lossy().into_owned();
+    if full.is_empty() {
+        return None;
+    }
+    // `~` where the home directory is: a line that is mostly somebody's user
+    // name is a line spent saying where the machine keeps its accounts.
+    let shown = std::env::home_dir()
+        .and_then(|home| root.strip_prefix(&home).ok())
+        .map(|rest| format!("~/{}", rest.to_string_lossy()))
+        .unwrap_or_else(|| full.clone());
+    Some((
+        crate::rail::ellipsize_front(&shown, MAX_CWD),
+        SharedString::from(full),
+    ))
+}
+
+/// Characters of the working directory the meta line carries.
+const MAX_CWD: usize = 48;
 
 pub(super) fn permission(
     session: &Entity<ChatSession>,
     p: &PermItem,
     target: TranscriptItemId,
+    well: Option<gpui::Pixels>,
     cx: &App,
 ) -> impl IntoElement + use<> {
     let idx = live_index(target);
+    let (shown, hidden) = p.shown_lines();
+    let block = CommandBlock {
+        session: session.clone(),
+        target,
+        command: SharedString::from(p.command().to_string()),
+        lines: shown
+            .into_iter()
+            .map(|l| SharedString::from(l.to_string()))
+            .collect(),
+        hidden,
+        well,
+        long: p.is_long(),
+        total: p.command_lines().len().max(1),
+        expanded: p.expanded,
+    };
+    // The only word the protocol offers about *what* is being asked for. An
+    // unrecognised kind has no word, so the slot stays empty rather than
+    // printing one this build made up.
+    let kind = (p.req.kind != ToolKind::Other).then(|| tool_label(p.req.kind));
+    let cwd = command_cwd(&session.read(cx).chat.root);
 
-    div()
+    floating_card(cx)
         .v_flex()
-        .gap_2()
-        .w_full()
-        .p_3()
-        .bg(cx.theme().background)
-        .rounded(cx.theme().radius)
-        .border_1()
-        .border_color(cx.theme().border)
+        // The card's own padding goes to the rows inside it, because the
+        // footer's rule has to run edge to edge and a rule inside a padded box
+        // stops short of the corners it is squaring off. The corners clip for
+        // the other half of that: without it the rule ends in a square nib a
+        // pixel outside the rounded edge above it.
+        .p_0()
+        .overflow_hidden()
         .child(
             div()
                 .h_flex()
-                .gap_2()
                 .items_center()
+                .justify_between()
+                .gap_2()
+                .w_full()
+                .px_4()
+                .pt_3()
                 .child(
-                    Icon::new(IconName::TriangleAlert)
-                        .size_4()
-                        .text_color(crate::theme::status_ink(cx).warning),
+                    div()
+                        .h_flex()
+                        .items_center()
+                        .gap_2()
+                        .flex_1()
+                        .min_w_0()
+                        .child(
+                            Icon::new(IconName::TriangleAlert)
+                                .size_4()
+                                .flex_none()
+                                .text_color(crate::theme::status_ink(cx).warning),
+                        )
+                        // **The weight and the mark carry it, not the size.**
+                        // This and the question card are the two blocks where
+                        // nothing proceeds until the user acts, and they were
+                        // set at the answer's own size to say so. What that
+                        // bought was a heading that was the largest text on
+                        // screen over the largest controls on screen, floating
+                        // an inch above a composer where everything had come
+                        // down a step.
+                        .child(
+                            div()
+                                .flex_1()
+                                .min_w_0()
+                                .truncate()
+                                .text_sm()
+                                .font_semibold()
+                                .child("Permission required"),
+                        ),
                 )
-                // Left at the answer's size while every other agent-side card
-                // stepped down to the chrome size, and that gap is the point:
-                // this and the question below are the only two blocks where
-                // nothing at all proceeds until the user acts, so they are the
-                // only two allowed to speak as loudly as the conversation.
-                .child(div().font_semibold().child("Permission required")),
+                // What kind of work it is, opposite the heading — the same
+                // slot and the same voice the question card puts its counter
+                // in, because the two cards are read as one family and this is
+                // the corner a reader has already learned to check.
+                .children(kind.map(|word| {
+                    div()
+                        .flex_none()
+                        .text_xs()
+                        .text_color(cx.theme().muted_foreground)
+                        .child(word)
+                })),
         )
-        .child(BlockingBody::new(
-            target,
-            vec![mono_well(&p.req.title, MAX_MONO_LINES, cx).into_any_element()],
-        ))
+        .child(
+            div()
+                .v_flex()
+                .gap_2()
+                .w_full()
+                .px_4()
+                .pt_3()
+                .pb_3p5()
+                .child(block)
+                .children(cwd.map(|(shown, full)| {
+                    div()
+                        .id(("perm-cwd", fold_key(target)))
+                        .w_full()
+                        .truncate()
+                        .text_xs()
+                        .text_color(cx.theme().muted_foreground)
+                        .child(format!("in {shown}"))
+                        .tooltip(move |window, cx| Tooltip::new(full.clone()).build(window, cx))
+                })),
+        )
         .map(|card| match (&p.resolved, idx) {
             // Resolved, or living in read-only history where no rpc id is
             // answerable: what is drawn is the record of what was decided, not
             // controls that could still decide it.
-            (Some(choice), _) => card.child(
-                div()
-                    .text_xs()
-                    .text_color(cx.theme().muted_foreground)
-                    .child(format!("✓ {choice}")),
+            (Some(choice), _) => card
+                .child(div().w_full().h_px().bg(cx.theme().border))
+                .child(
+                    div()
+                        .h_flex()
+                        .items_center()
+                        .gap_1p5()
+                        .w_full()
+                        .px_4()
+                        .py_2()
+                        .text_xs()
+                        .text_color(cx.theme().muted_foreground)
+                        .child(Icon::new(IconName::Check).size_3())
+                        .child(choice.clone()),
+                )
+                .into_any_element(),
+            (None, None) => card.into_any_element(),
+            (None, Some(idx)) => permission_keys(
+                card.child(permission_footer(session, p, idx, cx)),
+                session,
+                p,
+                idx,
+                cx,
             ),
-            (None, None) => card,
-            (None, Some(idx)) => card.child(
-                div().h_flex().gap_2().justify_end().w_full().children(
-                    p.req
-                        .options
-                        .iter()
-                        .enumerate()
-                        .map(|(i, option)| {
+        })
+}
+
+/// Enter allows once, Esc denies — and only while the card holds the caret.
+///
+/// **Taken on the card's own handle rather than bound as app actions**, which
+/// is what the question card does and for the same reason: both keys are ones
+/// somebody is as likely to be pressing in the composer an inch below, and an
+/// app binding would reach over it exactly the way the panel shortcuts are
+/// meant to.
+///
+/// Which option either key means is [`onehand_core::acp::PermissionWeight`]
+/// and never the position in the list: an agent is free to send its grants in
+/// any order, and a key that answered by position would grant *always* on a
+/// card that happened to list it first. An option no card offers is no key at
+/// all, since there is nothing to send.
+fn permission_keys(
+    card: gpui::Div,
+    session: &Entity<ChatSession>,
+    p: &PermItem,
+    idx: usize,
+    cx: &App,
+) -> gpui::AnyElement {
+    let Some(focus) = session.read(cx).perm_focus(idx).cloned() else {
+        return card.into_any_element();
+    };
+    let pick = |weight: PermissionWeight| {
+        p.req
+            .options
+            .iter()
+            .find(|option| option.weight() == weight)
+            .map(|option| option.id.clone())
+    };
+    let (allow, deny) = (
+        pick(PermissionWeight::AllowOnce),
+        pick(PermissionWeight::Deny),
+    );
+    let session = session.clone();
+    let card_focus = focus.clone();
+    card.id(("perm-card", idx))
+        .track_focus(&focus)
+        .on_key_down(move |event, window, cx| {
+            let keystroke = &event.keystroke;
+            // A modified key is somebody else's: Ctrl+1 switches sessions and
+            // Shift+Enter is a newline in whatever holds the caret.
+            if keystroke.modifiers.modified() {
+                return;
+            }
+            let chosen = match keystroke.key.as_str() {
+                // **Only while the card itself holds the caret**, which is the
+                // question card's rule and matters more here. Every button in
+                // the footer is a library `Button`, and a focused one already
+                // turns Enter into its own click -- so answering here as well
+                // races it, and this listener runs first because a click is
+                // settled on the key going *up*. Somebody who has tabbed to
+                // Deny and pressed Enter would have granted the call: the grant
+                // lands, and Deny's own click arrives afterwards to find the
+                // permission already answered and is dropped. Unguarded, the
+                // key that means no is how yes gets said.
+                "enter" if card_focus.is_focused(window) => allow.as_deref(),
+                "enter" => None,
+                // Esc is safe in the other direction and needs no such guard:
+                // no button on this card denies by being focused, and the worst
+                // it can do is refuse a call twice.
+                "escape" => deny.as_deref(),
+                _ => None,
+            };
+            if let Some(option) = chosen {
+                answer_permission(&session, idx, option, cx);
+            }
+        })
+        .into_any_element()
+}
+
+/// The strip that answers the card.
+///
+/// **A strip of its own over a rule that spans the card**, which is the
+/// question card's footer drawn again and deliberately so: both end the one
+/// block everything is waiting on, and left inside the body's padding the
+/// buttons read as the last row of the card rather than as what closes it.
+///
+/// **The buttons wrap before a label is cut.** A narrow pane drops the key
+/// hints first — they name keys that still work — and then lets the row fold
+/// onto a second, still right-aligned line. A truncated *Always allow* is a
+/// grant nobody can read the reach of, which is the one thing on this card
+/// that must never happen.
+fn permission_footer(
+    session: &Entity<ChatSession>,
+    p: &PermItem,
+    idx: usize,
+    cx: &App,
+) -> impl IntoElement + use<> {
+    // Deny first and the narrowest grant last, against the reading direction
+    // of the sentence: the button under the thumb at the end of the row is the
+    // one that expires with this call, and the widest grant never sits there.
+    let mut options: Vec<(usize, &onehand_core::acp::PermissionOption)> =
+        p.req.options.iter().enumerate().collect();
+    options.sort_by_key(|(_, option)| match option.weight() {
+        PermissionWeight::Deny => 0,
+        PermissionWeight::AllowAlways => 1,
+        PermissionWeight::AllowOnce => 2,
+    });
+
+    div()
+        .v_flex()
+        .w_full()
+        .child(div().w_full().h_px().bg(cx.theme().border))
+        .child(
+            div()
+                .h_flex()
+                .items_center()
+                .justify_between()
+                .flex_wrap()
+                .gap_2()
+                .w_full()
+                .px_4()
+                .py_2p5()
+                .child(
+                    div()
+                        // The first thing to give way when the row runs out of
+                        // room, because the keys it names keep working whether
+                        // or not they are printed. Squeezed to nothing, the
+                        // buttons wrap onto a line of their own rather than
+                        // losing a character of a label.
+                        .flex_shrink(1.)
+                        .min_w_0()
+                        .truncate()
+                        .text_xs()
+                        .text_color(cx.theme().muted_foreground)
+                        .child("Enter allow · Esc deny"),
+                )
+                .child(
+                    div()
+                        .h_flex()
+                        .items_center()
+                        .justify_end()
+                        .flex_wrap()
+                        .gap_2()
+                        .flex_none()
+                        .children(options.into_iter().map(|(i, option)| {
                             let (id, session) = (option.id.clone(), session.clone());
+                            let weight = option.weight();
                             grows(crate::controls::action(("perm", i)))
                                 // One primary per card, and it is the grant
                                 // that expires with this call. "Always allow"
@@ -1517,24 +2170,31 @@ pub(super) fn permission(
                                 // it is the one that cannot be taken back from
                                 // the card. It stays reachable, in the neutral
                                 // outline — a decision, not a reflex.
-                                .map(|b| match option.weight() {
+                                .map(|b| match weight {
                                     PermissionWeight::AllowOnce => b.primary(),
                                     PermissionWeight::AllowAlways => b.outline(),
                                     PermissionWeight::Deny => b.ghost(),
                                 })
                                 .label(option.name.clone())
                                 .on_click(move |_, _, cx: &mut App| {
-                                    session.update(cx, |s, cx| {
-                                        s.chat.answer_permission(idx, &id);
-                                        cx.notify();
-                                    });
+                                    answer_permission(&session, idx, &id, cx);
                                 })
-                                .into_any_element()
-                        })
-                        .collect::<Vec<_>>(),
+                        })),
                 ),
-            ),
-        })
+        )
+}
+
+/// Settle the card at `idx` on `option`.
+///
+/// One function behind the buttons and the keys for the reason the question
+/// card has one: they are the same decision, and a second copy is where a key
+/// comes to answer a card the click would have refused.
+fn answer_permission(session: &Entity<ChatSession>, idx: usize, option: &str, cx: &mut App) {
+    let option = option.to_string();
+    session.update(cx, |s, cx| {
+        s.chat.answer_permission(idx, &option);
+        cx.notify();
+    });
 }
 
 // ── the agent asking a question (`AskUserQuestion` / an MCP form) ───────────
@@ -1546,71 +2206,373 @@ pub(super) fn ask(
     cx: &App,
 ) -> impl IntoElement + use<> {
     let idx = live_index(target);
+    let live = idx.is_some() && a.resolved.is_none();
+    let counter = (live && a.req.fields.len() > 1).then(|| {
+        format!(
+            "Question {} of {}",
+            a.active_field() + 1,
+            a.req.fields.len()
+        )
+    });
 
-    div()
+    floating_card(cx)
         .v_flex()
-        .gap_2()
-        .w_full()
-        .p_3()
-        .bg(cx.theme().background)
-        .rounded(cx.theme().radius)
-        .border_1()
-        .border_color(cx.theme().border)
+        .p_0()
+        // **The card's own padding goes to the rows inside it.** The heading
+        // and the tab strip are separated by a rule that has to run edge to
+        // edge, and a rule inside a padded box stops short of the corners it is
+        // squaring off -- which reads as a line somebody drew rather than as
+        // the edge of a region.
+        //
+        // The corners clip what is inside them for the same reason from the
+        // other end: the strip's hairline and the footer's both run the full
+        // width, so without it each ends in a square nib a pixel outside the
+        // rounded edge above it.
+        .overflow_hidden()
         .child(
             div()
                 .h_flex()
-                .gap_2()
                 .items_center()
+                .gap_2()
+                .w_full()
+                .px_4()
+                .pt_3()
                 .child(Icon::new(IconName::Info).size_4())
-                .child(div().font_semibold().child(a.req.message.clone())),
+                .child(
+                    div()
+                        .flex_1()
+                        .min_w_0()
+                        .truncate()
+                        .text_sm()
+                        .font_semibold()
+                        .child(a.req.message.clone()),
+                )
+                // Where the reader is in the form, in words, because the tab
+                // strip says which question is open but not how many are left:
+                // three numbered tabs read as three steps only once you have
+                // counted them.
+                .children(counter.map(|line| {
+                    div()
+                        .flex_none()
+                        .text_xs()
+                        .text_color(cx.theme().muted_foreground)
+                        .child(line)
+                })),
         )
         .map(|card| match (&a.resolved, idx) {
-            (Some(answer), _) => card.child(
-                div()
-                    .text_xs()
-                    .text_color(cx.theme().muted_foreground)
-                    .child(format!("✓ {answer}")),
-            ),
+            (Some(answer), _) => card
+                .child(
+                    div()
+                        .h_flex()
+                        .items_center()
+                        .gap_1p5()
+                        .px_4()
+                        .py_2()
+                        .text_xs()
+                        .text_color(cx.theme().muted_foreground)
+                        .child(Icon::new(IconName::Check).size_3())
+                        .child(answer.clone()),
+                )
+                .into_any_element(),
             // A question replayed from the archive carries an rpc id no running
             // adapter issued: showing controls would invite an answer nobody
             // is waiting for.
-            (None, None) => card,
+            (None, None) => card.into_any_element(),
             (None, Some(idx)) => ask_form(card, session, a, target, idx, cx),
+        })
+}
+
+/// Take one row of the question showing at `field`.
+///
+/// **One function behind the click and the key**, because they are the same
+/// gesture: a row aimed at with the pointer and a row walked to with the arrows
+/// both end in the same answer, and two copies of "what picking does" is how a
+/// number key comes to leave the typed answer sitting in a box the click would
+/// have emptied.
+fn ask_take(
+    session: &Entity<ChatSession>,
+    idx: usize,
+    field: usize,
+    row: onehand_core::chat::AskRow,
+    quick: bool,
+    window: &mut Window,
+    cx: &mut App,
+) {
+    use onehand_core::chat::AskRow;
+
+    match row {
+        // The typed answer is a row of the list, so reaching it is reaching its
+        // box: the keyboard hands the caret over rather than answering for the
+        // user, which is the one row that cannot be settled by arriving at it.
+        AskRow::Custom => {
+            let state = session.read(cx).ask_input(idx, field).cloned();
+            if let Some(state) = state {
+                let handle = state.read(cx).focus_handle(cx);
+                window.focus(&handle, cx);
+                session.update(cx, |s, cx| {
+                    if let Some(item) = s.chat.ask_at_mut(idx) {
+                        item.cursor = item.row_count(field).saturating_sub(1);
+                    }
+                    cx.notify();
+                });
+            }
+        }
+        AskRow::Choice(option) => session.update(cx, |s, cx| {
+            // Picking is the user choosing the agent's wording over their own,
+            // so the box goes with it -- model and widget together, since
+            // neither clears the other.
+            s.clear_ask_input(idx, field, window, cx);
+            if let Some(item) = s.chat.ask_at_mut(idx) {
+                item.toggle(field, option);
+                item.cursor = option;
+            }
+            // A one-question single-select has nothing left to decide, so it
+            // commits on the press.
+            if quick {
+                s.chat.answer_ask(idx, false);
+            }
+            cx.notify();
+        }),
+    }
+}
+
+/// Pass on the question showing at `field`, and settle the form if it was the
+/// last one.
+///
+/// What is sent then is whatever the *other* questions hold: a form skipped
+/// through to the end with nothing filled in is a refusal, and one with answers
+/// above the skipped question is those answers. Declining a form that carries
+/// work already done would throw it away at the last press.
+fn ask_skip(
+    session: &Entity<ChatSession>,
+    idx: usize,
+    field: usize,
+    window: &mut Window,
+    cx: &mut App,
+) {
+    session.update(cx, |s, cx| {
+        s.clear_ask_input(idx, field, window, cx);
+        let done = s
+            .chat
+            .ask_at_mut(idx)
+            .is_none_or(|item| item.skip_field(field));
+        if done {
+            let answered = s.chat.ask_at_mut(idx).is_some_and(|item| item.has_answer());
+            s.chat.answer_ask(idx, !answered);
+        }
+        cx.notify();
+    });
+}
+
+/// Move the form on from `field`, or submit it where that was the last
+/// question.
+fn ask_advance(session: &Entity<ChatSession>, idx: usize, field: usize, cx: &mut App) {
+    session.update(cx, |s, cx| {
+        let last = s.chat.ask_at_mut(idx).is_none_or(|item| {
+            let last = item.is_last(field);
+            if !last {
+                item.go_to(field + 1);
+            }
+            last
+        });
+        if last {
+            s.chat.answer_ask(idx, false);
+        }
+        cx.notify();
+    });
+}
+
+/// The highest row a single digit reaches, and so the last one that is offered
+/// a key at all.
+///
+/// **The handler reads one keystroke, not a typed number.** There is nowhere to
+/// hold a half-entered figure and nothing that could say when one had ended, so
+/// a row past the ninth has no key and must not be drawn carrying one. Printed
+/// anyway, `10` was a hint for a press that cannot be made — and worse than
+/// inert on the card that answers as soon as a row is taken, where reaching for
+/// it lands on `1` and commits the first choice instead.
+const ASK_KEY_ROWS: usize = 9;
+
+/// The key hint at the right-hand end of a row, and the number that reaches it.
+///
+/// **A row a keyboard can reach says so on the row.** The hints at the foot of
+/// the card name the arrows and Enter, which is the walk; this is the jump, and
+/// a jump has to be to something the user can already see a name for. It is
+/// held off shrinking because it is two characters at most and the words beside
+/// it are the agent's -- a paragraph of description would otherwise squeeze the
+/// one part of the row that is fixed-length.
+///
+/// `None` past the ninth row, which is a row with no key rather than a row with
+/// an unusable one: nothing is drawn, and the words beside it take the space.
+fn ask_key_hint(n: usize, cx: &App) -> Option<impl IntoElement + use<>> {
+    if n > ASK_KEY_ROWS {
+        return None;
+    }
+    Some(ask_key_mark(n, cx))
+}
+
+fn ask_key_mark(n: usize, cx: &App) -> impl IntoElement + use<> {
+    div()
+        .flex_none()
+        .min_w(ASK_HINT_SIZE)
+        .h(ASK_HINT_SIZE)
+        .px(ASK_HINT_PAD)
+        .h_flex()
+        .items_center()
+        .justify_center()
+        .rounded(cx.theme().radius)
+        .border_1()
+        .border_color(cx.theme().border)
+        .text_xs()
+        .text_color(cx.theme().muted_foreground)
+        .child(format!("{n}"))
+}
+
+/// One numbered step of the tab strip.
+///
+/// **The number is the point, until the question has an answer.** A strip of
+/// titles says these are three things; a strip of *numbered* titles says they
+/// are three things in an order, with a first and a last -- which is the only
+/// question a reader has about a form they are partway through. Once a question
+/// is answered its number has done that job and the tick replaces it: what is
+/// left to do is then readable as the tabs still carrying digits, without
+/// counting anything. The two never show together, because one 18px circle
+/// holds one mark.
+fn ask_tab_mark(index: usize, active: bool, answered: bool, cx: &App) -> impl IntoElement + use<> {
+    let (fill, ink) = match (active, answered) {
+        // Open: the strongest of the three, because it is the one the choices
+        // below belong to.
+        (true, _) => (cx.theme().primary, cx.theme().primary_foreground),
+        // Answered and not open: filled, quietly, so what is left to do is
+        // readable as the ones that are *not* filled.
+        (false, true) => (cx.theme().accent, cx.theme().accent_foreground),
+        (false, false) => (cx.theme().transparent, cx.theme().muted_foreground),
+    };
+    div()
+        .flex_none()
+        .size(ASK_TAB_MARK)
+        .rounded_full()
+        .bg(fill)
+        .when(!active && !answered, |mark| {
+            mark.border_1().border_color(cx.theme().border)
+        })
+        .h_flex()
+        .items_center()
+        .justify_center()
+        .text_xs()
+        .text_color(ink)
+        .map(|mark| match answered {
+            true => mark.child(Icon::new(IconName::Check).size_3()),
+            false => mark.child(format!("{}", index + 1)),
+        })
+}
+
+/// The mark at the head of a choice row.
+///
+/// Round for a single-select and square for a multi-select, which is the one
+/// convention this app inherits rather than invents: a reader who has met a
+/// form before already knows that a circle means *instead of* and a box means
+/// *as well as*, and nothing else on the row says it. Drawn from two divs
+/// rather than an icon because the bundled set has neither shape as a control
+/// -- its `circle-check` is an outcome, not a thing waiting to be chosen.
+///
+/// **Its ring is ink and not the hairline**, which is the difference between a
+/// control and an edge. Drawn in the hairline it vanished the moment the row
+/// was hovered: a ghost button's hover fill is derived from the same step of
+/// the ramp the hairline sits on, so in the dark palette the two land within a
+/// shade of each other and the ring is painted onto its own background. A mark
+/// that disappears under the pointer disappears exactly when it is being aimed
+/// at.
+fn ask_choice_mark(on: bool, single: bool, cx: &App) -> impl IntoElement + use<> {
+    div()
+        .flex_none()
+        .size(ASK_CHOICE_MARK)
+        .h_flex()
+        .items_center()
+        .justify_center()
+        // Half a pixel over the hairline everything else on the card is drawn
+        // with, which is the whole of the difference between an edge and a
+        // control: this ring is the thing being aimed at, and at one pixel it
+        // reads as the seam of the row rather than as the mark inside it.
+        .border(ASK_MARK_RING)
+        .border_color(match on {
+            true => cx.theme().primary,
+            false => cx.theme().muted_foreground,
+        })
+        .map(|mark| match single {
+            true => mark.rounded_full(),
+            false => mark.rounded(cx.theme().radius),
+        })
+        .when(on, |mark| {
+            mark.child(
+                div()
+                    .size(ASK_CHOICE_DOT)
+                    .bg(cx.theme().primary)
+                    .map(|dot| match single {
+                        true => dot.rounded_full(),
+                        false => dot.rounded_sm(),
+                    }),
+            )
         })
 }
 
 /// The live form.
 ///
-/// **One question at a time.** A multi-question form renders as a tab strip
-/// with only the active field's choices below it: stacking every question made
-/// the card taller than the pane and the overflow was lost off the top
-///. A single single-select form is the *quick* shape —
-/// clicking a choice answers on the spot, with no Submit to hunt for.
+/// **One question at a time.** A multi-question form renders as a numbered tab
+/// strip with only the active field's choices below it: stacking every question
+/// made the card taller than the pane and the overflow was lost off the top. A
+/// single single-select form is the *quick* shape — clicking a choice answers
+/// on the spot, with no Submit to hunt for.
 ///
-/// Picking in a multi-question form **walks itself on** to the next open
-/// question, so the tab strip is there to go back and check an answer rather
-/// than to be aimed at once per question.
-fn ask_form(
-    card: gpui::Div,
-    session: &Entity<ChatSession>,
-    a: &AskItem,
-    target: TranscriptItemId,
+/// **The forward button is what moves the form on**, not the pick. A
+/// single-select press used to walk itself to the next open question, on the
+/// reasoning that answering one question is asking for the next; what that cost
+/// once the card grew a footer is the button in it — a form that has already
+/// moved on leaves *Next* pointing at a question the user is now looking at, so
+/// the one control the footer exists to offer is the one control there is never
+/// a moment to press. The tab strip is still how an answer is gone back to.
+///
+/// **The keys belong to the card and only to the card.** Numbers, the arrows,
+/// Enter and Esc are every one of them a key somebody is as likely to be typing
+/// into the composer an inch below, so they are taken on the card's own focus
+/// handle rather than bound as app actions — a binding would reach over the
+/// composer exactly the way the panel shortcuts are meant to, which is the
+/// opposite of what a form wants.
+/// The four parts of a question card are drawn against the same five facts:
+/// which session it belongs to, the item, where it is in the transcript, which
+/// question of the form is open, and whether the card is the quick kind that
+/// commits on the click itself.
+///
+/// Held together rather than threaded through four signatures, which is what
+/// they were when this was one function: the same five arguments in the same
+/// order at every call, and a fifth part added later would have taken them
+/// again. Everything else each part needs is derived from these inside it.
+struct AskForm<'a> {
+    session: &'a Entity<ChatSession>,
+    a: &'a AskItem,
     idx: usize,
-    cx: &App,
-) -> gpui::Div {
-    let quick = a.is_quick();
-    let active = a.active_field();
-    let multi_field = a.req.fields.len() > 1;
+    /// The question the strip has open, and the one every row below it answers.
+    active: usize,
+    /// A one-question single-select: it answers on the click and carries no
+    /// footer to hunt for.
+    quick: bool,
+}
 
-    let tabs = multi_field.then(|| {
+impl AskForm<'_> {
+    /// The strip of questions across the top, on a form that has more than one.
+    fn tabs(&self, cx: &App) -> gpui::Stateful<gpui::Div> {
+        let (session, a, idx, active) = (self.session, self.a, self.idx, self.active);
         div()
             .id(("ask-tabs", idx))
             .h_flex()
             .gap_1()
             .w_full()
+            .px_3()
+            .pt_2()
             .overflow_x_scroll()
             .children(a.req.fields.iter().enumerate().map(|(f, field)| {
                 let session = session.clone();
+                let (open, answered) = (f == active, a.field_answered(f));
                 let label = field
                     .title
                     .clone()
@@ -1618,195 +2580,498 @@ fn ask_form(
                     .unwrap_or_else(|| format!("Question {}", f + 1));
                 crate::controls::action(("ask-tab", f))
                     .ghost()
-                    .selected(f == active)
+                    .small()
                     .h_flex()
-                    .gap_1()
+                    .items_center()
+                    .gap_2()
                     .flex_none()
-                    .px_2()
-                    .py_1()
-                    .rounded(cx.theme().radius)
-                    .text_xs()
-                    // The tick beside a label marks a question as *answered*,
-                    // which is a different thing from the one on screen — so
-                    // the fill is all that says which tab is open. It is the
-                    // ramp's selected step, a clear stage past hover, and the
-                    // weight beside it does the rest.
-                    .when(f == active, |tab| {
-                        tab.bg(cx.theme().accent)
-                            .text_color(cx.theme().accent_foreground)
-                            .font_semibold()
+                    .h(ASK_TAB_H)
+                    .px_2p5()
+                    .rounded_none()
+                    // **Underlined rather than filled.** A filled tab in a
+                    // strip that already carries a filled number in each of its
+                    // own tabs is two fills arguing about which one means
+                    // "here"; the rule under the open tab lands on the strip's
+                    // own hairline and reads as the one continuing into the
+                    // body below it.
+                    .border_b_2()
+                    .border_color(match open {
+                        true => cx.theme().primary,
+                        false => cx.theme().transparent,
                     })
-                    // Only a *tab* label is cut short; a choice never is. It is
-                    // held to one line as well as to a width: a title long
-                    // enough to wrap turns the strip three rows tall, and the
-                    // row height the library gave it stays at one — so the
-                    // second and third lines are drawn over the choices below.
-                    .max_w(ASK_TAB_W)
-                    .whitespace_nowrap()
-                    .overflow_hidden()
-                    .label(label)
-                    .children(
-                        a.field_answered(f)
-                            .then(|| Icon::new(IconName::Check).size_3()),
+                    .child(ask_tab_mark(f, open, answered, cx))
+                    .child(
+                        div()
+                            // Only a *tab* label is cut short; a choice never
+                            // is. It is held to one line as well as to a width:
+                            // a title long enough to wrap turns the strip three
+                            // rows tall while the row height stays at one, so
+                            // the second and third lines are drawn over the
+                            // choices below.
+                            .max_w(ASK_TAB_W)
+                            .whitespace_nowrap()
+                            .overflow_hidden()
+                            .truncate()
+                            .text_sm()
+                            .when(open, |label| {
+                                label.font_semibold().text_color(cx.theme().foreground)
+                            })
+                            .when(!open, |label| label.text_color(cx.theme().muted_foreground))
+                            .child(label),
                     )
+                    // Jumping back restores what that question already holds,
+                    // which costs nothing to arrange: every answer is kept per
+                    // field, so the tab only has to move the view.
                     .on_click(move |_, _, cx: &mut App| {
                         session.update(cx, |s, cx| {
                             if let Some(item) = s.chat.ask_at_mut(idx) {
-                                item.tab = f;
+                                item.go_to(f);
                             }
                             cx.notify();
                         });
                     })
             }))
-    });
+    }
 
-    let single = matches!(
-        a.req.fields.get(active).map(|f| &f.kind),
-        Some(ElicitKind::Select(_))
-    );
-    let choices = a
-        .req
-        .fields
-        .get(active)
-        .map(|field| match &field.kind {
-            ElicitKind::Select(c) | ElicitKind::MultiSelect(c) => c.clone(),
-            ElicitKind::Text => Vec::new(),
-        })
-        .unwrap_or_default();
-    let picked = a.picked.get(active).cloned().unwrap_or_default();
+    /// The open question's choices, one row each.
+    fn choice_rows(&self, cx: &App) -> Vec<gpui::AnyElement> {
+        let (session, a, idx, active, quick) =
+            (self.session, self.a, self.idx, self.active, self.quick);
+        let field = a.req.fields.get(active);
+        let single = matches!(field.map(|f| &f.kind), Some(ElicitKind::Select(_)));
+        let choices = field
+            .map(|field| match &field.kind {
+                ElicitKind::Select(c) | ElicitKind::MultiSelect(c) => c.clone(),
+                ElicitKind::Text => Vec::new(),
+            })
+            .unwrap_or_default();
+        let picked = a.picked.get(active).cloned().unwrap_or_default();
+        let cursor = a.cursor_row(active);
 
-    let rows = choices
-        .into_iter()
-        .enumerate()
-        .map(|(o, choice)| {
-            let session = session.clone();
-            let on = picked.contains(&o);
-            let mut choice_content = div()
-                .v_flex()
-                .gap_0p5()
-                .w_full()
-                .child(div().child(choice.label.clone()));
-            if let Some(description) = choice.description.clone() {
-                choice_content = choice_content.child(
+        choices
+            .into_iter()
+            .enumerate()
+            .map(|(o, choice)| {
+                let session = session.clone();
+                let on = picked.contains(&o);
+                // The one thing on this card that has to be *read* before anything
+                // can happen, so it is set at the size everything else meant to be
+                // read is, with its description tight underneath rather than a line
+                // away: the two are one answer, and spaced apart the description
+                // reads as belonging to whichever row it is nearer.
+                let destructive = choice.is_destructive();
+                let mut words = div().v_flex().gap_0p5().flex_1().min_w_0().child(
                     div()
-                        .text_size(WORK_TEXT)
-                        .text_color(cx.theme().muted_foreground)
-                        .child(description),
+                        .w_full()
+                        .when(destructive, |label| {
+                            label.text_color(crate::theme::status_ink(cx).danger)
+                        })
+                        .child(choice.label.clone()),
                 );
-            }
-            grows(crate::controls::action(("ask-choice", o)))
-                .ghost()
-                .selected(on)
-                .p_2()
+                if let Some(description) = choice.description.clone() {
+                    words = words.child(
+                        div()
+                            .w_full()
+                            .text_size(WORK_TEXT)
+                            .text_color(cx.theme().muted_foreground)
+                            .child(description),
+                    );
+                }
+                grows(crate::controls::action(("ask-choice", o)))
+                    .ghost()
+                    .px_3()
+                    .py_2()
+                    .w_full()
+                    .min_h(ASK_ROW_MIN)
+                    .rounded(cx.theme().radius_lg)
+                    .border_1()
+                    // **A taken choice is named by its border, and a destructive
+                    // one by the danger step of that same border.** Taking it is
+                    // still one press, so the tint is not a refusal -- it is the
+                    // one row on the card that cannot be pressed a second time to
+                    // undo, and the only place to say so is the row itself.
+                    .border_color(match (on, destructive) {
+                        (true, true) => crate::theme::status_ink(cx).danger,
+                        (true, false) => cx.theme().primary,
+                        // The keyboard's own position, which has to be visible
+                        // without being an answer: an arrow press moves this and
+                        // settles nothing, so it is the hairline lifted to full
+                        // ink rather than a third colour.
+                        (false, _) if cursor == Some(onehand_core::chat::AskRow::Choice(o)) => {
+                            cx.theme().ring
+                        }
+                        (false, _) => cx.theme().border,
+                    })
+                    // **One child, holding the row's own layout.** A `Button` wraps
+                    // whatever the call site gives it in a content box of the
+                    // library's own -- centred, with the gap its `Size` chose -- so
+                    // a flex written out here lands on a box with exactly one thing
+                    // in it and decides nothing at all. That is why the mark sat a
+                    // quarter-rem from the words it belongs to while this said
+                    // `gap_2p5`, and why aligning it to the top of a two-line
+                    // choice did nothing either.
+                    // **The mark and the hint sit on the row's middle, not on its
+                    // first line.** Both are one shape against a text column that
+                    // is one line or three depending on what the agent wrote, so
+                    // pinned to the top they line up with the label on a
+                    // described choice and with nothing at all on a bare one --
+                    // the column of marks down the left comes out ragged for a
+                    // reason that is about the wording rather than about the
+                    // control.
+                    .child(
+                        div()
+                            .h_flex()
+                            .items_center()
+                            .gap_3()
+                            .w_full()
+                            .child(ask_choice_mark(on, single, cx))
+                            .child(words)
+                            .children(ask_key_hint(o + 1, cx)),
+                    )
+                    .on_click(move |_, window: &mut Window, cx: &mut App| {
+                        ask_take(
+                            &session,
+                            idx,
+                            active,
+                            onehand_core::chat::AskRow::Choice(o),
+                            quick,
+                            window,
+                            cx,
+                        );
+                    })
+                    .into_any_element()
+            })
+            .collect::<Vec<_>>()
+    }
+
+    /// The question itself, above the choices that answer it.
+    ///
+    /// On a multi-question form the tab carries the field's heading and nothing
+    /// else said what was actually being asked -- a strip reading "Migration",
+    /// "Also generate", "Anything else" over three unexplained options is a
+    /// form answered by guessing. The description is the question and the title
+    /// is the tab's word for it, so the description leads and the title stands
+    /// in where the agent sent only one of the two.
+    ///
+    /// A single-question form is the exception and prints nothing here: its
+    /// question *is* the card's heading, so a second copy under it asks twice.
+    fn question(&self) -> Option<String> {
+        let field = self.a.req.fields.get(self.active)?;
+        (self.a.req.fields.len() > 1)
+            .then(|| field.description.clone().or_else(|| field.title.clone()))
+            .flatten()
+    }
+
+    /// The free-text box, where the question offers one.
+    ///
+    /// The choices above it are what the agent thought of; this is the answer
+    /// it did not, and a form that shows only the first is a question the user
+    /// cannot actually answer.
+    fn custom_row(&self, cx: &App) -> Option<gpui::Div> {
+        let state = self
+            .a
+            .has_custom(self.active)
+            .then(|| {
+                self.session
+                    .read(cx)
+                    .ask_input(self.idx, self.active)
+                    .cloned()
+            })
+            .flatten()?;
+        let cursor = self.a.cursor_row(self.active);
+        Some(
+            div()
+                .h_flex()
+                .items_center()
+                .gap_3()
                 .w_full()
-                .rounded(cx.theme().radius)
+                .px_3()
+                .min_h(ASK_CUSTOM_ROW_MIN)
+                .rounded(cx.theme().radius_lg)
                 .border_1()
-                .border_color(if on {
-                    cx.theme().primary
-                } else {
-                    cx.theme().border
+                // **Dashed** rather than solid, which is the one thing that
+                // separates it from the rows above without taking it out of
+                // the list: the agent's wording is fixed and this line is not
+                // yet written.
+                .border_dashed()
+                .border_color(match cursor == Some(onehand_core::chat::AskRow::Custom) {
+                    true => cx.theme().ring,
+                    false => cx.theme().border,
                 })
-                // The one thing on this card that has to be *read* before
-                // anything can happen, so it is set at the size everything
-                // else meant to be read is. It had been a step below the
-                // question it answers and a step above its own explanation --
-                // three sizes inside one decision.
-                // Descriptions stay below their choice inside one child, even
-                // though Button's own content row is horizontal.
-                .child(choice_content)
-                .on_click(move |_, _, cx: &mut App| {
-                    session.update(cx, |s, cx| {
-                        if let Some(item) = s.chat.ask_at_mut(idx) {
-                            item.toggle(active, o);
-                            // One pick settles a single-select, so the card
-                            // shows the next open question by itself; a
-                            // multi-select stays, since the user is still
-                            // choosing. Nothing left open leaves the tab where
-                            // it is, in front of Submit.
-                            if single && let Some(next) = item.next_unanswered(active) {
-                                item.tab = next;
-                            }
-                        }
-                        // A one-question single-select has nothing left to
-                        // decide, so it commits on the click.
-                        if quick {
-                            s.chat.answer_ask(idx, false);
-                        }
-                        cx.notify();
-                    });
-                })
-                .into_any_element()
-        })
-        .collect::<Vec<_>>();
+                .child(
+                    Icon::new(crate::icons::Icon::SquarePen)
+                        .size_4()
+                        .flex_none()
+                        .text_color(cx.theme().muted_foreground),
+                )
+                // The row is the border, so the field inside it draws none: two
+                // rings around one input read as two inputs, and the inner one
+                // lands a hair inside the outer with the gap between them
+                // reading as a mistake.
+                .child(
+                    div()
+                        .flex_1()
+                        .min_w_0()
+                        .child(Input::new(&state).appearance(false)),
+                )
+                .children(ask_key_hint(self.a.row_count(self.active), cx)),
+        )
+    }
 
-    let can_submit = a.has_answer();
-    // The free-text box, where the question offers one. The choices above it
-    // are what the agent thought of; this is the answer it did not, and a form
-    // that shows only the first is a question the user cannot actually answer.
-    let custom = a
-        .has_custom(active)
-        .then(|| session.read(cx).ask_input(idx, active).cloned())
-        .flatten();
-    let typed = a.custom.get(active).is_some_and(|c| !c.trim().is_empty());
+    /// The strip that closes the card: what the keyboard can do, then Skip and
+    /// the forward button.
+    fn footer(&self, cx: &App) -> gpui::Div {
+        let (session, idx, active, quick) = (self.session, self.idx, self.active, self.quick);
+        // The forward button is about *this* question: a form is walked through
+        // one at a time, so arming Submit off an answer three tabs back would
+        // offer to send while the question on screen is blank.
+        let can_advance = self.a.field_answered(active);
+        let last = self.a.is_last(active);
 
-    // The quick card commits on a click and deliberately carries no footer to
-    // hunt for -- but typing is not a click, so Submit appears the moment there
-    // are words with no other way out. Skip is not added with it: refusing the
-    // whole question is a thing that card has never offered, and writing an
-    // answer is not the moment to start.
-    let footer = !quick || typed;
-
-    card.children(tabs)
-        // Only the choices scroll. The tab strip is how the *other* questions
-        // are reached and the box below is where an answer nobody offered is
-        // written, so both are controls and both stay on the card beside the
-        // footer rather than inside the region that can be scrolled away from.
-        .children((!rows.is_empty()).then(|| BlockingBody::new(target, rows)))
-        .children(custom.map(|state| div().w_full().child(Input::new(&state))))
-        .when(footer, |card| {
-            card.child(
+        div()
+            // **A strip of its own, over a rule that spans the card.** The
+            // buttons here end the block everything is waiting on, and left
+            // inside the body's padding they read as the last row of the
+            // list rather than as what closes it. The rule is the same
+            // pixel the tab strip's is, for the same reason: it is where a
+            // region ends.
+            .child(div().w_full().h_px().bg(cx.theme().border))
+            .child(
                 div()
                     .h_flex()
+                    .items_center()
+                    .justify_between()
                     .gap_2()
-                    .justify_end()
                     .w_full()
-                    .children((!quick).then(|| {
-                        crate::controls::action(("ask-skip", idx))
-                            .ghost()
-                            .label("Skip")
-                            .on_click({
-                                let session = session.clone();
-                                move |_, _, cx: &mut App| {
-                                    session.update(cx, |s, cx| {
-                                        s.chat.answer_ask(idx, true);
-                                        cx.notify();
-                                    });
-                                }
-                            })
-                    }))
+                    .px_4()
+                    .py_2p5()
+                    // What the keyboard can do, said where the keyboard's
+                    // work ends. The numbers are on the rows themselves --
+                    // this is the walk, which has nowhere else to be named.
                     .child(
-                        crate::controls::action(("ask-submit", idx))
-                            .primary()
-                            .map(|submit| match can_submit {
-                                true => submit,
-                                // Nothing is picked yet, so the pointer would
-                                // be promising a press that does nothing.
-                                false => crate::controls::resting(submit),
-                            })
-                            .disabled(!can_submit)
-                            .label("Submit")
-                            .on_click({
-                                let session = session.clone();
-                                move |_, _, cx: &mut App| {
-                                    session.update(cx, |s, cx| {
-                                        s.chat.answer_ask(idx, false);
-                                        cx.notify();
-                                    });
-                                }
+                        div()
+                            .flex_1()
+                            .min_w_0()
+                            .truncate()
+                            .text_xs()
+                            .text_color(cx.theme().muted_foreground)
+                            .child(match quick {
+                                true => "Enter choose",
+                                false => "↑↓ move · Enter choose · Esc skip",
                             }),
+                    )
+                    .child(
+                        div()
+                            .h_flex()
+                            .items_center()
+                            .gap_2()
+                            .flex_none()
+                            .children((!quick).then(|| {
+                                crate::controls::action(("ask-skip", idx))
+                                    .secondary()
+                                    .small()
+                                    .label("Skip")
+                                    .on_click({
+                                        let session = session.clone();
+                                        move |_, window: &mut Window, cx: &mut App| {
+                                            ask_skip(&session, idx, active, window, cx);
+                                        }
+                                    })
+                            }))
+                            .child(
+                                crate::controls::action(("ask-submit", idx))
+                                    .primary()
+                                    .small()
+                                    .map(|submit| match can_advance {
+                                        true => submit,
+                                        // Nothing is picked yet, so the
+                                        // pointer would be promising a
+                                        // press that does nothing.
+                                        false => crate::controls::resting(submit),
+                                    })
+                                    .disabled(!can_advance)
+                                    .label(match last {
+                                        false => "Next →",
+                                        true => "Submit",
+                                    })
+                                    .on_click({
+                                        let session = session.clone();
+                                        move |_, _, cx: &mut App| {
+                                            ask_advance(&session, idx, active, cx);
+                                        }
+                                    }),
+                            ),
                     ),
             )
+    }
+
+    /// The card's own key handling, hung on the focus handle it was built with.
+    ///
+    /// Separate from the boxes above because it answers a different question:
+    /// those say what the form looks like, this says what a keystroke landing
+    /// anywhere on it means.
+    fn keys(&self, body: gpui::Div, focus: gpui::FocusHandle) -> gpui::Stateful<gpui::Div> {
+        let (idx, active, quick) = (self.idx, self.active, self.quick);
+        let session = self.session.clone();
+        let card = focus.clone();
+        body.id(("ask-card", idx))
+            .track_focus(&focus)
+            .on_key_down(move |event, window, cx| {
+                let keystroke = &event.keystroke;
+                // A modified key is somebody else's: Ctrl+1 switches sessions and
+                // Shift+Enter is a newline in whatever holds the caret.
+                if keystroke.modifiers.modified() {
+                    return;
+                }
+                let session = session.clone();
+                // **The free-text box takes every key while it has the caret.** It
+                // is inside the card, so a key press there reaches this listener on
+                // its way out -- and the answers this card is shortest about are
+                // digits, which is exactly what somebody writing their own answer
+                // types. Unguarded, a "1" in that box jumps to the first choice and
+                // empties the line being written.
+                let typing = session
+                    .read(cx)
+                    .ask_input(idx, active)
+                    .map(|state| state.read(cx).focus_handle(cx))
+                    .is_some_and(|handle| handle.is_focused(window));
+                if typing {
+                    return;
+                }
+                match keystroke.key.as_str() {
+                    "up" | "down" => {
+                        let delta = if keystroke.key == "up" { -1 } else { 1 };
+                        // The walk takes the caret back off whichever row was last
+                        // clicked, or the cursor and the focus point at two
+                        // different rows and Enter answers the one the eye is not
+                        // on.
+                        window.focus(&card, cx);
+                        session.update(cx, |s, cx| {
+                            if let Some(item) = s.chat.ask_at_mut(idx) {
+                                item.move_cursor(active, delta);
+                            }
+                            cx.notify();
+                        });
+                    }
+                    // **Only where the card itself holds the caret.** A choice row
+                    // is a library `Button`, and a focused one already turns Enter
+                    // into its own click -- so answering here as well is two
+                    // answers, which on a multi-select is the choice toggled on and
+                    // straight back off. The row that has the caret settles itself;
+                    // this is the walk's Enter, for the cursor the arrows moved.
+                    "enter" if card.is_focused(window) => {
+                        let row = session
+                            .read(cx)
+                            .chat
+                            .ask_at(idx)
+                            .and_then(|item| item.cursor_row(active));
+                        if let Some(row) = row {
+                            ask_take(&session, idx, active, row, quick, window, cx);
+                        }
+                    }
+                    "enter" => {}
+                    // Esc passes on this question rather than refusing the whole
+                    // form: the card is walked one question at a time, and the key
+                    // that means "not this one" has to mean it at the same scale
+                    // the Skip button beside it does.
+                    "escape" if !quick => ask_skip(&session, idx, active, window, cx),
+                    // A number jumps to the row carrying it, the typed answer's box
+                    // included -- and a number nobody offered does nothing at all,
+                    // which is `row` refusing rather than rounding to the nearest.
+                    key => {
+                        let Some(n) = key.parse::<usize>().ok().filter(|&n| n >= 1) else {
+                            return;
+                        };
+                        let row = session
+                            .read(cx)
+                            .chat
+                            .ask_at(idx)
+                            .and_then(|item| item.row(active, n - 1));
+                        if let Some(row) = row {
+                            ask_take(&session, idx, active, row, quick, window, cx);
+                        }
+                    }
+                }
+            })
+    }
+}
+
+/// The question card: the strip of questions, the open one's choices, the box
+/// for an answer nobody offered, and what closes it.
+///
+/// Assembly only. Each part is built by [`AskForm`], because a card that draws
+/// four separable regions in one function is one where a change to any of them
+/// is read against the other three.
+fn ask_form(
+    card: gpui::Div,
+    session: &Entity<ChatSession>,
+    a: &AskItem,
+    target: TranscriptItemId,
+    idx: usize,
+    cx: &App,
+) -> gpui::AnyElement {
+    let form = AskForm {
+        session,
+        a,
+        idx,
+        active: a.active_field(),
+        quick: a.is_quick(),
+    };
+    let multi_field = a.req.fields.len() > 1;
+    let rows = form.choice_rows(cx);
+    // The quick card commits on a click and deliberately carries no footer to
+    // hunt for -- but typing is not a click, so the footer appears the moment
+    // there are words with no other way out. Skip is not added with it:
+    // refusing the whole question is a thing that card has never offered, and
+    // writing an answer is not the moment to start.
+    let typed = a
+        .custom
+        .get(form.active)
+        .is_some_and(|c| !c.trim().is_empty());
+
+    let body = card
+        .children(multi_field.then(|| form.tabs(cx)))
+        // The strip's rule spans the card and not just the tabs: the tabs are a
+        // label on the body below them, and it is the body that has an edge.
+        .when(multi_field, |card| {
+            card.child(div().w_full().h_px().bg(cx.theme().border))
         })
+        .child(
+            div()
+                .v_flex()
+                .gap_3()
+                .w_full()
+                .px_4()
+                .pt_3p5()
+                .pb_4()
+                .children(form.question().map(|line| {
+                    div()
+                        .w_full()
+                        .text_sm()
+                        .line_height(relative(ASK_PROMPT_LEADING))
+                        .child(line)
+                }))
+                // Only the choices scroll. The tab strip is how the *other*
+                // questions are reached and the box below is where an answer
+                // nobody offered is written, so both are controls and both stay
+                // on the card beside the footer rather than inside the region
+                // that can be scrolled away from.
+                .children((!rows.is_empty()).then(|| BlockingBody::new(target, rows).flush()))
+                .children(form.custom_row(cx)),
+        )
+        // The rule over the footer is the footer's own, drawn as its first
+        // child. Added again here it came out twice, two pixels apart, which
+        // reads as a border that failed rather than as an edge — and the
+        // permission card beside it draws one.
+        .when(!form.quick || typed, |card| card.child(form.footer(cx)));
+
+    // No handle means no card on screen to hold the keys -- the boxes and the
+    // handle are built in the same pass, so this is only ever the frame a
+    // question first appears in.
+    match session.read(cx).ask_focus(idx).cloned() {
+        Some(focus) => form.keys(body, focus).into_any_element(),
+        None => body.into_any_element(),
+    }
 }
 
 // ── notice ──────────────────────────────────────────────────────────────────

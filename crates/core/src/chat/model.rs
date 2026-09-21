@@ -45,6 +45,70 @@ pub struct PermItem {
     pub req: PermissionRequest,
     /// The chosen option's name once answered (buttons then disable).
     pub resolved: Option<String>,
+    /// Whether the command block is open past the lines it folds at.
+    ///
+    /// Held on the item and not on the card that draws it, for the reason
+    /// every other fold in this conversation is: the card is rebuilt from
+    /// scratch on every frame, and what changes while a permission is parked
+    /// is the agent still streaming underneath it.
+    pub expanded: bool,
+}
+
+/// Real lines of a command a permission card draws before it folds.
+///
+/// **Real lines, never wrapped ones.** A command is the text a grant is given
+/// on the strength of, so the count is over the newlines the agent wrote and
+/// nothing else -- a bound measured in drawn rows would fold a two-line
+/// command on a narrow pane and leave a ten-line one whole on a wide one,
+/// which is a fold the user cannot predict.
+///
+/// Eight is what leaves the header, the buttons and enough of a script to
+/// recognise it on one screen together.
+///
+/// Named outside this crate by the block that draws the fold: the collapsed
+/// box is this many rows tall, so a command of one very long line is held to
+/// the same height as one of eight short ones rather than filling the card. The
+/// rules below apply it to the agent's newlines; the height is the only thing
+/// that has to know the number itself.
+pub const COMMAND_FOLD_LINES: usize = 8;
+
+impl PermItem {
+    /// The exact command, whatever the fold is doing to what is drawn.
+    ///
+    /// **Never the visible part.** Copy is offered on a collapsed block on
+    /// purpose -- reading a long command elsewhere is the reason somebody
+    /// reaches for it -- so a copy that stopped where the fold does would hand
+    /// back a script that runs to a different end than the one approved.
+    ///
+    /// It is also the one place that says *which field of the request is the
+    /// command*. The protocol calls it a title, which is a word for a heading
+    /// and not for a script somebody is about to approve; every rule below
+    /// reads it through here rather than reaching past to the field, so the
+    /// three of them cannot come to disagree about what they are measuring.
+    pub fn command(&self) -> &str {
+        &self.req.title
+    }
+
+    /// The command's own lines, in the agent's order and wording.
+    pub fn command_lines(&self) -> Vec<&str> {
+        self.command().lines().collect()
+    }
+
+    /// Whether there is more command than the block draws unopened.
+    pub fn is_long(&self) -> bool {
+        self.command().lines().count() > COMMAND_FOLD_LINES
+    }
+
+    /// The lines the block draws now, and how many are held back behind the
+    /// fold. A short command is always whole and has nothing to open.
+    pub fn shown_lines(&self) -> (Vec<&str>, usize) {
+        let lines = self.command_lines();
+        if self.expanded || lines.len() <= COMMAND_FOLD_LINES {
+            return (lines, 0);
+        }
+        let hidden = lines.len() - COMMAND_FOLD_LINES;
+        (lines[..COMMAND_FOLD_LINES].to_vec(), hidden)
+    }
 }
 
 /// An elicitation — the agent's *question* (`AskUserQuestion`) — rendered as a
@@ -63,6 +127,27 @@ pub struct AskItem {
     /// below it — stacking them all made a form taller than the pane, and the
     /// overflow was simply lost off the top of the sticky bar.
     pub tab: usize,
+    /// Which row of the showing question the keyboard is on.
+    ///
+    /// Held here rather than in the card that draws it, for the reason every
+    /// other cursor in this app is: the card is rebuilt from scratch on every
+    /// frame, so a highlight owned by the view survives exactly as long as
+    /// nothing else on screen changes — and what changes while a form is open
+    /// is the agent still streaming underneath it.
+    pub cursor: usize,
+}
+
+/// One row of the question showing on the card: the agent's choices, then the
+/// free-text box where the form offers one.
+///
+/// **One list, because the keyboard walks them as one.** The typed answer is
+/// the last option and not a control beside the options — it is what the user
+/// picks when none of the agent's wording fits — so it takes the next number
+/// after the last choice and ↑/↓ reach it without leaving the list.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AskRow {
+    Choice(usize),
+    Custom,
 }
 
 impl AskItem {
@@ -74,6 +159,7 @@ impl AskItem {
             custom: vec![String::new(); n],
             resolved: None,
             tab: 0,
+            cursor: 0,
         }
     }
 
@@ -116,21 +202,88 @@ impl AskItem {
         }
     }
 
-    /// Where the card goes once a single-select pick settles `field`: the first
-    /// question after it that carries no answer yet, or `None` to stay put.
+    /// Whether `field` is the last question of the form — which is what turns
+    /// the card's forward button from *Next* into *Submit*, and what makes
+    /// skipping it the end of the form rather than a step through it.
+    pub fn is_last(&self, field: usize) -> bool {
+        field + 1 >= self.req.fields.len()
+    }
+
+    /// Show `field`, from its first row.
     ///
-    /// A single-select pick *is* that question finished, so the card moves
-    /// itself on rather than making the user aim at the next tab — a form is
-    /// asked one question at a time and the click that answers one is the same
-    /// click that asks for the next.
+    /// The cursor goes back to the top rather than being carried over: it is a
+    /// place in *this* question's list, and a question with two choices
+    /// followed by one with five would otherwise open on whichever row the last
+    /// one was left on.
+    pub fn go_to(&mut self, field: usize) {
+        self.tab = field;
+        self.cursor = 0;
+    }
+
+    /// How many rows `field` offers the keyboard: the agent's choices, plus the
+    /// free-text box where the form has one.
+    pub fn row_count(&self, field: usize) -> usize {
+        let choices = self
+            .req
+            .fields
+            .get(field)
+            .map_or(0, |f| f.kind.choices().len());
+        choices + usize::from(self.has_custom(field))
+    }
+
+    /// The `n`th row of `field`, or `None` past the end — which is how a number
+    /// key nobody offered is refused rather than rounded to the nearest row.
+    pub fn row(&self, field: usize, n: usize) -> Option<AskRow> {
+        let choices = self.req.fields.get(field)?.kind.choices().len();
+        if n < choices {
+            Some(AskRow::Choice(n))
+        } else if n < self.row_count(field) {
+            Some(AskRow::Custom)
+        } else {
+            None
+        }
+    }
+
+    /// The row the keyboard is on, clamped — a cursor left past the end of a
+    /// shorter question lands on its last row rather than on nothing.
+    pub fn cursor_row(&self, field: usize) -> Option<AskRow> {
+        self.row(
+            field,
+            self.cursor.min(self.row_count(field).saturating_sub(1)),
+        )
+    }
+
+    /// Walk the cursor, wrapping at both ends: a list this short is one the eye
+    /// holds whole, so stopping at the bottom only costs presses.
+    pub fn move_cursor(&mut self, field: usize, delta: isize) {
+        let rows = self.row_count(field);
+        if rows == 0 {
+            return;
+        }
+        let at = self.cursor.min(rows - 1) as isize;
+        self.cursor = (at + delta).rem_euclid(rows as isize) as usize;
+    }
+
+    /// Pass on `field`: whatever was picked or typed there is dropped and the
+    /// card moves to the next question. Answers `true` when there is no next
+    /// one, which is the caller's cue to settle the whole form.
     ///
-    /// **Forward only, and never wrapping.** An earlier gap left behind is one
-    /// the user skipped on purpose, and jumping back to it moves the card in
-    /// the opposite direction from the click that asked for it — away from the
-    /// Submit they were walking towards, with the tick on the tab they just
-    /// filled scrolling out of sight. The tabs already say what is still open.
-    pub fn next_unanswered(&self, field: usize) -> Option<usize> {
-        (field + 1..self.req.fields.len()).find(|&f| !self.field_answered(f))
+    /// **Dropped and not merely stepped over.** Skipping is the user saying
+    /// this question gets no answer, and a half-typed line left behind would be
+    /// sent as one — the response is built from what each field holds, not from
+    /// which tab was last on screen.
+    pub fn skip_field(&mut self, field: usize) -> bool {
+        if let Some(picked) = self.picked.get_mut(field) {
+            picked.clear();
+        }
+        if let Some(custom) = self.custom.get_mut(field) {
+            custom.clear();
+        }
+        if self.is_last(field) {
+            return true;
+        }
+        self.go_to(field + 1);
+        false
     }
 
     /// Type into a field's free-text box; a non-blank answer drops that
@@ -1014,6 +1167,22 @@ pub struct Chat {
     // ── composer sources (Phase 3B) ──
     /// Root-relative file paths for `@`-mention completion.
     pub files: Vec<String>,
+    /// The directories [`Self::files`] passes through, with what is under each.
+    ///
+    /// **Derived once, where the list it is derived from changes once.** It was
+    /// rebuilt inside the popup, which is rebuilt on every keystroke and on
+    /// every frame an agent streams into — a walk of the whole file list and a
+    /// `BTreeMap` of every directory in the project, thrown away and done again
+    /// a moment later. Nothing about it changes between those frames.
+    pub folders: Vec<(String, usize)>,
+    /// Whether the scan that fills [`Self::files`] has finished.
+    ///
+    /// **An empty list is not the same as a list that has not arrived**, and
+    /// the `@` popup has to tell them apart: one means "still looking", the
+    /// other means there is nothing here to name. Inferred from the list being
+    /// empty, a project with no files to offer said it was still looking for
+    /// them forever.
+    pub files_scanned: bool,
     /// Agent-advertised slash commands for `/` completion.
     pub commands: Vec<SlashCommand>,
     /// Session modes offered by the agent (composer selector).
@@ -1745,6 +1914,7 @@ impl Chat {
                 self.items.push(ChatItem::Permission(PermItem {
                     req,
                     resolved: None,
+                    expanded: false,
                 }))
             }
             AcpEvent::Elicitation(req) => {
@@ -1974,6 +2144,16 @@ impl Chat {
         }
     }
 
+    /// The same question, read-only — what a key press asks before it acts, so
+    /// that where the cursor is and what row a number names are answered by the
+    /// model rather than recomputed at the keyboard.
+    pub fn ask_at(&self, idx: usize) -> Option<&AskItem> {
+        match self.items.get(idx) {
+            Some(ChatItem::Ask(a)) if a.resolved.is_none() => Some(a),
+            _ => None,
+        }
+    }
+
     /// Every unanswered question with its live-items index, in transcript order
     /// — pinned above the composer just like [`Self::pending_permissions`].
     pub fn pending_asks(&self) -> Vec<(usize, &AskItem)> {
@@ -2079,6 +2259,13 @@ impl Chat {
             Some(ChatItem::Tool(t)) => t.fold = !t.fold,
             Some(ChatItem::Plan(p)) => p.fold = !p.fold,
             _ => {}
+        }
+    }
+
+    /// Open or close a permission's command block past the lines it folds at.
+    pub fn toggle_permission(&mut self, target: TranscriptItemId) {
+        if let Some(ChatItem::Permission(p)) = self.list_mut(target).get_mut(target.index()) {
+            p.expanded = !p.expanded;
         }
     }
 
@@ -2373,6 +2560,57 @@ impl Chat {
             _ => false,
         })
     }
+
+    /// The paths this session has already touched, newest first.
+    ///
+    /// **What the `@` list offers above the project's own files**, and the
+    /// reason it is worth a group of its own: the file somebody wants to talk
+    /// about next is nearly always the file that was just written, and in a
+    /// repository of several thousand it is otherwise indistinguishable from
+    /// every other row — same shape, same sort, found only by remembering its
+    /// name well enough to type it. Here it is at the top of a list of four.
+    ///
+    /// Two sources, because they are the two ways a path enters a conversation:
+    /// a diff the agent produced, and a file the user attached to a prompt.
+    /// Both are already in the transcript, so this reads what is there rather
+    /// than keeping a second list beside it that could come to disagree.
+    ///
+    /// **Newest first and deduplicated to the newest mention**, which is the
+    /// order the question is asked in — "the one from just now" — and the
+    /// reason the walk runs backwards. A file edited five times is one row.
+    pub fn artifacts(&self, max: usize) -> Vec<String> {
+        let mut seen = std::collections::HashSet::new();
+        let mut out: Vec<String> = Vec::new();
+        for item in self.items.iter().rev() {
+            let paths: Vec<&str> = match item {
+                ChatItem::Tool(tool) => tool
+                    .call
+                    .content
+                    .iter()
+                    .filter_map(|section| match section {
+                        crate::acp::ToolContent::Diff { path, .. } => Some(path.as_str()),
+                        _ => None,
+                    })
+                    .collect(),
+                ChatItem::User(msg) => msg
+                    .attachments
+                    .iter()
+                    .filter_map(|a| a.path.to_str())
+                    .collect(),
+                _ => continue,
+            };
+            for path in paths {
+                if out.len() >= max {
+                    return out;
+                }
+                if seen.insert(path) {
+                    out.push(path.to_string());
+                }
+            }
+        }
+        out
+    }
+
     /// The end of what the agent said **in the turn that just ended**, for
     /// anything that has to say what a turn came to somewhere the transcript is
     /// not.
@@ -3183,19 +3421,70 @@ mod tests {
         assert_eq!(a.picked[1], vec![1]);
     }
 
+    /// The card's forward button: enabled by *this* question carrying an
+    /// answer, and reading Submit only on the last one.
     #[test]
-    fn a_pick_walks_forward_to_the_next_open_question() {
+    fn forward_needs_this_question_answered_and_ends_on_the_last() {
+        let mut a = ask_item();
+        assert!(!a.field_answered(0), "nothing picked yet, so Next refuses");
+        assert!(!a.is_last(0));
+        a.toggle(0, 0);
+        assert!(a.field_answered(0));
+        // Question one being answered says nothing about question two.
+        assert!(!a.field_answered(1));
+        assert!(a.is_last(1), "the second of two is where Submit appears");
+    }
+
+    #[test]
+    fn skipping_drops_the_answer_and_walks_on() {
         let mut a = ask_item();
         a.toggle(0, 0);
-        assert_eq!(a.next_unanswered(0), Some(1));
+        a.set_custom(0, "mine".into());
+        // Not stepped over: a half-typed line left behind would be sent.
+        assert!(!a.skip_field(0), "there is a question after this one");
+        assert_eq!(a.tab, 1);
+        assert!(!a.field_answered(0));
+        assert_eq!(a.custom[0], "");
+        // The last question has nowhere to walk to, so skipping it settles the
+        // form instead.
+        assert!(a.skip_field(1));
+    }
+
+    #[test]
+    fn a_tab_jumped_back_to_still_holds_its_answer() {
+        let mut a = ask_item();
+        a.toggle(0, 1);
+        a.go_to(1);
         a.toggle(1, 0);
-        // With nothing open after it, the card stays where it is rather than
-        // moving off the answer that was just given.
-        assert_eq!(a.next_unanswered(0), None);
-        assert_eq!(a.next_unanswered(1), None);
-        // A gap left behind is left behind — the walk never turns round.
-        a.picked[0].clear();
-        assert_eq!(a.next_unanswered(1), None);
+        a.go_to(0);
+        assert_eq!(a.picked[0], vec![1], "the earlier pick survived the trip");
+        assert_eq!(a.cursor, 0, "and the keyboard starts at the top of it");
+    }
+
+    #[test]
+    fn the_cursor_walks_the_choices_and_the_typed_answer_as_one_list() {
+        let mut a = ask_item();
+        // Two choices and an "Other" box.
+        assert_eq!(a.row_count(0), 3);
+        assert_eq!(a.row(0, 2), Some(AskRow::Custom));
+        assert_eq!(a.row(0, 3), None, "a number nobody offered names nothing");
+        // The second field has no "Other" box, so it is choices alone.
+        assert_eq!(a.row_count(1), 2);
+        assert_eq!(a.row(1, 2), None);
+
+        assert_eq!(a.cursor_row(0), Some(AskRow::Choice(0)));
+        a.move_cursor(0, 1);
+        assert_eq!(a.cursor_row(0), Some(AskRow::Choice(1)));
+        a.move_cursor(0, 1);
+        assert_eq!(a.cursor_row(0), Some(AskRow::Custom));
+        a.move_cursor(0, 1);
+        assert_eq!(a.cursor_row(0), Some(AskRow::Choice(0)), "it wraps");
+        a.move_cursor(0, -1);
+        assert_eq!(a.cursor_row(0), Some(AskRow::Custom), "both ways");
+        // A cursor left past the end of a shorter question lands on its last
+        // row rather than on nothing.
+        assert_eq!(a.cursor, 2);
+        assert_eq!(a.cursor_row(1), Some(AskRow::Choice(1)));
     }
 
     #[test]
@@ -3532,6 +3821,7 @@ mod tests {
             choices: vec![ConfigChoice {
                 value: "high".into(),
                 name: "High".into(),
+                description: None,
             }],
         }];
 
@@ -3567,6 +3857,7 @@ mod tests {
             choices: vec![ConfigChoice {
                 value: "high".into(),
                 name: "High".into(),
+                description: None,
             }],
         }];
 
@@ -3649,6 +3940,7 @@ mod tests {
         PermissionRequest {
             rpc_id: serde_json::Value::from(7),
             tool_call_id: None,
+            kind: crate::acp::ToolKind::Execute,
             title: title.into(),
             options: vec![
                 PermissionOption {
@@ -3710,6 +4002,7 @@ mod tests {
         chat.items.push(ChatItem::Permission(PermItem {
             req: permission("rm -rf build"),
             resolved: None,
+            expanded: false,
         }));
 
         chat.cancel_turn();
@@ -3736,6 +4029,7 @@ mod tests {
         chat.items.push(ChatItem::Permission(PermItem {
             req: permission("rm -rf build"),
             resolved: None,
+            expanded: false,
         }));
 
         chat.answer_permission(0, "allow-1");
@@ -3752,6 +4046,83 @@ mod tests {
         assert!(!chat.awaiting_permission());
     }
 
+    /// **The fold is a count of the agent's own newlines.** A command at the
+    /// threshold is drawn whole and offers nothing to open: a control that
+    /// reveals the one line it was already hiding is a control that reads as
+    /// broken.
+    #[test]
+    fn a_command_folds_only_past_the_threshold() {
+        let at = PermItem {
+            req: permission(&"echo\n".repeat(COMMAND_FOLD_LINES)),
+            resolved: None,
+            expanded: false,
+        };
+        assert!(!at.is_long());
+        assert_eq!(at.shown_lines(), (vec!["echo"; COMMAND_FOLD_LINES], 0));
+
+        let over = PermItem {
+            req: permission(&"echo\n".repeat(COMMAND_FOLD_LINES + 3)),
+            resolved: None,
+            expanded: false,
+        };
+        assert!(over.is_long());
+        let (shown, hidden) = over.shown_lines();
+        assert_eq!(shown.len(), COMMAND_FOLD_LINES);
+        assert_eq!(hidden, 3);
+    }
+
+    /// **Copy hands back the whole command, fold or no fold.** It is offered on
+    /// a collapsed block precisely so a long script can be read somewhere
+    /// else, and one that stopped where the block does would hand back
+    /// something that runs to a different end than the one being approved.
+    /// The lines come back in the agent's own order and wording -- tabs,
+    /// blank lines and non-ASCII included.
+    #[test]
+    fn copying_a_collapsed_command_takes_all_of_it() {
+        let script = format!(
+            "#!/bin/sh\n{}\techo 'đã xong ✓'\n",
+            "printf 'x'\n".repeat(200)
+        );
+        let item = PermItem {
+            req: permission(&script),
+            resolved: None,
+            expanded: false,
+        };
+
+        assert_eq!(item.command(), script);
+        assert_eq!(item.shown_lines().0.len(), COMMAND_FOLD_LINES);
+
+        let long_line = "A".repeat(2_000);
+        let one = PermItem {
+            req: permission(&long_line),
+            resolved: None,
+            expanded: false,
+        };
+        // One real line however wide: wrapping is the view's problem and must
+        // not become a fold.
+        assert!(!one.is_long());
+        assert_eq!(one.command(), long_line);
+    }
+
+    /// Opening is the item's own state, so the card can be rebuilt from
+    /// scratch every frame without losing what the reader opened.
+    #[test]
+    fn opening_a_command_block_survives_in_the_item() {
+        let mut chat = Chat::default();
+        chat.items.push(ChatItem::Permission(PermItem {
+            req: permission(&"echo\n".repeat(20)),
+            resolved: None,
+            expanded: false,
+        }));
+
+        chat.toggle_permission(TranscriptItemId::Live(0));
+        let Some(ChatItem::Permission(p)) = chat.items.first() else {
+            panic!("the permission is gone");
+        };
+        assert!(p.expanded);
+        assert_eq!(p.shown_lines(), (vec!["echo"; 20], 0));
+    }
+
     /// A second click on an answered card would echo an rpc id the adapter has
     /// already resolved -- and after a restart, one it never issued at all.
     #[test]
@@ -3760,6 +4131,7 @@ mod tests {
         chat.items.push(ChatItem::Permission(PermItem {
             req: permission("rm -rf build"),
             resolved: None,
+            expanded: false,
         }));
 
         chat.answer_permission(0, "allow-1");
@@ -3797,10 +4169,12 @@ mod tests {
                     crate::acp::ConfigChoice {
                         value: "default".into(),
                         name: "Default".into(),
+                        description: None,
                     },
                     crate::acp::ConfigChoice {
                         value: "high".into(),
                         name: "High".into(),
+                        description: None,
                     },
                 ],
             },
@@ -3811,6 +4185,7 @@ mod tests {
                 choices: vec![crate::acp::ConfigChoice {
                     value: "opus".into(),
                     name: "Opus".into(),
+                    description: None,
                 }],
             },
         ];
