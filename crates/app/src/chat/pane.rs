@@ -3904,7 +3904,8 @@ impl ChatPane {
                     // list came from.
                     .map(|popup| {
                         div()
-                            .absolute()
+                            .w_full()
+                            .px_4()
                             // **Lifted off whatever is under it, and only when
                             // something is.** Flush, the popup and a parked
                             // card have the same width, nearly the same
@@ -3914,23 +3915,19 @@ impl ChatPane {
                             // here: over the dark palette's near-black it is
                             // invisible, which is why that palette needs a real
                             // step for a floating control in the first place.
-                            // Lifting leaves the card's bottom edge and border
+                            // The gap leaves the card's bottom edge and border
                             // showing, and two horizontal edges a few pixels
                             // apart is a stack where one is a panel.
+                            //
                             // Left as a rem. Resolved against
-                            // `window.rem_size()` it would be the one
-                            // length in this stack measured from the
-                            // *window's* base — and a panel's zoom
-                            // overrides the rem base for its own subtree,
-                            // so the peek would be the only part of it that
-                            // did not grow with the text beside it.
-                            .bottom(match pinned.is_empty() {
-                                true => gpui::rems(0.),
-                                false => super::composer::POPUP_STACK_PEEK,
+                            // `window.rem_size()` it would be the one length in
+                            // this stack measured from the *window's* base — and
+                            // a panel's zoom overrides the rem base for its own
+                            // subtree, so the peek would be the only part of it
+                            // that did not grow with the text beside it.
+                            .when(!pinned.is_empty(), |popup| {
+                                popup.mb(super::composer::POPUP_STACK_PEEK)
                             })
-                            .left_0()
-                            .right_0()
-                            .px_4()
                             .child(div().w_full().max_w(COMPOSER_COLUMN).mx_auto().child(popup))
                     });
                 // **Outside the measured box, for the reason the popup is.** A
@@ -3983,8 +3980,34 @@ impl ChatPane {
                 // Nothing at all rather than an empty box, so the column's own
                 // gap is not spent on a slot with no height and the composer
                 // does not drift down whenever neither is showing.
-                (popup.is_some() || cards.is_some())
-                    .then(|| div().relative().w_full().children(cards).children(popup))
+                // **The popup is the one in flow and the card is the one taken
+                // out of it**, which is the opposite of the obvious way round
+                // and the only way round that works.
+                //
+                // Absolute, the popup contributed no height, so this block's
+                // own bounds ended below it — and the handler that closes a
+                // popup when the mouse goes down *outside* this block compares
+                // against exactly those bounds, in the capture phase. Every
+                // click on a row was therefore a click outside, and the list
+                // closed before the press could reach it: the keyboard picked
+                // rows and the mouse could not.
+                //
+                // In flow the popup sets the height and the card hangs off the
+                // bottom of it, behind it, which is where it was drawn anyway.
+                // The card is the later thing to lose its height, and it can
+                // afford to: nothing measures a parked card by design.
+                match (popup, cards) {
+                    (Some(popup), Some(cards)) => Some(
+                        div()
+                            .relative()
+                            .w_full()
+                            .child(div().absolute().bottom_0().left_0().right_0().child(cards))
+                            .child(popup),
+                    ),
+                    (Some(popup), None) => Some(div().w_full().child(popup)),
+                    (None, Some(cards)) => Some(div().w_full().child(cards)),
+                    (None, None) => None,
+                }
             })
             .child(
                 // What the transcript has to clear: the pinned cards and the
