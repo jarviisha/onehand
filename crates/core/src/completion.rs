@@ -400,17 +400,20 @@ pub fn mentions(
     let mut rows = Vec::new();
     let mut held = 0usize;
 
-    let mut take = |matched: Vec<Mention>, cap: usize| {
-        held += matched.len().saturating_sub(cap);
-        rows.extend(matched.into_iter().take(cap));
-    };
+    // **Counted, then cut, then built.** Every match used to become a whole
+    // `Mention` — three or four `String`s and a scan for the match span — and
+    // only then was the list cut to the handful that get drawn. In a project of
+    // a few thousand files a bare `@` paid for all of them, on a list rebuilt
+    // at every keystroke and at every frame an agent streams into. The count is
+    // the only thing the dropped ones were ever needed for.
+    fn cut<T>(matched: Vec<T>, cap: usize, held: &mut usize) -> impl Iterator<Item = T> {
+        *held += matched.len().saturating_sub(cap);
+        matched.into_iter().take(cap)
+    }
 
-    take(
-        filter(files, query)
-            .into_iter()
-            .map(|path| Mention::new(MentionKind::File, path, path.clone(), None).lit(query))
-            .collect(),
-        per_group,
+    rows.extend(
+        cut(filter(files, query), per_group, &mut held)
+            .map(|path| Mention::new(MentionKind::File, path, path.to_string(), None).lit(query)),
     );
     // Filtered where the counts already are. Copying the names out to reuse
     // `filter` meant cloning every one of them and then walking back into the
@@ -418,34 +421,32 @@ pub fn mentions(
     // costs for the convenience of one call, on the one group whose rows carry
     // a second fact about themselves.
     let q = query.to_lowercase();
-    take(
-        folders
-            .iter()
-            .filter(|(dir, _)| q.is_empty() || dir.to_lowercase().contains(&q))
-            .map(|(dir, n)| {
-                Mention::new(
-                    MentionKind::Folder,
-                    dir,
-                    // The trailing slash is what makes this a listing rather
-                    // than a read: it is the shape an agent already reads as a
-                    // directory, so nothing here has to teach it a second one.
-                    format!("{dir}/"),
-                    Some(match n {
-                        1 => "1 file".to_string(),
-                        n => format!("{n} files"),
-                    }),
-                )
-                .lit(query)
-            })
-            .collect(),
-        per_group,
-    );
-    take(
-        filter(artifacts, query)
-            .into_iter()
-            .map(|path| Mention::new(MentionKind::Artifact, path, path.clone(), None).lit(query))
-            .collect(),
-        per_group.min(ARTIFACT_ROWS),
+    let dirs: Vec<&(String, usize)> = folders
+        .iter()
+        .filter(|(dir, _)| q.is_empty() || dir.to_lowercase().contains(&q))
+        .collect();
+    rows.extend(cut(dirs, per_group, &mut held).map(|(dir, n)| {
+        Mention::new(
+            MentionKind::Folder,
+            dir,
+            // The trailing slash is what makes this a listing rather than a
+            // read: it is the shape an agent already reads as a directory, so
+            // nothing here has to teach it a second one.
+            format!("{dir}/"),
+            Some(match n {
+                1 => "1 file".to_string(),
+                n => format!("{n} files"),
+            }),
+        )
+        .lit(query)
+    }));
+    rows.extend(
+        cut(
+            filter(artifacts, query),
+            per_group.min(ARTIFACT_ROWS),
+            &mut held,
+        )
+        .map(|path| Mention::new(MentionKind::Artifact, path, path.to_string(), None).lit(query)),
     );
 
     (rows, held)
@@ -902,6 +903,30 @@ mod tests {
                 "{query:?} produced more command rows than an empty query"
             );
         }
+    }
+
+    /// The count of what was held back has to survive the list being cut
+    /// before it is built. Building every match first and cutting afterwards is
+    /// what this replaced, and the count was the only reason the dropped ones
+    /// were ever made.
+    #[test]
+    fn what_is_cut_is_still_counted() {
+        let files: Vec<String> = (0..40).map(|i| format!("src/f{i}.rs")).collect();
+        let dirs = folders(&files);
+        let artifacts: Vec<String> = (0..20).map(|i| format!("src/f{i}.rs")).collect();
+
+        let (rows, held) = mentions(&files, &dirs, &artifacts, "", 5);
+        assert_eq!(rows.len(), 5 + dirs.len().min(5) + 5);
+        assert_eq!(
+            held,
+            (40 - 5) + dirs.len().saturating_sub(5) + (20 - 5),
+            "every group reports its own remainder"
+        );
+        // And the rows that survived are whole: cutting early must not leave a
+        // row half-built.
+        assert!(rows
+            .iter()
+            .all(|row| !row.name.is_empty() && !row.insert.is_empty()));
     }
 
     #[test]

@@ -584,8 +584,17 @@ impl ChatPane {
                         // Only for a card that *arrives*. One already on screen
                         // when the picker was opened is one the user saw and
                         // chose to open a picker over.
-                        pane.composer
-                            .update(cx, |composer, cx| composer.close_overlay(cx));
+                        // **Only when the asking session is the one on
+                        // screen.** This subscription is per session while the
+                        // composer is one entity shared by all of them, so
+                        // unguarded it let a background agent reach across and
+                        // shut the list the user was reading — with no card
+                        // appearing to account for it, because the card belongs
+                        // to a conversation that is not being shown.
+                        if pane.active == Some(uid) {
+                            pane.composer
+                                .update(cx, |composer, cx| composer.close_overlay(cx));
+                        }
                         pane.awaiting_user_detached(uid, *ask, &agent, &root_label, cx);
                     }
                     // Re-emitted rather than acted on: the transcript says what
@@ -3624,12 +3633,6 @@ impl ChatPane {
         let holding = self
             .active_conversation()
             .is_some_and(|conv| conv.viewport.holding());
-        let tail_room = self
-            .active_conversation()
-            .map_or(floor, |conv| conv.viewport.tail_room(floor));
-        let this = cx.entity();
-        let for_render = session.clone();
-        let scrolled_up = away_from_tail(&list_state) && !holding;
         // **Where the transcript stops being drawn: the composer's own middle.**
         // The overlay is transparent around its surfaces, so a row scrolling
         // under it stayed visible in the strip above the card, at both sides of
@@ -3642,10 +3645,18 @@ impl ChatPane {
         // taller than its own status row plus its inset -- and the resting
         // composer is four times that.
         let cut = overlay_h / 2.;
-        // What the list is padded by, less the part of it the clip now stands
-        // for: the two together are the room the last row rests in, and paying
-        // both puts the conversation a composer's height off its own floor.
-        let tail_pad = (tail_room - cut).max(px(0.));
+        let tail_room = self
+            .active_conversation()
+            .map_or((floor - cut).max(px(0.)), |conv| {
+                conv.viewport.tail_room(floor, cut)
+            });
+        let this = cx.entity();
+        let for_render = session.clone();
+        let scrolled_up = away_from_tail(&list_state) && !holding;
+        // The clip is already taken off inside `tail_room`, which is the only
+        // place that knows whether the number it returned was measured from the
+        // clipped viewport or is a constant that never heard of it.
+        let tail_pad = tail_room;
         // How much room a composer popup has to open into: the well, less what
         // the composer and its rest already stand in.
         //

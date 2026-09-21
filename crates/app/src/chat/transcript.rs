@@ -3059,15 +3059,11 @@ fn ask_form(
                 .children((!rows.is_empty()).then(|| BlockingBody::new(target, rows).flush()))
                 .children(form.custom_row(cx)),
         )
-        .when(!form.quick || typed, |card| {
-            // **A strip of its own, over a rule that spans the card.** The
-            // buttons there end the block everything is waiting on, and left
-            // inside the body's padding they read as the last row of the list
-            // rather than as what closes it. The rule is the same pixel the tab
-            // strip's is, for the same reason: it is where a region ends.
-            card.child(div().w_full().h_px().bg(cx.theme().border))
-                .child(form.footer(cx))
-        });
+        // The rule over the footer is the footer's own, drawn as its first
+        // child. Added again here it came out twice, two pixels apart, which
+        // reads as a border that failed rather than as an edge — and the
+        // permission card beside it draws one.
+        .when(!form.quick || typed, |card| card.child(form.footer(cx)));
 
     // No handle means no card on screen to hold the keys -- the boxes and the
     // handle are built in the same pass, so this is only ever the frame a

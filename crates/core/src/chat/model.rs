@@ -1167,6 +1167,22 @@ pub struct Chat {
     // ── composer sources (Phase 3B) ──
     /// Root-relative file paths for `@`-mention completion.
     pub files: Vec<String>,
+    /// The directories [`Self::files`] passes through, with what is under each.
+    ///
+    /// **Derived once, where the list it is derived from changes once.** It was
+    /// rebuilt inside the popup, which is rebuilt on every keystroke and on
+    /// every frame an agent streams into — a walk of the whole file list and a
+    /// `BTreeMap` of every directory in the project, thrown away and done again
+    /// a moment later. Nothing about it changes between those frames.
+    pub folders: Vec<(String, usize)>,
+    /// Whether the scan that fills [`Self::files`] has finished.
+    ///
+    /// **An empty list is not the same as a list that has not arrived**, and
+    /// the `@` popup has to tell them apart: one means "still looking", the
+    /// other means there is nothing here to name. Inferred from the list being
+    /// empty, a project with no files to offer said it was still looking for
+    /// them forever.
+    pub files_scanned: bool,
     /// Agent-advertised slash commands for `/` completion.
     pub commands: Vec<SlashCommand>,
     /// Session modes offered by the agent (composer selector).

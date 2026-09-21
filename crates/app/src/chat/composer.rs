@@ -351,12 +351,22 @@ pub enum Overlay {
 /// heading over each rather than by hiding one, because which of them somebody
 /// means is a thing only they know.
 fn act_rows(query: &str, session: &Entity<ChatSession>, cx: &App) -> Vec<Row> {
-    let offered = |act: Act| match act.opens() {
-        // A picker with nothing in it is what `toggle_picker` already refuses,
-        // asked here with the same question so the row and the press cannot
-        // come to disagree about whether the control exists.
-        Some(overlay) => picker_rows(&overlay, session, cx).is_some(),
-        None => true,
+    // **The question the chips ask, and not the one that looks like it.** This
+    // asked `picker_rows(..).is_some()`, which is `Some` for all three pickers
+    // unconditionally — the `None` arms are the completion list and the
+    // attachment tray. So every row was offered whatever the agent advertised,
+    // and taking one against a setting that does not exist deleted the typed
+    // text, set an overlay with nothing to draw, and left the composer's key
+    // context claimed: a popup that is not on screen still holding the arrows
+    // until Esc.
+    //
+    // `toggle_picker` is guarded the same way and so was no help. These three
+    // are the answers the chips themselves are drawn on.
+    let offered = |act: Act| match act {
+        Act::Options => options_action(session, cx).is_some(),
+        Act::Mode => mode_action(session, cx).is_some(),
+        Act::Fast => fast_action(session, cx).is_some(),
+        Act::Attach | Act::Mention => true,
     };
     // Hoisted, for the reason the folder run hoists its own: inside the filter
     // it is an allocation per row, on a list rebuilt at every keystroke.
@@ -815,7 +825,10 @@ impl Composer {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let Some(rows) = picker_rows(&target, session, cx) else {
+        // Not `is_some`: `picker_rows` answers `Some` for every picker, so the
+        // guard that was meant to refuse an overlay with nothing in it refused
+        // only the two overlays that are not pickers at all.
+        let Some(rows) = picker_rows(&target, session, cx).filter(|rows| !rows.is_empty()) else {
             return;
         };
         self.selected = rows.iter().position(|row| row.checked).unwrap_or(0);
@@ -942,11 +955,10 @@ impl Composer {
         let chat = &session.read(cx).chat;
         match trigger.kind {
             TriggerKind::File => {
-                let folders = completion::folders(&chat.files);
                 let artifacts = chat.artifacts(MAX_ARTIFACT_SCAN);
                 let (found, held) = completion::mentions(
                     &chat.files,
-                    &folders,
+                    &chat.folders,
                     &artifacts,
                     query,
                     MAX_COMPLETION_ROWS,
@@ -1770,7 +1782,14 @@ impl Composer {
         let pending = self.trigger.as_ref().is_some_and(|trigger| {
             let chat = &session.read(cx).chat;
             match trigger.kind {
-                TriggerKind::File => chat.files.is_empty(),
+                // The scan says when it is done. Read off the list being empty
+                // instead, a project with nothing to offer was "still looking"
+                // for the life of the session.
+                TriggerKind::File => !chat.files_scanned,
+                // No such signal for the agent's commands, and none is needed:
+                // the composer's own rows are always in this list, so it is
+                // never empty and the waiting line never shows. What the flag
+                // still buys is the height, measured once the agent has spoken.
                 TriggerKind::Command => chat.commands.is_empty(),
             }
         });

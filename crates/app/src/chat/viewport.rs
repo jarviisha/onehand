@@ -336,9 +336,19 @@ impl Viewport {
     /// under it. Padding draws nothing, so the room costs the reader nothing to
     /// look at, and it is gone the frame the answer is long enough to hold the
     /// position by itself.
-    pub fn tail_room(&self, floor: Pixels) -> Pixels {
+    /// `cut` is what the transcript is already clipped by at its foot, and it
+    /// is taken off here rather than by the caller because **only this knows
+    /// which of the two answers below it gave**. The held answer is measured
+    /// from the list's own viewport, which is the clipped box — so the clip is
+    /// inside it already, and subtracting it again outside left the list that
+    /// much short of the padding `scroll_to` needs to reach the tail. It never
+    /// came to rest, so the prompt stayed "held" and the jump-to-latest pill
+    /// appeared on every turn. The bare answer is a constant and knows nothing
+    /// about the clip, so there it is the caller's subtraction that was right.
+    pub fn tail_room(&self, floor: Pixels, cut: Pixels) -> Pixels {
+        let bare = (floor - cut).max(Pixels::ZERO);
         let (Some(hold), Some((state, _))) = (&self.hold, &self.list) else {
-            return floor;
+            return bare;
         };
         // **A list chasing its tail must never be given this room.** Following
         // puts the bottom of the *padding* at the bottom of the panel, so a
@@ -348,11 +358,11 @@ impl Viewport {
         // tail are already exclusive by construction; this is the second lock
         // on it, because the failure has no symptom to debug from.
         if state.is_following_tail() {
-            return floor;
+            return bare;
         }
         hold.room
             .unwrap_or_else(|| state.viewport_bounds().size.height)
-            .max(floor)
+            .max(bare)
     }
 
     /// Let go of a held prompt, putting tail-following back.

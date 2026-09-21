@@ -242,7 +242,9 @@ impl ChatSession {
                         .spawn(async move { completion::scan_files(&root, MAX_MENTION_FILES) })
                         .await;
                     let _ = session.update(cx, |session: &mut Self, cx| {
+                        session.chat.folders = completion::folders(&files);
                         session.chat.files = files;
+                        session.chat.files_scanned = true;
                         cx.notify();
                     });
                 }
