@@ -1894,6 +1894,22 @@ impl Composer {
                 // white page and three parts in 255 on this one — a shadow that
                 // was drawn the whole time and could not be seen.
                 .shadow(crate::theme::lift(cx))
+                // **The conversation behind must not move because of this.**
+                // gpui's own handler for a scrolling box adjusts its offset and
+                // stops there — it never claims the event — so the wheel went
+                // on to the transcript's list underneath and both moved at
+                // once, one of them for no reason the reader gave. Claimed
+                // here, on the surface rather than on the box that scrolls, so
+                // the header, the footer and the inset swallow it too: a wheel
+                // over any part of a card that is covering the conversation is
+                // aimed at the card.
+                //
+                // The inner list still scrolls. Its own handler is registered
+                // after this one and bubble order runs the deeper listener
+                // first, so it takes what it can use before this ends the
+                // event's travel. And gpui gates both on the pointer actually
+                // being over the box, so nothing is swallowed at a distance.
+                .on_scroll_wheel(|_, _, cx| cx.stop_propagation())
                 .p_1()
                 .child(popup_header(title, cx))
                 .child(
@@ -2339,6 +2355,9 @@ impl Composer {
             .border_color(cx.theme().accent)
             .bg(cx.theme().popover.alpha(1.))
             .shadow(crate::theme::lift(cx))
+            // The conversation behind must not move because of this card
+            // either; see the reason on the list above.
+            .on_scroll_wheel(|_, _, cx| cx.stop_propagation())
             .p_1()
             // The same pinned row every other popup carries. This one is built
             // by its own function rather than through `popup`, so leaving it

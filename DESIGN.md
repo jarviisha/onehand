@@ -419,6 +419,15 @@ Its shape, and the reason for each part:
   bottom edge showing. Flush, the two share a width, a surface and an edge and
   read as one tall panel; the usual cue is a drop shadow and the library's is
   invisible on this palette (§4).
+- **A surface covering the conversation claims the wheel.** gpui's handler for a
+  scrolling box adjusts that box's offset and stops there — it never claims the
+  event — so without this the wheel travelled on to the transcript underneath
+  and moved the rows the surface is sitting on top of. The claim goes on the
+  *outer* surface, not on the box that scrolls, so the chrome and the inset
+  swallow it too; the inner box still scrolls, because bubble order runs the
+  deeper listener first. This binds the popup and a parked card. It does **not**
+  bind the composer, which is the one surface down here the transcript *clears*
+  rather than hides behind — nothing is underneath it to be moved out of sight.
 
 ---
 

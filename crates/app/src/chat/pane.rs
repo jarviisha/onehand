@@ -3956,37 +3956,55 @@ impl ChatPane {
                 // that ended behind the box being typed in would hide its own
                 // last line permanently.
                 let cards = (!pinned.is_empty()).then(|| {
-                    div().w_full().px_4().child(
-                        div()
-                            .v_flex()
-                            .gap_2()
-                            .w_full()
-                            .max_w(COMPOSER_COLUMN)
-                            .mx_auto()
-                            // The composer's column, because while a card is
-                            // pinned it is part of that stack: these boxes sit
-                            // directly on the card, share its surface and its
-                            // radius, and are read as one object with it. A card
-                            // an inch wider than the box it rests on reads as
-                            // two panels that failed to line up.
-                            //
-                            // **Width follows where a card is, not what it is.**
-                            // Answered, it is drawn in the transcript and takes
-                            // the transcript's column like every block around
-                            // it. That was already half true -- a transcript row
-                            // is inset inside the reading column while a pinned
-                            // card was not -- so the rule that said the two must
-                            // match was describing something the layout had
-                            // never quite done.
-                            //
-                            // The text size is still the transcript's, which is
-                            // the part that does have to hold: a question
-                            // re-read in the history has to be the same words at
-                            // the same weight as the question that stopped
-                            // everything.
-                            .text_size(transcript::TEXT)
-                            .children(pinned),
-                    )
+                    div()
+                        .w_full()
+                        .px_4()
+                        // **A card covering the conversation must not move it.**
+                        // The same leak the popup above has: gpui's handler for
+                        // a scrolling box adjusts its own offset and never
+                        // claims the event, so a wheel over a parked card went
+                        // on to the transcript underneath and scrolled the very
+                        // rows the card is sitting on top of. Claimed on the
+                        // wrapper, so the card's own wells still take what they
+                        // can use first — bubble order runs the deeper listener
+                        // before this one.
+                        //
+                        // The composer is deliberately not given this. It is
+                        // the one surface down here the transcript *clears*
+                        // rather than hides behind, so there is nothing under
+                        // it being moved out of sight.
+                        .on_scroll_wheel(|_, _, cx| cx.stop_propagation())
+                        .child(
+                            div()
+                                .v_flex()
+                                .gap_2()
+                                .w_full()
+                                .max_w(COMPOSER_COLUMN)
+                                .mx_auto()
+                                // The composer's column, because while a card is
+                                // pinned it is part of that stack: these boxes sit
+                                // directly on the card, share its surface and its
+                                // radius, and are read as one object with it. A card
+                                // an inch wider than the box it rests on reads as
+                                // two panels that failed to line up.
+                                //
+                                // **Width follows where a card is, not what it is.**
+                                // Answered, it is drawn in the transcript and takes
+                                // the transcript's column like every block around
+                                // it. That was already half true -- a transcript row
+                                // is inset inside the reading column while a pinned
+                                // card was not -- so the rule that said the two must
+                                // match was describing something the layout had
+                                // never quite done.
+                                //
+                                // The text size is still the transcript's, which is
+                                // the part that does have to hold: a question
+                                // re-read in the history has to be the same words at
+                                // the same weight as the question that stopped
+                                // everything.
+                                .text_size(transcript::TEXT)
+                                .children(pinned),
+                        )
                 });
                 // Nothing at all rather than an empty box, so the column's own
                 // gap is not spent on a slot with no height and the composer
