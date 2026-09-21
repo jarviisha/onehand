@@ -89,6 +89,25 @@ const POPUP_HEADROOM: Rems = rems(1.);
 /// headings — a list that scrolled almost as soon as it opened, which is the
 /// one thing a short list is supposed to avoid.
 const POPUP_MAX_ROWS: f32 = 12.;
+/// How much of the card underneath a popup is left showing.
+///
+/// **The one cue that works in both palettes.** A popup drawn over a parked
+/// card has the card's exact width and very nearly its surface, so with their
+/// edges flush the two read as a single tall panel rather than as one thing
+/// resting on another. The usual answer to that is a drop shadow, and here it
+/// is not available: over a near-black surface a shadow is invisible, which is
+/// the same reason the dark palette needs a real step for a floating control
+/// rather than an elevation cue.
+///
+/// So the popup is lifted instead, and the card's bottom edge and border stay
+/// visible under it. Two horizontal edges a few pixels apart is a stack;
+/// one is a panel.
+///
+/// **Only when there is something to show.** With nothing pinned the popup
+/// sits where it always did, hard against the composer's own gap — a lift
+/// there would be a space with nothing in it, and the width and position of
+/// this card must not drift for reasons the reader cannot see.
+pub(super) const POPUP_STACK_PEEK: Rems = rems(0.375);
 /// What the popup spends on itself, outside the box that scrolls.
 ///
 /// The pinned title and — on a completion — the footer under the rule. Named
@@ -1623,7 +1642,13 @@ impl Composer {
                 // A list that opens over the field it completes is floating, so
                 // it takes the floating surface and the shadow that says so.
                 .bg(cx.theme().popover.alpha(1.))
-                .shadow_lg()
+                // A step past every other floating surface here, because this
+                // is the one that can be drawn *over* another of them. It buys
+                // nothing in the dark palette, where a shadow on near-black is
+                // invisible and the lift is carrying the whole signal, and it
+                // is most of the signal in the light one, where it is the lift
+                // that nearly disappears.
+                .shadow_xl()
                 .p_1()
                 .child(popup_header(title, cx))
                 .child(
@@ -2038,7 +2063,7 @@ impl Composer {
             // where one ends.
             .border_color(cx.theme().accent)
             .bg(cx.theme().popover.alpha(1.))
-            .shadow_lg()
+            .shadow_xl()
             .p_1()
             // The same pinned row every other popup carries. This one is built
             // by its own function rather than through `popup`, so leaving it
