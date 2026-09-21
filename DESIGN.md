@@ -386,7 +386,39 @@ something. A guard fails the build on a button built straight from the library.
 
 What the app *does* own, because it is onehand's and not a widget library's: the
 transcript block renderers (DESIGN-ANSWER.md), the icon registry (§6), the
-terminal panel over the vendored grid, and per-panel zoom.
+terminal panel over the vendored grid, per-panel zoom, and the composer's popup.
+
+**The composer's popup is one shell for every overlay** — the `@` list, the `/`
+list, the three settings pickers and the attachment tray. Same frame, same row
+height, same grouping, same keyboard model, same empty state; only the contents
+of a row differ. Two widgets here drift apart the first time either is touched.
+
+Its shape, and the reason for each part:
+
+- **A pinned title and a pinned footer**, outside the scroll, each ruled on the
+  edge facing the list. Held among the rows, the title scrolled away exactly
+  when the list was long enough to need it, and the footer sat under whatever
+  part-row the scroll stopped on.
+- **The whole-row bound is on the scrolling box**, not on the surface. The
+  surface also carries that chrome, so flooring there left the fold wherever the
+  chrome happened to put it — which is the part-row the flooring exists to
+  prevent.
+- **Height is measured once against an empty query** and held while the popup is
+  open. It belongs to the list, not to what is typed: taken from what was on
+  screen it held while a query narrowed and grew when a character was deleted,
+  and growth moves every row out from under the hand aiming at one.
+- **Rows are grouped under small labels** at the quiet step, carried by the
+  first row of their run rather than standing as rows themselves — so the index
+  the arrows walk is made only of things that can be taken, and a group that
+  matched nothing cannot leave a heading behind.
+- **Three ink steps for three kinds of text**: the name at full strength, its
+  detail a step below (`theme::meta_ink`), the run label at the quiet step. The
+  run a query matched is carried by *weight*, because a name at full strength
+  has nothing above it to climb to.
+- **A popup drawn over a parked card is lifted off it**, leaving the card's
+  bottom edge showing. Flush, the two share a width, a surface and an edge and
+  read as one tall panel; the usual cue is a drop shadow and the library's is
+  invisible on this palette (§4).
 
 ---
 

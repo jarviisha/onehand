@@ -560,7 +560,29 @@ plus `sendMessage` and `answerCallbackQuery`. Everything that is not the wire is
   same interruption twice. The card is capped **narrower than the transcript's reading column**
   (`COMPOSER_COLUMN`) and everything pinned above it takes that cap; the three settings lists the
   chips open all come from `picker_rows`, one answer because opening a list, walking it and drawing
-  it each ask for it.
+  it each ask for it. **`picker_rows` answers `Some` for all three**, empty vec included — its
+  `None` arms are the completion list and the attachment tray — so anything asking "does this
+  control exist" has to ask `mode_action`/`options_action`/`fast_action` instead, which is what the
+  chips themselves are drawn on. Asked the other way, a row was offered for a setting the agent
+  never advertised, and taking it opened an overlay with nothing to draw while still holding the
+  arrow keys.
+  **The popup is one shell for every overlay**, and what changes between them is the contents of a
+  row. It carries a **pinned title and a pinned footer**, both outside the scroll, each with a
+  hairline on the edge that faces the list: held among the rows, the title went away the moment the
+  list was long enough to need it and the footer sat under whatever half-row the scroll stopped on.
+  The bound that has to come out a whole number of rows is on the **scrolling box** and not on the
+  surface, because the surface also carries that chrome — floored there, the fold landed wherever
+  the chrome happened to leave it. Its height is **measured once, against an empty query**, and held
+  until it closes: the height belongs to the list rather than to what is typed, and taken from what
+  was on screen it held while a query narrowed and grew when a character was deleted.
+  **The `@` list is three groups** — files, folders, then what this session already touched
+  (`Chat::artifacts`, read back out of the transcript). Folders are derived from the file list
+  rather than walked for, carry what is beneath them, and insert a trailing slash, which is a
+  listing rather than a read. **The `/` list leads with the composer's own controls** — `/model`,
+  `/mode`, `/fast`, `/attach`, `/mention` — then the agent's, unprefixed first and each namespace as
+  a run of its own with the prefix taken off the rows and put on the heading. Those rows *act*
+  rather than complete, so accepting one takes the text that reached it back out of the buffer
+  (`completion::remove`): it is a way to a control, not a message.
   **Standing state is a bare strip under the card**, outside it: the project's branch on the left,
   the permission mode on the right — left is the project, right is the turn. The branch is a
   control rather than a label, emitting `ChatPaneEvent::Project` so the shell opens the same menu
@@ -960,8 +982,13 @@ centre is the chat, right dock the Workbench, bottom dock the terminal.
   which worked while the rail was drawn in that surface too; once the rail moved to the chrome step
   the plate became the one thing in the window painted a step *below* what it sits on, which is a
   hole rather than a plate, and the `shadow_sm` under it could not say otherwise at that size. The
-  shadow went with the change: a fill that differs lifts by itself, and a drop shadow over a
-  near-black surface is invisible anyway.
+  shadow went with the change: a fill that differs lifts by itself, and the component library's own
+  drop shadow over a near-black surface is invisible anyway — every step of that ladder is pure
+  black at a tenth of an alpha, which against the dark palette's floating surface is a difference of
+  three parts in 255. That is a fact about *those* values and not about shadow: where one has to be
+  seen, `crate::theme::lift` draws the app's own, with the alpha chosen per palette. The dark one
+  needs more than four times the light one, because a black shadow on white has the whole range to
+  fall through and on near-black it has almost none.
   The flat list **sorts itself by what each session wants** — `rail::session_order`, which is
   `SessionSignal::rank` first and then recency, so a parked question or a dead adapter rises to the
   top and a session carrying no signal at all falls into the tail in most-recently-viewed order. That
@@ -1438,11 +1465,16 @@ Listed because a missing feature nobody wrote down reads as a bug in the ones th
 
 - **No command palette** (`Ctrl+Shift+P`). It is a feature — a command registry plus a filtered
   popup — not a keymap entry.
-- **Keyboard navigation in the completion popup is incomplete.** gpui-component owns the menu
-  inside `Input`; its editor-only `CompletionProvider` is not reachable from an ordinary input, and
-  action dispatch reaches the focused input before the composer's wrapper. Today the popup is
-  click-to-pick, with Enter accepting the highlighted row. Fixing this needs an upstream hook or a
-  move to `EditorState`, not another outer key binding.
+- **The completion popup has no argument step.** A command that takes one is accepted like any
+  other and leaves the caret after it; there is no chip for the chosen command, no trailing chevron
+  saying an argument is coming, and no Backspace-returns-to-the-list. `Tab` accepts the highlighted
+  row rather than completing the common prefix. The keys that do work — `Up`/`Down` wrapping,
+  `Enter`, `Esc`, and a click, which go through one router so neither can act where the other
+  cannot — are bound `ChatComposer > Input` and claimed only while a list is open, since gpui's
+  dispatch reaches the focused input before any outer wrapper.
+- **An accepted mention is plain text, not a token.** It inserts the whole path, so a long one is
+  as wide as it reads; there is no single-unit deletion and no hover carrying the full path. That
+  needs the input to own a span it treats atomically, which `Input` does not offer.
 - **The remote bridge does not stream the transcript.** A finished turn carries the *end* of the
   agent's last answer (`Chat::answer_tail`) and nothing else: no tool cards, no diffs, no reasoning,
   nothing mid-turn. That excerpt is there because "finished a turn" alone is a notification whose only

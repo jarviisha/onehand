@@ -83,6 +83,24 @@ pub struct TopRoom {
     pub floor: Pixels,
 }
 
+/// How much room the list leaves under its last row.
+///
+/// **The clip comes off once, and only off the answer that has not already had
+/// it taken off.** `measured` is read from the list's own viewport, which *is*
+/// the clipped box — so subtracting `cut` from it again left the list that much
+/// short of the padding a scroll to the tail needs. It never came to rest, so
+/// the prompt stayed held and the jump-to-latest pill appeared on every turn.
+/// `floor` is a constant that has never heard of the clip, so there the
+/// subtraction is right.
+///
+/// Split out from [`Viewport::tail_room`] because that reads a `ListState`,
+/// which cannot be built without a window — and the arithmetic is the whole of
+/// what went wrong.
+fn room_for(floor: Pixels, cut: Pixels, measured: Option<Pixels>) -> Pixels {
+    let bare = (floor - cut).max(Pixels::ZERO);
+    measured.map_or(bare, |measured| measured.max(bare))
+}
+
 /// A prompt being kept at the top of the panel while its answer arrives.
 struct Hold {
     prompt: TranscriptItemId,
@@ -346,9 +364,8 @@ impl Viewport {
     /// appeared on every turn. The bare answer is a constant and knows nothing
     /// about the clip, so there it is the caller's subtraction that was right.
     pub fn tail_room(&self, floor: Pixels, cut: Pixels) -> Pixels {
-        let bare = (floor - cut).max(Pixels::ZERO);
         let (Some(hold), Some((state, _))) = (&self.hold, &self.list) else {
-            return bare;
+            return room_for(floor, cut, None);
         };
         // **A list chasing its tail must never be given this room.** Following
         // puts the bottom of the *padding* at the bottom of the panel, so a
@@ -358,11 +375,12 @@ impl Viewport {
         // tail are already exclusive by construction; this is the second lock
         // on it, because the failure has no symptom to debug from.
         if state.is_following_tail() {
-            return bare;
+            return room_for(floor, cut, None);
         }
-        hold.room
-            .unwrap_or_else(|| state.viewport_bounds().size.height)
-            .max(bare)
+        let measured = hold
+            .room
+            .unwrap_or_else(|| state.viewport_bounds().size.height);
+        room_for(floor, cut, Some(measured))
     }
 
     /// Let go of a held prompt, putting tail-following back.
@@ -1008,6 +1026,44 @@ mod tests {
 
     /// A question just asked is taken to the top of the panel, so the answer
     /// arrives in the space under it instead of pushing it off the screen.
+    /// **The clip is taken off once, and off the right one of the two.**
+    ///
+    /// The transcript is clipped at its foot so a row never shows sliced either
+    /// side of the composer. The held answer is measured from the list's own
+    /// viewport, which is already that clipped box; the bare answer is a
+    /// constant that has never heard of it. Taking the clip off both left the
+    /// list short of the padding a scroll to the tail needs — so it never came
+    /// to rest, the prompt stayed held, and the jump-to-latest pill appeared on
+    /// every turn while the transcript stopped following.
+    #[test]
+    fn the_clip_comes_off_the_floor_and_not_off_a_measurement() {
+        use super::room_for;
+
+        // The bare answer: a constant, so the clip is its caller's to remove.
+        assert_eq!(room_for(px(200.), px(50.), None), px(150.));
+        assert_eq!(room_for(px(200.), px(0.), None), px(200.));
+        assert_eq!(
+            room_for(px(30.), px(50.), None),
+            px(0.),
+            "a clip taller than the floor leaves no room rather than a negative one"
+        );
+
+        // The measured answer already has the clip inside it, so growing the
+        // clip must not shrink it — that double subtraction is the whole bug.
+        let held = px(420.);
+        for cut in [px(0.), px(50.), px(120.)] {
+            assert_eq!(
+                room_for(px(200.), cut, Some(held)),
+                held,
+                "the clip was taken off a measurement that already had it out"
+            );
+        }
+
+        // It is still a floor: a turn asking for less than what is left after
+        // the clip gets what is left.
+        assert_eq!(room_for(px(200.), px(50.), Some(px(10.))), px(150.));
+    }
+
     #[test]
     fn a_new_prompt_asks_to_be_held_at_the_top() {
         let mut chat = chat();
