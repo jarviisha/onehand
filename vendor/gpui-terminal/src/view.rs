@@ -1155,7 +1155,7 @@ impl TerminalView {
         let x: f32 = (position.x - self.content_origin.x).into();
         let y: f32 = (position.y - self.content_origin.y).into();
 
-        let (cols, rows) = (self.state.cols(), self.state.rows());
+        let (cols, rows) = self.state.size();
         let col = ((x / cw.max(1.0)).floor().max(0.0) as usize).min(cols.saturating_sub(1));
         let row = ((y / ch.max(1.0)).floor().max(0.0) as usize).min(rows.saturating_sub(1));
 
@@ -1504,7 +1504,7 @@ impl TerminalView {
     ///
     /// A tuple of (columns, rows).
     pub fn dimensions(&self) -> (usize, usize) {
-        (self.state.cols(), self.state.rows())
+        self.state.size()
     }
 
     /// Resize the terminal to new dimensions.

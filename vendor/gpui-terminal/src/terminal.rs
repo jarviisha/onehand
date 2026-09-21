@@ -358,34 +358,48 @@ impl TerminalState {
         f(&mut term)
     }
 
-    /// Get the number of columns in the terminal.
+    /// onehand patch: the size the grid is actually drawn at, as one answer.
     ///
-    /// onehand patch: read off the grid rather than off a field of our own.
-    /// The render pass resizes through [`Self::term_arc`] -- it holds the lock
-    /// already, to paint the frame it is measuring for -- so a copy kept here
-    /// was only ever right until the first time the panel changed size, and
-    /// after that it answered with whatever the constructor was handed. Every
-    /// caller wants the size the grid is actually drawn at: the pixel-to-cell
+    /// Read off the grid rather than off fields of our own. The render pass
+    /// resizes through [`Self::term_arc`] -- it holds the lock already, to
+    /// paint the frame it is measuring for -- so a copy kept here was only
+    /// ever right until the first time the panel changed size, and after that
+    /// it answered with whatever the constructor was handed. Every caller
+    /// wants the size the grid is actually drawn at: the pixel-to-cell
     /// conversion clamps against it, so a stale 24 rows under a taller panel
     /// pins every click below the 24th row onto that row, and a selection
     /// stops following the pointer partway down the screen.
+    ///
+    /// Both numbers together, and under one lock, because both callers want
+    /// the pair: asking twice takes a mutex the paint holds while it draws,
+    /// twice, on a path a tracked pointer runs down once a frame.
+    ///
+    /// # Returns
+    ///
+    /// The current `(columns, rows)`.
+    pub fn size(&self) -> (usize, usize) {
+        self.with_term(|term| {
+            let grid = term.grid();
+            (grid.columns(), grid.screen_lines())
+        })
+    }
+
+    /// Get the number of columns in the terminal.
     ///
     /// # Returns
     ///
     /// The current number of columns.
     pub fn cols(&self) -> usize {
-        self.term.lock().grid().columns()
+        self.size().0
     }
 
     /// Get the number of rows in the terminal.
-    ///
-    /// Read off the grid, for the reason given on [`Self::cols`].
     ///
     /// # Returns
     ///
     /// The current number of rows.
     pub fn rows(&self) -> usize {
-        self.term.lock().grid().screen_lines()
+        self.size().1
     }
 
     /// Get a cloned reference to the underlying terminal Arc.
@@ -477,13 +491,11 @@ mod tests {
         });
     }
 
-    /// onehand patch: the render pass resizes the grid through the shared
-    /// `Arc` and never through [`TerminalState::resize`], because it is already
-    /// holding the lock to paint the frame it measured. So the size these two
-    /// report has to come off the grid: while it was a pair of fields set only
-    /// by `resize`, a panel taller than the 80x24 it was constructed at kept
-    /// answering 24, and the pixel-to-cell conversion clamped every click below
-    /// the 24th row onto that row.
+    /// onehand patch: the reason [`TerminalState::size`] reads off the grid.
+    ///
+    /// Resized here through the shared `Arc` and deliberately not through
+    /// [`TerminalState::resize`], because that is the route the render pass
+    /// takes and the route that used to leave the reported size behind.
     #[test]
     fn size_follows_a_resize_through_the_shared_grid() {
         let (tx, _rx) = channel();
@@ -495,8 +507,7 @@ mod tests {
             .lock()
             .resize(TermDimensions::new(100, 72));
 
-        assert_eq!(terminal.rows(), 72);
-        assert_eq!(terminal.cols(), 100);
+        assert_eq!(terminal.size(), (100, 72));
     }
 
     #[test]
