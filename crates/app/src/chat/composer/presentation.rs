@@ -62,6 +62,32 @@ pub(super) enum Pick {
         config_id: String,
         value: String,
     },
+    /// Open one of the composer's own controls rather than putting anything in
+    /// the buffer. What the row named is a way *to* a control, so taking it has
+    /// to leave the field as it found it.
+    Act(Act),
+}
+
+/// A composer control reachable by name from the `/` list.
+///
+/// **The same controls the chips already offer, under the names people would
+/// guess.** Nothing here is new behaviour — every one is a `toggle_picker` or a
+/// trigger the `+` menu already inserts. What it adds is that they can be
+/// *typed*, which is what somebody with their hands on the keyboard wants, and
+/// which is the only route that does not start with knowing which chip a
+/// setting lives behind.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum Act {
+    /// The agent's config list: model, and whatever else it advertises.
+    Options,
+    /// The session mode.
+    Mode,
+    /// The one config group promoted to a chip of its own.
+    Fast,
+    /// The system file picker, for staging an attachment.
+    Attach,
+    /// Type an `@` into the field, so the mention list opens on it.
+    Mention,
 }
 
 /// Written out rather than derived: `#[default]` only reaches unit variants,

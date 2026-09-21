@@ -43,8 +43,8 @@ use onehand_core::completion::{self, ActiveTrigger, TriggerKind};
 
 mod presentation;
 use presentation::{
-    Pick, Row, composer_status, fast_action, fast_rows, mode_action, mode_rows, options_action,
-    options_rows, segmented_group,
+    Act, Pick, Row, composer_status, fast_action, fast_rows, mode_action, mode_rows,
+    options_action, options_rows, segmented_group,
 };
 
 /// How far back through the transcript the `@` list looks for paths this
@@ -305,6 +305,68 @@ pub enum Overlay {
     /// All staged attachments, including the entries hidden by the compact
     /// tray's rendering bound.
     Attachments,
+}
+
+/// The composer's own controls, as rows of the `/` list.
+///
+/// **Offered only where they would do something.** A settings list an agent
+/// never advertised opens onto nothing, and a row that opens nothing is worse
+/// than a missing row: it is a name the user now believes in. The three
+/// pickers are gated on the same answer their chips are — `picker_rows` — so a
+/// control that is not on the row is not in the list either.
+///
+/// **A group of their own, after the agent's.** `/` has meant "a command the
+/// agent offers" everywhere a user has met it before, and it still leads;
+/// these are underneath, named for what they act on. Two rows can share a name
+/// — an agent is free to advertise `model` too — and that is answered by the
+/// heading over each rather than by hiding one, because which of them somebody
+/// means is a thing only they know.
+fn act_rows(query: &str, session: &Entity<ChatSession>, cx: &App) -> Vec<Row> {
+    let offered = |overlay: Overlay| picker_rows(&overlay, session, cx).is_some();
+    [
+        (
+            "model",
+            "Choose the model and the agent's other settings",
+            Act::Options,
+            offered(Overlay::Options),
+        ),
+        (
+            "mode",
+            "Switch the session mode",
+            Act::Mode,
+            offered(Overlay::Mode),
+        ),
+        (
+            "fast",
+            "Turn fast mode on or off",
+            Act::Fast,
+            offered(Overlay::Fast),
+        ),
+        (
+            "attach",
+            "Pick files to send with the prompt",
+            Act::Attach,
+            true,
+        ),
+        (
+            "mention",
+            "Put an @ in the prompt to name a file",
+            Act::Mention,
+            true,
+        ),
+    ]
+    .into_iter()
+    .filter(|(name, _, _, offered)| {
+        *offered && (query.is_empty() || name.to_lowercase().contains(&query.to_lowercase()))
+    })
+    .map(|(name, about, act, _)| Row {
+        label: SharedString::from(name),
+        detail: Some(SharedString::from(about)),
+        pick: Pick::Act(act),
+        label_span: completion::span(name, query),
+        ..Row::default()
+    })
+    .collect()
 }
 
 /// The rows of a settings list, and `None` for an overlay that is not one.
@@ -593,7 +655,22 @@ impl Composer {
     ) -> bool {
         match self.overlay.clone() {
             None => false,
-            Some(Overlay::Completion) => self.accept(session, window, cx),
+            // **Through the same router a click goes through**, and not
+            // straight into `accept`. Every row in this list used to complete
+            // something, so the two paths happened to agree; a row that opens a
+            // control instead is one `accept` has nothing to do with, and it
+            // answered by doing nothing at all — the mouse worked and the
+            // keyboard did not, on the list whose whole point is the keyboard.
+            Some(Overlay::Completion) => {
+                let rows = self.matches(session, cx).0;
+                let Some(pick) = highlight(self.selected, rows.len())
+                    .and_then(|row| rows.into_iter().nth(row))
+                    .map(|row| row.pick)
+                else {
+                    return false;
+                };
+                self.apply_pick(&pick, session, window, cx)
+            }
             Some(Overlay::Fast) => {
                 let rows = fast_rows(session, cx);
                 let Some(row) =
@@ -645,6 +722,42 @@ impl Composer {
         self.state.update(cx, |state, cx| state.focus(window, cx));
         match pick {
             Pick::Complete(_) => self.accept(session, window, cx),
+            Pick::Act(act) => {
+                let act = *act;
+                // **The words that reached the control come back out first.**
+                // `/model` is a way to a picker and not a message, so leaving
+                // it in the field would make it the opening of whatever the
+                // user types next — and they would have to notice and delete
+                // it, having never meant to write it.
+                //
+                // Done here rather than left to the change event, for the
+                // reason `accept` does the same: the trigger and the overlay
+                // are settled outright instead of being trusted to arrive in
+                // an order this depends on.
+                if let Some(trigger) = self.trigger.clone() {
+                    let text = self.text(cx);
+                    let caret = self.state.read(cx).cursor();
+                    let (next, at) = completion::remove(&text, caret, &trigger);
+                    self.state.update(cx, |state, cx| {
+                        state.set_value(next, window, cx);
+                        state.set_selected_range(at..at, cx);
+                    });
+                }
+                self.trigger = None;
+                self.set_overlay(None);
+                self.selected = 0;
+                match act {
+                    Act::Options => self.toggle_picker(Overlay::Options, session, window, cx),
+                    Act::Mode => self.toggle_picker(Overlay::Mode, session, window, cx),
+                    Act::Fast => self.toggle_picker(Overlay::Fast, session, window, cx),
+                    Act::Attach => self.attach(cx),
+                    // Typed from code rather than inserted as text, so it goes
+                    // through the same path the `+` menu uses for a keyboard
+                    // that cannot produce the character.
+                    Act::Mention => self.insert_trigger('@', window, cx),
+                }
+                true
+            }
             Pick::Mode(id) => {
                 let id = id.clone();
                 session.update(cx, |session, cx| {
@@ -898,6 +1011,19 @@ impl Composer {
                         }
                     })
                     .collect();
+                // The composer's own controls close the list, under a heading
+                // of their own. Last, because `/` has meant "something the
+                // agent offers" everywhere a user has met it before and that
+                // reading still leads.
+                let mut rows: Vec<Row> = rows;
+                let mut own = act_rows(query, session, cx).into_iter();
+                if let Some(first) = own.next() {
+                    rows.push(Row {
+                        group: Some("Composer".into()),
+                        ..first
+                    });
+                    rows.extend(own);
+                }
                 (rows, held)
             }
         }

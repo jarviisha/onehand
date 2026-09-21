@@ -87,7 +87,7 @@ pub fn filter<'a>(candidates: &'a [String], query: &str) -> Vec<&'a String> {
 /// the original, and slicing at it is a panic. Rare enough never to be seen in
 /// testing and certain to arrive eventually, since the haystack here is a
 /// filename somebody else chose.
-pub(crate) fn span(haystack: &str, needle: &str) -> Option<std::ops::Range<usize>> {
+pub fn span(haystack: &str, needle: &str) -> Option<std::ops::Range<usize>> {
     fn lower(c: char) -> char {
         c.to_lowercase().next().unwrap_or(c)
     }
@@ -449,6 +449,23 @@ pub fn mentions(
     );
 
     (rows, held)
+}
+
+/// Take the trigger and its query back out of `text`, leaving nothing.
+///
+/// **For a row that acts rather than completes.** A completion row's whole job
+/// is to put something in the buffer; a row that opens a picker has to take
+/// *itself* out of it, or the command somebody typed to reach a control is
+/// still sitting there as the first words of their next prompt.
+///
+/// Here and not at the call site because the span is the same one [`apply`]
+/// replaces, and it is arithmetic over a byte offset the caller cannot see.
+pub fn remove(text: &str, caret: usize, trigger: &ActiveTrigger) -> (String, usize) {
+    let caret = caret.min(text.len());
+    let mut out = String::with_capacity(text.len());
+    out.push_str(&text[..trigger.start]);
+    out.push_str(&text[caret..]);
+    (out, trigger.start)
 }
 
 /// Apply `choice` for `trigger` to `text`, replacing the trigger+query span.
@@ -893,6 +910,20 @@ mod tests {
         let (rows, held) = mentions(&files, &folders(&files), &[], "zzz", 10);
         assert!(rows.is_empty());
         assert_eq!(held, 0);
+    }
+
+    /// A row that opens a control has to take the words that reached it back
+    /// out, or they are the first thing in the next prompt.
+    #[test]
+    fn removing_a_trigger_leaves_what_was_around_it() {
+        let trig = detect("/mod", 4).unwrap();
+        assert_eq!(remove("/mod", 4, &trig), (String::new(), 0));
+
+        // A mention sits inside a sentence, so both sides survive.
+        let trig = detect("look at @ma", 11).unwrap();
+        let (text, caret) = remove("look at @ma", 11, &trig);
+        assert_eq!(text, "look at ");
+        assert_eq!(caret, "look at ".len());
     }
 
     #[test]
