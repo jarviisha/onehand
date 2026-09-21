@@ -1760,10 +1760,20 @@ impl Composer {
         // and a height taken from that is zero, which is the popup growing from
         // nothing a frame later. Waiting on an empty source it stands at its
         // full height instead, and re-measures once the pool arrives.
-        let pending = matches!(
-            self.trigger.as_ref().map(|trigger| trigger.kind),
-            Some(TriggerKind::File)
-        ) && session.read(cx).chat.files.is_empty();
+        // **Each trigger draws from its own pool, and each arrives late.**
+        // Files are scanned off the UI loop when the session opens; commands
+        // come from the agent over the wire once it connects. This asked about
+        // the file pool alone, so a `/` typed while connecting measured the
+        // composer's own five rows, recorded that as the height, and then grew
+        // by the agent's entire command list when it landed — the exact fault
+        // the guard exists for, on the trigger it did not cover.
+        let pending = self.trigger.as_ref().is_some_and(|trigger| {
+            let chat = &session.read(cx).chat;
+            match trigger.kind {
+                TriggerKind::File => chat.files.is_empty(),
+                TriggerKind::Command => chat.commands.is_empty(),
+            }
+        });
         // Measured once, on the frame the popup opens, and held until it
         // closes. Guarded rather than written through `get_or_insert`, whose
         // argument is evaluated on every call — and the argument here builds
