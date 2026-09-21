@@ -46,6 +46,30 @@ ACP_CMD="node crates/core/examples/mock_terminal_agent.js" cargo run -p onehand-
 ACP_CMD="node crates/core/examples/mock_ask_agent.js" cargo run -p onehand-core --example acp_smoke go
 ```
 
+**To look at the app's chrome without an API key**, point an agent at
+`crates/core/examples/mock_ui_agent.js` — Settings ▸ Agents, or in `onehand.toml`:
+
+```toml
+[[agents]]
+name = "Mock UI"
+command = "node"
+args = ["crates/core/examples/mock_ui_agent.js"]
+```
+
+It advertises modes, config options (model with per-choice descriptions, effort, fast) and slash
+commands, and every prompt replies with reasoning, prose, a tool call, a parked permission, a
+one-question card and a three-question card — every shape the two blocking cards take, and every
+piece of chrome the window draws around a conversation. The three-question form deliberately mixes
+a single-select, a multi-select and a free-text field, because each draws differently and a card of
+three identical questions would only ever exercise one of them. It answers
+`session/set_config_option` and `session/set_mode` by republishing the new state, so the chips move
+when they are used.
+
+**A mock *agent* and not a mock mode inside the app**, deliberately: the window is driven over the
+real transport, by the real parser, through the real session lifecycle, so what is on screen is what
+a real adapter would produce. A rendering path reachable only from a dev mode is one nobody is
+looking at when it breaks — and it would be a second way to reach every view, kept in step by hand.
+
 **Use the Makefile targets for `fmt` and `clippy`**, not bare cargo: `vendor/`
 is a workspace member, so `cargo fmt` reformats it and `clippy --fix` rewrites it — hundreds of lines
 of churn on upstream code, destroying the one property that vendor has (its diff against upstream is
@@ -529,8 +553,48 @@ plus `sendMessage` and `answerCallbackQuery`. Everything that is not the wire is
 - `composer.rs` — the card the pane mounts: the input, `@`/`/` completion, attachments,
   agent-advertised selectors and Send. It draws itself and reports the send press as an event,
   because which of Send and Stop was pressed is a question about the turn, not about the click.
+  **Everything that floats over it is built here and drawn as one object** — the card, a parked
+  permission, a parked question, an adapter still connecting, a queued prompt — sharing one
+  surface, hairline, radius and shadow, because written out per card they had already come apart
+  and a permission parked above a queued prompt read as two unrelated things rather than as the
+  same interruption twice. The card is capped **narrower than the transcript's reading column**
+  (`COMPOSER_COLUMN`) and everything pinned above it takes that cap; the three settings lists the
+  chips open all come from `picker_rows`, one answer because opening a list, walking it and drawing
+  it each ask for it. **`picker_rows` answers `Some` for all three**, empty vec included — its
+  `None` arms are the completion list and the attachment tray — so anything asking "does this
+  control exist" has to ask `mode_action`/`options_action`/`fast_action` instead, which is what the
+  chips themselves are drawn on. Asked the other way, a row was offered for a setting the agent
+  never advertised, and taking it opened an overlay with nothing to draw while still holding the
+  arrow keys.
+  **The popup is one shell for every overlay**, and what changes between them is the contents of a
+  row. It carries a **pinned title and a pinned footer**, both outside the scroll, each with a
+  hairline on the edge that faces the list: held among the rows, the title went away the moment the
+  list was long enough to need it and the footer sat under whatever half-row the scroll stopped on.
+  The bound that has to come out a whole number of rows is on the **scrolling box** and not on the
+  surface, because the surface also carries that chrome — floored there, the fold landed wherever
+  the chrome happened to leave it. Its height is **measured once, against an empty query**, and held
+  until it closes: the height belongs to the list rather than to what is typed, and taken from what
+  was on screen it held while a query narrowed and grew when a character was deleted.
+  **The `@` list is three groups** — files, folders, then what this session already touched
+  (`Chat::artifacts`, read back out of the transcript). Folders are derived from the file list
+  rather than walked for, carry what is beneath them, and insert a trailing slash, which is a
+  listing rather than a read. **The `/` list leads with the composer's own controls** — `/model`,
+  `/mode`, `/fast`, `/attach`, `/mention` — then the agent's, unprefixed first and each namespace as
+  a run of its own with the prefix taken off the rows and put on the heading. Those rows *act*
+  rather than complete, so accepting one takes the text that reached it back out of the buffer
+  (`completion::remove`): it is a way to a control, not a message.
+  **Standing state is a bare strip under the card**, outside it: the project's branch on the left,
+  the permission mode on the right — left is the project, right is the turn. The branch is a
+  control rather than a label, emitting `ChatPaneEvent::Project` so the shell opens the same menu
+  the rail's project rows carry, branch rename included.
 - `pane.rs` — what the shell mounts: session switching, the resume picker, the project page, the find bar, unseen
   badges, and the run plan the virtualized list reads.
+  **The transcript stops being drawn at the composer's middle** and fades into the surface over the
+  last few lines before it (`SMOKE`): the overlay is transparent around its surfaces, so an unclipped
+  row stayed visible either side of the card and read as the card having been dropped on the text,
+  while an unfaded clip is a line — full-strength text for one row and gone the next. The fade is
+  drawn between the list and every control, so what it takes is the conversation alone, and it ends
+  at the clip rather than at the card, which is narrower than the panel.
   Its **header is the panel's only chrome** (the dock draws the conversation bare), and it is split by
   what a control is *about*. **The conversation's name is itself the menu** — full-strength ink and
   semibold against an otherwise muted row, with the hover background and a chevron whose space is held
@@ -918,8 +982,13 @@ centre is the chat, right dock the Workbench, bottom dock the terminal.
   which worked while the rail was drawn in that surface too; once the rail moved to the chrome step
   the plate became the one thing in the window painted a step *below* what it sits on, which is a
   hole rather than a plate, and the `shadow_sm` under it could not say otherwise at that size. The
-  shadow went with the change: a fill that differs lifts by itself, and a drop shadow over a
-  near-black surface is invisible anyway.
+  shadow went with the change: a fill that differs lifts by itself, and the component library's own
+  drop shadow over a near-black surface is invisible anyway — every step of that ladder is pure
+  black at a tenth of an alpha, which against the dark palette's floating surface is a difference of
+  three parts in 255. That is a fact about *those* values and not about shadow: where one has to be
+  seen, `crate::theme::lift` draws the app's own, with the alpha chosen per palette. The dark one
+  needs more than four times the light one, because a black shadow on white has the whole range to
+  fall through and on near-black it has almost none.
   The flat list **sorts itself by what each session wants** — `rail::session_order`, which is
   `SessionSignal::rank` first and then recency, so a parked question or a dead adapter rises to the
   top and a session carrying no signal at all falls into the tail in most-recently-viewed order. That
@@ -983,11 +1052,17 @@ centre is the chat, right dock the Workbench, bottom dock the terminal.
   transcript is written at the end of every turn — `Shell::close_session`, also `Ctrl+Shift+W`). The
   session menu is **also** the row's right-click menu, on every row and not just the active one;
   Restart and Export select the session first, so they always act on what is on screen.
-- **Two `Dialog`s have no trigger: renaming a conversation, and splitting a project into a
-  worktree.** Every other dialog is opened by a control that carries `Dialog::trigger`; these are
-  opened from a menu entry that is gone by the time they appear, so `Shell::renaming` /
-  `Shell::worktree_draft` being `Some` is what puts each on screen and Esc/Cancel/close must all
-  clear it. A rename archives immediately rather than at the end of the next turn.
+- **Three `Dialog`s have no trigger: renaming a conversation, splitting a project into a
+  worktree, and renaming a branch.** Every other dialog is opened by a control that carries
+  `Dialog::trigger`; these are opened from a menu entry that is gone by the time they appear, so
+  `Shell::renaming` / `Shell::worktree_draft` / `Shell::branch_draft` being `Some` is what puts
+  each on screen and Esc/Cancel/close must all clear it. A conversation rename archives
+  immediately rather than at the end of the next turn. **The branch rename is `git branch -m` and
+  never `-M`** (`worktree::rename_branch_blocking`): the forced form overwrites a branch already
+  carrying the new name and throws away what was on it, while all the user asked for is that this
+  branch be called something else — so a collision is git's refusal, shown against the name that
+  caused it. A name that has not changed closes the form and does nothing, since git accepts it
+  and a sweep plus a notification for a no-op reads as something having happened.
 - **A worktree becomes a project root of its own**, added to the same workspace and selected
   (`Shell::commit_worktree`). It is a whole second checkout, so its file tree, terminal, git status
   and sessions all differ from the original's — and every one of those is already keyed by path, so
@@ -1390,11 +1465,16 @@ Listed because a missing feature nobody wrote down reads as a bug in the ones th
 
 - **No command palette** (`Ctrl+Shift+P`). It is a feature — a command registry plus a filtered
   popup — not a keymap entry.
-- **Keyboard navigation in the completion popup is incomplete.** gpui-component owns the menu
-  inside `Input`; its editor-only `CompletionProvider` is not reachable from an ordinary input, and
-  action dispatch reaches the focused input before the composer's wrapper. Today the popup is
-  click-to-pick, with Enter accepting the highlighted row. Fixing this needs an upstream hook or a
-  move to `EditorState`, not another outer key binding.
+- **The completion popup has no argument step.** A command that takes one is accepted like any
+  other and leaves the caret after it; there is no chip for the chosen command, no trailing chevron
+  saying an argument is coming, and no Backspace-returns-to-the-list. `Tab` accepts the highlighted
+  row rather than completing the common prefix. The keys that do work — `Up`/`Down` wrapping,
+  `Enter`, `Esc`, and a click, which go through one router so neither can act where the other
+  cannot — are bound `ChatComposer > Input` and claimed only while a list is open, since gpui's
+  dispatch reaches the focused input before any outer wrapper.
+- **An accepted mention is plain text, not a token.** It inserts the whole path, so a long one is
+  as wide as it reads; there is no single-unit deletion and no hover carrying the full path. That
+  needs the input to own a span it treats atomically, which `Input` does not offer.
 - **The remote bridge does not stream the transcript.** A finished turn carries the *end* of the
   agent's last answer (`Chat::answer_tail`) and nothing else: no tool cards, no diffs, no reasoning,
   nothing mid-turn. That excerpt is there because "finished a turn" alone is a notification whose only
@@ -1438,7 +1518,17 @@ Listed because a missing feature nobody wrote down reads as a bug in the ones th
   looking at the app's chrome afterwards, and re-running that grep.
   `crate::icons` holds **only what that enum cannot draw**: a shape the bundled set has no drawing
   of at all, and a brand mark, which belongs to the product it stands for rather than to a
-  general-purpose UI kit. Today it is five shapes and **no brand marks** — the one there was, for
+  general-purpose UI kit. Plus one narrow exception, the `-light` entries: a shape the bundled set
+  *does* draw, forked for its **stroke weight** alone. That weight lives inside the SVG and no API
+  reaches it, so a glyph drawn much larger than the app draws glyphs anywhere else cannot be made
+  lighter without a second copy. The composer's action row is that place — 1.25rem against about
+  0.75rem everywhere else, where Lucide's stroke of 2 reads as a marker pen — and the library's own
+  copies stay in use at every other call site, so the app carries two weights split by *how big a
+  glyph is drawn* rather than by which glyph it is. When a call site stops drawing oversized the
+  override goes with it: `square-slash` carried one while it was a button in that row and lost it
+  on moving into the `+` menu, where it stands beside two icons at the library's own weight. The weight is declared in the manifest's
+  `[stroke]` table and written in by `sync-icons.sh`, never edited into a file by hand: that script
+  refetches every checked-in SVG, so a hand edit is one the next sync throws away in silence. Today it is five shapes and **no brand marks** — the one there was, for
   the default agent, sat in the binary drawn by nothing, which is what the registry's
   `allow(dead_code)` guarantees nobody will ever notice. So an entry is added when a call site needs
   it, never in advance.
@@ -1617,5 +1707,7 @@ Listed because a missing feature nobody wrote down reads as a bug in the ones th
   scans go through `cx.background_executor()`, never inline in a render or an action handler.
 - **IME can swallow a typed `/` on Linux.** With a Vietnamese IME enabled, the composer may never
   receive the character, so the slash-command popup cannot be opened by typing. The workaround is the
-  composer's `@` and `/` toolbar buttons, which insert the trigger *from code*
-  (`Composer::insert_trigger`) and bypass the IME. Keep them: they are not a convenience.
+  *Mention a file* and *Run a slash command* entries in the composer's `+` menu, which insert the
+  trigger *from code* (`Composer::insert_trigger`) and bypass the IME. Keep them: they are not a
+  convenience, and each has to keep drawing the character it types — for the user who cannot type
+  it, the row is the only thing on screen naming it.

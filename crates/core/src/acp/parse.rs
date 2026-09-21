@@ -98,7 +98,17 @@ fn parse_config_option(o: &Value) -> Option<ConfigOption> {
                         .and_then(Value::as_str)
                         .unwrap_or(&value)
                         .to_string();
-                    Some(ConfigChoice { value, name })
+                    let description = c
+                        .get("description")
+                        .and_then(Value::as_str)
+                        .map(str::trim)
+                        .filter(|description| !description.is_empty())
+                        .map(str::to_string);
+                    Some(ConfigChoice {
+                        value,
+                        name,
+                        description,
+                    })
                 })
                 .collect()
         })
@@ -618,8 +628,9 @@ mod tests {
                 "id": "model", "name": "Model", "currentValue": "default", "type": "select",
                 "options": [
                     { "name": "Default (recommended)", "value": "default" },
-                    { "name": "Opus", "value": "opus[1m]" },
-                    { "name": "Sonnet", "value": "sonnet" }
+                    { "name": "Opus", "value": "opus[1m]",
+                      "description": "Opus 5 with 1M context" },
+                    { "name": "Sonnet", "value": "sonnet", "description": "   " }
                 ]
             }
         ]);
@@ -632,6 +643,18 @@ mod tests {
         assert_eq!(model.choices.len(), 3);
         assert_eq!(model.choices[1].value, "opus[1m]");
         assert_eq!(model.choices[1].name, "Opus");
+        assert_eq!(
+            model.choices[1].description.as_deref(),
+            Some("Opus 5 with 1M context")
+        );
+        assert_eq!(
+            model.choices[0].description, None,
+            "the protocol does not promise one"
+        );
+        assert_eq!(
+            model.choices[2].description, None,
+            "blank is absent, or the row grows a second line saying nothing"
+        );
     }
 
     #[test]

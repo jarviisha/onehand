@@ -80,10 +80,17 @@ pub struct ConfigOption {
 }
 
 /// One selectable value within a [`ConfigOption`].
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct ConfigChoice {
     pub value: String,
     pub name: String,
+    /// The agent's own sentence about what this choice is for.
+    ///
+    /// Optional because the protocol does not promise it and older adapters do
+    /// not send it. Where it is there it is the only thing that tells two model
+    /// names apart for somebody who has not read the vendor's release notes,
+    /// which is what a list of five of them is otherwise asking of a reader.
+    pub description: Option<String>,
 }
 
 impl std::fmt::Display for ConfigChoice {
@@ -290,6 +297,14 @@ impl PermissionOption {
 pub struct PermissionRequest {
     pub rpc_id: Value,
     pub tool_call_id: Option<String>,
+    /// What kind of work is being asked for, as the tool call declared it.
+    ///
+    /// The only word the protocol offers about *what* this is, and the card
+    /// needs one: a title that is a bare command says what would run without
+    /// saying it would run at all. There is no tool name on the wire, so an
+    /// unrecognised kind stays `Other` and the card prints nothing rather
+    /// than guessing at a label.
+    pub kind: ToolKind,
     pub title: String,
     pub options: Vec<PermissionOption>,
 }
@@ -313,6 +328,52 @@ pub struct ElicitChoice {
     pub label: String,
     /// Optional secondary line under the label.
     pub description: Option<String>,
+}
+
+/// Words a choice's label carries when taking it throws work away.
+const DESTRUCTIVE: &[&str] = &[
+    "delete",
+    "deletes",
+    "drop",
+    "drops",
+    "remove",
+    "removes",
+    "destroy",
+    "destroys",
+    "erase",
+    "erases",
+    "wipe",
+    "wipes",
+    "discard",
+    "discards",
+    "purge",
+    "purges",
+    "overwrite",
+    "overwrites",
+];
+
+impl ElicitChoice {
+    /// Whether this choice reads as the one that cannot be undone.
+    ///
+    /// **A word test on the agent's own label, because the protocol carries no
+    /// flag for it.** A form's choices arrive as a bare enum of strings: there
+    /// is nothing on the wire that separates "Leave them" from "Drop them", and
+    /// the one place the difference is written down is the wording the agent
+    /// chose for the person reading it.
+    ///
+    /// Wrong in the safe direction, which is what makes a heuristic affordable
+    /// here. A false positive tints a harmless option and costs a moment's
+    /// hesitation; a false negative draws a destructive one exactly as plainly
+    /// as it is drawn today. Neither can pick anything on the user's behalf --
+    /// this decides a colour, never an answer.
+    ///
+    /// Split on non-alphanumerics rather than searched for as substrings, so
+    /// "undropped" and "removable" are not read as warnings.
+    pub fn is_destructive(&self) -> bool {
+        self.label
+            .split(|c: char| !c.is_alphanumeric())
+            .any(|word| DESTRUCTIVE.contains(&word.to_ascii_lowercase().as_str()))
+    }
 }
 
 /// What one [`ElicitField`] asks for.
@@ -471,5 +532,23 @@ mod tests {
         // classify; the safe reading of an unreadable option is "no".
         assert_eq!(option("allow_on_tuesdays").weight(), PermissionWeight::Deny);
         assert_eq!(option("").weight(), PermissionWeight::Deny);
+    }
+
+    #[test]
+    fn a_choice_that_throws_work_away_is_read_off_its_label() {
+        let choice = |label: &str| ElicitChoice {
+            value: "v".into(),
+            label: label.into(),
+            description: None,
+        };
+        assert!(choice("Drop them").is_destructive());
+        assert!(choice("Delete the migrations").is_destructive());
+        assert!(choice("Overwrite").is_destructive());
+        assert!(!choice("Backfill them").is_destructive());
+        assert!(!choice("Leave them").is_destructive());
+        // Whole words only, or half the vocabulary of a safe option reads as a
+        // warning.
+        assert!(!choice("Undroppable columns").is_destructive());
+        assert!(!choice("Removable media").is_destructive());
     }
 }
