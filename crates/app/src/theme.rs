@@ -305,6 +305,51 @@ fn temper(base: Hsla, neutral: Hsla) -> Hsla {
 /// derived: both palettes get it from values they already hold, so there is no
 /// second ramp to keep in step by hand and no library token borrowed for a
 /// meaning it does not have.
+/// The shadow a surface takes when it floats over another surface.
+///
+/// **Because the component ladder's shadows cannot be seen on this palette.**
+/// Every step of gpui's `shadow_*` is pure black at a tenth of an alpha, which
+/// is a sensible cue on a white page and nothing at all on a dark one: against
+/// the floating surface that is a difference of three parts in 255, and the
+/// popup drawn over a parked card came out looking like one tall panel with a
+/// rule across it. That is the whole of what "a drop shadow over near-black is
+/// invisible" has always meant here — not that shadow is the wrong idea, but
+/// that *that* shadow is too faint to be one.
+///
+/// So the alpha is chosen per palette rather than shared. It has to be, and
+/// this is the direction that surprises: the dark palette needs **more** than
+/// four times the light one, because a black shadow on white has the whole
+/// range to fall through while on near-black it has almost none. One value
+/// tuned by eye in either mode is invisible in the other — the same trap the
+/// selected fill fell into, in the other direction.
+///
+/// Two shadows for the reason the component library uses two: the tight one
+/// draws the edge and the broad one carries the elevation. Blur costs the peak
+/// opacity, so the number that matters is not the alpha written here but what
+/// lands on the surface underneath — which is what
+/// `the_lift_can_be_seen_on_both_palettes` measures.
+pub(crate) fn lift(cx: &App) -> Vec<gpui::BoxShadow> {
+    let alpha = lift_alpha(cx.theme().mode.is_dark());
+    let shadow = |y: f32, blur: f32, spread: f32, alpha: f32| gpui::BoxShadow {
+        color: gpui::hsla(0., 0., 0., alpha),
+        offset: gpui::point(gpui::px(0.), gpui::px(y)),
+        blur_radius: gpui::px(blur),
+        spread_radius: gpui::px(spread),
+        inset: false,
+    };
+    vec![
+        shadow(2., 4., -1., alpha),
+        shadow(10., 20., -4., alpha * 0.8),
+    ]
+}
+
+fn lift_alpha(dark: bool) -> f32 {
+    match dark {
+        true => 0.6,
+        false => 0.14,
+    }
+}
+
 pub(crate) fn meta_ink(cx: &App) -> Hsla {
     between(cx.theme().foreground, cx.theme().muted_foreground)
 }
@@ -740,6 +785,54 @@ mod tests {
             assert!(
                 contrast(theme.accent_foreground, drawn) >= AA,
                 "{name}: the ink on the drawn selection is not readable"
+            );
+        }
+    }
+
+    /// A shadow that cannot be seen is not a cue, it is a line of code.
+    ///
+    /// This is the check the component library's own ladder fails here, and it
+    /// failed silently: `shadow_xl` is black at a tenth, which against the dark
+    /// palette's floating surface moves it by three parts in 255. The popup
+    /// drawn over a parked card had a shadow the whole time and read as one
+    /// tall panel.
+    ///
+    /// Measured against the surface the shadow actually falls on — another
+    /// floating card, since that is the case it exists for — and in both
+    /// palettes, because the alpha differs between them by more than four times
+    /// and a number tuned by eye in one mode is invisible in the other.
+    #[test]
+    fn the_lift_can_be_seen_on_both_palettes() {
+        fn under(surface: Hsla, alpha: f32) -> Hsla {
+            let s = gpui::Rgba::from(surface);
+            gpui::Rgba {
+                r: s.r * (1. - alpha),
+                g: s.g * (1. - alpha),
+                b: s.b * (1. - alpha),
+                a: 1.,
+            }
+            .into()
+        }
+
+        for (name, ramp, mode) in [
+            ("light", &LIGHT, ThemeMode::Light),
+            ("dark", &DARK, ThemeMode::Dark),
+        ] {
+            let theme = resolve(ramp, mode);
+            let alpha = lift_alpha(mode == ThemeMode::Dark);
+            let ratio = contrast(under(theme.popover, alpha), theme.popover);
+            assert!(
+                ratio >= ROW,
+                "{name}: the lift is {ratio:.2} against the card it falls on, which is not a shadow"
+            );
+
+            // The ladder this replaced, at the value it would have used, so the
+            // reason for replacing it is on the record rather than in a commit
+            // message.
+            let shipped = contrast(under(theme.popover, 0.1), theme.popover);
+            assert!(
+                mode == ThemeMode::Light || shipped < ROW,
+                "dark: the component ladder's shadow is visible after all, so this is not needed"
             );
         }
     }

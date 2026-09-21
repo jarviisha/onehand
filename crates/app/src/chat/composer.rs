@@ -1642,13 +1642,11 @@ impl Composer {
                 // A list that opens over the field it completes is floating, so
                 // it takes the floating surface and the shadow that says so.
                 .bg(cx.theme().popover.alpha(1.))
-                // A step past every other floating surface here, because this
-                // is the one that can be drawn *over* another of them. It buys
-                // nothing in the dark palette, where a shadow on near-black is
-                // invisible and the lift is carrying the whole signal, and it
-                // is most of the signal in the light one, where it is the lift
-                // that nearly disappears.
-                .shadow_xl()
+                // The app's own, not the component ladder's. Every step of that
+                // ladder is black at a tenth of an alpha, which is a cue on a
+                // white page and three parts in 255 on this one — a shadow that
+                // was drawn the whole time and could not be seen.
+                .shadow(crate::theme::lift(cx))
                 .p_1()
                 .child(popup_header(title, cx))
                 .child(
@@ -2063,7 +2061,7 @@ impl Composer {
             // where one ends.
             .border_color(cx.theme().accent)
             .bg(cx.theme().popover.alpha(1.))
-            .shadow_xl()
+            .shadow(crate::theme::lift(cx))
             .p_1()
             // The same pinned row every other popup carries. This one is built
             // by its own function rather than through `popup`, so leaving it
