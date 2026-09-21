@@ -1781,14 +1781,18 @@ impl Composer {
         if self.opened_rows.is_none() && !pending {
             self.opened_rows = Some(self.shape(session, cx));
         }
-        // While the pool is still arriving there is nothing to measure, so the
-        // full height stands in and is **not** recorded — recorded, it would be
-        // the height for as long as the popup stayed open, and the list that
-        // landed a frame later would have been measured by its own absence.
-        let (floor, label_floor) = match pending {
-            true => (POPUP_MAX_ROWS as usize, 0),
-            false => self.opened_rows.unwrap_or_default(),
-        };
+        // **Nothing is reserved while the pool is still arriving.** A full
+        // twelve rows used to stand in, on the reasoning that a popup should
+        // open at a stable height rather than grow into one. What that bought
+        // was a worse motion than the one it prevented: the stand-in is a
+        // guess at a number that cannot be known yet, so a four file project
+        // opened at twelve rows and collapsed to four the moment the scan
+        // landed. A collapse is read as something being taken away; growth
+        // out of a line that says it is still working is read as it working.
+        //
+        // The height is measured when there is something to measure, which is
+        // what the recording below already waited for.
+        let (floor, label_floor) = self.opened_rows.unwrap_or_default();
         let headings = rows.iter().filter(|row| row.group.is_some()).count();
         // Drawn *inside* the scroll, which is what makes this a floor on the
         // list rather than a height on the popup. A `min_h` on the surface
@@ -2003,15 +2007,30 @@ impl Composer {
                             // exactly what they cannot see, because it is in
                             // the field behind the card. Said back, a typo
                             // answers itself.
+                            //
+                            // **And "nothing matched" is only true once there
+                            // is something to match against.** The `@` list is
+                            // scanned off the UI loop, so for the first moments
+                            // of a session the pool is empty and every query
+                            // came back with nothing — which this reported as a
+                            // failed search, against a search that had not run.
+                            // A wrong answer in the shape of a right one: the
+                            // reader retypes a filename that was never going to
+                            // be found any faster.
                             let query = self
                                 .trigger
                                 .as_ref()
                                 .map(|trigger| trigger.query.clone())
                                 .unwrap_or_default();
-                            list.child(notice(cx).text_sm().child(match query.is_empty() {
-                                true => "Nothing to complete".to_string(),
-                                false => format!("No matches for \u{201c}{query}\u{201d}"),
-                            }))
+                            list.child(notice(cx).text_sm().child(
+                                match (pending, query.is_empty()) {
+                                    (true, _) => "Still looking…".to_string(),
+                                    (false, true) => "Nothing to complete".to_string(),
+                                    (false, false) => {
+                                        format!("No matches for \u{201c}{query}\u{201d}")
+                                    }
+                                },
+                            ))
                         })
                         .children(filler.map(|_| div().h(POPUP_ROW_H).flex_none()))
                         // The same box a heading occupies, margin included.
