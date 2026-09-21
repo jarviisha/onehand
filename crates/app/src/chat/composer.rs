@@ -110,13 +110,28 @@ const POPUP_MAX_ROWS: f32 = 12.;
 pub(super) const POPUP_STACK_PEEK: Rems = rems(0.375);
 /// What the popup spends on itself, outside the box that scrolls.
 ///
-/// The pinned title and — on a completion — the footer under the rule. Named
-/// so the height budget can subtract them: the thing that has to come out a
-/// whole number of rows is the *viewport*, and the viewport is the surface less
-/// this. Floored on the surface instead, the fold landed wherever the chrome
-/// happened to leave it, which is exactly the half-row the flooring exists to
-/// prevent.
-const POPUP_CHROME_H: Rems = rems(4.25);
+/// **An over-estimate on purpose, and that is the whole design.** This was one
+/// hand-measured number subtracted from the surface before flooring it, which
+/// is the same mistake it was written to fix: nothing tied it to the elements
+/// it claimed to measure, the test asserted arithmetic against the constant
+/// itself so drift passed, and it was silently wrong for the three popups that
+/// draw no footer at all.
+///
+/// The fold is no longer this number's problem. The bound that has to come out
+/// a whole number of rows is on the **scrolling box**, so the cut lands between
+/// two rows however tall the chrome turns out to be. All this decides is how
+/// much room the box is offered — and being generous there costs at most a row
+/// of the twelve, while being short by a pixel used to cost the thing the
+/// flooring was for.
+///
+/// The parts, each named for the call it mirrors: the pinned header
+/// (`CHIP_H` + `pb_1` + `mb_1`), the footer where one is drawn (`CHIP_H` +
+/// `pt_2` + `mt_1`), the segment rail where one is (`py_3` around a row), and
+/// the surface's own `p_1` top and bottom.
+const POPUP_HEADER_H: Rems = rems(2.);
+const POPUP_FOOTER_H: Rems = rems(2.25);
+const POPUP_RAIL_H: Rems = rems(3.);
+const POPUP_INSET_H: Rems = rems(0.5);
 
 /// How tall a list may grow, given the panel it is opening inside.
 ///
@@ -145,27 +160,41 @@ const POPUP_CHROME_H: Rems = rems(4.25);
 /// one row and a scrollbar.
 pub fn popup_room(panel: gpui::Pixels, reserved: gpui::Pixels, rem: gpui::Pixels) -> gpui::Pixels {
     let row = POPUP_ROW_H.to_pixels(rem);
-    let chrome = POPUP_CHROME_H.to_pixels(rem);
+    let chrome = popup_chrome(true, true).to_pixels(rem);
     let rows = row * POPUP_MAX_ROWS + chrome;
-    let room = (panel - reserved - POPUP_HEADROOM.to_pixels(rem))
+    (panel - reserved - POPUP_HEADROOM.to_pixels(rem))
         .min(rows)
-        .max(POPUP_MIN_H.to_pixels(rem));
-    // **Cut back so the scrolling box is a whole number of rows.** A bound
-    // taken straight from the panel lands wherever the panel happens to end,
-    // which is usually part-way through a row — and a row sliced through its
-    // middle at the top of a scrolling list does not read as "there is more
-    // above", it reads as a drawing that went wrong.
-    //
-    // The flooring is on the *viewport* and not on the surface, which is the
-    // whole of the difference: the surface also carries the pinned title and
-    // the footer, so a surface that is a whole number of rows leaves a viewport
-    // that is not. Take the chrome off, floor, put it back.
-    //
-    // A heading standing among the rows is still not a row, so a list with
-    // groups in it can still fold mid-heading. That one is bounded by how much
-    // a heading is: it is shorter than a row, and it is never the thing at the
-    // fold twice running.
-    ((room - chrome) / row).floor().max(1.) * row + chrome
+        .max(POPUP_MIN_H.to_pixels(rem))
+}
+
+/// Everything the popup draws above and below its scrolling box.
+///
+/// Both halves are asked for by name rather than inferred, because only the
+/// caller knows which of them it is about to draw: the footer belongs to a
+/// completion and the rail to the one config group promoted out of the list.
+pub(super) fn popup_chrome(footer: bool, rail: bool) -> Rems {
+    let mut h = POPUP_HEADER_H.0 + POPUP_INSET_H.0;
+    if footer {
+        h += POPUP_FOOTER_H.0;
+    }
+    if rail {
+        h += POPUP_RAIL_H.0;
+    }
+    rems(h)
+}
+
+/// How tall the scrolling box may stand: a whole number of rows, always.
+///
+/// **The bound is here and not on the surface**, which is the fix for a fold
+/// that kept landing mid-row. Floored on the surface, what the reader sees is
+/// the surface *less the chrome*, and that remainder is only a whole number of
+/// rows if the chrome happens to be — which nothing arranged and no test
+/// checked. Floored here it is exact whatever the chrome comes to, so the
+/// chrome estimate stops being load-bearing.
+pub(super) fn popup_list_h(room: gpui::Pixels, rem: gpui::Pixels, chrome: Rems) -> gpui::Pixels {
+    let row = POPUP_ROW_H.to_pixels(rem);
+    let left = room - chrome.to_pixels(rem);
+    (left / row).floor().max(1.) * row
 }
 /// How tall a row in the popup stands.
 ///
@@ -322,44 +351,34 @@ pub enum Overlay {
 /// heading over each rather than by hiding one, because which of them somebody
 /// means is a thing only they know.
 fn act_rows(query: &str, session: &Entity<ChatSession>, cx: &App) -> Vec<Row> {
-    let offered = |overlay: Overlay| picker_rows(&overlay, session, cx).is_some();
+    let offered = |act: Act| match act.opens() {
+        // A picker with nothing in it is what `toggle_picker` already refuses,
+        // asked here with the same question so the row and the press cannot
+        // come to disagree about whether the control exists.
+        Some(overlay) => picker_rows(&overlay, session, cx).is_some(),
+        None => true,
+    };
+    // Hoisted, for the reason the folder run hoists its own: inside the filter
+    // it is an allocation per row, on a list rebuilt at every keystroke.
+    let q = query.to_lowercase();
     [
         (
             "model",
             "Choose the model and the agent's other settings",
             Act::Options,
-            offered(Overlay::Options),
         ),
-        (
-            "mode",
-            "Switch the session mode",
-            Act::Mode,
-            offered(Overlay::Mode),
-        ),
-        (
-            "fast",
-            "Turn fast mode on or off",
-            Act::Fast,
-            offered(Overlay::Fast),
-        ),
-        (
-            "attach",
-            "Pick files to send with the prompt",
-            Act::Attach,
-            true,
-        ),
+        ("mode", "Switch the session mode", Act::Mode),
+        ("fast", "Turn fast mode on or off", Act::Fast),
+        ("attach", "Pick files to send with the prompt", Act::Attach),
         (
             "mention",
             "Put an @ in the prompt to name a file",
             Act::Mention,
-            true,
         ),
     ]
     .into_iter()
-    .filter(|(name, _, _, offered)| {
-        *offered && (query.is_empty() || name.to_lowercase().contains(&query.to_lowercase()))
-    })
-    .map(|(name, about, act, _)| Row {
+    .filter(|(name, _, act)| offered(*act) && (q.is_empty() || name.to_lowercase().contains(&q)))
+    .map(|(name, about, act)| Row {
         label: SharedString::from(name),
         detail: Some(SharedString::from(about)),
         pick: Pick::Act(act),
@@ -746,15 +765,13 @@ impl Composer {
                 self.trigger = None;
                 self.set_overlay(None);
                 self.selected = 0;
-                match act {
-                    Act::Options => self.toggle_picker(Overlay::Options, session, window, cx),
-                    Act::Mode => self.toggle_picker(Overlay::Mode, session, window, cx),
-                    Act::Fast => self.toggle_picker(Overlay::Fast, session, window, cx),
-                    Act::Attach => self.attach(cx),
+                match (act.opens(), act) {
+                    (Some(overlay), _) => self.toggle_picker(overlay, session, window, cx),
+                    (None, Act::Attach) => self.attach(cx),
                     // Typed from code rather than inserted as text, so it goes
                     // through the same path the `+` menu uses for a keyboard
                     // that cannot produce the character.
-                    Act::Mention => self.insert_trigger('@', window, cx),
+                    (None, _) => self.insert_trigger('@', window, cx),
                 }
                 true
             }
@@ -1669,9 +1686,10 @@ impl Composer {
         &mut self,
         session: &Entity<ChatSession>,
         room: gpui::Pixels,
+        rem: gpui::Pixels,
         cx: &mut Context<Self>,
     ) -> Option<gpui::Div> {
-        self.popup(session, room, cx)
+        self.popup(session, room, rem, cx)
     }
 
     pub fn close_overlay(&mut self, cx: &mut Context<Self>) {
@@ -1697,6 +1715,7 @@ impl Composer {
         &mut self,
         session: &Entity<ChatSession>,
         room: gpui::Pixels,
+        rem: gpui::Pixels,
         cx: &mut Context<Self>,
     ) -> Option<gpui::Div> {
         let overlay = self.overlay.clone()?;
@@ -1857,6 +1876,14 @@ impl Composer {
                         // content, so the box would push them off the bottom
                         // instead of scrolling.
                         .min_h_0()
+                        // A whole number of rows, computed from what this
+                        // popup is actually about to draw around itself rather
+                        // than from one constant standing for every popup.
+                        .max_h(popup_list_h(
+                            room,
+                            rem,
+                            popup_chrome(overlay == Overlay::Completion, segments.is_some()),
+                        ))
                         .overflow_y_scroll()
                         // Held by the composer rather than by the element, so walking
                         // the list with the keys can scroll it: the handle is what
@@ -1977,7 +2004,14 @@ impl Composer {
                             }))
                         })
                         .children(filler.map(|_| div().h(POPUP_ROW_H).flex_none()))
-                        .children(label_filler.map(|_| div().h(GROUP_LABEL_H).flex_none())),
+                        // The same box a heading occupies, margin included.
+                        // Built from `h` alone it was short by the gap under
+                        // every heading, so the list it was holding steady
+                        // still moved by that much for each group that came or
+                        // went.
+                        .children(
+                            label_filler.map(|_| div().min_h(GROUP_LABEL_H).mb_1p5().flex_none()),
+                        ),
                 )
                 // **Outside the scrolling box, and that is the whole point of
                 // them.** Both are sentences about the list rather than choices
@@ -3203,49 +3237,43 @@ mod tests {
 
     #[test]
     fn a_list_is_capped_by_the_panel_and_never_below_its_floor() {
-        use super::{POPUP_MAX_ROWS, POPUP_MIN_H, popup_room};
+        use super::{POPUP_MIN_H, popup_room};
         use gpui::px;
 
         let rem = px(16.);
         let row = super::POPUP_ROW_H.to_pixels(rem);
-        let chrome = super::POPUP_CHROME_H.to_pixels(rem);
-        let cap = row * POPUP_MAX_ROWS + chrome;
 
-        // **Measured on the scrolling box and not on the surface**, which is
-        // the whole point: the surface also carries the pinned title and the
-        // footer, so a surface that came out a whole number of rows left a
-        // viewport that did not, and the fold landed mid-row anyway. This
-        // assertion used to be on the surface and passed while that was true.
-        for (panel, reserved) in [(800., 120.), (500., 300.), (200., 180.), (0., 400.)] {
-            let room = popup_room(px(panel), px(reserved), rem);
-            assert_eq!(
-                (room - chrome) % row,
-                px(0.),
-                "{panel}/{reserved} leaves a part-row at the fold"
-            );
-            assert!(
-                room > chrome,
-                "{panel}/{reserved} left no room for a single row"
-            );
+        // **The whole-row bound is on the scrolling box, so it is exact
+        // whatever the chrome comes to.** It used to be on the surface, with
+        // one hand-measured constant subtracted first — and this test asserted
+        // that arithmetic against the same constant, so it passed while the
+        // fold landed mid-row for every popup whose chrome was not exactly
+        // that number. Measured here against each shape the popup actually
+        // takes, including the three that draw no footer at all.
+        for (footer, rail) in [(true, false), (false, false), (false, true), (true, true)] {
+            let chrome = super::popup_chrome(footer, rail);
+            for panel in [800., 500., 300., 0.] {
+                let room = popup_room(px(panel), px(120.), rem);
+                let list = super::popup_list_h(room, rem, chrome);
+                assert_eq!(
+                    list % row,
+                    px(0.),
+                    "footer {footer} rail {rail} at {panel}: the fold cuts a row"
+                );
+                assert!(
+                    list >= row,
+                    "footer {footer} rail {rail} at {panel}: no room for a row"
+                );
+            }
         }
 
         assert!(
-            cap < px(800. - 120. - 16.),
+            popup_room(px(800.), px(120.), rem) < px(800. - 120. - 16.),
             "the row cap has to be the binding one on a tall panel or it says nothing"
         );
         assert_eq!(
-            popup_room(px(800.), px(120.), rem),
-            ((cap - chrome) / row).floor() * row + chrome,
-            "a tall panel is bounded by the rows worth reading, not by the window"
-        );
-        assert_eq!(
-            popup_room(px(500.), px(300.), rem),
-            ((px(500. - 300. - 16.) - chrome) / row).floor() * row + chrome,
-            "a panel with less room than the cap hands over what it actually has"
-        );
-        assert_eq!(
             popup_room(px(200.), px(180.), rem),
-            ((POPUP_MIN_H.to_pixels(rem) - chrome) / row).floor() * row + chrome,
+            POPUP_MIN_H.to_pixels(rem),
             "a squeezed panel bottoms out rather than collapsing to one row"
         );
     }

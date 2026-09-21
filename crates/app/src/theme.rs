@@ -305,6 +305,14 @@ fn temper(base: Hsla, neutral: Hsla) -> Hsla {
 /// derived: both palettes get it from values they already hold, so there is no
 /// second ramp to keep in step by hand and no library token borrowed for a
 /// meaning it does not have.
+pub(crate) fn meta_ink(cx: &App) -> Hsla {
+    between(cx.theme().foreground, cx.theme().muted_foreground)
+}
+
+fn between(prose: Hsla, meta: Hsla) -> Hsla {
+    prose.mix_oklab(meta, 0.5)
+}
+
 /// The shadow a surface takes when it floats over another surface.
 ///
 /// **Because the component ladder's shadows cannot be seen on this palette.**
@@ -348,14 +356,6 @@ fn lift_alpha(dark: bool) -> f32 {
         true => 0.6,
         false => 0.14,
     }
-}
-
-pub(crate) fn meta_ink(cx: &App) -> Hsla {
-    between(cx.theme().foreground, cx.theme().muted_foreground)
-}
-
-fn between(prose: Hsla, meta: Hsla) -> Hsla {
-    prose.mix_oklab(meta, 0.5)
 }
 
 #[cfg(test)]

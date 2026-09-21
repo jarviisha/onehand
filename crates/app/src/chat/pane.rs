@@ -3884,49 +3884,55 @@ impl ChatPane {
             // while one is open is the case that would be silent, and that is
             // answered at the event instead: parking an ask closes the popup.
             .children({
-                let popup =
-                    self.composer
-                        .update(cx, |composer, cx| {
-                            composer.detached_popup(session, room.popup, cx)
-                        })
-                        // **Every overlay is the same card, in the same place.** The
-                        // option lists used to hang off the chip that opened them,
-                        // on the reasoning that keeping a compact surface against
-                        // its trigger says which control it belongs to. What it
-                        // cost is the thing a list of choices is for: sized to its
-                        // own rows and pinned to one end of the card, a model list
-                        // had no room for the sentence the agent sends about each
-                        // choice, and the rows it did fit were narrower than the
-                        // words in them. The card above the composer is the width
-                        // of the reading column, which is what every choice here
-                        // needs -- and the chip stays lit underneath for as long as
-                        // its list is open, which is what actually says where the
-                        // list came from.
-                        .map(|popup| {
-                            div()
-                                .absolute()
-                                // **Lifted off whatever is under it, and only when
-                                // something is.** Flush, the popup and a parked
-                                // card have the same width, nearly the same
-                                // surface and a shared edge, so the two read as one
-                                // tall panel. The usual cue for "this is above
-                                // that" is a drop shadow, and it is not available
-                                // here: over the dark palette's near-black it is
-                                // invisible, which is why that palette needs a real
-                                // step for a floating control in the first place.
-                                // Lifting leaves the card's bottom edge and border
-                                // showing, and two horizontal edges a few pixels
-                                // apart is a stack where one is a panel.
-                                .bottom(match pinned.is_empty() {
-                                    true => gpui::px(0.),
-                                    false => super::composer::POPUP_STACK_PEEK
-                                        .to_pixels(window.rem_size()),
-                                })
-                                .left_0()
-                                .right_0()
-                                .px_4()
-                                .child(div().w_full().max_w(COMPOSER_COLUMN).mx_auto().child(popup))
-                        });
+                let popup = self
+                    .composer
+                    .update(cx, |composer, cx| {
+                        composer.detached_popup(session, room.popup, window.rem_size(), cx)
+                    })
+                    // **Every overlay is the same card, in the same place.** The
+                    // option lists used to hang off the chip that opened them,
+                    // on the reasoning that keeping a compact surface against
+                    // its trigger says which control it belongs to. What it
+                    // cost is the thing a list of choices is for: sized to its
+                    // own rows and pinned to one end of the card, a model list
+                    // had no room for the sentence the agent sends about each
+                    // choice, and the rows it did fit were narrower than the
+                    // words in them. The card above the composer is the width
+                    // of the reading column, which is what every choice here
+                    // needs -- and the chip stays lit underneath for as long as
+                    // its list is open, which is what actually says where the
+                    // list came from.
+                    .map(|popup| {
+                        div()
+                            .absolute()
+                            // **Lifted off whatever is under it, and only when
+                            // something is.** Flush, the popup and a parked
+                            // card have the same width, nearly the same
+                            // surface and a shared edge, so the two read as one
+                            // tall panel. The usual cue for "this is above
+                            // that" is a drop shadow, and it is not available
+                            // here: over the dark palette's near-black it is
+                            // invisible, which is why that palette needs a real
+                            // step for a floating control in the first place.
+                            // Lifting leaves the card's bottom edge and border
+                            // showing, and two horizontal edges a few pixels
+                            // apart is a stack where one is a panel.
+                            // Left as a rem. Resolved against
+                            // `window.rem_size()` it would be the one
+                            // length in this stack measured from the
+                            // *window's* base — and a panel's zoom
+                            // overrides the rem base for its own subtree,
+                            // so the peek would be the only part of it that
+                            // did not grow with the text beside it.
+                            .bottom(match pinned.is_empty() {
+                                true => gpui::rems(0.),
+                                false => super::composer::POPUP_STACK_PEEK,
+                            })
+                            .left_0()
+                            .right_0()
+                            .px_4()
+                            .child(div().w_full().max_w(COMPOSER_COLUMN).mx_auto().child(popup))
+                    });
                 // **Outside the measured box, for the reason the popup is.** A
                 // parked card is a surface over the conversation, not a floor
                 // under it: measured, every card that arrives grows the

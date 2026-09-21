@@ -365,6 +365,17 @@ impl Mention {
     }
 }
 
+/// Rows the artifact run shows before the rest are counted rather than drawn.
+///
+/// **Small on purpose, and counted rather than cut off upstream.** The claim
+/// this group makes is "the thing that just happened", and it is only true of
+/// the last few — a long recency list is the project's own file list again, in
+/// a worse order and under a heading promising something it no longer delivers.
+/// But the cut has to happen *after* the query has been applied and where the
+/// count of what was held back can be reported, or a query aimed at something
+/// older finds nothing here and nothing says why.
+const ARTIFACT_ROWS: usize = 8;
+
 /// The whole `@` list for one query: files, then folders, then what this
 /// session has already touched.
 ///
@@ -379,17 +390,6 @@ impl Mention {
 /// A group that matched nothing contributes no rows, and therefore no heading:
 /// the heading belongs to the row under it, so an empty group cannot leave one
 /// behind.
-/// Rows the artifact run shows before the rest are counted rather than drawn.
-///
-/// **Small on purpose, and counted rather than cut off upstream.** The claim
-/// this group makes is "the thing that just happened", and it is only true of
-/// the last few — a long recency list is the project's own file list again, in
-/// a worse order and under a heading promising something it no longer delivers.
-/// But the cut has to happen *after* the query has been applied and where the
-/// count of what was held back can be reported, or a query aimed at something
-/// older finds nothing here and nothing says why.
-const ARTIFACT_ROWS: usize = 8;
-
 pub fn mentions(
     files: &[String],
     folders: &[(String, usize)],

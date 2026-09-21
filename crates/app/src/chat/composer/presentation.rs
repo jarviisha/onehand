@@ -90,6 +90,23 @@ pub(super) enum Act {
     Mention,
 }
 
+impl Act {
+    /// The overlay this opens, where it opens one.
+    ///
+    /// **One mapping and not two.** It was written out at both ends — once to
+    /// ask whether the control had anything in it, once to open it — and two
+    /// copies of a three-arm table is two places for an arm to be added to one
+    /// and not the other, which draws a row that refuses when pressed.
+    pub(super) fn opens(self) -> Option<super::Overlay> {
+        match self {
+            Self::Options => Some(super::Overlay::Options),
+            Self::Mode => Some(super::Overlay::Mode),
+            Self::Fast => Some(super::Overlay::Fast),
+            Self::Attach | Self::Mention => None,
+        }
+    }
+}
+
 /// Written out rather than derived: `#[default]` only reaches unit variants,
 /// and the completion arm carries the string it would insert.
 impl Default for Pick {
