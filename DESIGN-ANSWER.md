@@ -918,34 +918,31 @@ the pill at its end.
 - **Activity row:** one anatomy for everything in that block, at a fixed height.
   Left to right: **state** in a fixed slot · **kind**, the block's drawing for
   the sort of work · **verb**, what was done, the one part at full ink ·
-  **summary**, what it was done to, muted and cut to one line · **meta**, a pill
-  against a right-hand floor · **chevron**, always the last column on every row.
-  Only the summary gives way when the row runs short. A row with nothing to open
-  draws no chevron and takes no hover fill.
-- **A row that stands for a run and a row that is one step are the same row**
-  collapsed. The only difference is what each opens into: one unfolds a command
-  and its output, the other unfolds the steps it stands for — children at a
-  shorter height, set in to where the parent's verb starts, carrying no frame
-  and separated only by hairlines.
+  **object**, what it was done to, muted and cut to one line · **meta**, words
+  and numbers against a right-hand floor · **chevron**, always the last column.
+  Only the object gives way when the row runs short. A row with nothing to open
+  draws no chevron and takes no pointer.
+- **A row that stands for a run of reads and a row that is one step are the same
+  row** collapsed. The only difference is what each opens into: one unfolds a
+  command and its output, the other the paths it stands for.
+- **A row hovers the way the cluster's line above it does: ink, and no plate.**
+  A fill behind a row is the row answering as a surface, and these rows are a
+  list inside a frame that is already one. The **weight is left alone here and
+  only here**: the verb is a shrink-to-fit column, so a heavier one moves where
+  the object column starts, and a block of rows whose columns shift under the
+  pointer is the thing the frame exists to prevent. The layout and the ink sit
+  on the row element itself rather than on a box inside it, because a hover
+  styles the element whose hitbox the pointer is over and text colour cascades
+  *down*: a wrapper hovering over a child that has already set its own colour
+  changes nothing. Everything that should lift inherits; the verb, already as
+  bright as the row goes, says so.
+- **Motion:** none. The chevron swaps rather than rotates; body height is not
+  animated. A transcript that reflows while it streams is harder to read, not
+  livelier.
 - **Plan:** the one framed block that is not activity. Same frame, same corner, a
   heading carrying an exact count and a bar under it carrying the same figure as
   a length, then one entry per row at the control height with a checkbox that
   never changes size — only what is inside it.
-- **Header:** role icon, label or title + descriptor, optional status, then a
-  chevron when detail exists. All glyphs occupy the same centred `size_4` slot;
-  only the sans label and mono descriptor align by text baseline. Right means
-  collapsed; down means open. The chevron always follows the label's right edge,
-  never a distant right-hand rail; hovering the interactive row promotes the
-  label from `muted_foreground` to `foreground`.
-- **Body:** rendered only while expanded. Everything below one activity header
-  — all `IN` / `OUT` / `EDIT` / `ERR` sections together — shares one bordered
-  card whose left edge aligns with the label. Long detail scrolls inside that
-  card, with a visible scrollbar whenever content overflows; the muted machine
-  wells inside do not repeat its border. Running tools force-open; every settled
-  state follows the user's fold choice.
-- **Motion:** none. The chevron swaps rather than rotates; body height is not
-  animated. A transcript that reflows while it streams is harder to read, not
-  livelier.
 
 ---
 
@@ -1036,7 +1033,9 @@ and its first paragraph — is **one cluster**, and a cluster is **one muted lin
   removed — mono, each side in the ink it means, and **a side that is zero is
   not drawn**, which colour is what forces: `−0` set in the danger ink is the
   colour of something having gone when nothing did — then how long the whole
-  stretch took, and a chevron. The total is a sum of durations each step stamped
+  stretch took, and **the chevron, last — the same end of the row it takes
+  inside the frame**, so the one control meaning the same thing everywhere is
+  not in two places depending on which kind of row it is on. The total is a sum of durations each step stamped
   once when it settled, not a clock: a live figure is a number the line re-reads
   every frame and never comes to rest on. It is drawn only where something
   actually reported one, or a cluster whose steps never said would claim to have

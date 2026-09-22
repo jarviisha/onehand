@@ -4077,21 +4077,6 @@ fn cluster_line(
                 .text_color(crate::theme::meta_ink(cx))
         })
         .on_click(move |event, window, cx| on_click(event, window, cx))
-        .child(
-            div()
-                .size(CHEVRON_SLOT)
-                .flex_none()
-                .h_flex()
-                .items_center()
-                .justify_center()
-                .child(
-                    Icon::new(match open {
-                        true => IconName::ChevronDown,
-                        false => IconName::ChevronRight,
-                    })
-                    .size(CHEVRON_MARK),
-                ),
-        )
         .child(sentence)
         // How many went wrong, said in the ink that means it.
         .children((summary.errors > 0).then(|| {
@@ -4138,6 +4123,25 @@ fn cluster_line(
                         .child(format!("−{}", summary.removed))
                 }))
         }))
+        // **Last, as it is on every row inside the frame.** The arrow means the
+        // same thing in both places, and a control that moves ends of the line
+        // depending on which kind of row it is on is one the eye has to find
+        // twice.
+        .child(
+            div()
+                .size(CHEVRON_SLOT)
+                .flex_none()
+                .h_flex()
+                .items_center()
+                .justify_center()
+                .child(
+                    Icon::new(match open {
+                        true => IconName::ChevronDown,
+                        false => IconName::ChevronRight,
+                    })
+                    .size(CHEVRON_MARK),
+                ),
+        )
         .into_any_element()
 }
 
@@ -4506,109 +4510,97 @@ fn activity_row(
 ) -> gpui::AnyElement {
     let interactive = row.fold.is_some();
     let id = row.id.clone();
-    let content = div()
-        .h_flex()
-        .items_center()
-        .gap(PART_GAP)
-        .w_full()
-        .min_w_0()
-        .py(ROW_PAD_Y)
-        .px(ROW_PAD_X)
-        // **A disc in the ink the state means, and nothing else in the slot.**
-        // A tick and a cross are two drawings to read at a size where both are
-        // a handful of strokes; a disc is one shape wherever it appears, so
-        // what the column carries is a colour — and a colour is read without
-        // being looked at. Running is the exception a static shape cannot
-        // cover.
-        .child(row.mark.draw(cx))
-        .child(
-            div()
-                .size(KIND_ICON)
-                .flex_none()
-                .h_flex()
-                .items_center()
-                .justify_center()
-                .child(
-                    Icon::new(Icon::empty().path(row.kind))
-                        .size(KIND_ICON)
-                        .text_color(cx.theme().muted_foreground),
-                ),
-        )
-        .child(
-            div()
-                .flex_none()
-                .whitespace_nowrap()
-                .text_size(VERB_TEXT)
-                .text_color(cx.theme().foreground)
-                .child(row.verb),
-        )
-        .children(row.object.map(|object| {
-            div()
-                .flex_1()
-                .min_w_0()
-                .h_flex()
-                .items_center()
-                .overflow_hidden()
-                .whitespace_nowrap()
-                .font_family(cx.theme().mono_font_family.clone())
-                .text_size(OBJECT_TEXT)
-                .when(row.struck, |o| o.line_through())
-                .children(object.dir.map(|dir| {
-                    div()
-                        .flex_none()
-                        .text_color(cx.theme().muted_foreground.opacity(0.7))
-                        .child(dir)
-                }))
-                .child(
-                    div()
-                        .min_w_0()
-                        .truncate()
-                        .text_color(cx.theme().muted_foreground)
-                        .child(object.name),
-                )
-        }))
-        .child(div().flex_1().min_w_0())
-        .children(row.meta)
-        .child(
-            div()
-                .size(CHEVRON_SLOT)
-                .flex_none()
-                .h_flex()
-                .items_center()
-                .justify_center()
-                .children(row.fold.map(|open| {
-                    Icon::new(match open {
-                        true => IconName::ChevronDown,
-                        false => IconName::ChevronRight,
-                    })
-                    .size(CHEVRON_MARK)
-                    .text_color(cx.theme().muted_foreground.opacity(0.8))
-                })),
-        );
+    // **The layout and the ink sit on the row itself, not on a box inside it.**
+    // A hover styles the element whose hitbox the pointer is over, and text
+    // colour cascades *down* -- so a wrapper that hovers over a child which has
+    // already set its own colour changes nothing. Everything that should lift
+    // therefore inherits, and the one thing that should not says so.
+    // Generic over the element, because the interactive row is a
+    // `Stateful<Div>` and the inert one is a plain `Div`: both are `Styled` and
+    // `ParentElement`, which is the whole of what dressing a row needs.
+    fn dress<E>(row_div: E, row: ActivityRow, cx: &App) -> E
+    where
+        E: Styled + ParentElement,
+    {
+        row_div
+            .h_flex()
+            .items_center()
+            .gap(PART_GAP)
+            .w_full()
+            .min_w_0()
+            .py(ROW_PAD_Y)
+            .px(ROW_PAD_X)
+            .text_color(cx.theme().muted_foreground)
+            // **A disc in the ink the state means, and nothing else in the
+            // slot.** A tick and a cross are two drawings to read at a size
+            // where both are a handful of strokes; a disc is one shape wherever
+            // it appears, so what the column carries is a colour -- and a
+            // colour is read without being looked at.
+            .child(row.mark.draw(cx))
+            .child(
+                div()
+                    .size(KIND_ICON)
+                    .flex_none()
+                    .h_flex()
+                    .items_center()
+                    .justify_center()
+                    .child(Icon::new(Icon::empty().path(row.kind)).size(KIND_ICON)),
+            )
+            .child(
+                div()
+                    .flex_none()
+                    .whitespace_nowrap()
+                    .text_size(VERB_TEXT)
+                    // The one part held at the reading ink, so it does not lift
+                    // with the rest: it is already as bright as this row goes.
+                    .text_color(cx.theme().foreground)
+                    .child(row.verb),
+            )
+            .children(row.object.map(|object| {
+                div()
+                    .flex_1()
+                    .min_w_0()
+                    .h_flex()
+                    .items_center()
+                    .overflow_hidden()
+                    .whitespace_nowrap()
+                    .font_family(cx.theme().mono_font_family.clone())
+                    .text_size(OBJECT_TEXT)
+                    .when(row.struck, |o| o.line_through())
+                    .children(object.dir.map(|dir| {
+                        div()
+                            .flex_none()
+                            .text_color(cx.theme().muted_foreground.opacity(0.7))
+                            .child(dir)
+                    }))
+                    .child(div().min_w_0().truncate().child(object.name))
+            }))
+            .child(div().flex_1().min_w_0())
+            .children(row.meta)
+            .child(chevron_slot(row.fold, cx))
+    }
 
     match interactive {
-        true => crate::controls::action(id)
-            .ghost()
-            .w_full()
-            .min_w_0()
-            .h_auto()
-            .p_0()
-            .rounded_none()
-            .child(content)
-            .on_click(on_click)
-            .into_any_element(),
-        // Nothing to open, so nothing to press: a hover fill and a pointer on a
-        // row that does not answer is a promise the row cannot keep.
-        false => div()
+        // **The same hover the cluster's line takes: ink, and no plate.** A
+        // fill behind a row is the row answering as a surface, and these rows
+        // are a list inside a frame that is already one. The weight is left
+        // alone here and only here: the verb is `flex_none`, so a heavier one
+        // would move where the object column starts, and a block of rows whose
+        // columns shift under the pointer is the one thing the frame is for.
+        true => div()
             .id(id)
-            .w_full()
-            .min_w_0()
-            .child(content)
+            .cursor_pointer()
+            .hover(|row| row.text_color(crate::theme::meta_ink(cx)))
+            .on_click(on_click)
+            .map(|row_div| dress(row_div, row, cx))
             .into_any_element(),
+        // Nothing to open, so nothing to press: a pointer on a row that does
+        // not answer is a promise the row cannot keep.
+        false => dress(div(), row, cx).into_any_element(),
     }
 }
 
-/// The counts at the end of a row that changed a file.
+/// The counts at the end of a row that changed a file./// The counts at the end of a row that changed a file.
 ///
 /// **`−0` is not drawn**, which colour is what forces: a zero set in the ink
 /// that means "this went" is the colour of a loss that did not happen.
