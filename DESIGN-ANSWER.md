@@ -1202,10 +1202,15 @@ throughout, at a leading a list of it wants.
   any say, so a box that merely sets `overflow-y: scroll` is a box the wheel
   slides the *conversation* behind: the reader ends up somewhere else in the turn
   while trying to read one command's output. A mask sits as a sibling of the
-  scrolled box, consumes the vertical delta before the list sees it, and hands it
-  back at the edges — so a detail scrolled to its end lets the transcript carry
-  on, which is what every platform scroller does and what a reader expects
-  without knowing it.
+  scrolled box and consumes the vertical delta before the list sees it.
+- **Contained, and not chained.** It keeps consuming at the edge rather than
+  handing the delta back, which is the opposite of what a browser does by
+  default and is right here: these boxes are a few lines tall inside a
+  transcript that is hundreds, so a reader who reaches the end of one command's
+  output would have the whole conversation take off under their finger. What
+  they were doing was reading *this*, and arriving at its last line is not a
+  request to leave it. The component library's own mask chains, so the
+  transcript brings its own.
 
 ### 5.5.1 The record a settled exchange leaves
 A question the agent asked, and a grant the user answered, are **rows of the

@@ -1262,9 +1262,66 @@ impl RenderOnce for ScrollBody {
                     .track_scroll(&scroll)
                     .children(self.children),
             )
-            .child(ScrollableMask::new(Axis::Vertical, &scroll).id(("detail-mask", key)))
+            .child(contain_wheel(scroll.clone()))
             .child(Scrollbar::vertical(&scroll).mode(ScrollbarMode::Always))
     }
+}
+
+/// Take the wheel for a box and never hand it back.
+///
+/// **Contained, not chained.** The component library's mask stops at the edge
+/// and lets the delta bubble — which is what a browser does by default, and is
+/// wrong here: these boxes are a few lines tall inside a transcript that is
+/// hundreds, so a reader who reaches the end of one command's output has the
+/// whole conversation take off under their finger. What they were doing was
+/// reading *this*, and arriving at its last line is not a request to leave it.
+///
+/// Registered in the **capture** phase for the reason the library's is: the
+/// transcript is a `gpui::list`, which registers its own wheel listener after
+/// its children paint, so in the bubble phase it runs first and has already
+/// spent the delta. `should_handle_scroll` rather than a bare bounds test, so
+/// the box stays inert under a popup or a dialog.
+///
+/// A `canvas` rather than an element of its own: the whole of what this needs
+/// is a hitbox and one listener, and both are reachable from the two callbacks
+/// a canvas already hands out.
+fn contain_wheel(scroll: ScrollHandle) -> impl IntoElement {
+    gpui::canvas(
+        move |bounds, window, _| window.insert_hitbox(bounds, gpui::HitboxBehavior::Normal),
+        move |_, hitbox, window, _| {
+            let view = window.current_view();
+            let line_height = window.line_height();
+            let id = hitbox.id;
+            window.on_mouse_event(
+                move |event: &gpui::ScrollWheelEvent, phase, window, cx: &mut App| {
+                    if !(phase.capture() && id.should_handle_scroll(window)) {
+                        return;
+                    }
+                    let delta = event.delta.pixel_delta(line_height).y;
+                    // Clamped against the box's own travel, and the current
+                    // offset clamped with it: a bubbled event can push the
+                    // shared offset past the edge unclamped, and that transient
+                    // overscroll reads as room that is not there.
+                    let travel = scroll.max_offset().y.max(gpui::px(0.));
+                    let mut offset = scroll.offset();
+                    let current = offset.y.clamp(-travel, gpui::px(0.));
+                    let next = (current + delta).clamp(-travel, gpui::px(0.));
+                    if next != current {
+                        offset.y = next;
+                        scroll.set_offset(offset);
+                        cx.notify(view);
+                    }
+                    // **Always, and at the edge most of all.** Letting go here
+                    // is the whole of what this exists to stop.
+                    cx.stop_propagation();
+                },
+            );
+        },
+    )
+    .absolute()
+    .top_0()
+    .left_0()
+    .size_full()
 }
 
 /// A detail's body, scrolling inside its box only once it has been opened.
