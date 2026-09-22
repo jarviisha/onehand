@@ -1211,6 +1211,16 @@ throughout, at a leading a list of it wants.
   is where its failure is. The cut fades into the box at whichever end it falls,
   and the control that opens it is a pill sitting over the fade — a plate of its
   own, or it is read against the text it is covering.
+- **The box carries a Copy, because a drag cannot select it.** The renderer only
+  gives selection to text that goes through its markdown path — which is how the
+  agent's prose is selectable and why nothing here is: a diff's three columns are
+  layout, and running them through that renderer to gain a drag would cost the
+  columns. So the block answers in whole rather than in part, which is also what
+  somebody pasting a failure into a bug report wants. It is drawn always, never
+  waiting to be hovered: a control that appears under the pointer is one nobody
+  finds who was not already reaching for it. It covers the tail of the first
+  line, which is the trade a reserved column would otherwise charge every line
+  below — and what a first line carries is its opening.
 - **Opened, the box scrolls inside a fixed height**, and the control that shuts
   it sits *outside* that scroll with a rule between, so it never goes where the
   content goes. **Collapsed it does not scroll at all** — a preview short enough

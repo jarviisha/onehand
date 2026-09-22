@@ -1522,6 +1522,13 @@ Listed because a missing feature nobody wrote down reads as a bug in the ones th
   than none.
 - **Only Telegram.** The layer underneath is general and `RemoteChannel` is what a second one would
   implement, but nothing else does. There is no Discord adapter and no HTTP endpoint.
+- **Nothing in an activity detail can be selected with a drag.** gpui gives selection to text
+  that goes through `TextView`, which is a *markdown* renderer — that is why the agent's prose is
+  selectable and a command, an output or a diff is not. Routing them through it would mean giving a
+  diff's three columns up, since those columns are layout and markdown has no notion of them. The
+  box carries a Copy for the whole of what it holds instead. The primitives for doing it properly
+  are there (`gpui::InteractiveText` plus `TextLayout::index_for_position`, which is what
+  `vendor/gpui-terminal` builds its own selection on) — it is a feature, not a limitation.
 - **`path:line:col` tokens in agent prose are not clickable.** The transcript renders prose through
   `TextView::markdown` and does not scan it for path tokens. Only a tool card's path header opens a
   file, and it carries no line — ACP's diff payload has no hunk offsets. Core holds no parser for

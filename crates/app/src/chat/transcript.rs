@@ -927,7 +927,7 @@ fn prose_style(window: &Window, cx: &App) -> TextViewStyle {
 /// One constructor for both the copies the transcript offers — a fenced block
 /// and a whole answer — because they are the same gesture and the only reason
 /// they ever looked different was that they were written months apart.
-fn copy_button(id: &'static str, text: impl Into<SharedString>) -> Button {
+fn copy_button(id: impl Into<gpui::ElementId>, text: impl Into<SharedString>) -> Button {
     let text = text.into();
     crate::controls::action(id)
         .ghost()
@@ -1103,6 +1103,37 @@ enum Detail {
     Image(std::sync::Arc<Vec<u8>>),
 }
 
+impl Detail {
+    /// The whole of what the box holds, as text.
+    ///
+    /// **What Copy hands over, and why there is a Copy at all.** The rows here
+    /// are drawn from plain elements, which the renderer does not let a drag
+    /// select -- the one selectable text in the transcript is the agent's prose,
+    /// and it is selectable because it goes through a markdown renderer that
+    /// owns its own selection. A diff cannot: its three columns are layout, and
+    /// running them through that renderer to gain a drag would cost the columns.
+    /// So the block answers in whole rather than in part, which is also what
+    /// somebody pasting a failure into a bug report wants.
+    fn text(&self, rows: &[String]) -> Option<String> {
+        match self {
+            Self::Command { command, output } => Some(match output.is_empty() {
+                true => command.clone(),
+                false => format!("{command}\n\n{output}"),
+            }),
+            Self::Lines(lines) => Some(
+                lines
+                    .iter()
+                    .map(|l| l.to_string())
+                    .collect::<Vec<_>>()
+                    .join("\n"),
+            ),
+            Self::Diffs => Some(rows.join("\n")),
+            // Bytes are not text, and a clipboard image is a different feature.
+            Self::Image(_) => None,
+        }
+    }
+}
+
 fn tool_detail(t: &ToolItem, presented: &activity::Presentation, root: &Path) -> Option<Detail> {
     if t.call.kind == ToolKind::Execute {
         let command = onehand_core::chat::redact(t.call.title.trim());
@@ -1165,6 +1196,7 @@ fn detail_frame(
     detail: Detail,
     cx: &App,
 ) -> gpui::Div {
+    let copy = detail.text(&diff_text(t));
     div()
         .w_full()
         .min_w_0()
@@ -1173,6 +1205,7 @@ fn detail_frame(
         .pb(FRAME_PAD)
         .child(
             div()
+                .relative()
                 .w_full()
                 .min_w_0()
                 .overflow_hidden()
@@ -1212,8 +1245,49 @@ fn detail_frame(
                             .text_color(cx.theme().muted_foreground)
                             .child(line)
                     })),
-                }),
+                })
+                // **Drawn always, never waiting to be hovered.** A control that
+                // appears under the pointer is one nobody finds who was not
+                // already reaching for it -- and this is the box whose text is
+                // most likely to be wanted somewhere else: pasted into a shell,
+                // quoted in a bug report, kept as the record of what ran.
+                //
+                // It covers the tail of the first line, which is the trade the
+                // column it would otherwise reserve costs every line below.
+                // What a first line carries is its opening, and that is the
+                // part it keeps.
+                .children(copy.map(|text| {
+                    div()
+                        .absolute()
+                        .top(TIGHT_GAP)
+                        .right(TIGHT_GAP)
+                        .rounded(radius_control(cx))
+                        .bg(cx.theme().muted)
+                        .child(
+                            copy_button(("detail-copy", fold_key(target)), text)
+                                .tooltip("Copy this"),
+                        )
+                })),
         )
+}
+
+/// A diff's rows as the lines they would be in a file.
+fn diff_text(t: &ToolItem) -> Vec<String> {
+    let mut out = Vec::new();
+    for key in 0..t.call.content.len() {
+        let Some(rows) = t.diff_rows.get(&key) else {
+            continue;
+        };
+        for row in rows {
+            out.push(match row {
+                DiffRow::Context(l) => format!(" {l}"),
+                DiffRow::Added(l) => format!("+{l}"),
+                DiffRow::Removed(l) => format!("-{l}"),
+                DiffRow::Skipped(n) => format!("@@ {n} unchanged lines @@"),
+            });
+        }
+    }
+    out
 }
 
 /// Where whatever a row opens into is set in to: the row's own words, with the
