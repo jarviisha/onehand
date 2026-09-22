@@ -4035,15 +4035,22 @@ fn cluster_line(
             .child(div().min_w_0().truncate().child(part.rest.clone()));
     }
 
-    crate::controls::action(id)
-        // **The text variant, which is the one with no fill at all** — hover
-        // and press alike. A plate under this line was a rectangle appearing
-        // between two paragraphs every time the pointer crossed the column, for
-        // a control whose whole job is to be a note in the margin; and once
-        // there is no plate there is nothing for padding to hold the text off,
-        // so the sentence simply starts where the prose does.
-        .text()
-        .group("cluster-line")
+    // **A stateful `div`, not the app's button wrapper.** The wrapper is a
+    // library `Button`, and reaching its hover state from the call site meant
+    // going through three layers -- the button's own refinement, the
+    // `Stateful<Div>` underneath it, and the group-hitbox registry a
+    // `group_hover` resolves against. Two attempts at that changed nothing on
+    // screen. `hover` on a stateful div is the primitive all three are built
+    // out of: it styles the element whose own hitbox the pointer is over, with
+    // nothing in between to go wrong.
+    //
+    // What it costs is the keyboard, which a `Button` would have carried. The
+    // rail's rows made the same trade for the same kind of reason.
+    div()
+        .id(id)
+        .h_flex()
+        .items_center()
+        .gap(STACK_GAP)
         .h(rems(1.75))
         // **Shrink to the sentence.** A control the width of the column is a
         // bar, and a bar is a thing in the transcript rather than a note in the
@@ -4051,114 +4058,90 @@ fn cluster_line(
         .w_auto()
         .max_w_full()
         .min_w_0()
-        .p_0()
-        .rounded_none()
-        .on_click(on_click)
+        .cursor_pointer()
+        .text_size(CLUSTER_TEXT)
+        // **A weight is a request, like a family.** It lands only where the
+        // resolved face carries that cut; where it does not, the platform hands
+        // back the nearest it has. Nothing here depends on it: the ink carries
+        // the line on its own, and this is the second channel, not the first.
+        .font_weight(gpui::FontWeight::EXTRA_LIGHT)
+        .text_color(cx.theme().muted_foreground)
+        // **Hover is the ink and the weight, and no fill.** Both are the line's
+        // own two channels turned up rather than a plate put behind it -- which
+        // is what a note in the margin has to do, since a rectangle appearing
+        // between two paragraphs is the chrome answering instead of the thing
+        // hovered. The meaning colours on the counts are set per child and are
+        // left alone.
+        .hover(|line| {
+            line.font_weight(gpui::FontWeight::NORMAL)
+                .text_color(crate::theme::meta_ink(cx))
+        })
+        .on_click(move |event, window, cx| on_click(event, window, cx))
         .child(
+            div()
+                .size(CHEVRON_SLOT)
+                .flex_none()
+                .h_flex()
+                .items_center()
+                .justify_center()
+                .child(
+                    Icon::new(match open {
+                        true => IconName::ChevronDown,
+                        false => IconName::ChevronRight,
+                    })
+                    .size(CHEVRON_MARK),
+                ),
+        )
+        .child(sentence)
+        // How many went wrong, said in the ink that means it.
+        .children((summary.errors > 0).then(|| {
+            div()
+                .flex_none()
+                .whitespace_nowrap()
+                .text_color(status.danger)
+                .child(match summary.errors {
+                    1 => " · 1 error".to_string(),
+                    n => format!(" · {n} errors"),
+                })
+        }))
+        // The total, after the sentence and before the counts: it is about the
+        // *work* rather than about the files. Only where something reported
+        // one, or a cluster whose steps never said would claim to have taken no
+        // time at all.
+        .children((summary.seconds > 0).then(|| {
+            div()
+                .flex_none()
+                .whitespace_nowrap()
+                .font_family(cx.theme().mono_font_family.clone())
+                .child(elapsed(summary.seconds))
+        }))
+        // **Mono, and each side in the ink it means.** A diff's two numbers are
+        // the one pair here a reader takes in without reading. A side that is
+        // zero is not drawn: `−0` in the danger ink is the colour of something
+        // having gone when nothing did.
+        .children((summary.added > 0 || summary.removed > 0).then(|| {
             div()
                 .h_flex()
                 .items_center()
-                .gap(STACK_GAP)
-                .min_w_0()
-                .text_size(CLUSTER_TEXT)
-                // **Muted, lighter than the prose, and placed by size alone.**
-                // This line has been through a status mark, a brighter ink on
-                // its verbs and a heavier weight -- each added so it could be
-                // found while skimming, and each one also making it compete
-                // with the answer above it, which nothing here may do. Size is
-                // the channel left: it says *where* a reader is in the document
-                // without saying how much the thing wants from them, and the
-                // light weight is what keeps a larger size from reading as a
-                // louder one. What went wrong is still said in words, in the
-                // ink that means it.
-                //
-                // **A weight is a request, like a family.** It lands only
-                // where the resolved face carries that cut; where it does not,
-                // the platform hands back the nearest it has -- or, asked for
-                // something far enough off, a different family altogether,
-                // which would put this one line in a typeface of its own.
-                // Nothing here depends on it: the size and the ink carry the
-                // line on their own, and this is the third channel, not the
-                // first.
-                .font_weight(gpui::FontWeight::EXTRA_LIGHT)
-                .text_color(cx.theme().muted_foreground)
-                // **Hover is the ink and the weight, and no fill.** Both are
-                // the line's own two channels turned up rather than a plate
-                // put behind it -- which is what a note in the margin has to
-                // do, since a rectangle appearing between two paragraphs is
-                // the chrome answering instead of the thing hovered. The ink
-                // stops a step under the prose, as everything here does; the
-                // meaning colours on the counts are set per child and are left
-                // alone.
-                .group_hover("cluster-line", |line| {
-                    line.font_weight(gpui::FontWeight::NORMAL)
-                        .text_color(crate::theme::meta_ink(cx))
-                })
-                .child(sentence)
-                // How many went wrong, said in the ink that means it and
-                // nowhere near the mark, which reads the cluster's *ending*.
-                .children((summary.errors > 0).then(|| {
+                .gap(TIGHT_GAP)
+                .flex_none()
+                .whitespace_nowrap()
+                .font_family(cx.theme().mono_font_family.clone())
+                .children((summary.added > 0).then(|| {
                     div()
-                        .flex_none()
-                        .whitespace_nowrap()
+                        .text_color(status.success)
+                        .child(format!("+{}", summary.added))
+                }))
+                .children((summary.removed > 0).then(|| {
+                    div()
                         .text_color(status.danger)
-                        .child(match summary.errors {
-                            1 => " · 1 error".to_string(),
-                            n => format!(" · {n} errors"),
-                        })
+                        .child(format!("−{}", summary.removed))
                 }))
-                // **Mono, and each side in the ink it means.** A diff's two
-                // numbers are the one pair on this line a reader takes in
-                // without reading — how much came and how much went — and in
-                // one muted colour they were two figures to be told apart by
-                // the sign in front of them.
-                //
-                // Mono because they are the numbers that change while the line
-                // is on screen: a proportional face slides every word before
-                // them sideways each time a digit is added.
-                //
-                // **A side that is zero is not drawn**, which colour is what
-                // forces: `−0` set in the danger ink is the colour of something
-                // having gone when nothing did.
-                // **The total, after the counts and before the arrow.** It is
-                // the one number on this line that is about the *work* rather
-                // than about the files, so it goes last of the three -- and
-                // only where something actually reported one, because a
-                // cluster of steps that never said how long they took would
-                // otherwise claim to have taken no time at all.
-                .children((summary.seconds > 0).then(|| {
-                    div()
-                        .flex_none()
-                        .whitespace_nowrap()
-                        .font_family(cx.theme().mono_font_family.clone())
-                        .text_color(cx.theme().muted_foreground.opacity(0.7))
-                        .child(elapsed(summary.seconds))
-                }))
-                .children((summary.added > 0 || summary.removed > 0).then(|| {
-                    div()
-                        .h_flex()
-                        .items_center()
-                        .gap(TIGHT_GAP)
-                        .flex_none()
-                        .whitespace_nowrap()
-                        .font_family(cx.theme().mono_font_family.clone())
-                        .children((summary.added > 0).then(|| {
-                            div()
-                                .text_color(status.success)
-                                .child(format!("+{}", summary.added))
-                        }))
-                        .children((summary.removed > 0).then(|| {
-                            div()
-                                .text_color(status.danger)
-                                .child(format!("−{}", summary.removed))
-                        }))
-                }))
-                .child(chevron_slot(Some(open), cx)),
-        )
+        }))
         .into_any_element()
 }
 
-/// A stretch of one kind of work inside an opened cluster.
+/// A stretch of one kind of work inside an opened cluster./// A stretch of one kind of work inside an opened cluster.
 ///
 /// **A row that stands for a section and a row that is one step are the same
 /// row.** Collapsed they are indistinguishable, and the only difference is what

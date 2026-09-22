@@ -1048,6 +1048,16 @@ and its first paragraph — is **one cluster**, and a cluster is **one muted lin
   hovered. With no plate there is nothing for padding to hold the text off, so
   the sentence starts exactly where the prose does.
 
+  **The line is a stateful `div`, not the app's button wrapper**, and that is
+  what makes the hover land. The wrapper is a library `Button`, and reaching its
+  hover state from a call site means going through three layers — the button's
+  own refinement, the `Stateful<Div>` underneath it, and the group-hitbox
+  registry a `group_hover` resolves against. Two attempts at that changed
+  nothing on screen. `hover` on a stateful div is the primitive all three are
+  built out of: it styles the element whose own hitbox the pointer is over, with
+  nothing in between to go wrong. What it costs is the keyboard, which a
+  `Button` would have carried; the rail's rows made the same trade.
+
   What it costs is that the line is shrink-to-fit, so a heavier weight makes it a
   little wider — the right-hand end moves under the pointer while every word
   before it stays put. Taken deliberately: the alternative is a plate, and the
