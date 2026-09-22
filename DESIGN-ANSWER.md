@@ -1222,9 +1222,14 @@ throughout, at a leading a list of it wants.
   slides the *conversation* behind: the reader ends up somewhere else in the turn
   while trying to read one command's output. A mask sits as a sibling of the
   scrolled box and consumes the vertical delta before the list sees it.
-- **Contained, and not chained.** It keeps consuming at the edge rather than
-  handing the delta back, which is the opposite of what a browser does by
-  default and is right here: these boxes are a few lines tall inside a
+- **A box with nothing to scroll takes nothing**, which is the half a first
+  attempt forgets. Consumed wherever it is drawn, an opened detail shorter than
+  its own cap becomes a dead patch of the transcript: hovering it stops the
+  conversation moving, for a box that was not going to move either. The mask
+  reads last frame's travel and stands aside when there is none.
+- **Where there is travel it is contained, and not chained.** It keeps consuming
+  at the edge rather than handing the delta back, which is the opposite of what
+  a browser does by default and is right here: these boxes are a few lines tall inside a
   transcript that is hundreds, so a reader who reaches the end of one command's
   output would have the whole conversation take off under their finger. What
   they were doing was reading *this*, and arriving at its last line is not a

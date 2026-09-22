@@ -1297,10 +1297,15 @@ impl RenderOnce for ScrollBody {
     }
 }
 
-/// Take the wheel for a box and never hand it back.
+/// Take the wheel for a box that has somewhere to go, and never hand it back.
 ///
-/// **Contained, not chained.** The component library's mask stops at the edge
-/// and lets the delta bubble — which is what a browser does by default, and is
+/// **Two conditions, and the first is the one a first attempt forgets.** A box
+/// shorter than its own cap has nothing to scroll, so it takes nothing: consumed
+/// there, an opened detail is a dead patch of the transcript, where hovering
+/// stops the conversation moving for a box that was not going to move either.
+///
+/// **Then contained, not chained.** The component library's mask stops at the
+/// edge and lets the delta bubble — which is what a browser does by default, and is
 /// wrong here: these boxes are a few lines tall inside a transcript that is
 /// hundreds, so a reader who reaches the end of one command's output has the
 /// whole conversation take off under their finger. What they were doing was
@@ -1327,12 +1332,25 @@ fn contain_wheel(scroll: ScrollHandle) -> impl IntoElement {
                     if !(phase.capture() && id.should_handle_scroll(window)) {
                         return;
                     }
-                    let delta = event.delta.pixel_delta(line_height).y;
-                    // Clamped against the box's own travel, and the current
-                    // offset clamped with it: a bubbled event can push the
-                    // shared offset past the edge unclamped, and that transient
-                    // overscroll reads as room that is not there.
+                    // **A box with nothing to scroll takes nothing.** This is
+                    // the half the first version got wrong: it consumed the
+                    // wheel wherever it was drawn, so an opened detail shorter
+                    // than its own cap became a dead patch of the transcript --
+                    // hover it and the conversation stopped moving, for a box
+                    // that had nothing to move either.
+                    //
+                    // Last frame's measurement, like everything else measured
+                    // here. The first frame after a detail opens has no travel
+                    // recorded yet and lets one event past, which is a frame
+                    // nobody can see.
                     let travel = scroll.max_offset().y.max(gpui::px(0.));
+                    if travel <= gpui::px(0.) {
+                        return;
+                    }
+                    let delta = event.delta.pixel_delta(line_height).y;
+                    // The current offset is clamped too: a bubbled event can
+                    // push the shared offset past the edge unclamped, and that
+                    // transient overscroll reads as room that is not there.
                     let mut offset = scroll.offset();
                     let current = offset.y.clamp(-travel, gpui::px(0.));
                     let next = (current + delta).clamp(-travel, gpui::px(0.));
@@ -1341,8 +1359,10 @@ fn contain_wheel(scroll: ScrollHandle) -> impl IntoElement {
                         scroll.set_offset(offset);
                         cx.notify(view);
                     }
-                    // **Always, and at the edge most of all.** Letting go here
-                    // is the whole of what this exists to stop.
+                    // **And where there *is* travel, at the edge most of all.**
+                    // Reaching the end of a box a few lines tall is not a
+                    // request to leave it, and handing the delta on there is
+                    // the whole of what this exists to stop.
                     cx.stop_propagation();
                 },
             );
