@@ -1531,12 +1531,21 @@ Listed because a missing feature nobody wrote down reads as a bug in the ones th
   who wrote it. Each carries a Copy for the whole of what it holds instead, the prompt's sitting
   outside its bubble rather than over the one short sentence it is offering.
 
-  **The proper fix exists and is a feature, not a limitation.** `gpui_base::TextSelectionHandle`
-  with `TextSelectionRegistration` / `TextSelectionRun` is a document-wide selection spanning
-  arbitrary elements — it is what `TextView` itself is built on — and under that sit
-  `gpui::InteractiveText` and `TextLayout::index_for_position`, which is where
-  `vendor/gpui-terminal` gets its own. What it costs is a custom element per selectable run: a
-  hitbox, runs projected from a `TextLayout`, and the highlight painted behind the glyphs.
+  **Two ways out exist, and both were weighed and declined for now.** The component library does
+  ship a selectable plain-text control — `Editor` (and `TextArea`) with `.readonly(true)`, which
+  *"keeps the normal appearance and still can be focused, selected and copied, it only rejects the
+  changes made by the user"* — and with `.appearance(false)` and no explicit height it would sit in
+  a bubble and grow with its text. What it costs is an `Entity<EditorState>` per prompt cached on
+  the session (today that cache holds a handful of live cards, not every message of a long
+  conversation), a click on a prompt taking focus off the composer, and selection that still stops
+  at each block's edge — a diff stays unselectable either way.
+
+  The thorough one is `gpui_base::TextSelectionHandle` with `TextSelectionRegistration` /
+  `TextSelectionRun`: a document-wide selection spanning arbitrary elements, which is what
+  `TextView` itself is built on, and under which sit `gpui::InteractiveText` and
+  `TextLayout::index_for_position` — where `vendor/gpui-terminal` gets its own. It keeps the diff's
+  columns, needs no per-message state and steals no focus, and costs one custom element: a hitbox,
+  runs projected from a `TextLayout`, and the highlight painted behind the glyphs.
 - **`path:line:col` tokens in agent prose are not clickable.** The transcript renders prose through
   `TextView::markdown` and does not scan it for path tokens. Only a tool card's path header opens a
   file, and it carries no line — ACP's diff payload has no hunk offsets. Core holds no parser for
