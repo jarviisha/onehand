@@ -44,11 +44,19 @@ use std::path::{Path, PathBuf};
 /// around the floating composer. Held here, this is still real scrollable
 /// space: the last row can rest clear of the card without an opaque footer.
 ///
-/// A turn's worth of air rather than a hairline. The composer is a surface of
-/// its own floating over the conversation, and a transcript that stops just
-/// short of it reads as one still trying to fit — the last line of an answer
-/// and the box it is answered in run together into a single block.
-const COMPOSER_REST: Rems = rems(1.5);
+/// **Wider than any gap inside the conversation, because it is not one.** Every
+/// other space in the transcript separates two things of the same kind — two
+/// blocks, two turns — and is drawn from one ladder for exactly that reason.
+/// This one is where the column *ends*: below it is a surface of a different
+/// sort, floating, with its own edge and its own fill. A boundary between two
+/// kinds of thing that measures the same as a boundary inside one of them reads
+/// as the composer being the next paragraph.
+///
+/// Half again the space between two turns, which is the widest step the
+/// conversation itself uses. Written against that step rather than as its own
+/// number: it was set to match it once, the turn gap moved, and this quietly
+/// stopped being what its own comment said it was.
+const COMPOSER_REST: Rems = rems(transcript::TURN_GAP.0 * 1.5);
 /// Safe first-frame clearance before the overlay has reported its real height.
 /// The resting composer is about this tall; using zero until prepaint is what
 /// lets the initial transcript tail land behind it.

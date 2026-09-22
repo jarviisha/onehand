@@ -77,6 +77,17 @@ The transcript is a **full-height** scrolling column inside the dock's centre
 panel, running from the header's hairline to the bottom of the pane, with the
 composer floating over its foot.
 
+**Where the conversation comes to rest is wider than any gap inside it.** Every
+other space in the transcript separates two things of the same kind — two
+blocks, two turns — and comes from one ladder for that reason. The space above
+the composer is where the column *ends*: below it is a surface of a different
+sort, floating, with its own edge and its own fill, and a boundary between two
+kinds of thing that measures the same as a boundary inside one of them reads as
+the composer being the next paragraph. Half again the space between two turns,
+and written against that step rather than as its own number — it was set to
+match it once, the turn gap moved, and this quietly stopped being what its own
+comment said it was.
+
 **One scale, named for jobs, and nothing sized off it.** Every gap, pad, inset,
 height and corner in the transcript comes from a single ladder held in one
 place, and each step is named for what it is for rather than for how big it is:
