@@ -557,7 +557,7 @@ pub fn item(
         .then(|| chat.turn_answer(target))
         .flatten();
     let body = match it {
-        ChatItem::User(u) => user(u, room, cx).into_any_element(),
+        ChatItem::User(u) => user(u, fold_key(target), room, cx).into_any_element(),
         ChatItem::Agent(md) => agent(session, md, target, turn, window, cx).into_any_element(),
         ChatItem::Thought(th) => thought(session, th, target, window, cx).into_any_element(),
         ChatItem::Tool(t) => tool(session, t, target, cx).into_any_element(),
@@ -605,7 +605,7 @@ pub fn item(
 /// message. Both keep the right edge, because the edge is what says whose they
 /// are, and the files come first — they were handed over before the question
 /// was asked about them.
-fn user(u: &UserMsg, room: Room, cx: &App) -> impl IntoElement + use<> {
+fn user(u: &UserMsg, uid: usize, room: Room, cx: &App) -> impl IntoElement + use<> {
     let over = u.attachments.len().saturating_sub(MAX_ATTACHMENT_ROWS);
     let share = match room.narrow {
         true => USER_BUBBLE_MAX_NARROW,
@@ -651,6 +651,7 @@ fn user(u: &UserMsg, room: Room, cx: &App) -> impl IntoElement + use<> {
         }))
         .children((!u.text.trim().is_empty()).then(|| {
             div()
+                .relative()
                 .max_w(relative(share))
                 .py(TEXT_PAD_Y)
                 .px(TEXT_PAD_X)
@@ -665,6 +666,20 @@ fn user(u: &UserMsg, room: Room, cx: &App) -> impl IntoElement + use<> {
                 .bg(cx.theme().secondary)
                 .text_color(cx.theme().secondary_foreground)
                 .child(u.text.clone())
+                // **A Copy, because a drag cannot take this either.** What the
+                // user typed is drawn as typed -- deliberately, since a prompt
+                // run through the markdown renderer would turn `**/*.rs` into
+                // bold and a backtick into a code span, which is the transcript
+                // misquoting the person who wrote it. That renderer is also the
+                // only thing here that owns a selection, so the two cannot both
+                // be had until the transcript grows a selection of its own.
+                //
+                // Outside the bubble rather than over it: the bubble is the
+                // shortest block in the transcript and a control laid on it
+                // covers the sentence it is offering to copy.
+                .child(div().absolute().top_0().left(rems(-1.75)).child(
+                    copy_button(("copy-prompt", uid), u.text.clone()).tooltip("Copy this prompt"),
+                ))
         }))
 }
 

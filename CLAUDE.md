@@ -1522,13 +1522,21 @@ Listed because a missing feature nobody wrote down reads as a bug in the ones th
   than none.
 - **Only Telegram.** The layer underneath is general and `RemoteChannel` is what a second one would
   implement, but nothing else does. There is no Discord adapter and no HTTP endpoint.
-- **Nothing in an activity detail can be selected with a drag.** gpui gives selection to text
-  that goes through `TextView`, which is a *markdown* renderer — that is why the agent's prose is
-  selectable and a command, an output or a diff is not. Routing them through it would mean giving a
-  diff's three columns up, since those columns are layout and markdown has no notion of them. The
-  box carries a Copy for the whole of what it holds instead. The primitives for doing it properly
-  are there (`gpui::InteractiveText` plus `TextLayout::index_for_position`, which is what
-  `vendor/gpui-terminal` builds its own selection on) — it is a feature, not a limitation.
+- **Only the agent's prose can be selected with a drag.** The one selectable thing in the
+  transcript is what goes through `TextView`, which is a *markdown* renderer — so a command, an
+  output, a diff and the **user's own prompt** are all plain elements a drag slides straight past.
+  Neither of the two could simply be routed through it. A diff's three columns are layout and
+  markdown has no notion of them; and a prompt is drawn *as typed* on purpose, so rendering it would
+  turn `**/*.rs` into bold and a backtick into a code span — the transcript misquoting the person
+  who wrote it. Each carries a Copy for the whole of what it holds instead, the prompt's sitting
+  outside its bubble rather than over the one short sentence it is offering.
+
+  **The proper fix exists and is a feature, not a limitation.** `gpui_base::TextSelectionHandle`
+  with `TextSelectionRegistration` / `TextSelectionRun` is a document-wide selection spanning
+  arbitrary elements — it is what `TextView` itself is built on — and under that sit
+  `gpui::InteractiveText` and `TextLayout::index_for_position`, which is where
+  `vendor/gpui-terminal` gets its own. What it costs is a custom element per selectable run: a
+  hitbox, runs projected from a `TextLayout`, and the highlight painted behind the glyphs.
 - **`path:line:col` tokens in agent prose are not clickable.** The transcript renders prose through
   `TextView::markdown` and does not scan it for path tokens. Only a tool card's path header opens a
   file, and it carries no line — ACP's diff payload has no hunk offsets. Core holds no parser for
