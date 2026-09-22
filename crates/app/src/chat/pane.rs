@@ -53,20 +53,24 @@ const COMPOSER_REST: Rems = rems(1.5);
 /// The resting composer is about this tall; using zero until prepaint is what
 /// lets the initial transcript tail land behind it.
 const COMPOSER_MIN_H: Rems = rems(6.5);
-/// The reading column for transcript rows. `w_full` lets it shrink with a
-/// narrow panel; this cap keeps a line from stretching across the whole window
-/// on a wide one.
+/// The air between the column and the edge of the panel.
 ///
-/// **Set by what the widest block holds, not by prose alone.** A column sized
-/// purely for reading sentences is the narrower number this used to be — and
-/// what it cost is everything in the transcript that is not a sentence: a
-/// unified diff wraps its longest lines, a command well folds a path that
-/// would have fit, and a tool card's header ellipsizes a file name whose tail
-/// is the part that identifies it. Those are the blocks the user is reading
-/// the transcript *for* when something has gone wrong, and a cap tuned past
-/// them to keep paragraphs comfortable trades the case that matters for the
-/// case that was already fine.
-const CONTENT_COLUMN: Rems = rems(64.);
+/// The narrow figure is for a panel too short to spare the wide one: below that
+/// width the margin is taking room from the line itself rather than framing it.
+const SIDE_MARGIN: Rems = rems(1.25);
+const SIDE_MARGIN_NARROW: Rems = rems(0.75);
+/// Where a panel stops being wide enough to hold the column off its edges.
+const NARROW_PANEL: Rems = rems(30.);
+/// The pill offering the way back to the end of the conversation.
+///
+/// A step above the controls in the card below it, because it is the one thing
+/// on screen floating over the conversation with nothing around it — and a step
+/// under the card's own height, because it is not part of that card.
+const JUMP_PILL_H: Rems = rems(1.625);
+const JUMP_PILL_PAD: Rems = rems(0.75);
+/// The conversation header, which is the one row in the panel that never
+/// scrolls and so the edge every other measurement here is taken from.
+const HEADER_H: Rems = rems(2.75);
 /// The narrower cap the composer and the surfaces that belong to it take.
 ///
 /// **A message being written is not a message being read.** The transcript's
@@ -114,12 +118,17 @@ struct OverlayRoom {
 /// A turn is the unit the eye scrolls looking for. Given the same gap as the
 /// blocks *within* a turn, a long conversation is one undifferentiated column
 /// with nothing saying where the last question was asked.
-const TURN_GAP: Rems = rems(1.5);
+///
+/// All three of these are the transcript's own scale, read from the one place
+/// that holds it: they are the outermost steps of the same ladder the blocks
+/// inside a turn are spaced on, and kept here as separate numbers they were
+/// free to stop being a ladder at all.
+const TURN_GAP: Rems = transcript::TURN_GAP;
 /// The space between two ordinary blocks of one turn.
-const BLOCK_GAP: Rems = rems(0.75);
+const BLOCK_GAP: Rems = transcript::BLOCK_GAP;
 /// The space between two collapsed history rows, which are an index and are
 /// read as one.
-const COMPACT_GAP: Rems = rems(0.25);
+const COMPACT_GAP: Rems = transcript::TIGHT_GAP;
 /// How far above the clip the transcript dissolves into the surface under it.
 ///
 /// **A gradient and not a second edge.** The clip at the composer's middle is
@@ -140,7 +149,7 @@ const SMOKE: Rems = rems(7.);
 /// it is where the top of a question held at the top of the panel comes to rest
 /// — so the rule that decides when to stop holding one has to be measured from
 /// the same number the row is actually drawn at.
-const LIST_HEAD: Rems = rems(1.);
+const LIST_HEAD: Rems = rems(1.5);
 
 /// How much of a finished answer rides along with the turn-ended announcement.
 ///
@@ -2477,15 +2486,22 @@ impl ChatPane {
             .items_center()
             .gap_2()
             .w_full()
+            // **A fixed height, not one the tallest control happens to make.**
+            // It is the one row that never scrolls, so it is the edge every
+            // other measurement in the panel is taken from -- and sized by its
+            // contents it moved whenever a badge appeared or a title wrapped,
+            // taking the top of the conversation with it.
+            .flex_none()
+            .h(HEADER_H)
             .px_4()
-            .py_2()
-            // **No rule under it.** A hairline is an edge between two surfaces,
-            // and there are not two here: the header and the transcript are one
-            // reading surface, and what separates them is that one is a row of
-            // controls and the other is prose -- which the muted ink and the
-            // spacing already say. The panels either side of this one now draw
-            // their own edges and nothing else does, so a line across the top of
-            // the conversation was the last one left marking an inside.
+            // **A rule under it.** The list clips at exactly this line, so the
+            // conversation is cut off rather than running out: without an edge
+            // there, a paragraph sliced through the middle of its first row
+            // reads as a rendering fault. The fade at the other end of the list
+            // is the opposite answer to the opposite problem -- nothing is
+            // above this row for the text to dissolve into.
+            .border_b_1()
+            .border_color(cx.theme().border)
             .text_color(cx.theme().muted_foreground)
             .child(self.title_control(title, busy, archive, cx))
             .children(badge.map(|(signal, text)| status_badge(signal, text, cx)))
@@ -3043,7 +3059,7 @@ impl ChatPane {
         // the first frame of any conversation carrying a permission, not a rare
         // race. The caller reads it before the list starts, which is the last
         // moment it can be asked.
-        well: Option<gpui::Pixels>,
+        room: transcript::Room,
         window: &Window,
         cx: &App,
     ) -> gpui::AnyElement {
@@ -3056,19 +3072,28 @@ impl ChatPane {
         let Some(chat) = self.active_chat(cx) else {
             return div().into_any_element();
         };
-        let body = |targets: &[TranscriptItemId]| -> Vec<gpui::AnyElement> {
-            targets
-                .iter()
-                .filter_map(|&target| {
-                    viewport::item(chat, target).map(|item| {
-                        let find_emphasis =
-                            self.find.as_ref().and_then(|find| find.emphasis(target));
-                        transcript::item(session, item, target, find_emphasis, well, window, cx)
+        let body =
+            |targets: &[TranscriptItemId], room: &transcript::Room| -> Vec<gpui::AnyElement> {
+                targets
+                    .iter()
+                    .filter_map(|&target| {
+                        viewport::item(chat, target).map(|item| {
+                            let find_emphasis =
+                                self.find.as_ref().and_then(|find| find.emphasis(target));
+                            transcript::item(
+                                session,
+                                item,
+                                target,
+                                find_emphasis,
+                                room.clone(),
+                                window,
+                                cx,
+                            )
                             .into_any_element()
+                        })
                     })
-                })
-                .collect()
-        };
+                    .collect()
+            };
 
         // The run layout already classified every run's cadence, so the space
         // above this one is decided by the pair it forms with the run before it
@@ -3078,74 +3103,136 @@ impl ChatPane {
                 .and_then(|conv| conv.viewport.kind_before(ix)),
             plan.head_kind(),
         );
-        // Transcript rows are wider than the composer, but keep the same
-        // inside inset as its visible curve so the two surfaces retain one
-        // spacing rhythm. Read from the same token the composer rounds itself
-        // with, so a theme change cannot make them drift apart -- written out
-        // as arithmetic on the smaller step it already had, silently, the
-        // moment that card moved onto the theme's named card radius.
-        let side_padding = cx.theme().radius_lg;
+        let margin = match room.narrow {
+            true => SIDE_MARGIN_NARROW,
+            false => SIDE_MARGIN,
+        };
 
         let Some(strip) = plan.strip.clone() else {
-            return column(lead, side_padding, body(&plan.members)).into_any_element();
+            return column(lead, margin, body(&plan.members, &room), cx).into_any_element();
         };
 
         let anchor = plan.members[0];
         let this = self.handle.clone();
         let folded = session.clone();
 
+        // **Nothing under the line is built while it is closed.** A cluster is
+        // every step between two paragraphs, which in a long turn is dozens —
+        // and a collapsed line that built them all to draw none of them is that
+        // cost paid per frame for something nobody asked to see.
+        let inside = match plan.open {
+            false => Vec::new(),
+            true => strip
+                .sections
+                .iter()
+                .enumerate()
+                .map(|(n, section)| self.section_element(section, n, session, &room, window, cx))
+                .collect(),
+        };
+
         column(
             lead,
-            side_padding,
-            vec![
-                div()
-                    .v_flex()
-                    .gap(COMPACT_GAP)
-                    .w_full()
-                    .min_w_0()
-                    .child(transcript::activity_strip(
-                        strip.group,
-                        strip.summary,
-                        plan.open,
-                        move |_, _, cx: &mut App| {
-                            folded.update(cx, |session, cx| {
-                                session.toggle_activity(anchor);
-                                cx.notify();
-                            });
-                            // The pane owns the run layout the list reads back,
-                            // so it is the half that has to be told to draw
-                            // again -- the session's own notify redraws the
-                            // session, not the plan.
-                            let _ = this.update(cx, |_: &mut Self, cx| cx.notify());
-                        },
-                        ("activity", anchor.index()).into(),
-                        cx,
-                    ))
-                    .when(plan.open, |strip| {
-                        // Clear the group header's icon column so expanded
-                        // members read as its children. A leaf's own detail
-                        // then adds the same inset again beneath that leaf's
-                        // label, preserving the hierarchy at both levels.
-                        //
-                        // At the cadence index rows keep everywhere else, not a
-                        // looser one: what a group opens into is the same kind
-                        // of quiet row that sits a quarter-rem from its
-                        // neighbours out in the transcript, and one list drawn
-                        // at two rhythms depending on whether it is inside a
-                        // group is the group deciding something that is not
-                        // its to decide.
-                        strip.child(
-                            div()
-                                .v_flex()
-                                .gap(COMPACT_GAP)
-                                .pl_6()
-                                .children(body(&plan.members)),
-                        )
-                    })
-                    .into_any_element(),
-            ],
+            margin,
+            vec![transcript::cluster(
+                &strip,
+                plan.open,
+                move |_, _, cx: &mut App| {
+                    folded.update(cx, |session, cx| {
+                        session.toggle_activity(anchor);
+                        cx.notify();
+                    });
+                    // The pane owns the run layout the list reads back, so it
+                    // is the half that has to be told to draw again -- the
+                    // session's own notify redraws the session, not the plan.
+                    let _ = this.update(cx, |_: &mut Self, cx| cx.notify());
+                },
+                ("activity", anchor.index()).into(),
+                inside,
+                cx,
+            )],
+            cx,
         )
         .into_any_element()
+    }
+
+    /// One stretch of one kind of work inside an opened cluster.
+    ///
+    /// A section of one member is that member's own row; a section of several
+    /// is one row standing for them that opens into the rest.
+    fn section_element(
+        &self,
+        section: &viewport::Section,
+        // Which of the cluster's sections this is, for the rule that a
+        // hairline goes between two of them and never above the first.
+        index: usize,
+        session: &Entity<ChatSession>,
+        room: &transcript::Room,
+        window: &Window,
+        cx: &App,
+    ) -> gpui::AnyElement {
+        let Some(chat) = self.active_chat(cx) else {
+            return div().into_any_element();
+        };
+        let body =
+            |targets: &[TranscriptItemId], room: &transcript::Room| -> Vec<gpui::AnyElement> {
+                targets
+                    .iter()
+                    .filter_map(|&target| {
+                        viewport::item(chat, target).map(|item| {
+                            let find_emphasis =
+                                self.find.as_ref().and_then(|find| find.emphasis(target));
+                            transcript::item(
+                                session,
+                                item,
+                                target,
+                                find_emphasis,
+                                room.clone(),
+                                window,
+                                cx,
+                            )
+                            .into_any_element()
+                        })
+                    })
+                    .collect()
+            };
+
+        let anchor = section.members[0];
+        let open = session.read(cx).section_is_open(anchor);
+        let this = self.handle.clone();
+        let folded = session.clone();
+
+        // **A section of one is that step's own row, and so is a section of
+        // several — the merge is in the row's own words.** A row standing for
+        // one step would be the same row twice, one inside the other; and a row
+        // standing for three reads says `Read 3 files` and opens into the three
+        // paths, which is one level rather than two.
+        let single = section.members.len() < 2;
+        div()
+            .v_flex()
+            .w_full()
+            .min_w_0()
+            .children((index > 0).then(|| transcript::rule(cx)))
+            .map(|block| match single {
+                true => block.children(body(&section.members, room)),
+                false => block.child(transcript::activity_group(
+                    section,
+                    open,
+                    move |_, _, cx: &mut App| {
+                        folded.update(cx, |session, cx| {
+                            session.toggle_section(anchor);
+                            cx.notify();
+                        });
+                        let _ = this.update(cx, |_: &mut Self, cx| cx.notify());
+                    },
+                    ("section", anchor.index()).into(),
+                    match open {
+                        true => body(&section.members, room),
+                        false => Vec::new(),
+                    },
+                    cx,
+                )),
+            })
+            .into_any_element()
     }
 }
 
@@ -3681,6 +3768,13 @@ impl ChatPane {
         // value serves every row and the pinned cards above them alike.
         let well = (list_state.viewport_bounds().size.height > px(0.))
             .then(|| list_state.viewport_bounds().size.height);
+        // Read off the same frame and for the same reason: how wide the panel
+        // is decides what a block may spend on margins and on columns that are
+        // not the one thing it has to say. A width of zero is the frame before
+        // the list has measured itself, which is not a narrow panel.
+        let list_w = list_state.viewport_bounds().size.width;
+        let narrow = list_w > px(0.) && list_w < NARROW_PANEL.to_pixels(window.rem_size());
+        let room = transcript::Room::new(well, narrow);
         self.composer_drawn = true;
 
         div()
@@ -3713,7 +3807,13 @@ impl ChatPane {
                             .overflow_hidden()
                             .child(
                                 list(list_state, move |ix, window: &mut Window, cx: &mut App| {
-                                    this.read(cx).run_element(ix, &for_render, well, window, cx)
+                                    this.read(cx).run_element(
+                                        ix,
+                                        &for_render,
+                                        room.clone(),
+                                        window,
+                                        cx,
+                                    )
                                 })
                                 .size_full()
                                 .pt(LIST_HEAD)
@@ -3748,7 +3848,10 @@ impl ChatPane {
                         well.child(
                             div()
                                 .absolute()
-                                .bottom(floor)
+                                // Held off the composer rather than resting on
+                                // it: two floating surfaces touching read as
+                                // one surface with a notch taken out of it.
+                                .bottom(floor + BLOCK_GAP.to_pixels(window.rem_size()))
                                 .left_0()
                                 .right_0()
                                 .h_flex()
@@ -3770,6 +3873,8 @@ impl ChatPane {
                                                 // half-height means here -- not
                                                 // a measured size.
                                                 .rounded(px(9999.))
+                                                .h(JUMP_PILL_H)
+                                                .px(JUMP_PILL_PAD)
                                                 .icon(Icon::new(IconName::ChevronDown))
                                                 .label("New activity")
                                                 .tooltip("Jump to the latest activity")
@@ -4135,7 +4240,8 @@ fn lead_gap(previous: Option<RunKind>, this: RunKind) -> Rems {
 /// that shrinks with its panel. Width lives here rather than around each item
 /// because a run is what the virtual list draws; activity summaries drawn by
 /// the pane and their steps must share the same two edges.
-fn column(lead: Rems, side_padding: gpui::Pixels, content: Vec<gpui::AnyElement>) -> gpui::Div {
+fn column(lead: Rems, margin: Rems, content: Vec<gpui::AnyElement>, cx: &App) -> gpui::Div {
+    let _ = cx;
     div()
         .h_flex()
         .w_full()
@@ -4144,22 +4250,20 @@ fn column(lead: Rems, side_padding: gpui::Pixels, content: Vec<gpui::AnyElement>
         // block instead, the blocks that never asked would keep the app's own
         // base and the transcript would be two sizes.
         .text_size(transcript::TEXT)
-        // The side margin rides on the run, not on the box that clips the
-        // transcript: padding there would inset the clip too, cutting the text
+        // **One margin, on the run rather than on the box that clips the
+        // transcript.** Padding there would inset the clip too, cutting text
         // short of the header's rule and leaving a band of blank surface above
-        // whatever line the scroll happened to stop on.
-        .px_4()
+        // whatever line the scroll stopped on. It was two insets — one here and
+        // one on the column inside — which is a single number written as a sum
+        // whose halves had already started moving independently.
+        .px(margin)
         .pt(lead)
         .child(
             div()
                 .w_full()
                 .min_w_0()
-                .max_w(CONTENT_COLUMN)
+                .max_w(transcript::CONTENT_COLUMN)
                 .mx_auto()
-                // Equal to the composer's visible corner radius, which is what
-                // keeps the inset rhythm shared now that the two no longer
-                // share an outer cap.
-                .px(side_padding)
                 .children(content),
         )
 }
@@ -4529,8 +4633,8 @@ mod tests {
         let strip = |open: bool| viewport::RunPlan {
             members: vec![TranscriptItemId::Live(0)],
             strip: Some(viewport::ActivityPlan {
-                group: onehand_core::chat::ActivityGroup::Explored,
-                summary: "Inspected 3 files".to_string(),
+                summary: onehand_core::chat::ClusterSummary::default(),
+                sections: Vec::new(),
             }),
             open,
             // What the layout classifies an opened group as: a block's worth

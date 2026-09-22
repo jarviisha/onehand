@@ -23,6 +23,34 @@ pub fn first_line_trunc(s: &str, max: usize) -> String {
     }
 }
 
+/// A path cut down to what tells it apart on one line of a transcript.
+///
+/// **The name, and the directory holding it.** A row is a fixed height with
+/// four other columns on it, so a path is the one thing on it that can be
+/// arbitrarily long — and an absolute path spends every character it has on
+/// the part that is identical for every file in the project. The tail is what
+/// identifies a file; the directory above it is what tells two files with the
+/// same name apart, which in a source tree is most of the interesting cases.
+/// The whole path is still one disclosure away, and still in the tooltip.
+///
+/// Anything that is not a path comes back unchanged: an execute step's subject
+/// is a command, and cutting a command at its last slash would leave it saying
+/// something the agent never ran.
+pub fn short_path(value: &str) -> String {
+    let trimmed = value.trim().trim_end_matches('/');
+    if trimmed.is_empty() || trimmed.contains(char::is_whitespace) {
+        return value.trim().to_string();
+    }
+    let mut parts = trimmed.rsplit('/');
+    let Some(name) = parts.next().filter(|name| !name.is_empty()) else {
+        return value.trim().to_string();
+    };
+    match parts.next().filter(|dir| !dir.is_empty()) {
+        Some(dir) => format!("{dir}/{name}"),
+        None => name.to_string(),
+    }
+}
+
 /// Coarse transcript sections. Tool rows keep their precise semantic action,
 /// while adjacent rows with the same section read as one scan-friendly block.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -72,14 +100,18 @@ pub fn group(item: &ChatItem) -> Option<ActivityGroup> {
 
 pub struct Presentation {
     /// The verb a tool call is classified as — "Searched", "Ran tests",
-    /// "Built". **Nothing prints it.** The classification is finer than
-    /// [`ActivityKind`], which is what the transcript actually groups by, so
-    /// these strings are the only statement of that finer rule and the tests
-    /// below are its whole readership. Whether the rule is worth keeping
-    /// without a reader is a question about what a run header should say, not
-    /// a question about dead code, so it is not settled here.
-    #[cfg_attr(not(test), allow(dead_code))]
-    pub(crate) action: &'static str,
+    /// "Built".
+    ///
+    /// **This is the column a transcript row leads with**, and the reason it
+    /// is finer than [`ActivityKind`]: what the row has to say first is what
+    /// the step *did*, while the kind is only what it gets grouped and drawn
+    /// with. The two were one classification for a while and the coarse one
+    /// won, which left every read and every search reading `Explored`.
+    ///
+    /// It was written with no reader at all for longer than that, on the
+    /// reasoning that the rule was worth keeping until something wanted to
+    /// print it. Something does.
+    pub action: &'static str,
     pub subject: String,
     /// Always `None`. Set by nothing, read by nothing but the tests, and kept
     /// for the same reason as `action`.
@@ -466,7 +498,25 @@ fn quoted_argument_span(line: &str) -> Option<(String, usize)> {
 
 #[cfg(test)]
 mod tests {
-    use super::{execute_presentation, strip_redundant_prefix, ActivityKind};
+    use super::{execute_presentation, short_path, strip_redundant_prefix, ActivityKind};
+
+    #[test]
+    fn a_path_keeps_the_end_that_identifies_it() {
+        assert_eq!(
+            short_path("/home/me/project/crates/app/src/chat/pane.rs"),
+            "chat/pane.rs"
+        );
+        assert_eq!(short_path("README.md"), "README.md");
+        assert_eq!(short_path("src/lib.rs"), "src/lib.rs");
+        assert_eq!(short_path("crates/core/"), "crates/core");
+        // A command is not a path, and cutting one at its last slash would
+        // leave the row quoting something nobody ran.
+        assert_eq!(
+            short_path("cargo test -p onehand-core"),
+            "cargo test -p onehand-core"
+        );
+        assert_eq!(short_path(""), "");
+    }
 
     #[test]
     fn native_tool_titles_do_not_repeat_the_action() {

@@ -1,6 +1,13 @@
 // A minimal mock ACP agent that exercises the terminal extension: on a prompt
 // it asks the client to create a terminal, references it in a tool call, waits
 // for it to exit, then ends the turn. Used to verify src/acp/terminal.rs.
+//
+// **It exits non-zero, and that is the point of the number.** An exit status is
+// the one fact the protocol carries nowhere outside this extension, so a
+// transcript row can only ever print `exit N` for a command that ran through
+// here -- and a mock that always succeeded left the whole of that path
+// unreachable by anything but a real agent breaking a real build. The counter
+// runs to five and then fails, so the row shows output *and* a status.
 const readline = require('readline');
 const rl = readline.createInterface({ input: process.stdin });
 let promptId = null;
@@ -20,7 +27,7 @@ rl.on('line', (line) => {
     send({
       jsonrpc: '2.0', id: 100, method: 'terminal/create',
       params: { sessionId: 'mock', command: 'sh',
-        args: ['-c', 'for i in 1 2 3 4 5; do echo "line $i"; sleep 0.3; done'] },
+        args: ['-c', 'for i in 1 2 3 4 5; do echo "line $i"; sleep 0.3; done; echo "error: it did not work" >&2; exit 101'] },
     });
   } else if (m.id === 100 && m.result) {
     const tid = m.result.terminalId;
@@ -31,7 +38,10 @@ rl.on('line', (line) => {
       params: { sessionId: 'mock', terminalId: tid } });
   } else if (m.id === 101 && m.result) {
     send({ jsonrpc: '2.0', method: 'session/update', params: { sessionId: 'mock',
-      update: { sessionUpdate: 'tool_call_update', toolCallId: 'tc1', status: 'completed' } } });
+      update: { sessionUpdate: 'tool_call_update', toolCallId: 'tc1',
+        // The reply is `{ exitStatus: { exitCode } }` -- read through it, or
+        // every run reports success whatever the child did.
+        status: m.result.exitStatus?.exitCode ? 'failed' : 'completed' } } });
     send({ jsonrpc: '2.0', id: promptId, result: { stopReason: 'end_turn' } });
   }
 });

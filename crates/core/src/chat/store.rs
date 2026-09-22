@@ -195,6 +195,16 @@ enum Line {
         kind: String,
         status: String,
         content: Vec<StoredContent>,
+        /// How long it took, and what it exited with.
+        ///
+        /// **Both optional on the way in and omitted on the way out when
+        /// absent**, which is what lets every conversation written before they
+        /// existed still load: a reopened step from an older file simply has
+        /// nothing to say about either, which is the truth.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        secs: Option<u64>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        exit: Option<i32>,
     },
     Plan {
         entries: Vec<StoredPlanEntry>,
@@ -491,14 +501,21 @@ fn restore_line(dir: &Path, line: &Line) -> ChatItem {
             kind,
             status,
             content,
-        } => ChatItem::Tool(ToolItem::new(ToolCall {
-            id: id.clone(),
-            title: title.clone(),
-            description: description.clone(),
-            kind: ToolKind::parse(kind),
-            status: ToolStatus::parse(status),
-            content: content.iter().map(|c| restore_content(dir, c)).collect(),
-        })),
+            secs,
+            exit,
+        } => {
+            let mut item = ToolItem::new(ToolCall {
+                id: id.clone(),
+                title: title.clone(),
+                description: description.clone(),
+                kind: ToolKind::parse(kind),
+                status: ToolStatus::parse(status),
+                content: content.iter().map(|c| restore_content(dir, c)).collect(),
+            });
+            item.elapsed_secs = *secs;
+            item.exit_code = *exit;
+            ChatItem::Tool(item)
+        }
     }
 }
 
@@ -740,6 +757,8 @@ pub(crate) fn line_of(chat: &Chat, item: &ChatItem) -> Option<(String, Vec<Blob>
                 .iter()
                 .map(|c| content_of(chat, c, &mut blobs))
                 .collect(),
+            secs: t.elapsed_secs,
+            exit: t.exit_code,
         },
         ChatItem::Permission(_) | ChatItem::Ask(_) => return None,
     };

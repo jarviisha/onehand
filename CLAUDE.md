@@ -57,13 +57,36 @@ args = ["crates/core/examples/mock_ui_agent.js"]
 ```
 
 It advertises modes, config options (model with per-choice descriptions, effort, fast) and slash
-commands, and every prompt replies with reasoning, prose, a tool call, a parked permission, a
-one-question card and a three-question card — every shape the two blocking cards take, and every
-piece of chrome the window draws around a conversation. The three-question form deliberately mixes
-a single-select, a multi-select and a free-text field, because each draws differently and a card of
-three identical questions would only ever exercise one of them. It answers
-`session/set_config_option` and `session/set_mode` by republishing the new state, so the chips move
-when they are used.
+commands, and **one prompt draws a whole transcript**: reasoning, prose carrying every markdown
+block the renderer has, an activity block per shape a run can take — clean, one that stumbled and
+recovered, one that ended on a failure, one longer than the child cap with its failures scattered
+through the middle — a diff, a plan, an image result, two steps left mid-flight, then the parked
+permission and the two question cards, which settle into the record rows they leave behind. **One
+turn and not one shape per prompt**, because what goes wrong in a transcript goes wrong *between*
+blocks: a run reading the same as the run above it, a child row repeating its parent, two blocks
+failing to share one frame. None of those is visible one block at a time.
+
+Three things it holds on purpose. The commands in one run are pointed at a single host with a
+password in every one of them, so the rule that lifts a shared target up to the parent row and the
+rule that masks a credential can both be *seen* rather than trusted. A failed command is followed by
+the same command again, which is what earns the retry mark. And the three-question form mixes a
+single-select, a multi-select and a free-text field, because each draws differently and a card of
+three identical questions would only ever exercise one of them.
+
+**The tour is played rather than printed**, over about twelve seconds. Three of the states the
+app spends most of its time in have no finished form to look at — an answer arriving a chunk at a
+time, a thought still being had, a command still running — and those are the frames where a spinner
+has to hold its column, where a cluster's line has to change in place without moving anything, and
+where the composer has to stay answerable. A `fast` anywhere in the prompt lands the whole thing at
+once; cancelling stops it where it is, which is what a cancel is for and what a mock emitting into
+an already-closed turn was not doing.
+
+**Every other turn ends on a JSON-RPC error rather than a stop reason.** The error banner is the one
+block an agent cannot ask for — it is what the app draws when a turn *breaks* — so the only way to
+look at it is to break one, and the only way to still see everything else is to not break every one.
+
+It answers `session/set_config_option` and `session/set_mode` by republishing the new state, so the
+chips move when they are used.
 
 **A mock *agent* and not a mock mode inside the app**, deliberately: the window is driven over the
 real transport, by the real parser, through the real session lifecycle, so what is on screen is what
@@ -1475,6 +1498,20 @@ Listed because a missing feature nobody wrote down reads as a bug in the ones th
 - **An accepted mention is plain text, not a token.** It inserts the whole path, so a long one is
   as wide as it reads; there is no single-unit deletion and no hover carrying the full path. That
   needs the input to own a span it treats atomically, which `Input` does not offer.
+- **An exit status only exists for a command run through ACP's terminal extension.** The protocol
+  carries one nowhere else, so an adapter reporting a failure as a plain `tool_call` has no code to
+  give and the row says `failed` rather than `exit N`. Recovering it from the output was considered
+  and refused: the code is in the footer this app itself appends, so parsing it back is parsing our
+  own wording, and a number got that way is wrong the first time the wording moves. `ToolItem`
+  carries it instead, lifted off the terminal at the one moment both are in hand — the turn-end
+  flatten, after which the terminal is gone. `mock_terminal_agent.js` exits 101 on purpose so the
+  path is reachable without breaking a real build.
+- **A step's duration is stamped once, when it settles**, and only for work that arrived unfinished:
+  a step that was already `completed` when it reached this process was timed by whoever ran it, and
+  a clock started here would be measuring the wire. Both facts persist into the archive as optional
+  keys, so a conversation written before they existed still loads and simply has nothing to say
+  about either. Nothing reads the duration per row — it is summed onto the line standing for the
+  cluster, where one number answers "how long was that" without twenty rows each answering it.
 - **The remote bridge does not stream the transcript.** A finished turn carries the *end* of the
   agent's last answer (`Chat::answer_tail`) and nothing else: no tool cards, no diffs, no reasoning,
   nothing mid-turn. That excerpt is there because "finished a turn" alone is a notification whose only

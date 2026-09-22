@@ -201,6 +201,13 @@ pub struct ChatSession {
     /// joining the run ahead of it renumbers every run below and would silently
     /// move the fold.
     activity_open: HashSet<TranscriptItemId>,
+    /// Sections the user opened inside an opened cluster.
+    ///
+    /// **A third set, because a cluster and its first section share a key.**
+    /// Both are anchored on their first item and the cluster's first item *is*
+    /// its first section's, so one set holding both would open a section the
+    /// moment the cluster around it opened and there would be no closing it.
+    section_open: HashSet<TranscriptItemId>,
     /// How many times a fold has been toggled.
     ///
     /// The run layout is built partly from these folds, so it has to be rebuilt
@@ -264,6 +271,7 @@ impl ChatSession {
                 ask_focus: HashMap::new(),
                 perm_focus: HashMap::new(),
                 activity_open: HashSet::new(),
+                section_open: HashSet::new(),
                 folds_revision: 0,
                 _pump: cx.spawn(async move |session, cx| {
                     let mut events = events;
@@ -321,6 +329,19 @@ impl ChatSession {
     pub fn toggle_activity(&mut self, anchor: TranscriptItemId) {
         if !self.activity_open.remove(&anchor) {
             self.activity_open.insert(anchor);
+        }
+        self.folds_revision = self.folds_revision.wrapping_add(1);
+    }
+
+    /// Whether the section anchored at `anchor` is showing its steps.
+    pub fn section_is_open(&self, anchor: TranscriptItemId) -> bool {
+        self.section_open.contains(&anchor)
+    }
+
+    /// Fold or unfold the section anchored at `anchor`.
+    pub fn toggle_section(&mut self, anchor: TranscriptItemId) {
+        if !self.section_open.remove(&anchor) {
+            self.section_open.insert(anchor);
         }
         self.folds_revision = self.folds_revision.wrapping_add(1);
     }

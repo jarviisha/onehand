@@ -12,13 +12,44 @@ use super::transcript;
 use gpui::{App, Entity, FollowMode, ListAlignment, ListOffset, ListState, Pixels, Window, px};
 use gpui_component::input::InputState;
 use onehand_core::chat::{
-    ActivityGroup, Chat, ChatItem, TranscriptItemId, TranscriptMatch, compute_matches,
+    ActivityGroup, Chat, ChatItem, RunOutcome, TranscriptItemId, TranscriptMatch, cluster_summary,
+    compute_matches, run_outcome,
 };
 
+/// One cluster of activity: the muted line, and what is under it once opened.
+///
+/// **Worked out at plan time, where the members are already in hand**, and not
+/// at draw time — the sentence, the outcome and every child line are walks over
+/// the same list, and a row asking for them per frame is that list walked once
+/// per frame for an answer the plan was standing next to. The plan is rebuilt
+/// only when the transcript or a fold actually changes.
 #[derive(Clone)]
 pub struct ActivityPlan {
+    /// The one sentence the collapsed line says.
+    ///
+    /// **And the whole of what that line is drawn from.** The cluster used to
+    /// carry a run outcome beside this, for a status mark at the head of the
+    /// line -- and with the mark gone there was nothing left reading it: what
+    /// went wrong is a count, and the count is in here.
+    pub summary: onehand_core::chat::ClusterSummary,
+    /// The rows inside the frame, grouped by the kind of work they were.
+    pub sections: Vec<Section>,
+}
+
+/// A stretch of one cluster's members that were the same kind of work.
+///
+/// **Only the opened frame reads these.** The cluster's own line names kinds in
+/// its sentence and carries the status in its mark, so it needs no grouping;
+/// what still does is the list under it, which is read as a list of things the
+/// agent did and groups the repetitive ones.
+#[derive(Clone)]
+pub struct Section {
     pub group: ActivityGroup,
+    pub members: Vec<TranscriptItemId>,
+    /// Counts, for the row standing for the section where it has more than one
+    /// member.
     pub summary: String,
+    pub outcome: RunOutcome,
 }
 
 /// What cadence a run asks of the run above it.
@@ -41,7 +72,7 @@ pub enum RunKind {
 /// quiet steps.
 pub struct RunPlan {
     pub members: Vec<TranscriptItemId>,
-    /// `Some` when this run draws as an activity strip.
+    /// `Some` when this run draws as one row standing for several steps.
     pub strip: Option<ActivityPlan>,
     pub open: bool,
     pub kind: RunKind,
@@ -235,7 +266,7 @@ impl Viewport {
                     open: true,
                     kind: item(chat, target).map_or(RunKind::Block, single_kind),
                 },
-                transcript::Run::Activity { group, members } => {
+                transcript::Run::Activity { members } => {
                     let anchor = members[0];
                     let bodies: Vec<&ChatItem> = members
                         .iter()
@@ -245,13 +276,13 @@ impl Viewport {
                     let open = is_open(anchor);
                     RunPlan {
                         strip: Some(ActivityPlan {
-                            group,
-                            summary: transcript::activity_summary(&bodies),
+                            summary: cluster_summary(&bodies),
+                            sections: sections(chat, &members),
                         }),
                         open,
                         members,
-                        // Folded it is one index row; opened it is every step it
-                        // holds, which is a block's worth of reading.
+                        // Folded it is one muted line; opened it is a frame with
+                        // every step it holds in it.
                         kind: if open {
                             RunKind::Block
                         } else {
@@ -715,6 +746,40 @@ fn draws_the_same(was: &RunPlan, now: &RunPlan) -> bool {
         && was.strip.as_ref().map(|s| &s.summary) == now.strip.as_ref().map(|s| &s.summary)
 }
 
+/// Split a cluster into the stretches of one kind of work the frame lists.
+fn sections(chat: &Chat, members: &[TranscriptItemId]) -> Vec<Section> {
+    let mut out: Vec<Vec<TranscriptItemId>> = Vec::new();
+    let mut last: Option<ActivityGroup> = None;
+    for &target in members {
+        let group = item(chat, target).and_then(transcript::section_group);
+        // `None` never extends: a step that stands on its own does so however
+        // many of its kind are beside it, so two of them are two sections.
+        match (group.is_some() && group == last, out.last_mut()) {
+            (true, Some(run)) => run.push(target),
+            _ => out.push(vec![target]),
+        }
+        last = group;
+    }
+    out.into_iter()
+        .map(|members| {
+            let bodies: Vec<&ChatItem> = members
+                .iter()
+                .copied()
+                .filter_map(|t| item(chat, t))
+                .collect();
+            Section {
+                group: bodies
+                    .first()
+                    .and_then(|item| transcript::section_group(item))
+                    .unwrap_or(ActivityGroup::Other),
+                summary: transcript::activity_summary(&bodies),
+                outcome: run_outcome(&bodies),
+                members,
+            }
+        })
+        .collect()
+}
+
 /// Whether an item is a blocking card still waiting on the user, and so is
 /// drawn above the composer rather than in the transcript.
 pub fn is_pinned(item: &ChatItem) -> bool {
@@ -856,7 +921,7 @@ mod tests {
         }))
     }
 
-    /// An answer, then two reads that fold into one activity strip.
+    /// An answer, then two reads that fold into one activity cluster.
     fn chat() -> Chat {
         let mut chat = Chat::new(1, PathBuf::from("/tmp/project"), "claude".to_string(), None);
         chat.items = vec![
@@ -879,8 +944,11 @@ mod tests {
             "two reads are one run"
         );
         let strip = viewport.run(1).and_then(|run| run.strip.as_ref()).unwrap();
-        assert_eq!(strip.group, ActivityGroup::Explored);
-        assert_eq!(strip.summary, "Inspected 2 files");
+        assert_eq!(strip.sections.len(), 1, "two reads are one kind of work");
+        assert_eq!(strip.sections[0].group, ActivityGroup::Explored);
+        // The one sentence the muted line says: kinds of work in the order
+        // they happened, each with a count.
+        assert_eq!(strip.summary.plain(), "Read 2 files");
         assert!(viewport.run(2).is_none(), "three items, two rows");
     }
 
@@ -974,10 +1042,17 @@ mod tests {
         assert_eq!(viewport.run(1).map(|r| r.members.len()), Some(3));
     }
 
-    /// Live tools are attention cards, not members of a history summary. Once
-    /// they settle, adjacent work may collapse into a user-controlled strip.
+    /// **A step in flight is in the cluster it happened in**, and stays there
+    /// when it finishes.
+    ///
+    /// It used to be outside: a running tool was its own row until it settled,
+    /// at which point it folded into the strip above it. So the row count
+    /// changed every few seconds mid-turn, the reader's position moved with it,
+    /// and a step that had been a tall card became a line in a list somebody
+    /// was already reading. A cluster is bounded by the agent's words, not by
+    /// what each step inside it happens to be doing.
     #[test]
-    fn live_tools_become_activity_only_after_settling() {
+    fn a_step_in_flight_is_in_the_cluster_it_happened_in() {
         let mut chat = chat();
         chat.items.push(ChatItem::User(UserMsg::text("and now?")));
         chat.items.push(read("Read src/c.rs"));
@@ -993,23 +1068,26 @@ mod tests {
         let mut viewport = Viewport::default();
         viewport.replan(&chat, 0, |_| false);
 
-        // 0: old answer · 1: old reads · 2: prompt · 3: completed reads in the
-        // live turn · 4: checkpoint · 5/6: reads changing right now. Each live
-        // tool owns a row/card and cannot disappear behind a summary.
+        // 0: old answer · 1: old reads · 2: prompt · 3: the completed reads of
+        // the live turn · 4: checkpoint · 5: the two reads changing right now,
+        // which are one cluster like any other.
         assert_eq!(viewport.run(1).map(|r| r.open), Some(false));
         assert_eq!(viewport.run(3).map(|r| r.open), Some(false));
-        assert!(viewport.run(5).and_then(|r| r.strip.as_ref()).is_none());
-        assert!(viewport.run(6).and_then(|r| r.strip.as_ref()).is_none());
         assert_eq!(
             viewport.run(5).map(|r| r.members.as_slice()),
-            Some([TranscriptItemId::Live(7)].as_slice())
+            Some([TranscriptItemId::Live(7), TranscriptItemId::Live(8)].as_slice())
         );
-        assert_eq!(
-            viewport.run(6).map(|r| r.members.as_slice()),
-            Some([TranscriptItemId::Live(8)].as_slice())
-        );
+        // **Collapsed, even while it is running.** A cluster that opened itself
+        // would push the answer above it up the panel every time a turn started
+        // work, and shut again when it stopped.
+        assert_eq!(viewport.run(5).map(|r| r.open), Some(false));
+        assert!(viewport.run(6).is_none(), "and nothing after it");
 
-        // The tools settle and become one folded history row.
+        // They settle. **Nothing about the layout moves**: the same run, the
+        // same members, the same fold. What changes is the sentence that run's
+        // line says about itself, which is a row redrawn rather than a row
+        // appearing or going.
+        let before = viewport.run(5).map(|r| r.members.len());
         for item in &mut chat.items[7..=8] {
             let ChatItem::Tool(tool) = item else {
                 unreachable!();
@@ -1018,8 +1096,7 @@ mod tests {
         }
         chat.busy = false;
         viewport.replan(&chat, 0, |_| false);
-        assert!(viewport.run(5).and_then(|r| r.strip.as_ref()).is_some());
-        assert_eq!(viewport.run(5).map(|r| r.members.len()), Some(2));
+        assert_eq!(viewport.run(5).map(|r| r.members.len()), before);
         assert_eq!(viewport.run(5).map(|r| r.open), Some(false));
         assert!(viewport.run(6).is_none());
     }
@@ -1140,16 +1217,20 @@ mod tests {
         );
     }
 
-    /// A step settling folds two rows into one, and the reader above the fold
-    /// must not feel it.
+    /// A step settling at the tail must not move the reader above it.
     ///
     /// Told to reset, the list gave up every measured height and the scroll
     /// position on *every* tool that finished -- which mid-turn is every few
     /// seconds. It read as the panel flickering: the transcript jumped, the
     /// frame hitched re-measuring what was above, and the way-back pill blinked
     /// as the anchor landed past the tail for a frame.
+    ///
+    /// Clustering took the *other* half of that away: a step finishing no
+    /// longer folds one row into another, because it was already in the cluster
+    /// the moment it started. The row count holding still is now part of what
+    /// this asserts rather than something it works around.
     #[test]
-    fn a_step_folding_at_the_tail_leaves_the_reader_where_they_were() {
+    fn a_step_settling_at_the_tail_leaves_the_reader_where_they_were() {
         let mut chat = chat();
         chat.items
             .push(read_with_status("Read src/c.rs", ToolStatus::InProgress));
@@ -1166,7 +1247,8 @@ mod tests {
             offset_in_item: px(120.),
         });
 
-        // The tool settles and joins the strip above it: one row fewer.
+        // The tool settles. It was in the cluster already, so the only thing
+        // that changes is what that cluster's one line says about itself.
         chat.apply(onehand_core::acp::AcpEvent::ToolUpdate(
             onehand_core::acp::ToolCallUpdate {
                 id: "Read src/c.rs".to_string(),
@@ -1179,7 +1261,11 @@ mod tests {
         viewport.replan(&chat, 0, |_| false);
         let state = viewport.list_state(true, ROOM);
 
-        assert_eq!(state.item_count(), count - 1, "two rows became one");
+        assert_eq!(
+            state.item_count(),
+            count,
+            "a step finishing is not a row appearing or going"
+        );
         let top = state.logical_scroll_top();
         assert_eq!(
             (top.item_ix, top.offset_in_item),
@@ -1208,11 +1294,12 @@ mod tests {
         let mut viewport = Viewport::default();
         viewport.replan(&chat, 0, |_| false);
         let _ = viewport.list_state(true, ROOM);
-        // 0: answer · 1: the strip · 2: answer · 3: the running read.
+        // 0: answer · 1: the cluster · 2: answer · 3: the running read, which
+        // is a cluster of one.
         assert_eq!(viewport.changed_from, 4, "nothing left to tell the list");
 
-        // The read settles with no foldable neighbour, so it stays one run and
-        // only its shape changes.
+        // The read settles. It is alone between two paragraphs either way, so
+        // it stays one run and only what its line says changes.
         chat.apply(onehand_core::acp::AcpEvent::ToolUpdate(
             onehand_core::acp::ToolCallUpdate {
                 id: "Read src/c.rs".to_string(),
@@ -1236,7 +1323,7 @@ mod tests {
         );
 
         let _ = viewport.list_state(true, ROOM);
-        assert_eq!(viewport.changed_from, 5, "told, and the note cleared");
+        assert_eq!(viewport.changed_from, 4, "told, and the note cleared");
     }
 
     /// The way back to the latest lands on the held question, and not on the

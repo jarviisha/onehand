@@ -11,6 +11,7 @@ pub mod activity;
 pub mod attention;
 pub mod find;
 pub mod model;
+pub mod steps;
 pub mod store;
 
 pub use activity::{
@@ -23,6 +24,10 @@ pub use model::{
     PlanItem, QueuedPrompt, Selector, SelectorChoice, SubmitBlock, TermView, Thought, ToolItem,
     TranscriptItemId, TurnAnswer, UserAsk, UserMsg, COMMAND_FOLD_LINES, MAX_TERM_BYTES,
     MODE_SELECTOR,
+};
+pub use steps::{
+    cluster_summary, redact, run_outcome, step_lines, ClusterSummary, Outcome, RunLines,
+    RunOutcome, StepLine, SummaryPart,
 };
 pub use store::{
     commit, conv_dir, conversations_dir, delete, list_conversations, load, now_secs, ConfigPick,
