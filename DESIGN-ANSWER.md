@@ -936,6 +936,16 @@ the pill at its end.
   *down*: a wrapper hovering over a child that has already set its own colour
   changes nothing. Everything that should lift inherits; the verb, already as
   bright as the row goes, says so.
+- **Every mark on a row is dropped a pixel onto the line its words read on.** A
+  centred box and centred *type* are not the same place: the renderer puts a
+  line's baseline at `(line_height − ascent − descent) / 2 + ascent`, and since a
+  face's ascent is the larger of the two the baseline lands below the middle of
+  the box — so lowercase text sits about a tenth of an em low inside its own
+  line, and a glyph centred against that box comes out looking that much high.
+  It is the one measurement here that is not on the spacing scale, because it is
+  an optical correction and not a space; one function owns it, since a row has
+  two or three marks and the first one added without it reads as the row having
+  come apart.
 - **Motion:** none. The chevron swaps rather than rotates; body height is not
   animated. A transcript that reflows while it streams is harder to read, not
   livelier.

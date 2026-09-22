@@ -202,6 +202,20 @@ const OBJECT_TEXT: Rems = rems(0.75);
 /// The arrow, and the slot holding its column while it turns.
 const CHEVRON_MARK: Rems = rems(0.6875);
 const CHEVRON_SLOT: Rems = rems(0.75);
+/// How far a glyph drops to sit on the line its text does.
+///
+/// **An optical correction, and the one number here that is not on the scale.**
+/// A centred box and centred *type* are not the same place: the renderer puts a
+/// line's baseline at `(line_height − ascent − descent) / 2 + ascent`, and since
+/// a face's ascent is the larger of the two the baseline lands below the middle
+/// of the box — so lowercase text sits about a tenth of an em low inside its own
+/// line, and an icon centred against that box comes out looking that much high.
+/// Every row here puts a mark beside words, so every one of them needs it.
+///
+/// A tenth of an em at the sizes on these rows is a pixel, which is why it is
+/// written as one rather than as a fraction of a size that changes: half a pixel
+/// would not survive the rounding, and two would be a visible drop.
+const GLYPH_DROP: Rems = rems(0.0625);
 
 /// Where a row's verb starts, and so where whatever it opens is set in to.
 ///
@@ -1214,6 +1228,22 @@ fn detail_well(body: impl IntoElement) -> gpui::Div {
         .child(body)
 }
 
+/// The fixed box a mark sits in, dropped onto the line its neighbours read on.
+///
+/// One function because every row has two or three of them and they all need
+/// the same correction: written out per call site, the first one somebody added
+/// without it is a mark a pixel above the words beside it, which reads as the
+/// row having come apart rather than as anything measurable.
+fn mark_slot(size: Rems) -> gpui::Div {
+    div()
+        .size(size)
+        .flex_none()
+        .mt(GLYPH_DROP)
+        .h_flex()
+        .items_center()
+        .justify_center()
+}
+
 /// A detail that has outgrown its box, scrolling inside it and nowhere else.
 ///
 /// **The wheel has to be taken in the capture phase.** The transcript is a
@@ -1343,20 +1373,14 @@ fn scrolled(open: bool, key: usize, body: gpui::Div) -> gpui::AnyElement {
 /// open would shift every word beside it, and a column of them down a block
 /// would come out ragged for a reason about the rows rather than the arrows.
 fn chevron_slot(fold: Option<bool>, cx: &App) -> gpui::Div {
-    div()
-        .size(CHEVRON_SLOT)
-        .flex_none()
-        .h_flex()
-        .items_center()
-        .justify_center()
-        .children(fold.map(|open| {
-            Icon::new(match open {
-                true => IconName::ChevronDown,
-                false => IconName::ChevronRight,
-            })
-            .size(CHEVRON_MARK)
-            .text_color(cx.theme().muted_foreground)
-        }))
+    mark_slot(CHEVRON_SLOT).children(fold.map(|open| {
+        Icon::new(match open {
+            true => IconName::ChevronDown,
+            false => IconName::ChevronRight,
+        })
+        .size(CHEVRON_MARK)
+        .text_color(cx.theme().muted_foreground)
+    }))
 }
 
 /// The box a detail is drawn in, without the row wrapper around it.
@@ -4128,19 +4152,13 @@ fn cluster_line(
         // depending on which kind of row it is on is one the eye has to find
         // twice.
         .child(
-            div()
-                .size(CHEVRON_SLOT)
-                .flex_none()
-                .h_flex()
-                .items_center()
-                .justify_center()
-                .child(
-                    Icon::new(match open {
-                        true => IconName::ChevronDown,
-                        false => IconName::ChevronRight,
-                    })
-                    .size(CHEVRON_MARK),
-                ),
+            mark_slot(CHEVRON_SLOT).child(
+                Icon::new(match open {
+                    true => IconName::ChevronDown,
+                    false => IconName::ChevronRight,
+                })
+                .size(CHEVRON_MARK),
+            ),
         )
         .into_any_element()
 }
@@ -4381,12 +4399,7 @@ impl RowMark {
     /// parent's mark and the two levels lined up exactly.
     fn draw(self, cx: &App) -> gpui::Div {
         let status = crate::theme::status_ink(cx);
-        let slot = div()
-            .size(KIND_ICON)
-            .flex_none()
-            .h_flex()
-            .items_center()
-            .justify_center();
+        let slot = mark_slot(KIND_ICON);
         let ink = match self {
             Self::Waiting => cx.theme().muted_foreground.opacity(0.5),
             Self::Running => return slot.child(Spinner::new().xsmall()),
@@ -4538,13 +4551,7 @@ fn activity_row(
             // colour is read without being looked at.
             .child(row.mark.draw(cx))
             .child(
-                div()
-                    .size(KIND_ICON)
-                    .flex_none()
-                    .h_flex()
-                    .items_center()
-                    .justify_center()
-                    .child(Icon::new(Icon::empty().path(row.kind)).size(KIND_ICON)),
+                mark_slot(KIND_ICON).child(Icon::new(Icon::empty().path(row.kind)).size(KIND_ICON)),
             )
             .child(
                 div()
