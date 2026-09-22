@@ -1040,9 +1040,18 @@ and its first paragraph — is **one cluster**, and a cluster is **one muted lin
   once when it settled, not a clock: a live figure is a number the line re-reads
   every frame and never comes to rest on. It is drawn only where something
   actually reported one, or a cluster whose steps never said would claim to have
-  taken no time at all. Hovering lifts the ink one step and lays a
-  very faint fill under it, pulled back out by its own padding so the first
-  glyph stays flush with the prose. The whole line is the control.
+  taken no time at all. The whole line is the control.
+- **Hovering is the ink and the weight, and no fill at all** — the line's own two
+  channels turned up rather than a plate put behind it, which is what a note in
+  the margin has to do: a rectangle appearing between two paragraphs every time
+  the pointer crosses the column is the chrome answering instead of the thing
+  hovered. With no plate there is nothing for padding to hold the text off, so
+  the sentence starts exactly where the prose does.
+
+  What it costs is that the line is shrink-to-fit, so a heavier weight makes it a
+  little wider — the right-hand end moves under the pointer while every word
+  before it stays put. Taken deliberately: the alternative is a plate, and the
+  wobble is at the end of a line nothing is aligned to.
 - **At the transcript's own reading size**, and never more. It has been all
   three: a step under it — where it started — read as a footnote to the paragraph
   above rather than as the heading of what came next; a step over it made the

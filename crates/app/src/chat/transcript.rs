@@ -3979,7 +3979,13 @@ fn cluster_line(
     }
 
     crate::controls::action(id)
-        .ghost()
+        // **The text variant, which is the one with no fill at all** — hover
+        // and press alike. A plate under this line was a rectangle appearing
+        // between two paragraphs every time the pointer crossed the column, for
+        // a control whose whole job is to be a note in the margin; and once
+        // there is no plate there is nothing for padding to hold the text off,
+        // so the sentence simply starts where the prose does.
+        .text()
         .group("cluster-line")
         .h(rems(1.75))
         // **Shrink to the sentence.** A control the width of the column is a
@@ -3988,13 +3994,8 @@ fn cluster_line(
         .w_auto()
         .max_w_full()
         .min_w_0()
-        .px(STACK_GAP)
-        // Pulled back out by exactly the padding, so the first glyph of the
-        // sentence is flush with the prose above it while the hover fill still
-        // stands clear of the text on both sides.
-        .ml(rems(-STACK_GAP.0))
-        .py_0()
-        .rounded(radius_control(cx))
+        .p_0()
+        .rounded_none()
         .on_click(on_click)
         .child(
             div()
@@ -4024,8 +4025,17 @@ fn cluster_line(
                 // first.
                 .font_weight(gpui::FontWeight::EXTRA_LIGHT)
                 .text_color(cx.theme().muted_foreground)
+                // **Hover is the ink and the weight, and no fill.** Both are
+                // the line's own two channels turned up rather than a plate
+                // put behind it -- which is what a note in the margin has to
+                // do, since a rectangle appearing between two paragraphs is
+                // the chrome answering instead of the thing hovered. The ink
+                // stops a step under the prose, as everything here does; the
+                // meaning colours on the counts are set per child and are left
+                // alone.
                 .group_hover("cluster-line", |line| {
-                    line.text_color(crate::theme::meta_ink(cx))
+                    line.font_weight(gpui::FontWeight::NORMAL)
+                        .text_color(crate::theme::meta_ink(cx))
                 })
                 .child(sentence)
                 // How many went wrong, said in the ink that means it and
