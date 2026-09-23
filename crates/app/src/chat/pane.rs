@@ -2378,8 +2378,8 @@ impl ChatPane {
     /// worse than no mark. So the slot is held at the largest the square ever
     /// gets and the square is centred inside it: what breathes is the ink, and
     /// the space it occupies is constant.
-    const PULSE_SIZE: Rems = rems(0.75);
-    const PULSE_MIN: Rems = rems(0.375);
+    const PULSE_SIZE: Rems = rems(0.875);
+    const PULSE_MIN: Rems = rems(0.4375);
 
     fn working_strip(&self, cx: &App) -> gpui::AnyElement {
         let running = self
@@ -2448,7 +2448,7 @@ impl ChatPane {
         let mut row = div()
             .h_flex()
             .items_center()
-            .gap_1p5()
+            .gap_1()
             .h(rems(1.5))
             .text_xs()
             // **One ink for the words, the accent for the mark alone.** A
