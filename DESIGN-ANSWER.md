@@ -648,13 +648,15 @@ column, the transcript keeps left and right padding equal to the composer's
 visible corner radius, preserving the same spacing rhythm within their shared
 outer width.
 
-**A turn that is still going says so on one pinned line**, above the composer
-with the other pinned strips: a spinner, the time it has been running, how many
-steps are in flight, and what the agent says it is doing — then the way to stop
-it, right-aligned. It is chrome and has to read as chrome, since it sits
+**A turn that is still going says so on one line at the end of the transcript**:
+a spinner, the time it has been running, how many steps are in flight, and what
+the agent says it is doing. It is a row of the conversation rather than
+something floating over the composer, so it sits where the next block will
+appear and in the same reading column — and so it scrolls away with everything
+else, which is the trade. It is chrome and has to read as chrome, since it sits
 directly under an answer that is streaming: the ink is the secondary one end to
-end, only the spinner keeps the accent, and the row's height is fixed whatever
-it holds.
+end, only the spinner keeps the accent, no surface or shadow under it, and the
+row's height is fixed whatever it holds.
 
 **The elapsed column is reserved, not measured.** The whole point of it is that
 nothing after it moves when `9s` becomes `10s` or `59s` becomes `1m 00s`, and a

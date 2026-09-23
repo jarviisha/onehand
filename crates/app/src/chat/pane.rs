@@ -2255,7 +2255,7 @@ impl ChatPane {
     /// The transcript is what leaves it out — see the projection — so the card
     /// is never drawn twice.
     fn pinned(
-        &mut self,
+        &self,
         session: &Entity<ChatSession>,
         // A pinned card rests on the composer rather than inside the list, but
         // what it must not outgrow is the same panel.
@@ -2300,10 +2300,6 @@ impl ChatPane {
         // is where the prompt it holds was written and where it will reappear
         // if the queue is cancelled.
         pinned.extend(self.connecting_strip(cx).map(IntoElement::into_any_element));
-        pinned.extend(
-            self.working_strip(window, cx)
-                .map(IntoElement::into_any_element),
-        );
         pinned.extend(self.queued_strip(cx).map(IntoElement::into_any_element));
         pinned
     }
@@ -2363,44 +2359,33 @@ impl ChatPane {
     /// up: the ink is the secondary one end to end, only the spinner keeps the
     /// accent, and the row's height is fixed whatever it holds. What it is for
     /// is answering "is this still alive" at a glance, and nothing more.
-    fn working_strip(
-        &mut self,
-        window: &Window,
-        cx: &mut Context<Self>,
-    ) -> Option<impl IntoElement + use<>> {
-        let chat = self.active_chat(cx)?;
-        // A turn that has not started, or one whose connection has not: the
-        // connecting strip is already speaking for the second.
-        let live = chat.busy && chat.link != Link::Connecting;
-        let status = chat.activity_status();
-        // Steps of *this* turn still going. Counted from the live items, which
-        // is where a running tool is, and never from the archive.
-        let running = chat
-            .items
-            .iter()
-            .filter(|item| {
-                matches!(
-                    item,
-                    onehand_core::chat::ChatItem::Tool(tool)
-                        if matches!(
-                            tool.call.status,
-                            onehand_core::acp::ToolStatus::InProgress
-                                | onehand_core::acp::ToolStatus::Pending
+    fn working_strip(&self, cx: &App) -> gpui::AnyElement {
+        let running = self
+            .active_conversation()
+            .and_then(|conv| conv.session())
+            .map(|session| session.read(cx))
+            .map(|session| {
+                session
+                    .chat
+                    .items
+                    .iter()
+                    .filter(|item| {
+                        matches!(
+                            item,
+                            onehand_core::chat::ChatItem::Tool(tool)
+                                if matches!(
+                                    tool.call.status,
+                                    onehand_core::acp::ToolStatus::InProgress
+                                        | onehand_core::acp::ToolStatus::Pending
+                                )
                         )
-                )
+                    })
+                    .count()
             })
-            .count();
+            .unwrap_or(0);
+        let status = self.active_chat(cx).and_then(|chat| chat.activity_status());
 
-        if !live {
-            // The clock is the turn's, so it goes with it.
-            self.turn_began = None;
-            self.ticker = None;
-            return None;
-        }
-        let began = *self.turn_began.get_or_insert_with(std::time::Instant::now);
-        self.start_ticker(window, cx);
-
-        let elapsed = began.elapsed().as_secs();
+        let elapsed = self.turn_began.map_or(0, |began| began.elapsed().as_secs());
         let clock = match elapsed {
             0..=59 => format!("{elapsed}s"),
             _ => format!("{}m {:02}s", elapsed / 60, elapsed % 60),
@@ -2412,47 +2397,58 @@ impl ChatPane {
                 .child("·")
         };
 
-        Some(
-            transcript::floating_card(cx)
-                .h_flex()
-                .items_center()
-                .gap_2()
-                .h(rems(2.))
-                .px_3()
-                .text_xs()
-                // **One ink for the words, the accent for the spinner alone.**
-                // A status line tinted to be noticed is a status line competing
-                // with the answer arriving above it.
-                .text_color(cx.theme().muted_foreground)
-                .child(Spinner::new().xsmall())
-                .child(
-                    div()
-                        .flex_none()
-                        .w(Self::CLOCK_W)
-                        .font_family(cx.theme().mono_font_family.clone())
-                        .child(clock),
-                )
-                .children((running > 0).then(|| dot(cx)))
-                .children((running > 0).then(|| {
-                    div().flex_none().whitespace_nowrap().child(match running {
-                        1 => "1 task".to_string(),
-                        n => format!("{n} tasks"),
-                    })
-                }))
-                .children(status.as_ref().map(|_| dot(cx)))
-                // The one part that gives way: it is the agent's own words
-                // about what it is doing, and the only thing here whose length
-                // nothing bounds.
-                .children(status.map(|status| div().flex_1().min_w_0().truncate().child(status)))
-                .child(div().flex_1().min_w_0())
-                .child(
-                    div()
-                        .flex_none()
-                        .whitespace_nowrap()
-                        .text_color(cx.theme().muted_foreground.opacity(0.7))
-                        .child("Stop to cancel"),
-                ),
-        )
+        div()
+            .h_flex()
+            .items_center()
+            .gap_2()
+            .h(rems(1.5))
+            .text_xs()
+            // **One ink for the words, the accent for the spinner alone.** A
+            // status line tinted to be noticed is a status line competing with
+            // the answer arriving above it.
+            .text_color(cx.theme().muted_foreground)
+            .child(Spinner::new().xsmall())
+            .child(
+                div()
+                    .flex_none()
+                    .w(Self::CLOCK_W)
+                    .font_family(cx.theme().mono_font_family.clone())
+                    .child(clock),
+            )
+            .children((running > 0).then(|| dot(cx)))
+            .children((running > 0).then(|| {
+                div().flex_none().whitespace_nowrap().child(match running {
+                    1 => "1 task".to_string(),
+                    n => format!("{n} tasks"),
+                })
+            }))
+            .children(status.as_ref().map(|_| dot(cx)))
+            // The one part that gives way: it is the agent's own words about
+            // what it is doing, and the only thing here whose length nothing
+            // bounds.
+            .children(status.map(|status| div().flex_1().min_w_0().truncate().child(status)))
+            .into_any_element()
+    }
+
+    /// Notice a turn starting and ending, and keep its clock true.
+    ///
+    /// **Stamped here because the model does not carry it.** A turn's start is
+    /// `pub(crate)` in core, and the status line is not a good enough reason to
+    /// widen it -- so the pane notices `busy` going up and reads its own clock.
+    /// What that costs is an approximation: a session switched away from and
+    /// back, or an app restarted mid-turn, starts counting again from zero.
+    fn track_turn(&mut self, window: &Window, cx: &mut Context<Self>) {
+        let live = self
+            .active_chat(cx)
+            .is_some_and(|chat| chat.busy && chat.link != Link::Connecting);
+        if !live {
+            // The clock is the turn's, so it goes with it.
+            self.turn_began = None;
+            self.ticker = None;
+            return;
+        }
+        self.turn_began.get_or_insert_with(std::time::Instant::now);
+        self.start_ticker(window, cx);
     }
 
     /// Wake once a second while a turn is live, and not otherwise.
@@ -3279,6 +3275,12 @@ impl ChatPane {
         };
 
         let Some(strip) = plan.strip.clone() else {
+            // The run the layout appends while a turn is live carries no
+            // transcript item, because what it reports is the turn rather than
+            // anything in it.
+            if plan.members.is_empty() {
+                return column(lead, margin, vec![self.working_strip(cx)], cx).into_any_element();
+            }
             return column(lead, margin, body(&plan.members, &room), cx).into_any_element();
         };
 
@@ -3756,6 +3758,7 @@ impl Render for ChatPane {
     /// inner focusable takes the click first and stops it.
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let zoom = self.zoom;
+        self.track_turn(window, cx);
         let body = self.body(window, cx);
         div()
             .size_full()

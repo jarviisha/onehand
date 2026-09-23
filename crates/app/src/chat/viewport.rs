@@ -257,7 +257,7 @@ impl Viewport {
         self.planned = Some(key);
         let addressed: Vec<(TranscriptItemId, &ChatItem)> = addressed(chat).collect();
 
-        let plan: Vec<RunPlan> = transcript::runs(&addressed)
+        let mut plan: Vec<RunPlan> = transcript::runs(&addressed)
             .into_iter()
             .map(|run| match run {
                 transcript::Run::Single(target) => RunPlan {
@@ -273,6 +273,7 @@ impl Viewport {
                         .copied()
                         .filter_map(|t| item(chat, t))
                         .collect();
+
                     let open = is_open(anchor);
                     RunPlan {
                         strip: Some(ActivityPlan {
@@ -301,6 +302,25 @@ impl Viewport {
         // over the earlier one and the splice began past the row that had
         // actually changed, leaving the list holding a tall card's height for a
         // row now one line high.
+        // **A turn that is still going gets a row of its own, at the end.**
+        // Empty members and no strip is what marks it: the renderer draws its
+        // own line there rather than any transcript item, because there is no
+        // item -- the thing being reported is the turn itself. It is a row
+        // rather than something floating over the composer so that it sits
+        // where the next block will appear, in the same reading column; the
+        // cost is that scrolling up takes it off screen, which is the trade
+        // taken deliberately. `busy` is already part of the key above, so the
+        // row arrives and leaves with the turn and nothing else invalidates
+        // for it.
+        if chat.busy {
+            plan.push(RunPlan {
+                members: Vec::new(),
+                strip: None,
+                open: true,
+                kind: RunKind::Compact,
+            });
+        }
+
         let diverged = self
             .plan
             .iter()
@@ -584,8 +604,13 @@ impl Viewport {
         // height, which is exactly what a streamed chunk did to it -- and the
         // list puts the reader back where they were once it knows the new
         // height.
+        //
+        // **Two rows while a turn is live, not one.** The last row is then the
+        // status line the plan appends, and the run growing under the arriving
+        // chunks is the one before it -- asking for the last alone left the
+        // streaming answer frozen at its first chunk's height.
         if busy && count > 0 {
-            state.remeasure_items(count - 1..count);
+            state.remeasure_items(count.saturating_sub(2)..count);
         }
         let state = state.clone();
 
@@ -1081,7 +1106,10 @@ mod tests {
         // would push the answer above it up the panel every time a turn started
         // work, and shut again when it stopped.
         assert_eq!(viewport.run(5).map(|r| r.open), Some(false));
-        assert!(viewport.run(6).is_none(), "and nothing after it");
+        // 6 is the line saying the turn is still going, which every live
+        // plan ends on.
+        assert_eq!(viewport.run(6).map(|r| r.members.is_empty()), Some(true));
+        assert!(viewport.run(7).is_none(), "and nothing after it");
 
         // They settle. **Nothing about the layout moves**: the same run, the
         // same members, the same fold. What changes is the sentence that run's
@@ -1295,8 +1323,8 @@ mod tests {
         viewport.replan(&chat, 0, |_| false);
         let _ = viewport.list_state(true, ROOM);
         // 0: answer · 1: the cluster · 2: answer · 3: the running read, which
-        // is a cluster of one.
-        assert_eq!(viewport.changed_from, 4, "nothing left to tell the list");
+        // is a cluster of one · 4: the line saying the turn is still going.
+        assert_eq!(viewport.changed_from, 5, "nothing left to tell the list");
 
         // The read settles. It is alone between two paragraphs either way, so
         // it stays one run and only what its line says changes.
@@ -1323,7 +1351,7 @@ mod tests {
         );
 
         let _ = viewport.list_state(true, ROOM);
-        assert_eq!(viewport.changed_from, 4, "told, and the note cleared");
+        assert_eq!(viewport.changed_from, 5, "told, and the note cleared");
     }
 
     /// The way back to the latest lands on the held question, and not on the
