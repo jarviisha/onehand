@@ -30,17 +30,24 @@ block type the chat renders, how it folds, and how it behaves mid-stream.
 3. **One turn = many blocks.** An agent turn is prose + tool cards + process rows
    stacked on one shared left axis.
 
-The transcript runs in a centred **64rem reading column**. That is a maximum
-rather than a fixed minimum: on a narrower panel the column contracts to the
-available width, minus equal padding on both sides. **It is set by what the
-widest block holds, not by prose alone.** A column sized purely for reading
-sentences is the narrower number this used to be, and what that cost was
-everything in the transcript which is not a sentence: a unified diff wrapping
-its longest lines, a command well folding a path that would have fit, a tool
-card's header ellipsizing a file name whose tail is the part that identifies
-it. Those are the blocks somebody is reading the transcript *for* when
-something has gone wrong, and a cap tuned past them to keep paragraphs
-comfortable trades the case that matters for the case that was already fine.
+The transcript runs in a centred **59rem reading column**, held off the panel by
+a single margin. That is a maximum rather than a fixed minimum: on a narrower
+panel the column contracts to the available width, and below about 30rem the
+margin comes down a step because past that point it is taking room from the line
+rather than framing it. **It is derived from the widest thing it has to
+hold, not chosen for prose.** A column set by reading measure alone is narrower —
+and what that costs is everything in the transcript that is *not* prose, which is
+what somebody is reading it for when something has gone wrong. A diff is the
+sharpest case: at the prose-sized cap this replaced, a line of this project's own
+code had 74 columns to sit in against the 100 `rustfmt` writes it at, so nearly
+every line of nearly every diff wrapped. So the number is the width at which 100
+mono columns clear the chrome around them — the child inset, the detail's
+gutters, the well's padding, the diff's sign column, the frame's border — and a
+test holds the sum, so the cap moves when any of those insets does instead of
+the diff quietly getting tighter. The blocks that still want more have answers of
+their own: a command scrolls sideways inside its well, a file name is elided from
+the front where the identifying tail survives, and a row's least load-bearing
+column gives way first.
 **The composer is capped narrower**, and its popups with it, because a message
 being written is not a
 message being read: the reading column is set by how far a line of prose can run
@@ -69,6 +76,47 @@ fiction.
 The transcript is a **full-height** scrolling column inside the dock's centre
 panel, running from the header's hairline to the bottom of the pane, with the
 composer floating over its foot.
+
+**Where the conversation comes to rest is wider than any gap inside it.** Every
+other space in the transcript separates two things of the same kind — two
+blocks, two turns — and comes from one ladder for that reason. The space above
+the composer is where the column *ends*: below it is a surface of a different
+sort, floating, with its own edge and its own fill, and a boundary between two
+kinds of thing that measures the same as a boundary inside one of them reads as
+the composer being the next paragraph. Half again the space between two turns,
+and written against that step rather than as its own number — it was set to
+match it once, the turn gap moved, and this quietly stopped being what its own
+comment said it was.
+
+**One scale, named for jobs, and nothing sized off it.** Every gap, pad, inset,
+height and corner in the transcript comes from a single ladder held in one
+place, and each step is named for what it is for rather than for how big it is:
+the space between turns, between blocks of one turn, between the parts of one
+block, between a line and its caption, and the pair of insets a frame keeps.
+Written out per call site they had already come apart — two paragraphs of one
+answer standing further apart than the answer stood from the card under it, a
+step's detail inset to one number while the group holding it used another, four
+values in use for the one job of "a line and the caption under it".
+
+The ladder's rule is that **what is inside a thing is always closer than what
+surrounds it**, at every level and for corners as much as for gaps. That is the
+whole of how the transcript says where one block ends and the next begins, and
+it is why a value chosen between two steps is a boundary nobody can resolve. The
+corner ladder is anchored on the theme's own two named radii, so a theme that
+squares its corners squares every one of these with it — and it is deliberately
+**small and nearly square all the way up**: a mark, a control, a block, and the
+user's bubble. What the transcript is meant to read as is a technical document,
+and a generous corner is what turns a record into a feed of cards. That includes
+the status pill, which is a corner here rather than a capsule: fully round it
+was the only curved silhouette in the column, reading as a badge stuck onto a
+row rather than as one of its columns. Two tests hold the scale: one fails on
+any step that has left it, naming the step; the other on any pair that has
+stopped nesting.
+
+**Nothing is nested more than two frames deep.** A block's rows are inside the
+block's own edge and bring none of their own; a well inside a row's detail is
+the second and last. Where more separation is wanted inside a frame, it is a
+hairline or white space — never a third box.
 
 The **composer is a card** — a hairline and a radius around the field and every
 control that acts on it — inset from the panel's edges, not a region divided off
@@ -600,7 +648,148 @@ column, the transcript keeps left and right padding equal to the composer's
 visible corner radius, preserving the same spacing rhythm within their shared
 outer width.
 
-The composer, the jump-to-latest pill and the completion popup are floating
+**A finished turn closes on a block saying what it did to the working tree**,
+and it is a *result* rather than a record. The clusters above it say what the
+agent did in the order it did it, which answers "how did it get here"; this says
+what is different now, which is what somebody has to act on. A file written
+three times is three entries up there and one row here, deliberately — the two
+are not the same list drawn twice.
+
+Its head is **one step above the reading size**: this is where a turn ends and
+what a reader scrolling past a long answer is looking for, and every other line
+in the block is at or below the transcript's own size, so the step is what gives
+the block a top rather than a first row. It carries the file count, the turn's
+own `+N −M` in mono with each side in the ink it means, and — right-aligned,
+because it is the one number about the turn rather than about the tree — how
+long the turn took. It takes the surface language of an activity group: no fill
+of its own, one hairline border, the theme's large radius, and each tier ruled
+off the next in that same border colour.
+
+**Only where something was written.** A turn that read and answered gets no
+block at all, never a block reporting nothing, and a turn still running gets
+none either: a total that grows under the eye is not a summary, and the status
+line below is already saying the work is in flight.
+
+**The last finished turn opens itself and every older one is a line.** A
+conversation that kept them all open is a column of tables with the reading
+between them; sending the next prompt is what puts the one above away, which is
+the moment the reader stopped asking. **A reader who decided keeps their
+decision** — the fold records the answer given, not the exception to a default,
+because that default moves: recorded the other way round, a block closed while
+its turn was newest sprang open the moment the next prompt went out.
+
+Each file is a row: **a letter in its own ink** — added, modified, deleted —
+rather than a coloured dot, because three states on a dense row is more than
+colour alone carries and the letter is what every diff tool already uses; the
+folder a step quieter than the file's own name, which is the two strengths a
+completion row puts a name and its folder at; that file's `+N −M`; and a bar
+saying how much of it the turn touched. A deleted file's path is struck through.
+Rows **hover on ink and never on a fill**, which is what every other row inside
+a frame answers a hover with: a plate here would make one list in the transcript
+behave unlike the list an inch above it. Clicking the row opens **the turn's
+diff for that file** — from before its first
+edit to after its last, in the same renderer every other diff in the transcript
+goes through.
+
+**The bar is of the file, not of the turn.** Twenty lines changed is most of a
+short file and nothing at all in a long one, and the number beside it cannot say
+which — so the bar is the only thing answering "was this rewritten or nudged",
+and the untouched remainder is what gives it that scale.
+
+**Eight rows, then a control.** A turn that rewrites a package writes fifty
+files, and a block listing all of them is the thing it was meant to replace:
+something to scroll rather than read. Over the cap they are ordered by how much
+of each file the turn touched, and what was left out **says how many and
+opens** — under the cap the order the turn touched them in is kept, since that
+is the order the reader watched it happen. A list silently cut at eight is a
+list claiming the turn touched eight files; one that says how many were dropped
+and cannot show them is a question with no answer in the room.
+
+**The diffs are computed when a row is opened, once, and kept.** A conversation
+holds every turn it has had, and diffing every file of every one of them on the
+chance somebody expands one is work paid a thousand times to be used once — and
+taking it in the renderer instead is worse still, since that runs on every frame
+the row is on screen and an LCS over two whole files builds a table megabytes
+wide. What the block carries is counts, which the model had already worked out.
+
+**It is derived and never stored.** The diffs it adds up are already in the
+transcript and in the archive, so a summary written down beside them is a second
+copy that can disagree with the first — and the archive is appended to and never
+revisited, so a copy written at the end of a turn could not be corrected if it
+ever did.
+
+**A turn that is still going says so on one line at the end of the transcript**:
+a mark, the time it has been running, how many steps are in flight, and what the
+agent says it is doing — **and it always has that last word.** The model goes
+quiet while a thought or a step is live, because the transcript's own block a
+few lines up is already saying it, which was right while the only other reader
+was a notification; this line sits *below* those blocks and says nothing else,
+so the two states a reader most wants named were coming out as a mark and a
+clock. It reads the live items for a word of its own rather than asking the
+model to report differently. It is a row of the conversation rather than
+something floating over the composer, so it sits where the next block will
+appear and in the same reading column — and so it scrolls away with everything
+else, which is the trade. **It takes the widest boundary in the conversation**,
+the one a prompt gets, and ignores the cadence the run above it asked for: every
+other gap there is between two things the agent said, while this one is between
+what it said and the app talking about it. At a block's distance it read as one
+more entry in the turn — worst directly under a cluster, where the two closed
+ranks and the status line looked like another folded step. It is chrome and has to read as chrome, since it sits
+directly under an answer that is streaming: the ink is the secondary one end to
+end, only the spinner keeps the accent, no surface or shadow under it, and the
+row's height is fixed whatever it holds.
+
+**The elapsed column is reserved, and its digits sit against its right edge.**
+The whole point of it is that nothing after it moves when `9s` becomes `10s` or
+`59s` becomes `1m 0s`, and a box that shrink-wraps its digits moves on every one
+of those. Fixing the box and putting the digits at its right edge is the whole
+of the fix: what follows the clock begins at the same place whatever the clock
+says, and the digits grow leftward into room that was already spoken for. Only
+the agent's own words give way, and they truncate rather than wrap.
+
+**It is drawn in the row's own face and not in mono**, which the reserved box is
+what makes affordable. Tabular digits answer a narrower question — that the text
+inside a shrink-wrapping box not slide — and they answer it by putting a second
+typeface on a row of text. Two faces on one line do not share a baseline, so the
+clock sat a shade off everything beside it, which reads as the row not being on
+one line at all.
+
+**The mark is a square that swells and shrinks, not a spinner.** A spinner is a
+wait with no progress in it, which is what this is not — the thing it stands
+beside is a clock counting up and a sentence that changes. It is drawn in the
+ink that says work is going well, and its repeat is capped well under the frame
+rate: it is a mark keeping time rather than something being watched.
+
+**It grows about its own centre, and the slot around it never changes size.**
+Growing a box on a row of text pushes that row's baseline around, and a mark
+that moved the words beside it every second would be worse than no mark. So the
+slot is held at the largest the square ever gets and the square is centred
+inside it: what breathes is the ink, and the space it occupies is constant.
+
+**A separator only stands between two things that are both there.** The clock
+never takes one at all — it is the row's own left edge rather than one side of a
+pair — so a line carrying nothing but a status runs straight from the clock into
+the words.
+
+**The clock wakes once a second and not otherwise.** Drawn from the render pass
+it would be a frame timer; asked for on a one-second tick it redraws at the rate
+the thing it draws actually changes, and it stands down while the window is not
+in front of the user. The count is read off a start instant rather than
+accumulated, so coming back to the window shows the right number rather than the
+number of ticks that were drawn.
+
+**The way back to the end of the conversation is one arrow on a disc**, held a
+block's gap above the composer's own top edge. It carried the words *New
+activity*, which name what is down there — something the transcript says for
+itself the moment the control is used — and a label on a thing floating over a
+conversation is a sentence competing with the one being read; what it means is
+in the tooltip, where a control that needs explaining keeps it. It is measured
+from the composer's edge and **not** from where the transcript comes to rest:
+that resting line is deliberately the widest space in the conversation, and
+placed against it the control floated most of an inch clear of the thing it
+belongs beside.
+
+The composer, that disc and the completion popup are floating
 controls, so they take the opaque `popover` surface and a clear elevation
 shadow. Transcript content may continue scrolling behind their bounds, but it
 must never show through **or visually merge with them** — and the second half is
@@ -656,17 +845,17 @@ opens over the edge of the card it lives in owes the same.
   and a folded strip glued the next answer to itself.
 - **A run has two ends, and an opened group is not the same kind at both.** The
   gap above a run answers to what it *begins* with, the gap below to what it
-  *ends* with. An opened activity group ends as a block's worth of reading, so
+  *ends* with. An opened activity run ends as a block's worth of reading, so
   what follows it takes a block gap — but it still begins with the same index row
   it began with while closed, and nothing about the boundary above that row
   changed. Read from the run as a whole, opening a group tripled the space over
   its own header: the row slid down under the pointer that had just clicked it,
   and everything above appeared to shift for a reason nothing on screen gave.
-- **What a group opens into keeps the cadence index rows keep everywhere else.**
-  Its members are the same quiet rows that sit at the smallest gap out in the
-  transcript, so they sit at that gap inside it too. One list drawn at two
-  rhythms depending on whether it is inside a group is the group deciding
-  something that is not its to decide.
+- **What a group opens into is separated by rules, not by a cadence.** Its
+  members are the group's own body rather than a list that happens to sit under
+  its heading, so what stands between one and the next is a hairline and no gap
+  at all. Out in the transcript the same row sits at the tightest gap from its
+  neighbours; inside a group it sits against them.
 - **The space between the paragraphs of one answer is bounded by the space
   between whole blocks.** The markdown renderer's own default is wider than the
   gap the transcript sets between an answer and the tool card beneath it, which
@@ -686,7 +875,7 @@ opens over the edge of the card it lives in owes the same.
 
 **The transcript has two voices, and size is what tells them apart: what was
 said, and how it got made.** An answer, a prompt and a thought's reasoning are
-the first. A tool card, a plan, an activity strip and every descriptor on them
+the first. An activity row, a plan, a group header and every descriptor on them
 are the second — they are the record of the work, not the work, and at the
 answer's size they compete with the thing the reader came for. The two blocking
 cards are the deliberate exception: a permission and a question are the only
@@ -722,12 +911,13 @@ the reader can see.
 | Prose, messages, thought bodies | the inherited size — nothing set |
 | A blocking card's question, and its choices | the inherited size |
 | Tool cards, plans, and a choice's explanation | one step under the reading size |
-| Every quiet disclosure row — activity strips, thoughts, settled tool rows and their descriptors | `text_xs` |
+| Every activity row — a step, a run, a thought, a settled exchange, and their summaries | `text_xs` |
 | Attention tool names and "Plan" | semibold, at their card's size |
-| A quiet row's *name* — an activity group, "Thought for Xs" | semibold, at `text_xs` |
-| A quiet row's *summary* or descriptor | regular + `muted_foreground`, at `text_xs` |
+| Such a row's *verb* — `Inspected`, `Explored`, `Reasoned` | semibold, at `text_xs` |
+| Such a row's *summary* or descriptor | regular + `muted_foreground`, at `text_xs` |
 | Meta — tags, status, timings, counts, attachment rows | `text_xs` + `muted_foreground` |
-| Code, diffs, terminal, `IN`/`OUT` bodies, fenced blocks | the theme's mono family, one size, leading tightened from the prose default |
+| Code, diffs, terminal bodies | the theme's mono family, one size, leading tightened from the prose default |
+| A fenced block inside an answer | the same family, a hair smaller, and looser between lines — see below |
 
 **Every well of machine text is one well.** A tool's output, a diff, a live
 terminal and a fenced block quoted inside an answer are the same claim — a
@@ -736,6 +926,28 @@ The last of them arrives through a different renderer and has to be given those
 values explicitly; left to itself it draws at a pixel size of its own, and the
 same command reads at one size in a tool card and another when quoted back in
 prose.
+
+**A fenced block is the exception, and the only one.** The other three are quoted
+*machine* text inside chrome — a card's output, a diff, a terminal — while a
+fenced block is something the agent chose to show in the middle of a sentence,
+read at the pace of the prose around it. So it sits a hair under the shared size
+and breathes more between its lines. It also **carries no fill**: the renderer
+gives one, and the user's own bubble is filled too, so a quotation and a thing
+somebody said read as the same object at a glance. A filled surface in the
+transcript means one thing only — *this was typed by the person reading it* —
+and everything else is an edge on the reading surface, which is the language the
+activity block already speaks.
+
+**What the block cannot have is a header.** The renderer opens one style
+refinement for the container and one closure for a box it pins to the top-right
+corner itself, so the surface is the caller's and a header *row* carrying a path,
+a language and a copy is not: there is no slot above the code, and the copy's
+position is the library's. The language is said in that corner box, because it is
+the only slot there is. Owning the block outright is reachable — the markdown
+block parser runs before the built-in conversion and can intercept a code node —
+but the element that carries selection is private to the library, so a
+hand-rolled block would trade the ability to select code for a header. That is
+the wrong way round.
 
 **Prose leading is wrong for a diff.** The golden ratio is right for a
 paragraph and wrong for two hundred lines each carrying two thirds of a blank
@@ -851,61 +1063,123 @@ lighter box.
 
 ## 4 — Collapsible blocks
 
-One interaction with two shapes, selected by state rather than by adjacency.
-Work needing attention is a card; settled history is a quiet disclosure row.
+One interaction with one shape. Every activity — a step, a run of steps, a
+thought, a settled question, a settled grant — is a row of the same anatomy
+inside the same frame, and what a row is doing changes only its state column and
+the pill at its end.
 
 ```
-┌─ «icon» title · descriptor …… status  ▸ ┐   attention card
-│  body (revealed on expand)               │
-└──────────────────────────────────────────┘
-
-«icon» settled summary  ✓ / failed  ▸        quiet disclosure
-        body (revealed below)
+┌────────────────────────────────────────────┐
+│ ✓ «k» Inspected  chat/pane.rs ………………    ▸ │  one step
+├────────────────────────────────────────────┤
+│ ✓ «k» Explored   3 files · 1 search ……   ▾ │  a run of steps
+│      ✓ «k» Inspected  a.rs ……………………    ▸ │    its children
+│      ✓ «k» Searched   BuildSequences …  ▸ │
+├────────────────────────────────────────────┤
+│ ◌ «k» Ran        cargo test ………  running ▸ │  still going
+├────────────────────────────────────────────┤
+│ ⊘ «k» D̶e̶n̶i̶e̶d̶    r̶m̶ ̶-̶r̶f̶ ̶…̶   [allow once] ▸ │  a settled grant
+└────────────────────────────────────────────┘
 ```
 
-- **Attention card:** pending and running tools, plus plans. Transparent surface,
-  one hairline, themed radius and `p_3`; title-to-body spacing is `gap_2`. A
-  plan's entries stay denser at `gap_1` inside their own list.
-- **Quiet disclosure:** thoughts, activity strips and terminal tool rows. No
-  border or card padding around the header or the whole group; failed tools use
-  the same shape as completed tools and add only their `danger` status. Detail
-  appears beneath the row. Activity summaries and settled tool rows start on
-  the same axis as prose; Thought remains aligned there as a named block too.
-  **Every row of this shape is one size**, thoughts included. A `Reasoned` strip
-  holds thoughts *and* `Think` tool steps, so a thought set one step larger put
-  two sizes among sibling rows and made the children louder than the group
-  header naming them. Weight separates a name from a summary; size does not have
-  to.
-- **Header:** role icon, label or title + descriptor, optional status, then a
-  chevron when detail exists. All glyphs occupy the same centred `size_4` slot;
-  only the sans label and mono descriptor align by text baseline. Right means
-  collapsed; down means open. The chevron always follows the label's right edge,
-  never a distant right-hand rail; hovering the interactive row promotes the
-  label from `muted_foreground` to `foreground`.
-- **Body:** rendered only while expanded. Everything below one activity header
-  — all `IN` / `OUT` / `EDIT` / `ERR` sections together — shares one bordered
-  card whose left edge aligns with the label. Long detail scrolls inside that
-  card, with a visible scrollbar whenever content overflows; the muted machine
-  wells inside do not repeat its border. Running tools force-open; every settled
-  state follows the user's fold choice.
+- **Activity block:** every stretch of adjacent activity between two agent
+  paragraphs, inside **one** frame — a step, a run of steps, a thought, a
+  settled question, a settled grant. Rows are separated by hairlines with **no
+  gap**; a gap between two bordered things is a seam, while a rule between two
+  unbordered ones is a table, which is what a column of rows sharing six columns
+  is. **Two activity frames never stand next to each other**: the block is
+  assembled from the runs it spans, the first opening its corners, the last
+  closing them, and every run between drawing only the hairline under itself.
+- **Activity row:** one anatomy for everything in that block, at a fixed height.
+  Left to right: **state** in a fixed slot · **kind**, the block's drawing for
+  the sort of work · **verb**, what was done, the one part at full ink ·
+  **object**, what it was done to, muted and cut to one line · **meta**, words
+  and numbers against a right-hand floor · **chevron**, always the last column.
+  Only the object gives way when the row runs short. A row with nothing to open
+  draws no chevron and takes no pointer.
+- **A row that stands for a run of reads and a row that is one step are the same
+  row** collapsed. The only difference is what each opens into: one unfolds a
+  command and its output, the other the paths it stands for.
+- **A row hovers the way the cluster's line above it does: ink, and no plate.**
+  A fill behind a row is the row answering as a surface, and these rows are a
+  list inside a frame that is already one. The **weight is left alone here and
+  only here**: the verb is a shrink-to-fit column, so a heavier one moves where
+  the object column starts, and a block of rows whose columns shift under the
+  pointer is the thing the frame exists to prevent. The layout and the ink sit
+  on the row element itself rather than on a box inside it, because a hover
+  styles the element whose hitbox the pointer is over and text colour cascades
+  *down*: a wrapper hovering over a child that has already set its own colour
+  changes nothing. Everything that should lift inherits; the verb, already as
+  bright as the row goes, says so.
+- **Every mark on a row is dropped a pixel onto the line its words read on.** A
+  centred box and centred *type* are not the same place: the renderer puts a
+  line's baseline at `(line_height − ascent − descent) / 2 + ascent`, and since a
+  face's ascent is the larger of the two the baseline lands below the middle of
+  the box — so lowercase text sits about a tenth of an em low inside its own
+  line, and a glyph centred against that box comes out looking that much high.
+  It is the one measurement here that is not on the spacing scale, because it is
+  an optical correction and not a space; one function owns it, since a row has
+  two or three marks and the first one added without it reads as the row having
+  come apart.
 - **Motion:** none. The chevron swaps rather than rotates; body height is not
   animated. A transcript that reflows while it streams is harder to read, not
   livelier.
+- **Plan:** the one framed block that is not activity. Same frame, same corner, a
+  heading carrying an exact count and a bar under it carrying the same figure as
+  a length, then one entry per row at the control height with a checkbox that
+  never changes size — only what is inside it.
 
 ---
 
 ## 5 — Block types
 
 The `ChatItem` variants — `User · Agent · Thought · Tool · Plan · Permission ·
-Ask · Notice` — plus the activity strip and the chrome rows (§6).
+Ask · Notice` — plus the activity block and the chrome rows (§6).
 
 ### 5.1 User prompt
 The **only** block with a fill, and the only one on the right.
 
-- Body: filled, rounded, no border, shrink-to-fit against the right edge and
-  bounded to a fraction of the row before it wraps. A one-line question
-  stretched edge to edge is shaped exactly like an answer, and the shape is
-  what the eye reads first.
+- Body: filled on the ramp's own bubble step, with a hairline only to hold the
+  shape where the two surfaces get close. Shrink-to-fit against the right edge
+  and bounded to a fraction of the reading column before it wraps — a one-line
+  question stretched edge to edge is shaped exactly like an answer, and the
+  shape is what the eye reads first. **Its right edge is the column's**, the same
+  edge the agent's prose ends at; what made them look unaligned is that prose is
+  ragged-right and never reaches it, while a fill does.
+- **The one corner in the transcript that is not nearly square**, and its tail
+  corner brought back down to a control's. Everything else here is a bounded
+  region of a document and takes the tight ladder for that reason; this is the
+  one block shaped like a thing somebody *said*, and a bubble rounded evenly is
+  a lozenge that could belong to either side. Its padding is the one pair off
+  the spacing scale: a corner has to be cleared before it can be padded, and at
+  the scale's own steps the text either crowded the curve or stood a whole step
+  clear of it and left the bubble hollow.
+- **A backtick pair is the one mark read as markup.** The prompt is drawn as
+  typed — run through the markdown renderer it would turn `**/*.rs` into bold
+  and `# 1` into a heading, the transcript misquoting the person who wrote it —
+  but a fenced span is how somebody says "this is a name, not a word", and
+  losing it makes a path in the middle of a sentence unfindable. Only *matched*
+  pairs count; a lone backtick is a backtick.
+- **Copy sits under the bubble, on its right edge, and appears when the message
+  is pointed at.** The hover belongs to the whole message, not to the row it
+  reveals: put on the row itself it asked the reader to find a transparent strip
+  a few pixels tall before it would show them what was in it, which is the same
+  as not being there. The wrapper shrinks to the bubble, so the region that
+  answers is the thing somebody is pointing at.
+
+  It works by **cascade rather than by naming a group**: the usual way to show a
+  child on hover resolves a group name through a registry, while text colour
+  simply inherits — so the wrapper turns the ink up and the row, which sets none
+  of its own, comes with it; the bubble, which sets its own, does not. The row is
+  laid out either way, so nothing moves when the pointer arrives, and a press
+  gives the row a colour of its own — which is also what holds the answer up
+  after the pointer has gone, until a timer takes it back.
+- **A turn opens above the prompt and does not close below it.** The space over
+  a question is what a reader scrolling back finds the last one by, so it is the
+  widest boundary inside the conversation — twice what two blocks of one answer
+  take. Under it the answer is the *reply*, and a gap as wide as the one above
+  would cut the question off from the thing answering it. The two were
+  symmetrical, which said the prompt belonged to neither side.
 - Attachments stack **above** the bubble and **outside** it, on the same right
   edge, each a bounded thumbnail for an image (§12) with a quiet caption under
   it — kind icon, file name, and a `danger` "not sent" mark on anything the
@@ -918,8 +1192,7 @@ The **only** block with a fill, and the only one on the right.
   answer is about the wrong picture.
 - The bubble itself is drawn only when something was typed, so an
   attachment-only prompt is the files alone.
-- *(Not rendered: the per-message footer with Copy / Select text, and the
-  long-prompt clamp with "Show full message".)*
+- *(Not rendered: the long-prompt clamp with "Show full message".)*
 
 ### 5.2 Agent answer
 Markdown prose starts directly on the transcript's shared left axis. There is
@@ -948,90 +1221,289 @@ speaker.
   copies however much had landed by the click.
 
 ### 5.3 Thought
-Collapsed reasoning, never containing tool calls. A §4 quiet disclosure whose summary is
-"Thought for Xs" / "Thinking…", body on a well, collapsed by default.
+Collapsed reasoning, never containing tool calls. One activity row —
+`Reasoned · Xs`, or `Reasoning` with a spinner while it is still arriving —
+collapsed by default, its body unfolding under it at the verb's own inset. The
+two states are the same row: the mark and the verb change and nothing moves.
 
-### 5.4 Activity strip
-Folds a run of adjacent **settled** process steps into one line. Pending and
-running work never enters a strip: it remains visible as a card until it reaches
-a terminal completed or failed state.
+### 5.4 Activity cluster
+Everything the agent did between two of its own paragraphs — or between a prompt
+and its first paragraph — is **one cluster**, and a cluster is **one muted line**.
 
-- Summary aggregates adjacent settled work by semantic kind (`Inspected 3 files
-  · ran 1 command`) rather than repeating one phrase per target. If any member
-  failed, the summary carries one `danger` failed state. Every strip starts with
-  its stable group name and a distinct group icon; the changing counts remain a
-  descriptor, so two different kinds of work never look like the same unnamed
-  history row.
-- Expanded steps are **indented one icon column beneath the summary** so the
-  group hierarchy remains visible — without adding a card or left rule around
-  the group. Each step's complete machine detail owns one bordered card aligned
-  beneath that step's label. A group has no fixed-height viewport of its own;
-  only an opened leaf detail is capped and scrollable.
-- Settled strips follow the user's fold state. Live thoughts remain standalone
-  rows and running tools remain attention cards, so the turn-level `busy` flag
-  never expands an audit trail behind them.
-- Fold state is keyed by the run's **first item identity**, never by run index: a
-  new step joining the run ahead of it renumbers every index below and silently
-  moves the fold.
+- **Bounded by the agent's words and by nothing else.** Not by the kind of work:
+  three reads and a command between one paragraph and the next used to draw two
+  headers, which is two claims about one stretch of work with nothing between
+  them to explain the seam. Not by status either: a running step used to sit
+  outside the cluster and move in when it finished, so the row count changed
+  every few seconds mid-turn and a step that had been a card became a line in a
+  list somebody was already reading. **A cluster of one is still a cluster** —
+  the exception meant the transcript had two ways of saying the same thing, and
+  which one a reader got depended on whether the agent happened to do a second
+  thing afterwards. Settled questions and settled grants are in it too.
+- **Two clusters never stand next to each other.** If nothing of the agent's is
+  between them, they are one cluster.
+- **The line has no frame, no fill and no rule.** It sits on the reading surface
+  at the same left edge as the prose either side of it, in the ink a marginal
+  note is set in, and it **shrinks to what it says** rather than ruling a bar
+  across the column — past the column it truncates. Shrinking is load-bearing
+  and not decoration: the line is a library `Button`, which centres its own
+  content with no way out, so stretched across the column the sentence sat down
+  the middle with the prose either side of it starting at the left edge. A
+  column flex stretches its children by default, so the line's container has to
+  say otherwise. Its columns: the sentence, an error count, the lines added and
+  removed — mono, each side in the ink it means, and **a side that is zero is
+  not drawn**, which colour is what forces: `−0` set in the danger ink is the
+  colour of something having gone when nothing did — then how long the whole
+  stretch took, and **the chevron, last — the same end of the row it takes
+  inside the frame**, so the one control meaning the same thing everywhere is
+  not in two places depending on which kind of row it is on. The total is a sum of durations each step stamped
+  once when it settled, not a clock: a live figure is a number the line re-reads
+  every frame and never comes to rest on. It is drawn only where something
+  actually reported one, or a cluster whose steps never said would claim to have
+  taken no time at all — and **only once the cluster has stopped**: while a step
+  is still going the sum is of what has already settled, which is not the
+  duration of anything a reader can see, and it sits next to a line saying work
+  is in flight and reads as that work's, frozen. The line already says it is
+  running; how long it took is an answer, and an answer belongs after the fact.
+  The whole line is the control.
+- **Hovering is the ink and the weight, and no fill at all** — the line's own two
+  channels turned up rather than a plate put behind it, which is what a note in
+  the margin has to do: a rectangle appearing between two paragraphs every time
+  the pointer crosses the column is the chrome answering instead of the thing
+  hovered. With no plate there is nothing for padding to hold the text off, so
+  the sentence starts exactly where the prose does.
 
-### 5.5 Tool call
-Header anatomy: kind icon + tool name + descriptor (first line, truncated; mono
-for a command, sans otherwise) + status + disclosure when detail exists. ACP
-titles that repeat the structured kind are normalized, so a row never reads
-`Edit Edit …`. An execute step with an agent-authored human description omits
-the redundant `Run`; raw commands retain it because it names the machine text.
-Embedded newlines in a raw command are collapsed to spaces in the header, while
-the expandable `IN` body preserves the command verbatim. Sans tool labels and
-mono commands align by text baseline rather than by the centres of their
-different font boxes.
-File targets under the session root display as project-relative paths; opening
-them still resolves the original path against that root.
+  **The line is a stateful `div`, not the app's button wrapper**, and that is
+  what makes the hover land. The wrapper is a library `Button`, and reaching its
+  hover state from a call site means going through three layers — the button's
+  own refinement, the `Stateful<Div>` underneath it, and the group-hitbox
+  registry a `group_hover` resolves against. Two attempts at that changed
+  nothing on screen. `hover` on a stateful div is the primitive all three are
+  built out of: it styles the element whose own hitbox the pointer is over, with
+  nothing in between to go wrong. What it costs is the keyboard, which a
+  `Button` would have carried; the rail's rows made the same trade.
 
-- **Prominent vs quiet is decided only by status.** Terminal tools — completed
-  or failed — render as chevroned ghost rows, whether alone or beside another
-  tool. Pending and running tools render as full §4 cards and stay outside
-  activity strips. Opening a terminal row sets its detail beneath it, by space
-  and never by a rule (§5.4). Adjacency may replace several settled rows with
-  one summary, but it never changes any tool's underlying shape.
-- **Status:** pending muted · running `warning` · failed `danger`. Pending and
-  running remain words because they need attention; failed remains a word
-  because the exceptional terminal result must be named. Completed is the
-  common case and becomes a compact `success` check beside the descriptor,
-  avoiding a right-hand column of repeated `done`s.
-- **The chevron follows the label, not the row.** It is the handle for the thing
-  named beside it, including one-phrase activity summaries and thoughts. The
-  label may shrink and truncate, but never flexes merely to send its chevron to
-  the far edge. An exceptional status such as `failed` sits inside this cluster
-  between descriptor and chevron, never in a separate right-hand column. Hover
-  promotes the label text to `foreground` while semantic status colours remain
-  unchanged.
-- **Expanded when** the user opened it **or** it is running — computed, never
-  stored (§7). Failed tools start collapsed like other settled work; their
-  `danger` status remains visible in the header.
-- **Body sections** are a tag column (`IN` / `OUT` / `EDIT` / `ERR`) beside a mono
-  body:
-  - `IN` — the command, verbatim. An execute step always has one, so it always
-    offers disclosure: the header elides to a line, and a command is the part
-    of a tool step most worth reading whole.
-  - `EDIT` — the diff: a path sub-header, then removals and additions on tinted
-    lines, capped **across all hunks of the card**.
-  - `OUT` (text) — the tail, folded to a reading threshold with "Show N more
-    lines", then hard-capped per well when opened. Two bounds answering two
-    questions: the fold is about not burying the answer below it, the cap is
-    about not drawing one element per line of whatever the agent `cat`-ed. The
-    fold state is the model's, keyed by the section's index.
-  - `OUT` (terminal) — the live ACP-terminal stream, last N lines, then an exit
-    footer that reads `success` on 0 and `danger` otherwise.
-- A tool with no detail renders as its header line only.
-- **The path in a diff header is a link** — clicking it asks the shell to open
-  the file in the Workbench. The chat never opens a file itself: it says what was
-  asked for, and the shell decides where it goes.
+  What it costs is that the line is shrink-to-fit, so a heavier weight makes it a
+  little wider — the right-hand end moves under the pointer while every word
+  before it stays put. Taken deliberately: the alternative is a plate, and the
+  wobble is at the end of a line nothing is aligned to.
+- **At the transcript's own reading size**, and never more. It has been all
+  three: a step under it — where it started — read as a footnote to the paragraph
+  above rather than as the heading of what came next; a step over it made the
+  line the only thing in the transcript set larger than the agent's own words,
+  and size is loud in a way ink is not, so it out-measured every answer it sat
+  between. At the reading size it is neither. It takes its place in the column
+  and lets the light weight and the muted ink say how much of the reader it
+  wants, which is what those two channels are for.
+- **Muted end to end, lighter than the prose, placed by size alone.** It has
+  been through a status mark, a brighter ink on its verbs and a heavier weight —
+  each added so the line could be found while skimming, and each one also making
+  it compete with the answer above it, which nothing here may do. Size is the
+  channel left: it says where a reader is in the document without saying how much
+  the thing wants from them, and the light weight is what keeps a larger size
+  from reading as a louder one. A weight is a request like a family is: it lands
+  only where the resolved face carries that cut, and asked for something far
+  enough off the platform may answer with a different family altogether — which
+  would put this one line in a typeface of its own. So nothing depends on it:
+  size and ink carry the line, and the weight is the third channel. There
+  is no status glyph — what went wrong is a count, said in words and in the ink
+  that means it.
+- **The sentence is kinds of work, in the order they first happened, each with a
+  count**: `Read 3 files, ran 7 commands, edited 2 files, 3 other steps`. Not one
+  phrase per step, which costs as much to scan folded as unfolded; not a bare
+  total, which says how much happened without saying what. Only the opening word
+  is capitalised. The agent's own housekeeping — looking a tool up, stopping a
+  task — has no verb and goes last, because given one it reads as work on the
+  project. A settled question reads `asked n questions`; a grant is not
+  mentioned, being the user answering rather than the agent working. **No command,
+  no long path and no secret ever reaches this line.**
+- **While something is running the sentence leads with it, in the present
+  tense**: `Running dotnet test · read 2 files`. A line opening with what is
+  finished buries the one part of it still changing. The step in flight is not
+  counted among the things that have been done. When it settles the line changes
+  in place; its height, its position and its cap do not.
+- **The line says what the work was, not how it came out.** It carried a tally of
+  what failed, in the danger ink, and that was the loudest thing on a line whose
+  whole job is to stay behind the answer above it — for a number nobody can act
+  on without opening the block anyway. How it came out is the business of the
+  rows inside, each of which names its own failure and its own exit code. A
+  cluster still working does lead its sentence with what it is doing, because
+  that is what the work *is* at that moment.
+
+  **What this costs is stated plainly: a collapsed line no longer says whether
+  anything broke.** Reading only the header lines of a long turn tells you what
+  the agent did and not whether it worked, which was an earlier criterion. The
+  trade was asked for; the way back, if the quiet costs too much, is a mark
+  rather than a count — one disc in the danger ink, which says *something here*
+  without spending the line's one loud slot on arithmetic.
+  (The *rows inside* it still carry marks, and those read the section's ending
+  rather than its worst moment: quiet, `warning` where a failure was recovered
+  from, `danger` where the section ended on one.)
+
+  **Those marks are a square in the state's own ink, not a glyph naming it.** A
+  tick and a cross are two drawings to read at a size where both are a handful
+  of strokes, and a column of them down a block is a column of small pictures
+  competing with the words beside them. A square is one shape wherever it
+  appears, so what the column carries is a colour — and a colour is read without
+  being looked at. The mark is sized off the glyph it replaced rather than
+  fixed, so a parent's and a child's stay the step apart that says which level a
+  row is on. Running keeps the spinner: a static dot cannot say *moving*.
+
+  **Nothing critical rests on the colour alone**, which is the rule this would
+  otherwise break. A failed row still prints `failed` in its right-hand column,
+  and the cluster's own line still says `· n errors` in words — so the square is
+  the fast channel and never the only one.
+- **Collapsed by default, always** — including a cluster with errors in it and a
+  cluster still running. One that opened itself would push the answer above it up
+  the panel every time a turn started work and shut again when it stopped. The
+  fold is the user's and survives the transcript growing.
+- **The frame exists only once it is asked for.** Drawn always, it was a box the
+  height of a paragraph standing between two paragraphs, for steps nobody had
+  asked to see — the detail claiming the space of the answer. Opened, it appears
+  under the line at the tight gap, takes the full column, and is the single frame
+  layer: **one border, the block corner, and no fill**. A fill would put a second
+  surface inside the reading one — a slab of another colour standing between two
+  paragraphs for as long as it is open — and it buys nothing the border does not
+  already say. It also leaves the rows inside their full hover contrast, which
+  against a surface already a step off the reading one was halved. Everything
+  inside separates by hairline, never by another bordered box.
+- The line sits a block's gap from the prose above and below it, and when open
+  that gap is measured from the foot of the frame.
+
+### 5.5 Activity row
+One anatomy for every kind of step inside an opened cluster, columns spaced
+evenly and aligned down the whole block:
+
+| Column | Size | Holds |
+|---|---|---|
+| State | fixed slot | a disc in the ink the state means — quiet waiting, `success` done, `warning` recovered, `danger` failed, quiet again refused — and a spinner while it runs |
+| Kind | fixed slot | the block's drawing for the sort of work |
+| Verb | its own width | `Read` · `Edited` · `Ran tests` · `Asked` · `Allowed`, in the reading face and the reading ink |
+| Object | takes what is left | what it was done to, in the machine face a step under, one line, ellipsized |
+| Meta | right-aligned | `+N` / `−N`, `exit 101`, `failed`, `deleted` — words and numbers, never a plate |
+| Chevron | fixed slot | the arrow, reserved whether or not it is drawn |
+
+- **The exit status where there is one, the word where there is not.** Only a
+  command run through the terminal extension reports a code; an adapter that
+  says a step failed as a plain tool call has none to give, and one invented
+  from its output is a fact the reader would then act on.
+- **The state is a disc, not a glyph.** A tick and a cross are two drawings to
+  read at a size where both are a handful of strokes, and a column of them is a
+  column of small pictures competing with the words beside them. A disc is one
+  shape wherever it appears, so what the column carries is a colour — and a
+  colour is read without being looked at. Running keeps the spinner: a static
+  shape cannot say *moving*. **Nothing critical rests on the colour alone** — a
+  failed row still prints `failed`, and the cluster's line still counts errors in
+  words.
+- **A path arrives split.** A reader scanning a column of them is looking for the
+  *name*; the directory above it is only there for the times two names are the
+  same, and at one weight it takes the eye first every time it is long. So the
+  directory recedes a step and the name keeps the reading ink. A command is not a
+  path and is never cut at its last slash. A deleted file is struck through.
+- **Only reads merge.** Three files looked at in a row are one thing the agent
+  did, and `Read 3 files` opening into the three paths is what a reader wants of
+  them. Two edits are not: each carries its own diff, which is the thing somebody
+  opened the block to see, and folding them behind one row puts it two clicks
+  away to save a line. The same for two commands, whose output is the point of
+  each.
+- **A failure opens itself, and can still be shut.** The one thing a reader needs
+  from a settled step is whether it worked; for the one that did not, the next
+  question is always what it said, so making them ask is a click charged for the
+  case that already went badly. It is **seeded into the fold the user owns**, not
+  OR-ed into the open rule — a terminal status forcing the row open forces it
+  open *for ever*, so the control that shuts it does nothing and the one state
+  that most wants a way out is the one with none. Running gets away with the OR
+  because it stops being true on its own.
+
+### 5.5.2 What a row opens into
+Set in to the row's own words, in one box: a border, the block corner, and a
+single step off the frame — a layer, not a card dropped in. Machine text
+throughout, at a leading a list of it wants.
+
+- **A command, then what it printed**, separated by a hairline. The `$` says
+  which is which; there are no `IN` / `OUT` labels, which were four characters of
+  chrome per section and a fixed column taken off the widest text in the
+  transcript. The ink follows the *line*, not the row: an error in the middle of
+  a hundred quiet lines is the one somebody is looking for.
+- **A diff in three columns** — number, sign, text — the number and sign pinned
+  to the *first* row of a line that wraps, or the column down the side stops
+  being a ruler the moment anything is long. Added and removed rows take a wash
+  of their own ink, never a solid fill. An elided run is its own line, in the ink
+  that means there is more behind it.
+- **A diff past four hundred changed lines is offered, not drawn.** One that size
+  is searched rather than read, and every line of it is an element in a list
+  already virtualising rows for the same reason.
+- **Collapsed shows the point and fades the rest**: a diff from its top, because
+  that is where the change is; a command's output from its bottom, because that
+  is where its failure is. The cut fades into the box at whichever end it falls,
+  and the control that opens it is a pill sitting over the fade — a plate of its
+  own, or it is read against the text it is covering.
+- **The box carries a Copy, because a drag cannot select it.** The renderer only
+  gives selection to text that goes through its markdown path — which is how the
+  agent's prose is selectable and why nothing here is: a diff's three columns are
+  layout, and running them through that renderer to gain a drag would cost the
+  columns. So the block answers in whole rather than in part, which is also what
+  somebody pasting a failure into a bug report wants. It is drawn always, never
+  waiting to be hovered: a control that appears under the pointer is one nobody
+  finds who was not already reaching for it. It covers the tail of the first
+  line, which is the trade a reserved column would otherwise charge every line
+  below — and what a first line carries is its opening.
+- **Opened, the box scrolls inside a fixed height**, and the control that shuts
+  it sits *outside* that scroll with a rule between, so it never goes where the
+  content goes. **Collapsed it does not scroll at all** — a preview short enough
+  to read whole has nothing to scroll, and a box that scrolled anyway would be a
+  second scroller under the reader's finger for no reason.
+- **The wheel has to be taken in the capture phase.** The transcript is a
+  `gpui::list`, which registers its own wheel listener before its children have
+  any say, so a box that merely sets `overflow-y: scroll` is a box the wheel
+  slides the *conversation* behind: the reader ends up somewhere else in the turn
+  while trying to read one command's output. A mask sits as a sibling of the
+  scrolled box and consumes the vertical delta before the list sees it.
+- **A box with nothing to scroll takes nothing**, which is the half a first
+  attempt forgets. Consumed wherever it is drawn, an opened detail shorter than
+  its own cap becomes a dead patch of the transcript: hovering it stops the
+  conversation moving, for a box that was not going to move either. The mask
+  reads last frame's travel and stands aside when there is none.
+- **Where there is travel it is contained, and not chained.** It keeps consuming
+  at the edge rather than handing the delta back, which is the opposite of what
+  a browser does by default and is right here: these boxes are a few lines tall inside a
+  transcript that is hundreds, so a reader who reaches the end of one command's
+  output would have the whole conversation take off under their finger. What
+  they were doing was reading *this*, and arriving at its last line is not a
+  request to leave it. The component library's own mask chains, so the
+  transcript brings its own.
+
+### 5.5.1 The record a settled exchange leaves
+A question the agent asked, and a grant the user answered, are **rows of the
+block** once they are settled — not cards.
+
+- While either is waiting it is not in the transcript at all: it is pinned above
+  the composer, where the answer is given. What is left afterwards is the fact —
+  the agent asked this, the user said that — and that is one line of the same
+  list a step is a line of. Drawn as a card it was the loudest thing in the
+  conversation for the rest of the conversation's life: a heading, a rule, a
+  body, a footer and a shadow per exchange, so three questions in a row cost
+  most of a screen to say three sentences.
+- The **kind slot carries the user**, because every other row in the block is
+  something the agent did and this is the one where somebody answered.
+- A **grant** reads `Allowed` or `Denied`, with the command as its summary and
+  the option's own wording as its pill. A refusal is not a failure — nothing
+  went wrong, a decision was taken — so it takes neither the tick nor the danger
+  cross, and says what happened by striking the words out. Opened, it gives the
+  whole command and the directory it would have run in.
+- A **question** reads `Asked`. One question puts the question in the summary
+  and the answer in the pill, and has nothing to open. Several put the agent's
+  own prompt in the summary and the count in the pill, and open into one row per
+  question with its answer right-aligned beside it — **no rules between those
+  pairs**: they are one answer given in several parts, and ruled apart they read
+  as separate exchanges. A typed answer takes the same pill as a chosen one;
+  which it was is carried by weight, not by a different control.
 
 ### 5.6 Command
 The terminal icon and mono descriptor distinguish a command — **no accent
 rail** (§3). While pending or running it is a standalone card; once completed
 or failed it becomes the same compact row as every other settled tool and may
-join adjacent settled work in an activity strip.
+join adjacent settled work in one activity row.
 
 ### 5.7 Permission
 A blocking card: the agent parks until it is answered.
@@ -1349,7 +1821,7 @@ threshold that hides the rest behind "Show N more lines", terminal lines, plan
 items, attachment rows, code-block height, tool-detail height, completion rows —
 plus `MAX_TERM_BYTES` in core, which bounds the model rather than the view.
 
-An activity strip needs no constant: its summary is built from a fixed array
+An activity run needs no constant: its summary is built from a fixed array
 indexed by category, so the number of phrases it can produce is bounded by the
 number of categories that exist. A bound the type system already holds does not
 get a second one written beside it.

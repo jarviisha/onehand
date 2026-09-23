@@ -122,6 +122,17 @@ pub struct AskItem {
     pub custom: Vec<String>,
     /// A one-line summary of the answer once settled (controls then disable).
     pub resolved: Option<String>,
+    /// Whether the settled record of this exchange is showing its
+    /// question-and-answer pairs.
+    ///
+    /// **Only ever read once the form is answered.** While it is open the card
+    /// is on screen whole and there is nothing to unfold; what this folds is
+    /// the record left behind afterwards, which is one line by default and the
+    /// list of what was asked and what was chosen when opened. Held here for
+    /// the reason every other fold in this conversation is: the row is rebuilt
+    /// from scratch on every frame, so a flag owned by the view lasts exactly
+    /// as long as nothing else on screen changes.
+    pub expanded: bool,
     /// Which question the card is showing. A multi-question form renders as a
     /// tab strip (one tab per field) with only the active field's choices
     /// below it — stacking them all made a form taller than the pane, and the
@@ -158,6 +169,7 @@ impl AskItem {
             picked: vec![Vec::new(); n],
             custom: vec![String::new(); n],
             resolved: None,
+            expanded: false,
             tab: 0,
             cursor: 0,
         }
@@ -547,13 +559,43 @@ pub struct ToolItem {
     /// Content sections whose OUT well is un-folded past the threshold,
     /// keyed by the section's index in `call.content`.
     pub out_open: HashSet<usize>,
+    /// When this step began, for the duration below.
+    ///
+    /// **Not persisted, and it must not be.** An `Instant` is a reading of a
+    /// clock this process started; carried into a file and back it would be a
+    /// point in another process's timeline, which is not a time at all. What
+    /// survives a reopen is the duration it produced.
+    pub(crate) started: Option<Instant>,
+    /// How long the step took, stamped once when it settled.
+    ///
+    /// **Measured here and nowhere else.** A duration is the difference between
+    /// two moments, and the only place that sees both is the reducer the events
+    /// arrive at: a renderer asking "how long has this been going" is asking
+    /// per frame and getting a different answer each time, which is a number
+    /// that never settles even after the step has.
+    pub elapsed_secs: Option<u64>,
+    /// What the command exited with, where it ran through a real terminal.
+    ///
+    /// `None` for every step that did not: the protocol carries no exit status
+    /// outside its terminal extension, so an adapter reporting a failure as a
+    /// plain `tool_call` has no code to report and the row says `failed`
+    /// instead. Guessing one from the output would be inventing a fact the
+    /// reader would then act on.
+    pub exit_code: Option<i32>,
 }
 
 impl ToolItem {
     pub fn new(call: ToolCall) -> Self {
         let diff_summary = Self::summarize_diffs(&call);
         let diff_rows = Self::hunks(&call);
+        let running = matches!(call.status, ToolStatus::Pending | ToolStatus::InProgress);
         Self {
+            // Only work that has not finished gets a start: a step that arrives
+            // already settled was timed by whoever ran it, and stamping it here
+            // would measure the moment it reached this process.
+            started: running.then(Instant::now),
+            elapsed_secs: None,
+            exit_code: None,
             call,
             diff_summary,
             diff_rows,
@@ -1897,7 +1939,11 @@ impl Chat {
             AcpEvent::ToolCall(tc) => {
                 self.consume_replay();
                 self.finalize_thought();
-                self.items.push(ChatItem::Tool(ToolItem::new(tc)));
+                let mut item = ToolItem::new(tc);
+                // The same rule for a step that arrives already failed, which
+                // is how an adapter reports one it never started.
+                item.fold = item.call.status == ToolStatus::Failed;
+                self.items.push(ChatItem::Tool(item));
             }
             AcpEvent::ToolUpdate(tu) => {
                 self.consume_replay();
@@ -1959,6 +2005,7 @@ impl Chat {
                 // cancelled turn, or an adapter that moved on) resolves them
                 // as cancelled — protocol-correct, and the buttons disable.
                 self.cancel_pending_permissions();
+                self.settle_running_steps();
                 // Fold finished terminals into their cards so the `terminals` map
                 // only ever holds live ones (the turn is over → no more updates).
                 self.flatten_exited_terminals();
@@ -2000,6 +2047,34 @@ impl Chat {
             if let ChatItem::Tool(t) = item {
                 if t.call.id == tu.id {
                     if let Some(status) = tu.status {
+                        // Settling is the moment the duration exists, and it is
+                        // stamped once: a later update to the same card -- of
+                        // which there are several, since content arrives after
+                        // the status does -- must not restart the clock.
+                        if !matches!(status, ToolStatus::Pending | ToolStatus::InProgress)
+                            && t.elapsed_secs.is_none()
+                        {
+                            t.elapsed_secs =
+                                Some(t.started.map(|s| s.elapsed().as_secs()).unwrap_or(0));
+                        }
+                        // **A failure opens itself, and can still be shut.**
+                        // The one thing a reader needs from a settled step is
+                        // whether it worked, and for the one that did not the
+                        // next question is always the same -- what did it say?
+                        // -- so making them ask is a click charged for the case
+                        // that already went badly.
+                        //
+                        // Seeded into the fold the user owns rather than
+                        // OR-ed into `is_open`, which is where this was first
+                        // written and is a trap: a terminal status that forces
+                        // the row open forces it open *for ever*, so the
+                        // control that shuts it does nothing and the one state
+                        // that most wants a way out is the one with none.
+                        // Running gets away with the OR because it stops being
+                        // true on its own.
+                        if status == ToolStatus::Failed && t.call.status != ToolStatus::Failed {
+                            t.fold = true;
+                        }
                         t.call.status = status;
                     }
                     if let Some(title) = tu.title {
@@ -2069,10 +2144,21 @@ impl Chat {
             let flat = format!("{}{footer}", view.output);
             for item in self.items.iter_mut() {
                 if let ChatItem::Tool(t) = item {
+                    let mut ours = false;
                     for c in t.call.content.iter_mut() {
                         if matches!(c, ToolContent::Terminal(tid) if *tid == id) {
                             *c = ToolContent::Text(flat.clone());
+                            ours = true;
                         }
+                    }
+                    // **Kept off the text on the way past.** This is the one
+                    // moment the exit status and the step it belongs to are
+                    // both in hand: after it the terminal is gone and the code
+                    // is a line inside a string, which the row would have to
+                    // parse back out -- and a number recovered by parsing is a
+                    // number that is wrong the first time the wording changes.
+                    if ours {
+                        t.exit_code = view.exit_code;
                     }
                 }
             }
@@ -2209,6 +2295,46 @@ impl Chat {
     /// would echo an rpc id a since-restarted adapter never issued), and the
     /// rail dot stays stuck on "waiting for you". With no live `tx`
     /// (disconnected) the cards are still resolved locally.
+    /// Close off every step the turn left in flight.
+    ///
+    /// **A turn ending is the last word on its own steps.** Nothing more will
+    /// arrive for a call the adapter never settled -- a cancelled turn is the
+    /// ordinary way that happens, and an adapter that simply moved on is the
+    /// other -- so a step left `InProgress` stays that way for the rest of the
+    /// conversation. Everything downstream reads it as live: the cluster it is
+    /// in says it is still running and never reports how long it took, and the
+    /// line at the foot of the transcript counts it among the steps in flight
+    /// for every later turn.
+    ///
+    /// **`Failed` and not `Completed`.** What is known is that it did not
+    /// report finishing; calling that success is the one reading the transcript
+    /// cannot recover from, since a card claiming a write went through is worse
+    /// than one saying it is unclear. This is the same answer
+    /// `cancel_pending_permissions` gives a dangling card one line above.
+    fn settle_running_steps(&mut self) {
+        for item in &mut self.items {
+            if let ChatItem::Tool(tool) = item {
+                if !matches!(
+                    tool.call.status,
+                    ToolStatus::Pending | ToolStatus::InProgress
+                ) {
+                    continue;
+                }
+                tool.call.status = ToolStatus::Failed;
+                // Timed here for the same reason a settling update is: this is
+                // the moment the step stopped, and a step that never settles
+                // has no duration at all.
+                if tool.elapsed_secs.is_none() {
+                    tool.elapsed_secs =
+                        Some(tool.started.map(|s| s.elapsed().as_secs()).unwrap_or(0));
+                }
+                // The same seed a failure arriving as an update leaves, so a
+                // reader can see what the step had said before it stopped.
+                tool.fold = true;
+            }
+        }
+    }
+
     pub(crate) fn cancel_pending_permissions(&mut self) {
         for it in &mut self.items {
             match it {
@@ -2266,6 +2392,13 @@ impl Chat {
     pub fn toggle_permission(&mut self, target: TranscriptItemId) {
         if let Some(ChatItem::Permission(p)) = self.list_mut(target).get_mut(target.index()) {
             p.expanded = !p.expanded;
+        }
+    }
+
+    /// Open or close the settled record of one question.
+    pub fn toggle_ask(&mut self, target: TranscriptItemId) {
+        if let Some(ChatItem::Ask(a)) = self.list_mut(target).get_mut(target.index()) {
+            a.expanded = !a.expanded;
         }
     }
 
@@ -2889,13 +3022,22 @@ mod tests {
             content: vec![],
         };
         assert!(ToolItem::new(call(ToolStatus::InProgress)).is_open());
-        assert!(!ToolItem::new(call(ToolStatus::Failed)).is_open());
         assert!(!ToolItem::new(call(ToolStatus::Completed)).is_open());
         assert!(!ToolItem::new(call(ToolStatus::Pending)).is_open());
+        // A failure opens itself too, but through the fold rather than through
+        // this -- see `a_failure_opens_itself_and_can_still_be_shut`.
+        assert!(!ToolItem::new(call(ToolStatus::Failed)).is_open());
     }
 
+    /// **A failure opens itself, and the user can still shut it.**
+    ///
+    /// The second half is the trap. Written as `is_open() = fold || Failed`,
+    /// which is how the running case is written, a terminal status forces the
+    /// row open *for ever*: the control that shuts it does nothing, and the one
+    /// state that most wants a way out is the one with none. Running gets away
+    /// with the OR because it stops being true on its own.
     #[test]
-    fn failed_tool_opens_only_on_user_request() {
+    fn a_failure_opens_itself_and_can_still_be_shut() {
         let mut chat = Chat::default();
         chat.items.push(ChatItem::Tool(ToolItem::new(ToolCall {
             id: "failed".into(),
@@ -2910,11 +3052,56 @@ mod tests {
             ChatItem::Tool(tool) => tool.is_open(),
             _ => false,
         };
-        assert!(!open(&chat), "a new failure starts collapsed");
-        chat.toggle_tool(TranscriptItemId::Live(0));
-        assert!(open(&chat), "the user can reveal a failed tool");
-        chat.toggle_tool(TranscriptItemId::Live(0));
-        assert!(!open(&chat), "the failed tool can be collapsed again");
+        // Arriving already failed is how an adapter reports a step it never
+        // started, and it opens on the same rule.
+        chat.apply(crate::acp::AcpEvent::ToolCall(ToolCall {
+            id: "late".into(),
+            title: "cargo build".into(),
+            description: None,
+            kind: crate::acp::ToolKind::Execute,
+            status: ToolStatus::Failed,
+            content: vec![],
+        }));
+        let late = chat.items.len() - 1;
+        assert!(
+            matches!(&chat.items[late], ChatItem::Tool(t) if t.is_open()),
+            "a failure opens itself"
+        );
+        chat.toggle_tool(TranscriptItemId::Live(late));
+        assert!(
+            matches!(&chat.items[late], ChatItem::Tool(t) if !t.is_open()),
+            "and shuts when told to"
+        );
+
+        // And a step that *becomes* a failure mid-turn does the same.
+        chat.apply(crate::acp::AcpEvent::ToolCall(ToolCall {
+            id: "running".into(),
+            title: "cargo test".into(),
+            description: None,
+            kind: crate::acp::ToolKind::Execute,
+            status: ToolStatus::InProgress,
+            content: vec![],
+        }));
+        chat.apply(crate::acp::AcpEvent::ToolUpdate(
+            crate::acp::ToolCallUpdate {
+                id: "running".into(),
+                status: Some(ToolStatus::Failed),
+                title: None,
+                description: None,
+                content: None,
+            },
+        ));
+        let broke = chat.items.len() - 1;
+        assert!(
+            matches!(&chat.items[broke], ChatItem::Tool(t) if t.is_open()),
+            "a step that breaks opens itself"
+        );
+        chat.toggle_tool(TranscriptItemId::Live(broke));
+        assert!(
+            matches!(&chat.items[broke], ChatItem::Tool(t) if !t.is_open()),
+            "and shuts when told to"
+        );
+        let _ = open;
     }
 
     #[test]
@@ -4316,6 +4503,42 @@ mod tests {
 
     /// The reducer says the turn settled, rather than every caller matching on
     /// the event a second time to find out.
+    /// A turn ending settles the steps it left in flight.
+    ///
+    /// Nothing more arrives for a call the adapter never finished -- a
+    /// cancelled turn is the ordinary way that happens -- so a step left
+    /// running stays that way for the rest of the conversation, and everything
+    /// downstream reads it as live.
+    #[test]
+    fn a_turn_ending_settles_what_it_left_running() {
+        let mut chat = Chat::new(1, std::path::PathBuf::from("/tmp/p"), "a".into(), None);
+        chat.busy = true;
+        chat.items.push(ChatItem::Tool(ToolItem::new(ToolCall {
+            id: "slow".into(),
+            title: "cargo build".into(),
+            description: None,
+            kind: crate::acp::ToolKind::Execute,
+            status: ToolStatus::InProgress,
+            content: Vec::new(),
+        })));
+
+        chat.apply(AcpEvent::TurnEnded {
+            stop_reason: "cancelled".into(),
+        });
+
+        let ChatItem::Tool(tool) = &chat.items[0] else {
+            panic!("the step is still there");
+        };
+        // Failed and not completed: what is known is that it never reported
+        // finishing, and a card claiming a write went through is the one
+        // reading a transcript cannot recover from.
+        assert_eq!(tool.call.status, ToolStatus::Failed);
+        assert!(
+            tool.elapsed_secs.is_some(),
+            "it stopped, so it has a length"
+        );
+    }
+
     #[test]
     fn the_turn_ending_is_reported_once() {
         let (mut chat, _rx) = chat_with_tx();

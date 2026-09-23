@@ -57,13 +57,36 @@ args = ["crates/core/examples/mock_ui_agent.js"]
 ```
 
 It advertises modes, config options (model with per-choice descriptions, effort, fast) and slash
-commands, and every prompt replies with reasoning, prose, a tool call, a parked permission, a
-one-question card and a three-question card — every shape the two blocking cards take, and every
-piece of chrome the window draws around a conversation. The three-question form deliberately mixes
-a single-select, a multi-select and a free-text field, because each draws differently and a card of
-three identical questions would only ever exercise one of them. It answers
-`session/set_config_option` and `session/set_mode` by republishing the new state, so the chips move
-when they are used.
+commands, and **one prompt draws a whole transcript**: reasoning, prose carrying every markdown
+block the renderer has, an activity block per shape a run can take — clean, one that stumbled and
+recovered, one that ended on a failure, one longer than the child cap with its failures scattered
+through the middle — a diff, a plan, an image result, two steps left mid-flight, then the parked
+permission and the two question cards, which settle into the record rows they leave behind. **One
+turn and not one shape per prompt**, because what goes wrong in a transcript goes wrong *between*
+blocks: a run reading the same as the run above it, a child row repeating its parent, two blocks
+failing to share one frame. None of those is visible one block at a time.
+
+Three things it holds on purpose. The commands in one run are pointed at a single host with a
+password in every one of them, so the rule that lifts a shared target up to the parent row and the
+rule that masks a credential can both be *seen* rather than trusted. A failed command is followed by
+the same command again, which is what earns the retry mark. And the three-question form mixes a
+single-select, a multi-select and a free-text field, because each draws differently and a card of
+three identical questions would only ever exercise one of them.
+
+**The tour is played rather than printed**, over about twelve seconds. Three of the states the
+app spends most of its time in have no finished form to look at — an answer arriving a chunk at a
+time, a thought still being had, a command still running — and those are the frames where a spinner
+has to hold its column, where a cluster's line has to change in place without moving anything, and
+where the composer has to stay answerable. A `fast` anywhere in the prompt lands the whole thing at
+once; cancelling stops it where it is, which is what a cancel is for and what a mock emitting into
+an already-closed turn was not doing.
+
+**Every other turn ends on a JSON-RPC error rather than a stop reason.** The error banner is the one
+block an agent cannot ask for — it is what the app draws when a turn *breaks* — so the only way to
+look at it is to break one, and the only way to still see everything else is to not break every one.
+
+It answers `session/set_config_option` and `session/set_mode` by republishing the new state, so the
+chips move when they are used.
 
 **A mock *agent* and not a mock mode inside the app**, deliberately: the window is driven over the
 real transport, by the real parser, through the real session lifecycle, so what is on screen is what
@@ -1475,6 +1498,65 @@ Listed because a missing feature nobody wrote down reads as a bug in the ones th
 - **An accepted mention is plain text, not a token.** It inserts the whole path, so a long one is
   as wide as it reads; there is no single-unit deletion and no hover carrying the full path. That
   needs the input to own a span it treats atomically, which `Input` does not offer.
+- **A turn ending settles the steps it left in flight** (`Chat::settle_running_steps`,
+  beside `cancel_pending_permissions`). Nothing more arrives for a call the adapter never
+  finished — a cancelled turn is the ordinary way that happens — so a step left `InProgress`
+  stays that way for the rest of the conversation, and everything downstream reads it as
+  live: its cluster says it is still running and never reports how long it took, and the
+  line at the foot of the transcript counts it among the steps in flight for every later
+  turn. It settles to `Failed` and not `Completed`: what is known is that it never reported
+  finishing, and a card claiming a write went through is the one reading a transcript
+  cannot recover from.
+- **An exit status only exists for a command run through ACP's terminal extension.** The protocol
+  carries one nowhere else, so an adapter reporting a failure as a plain `tool_call` has no code to
+  give and the row says `failed` rather than `exit N`. Recovering it from the output was considered
+  and refused: the code is in the footer this app itself appends, so parsing it back is parsing our
+  own wording, and a number got that way is wrong the first time the wording moves. `ToolItem`
+  carries it instead, lifted off the terminal at the one moment both are in hand — the turn-end
+  flatten, after which the terminal is gone. `mock_terminal_agent.js` exits 101 on purpose so the
+  path is reachable without breaking a real build.
+- **A step's duration is stamped once, when it settles**, and only for work that arrived unfinished:
+  a step that was already `completed` when it reached this process was timed by whoever ran it, and
+  a clock started here would be measuring the wire. Both facts persist into the archive as optional
+  keys, so a conversation written before they existed still loads and simply has nothing to say
+  about either. Nothing reads the duration per row — it is summed onto the line standing for the
+  cluster, where one number answers "how long was that" without twenty rows each answering it.
+- **A turn's closing summary is derived, never persisted.** A finished turn ends
+  on a block saying how many files it wrote, the turn's `+N −M` and how long it
+  took, opening into a row per file — `onehand_core::chat::turn_changes` over
+  that turn's own steps, rebuilt on every replan rather than written into
+  `items.jsonl`. The diffs it adds up are already in the archive, and that file
+  is appended to and never revisited, so a copy written at the end of a turn
+  could not be corrected if the two ever disagreed. It is one row per *file* and
+  not per edit: a turn that writes, tests and writes again is one row, because
+  the question is what is different now and the route is what the clusters above
+  it already are. A cancelled turn still gets one; a running turn does not, since
+  a total growing under the eye is not a summary. Opening a file row diffs that
+  file **at that moment** (`turn_file_diff`, first `old` against last `new`) and
+  never during the replan — a conversation holds every turn it has had, and
+  diffing all of them on the chance one is expanded is work paid a thousand
+  times to be used once.
+- **What the summary block cannot say, and where the data would have to come
+  from.** *Renames* are absent because ACP's diff section is `{path, old, new}`
+  and carries no second path — an adapter reports one as a delete and an add,
+  so a fourth verdict would be one `turn_changes` could never return. *Test and
+  lint results* are absent because nothing in the protocol is structured: a run
+  is a `tool_call` whose output is text, so counting passes means parsing
+  `cargo`/`jest`/`pytest` prose, which is a rule that is wrong the first time a
+  tool changes its wording. The place for it is the ACP layer — a structured
+  result on `ToolCall`, filled either by an adapter that knows what it ran or by
+  a declared per-tool parser — not a scan of the transcript. *Undo* is absent
+  because nothing in the app writes files back: the first `old` of each path in
+  a turn is the snapshot it would need, so the missing half is a write path plus
+  a second snapshot for undoing the undo, and both belong in core beside
+  `editor::save_blocking` rather than in a renderer. A *suggested commit
+  message* is absent for a different reason — writing one means asking the
+  model, and the mechanical sentence a renderer could manage ("Update 3 files")
+  is worse than none; there is no commit path either, only `gitstat`'s read.
+  And `Deleted` is a **guess**: a file emptied and a file removed arrive as the
+  same thing, a diff section whose new text is empty, so the letter on the row
+  reads the commoner of the two while the counts and the bar stay right either
+  way.
 - **The remote bridge does not stream the transcript.** A finished turn carries the *end* of the
   agent's last answer (`Chat::answer_tail`) and nothing else: no tool cards, no diffs, no reasoning,
   nothing mid-turn. That excerpt is there because "finished a turn" alone is a notification whose only
@@ -1485,14 +1567,54 @@ Listed because a missing feature nobody wrote down reads as a bug in the ones th
   than none.
 - **Only Telegram.** The layer underneath is general and `RemoteChannel` is what a second one would
   implement, but nothing else does. There is no Discord adapter and no HTTP endpoint.
+- **Only the agent's prose can be selected with a drag.** The one selectable thing in the
+  transcript is what goes through `TextView`, which is a *markdown* renderer — so a command, an
+  output, a diff and the **user's own prompt** are all plain elements a drag slides straight past.
+  Neither of the two could simply be routed through it. A diff's three columns are layout and
+  markdown has no notion of them; and a prompt is drawn *as typed* on purpose, so rendering it would
+  turn `**/*.rs` into bold and a backtick into a code span — the transcript misquoting the person
+  who wrote it. Each carries a Copy for the whole of what it holds instead, the prompt's sitting
+  outside its bubble rather than over the one short sentence it is offering.
+
+  **Two ways out exist, and both were weighed and declined for now.** The component library does
+  ship a selectable plain-text control — `Editor` (and `TextArea`) with `.readonly(true)`, which
+  *"keeps the normal appearance and still can be focused, selected and copied, it only rejects the
+  changes made by the user"* — and with `.appearance(false)` and no explicit height it would sit in
+  a bubble and grow with its text. What it costs is an `Entity<EditorState>` per prompt cached on
+  the session (today that cache holds a handful of live cards, not every message of a long
+  conversation), a click on a prompt taking focus off the composer, and selection that still stops
+  at each block's edge — a diff stays unselectable either way.
+
+  The thorough one is `gpui_base::TextSelectionHandle` with `TextSelectionRegistration` /
+  `TextSelectionRun`: a document-wide selection spanning arbitrary elements, which is what
+  `TextView` itself is built on, and under which sit `gpui::InteractiveText` and
+  `TextLayout::index_for_position` — where `vendor/gpui-terminal` gets its own. It keeps the diff's
+  columns, needs no per-message state and steals no focus, and costs one custom element: a hitbox,
+  runs projected from a `TextLayout`, and the highlight painted behind the glyphs.
 - **`path:line:col` tokens in agent prose are not clickable.** The transcript renders prose through
   `TextView::markdown` and does not scan it for path tokens. Only a tool card's path header opens a
   file, and it carries no line — ACP's diff payload has no hunk offsets. Core holds no parser for
   these tokens either: the feature is the detection pass, and a parser written ahead of it is a
   guess at an interface nobody has designed.
-- **A fenced code block inside prose cannot fold independently.** `TextViewStyle::code_block` is
-  shared by every block and has nowhere to keep per-block fold state. Supporting it means owning a
-  custom Markdown code-block renderer; the current compromise is a height cap and Copy button.
+- **A fenced code block inside prose has no header, and cannot fold independently.** What the
+  renderer opens to a caller is one `StyleRefinement` for the container and one closure for a box it
+  pins to the top-right corner itself — so the surface (edge, corner, padding, size, leading) is
+  ours, and a header *row* carrying a file path, a language and a copy is not: there is no slot
+  above the code to put one in, the copy's position is written by the library, and
+  `TextViewStyle::code_block` is one style for every block with nowhere to keep per-block fold
+  state. The language is said in the corner box instead, since that is the only slot there is.
+
+  **Owning the block is reachable and costs selection.** `TextView::markdown_block_parser` runs
+  *before* the built-in conversion and can intercept `mdast::Node::Code`, and
+  `markdown_block_renderer` then draws it — that is the supported hook, and `SyntaxHighlighter` is
+  public so highlighting survives. What does not is selection: the element that carries it,
+  `text::Inline`, is `pub(crate)`, so a hand-rolled block would draw `StyledText` and lose the drag.
+  Trading a header for the ability to select code is the wrong way round.
+
+  **The comment scope cannot be retinted either.** `TextViewStyle::highlight_theme` is a public
+  field, but `ThemeStyle::color` inside it is private with no setter and no constructor — reachable
+  only by round-tripping through its `Deserialize`, which means writing a colour literal back in,
+  and a literal is the one thing the theme exists to stop.
 - **The terminal has no `APP_KEYPAD`.** The numeric keypad's application mode is unimplemented,
   because gpui does not report a keypad key differently from the digit above it. The keys work; they
   always send the ordinary form. The rest of the required full-screen terminal behaviour is present.

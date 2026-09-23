@@ -12,9 +12,10 @@
 use super::composer::{Composer, ComposerEvent};
 use super::conversation::{Conversation, SessionPhase};
 use super::session::{ChatEvent, ChatSession};
-use super::transcript;
+use super::transcript::{self, radius_tag};
 use super::viewport::{self, FindState, RunKind};
 use gpui::prelude::FluentBuilder as _;
+use gpui::{Animation, AnimationExt as _};
 use gpui::{
     App, AppContext, Context, Div, ElementId, Entity, EventEmitter, FocusHandle, Focusable,
     InteractiveElement, IntoElement, ListState, ParentElement, Rems, Render, SharedString,
@@ -44,29 +45,41 @@ use std::path::{Path, PathBuf};
 /// around the floating composer. Held here, this is still real scrollable
 /// space: the last row can rest clear of the card without an opaque footer.
 ///
-/// A turn's worth of air rather than a hairline. The composer is a surface of
-/// its own floating over the conversation, and a transcript that stops just
-/// short of it reads as one still trying to fit — the last line of an answer
-/// and the box it is answered in run together into a single block.
-const COMPOSER_REST: Rems = rems(1.5);
+/// **Wider than any gap inside the conversation, because it is not one.** Every
+/// other space in the transcript separates two things of the same kind — two
+/// blocks, two turns — and is drawn from one ladder for exactly that reason.
+/// This one is where the column *ends*: below it is a surface of a different
+/// sort, floating, with its own edge and its own fill. A boundary between two
+/// kinds of thing that measures the same as a boundary inside one of them reads
+/// as the composer being the next paragraph.
+///
+/// Half again the space between two turns, which is the widest step the
+/// conversation itself uses. Written against that step rather than as its own
+/// number: it was set to match it once, the turn gap moved, and this quietly
+/// stopped being what its own comment said it was.
+const COMPOSER_REST: Rems = rems(transcript::TURN_GAP.0 * 1.5);
 /// Safe first-frame clearance before the overlay has reported its real height.
 /// The resting composer is about this tall; using zero until prepaint is what
 /// lets the initial transcript tail land behind it.
 const COMPOSER_MIN_H: Rems = rems(6.5);
-/// The reading column for transcript rows. `w_full` lets it shrink with a
-/// narrow panel; this cap keeps a line from stretching across the whole window
-/// on a wide one.
+/// The air between the column and the edge of the panel.
 ///
-/// **Set by what the widest block holds, not by prose alone.** A column sized
-/// purely for reading sentences is the narrower number this used to be — and
-/// what it cost is everything in the transcript that is not a sentence: a
-/// unified diff wraps its longest lines, a command well folds a path that
-/// would have fit, and a tool card's header ellipsizes a file name whose tail
-/// is the part that identifies it. Those are the blocks the user is reading
-/// the transcript *for* when something has gone wrong, and a cap tuned past
-/// them to keep paragraphs comfortable trades the case that matters for the
-/// case that was already fine.
-const CONTENT_COLUMN: Rems = rems(64.);
+/// The narrow figure is for a panel too short to spare the wide one: below that
+/// width the margin is taking room from the line itself rather than framing it.
+const SIDE_MARGIN: Rems = rems(1.25);
+const SIDE_MARGIN_NARROW: Rems = rems(0.75);
+/// Where a panel stops being wide enough to hold the column off its edges.
+const NARROW_PANEL: Rems = rems(30.);
+/// The disc offering the way back to the end of the conversation.
+///
+/// A step above the controls in the card below it, because it is the one thing
+/// on screen floating over the conversation with nothing around it — and a step
+/// under the card's own height, because it is not part of that card. Square, so
+/// the full radius makes it a circle: it holds one arrow and nothing else.
+const JUMP_PILL_H: Rems = rems(1.625);
+/// The conversation header, which is the one row in the panel that never
+/// scrolls and so the edge every other measurement here is taken from.
+const HEADER_H: Rems = rems(2.75);
 /// The narrower cap the composer and the surfaces that belong to it take.
 ///
 /// **A message being written is not a message being read.** The transcript's
@@ -108,18 +121,16 @@ struct OverlayRoom {
     well: Option<gpui::Pixels>,
 }
 
-/// The space at a turn boundary — above a prompt, and between a prompt and the
-/// answer replying to it.
+/// The space between two ordinary blocks of one turn, and the step every other
+/// gap in the conversation is written against.
 ///
-/// A turn is the unit the eye scrolls looking for. Given the same gap as the
-/// blocks *within* a turn, a long conversation is one undifferentiated column
-/// with nothing saying where the last question was asked.
-const TURN_GAP: Rems = rems(1.5);
-/// The space between two ordinary blocks of one turn.
-const BLOCK_GAP: Rems = rems(0.75);
+/// Read from the transcript's own scale: it is the outermost step of the same
+/// ladder the blocks inside a turn are spaced on, and kept here as a separate
+/// number it was free to stop being a ladder at all.
+const BLOCK_GAP: Rems = transcript::BLOCK_GAP;
 /// The space between two collapsed history rows, which are an index and are
 /// read as one.
-const COMPACT_GAP: Rems = rems(0.25);
+const COMPACT_GAP: Rems = transcript::TIGHT_GAP;
 /// How far above the clip the transcript dissolves into the surface under it.
 ///
 /// **A gradient and not a second edge.** The clip at the composer's middle is
@@ -140,7 +151,7 @@ const SMOKE: Rems = rems(7.);
 /// it is where the top of a question held at the top of the panel comes to rest
 /// — so the rule that decides when to stop holding one has to be measured from
 /// the same number the row is actually drawn at.
-const LIST_HEAD: Rems = rems(1.);
+const LIST_HEAD: Rems = rems(1.5);
 
 /// How much of a finished answer rides along with the turn-ended announcement.
 ///
@@ -335,6 +346,22 @@ pub struct ChatPane {
     /// is silent: focus handed to an input that is not on screen leaves the
     /// window with nothing focused at all.
     composer_drawn: bool,
+    /// When the turn on screen started, and the ticker keeping its clock true.
+    ///
+    /// **Stamped here because the model does not carry it.** A turn's start is
+    /// `pub(crate)` in core, and the status line is not a good enough reason to
+    /// widen it -- so the pane notices `busy` going up and reads its own clock.
+    /// What that costs is honest and small: a session switched away from and
+    /// back, or an app restarted mid-turn, starts the count again. It is a
+    /// liveness reading, not a measurement, and the measured figure a turn
+    /// leaves behind is the answer's own footer.
+    ///
+    /// The task is the other half. A clock that only redrew when something else
+    /// did would sit at `0s` through a minute of silence, which is the one
+    /// stretch it exists for; this wakes once a second while a turn is live and
+    /// does nothing at all when one is not.
+    turn_began: Option<std::time::Instant>,
+    ticker: Option<gpui::Task<()>>,
 }
 
 impl ChatPane {
@@ -398,6 +425,8 @@ impl ChatPane {
                 git: None,
                 composer_h: Default::default(),
                 composer_drawn: false,
+                turn_began: None,
+                ticker: None,
             }
         })
     }
@@ -2313,6 +2342,222 @@ impl ChatPane {
         )
     }
 
+    /// The widest the elapsed column ever has to be.
+    ///
+    /// **Reserved, and the digits sit against its right edge.** The whole point
+    /// of the column is that nothing after it moves when `9s` becomes `10s` or
+    /// `59s` becomes `1m 0s`, and a box that shrink-wraps its digits moves on
+    /// every one of those. Fixing the box and putting the digits at its right
+    /// edge is the whole of the fix: what follows the clock begins at the same
+    /// place whatever the clock says, and the digits grow leftward into room
+    /// that was already spoken for.
+    ///
+    /// **Drawn in the row's own face, not in mono**, which the reserved box is
+    /// what makes affordable. Tabular digits answer a narrower question -- that
+    /// the text inside a shrink-wrapping box not slide -- and they answer it by
+    /// putting a second typeface on a row of text. Two faces on one line do not
+    /// share a baseline, so the clock sat a shade off everything beside it,
+    /// which reads as the row not being on one line at all. There is no jump
+    /// left for them to prevent.
+    ///
+    /// **Held at what the longest form actually needs and no wider.** Reserved
+    /// generously it is dead space that never goes away, and right-aligned
+    /// digits put all of it on the *left* -- so every short clock read as the
+    /// mark beside it having drifted away from the words.
+    const CLOCK_W: Rems = rems(2.75);
+
+    /// The mark that says a turn is alive, and how far it breathes.
+    ///
+    /// **A square that swells and shrinks rather than a spinner.** A spinner is
+    /// a wait with no progress in it, which is what this is not: the thing it
+    /// stands beside is a clock counting up and a sentence that changes.
+    ///
+    /// **It grows about its own centre, and the slot around it never changes
+    /// size.** Growing a box on a row of text pushes that row's baseline
+    /// around, and a mark that moved the words beside it every second would be
+    /// worse than no mark. So the slot is held at the largest the square ever
+    /// gets and the square is centred inside it: what breathes is the ink, and
+    /// the space it occupies is constant.
+    const PULSE_SIZE: Rems = rems(0.875);
+    const PULSE_MIN: Rems = rems(0.4375);
+
+    fn working_strip(&self, cx: &App) -> gpui::AnyElement {
+        let running = self
+            .active_conversation()
+            .and_then(|conv| conv.session())
+            .map(|session| session.read(cx))
+            .map(|session| {
+                session
+                    .chat
+                    .items
+                    .iter()
+                    .filter(|item| {
+                        matches!(
+                            item,
+                            onehand_core::chat::ChatItem::Tool(tool)
+                                if matches!(
+                                    tool.call.status,
+                                    onehand_core::acp::ToolStatus::InProgress
+                                        | onehand_core::acp::ToolStatus::Pending
+                                )
+                        )
+                    })
+                    .count()
+            })
+            .unwrap_or(0);
+        let status = self
+            .active_chat(cx)
+            .and_then(|chat| chat.activity_status().or_else(|| working_word(chat)));
+
+        let elapsed = self.turn_began.map_or(0, |began| began.elapsed().as_secs());
+        let clock = match elapsed {
+            0..=59 => format!("{elapsed}s"),
+            _ => format!("{}m {}s", elapsed / 60, elapsed % 60),
+        };
+
+        // **Only what is actually there.** A separator standing between a thing
+        // and nothing is punctuation for a clause that was never written, and
+        // the clock never takes one at all: it is the row's own left edge
+        // rather than one side of a pair.
+        let mut parts: Vec<gpui::AnyElement> = Vec::new();
+        if running > 0 {
+            parts.push(
+                div()
+                    .flex_none()
+                    .whitespace_nowrap()
+                    .child(match running {
+                        1 => "1 running task".to_string(),
+                        n => format!("{n} running tasks"),
+                    })
+                    .into_any_element(),
+            );
+        }
+        if let Some(status) = status {
+            // The one part that gives way: it is the agent's own words about
+            // what it is doing, and the only thing here whose length nothing
+            // bounds.
+            parts.push(
+                div()
+                    .flex_1()
+                    .min_w_0()
+                    .truncate()
+                    .child(status)
+                    .into_any_element(),
+            );
+        }
+
+        let (big, small) = (Self::PULSE_SIZE.0, Self::PULSE_MIN.0);
+        let mut row = div()
+            .h_flex()
+            .items_center()
+            .gap_1()
+            .h(rems(1.5))
+            .text_xs()
+            // **One ink for the words, the accent for the mark alone.** A
+            // status line tinted to be noticed is a status line competing with
+            // the answer arriving above it.
+            .text_color(cx.theme().muted_foreground)
+            .child(
+                div()
+                    .flex_none()
+                    .size(Self::PULSE_SIZE)
+                    .flex()
+                    .items_center()
+                    .justify_center()
+                    .child(
+                        div()
+                            .rounded(radius_tag(cx))
+                            .bg(crate::theme::status_ink(cx).success)
+                            .with_animation(
+                                "turn-pulse",
+                                // Capped well under the frame rate: this is a
+                                // mark keeping time, not something being
+                                // watched, and an uncapped repeat redraws the
+                                // whole window on every frame for as long as a
+                                // turn runs.
+                                Animation::new(std::time::Duration::from_millis(1_100))
+                                    .repeat()
+                                    .with_max_fps(30.),
+                                move |square, t| {
+                                    // Centred by the slot rather than by an
+                                    // offset of its own, so the growth is even
+                                    // on all four sides and the arithmetic has
+                                    // nowhere to be wrong.
+                                    let phase = t * std::f32::consts::TAU;
+                                    let swell = (1. + phase.sin()) / 2.;
+                                    square.size(rems(small + (big - small) * swell))
+                                },
+                            ),
+                    ),
+            )
+            .child(div().flex_none().w(Self::CLOCK_W).text_right().child(clock));
+        for (n, part) in parts.into_iter().enumerate() {
+            if n > 0 {
+                row = row.child(
+                    div()
+                        .flex_none()
+                        .text_color(cx.theme().muted_foreground.opacity(0.6))
+                        .child("·"),
+                );
+            }
+            row = row.child(part);
+        }
+        row.into_any_element()
+    }
+
+    /// Notice a turn starting and ending, and keep its clock true.
+    ///
+    /// **Stamped here because the model does not carry it.** A turn's start is
+    /// `pub(crate)` in core, and the status line is not a good enough reason to
+    /// widen it -- so the pane notices `busy` going up and reads its own clock.
+    /// What that costs is an approximation: a session switched away from and
+    /// back, or an app restarted mid-turn, starts counting again from zero.
+    fn track_turn(&mut self, window: &Window, cx: &mut Context<Self>) {
+        let live = self
+            .active_chat(cx)
+            .is_some_and(|chat| chat.busy && chat.link != Link::Connecting);
+        if !live {
+            // The clock is the turn's, so it goes with it.
+            self.turn_began = None;
+            self.ticker = None;
+            return;
+        }
+        self.turn_began.get_or_insert_with(std::time::Instant::now);
+        self.start_ticker(window, cx);
+    }
+
+    /// Wake once a second while a turn is live, and not otherwise.
+    ///
+    /// **Not a frame timer**, which is what a clock drawn from the render pass
+    /// would become: this asks for a redraw at the rate the thing it draws
+    /// actually changes. It stands down while the window is not the one in
+    /// front of the user -- the seconds keep passing either way, and the count
+    /// is read off a start instant rather than accumulated, so coming back to
+    /// the window shows the right number rather than the number of ticks that
+    /// were drawn.
+    fn start_ticker(&mut self, window: &Window, cx: &mut Context<Self>) {
+        if self.ticker.is_some() || !window.is_window_active() {
+            return;
+        }
+        self.ticker = Some(cx.spawn(async move |pane, cx| {
+            loop {
+                cx.background_executor()
+                    .timer(std::time::Duration::from_secs(1))
+                    .await;
+                let live = pane.update(cx, |pane: &mut Self, cx| {
+                    let live = pane.turn_began.is_some();
+                    if live {
+                        cx.notify();
+                    }
+                    live
+                });
+                if !matches!(live, Ok(true)) {
+                    break;
+                }
+            }
+        }));
+    }
+
     /// What is waiting for this turn to end, and the way to take it back.
     ///
     /// A prompt that left the composer and is not in the transcript is a prompt
@@ -2477,15 +2722,27 @@ impl ChatPane {
             .items_center()
             .gap_2()
             .w_full()
+            // **A fixed height, not one the tallest control happens to make.**
+            // It is the one row that never scrolls, so it is the edge every
+            // other measurement in the panel is taken from -- and sized by its
+            // contents it moved whenever a badge appeared or a title wrapped,
+            // taking the top of the conversation with it.
+            .flex_none()
+            .h(HEADER_H)
             .px_4()
-            .py_2()
             // **No rule under it.** A hairline is an edge between two surfaces,
             // and there are not two here: the header and the transcript are one
             // reading surface, and what separates them is that one is a row of
             // controls and the other is prose -- which the muted ink and the
-            // spacing already say. The panels either side of this one now draw
+            // spacing already say. The panels either side of this one draw
             // their own edges and nothing else does, so a line across the top of
             // the conversation was the last one left marking an inside.
+            //
+            // It was tried, on the reasoning that the list clips at exactly this
+            // line and an unmarked cut reads as a rendering fault. What that
+            // costs is a rule drawn permanently for a state the reader is only
+            // in while scrolling -- and the fade at the other end of the list is
+            // the answer that shape of problem actually takes.
             .text_color(cx.theme().muted_foreground)
             .child(self.title_control(title, busy, archive, cx))
             .children(badge.map(|(signal, text)| status_badge(signal, text, cx)))
@@ -2994,10 +3251,12 @@ impl ChatPane {
         let session = session.read(cx);
         let handle = self.handle.clone();
         let conv = self.active_conversation_mut()?;
-        conv.viewport
-            .replan(&session.chat, session.folds_revision(), |anchor| {
-                session.activity_is_open(anchor)
-            });
+        conv.viewport.replan(
+            &session.chat,
+            session.folds_revision(),
+            |anchor| session.activity_is_open(anchor),
+            |anchor, default| session.turn_is_open(anchor, default),
+        );
         let state = conv.viewport.list_state(session.chat.busy, room);
         // Asked for once the state exists, and only then: the list is what
         // knows it has been scrolled, and the pane is what draws the control
@@ -3043,7 +3302,7 @@ impl ChatPane {
         // the first frame of any conversation carrying a permission, not a rare
         // race. The caller reads it before the list starts, which is the last
         // moment it can be asked.
-        well: Option<gpui::Pixels>,
+        room: transcript::Room,
         window: &Window,
         cx: &App,
     ) -> gpui::AnyElement {
@@ -3056,19 +3315,28 @@ impl ChatPane {
         let Some(chat) = self.active_chat(cx) else {
             return div().into_any_element();
         };
-        let body = |targets: &[TranscriptItemId]| -> Vec<gpui::AnyElement> {
-            targets
-                .iter()
-                .filter_map(|&target| {
-                    viewport::item(chat, target).map(|item| {
-                        let find_emphasis =
-                            self.find.as_ref().and_then(|find| find.emphasis(target));
-                        transcript::item(session, item, target, find_emphasis, well, window, cx)
+        let body =
+            |targets: &[TranscriptItemId], room: &transcript::Room| -> Vec<gpui::AnyElement> {
+                targets
+                    .iter()
+                    .filter_map(|&target| {
+                        viewport::item(chat, target).map(|item| {
+                            let find_emphasis =
+                                self.find.as_ref().and_then(|find| find.emphasis(target));
+                            transcript::item(
+                                session,
+                                item,
+                                target,
+                                find_emphasis,
+                                room.clone(),
+                                window,
+                                cx,
+                            )
                             .into_any_element()
+                        })
                     })
-                })
-                .collect()
-        };
+                    .collect()
+            };
 
         // The run layout already classified every run's cadence, so the space
         // above this one is decided by the pair it forms with the run before it
@@ -3078,74 +3346,174 @@ impl ChatPane {
                 .and_then(|conv| conv.viewport.kind_before(ix)),
             plan.head_kind(),
         );
-        // Transcript rows are wider than the composer, but keep the same
-        // inside inset as its visible curve so the two surfaces retain one
-        // spacing rhythm. Read from the same token the composer rounds itself
-        // with, so a theme change cannot make them drift apart -- written out
-        // as arithmetic on the smaller step it already had, silently, the
-        // moment that card moved onto the theme's named card radius.
-        let side_padding = cx.theme().radius_lg;
+        let margin = match room.narrow {
+            true => SIDE_MARGIN_NARROW,
+            false => SIDE_MARGIN,
+        };
 
         let Some(strip) = plan.strip.clone() else {
-            return column(lead, side_padding, body(&plan.members)).into_any_element();
+            // The run the layout appends while a turn is live carries no
+            // transcript item, because what it reports is the turn rather than
+            // anything in it.
+            //
+            // **It takes the widest boundary in the conversation**, the one a
+            // prompt gets, and ignores the cadence the run above it asked for.
+            // Every other gap here is between two things the agent said; this
+            // one is between what it said and the app talking about it, and set
+            // at a block's distance the line read as one more entry in the
+            // turn -- worst directly under a cluster, where the two closed
+            // ranks and the status line looked like another folded step.
+            if plan.members.is_empty() {
+                // The other memberless row: what a finished turn wrote. It
+                // takes the same wide boundary, and for the same reason -- it
+                // is the app talking about the turn rather than part of it.
+                let body = match &plan.changes {
+                    Some(plan_changes) => {
+                        let anchor = plan_changes.anchor;
+                        let this = self.handle.clone();
+                        let folded = session.clone();
+                        let default = plan_changes.opens_itself;
+                        transcript::turn_summary(
+                            session,
+                            plan_changes,
+                            plan.open,
+                            move |_, _, cx: &mut App| {
+                                folded.update(cx, |session, cx| {
+                                    session.toggle_turn(anchor, default);
+                                    cx.notify();
+                                });
+                                let _ = this.update(cx, |_: &mut Self, cx| cx.notify());
+                            },
+                            cx,
+                        )
+                    }
+                    None => self.working_strip(cx),
+                };
+                return column(rems(BLOCK_GAP.0 * 2.), margin, vec![body]).into_any_element();
+            }
+            return column(lead, margin, body(&plan.members, &room)).into_any_element();
         };
 
         let anchor = plan.members[0];
         let this = self.handle.clone();
         let folded = session.clone();
 
+        // **Nothing under the line is built while it is closed.** A cluster is
+        // every step between two paragraphs, which in a long turn is dozens —
+        // and a collapsed line that built them all to draw none of them is that
+        // cost paid per frame for something nobody asked to see.
+        let inside = match plan.open {
+            false => Vec::new(),
+            true => strip
+                .sections
+                .iter()
+                .enumerate()
+                .map(|(n, section)| self.section_element(section, n, session, &room, window, cx))
+                .collect(),
+        };
+
         column(
             lead,
-            side_padding,
-            vec![
-                div()
-                    .v_flex()
-                    .gap(COMPACT_GAP)
-                    .w_full()
-                    .min_w_0()
-                    .child(transcript::activity_strip(
-                        strip.group,
-                        strip.summary,
-                        plan.open,
-                        move |_, _, cx: &mut App| {
-                            folded.update(cx, |session, cx| {
-                                session.toggle_activity(anchor);
-                                cx.notify();
-                            });
-                            // The pane owns the run layout the list reads back,
-                            // so it is the half that has to be told to draw
-                            // again -- the session's own notify redraws the
-                            // session, not the plan.
-                            let _ = this.update(cx, |_: &mut Self, cx| cx.notify());
-                        },
-                        ("activity", anchor.index()).into(),
-                        cx,
-                    ))
-                    .when(plan.open, |strip| {
-                        // Clear the group header's icon column so expanded
-                        // members read as its children. A leaf's own detail
-                        // then adds the same inset again beneath that leaf's
-                        // label, preserving the hierarchy at both levels.
-                        //
-                        // At the cadence index rows keep everywhere else, not a
-                        // looser one: what a group opens into is the same kind
-                        // of quiet row that sits a quarter-rem from its
-                        // neighbours out in the transcript, and one list drawn
-                        // at two rhythms depending on whether it is inside a
-                        // group is the group deciding something that is not
-                        // its to decide.
-                        strip.child(
-                            div()
-                                .v_flex()
-                                .gap(COMPACT_GAP)
-                                .pl_6()
-                                .children(body(&plan.members)),
-                        )
-                    })
-                    .into_any_element(),
-            ],
+            margin,
+            vec![transcript::cluster(
+                &strip,
+                plan.open,
+                move |_, _, cx: &mut App| {
+                    folded.update(cx, |session, cx| {
+                        session.toggle_activity(anchor);
+                        cx.notify();
+                    });
+                    // The pane owns the run layout the list reads back, so it
+                    // is the half that has to be told to draw again -- the
+                    // session's own notify redraws the session, not the plan.
+                    let _ = this.update(cx, |_: &mut Self, cx| cx.notify());
+                },
+                ("activity", transcript::fold_key(anchor)).into(),
+                inside,
+                cx,
+            )],
         )
         .into_any_element()
+    }
+
+    /// One stretch of one kind of work inside an opened cluster.
+    ///
+    /// A section of one member is that member's own row; a section of several
+    /// is one row standing for them that opens into the rest.
+    fn section_element(
+        &self,
+        section: &viewport::Section,
+        // Which of the cluster's sections this is, for the rule that a
+        // hairline goes between two of them and never above the first.
+        index: usize,
+        session: &Entity<ChatSession>,
+        room: &transcript::Room,
+        window: &Window,
+        cx: &App,
+    ) -> gpui::AnyElement {
+        let Some(chat) = self.active_chat(cx) else {
+            return div().into_any_element();
+        };
+        let body =
+            |targets: &[TranscriptItemId], room: &transcript::Room| -> Vec<gpui::AnyElement> {
+                targets
+                    .iter()
+                    .filter_map(|&target| {
+                        viewport::item(chat, target).map(|item| {
+                            let find_emphasis =
+                                self.find.as_ref().and_then(|find| find.emphasis(target));
+                            transcript::item(
+                                session,
+                                item,
+                                target,
+                                find_emphasis,
+                                room.clone(),
+                                window,
+                                cx,
+                            )
+                            .into_any_element()
+                        })
+                    })
+                    .collect()
+            };
+
+        let anchor = section.members[0];
+        let open = session.read(cx).section_is_open(anchor);
+        let this = self.handle.clone();
+        let folded = session.clone();
+
+        // **A section of one is that step's own row, and so is a section of
+        // several — the merge is in the row's own words.** A row standing for
+        // one step would be the same row twice, one inside the other; and a row
+        // standing for three reads says `Read 3 files` and opens into the three
+        // paths, which is one level rather than two.
+        let single = section.members.len() < 2;
+        div()
+            .v_flex()
+            .w_full()
+            .min_w_0()
+            .children((index > 0).then(|| transcript::rule(cx)))
+            .map(|block| match single {
+                true => block.children(body(&section.members, room)),
+                false => block.child(transcript::activity_group(
+                    section,
+                    open,
+                    move |_, _, cx: &mut App| {
+                        folded.update(cx, |session, cx| {
+                            session.toggle_section(anchor);
+                            cx.notify();
+                        });
+                        let _ = this.update(cx, |_: &mut Self, cx| cx.notify());
+                    },
+                    ("section", transcript::fold_key(anchor)).into(),
+                    match open {
+                        true => body(&section.members, room),
+                        false => Vec::new(),
+                    },
+                    cx,
+                )),
+            })
+            .into_any_element()
     }
 }
 
@@ -3499,6 +3867,7 @@ impl Render for ChatPane {
     /// inner focusable takes the click first and stops it.
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let zoom = self.zoom;
+        self.track_turn(window, cx);
         let body = self.body(window, cx);
         div()
             .size_full()
@@ -3681,6 +4050,13 @@ impl ChatPane {
         // value serves every row and the pinned cards above them alike.
         let well = (list_state.viewport_bounds().size.height > px(0.))
             .then(|| list_state.viewport_bounds().size.height);
+        // Read off the same frame and for the same reason: how wide the panel
+        // is decides what a block may spend on margins and on columns that are
+        // not the one thing it has to say. A width of zero is the frame before
+        // the list has measured itself, which is not a narrow panel.
+        let list_w = list_state.viewport_bounds().size.width;
+        let narrow = list_w > px(0.) && list_w < NARROW_PANEL.to_pixels(window.rem_size());
+        let room = transcript::Room::new(well, narrow);
         self.composer_drawn = true;
 
         div()
@@ -3713,7 +4089,13 @@ impl ChatPane {
                             .overflow_hidden()
                             .child(
                                 list(list_state, move |ix, window: &mut Window, cx: &mut App| {
-                                    this.read(cx).run_element(ix, &for_render, well, window, cx)
+                                    this.read(cx).run_element(
+                                        ix,
+                                        &for_render,
+                                        room.clone(),
+                                        window,
+                                        cx,
+                                    )
                                 })
                                 .size_full()
                                 .pt(LIST_HEAD)
@@ -3748,7 +4130,16 @@ impl ChatPane {
                         well.child(
                             div()
                                 .absolute()
-                                .bottom(floor)
+                                // **Measured from the composer's own top edge,
+                                // not from where the transcript comes to rest.**
+                                // It was placed against that resting line, which
+                                // is deliberately the widest space in the
+                                // conversation -- so the control floated most of
+                                // an inch clear of the thing it belongs beside.
+                                // Held off by a block's gap and no more: two
+                                // floating surfaces touching read as one surface
+                                // with a notch taken out of it.
+                                .bottom(overlay_h + BLOCK_GAP.to_pixels(window.rem_size()))
                                 .left_0()
                                 .right_0()
                                 .h_flex()
@@ -3770,8 +4161,20 @@ impl ChatPane {
                                                 // half-height means here -- not
                                                 // a measured size.
                                                 .rounded(px(9999.))
+                                                // **The arrow alone.** The
+                                                // words named what was down
+                                                // there, which the transcript
+                                                // itself says the moment the
+                                                // control is used -- and a
+                                                // label on a thing floating
+                                                // over the conversation is a
+                                                // sentence competing with the
+                                                // one being read. What it
+                                                // means is in the tooltip,
+                                                // where a control that needs
+                                                // explaining keeps it.
+                                                .size(JUMP_PILL_H)
                                                 .icon(Icon::new(IconName::ChevronDown))
-                                                .label("New activity")
                                                 .tooltip("Jump to the latest activity")
                                                 .on_click(cx.listener(
                                                     |pane: &mut Self, _, _, cx| {
@@ -4114,17 +4517,57 @@ impl ChatPane {
 /// step and the turn read as sitting slightly low; and a folded strip pulled the
 /// answer *after* it up to 0.25rem, gluing prose to an index row it has nothing
 /// to do with.
+/// What the running line says when the model has nothing to add.
+///
+/// **The model goes quiet on purpose, and this is the one place that is
+/// wrong.** `Chat::activity_status` says nothing while a thought or a tool is
+/// live, because the transcript's own block is already saying it a few lines
+/// up -- which was right while the only other reader was a notification. The
+/// running line is *below* those blocks and says nothing else, so the two
+/// states a reader most wants a word for came out as a mark and a clock.
+///
+/// Read off the live items rather than asked for, so the layer below keeps
+/// reporting exactly what it reported before.
+fn working_word(chat: &Chat) -> Option<String> {
+    match chat.items.last()? {
+        ChatItem::Thought(thought) if thought.elapsed_secs.is_none() => {
+            Some("Thinking…".to_string())
+        }
+        ChatItem::Tool(tool)
+            if matches!(
+                tool.call.status,
+                onehand_core::acp::ToolStatus::InProgress | onehand_core::acp::ToolStatus::Pending
+            ) =>
+        {
+            // The step's own verb and object, which is the sentence the
+            // cluster line would say about it -- not the raw tool title, which
+            // is where a path or a whole command would come from.
+            let shown = onehand_core::chat::activity::presentation(tool);
+            Some(
+                format!("{} {}", shown.action, shown.subject)
+                    .trim()
+                    .to_string(),
+            )
+        }
+        _ => None,
+    }
+}
+
 fn lead_gap(previous: Option<RunKind>, this: RunKind) -> Rems {
     // The first run rests on the list's own top padding.
     let Some(previous) = previous else {
         return rems(0.);
     };
     match (previous, this) {
-        // A turn boundary, taken from either side: above the prompt it opens
-        // the turn, below it separates the question from its answer. At the gap
-        // blocks within a turn take, the first row under a prompt reads as one
-        // more line of the question.
-        (RunKind::Prompt, _) | (_, RunKind::Prompt) => TURN_GAP,
+        // **A turn opens above the prompt and not below it.** The space over a
+        // question is what a reader scrolling back finds the last one by, so it
+        // is the widest boundary inside the conversation -- twice what two
+        // blocks of one answer take. Under it the answer is the *reply*, and a
+        // gap as wide as the one above would cut the question off from the
+        // thing answering it. They were symmetrical, which said the prompt
+        // belonged to neither side.
+        (_, RunKind::Prompt) => rems(BLOCK_GAP.0 * 2.),
+        (RunKind::Prompt, _) => BLOCK_GAP,
         // Index entries close ranks with each other and with nothing else.
         (RunKind::Compact, RunKind::Compact) => COMPACT_GAP,
         _ => BLOCK_GAP,
@@ -4135,7 +4578,7 @@ fn lead_gap(previous: Option<RunKind>, this: RunKind) -> Rems {
 /// that shrinks with its panel. Width lives here rather than around each item
 /// because a run is what the virtual list draws; activity summaries drawn by
 /// the pane and their steps must share the same two edges.
-fn column(lead: Rems, side_padding: gpui::Pixels, content: Vec<gpui::AnyElement>) -> gpui::Div {
+fn column(lead: Rems, margin: Rems, content: Vec<gpui::AnyElement>) -> gpui::Div {
     div()
         .h_flex()
         .w_full()
@@ -4144,22 +4587,20 @@ fn column(lead: Rems, side_padding: gpui::Pixels, content: Vec<gpui::AnyElement>
         // block instead, the blocks that never asked would keep the app's own
         // base and the transcript would be two sizes.
         .text_size(transcript::TEXT)
-        // The side margin rides on the run, not on the box that clips the
-        // transcript: padding there would inset the clip too, cutting the text
+        // **One margin, on the run rather than on the box that clips the
+        // transcript.** Padding there would inset the clip too, cutting text
         // short of the header's rule and leaving a band of blank surface above
-        // whatever line the scroll happened to stop on.
-        .px_4()
+        // whatever line the scroll stopped on. It was two insets — one here and
+        // one on the column inside — which is a single number written as a sum
+        // whose halves had already started moving independently.
+        .px(margin)
         .pt(lead)
         .child(
             div()
                 .w_full()
                 .min_w_0()
-                .max_w(CONTENT_COLUMN)
+                .max_w(transcript::CONTENT_COLUMN)
                 .mx_auto()
-                // Equal to the composer's visible corner radius, which is what
-                // keeps the inset rhythm shared now that the two no longer
-                // share an outer cap.
-                .px(side_padding)
                 .children(content),
         )
 }
@@ -4469,10 +4910,60 @@ fn status_badge(
 #[cfg(test)]
 mod tests {
     use super::{
-        BLOCK_GAP, COMPACT_GAP, RunKind, SessionSignal, TURN_GAP, TranscriptItemId, away_from_tail,
-        lead_gap, restart_needs_arming, switching_away, viewport, waits_alone,
+        BLOCK_GAP, COMPACT_GAP, RunKind, SessionSignal, TranscriptItemId, away_from_tail, lead_gap,
+        rems, restart_needs_arming, switching_away, viewport, waits_alone, working_word,
     };
     use onehand_core::chat::Link;
+
+    /// The running line always has a word, including where the model is quiet.
+    ///
+    /// `Chat::activity_status` says nothing while a thought or a tool is live,
+    /// because the transcript's own block a few lines up is already saying it.
+    /// The running line sits *below* those blocks and says nothing else, so
+    /// without a word of its own the two states a reader most wants named came
+    /// out as a mark and a clock.
+    #[test]
+    fn a_running_line_is_never_wordless() {
+        use onehand_core::acp::{ToolCall, ToolKind, ToolStatus};
+        use onehand_core::chat::{Chat, ChatItem, Md, Thought, ToolItem};
+
+        let mut chat = Chat::new(
+            1,
+            std::path::PathBuf::from("/tmp/project"),
+            "claude".to_string(),
+            None,
+        );
+        chat.busy = true;
+        // Past the handshake: while it is still connecting the model has a
+        // sentence of its own and this never runs.
+        chat.link = Link::Connected;
+
+        chat.items.push(ChatItem::Thought(Thought {
+            md: Md::parse("weighing it up"),
+            started: None,
+            elapsed_secs: None,
+            expanded: false,
+        }));
+        assert_eq!(chat.activity_status(), None, "the model stays quiet");
+        assert_eq!(working_word(&chat).as_deref(), Some("Thinking…"));
+
+        chat.items.push(ChatItem::Tool(ToolItem::new(ToolCall {
+            id: "w".into(),
+            title: "Write src/lib.rs".into(),
+            description: None,
+            kind: ToolKind::Edit,
+            status: ToolStatus::InProgress,
+            content: Vec::new(),
+        })));
+        assert_eq!(chat.activity_status(), None);
+        let word = working_word(&chat).expect("a step in flight names itself");
+        assert!(word.contains("src/lib.rs"), "{word}");
+
+        // A settled transcript has nothing to say, and says nothing.
+        chat.busy = false;
+        chat.items.clear();
+        assert_eq!(working_word(&chat), None);
+    }
 
     /// The two sides of a prompt are one space, so they are one number —
     /// whatever sits above the prompt and whatever follows it.
@@ -4482,21 +4973,33 @@ mod tests {
     /// plus the prompt's, and it therefore changed with what happened to
     /// precede it while the gap below never did.
     #[test]
-    fn a_prompt_is_spaced_the_same_above_and_below() {
+    fn a_prompt_opens_a_turn_and_does_not_close_one() {
+        // Above: the widest boundary in the conversation, whatever precedes it
+        // -- that space is what a reader scrolling back finds the last question
+        // by.
         for above in [RunKind::Block, RunKind::Compact, RunKind::Prompt] {
             assert_eq!(
                 lead_gap(Some(above), RunKind::Prompt),
-                TURN_GAP,
+                rems(BLOCK_GAP.0 * 2.),
                 "{above:?} above a prompt"
             );
         }
-        for below in [RunKind::Block, RunKind::Compact, RunKind::Prompt] {
+        // Below: an ordinary block gap, because what follows is the *reply*.
+        // Symmetrical, the two said the prompt belonged to neither side.
+        for below in [RunKind::Block, RunKind::Compact] {
             assert_eq!(
                 lead_gap(Some(RunKind::Prompt), below),
-                TURN_GAP,
+                BLOCK_GAP,
                 "{below:?} below a prompt"
             );
         }
+        // **A prompt under a prompt is still a turn opening**, and opening wins
+        // over closing: somebody who asked twice without waiting asked two
+        // questions, and the space has to say so from the side that knows.
+        assert_eq!(
+            lead_gap(Some(RunKind::Prompt), RunKind::Prompt),
+            rems(BLOCK_GAP.0 * 2.),
+        );
     }
 
     /// Index rows close ranks with each other and with nothing else. The old
@@ -4529,9 +5032,10 @@ mod tests {
         let strip = |open: bool| viewport::RunPlan {
             members: vec![TranscriptItemId::Live(0)],
             strip: Some(viewport::ActivityPlan {
-                group: onehand_core::chat::ActivityGroup::Explored,
-                summary: "Inspected 3 files".to_string(),
+                summary: onehand_core::chat::ClusterSummary::default(),
+                sections: Vec::new(),
             }),
+            changes: None,
             open,
             // What the layout classifies an opened group as: a block's worth
             // of reading, which is what the run *after* it has to answer to.

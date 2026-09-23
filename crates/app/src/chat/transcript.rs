@@ -23,6 +23,7 @@ use gpui_component::Disableable as _;
 use gpui_component::button::{Button, ButtonVariants as _};
 use gpui_component::input::Input;
 use gpui_component::scroll::{ScrollableMask, Scrollbar, ScrollbarMode};
+use gpui_component::spinner::Spinner;
 use gpui_component::text::{TextView, TextViewStyle};
 use gpui_component::tooltip::Tooltip;
 use gpui_component::{ActiveTheme, Icon, IconName, Sizable as _, StyledExt};
@@ -42,23 +43,13 @@ use std::path::Path;
 const MAX_DIFF_LINES: usize = 200;
 /// Lines of a mono output well before the tail is dropped.
 const MAX_MONO_LINES: usize = 60;
-/// Lines a tool's output well shows before it folds behind "Show N more".
-const MONO_FOLD_LINES: usize = 12;
-/// Lines of live terminal output kept on screen (the tail).
-const MAX_TERM_LINES: usize = 40;
 /// Plan entries drawn before the list is truncated.
 const MAX_TODO_ITEMS: usize = 50;
 /// Attachment rows drawn under a prompt before the rest are counted.
 const MAX_ATTACHMENT_ROWS: usize = 8;
-/// Consecutive quiet steps below this never become a strip: folding one row
-/// behind a disclosure hides it without saving anything.
-const MIN_ACTIVITY_RUN: usize = 2;
 /// Height a fenced code block in prose is allowed before it scrolls inside
 /// itself instead of pushing the rest of the answer off screen.
 const MAX_CODE_BLOCK_H: Rems = rems(22.5);
-/// Height one machine-detail card may occupy before its contents scroll inside
-/// the card instead of lengthening the transcript.
-const MAX_TOOL_DETAIL_H: Rems = rems(18.);
 /// Height the body of a blocking card may occupy before it scrolls inside
 /// itself.
 ///
@@ -93,6 +84,23 @@ const CODE_TEXT: Rems = rems(0.8125);
 /// base while the body sat a step under it would print a third-level heading
 /// larger than the prose it names for no reason the reader can see.
 pub(super) const TEXT: Rems = rems(0.875);
+/// The line that stands for a cluster of work: the transcript's own reading
+/// size, and never more.
+///
+/// **It has been all three, and this is the one that holds.** A step under the
+/// reading size — where it started — it read as a footnote to the paragraph
+/// above rather than as the heading of what came next. A step over it, which is
+/// what replaced that, made it the only thing in the transcript set larger than
+/// the agent's own words, and size is loud in a way ink is not: the line then
+/// out-measured every answer it sat between, which is the one thing nothing
+/// here may do. At the reading size it is neither — it takes its place in the
+/// column and lets the light weight and the muted ink say how much of the
+/// reader it wants, which is what those two channels are for.
+///
+/// Written as the reading size rather than as the same number again, because
+/// that is the relationship: if the transcript's own size moves, this moves
+/// with it.
+const CLUSTER_TEXT: Rems = TEXT;
 /// The transcript's second voice: the record of how an answer got made.
 ///
 /// A tool card, a plan and a blocking card's secondary line are *about* the
@@ -107,6 +115,15 @@ pub(super) const TEXT: Rems = rems(0.875);
 /// output, and the two are free to move apart. Nothing else marks them the
 /// same — a well is mono, tinted and padded, a card header is none of those.
 const WORK_TEXT: Rems = rems(0.8125);
+/// A fenced block inside an answer: its own size and leading.
+///
+/// **Split from the size the other wells share, and only here.** A tool's
+/// output, a diff and a live terminal are quoted *machine* text inside chrome;
+/// a fenced block is something the agent chose to show in the middle of a
+/// sentence, read at the pace of the prose around it. It sits a hair under the
+/// others and breathes more between lines for that reason.
+const FENCE_TEXT: Rems = rems(0.78125);
+const FENCE_LEADING: f32 = 1.75;
 /// Leading for those wells, as a multiple of the size above.
 ///
 /// Prose is set at the golden ratio, which is right for a paragraph and wrong
@@ -114,24 +131,236 @@ const WORK_TEXT: Rems = rems(0.8125);
 /// column of half-empty rows the eye cannot track down. Tight enough to read as
 /// a block, loose enough to separate the lines.
 const CODE_LEADING: f32 = 1.45;
-/// The padding those wells carry, whether quoted in prose or drawn as a tool's
-/// output.
-const WELL_PAD: Rems = rems(0.625);
 /// Space between the paragraphs of one answer.
 ///
 /// **Bounded by the space between whole blocks**, which is the rule this had
 /// been breaking: at the renderer's own default two paragraphs of one answer
 /// stood further apart than the answer stood from the tool card beneath it, so
-/// the inside of a turn was louder than the transcript's own rhythm.
-const PARAGRAPH_GAP: Rems = rems(0.75);
-/// Width of the `IN` / `OUT` / `EDIT` tag column.
+/// the inside of a turn was louder than the transcript's own rhythm. It is now
+/// a step under that gap rather than equal to it, which is the same rule stated
+/// properly: two paragraphs are parts of one block.
+const PARAGRAPH_GAP: Rems = PART_GAP;
+// ── the scale ───────────────────────────────────────────────────────────────
+//
+// **Every gap, pad, inset, height and corner below is one of these steps, and
+// nothing in the transcript is sized off them.** Written out per call site they
+// had already come apart: two paragraphs of one answer stood further apart than
+// the answer stood from the card beneath it, a tool's detail was inset to one
+// number while the group holding it used another, and four different values
+// were in use for the one job of "a line and the caption under it". Named for
+// the job rather than for the number, so the next place needing one asks for
+// the role and lands on whatever the role currently is.
+//
+// The gaps are a ladder rather than a range: **what is inside a thing is always
+// closer than what surrounds it**, which is the whole of how the transcript
+// says where one block ends and the next begins. A value chosen between two
+// steps is a boundary the eye cannot resolve.
+
+/// Between one speaker's turn and the next — the unit a reader scrolls looking
+/// for, and the only gap wide enough to read as a break rather than as air.
+pub(super) const TURN_GAP: Rems = rems(2.);
+/// Between two blocks of one turn.
+pub(super) const BLOCK_GAP: Rems = rems(0.75);
+/// Between the parts of one block.
+const PART_GAP: Rems = rems(0.5);
+/// Between two rows that are read as one list, and between a line and the
+/// caption belonging to it.
+pub(super) const TIGHT_GAP: Rems = rems(0.25);
+/// A caption sitting directly over the thing it captions, where anything wider
+/// would read as two lines rather than one two-line thing.
+const HAIR_GAP: Rems = rems(0.125);
+/// The air between two small stacked things — an attachment and its neighbour,
+/// a bubble and the row of controls under it.
+const STACK_GAP: Rems = rems(0.375);
+/// Left and right inside a frame that lays its contents out in columns.
+const FRAME_PAD: Rems = rems(0.75);
+/// The wider frame inset, for a box whose text runs its full width rather than
+/// sitting in columns: a bubble, a well, a callout.
+const TEXT_PAD_X: Rems = rems(0.875);
+/// The vertical half of that pair, a touch under the horizontal for the reason
+/// every line of type is — a line box already carries its own leading.
+const TEXT_PAD_Y: Rems = rems(0.625);
+
+/// A status pill: as tall as the words in it and no taller.
+const PILL_H: Rems = rems(1.125);
+/// A control the pointer has to hit.
+const BUTTON_H: Rems = rems(1.5);
+/// One line of machine text.
+const LINE_H: Rems = rems(1.25);
+/// The fixed box every mark in a row is drawn inside. Drawings are smaller than
+/// it; what the box buys is that a spinner, a tick and a cross take each other's
+/// place without the words beside them moving.
+const MARK_SLOT: Rems = rems(1.);
+/// The drawing inside that box.
+const MARK_SIZE: Rems = rems(0.75);
+/// An activity row's own insets and columns.
 ///
-/// One step of the nesting scale, which is also what the tag has to clear: the
-/// longest of the four is four characters at the meta size.
-const SECTION_TAG_W: Rems = rems(2.5);
-/// Start the `IN` / `OUT` / `EDIT` tag column where the activity label starts:
-/// after the row's icon slot and the gap following it.
-const ACTIVITY_DETAIL_INSET: Rems = rems(1.5);
+/// **Its padding is not the frame's.** A row is a line of a list rather than a
+/// box with something in it, so it stands off the frame's edge by more than the
+/// frame's own hairline inset and sits tighter top to bottom than a card would.
+const ROW_PAD_Y: Rems = rems(0.5);
+const ROW_PAD_X: Rems = rems(0.875);
+/// The disc that carries a row's state, and the only thing in its slot.
+const STATUS_DOT: Rems = rems(0.375);
+/// The drawing for a kind of work, and the box it sits in — one and the same,
+/// because unlike a state there is only ever one shape here.
+const KIND_ICON: Rems = rems(0.875);
+/// The verb, in the reading face; what it was done to, in the machine one.
+const VERB_TEXT: Rems = rems(0.8125);
+const OBJECT_TEXT: Rems = rems(0.75);
+/// The arrow, and the slot holding its column while it turns.
+const CHEVRON_MARK: Rems = rems(0.6875);
+const CHEVRON_SLOT: Rems = rems(0.75);
+/// How far a glyph drops to sit on the line its text does.
+///
+/// **An optical correction, and the one number here that is not on the scale.**
+/// A centred box and centred *type* are not the same place: the renderer puts a
+/// line's baseline at `(line_height − ascent − descent) / 2 + ascent`, and since
+/// a face's ascent is the larger of the two the baseline lands below the middle
+/// of the box — so lowercase text sits about a tenth of an em low inside its own
+/// line, and an icon centred against that box comes out looking that much high.
+/// Every row here puts a mark beside words, so every one of them needs it.
+///
+/// A tenth of an em at the sizes on these rows is a pixel, which is why it is
+/// written as one rather than as a fraction of a size that changes: half a pixel
+/// would not survive the rounding, and two would be a visible drop.
+const GLYPH_DROP: Rems = rems(0.0625);
+
+/// Where a row's verb starts, and so where whatever it opens is set in to.
+///
+/// **A sum, written once and read twice.** It is the row's padding, the state
+/// disc, the kind icon and the two gaps between them — and what unfolds beneath
+/// a row lines up with the words that opened it rather than with the marks
+/// beside them. Written out as a number in the second place, the two drifted
+/// the first time either column moved.
+const DETAIL_INSET: Rems = rems(ROW_PAD_X.0 + STATUS_DOT.0 + PART_GAP.0 + KIND_ICON.0 + PART_GAP.0);
+
+/// The detail box: machine text, at the leading a list of it wants.
+const CODE_LH: f32 = 1.7;
+/// A diff's three columns.
+const DIFF_NUM_W: Rems = rems(2.75);
+const DIFF_NUM_PAD: Rems = rems(0.5);
+const DIFF_TEXT_PAD: Rems = rems(0.625);
+
+/// What a collapsed detail shows before it says there is more.
+///
+/// **A diff from the top and an output from the bottom**, because that is where
+/// each keeps its point: a diff opens on the change, and a command's failure is
+/// the last thing it printed.
+const PREVIEW_DIFF: usize = 12;
+const PREVIEW_OUT: usize = 5;
+/// How far the cut fades into the box, at whichever end the cut is.
+const SMOKE_DIFF: Rems = rems(4.);
+const SMOKE_OUT: Rems = rems(2.75);
+/// How tall an opened detail stands before it scrolls inside itself.
+const DETAIL_OPEN_H: Rems = rems(20.);
+/// Changed lines past which a diff is offered rather than drawn.
+///
+/// **A thousand-line diff is not read, it is searched** — and drawing it costs
+/// one element per line in a list that is already virtualising rows. Past this
+/// the row says how big it is and waits to be asked.
+const LARGE_DIFF: usize = 400;
+
+/// The little pill that opens and closes a detail.
+const PILL_PAD_Y: Rems = rems(0.125);
+const PILL_PAD_X: Rems = rems(0.75);
+
+/// The reading column, capped by what the widest thing in it has to hold.
+///
+/// **Derived, not chosen.** A column set by prose alone is narrower than this —
+/// and what that costs is everything in the transcript that is not prose, which
+/// is what somebody is reading it *for* when something has gone wrong. A diff
+/// is the sharpest case: at the narrower cap this replaced, a line of this
+/// project's own code had 74 columns to sit in, against the 100 `rustfmt`
+/// writes it at, so nearly every line of nearly every diff wrapped.
+///
+/// So the number is the width at which 100 mono columns clear the chrome around
+/// them — the child inset, the detail's gutters, the well's padding, the diff's
+/// sign column and the frame's own border — with a little over, because the
+/// mono advance the arithmetic uses is an estimate and some faces are wider.
+/// `a_hundred_columns_of_this_projects_code_fits` holds it, so the cap moves
+/// when any of those insets does instead of quietly getting tighter.
+///
+/// `w_full` lets it shrink with a narrow panel; this is only the maximum.
+pub(super) const CONTENT_COLUMN: Rems = rems(59.);
+/// What a diff line has to clear before it starts wrapping, in mono columns.
+///
+/// This project's own formatter width: the transcript's job when something
+/// breaks is reading diffs of this repository, and a cap under it means the
+/// common case is the wrapped one.
+///
+/// Read only by the test that holds the cap above it, which is the whole point
+/// of it having a name: the number is an argument, and an argument written into
+/// a comment is one nothing checks.
+#[cfg_attr(not(test), allow(dead_code))]
+const DIFF_COLUMNS: f32 = 100.;
+/// The `+` / `-` column of a diff: one mono character and the air either side.
+///
+/// A column of its own rather than a character glued to the front of the line,
+/// which is what it had been. Glued, the sign shifted every line of the file
+/// one place right of where the file has it and left a removed line and the
+/// added line replacing it starting at two different columns — so the one thing
+/// a diff is read for, what changed between two nearly identical lines, was
+/// being compared across an offset the diff itself introduced.
+const DIFF_SIGN_W: Rems = rems(0.875);
+/// The corner ladder: a mark, a control, a block, a bubble.
+///
+/// **Small and nearly square, all the way up.** What the transcript is meant to
+/// read as is a technical document — a record of what was asked and what was
+/// done about it — and a generous corner is what turns a record into a feed of
+/// cards. The widest corner here is the user's bubble, and it is only there
+/// because the bubble is the one block shaped like a thing somebody said.
+///
+/// **Anchored on the theme's two named steps rather than written out**, so a
+/// theme that squares its corners squares every one of these with it. The
+/// ladder's rule is that an inner corner is never wider than the one enclosing
+/// it: a box drawn at its container's own radius leaves the two arcs crossing,
+/// which reads as a box that failed to fit rather than as one thing inside
+/// another.
+fn corner(base: gpui::Pixels, step: f32) -> gpui::Pixels {
+    match base <= gpui::px(0.) {
+        // A squared theme is squared all the way down. Stepping up from zero
+        // would round exactly the corners such a theme asked to be left alone.
+        true => base,
+        false => (base + gpui::px(step)).max(gpui::px(0.)),
+    }
+}
+
+/// A kind mark, a checkbox: the tightest corner drawn anywhere here.
+pub(super) fn radius_tag(cx: &App) -> gpui::Pixels {
+    corner(cx.theme().radius, -4.)
+}
+/// A button, a status pill, an inline mark, a callout's open side.
+///
+/// **A pill is a corner and not a capsule**, which is the one place this ladder
+/// overrules the shape a pill usually has. Fully round, it was the only
+/// silhouette in the transcript that curved — a lozenge at the end of a row of
+/// square boxes, reading as a badge stuck onto the row rather than as one of
+/// its columns.
+fn radius_control(cx: &App) -> gpui::Pixels {
+    corner(cx.theme().radius, -2.)
+}
+/// Everything that is a box with content in it: an activity block, a well of
+/// machine text, a diff, a banner, a plan, a thumbnail.
+///
+/// **One step for all of them**, because they are one thing — a bounded region
+/// of the column — and a ladder that gave a well and the block around it two
+/// different corners would be spending a rung on a distinction nobody reading
+/// it is making.
+pub(super) fn radius_block(cx: &App) -> gpui::Pixels {
+    cx.theme().radius
+}
+/// A user's bubble, and nothing else.
+///
+/// **The one corner in the transcript that is not nearly square.** Everything
+/// else here is a bounded region of a document and takes the tight ladder for
+/// that reason; this is the one block shaped like a thing somebody *said*, and
+/// the roundness is what says so before a word of it is read. Its own tail
+/// corner comes back down to a control's, which is what points the shape at the
+/// side the prompt came from.
+fn radius_bubble(cx: &App) -> gpui::Pixels {
+    corner(cx.theme().radius_lg, 6.)
+}
 /// Width a question's tab label is elided at. Only a *tab* is ever elided.
 const ASK_TAB_W: Rems = rems(8.75);
 /// The numbered circle at the head of a question's tab.
@@ -173,83 +402,55 @@ const ASK_TAB_H: Rems = rems(2.25);
 /// prose, because it is one sentence that has to be read once and is as long as
 /// the agent made it.
 const ASK_PROMPT_LEADING: f32 = 1.4;
-/// The marker a pending plan entry draws, in place of an icon.
-const PLAN_DOT: Rems = rems(0.3125);
-/// Height an attached image's preview is bounded to beside a prompt.
+/// The box a plan entry's state is drawn in, and the mark inside a pending one.
 ///
-/// A preview is here to be recognised, not read: it answers "which picture did
-/// I send" and nothing more, and the file itself is one click away in whatever
-/// opens it. Sized larger it stops being a mark beside the question and becomes
-/// a block of the transcript in its own right, pushing the answer it was asked
-/// about off the screen.
-const ATTACHMENT_THUMB_H: Rems = rems(5.);
+/// A square rather than an icon, because what the column is asking is whether
+/// a line is done — and a checkbox is the one shape a reader does not have to
+/// be taught. The three states change what is *in* the box and never the box,
+/// so a plan does not reflow as it is worked through.
+const PLAN_BOX: Rems = rems(0.875);
+const PLAN_DOT: Rems = rems(0.25);
+/// The bar under a plan's heading. A rule's weight rather than a control's:
+/// it is read in one glance beside a count that already says the same thing.
+const PLAN_BAR_H: Rems = rems(0.1875);
+/// An attached file's plate beside a prompt.
+///
+/// **A fixed plate, not a bounded picture.** A preview is here to be
+/// recognised — it answers "which screenshot did I send" and nothing more, and
+/// the file itself is one click away in whatever opens it. Bounded only in
+/// height, a row of them came out a different width each and the row read as
+/// ragged rather than as a set; at one size they are a strip of cards, and a
+/// file with no picture takes the same plate with its name in it.
+const THUMB_W: Rems = rems(5.75);
+const THUMB_H: Rems = rems(3.875);
 /// How much of the row a user prompt may take before it wraps.
 ///
 /// The prompt is the one block that shrinks to what was typed: a one-line
 /// question stretched edge to edge is indistinguishable from an answer, and
 /// telling the two apart at a glance is the whole reason it sits on the other
 /// side. Past this it wraps rather than crowding the answer beneath it.
-const USER_BUBBLE_MAX: f32 = 0.8;
-
-/// The bounded detail card beneath one leaf activity label.
 ///
-/// Groups are only collections of these leaf rows and never own a fixed-height
-/// viewport. The card keeps a persistent scroll handle and a visible thumb
-/// whenever its own detail exceeds the cap.
-#[derive(IntoElement)]
-struct ActivityDetail {
-    target: TranscriptItemId,
-    children: Vec<gpui::AnyElement>,
-}
-
-impl ActivityDetail {
-    fn new(target: TranscriptItemId, children: Vec<gpui::AnyElement>) -> Self {
-        Self { target, children }
-    }
-}
-
-impl RenderOnce for ActivityDetail {
-    fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
-        let target = fold_key(self.target);
-        let state_id = ("activity-detail-scroll-state", target);
-        let scroll = window
-            .use_keyed_state(state_id, cx, |_, _| ScrollHandle::default())
-            .read(cx)
-            .clone();
-
-        div()
-            .id(("activity-detail-frame", target))
-            .relative()
-            .w_full()
-            .max_h(MAX_TOOL_DETAIL_H)
-            .child(
-                div()
-                    .id(("activity-detail-scroll", target))
-                    .v_flex()
-                    .gap_2()
-                    .w_full()
-                    .max_h(MAX_TOOL_DETAIL_H)
-                    .overflow_y_scroll()
-                    .track_scroll(&scroll)
-                    .p_3()
-                    // The thumb overlays the viewport; a wider right inset
-                    // keeps section content out from underneath it.
-                    .pr_6()
-                    .rounded(cx.theme().radius)
-                    .border_1()
-                    .border_color(cx.theme().border)
-                    .children(self.children),
-            )
-            // The mask handles vertical wheel input in the capture phase. A
-            // bubble listener runs too late inside `gpui::list`: the parent
-            // transcript has already consumed the same delta by then.
-            .child(
-                ScrollableMask::new(Axis::Vertical, &scroll).id(("activity-detail-mask", target)),
-            )
-            .child(Scrollbar::vertical(&scroll).mode(ScrollbarMode::Always))
-    }
-}
-
+/// The wider figure is for a narrow panel, where the column is already short
+/// enough that holding a fifth of it clear costs more than the edge is worth.
+const USER_BUBBLE_MAX: f32 = 0.78;
+const USER_BUBBLE_MAX_NARROW: f32 = 0.9;
+/// The bubble's own padding, and the one pair here off the spacing scale.
+///
+/// **A corner has to be cleared before it can be padded.** At the scale's own
+/// steps the text either crowded the 14px curve at the two ends of every line
+/// or stood a whole step clear of it and left the bubble looking hollow; these
+/// two are the pair that sits the words just outside the arc. Named and kept
+/// together so the reason travels with them, and deliberately not entered in
+/// the scale's own list: they are an optical fit to a radius, the way
+/// [`GLYPH_DROP`] is an optical fit to a baseline.
+const BUBBLE_PAD_Y: Rems = rems(0.6875);
+const BUBBLE_PAD_X: Rems = rems(0.9375);
+/// Between the bubble and the control offered under it.
+///
+/// Closer than anything else in the transcript: the control belongs to the
+/// bubble rather than following it, and at any of the scale's steps it read as
+/// a separate thing that happened to be beneath.
+const BUBBLE_TAIL_GAP: Rems = rems(0.1875);
 /// The body of a blocking card, bounded and scrolling inside itself.
 ///
 /// **The controls have to outlive the content.** A permission names a command
@@ -351,14 +552,35 @@ impl RenderOnce for BlockingBody {
 /// item came from the read-only resumed history or the live tail: history and
 /// live items are two collections, so a fold addressed by render position lands
 /// in the wrong one.
+/// How much room the block is being drawn in, and whether it is one of a
+/// group's own rows.
+///
+/// One value rather than three arguments threaded through a dozen signatures,
+/// and the two facts travel together because they are read off the same frame:
+/// a caller that passed a fresh width beside a stale panel height would be
+/// sizing one half of a block against a layout the other half never saw.
+#[derive(Clone)]
+pub struct Room {
+    /// The panel's own height, for the blocks that bound themselves against the
+    /// room they have rather than against the window.
+    pub well: Option<gpui::Pixels>,
+    /// A column too short to hold a block off its edges and still leave a line
+    /// worth reading.
+    pub narrow: bool,
+}
+
+impl Room {
+    pub fn new(well: Option<gpui::Pixels>, narrow: bool) -> Self {
+        Self { well, narrow }
+    }
+}
+
 pub fn item(
     session: &Entity<ChatSession>,
     it: &ChatItem,
     target: TranscriptItemId,
     find_emphasis: Option<bool>,
-    // The panel's own height, for the blocks that bound themselves against the
-    // room they have rather than against the window.
-    well: Option<gpui::Pixels>,
+    room: Room,
     window: &Window,
     cx: &App,
 ) -> impl IntoElement + use<> {
@@ -368,12 +590,12 @@ pub fn item(
         .then(|| chat.turn_answer(target))
         .flatten();
     let body = match it {
-        ChatItem::User(u) => user(u, cx).into_any_element(),
+        ChatItem::User(u) => user(u, fold_key(target), room, cx).into_any_element(),
         ChatItem::Agent(md) => agent(session, md, target, turn, window, cx).into_any_element(),
         ChatItem::Thought(th) => thought(session, th, target, window, cx).into_any_element(),
         ChatItem::Tool(t) => tool(session, t, target, cx).into_any_element(),
         ChatItem::Plan(p) => plan(session, p, target, cx).into_any_element(),
-        ChatItem::Permission(p) => permission(session, p, target, well, cx).into_any_element(),
+        ChatItem::Permission(p) => permission(session, p, target, room.well, cx).into_any_element(),
         ChatItem::Ask(a) => ask(session, a, target, cx).into_any_element(),
         ChatItem::Notice { text, level } => notice(text, *level, cx).into_any_element(),
     };
@@ -389,7 +611,7 @@ pub fn item(
         // gets the quiet list fill; the current hit gets the stronger selected
         // fill used by the find controls themselves.
         .when_some(find_emphasis, |row, current| {
-            row.rounded(cx.theme().radius).bg(if current {
+            row.rounded(radius_control(cx)).bg(if current {
                 cx.theme().accent.opacity(0.35)
             } else {
                 cx.theme().list_hover
@@ -416,20 +638,32 @@ pub fn item(
 /// message. Both keep the right edge, because the edge is what says whose they
 /// are, and the files come first — they were handed over before the question
 /// was asked about them.
-fn user(u: &UserMsg, cx: &App) -> impl IntoElement + use<> {
+fn user(u: &UserMsg, uid: usize, room: Room, cx: &App) -> impl IntoElement + use<> {
     let over = u.attachments.len().saturating_sub(MAX_ATTACHMENT_ROWS);
+    let share = match room.narrow {
+        true => USER_BUBBLE_MAX_NARROW,
+        false => USER_BUBBLE_MAX,
+    };
 
     div()
         .v_flex()
         .items_end()
-        .gap_2()
+        // Tighter than the gap between blocks, because these are the parts of
+        // one thing said: what was handed over, the sentence asking about it,
+        // and whatever is offered underneath.
+        .gap(STACK_GAP)
         .w_full()
         .children((!u.attachments.is_empty()).then(|| {
             div()
-                .v_flex()
+                // **A strip, not a column.** Handed over together, they were
+                // handed over at once, and stacked they pushed the question
+                // itself further off the screen with every file added.
+                .h_flex()
+                .flex_wrap()
+                .justify_end()
                 .items_end()
-                .gap_2()
-                .max_w(relative(USER_BUBBLE_MAX))
+                .gap(STACK_GAP)
+                .max_w(relative(share))
                 .children(
                     u.attachments
                         .iter()
@@ -439,6 +673,9 @@ fn user(u: &UserMsg, cx: &App) -> impl IntoElement + use<> {
                 .when(over > 0, |list| {
                     list.child(
                         div()
+                            .h(THUMB_H)
+                            .h_flex()
+                            .items_center()
                             .text_xs()
                             .text_color(cx.theme().muted_foreground)
                             .child(format!("+{over} more attachment(s)")),
@@ -447,13 +684,190 @@ fn user(u: &UserMsg, cx: &App) -> impl IntoElement + use<> {
         }))
         .children((!u.text.trim().is_empty()).then(|| {
             div()
-                .max_w(relative(USER_BUBBLE_MAX))
-                .p_3()
-                .rounded(cx.theme().radius * 2.)
-                .bg(cx.theme().secondary)
-                .text_color(cx.theme().secondary_foreground)
-                .child(u.text.clone())
+                .id(("prompt", uid))
+                .v_flex()
+                .items_end()
+                // The control belongs to the bubble rather than following it.
+                .gap(BUBBLE_TAIL_GAP)
+                .max_w(relative(share))
+                // **The hover belongs to the whole message, not to the row it
+                // reveals.** Put on the row itself it asked the reader to find
+                // a transparent strip a few pixels tall before it would show
+                // them what was in it -- which is the same as not being there.
+                // The wrapper shrinks to the bubble, so the region that answers
+                // is the thing somebody is pointing at.
+                //
+                // It works by cascade rather than by naming a group: text
+                // colour inherits, so the row is drawn in whatever this says
+                // and the bubble, which sets its own ink, is untouched.
+                .text_color(cx.theme().transparent)
+                .hover(|turn| turn.text_color(cx.theme().muted_foreground))
+                .child(
+                    div()
+                        .w_full()
+                        .py(BUBBLE_PAD_Y)
+                        .px(BUBBLE_PAD_X)
+                        .rounded(radius_bubble(cx))
+                        // **The corner nearest the speaker is the tight one.**
+                        // A bubble rounded evenly is a lozenge that could
+                        // belong to either side; one corner brought back down
+                        // to a control's points the shape at the edge the
+                        // prompt came from, which is the whole of what the
+                        // right-hand lane is saying.
+                        .rounded_br(radius_control(cx))
+                        // **The one filled surface in the transcript**, on the
+                        // ramp's own step for it. Everything else is an edge on
+                        // the reading surface, so a fill means one thing here:
+                        // this was typed by the person reading it. The hairline
+                        // is only to hold the shape where the two get close.
+                        .border_1()
+                        .border_color(cx.theme().border)
+                        .bg(cx.theme().secondary)
+                        .text_color(cx.theme().secondary_foreground)
+                        .child(prompt_text(&u.text, cx)),
+                )
+                .child(PromptCopy {
+                    key: uid,
+                    text: u.text.clone().into(),
+                })
         }))
+}
+
+/// The control under a prompt: hidden until the turn is pointed at, and
+/// answering when it is pressed.
+///
+/// **An element of its own, because it has to remember two things the frame
+/// does not.** Whether it was just pressed — which needs keyed state, and keyed
+/// state needs the window — and a timer to take that back a second later.
+///
+/// **It appears by inheriting, not by being revealed.** The usual way to show a
+/// child on hover is to name a group on an ancestor and ask for it by name from
+/// the child, which resolves through a registry and has already failed twice in
+/// this file. Text colour cascades, so the row is drawn transparent and the
+/// hover on its own container turns the ink up: one primitive, no registry, and
+/// the space is held either way because the row is always laid out.
+#[derive(IntoElement)]
+struct PromptCopy {
+    key: usize,
+    text: SharedString,
+}
+
+impl RenderOnce for PromptCopy {
+    fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
+        let key = self.key;
+        let done = window.use_keyed_state(("prompt-copied", key), cx, |_, _| false);
+        let copied = *done.read(cx);
+        let text = self.text.clone();
+
+        div()
+            .id(("prompt-copy", key))
+            .h_flex()
+            .items_center()
+            .justify_end()
+            .gap(TIGHT_GAP)
+            .flex_none()
+            .h(BUTTON_H)
+            .cursor_pointer()
+            .text_xs()
+            // **No colour of its own until it has something to say.** The ink
+            // is the message's, inherited, so the row appears when the message
+            // is pointed at rather than when this thin strip is. Once pressed
+            // it takes its own, which is also what keeps the answer up after
+            // the pointer has gone.
+            .when(copied, |row| {
+                row.text_color(crate::theme::status_ink(cx).success)
+            })
+            .child(
+                Icon::new(match copied {
+                    true => IconName::Check,
+                    false => IconName::Copy,
+                })
+                .size(MARK_SIZE),
+            )
+            .child(match copied {
+                true => "Copied",
+                false => "Copy",
+            })
+            .on_click(move |_, window, cx| {
+                cx.write_to_clipboard(gpui::ClipboardItem::new_string(text.to_string()));
+                done.update(cx, |done, cx| {
+                    *done = true;
+                    cx.notify();
+                });
+                // Taken back on a timer rather than on the next pointer move:
+                // an answer that only clears when the mouse happens to leave is
+                // one that is still claiming to have just happened a minute
+                // later.
+                let done = done.clone();
+                window
+                    .spawn(cx, async move |cx| {
+                        cx.background_executor()
+                            .timer(std::time::Duration::from_millis(1_200))
+                            .await;
+                        done.update(cx, |done, cx| {
+                            *done = false;
+                            cx.notify();
+                        });
+                    })
+                    .detach();
+            })
+    }
+}
+
+/// What the user typed, with the spans they fenced in backticks set apart.
+///
+/// **Drawn as typed, and this is the one exception.** A prompt run through the
+/// markdown renderer would turn `**/*.rs` into bold and `# 1` into a heading —
+/// the transcript misquoting the person who wrote it — so the text is drawn
+/// verbatim. A backtick pair is the one mark a reader means as markup even here,
+/// because it is how they say "this is a name, not a word", and losing it makes
+/// a path in the middle of a sentence unfindable.
+///
+/// Only *matched* pairs count. A lone backtick is a backtick, which is what
+/// somebody typing about shell quoting meant by it.
+fn prompt_text(text: &str, cx: &App) -> gpui::AnyElement {
+    let spans = code_spans(text);
+    if spans.is_empty() {
+        // Nothing to set apart, so nothing pays for the run machinery.
+        return div().child(text.to_string()).into_any_element();
+    }
+    let chip = gpui::HighlightStyle {
+        // **A fill, and no corner.** A highlight run paints a rectangle behind
+        // its glyphs and there is no radius on it — the rounded chip this wants
+        // would need the text laid out by hand. The fill and the face together
+        // are still enough to read as one.
+        background_color: Some(cx.theme().muted),
+        color: Some(cx.theme().secondary_foreground),
+        ..Default::default()
+    };
+    let mono = cx.theme().mono_font_family.clone();
+    gpui::StyledText::new(text.to_string())
+        .with_highlights(spans.iter().map(|range| (range.clone(), chip)))
+        .with_font_family_overrides(spans.into_iter().map(|range| (range, mono.clone())))
+        .into_any_element()
+}
+
+/// The byte ranges of every matched backtick pair, contents only, in order.
+///
+/// Returned sorted and non-overlapping because both run APIs require it, and a
+/// scan that pairs each opening tick with the next closing one is sorted by
+/// construction.
+fn code_spans(text: &str) -> Vec<std::ops::Range<usize>> {
+    let mut out = Vec::new();
+    let mut open: Option<usize> = None;
+    for (at, c) in text.char_indices() {
+        if c != '`' {
+            continue;
+        }
+        match open.take() {
+            // An empty pair marks nothing, and a zero-width run is a run the
+            // layout has to carry for no glyph.
+            Some(from) if at > from => out.push(from..at),
+            Some(_) => {}
+            None => open = Some(at + 1),
+        }
+    }
+    out
 }
 
 /// One attached file: what it is, and — for a picture — what it looks like.
@@ -478,48 +892,56 @@ fn attachment(a: &onehand_core::attachment::AttachmentSnapshot, cx: &App) -> imp
     let thumbnail = (a.kind == AttachmentKind::Image && !unavailable).then(|| a.path.clone());
 
     div()
-        .v_flex()
-        .items_end()
-        .gap_1()
-        .max_w_full()
-        // The picture above and the name under it: a preview is read as the
-        // thing itself, and the name is its caption rather than its label. The
-        // border is what gives the picture an edge of its own now that there is
-        // no fill behind it — a screenshot of a window otherwise ends wherever
-        // its own background happens to stop.
-        .children(thumbnail.map(|path| {
-            div()
-                // The picture sits inside the frame rather than against it: a
-                // border drawn on the pixels reads as a crop, and the two
-                // radii have to be concentric or the outer corner cuts across
-                // the inner one.
-                .p_1()
-                .overflow_hidden()
-                .rounded(cx.theme().radius * 1.5)
-                .border_1()
-                .border_color(cx.theme().border)
-                .child(
-                    gpui::img(path)
-                        .max_h(ATTACHMENT_THUMB_H)
-                        .max_w_full()
-                        .rounded(cx.theme().radius),
-                )
-        }))
+        // **One plate whatever is on it.** A picture fills it and a file
+        // carries its mark in the middle of it, so a prompt that handed over
+        // both is a strip of one kind of thing rather than a picture beside a
+        // chip of some other height. The name sits at the foot of the plate: a
+        // preview is read as the thing itself, and the name is its caption
+        // rather than its label.
+        .relative()
+        .flex_none()
+        .w(THUMB_W)
+        .h(THUMB_H)
+        .overflow_hidden()
+        .rounded(radius_block(cx))
+        .border_1()
+        .border_color(cx.theme().border)
+        .map(|plate| match thumbnail {
+            Some(path) => plate.child(gpui::img(path).size_full()),
+            // The registry has no picture glyph, so the plain file mark stands
+            // in for both kinds; where there is a preview it says what the file
+            // is better than any icon could, so the mark is drawn only here.
+            None => plate.child(
+                div()
+                    .size_full()
+                    .h_flex()
+                    .items_center()
+                    .justify_center()
+                    .text_color(cx.theme().muted_foreground)
+                    .child(Icon::new(IconName::File).size_4()),
+            ),
+        })
         .child(
             div()
+                // Over the foot of the plate rather than under it: the plate is
+                // a fixed size, and a caption taking a row of its own would
+                // make every attachment two different heights again depending
+                // on whether its name wrapped.
+                .absolute()
+                .bottom_0()
+                .left_0()
+                .right_0()
                 .h_flex()
                 .items_center()
-                .gap_2()
-                .max_w_full()
+                .gap(TIGHT_GAP)
+                .px(TIGHT_GAP)
+                .py(HAIR_GAP)
+                .bg(cx.theme().secondary)
                 .text_xs()
                 .text_color(cx.theme().muted_foreground)
-                // The registry has no picture glyph, so the plain file mark
-                // stands in for both kinds; for an image the preview above says
-                // what it is better than any icon could.
-                .child(Icon::new(IconName::File).size_3())
                 .child(div().min_w_0().truncate().child(a.name.clone()))
                 // An attachment the agent never received is the one thing about
-                // this row that changes the answer, so it is spelled out.
+                // this plate that changes the answer, so it is spelled out.
                 .when(unavailable, |row| {
                     row.child(
                         div()
@@ -558,20 +980,48 @@ fn agent(
 
     div()
         .v_flex()
-        .gap_1()
+        .gap(TIGHT_GAP)
         .w_full()
+        .group("turn-footer")
         .child(md_view(session, md, window, cx))
         .children(footer.map(|elapsed| {
             div()
                 .h_flex()
                 .items_center()
-                .gap_2()
+                .justify_between()
+                .gap(PART_GAP)
                 .w_full()
+                // **The row holds its height whether or not anything is in
+                // it.** Appearing under the pointer it would push the whole
+                // conversation down by its own height every time the reader
+                // crossed the last paragraph of an answer, which is a page
+                // that moves while it is being read.
+                .h(rems(1.75))
                 .text_xs()
                 .text_color(cx.theme().muted_foreground)
-                .children(elapsed.map(|secs| div().child(format!("Processed in {secs}s"))))
-                .child(div().flex_1())
-                .child(copy_turn_button(session, target).tooltip("Copy this answer"))
+                .invisible()
+                .group_hover("turn-footer", |row| row.visible())
+                // What can be done with the answer, at the end the reading
+                // stopped at; what the answer *was*, opposite it. A control and
+                // a record are two different offers and the row is read from
+                // the left.
+                .child(
+                    div()
+                        .h_flex()
+                        .items_center()
+                        .gap(HAIR_GAP)
+                        .flex_none()
+                        .child(copy_turn_button(session, target).tooltip("Copy this answer")),
+                )
+                .child(
+                    div()
+                        .h_flex()
+                        .items_center()
+                        .gap(TEXT_PAD_Y)
+                        .min_w_0()
+                        .truncate()
+                        .children(elapsed.map(|secs| div().child(format!("Processed in {secs}s")))),
+                )
         }))
 }
 
@@ -590,7 +1040,25 @@ fn md_view(
         Some(state) => TextView::new(state)
             .selectable(true)
             .style(prose_style(window, cx))
-            .code_block_actions(|block, _, _| copy_button("copy-code", block.code()))
+            // **The language, beside the copy.** A block that does not say what
+            // it is leaves a reader guessing from the syntax -- and this
+            // floating corner is the only slot the renderer opens, so it is
+            // where the label has to go until the block is ours to lay out.
+            .code_block_actions(|block, _, cx| {
+                div()
+                    .h_flex()
+                    .items_center()
+                    .gap(TIGHT_GAP)
+                    .children(block.lang().filter(|l| !l.trim().is_empty()).map(|lang| {
+                        div()
+                            .flex_none()
+                            .pl(TIGHT_GAP)
+                            .text_size(OBJECT_TEXT)
+                            .text_color(cx.theme().muted_foreground)
+                            .child(lang)
+                    }))
+                    .child(copy_button("copy-code", block.code()))
+            })
             .into_any_element(),
         None => div().child(md.source.clone()).into_any_element(),
     }
@@ -649,34 +1117,38 @@ fn prose_style(window: &Window, cx: &App) -> TextViewStyle {
             background_color: Some(cx.theme().transparent),
             ..HighlightStyle::default()
         })
+        // The fenced block drawn as the wells around it are: the same corner,
+        // the same edge, the same two insets. The renderer's own is a filled
+        // box with no border at the control radius, which put a quoted command
+        // in an answer and the identical command in the tool card below it in
+        // two different boxes.
         .code_block(
             StyleRefinement::default()
                 .max_h(MAX_CODE_BLOCK_H)
                 .overflow_hidden()
-                .p(WELL_PAD)
-                .text_size(CODE_TEXT)
-                .line_height(relative(CODE_LEADING)),
-        );
+                .py(FRAME_PAD)
+                .px(TEXT_PAD_X)
+                .rounded(radius_block(cx))
+                .border_1()
+                .border_color(cx.theme().border)
+                // **Nothing behind it, which is the point.** The renderer fills
+                // a fenced block with the well step, and the user's own bubble
+                // is filled too -- so a quotation and a thing somebody said
+                // came out as the same object at a glance. A filled surface in
+                // the transcript now means one thing only: this was typed by
+                // the person reading it. Everything else is an edge on the
+                // reading surface, which is the language the activity block
+                // already speaks.
+                .bg(cx.theme().transparent)
+                .text_size(FENCE_TEXT)
+                .line_height(relative(FENCE_LEADING)),
+        )
+        // A table is read across, so its cells are wider than they are tall:
+        // padding a cell evenly leaves the columns crowded and the rows loose,
+        // which is the one way round a table must not be.
+        .table_cell(StyleRefinement::default().py(STACK_GAP).px(TEXT_PAD_Y));
     style.heading_base_font_size = window.rem_size() * TEXT.0;
     style
-}
-
-/// The shared tinted well for machine detail, in the mono family at the one
-/// size all of them share. The enclosing activity detail owns the border and
-/// scroll; `IN` / `OUT` wells only distinguish sections inside that card.
-///
-/// The markdown renderer's fenced blocks receive the shared padding and
-/// typography through a style refinement, which is the only way to reach their
-/// library-owned container.
-fn well(cx: &App) -> gpui::Div {
-    div()
-        .w_full()
-        .p(WELL_PAD)
-        .rounded(cx.theme().radius)
-        .bg(cx.theme().muted)
-        .font_family(cx.theme().mono_font_family.clone())
-        .text_size(CODE_TEXT)
-        .line_height(relative(CODE_LEADING))
 }
 
 /// Copy `text` to the clipboard, as a quiet icon button.
@@ -684,12 +1156,15 @@ fn well(cx: &App) -> gpui::Div {
 /// One constructor for both the copies the transcript offers — a fenced block
 /// and a whole answer — because they are the same gesture and the only reason
 /// they ever looked different was that they were written months apart.
-fn copy_button(id: &'static str, text: impl Into<SharedString>) -> Button {
+fn copy_button(id: impl Into<gpui::ElementId>, text: impl Into<SharedString>) -> Button {
     let text = text.into();
     crate::controls::action(id)
         .ghost()
         .xsmall()
-        .icon(Icon::new(IconName::Copy))
+        // Square at the shared control height, so a copy offered on a fenced
+        // block and one offered at the end of an answer are the same target.
+        .size(BUTTON_H)
+        .icon(Icon::new(IconName::Copy).size(MARK_SIZE))
         .on_click(move |_, _, cx: &mut App| {
             cx.write_to_clipboard(gpui::ClipboardItem::new_string(text.to_string()));
         })
@@ -708,7 +1183,8 @@ fn copy_turn_button(session: &Entity<ChatSession>, target: TranscriptItemId) -> 
     crate::controls::action("copy-answer")
         .ghost()
         .xsmall()
-        .icon(Icon::new(IconName::Copy))
+        .size(BUTTON_H)
+        .icon(Icon::new(IconName::Copy).size(MARK_SIZE))
         .on_click(move |_, _, cx: &mut App| {
             let prose = session.read(cx).chat.turn_prose(target);
             cx.write_to_clipboard(gpui::ClipboardItem::new_string(prose));
@@ -724,50 +1200,46 @@ fn thought(
     window: &Window,
     cx: &App,
 ) -> impl IntoElement + use<> {
-    let label = match th.elapsed_secs {
-        Some(secs) => format!("Thought for {secs}s"),
-        None => "Thinking…".to_string(),
+    // **One row, whether it is still thinking or has finished.** The verb and
+    // the mark change; nothing moves. It used to be a bare line at one height
+    // when it stood alone and a row at another inside a group, so the same
+    // block was two shapes depending on what happened to be next to it.
+    let (verb, summary, mark) = match th.elapsed_secs {
+        Some(secs) => ("Reasoned", format!("{secs}s"), RowMark::Done),
+        None => ("Reasoning", String::new(), RowMark::Running),
     };
+    let toggle = {
+        let session = session.clone();
+        move |_: &ClickEvent, _: &mut Window, cx: &mut App| {
+            session.update(cx, |s, cx| {
+                s.chat.toggle_thought(target);
+                cx.notify();
+            });
+        }
+    };
+
+    let row = ActivityRow::new(
+        ("thought", fold_key(target)).into(),
+        mark,
+        group_icon(activity::ActivityGroup::Reasoned),
+        verb,
+    )
+    .object((!summary.is_empty()).then(|| Object::plain(summary)))
+    .fold(Some(th.expanded));
 
     div()
         .v_flex()
-        .gap_2()
         .w_full()
-        .child(ghost_row(
-            IconName::Info,
-            ("thought", fold_key(target)).into(),
-            // Built here rather than through the one-label row, which is the
-            // shape a *summary* takes: this line names a block, and a block's
-            // name carries the weight every other one does. It stays in the
-            // quiet size and colour, so the weight reads as a title inside the
-            // chrome rather than as a second voice against the answer.
-            div()
-                .flex_shrink(1.)
-                .min_w_0()
-                .truncate()
-                .font_semibold()
-                .child(label)
-                .into_any_element(),
-            None,
-            Some(th.expanded),
-            {
-                let session = session.clone();
-                move |_: &ClickEvent, _: &mut Window, cx: &mut App| {
-                    session.update(cx, |s, cx| {
-                        s.chat.toggle_thought(target);
-                        cx.notify();
-                    });
-                }
-            },
-            cx,
-        ))
+        .min_w_0()
+        .child(activity_row(row, toggle, cx))
         .when(th.expanded, |block| {
             block.child(
                 div()
                     .w_full()
-                    .p_3()
-                    .rounded(cx.theme().radius)
-                    .bg(cx.theme().muted)
+                    .min_w_0()
+                    .pl(DETAIL_INSET)
+                    .pr(ROW_PAD_X)
+                    .pb(FRAME_PAD)
                     .text_color(cx.theme().muted_foreground)
                     .child(md_view(session, &th.md, window, cx)),
             )
@@ -776,52 +1248,32 @@ fn thought(
 
 // ── tool call ───────────────────────────────────────────────────────────────
 
-/// A tool step: a compact record once settled, a card while it needs attention.
+/// A tool step: one activity row, and what it opens into.
 ///
-/// **Which shape is not a style choice.** Status is the only input: terminal
-/// work (completed or failed) is a quiet row, while pending and running work is
-/// a card. A failure remains unmistakable through its danger status; a border
-/// around the whole tool adds no further information.
+/// **One geometry for every kind and every status.** A status is what the disc
+/// at the head of the row says and what the column at its end says; it is never
+/// what the row *is*. What differs between a read and a command is only the
+/// shape of the thing underneath, once somebody has asked for it.
 fn tool(
     session: &Entity<ChatSession>,
     t: &ToolItem,
     target: TranscriptItemId,
     cx: &App,
 ) -> impl IntoElement + use<> {
-    let descriptor = tool_descriptor(t, &session.read(cx).chat.root);
-    let quiet = is_settled(t);
-    let show_kind = show_tool_kind(t);
-    // Mono only when the descriptor *is* the command. An `Execute` step that
-    // arrived with a description is being described in prose, and prose set in
-    // mono claims to be something that could be typed back into a shell.
-    let verbatim = t.call.kind == ToolKind::Execute && t.call.description.is_none();
-    // What the agent actually ran, when the header is not already showing it.
-    //
-    // The header truncates to one line and a command is the one part of a tool
-    // step that is worth reading in full — a `find` with four predicates, a
-    // `sed` whose expression is the whole point — and the card had nowhere
-    // else that carried it. With no `description` the header *is* the command,
-    // truncated; with one, the command was not on screen at all.
-    let command = (t.call.kind == ToolKind::Execute && !t.call.title.trim().is_empty())
-        .then(|| t.call.title.clone());
+    let root = session.read(cx).chat.root.clone();
+    let presented = activity::presentation(t);
     let open = t.is_open();
-    let has_detail = !t.call.content.is_empty() || command.is_some();
-
-    let sections = if open {
-        let mut budget = MAX_DIFF_LINES;
-        command
-            .map(|cmd| labeled("IN", mono_well(&cmd, MAX_MONO_LINES, cx), cx).into_any_element())
-            .into_iter()
-            .chain(
-                t.call.content.iter().enumerate().map(|(key, content)| {
-                    section(session, t, target, key, content, &mut budget, cx)
-                }),
-            )
-            .collect::<Vec<_>>()
-    } else {
-        Vec::new()
-    };
-
+    // **The live stream, while there is one.** A command that is still running
+    // has its output in the session's terminal map rather than in the card --
+    // the model folds it in at turn end -- so a detail built from the card's
+    // own sections alone draws an empty box under a `cargo build` for as long
+    // as the build takes, which is exactly when somebody is looking at it.
+    let live: Option<&onehand_core::chat::TermView> =
+        t.call.content.iter().find_map(|section| match section {
+            ToolContent::Terminal(id) => session.read(cx).chat.terminals.get(id),
+            _ => None,
+        });
+    let detail = tool_detail(t, &presented, &root, live);
     let toggle = {
         let session = session.clone();
         move |_: &ClickEvent, _: &mut Window, cx: &mut App| {
@@ -832,177 +1284,891 @@ fn tool(
         }
     };
 
-    if quiet {
-        return div()
-            .v_flex()
-            .gap_2()
-            .w_full()
-            .child(ghost_row(
-                tool_icon(t.call.kind),
-                ("tool", fold_key(target)).into(),
-                // Shrink-to-fit, not fill: this row's chevron belongs beside
-                // what it opens. The descriptor still truncates rather than
-                // running the row off the column -- it may shrink, it just does
-                // not grow.
-                div()
-                    .h_flex()
-                    .gap_2()
-                    .min_w_0()
-                    .overflow_hidden()
-                    .child(
-                        div()
-                            .h_flex()
-                            // Only text participates in baseline alignment.
-                            // Sans labels and mono commands have different font
-                            // metrics; glyphs beside them belong to the row's
-                            // centred icon grid instead.
-                            .items_baseline()
-                            .gap_2()
-                            .min_w_0()
-                            .overflow_hidden()
-                            .children(
-                                show_kind.then(|| div().flex_none().child(tool_label(t.call.kind))),
-                            )
-                            .child(
-                                div()
-                                    .min_w_0()
-                                    .truncate()
-                                    .when(verbatim, |d| {
-                                        d.font_family(cx.theme().mono_font_family.clone())
-                                    })
-                                    .child(descriptor),
-                            ),
-                    )
-                    .children(completed_mark(t.call.status, cx))
-                    .into_any_element(),
-                status_note(t.call.status, cx),
-                has_detail.then_some(open),
-                toggle,
-                cx,
-            ))
-            .when(open && has_detail, |row| {
-                // One card owns everything below this activity's label: its
-                // tags, command, output, diffs and status. The card edge starts
-                // on the label's axis, and its fixed viewport keeps opening one
-                // activity from pushing the following rows out of sight.
-                row.child(
-                    div()
-                        .w_full()
-                        .pl(ACTIVITY_DETAIL_INSET)
-                        .child(ActivityDetail::new(target, sections)),
-                )
-            })
-            .into_any_element();
-    }
-
-    // A live tool with detail is a disclosure too. Use the shared Button
-    // primitive so the same header that opens with a pointer also opens with
-    // Tab + Enter/Space and exposes a button role to accessibility clients.
-    let header_content = div()
-        .h_flex()
-        .items_center()
-        .gap_2()
-        .w_full()
-        .text_size(WORK_TEXT)
-        .child(Icon::new(tool_icon(t.call.kind)).size_4())
-        .children(show_kind.then(|| {
-            div()
-                .font_semibold()
-                .flex_none()
-                .child(tool_label(t.call.kind))
-        }))
-        .child(
-            div()
-                .flex_1()
-                .min_w_0()
-                .truncate()
-                .text_color(cx.theme().muted_foreground)
-                .when(verbatim, |d| {
-                    d.font_family(cx.theme().mono_font_family.clone())
-                })
-                .child(descriptor),
-        )
-        .children(completed_mark(t.call.status, cx))
-        .children(status_note(t.call.status, cx))
-        .children(has_detail.then(|| {
-            Icon::new(if open {
-                IconName::ChevronDown
-            } else {
-                IconName::ChevronRight
-            })
-            .size_4()
-        }));
-    let header = if has_detail {
-        crate::controls::action(("tool", fold_key(target)))
-            .ghost()
-            .w_full()
-            .min_w_0()
-            .p_0()
-            .child(header_content)
-            .on_click(toggle)
-            .into_any_element()
-    } else {
-        div()
-            .id(("tool", fold_key(target)))
-            .child(header_content)
-            .into_any_element()
+    let (added, removed) = t
+        .diff_summary
+        .iter()
+        .fold((0, 0), |(a, r), (_, plus, minus)| (a + plus, r + minus));
+    let deleted = t.call.kind == ToolKind::Delete;
+    let object = match t.call.kind {
+        // A command is not a path and must not be split at its last slash.
+        ToolKind::Execute => Some(Object::plain(activity::first_line_trunc(
+            &onehand_core::chat::redact(&presented.subject),
+            160,
+        ))),
+        _ if presented.subject.trim().is_empty() => None,
+        _ => Some(Object::path(path_for_display(&root, &presented.subject))),
     };
+    let meta = match (t.call.status, deleted) {
+        // **The code where there is one, the word where there is not.** Only a
+        // command run through the terminal extension reports a status, so a
+        // failure arriving as a plain tool call has nothing but the word --
+        // and printing `failed` over a step that told us it exited 101 throws
+        // away the one thing that says *what* went wrong.
+        (ToolStatus::Failed, _) => Some(row_note(
+            match t.exit_code {
+                Some(code) => format!("exit {code}"),
+                None => "failed".to_string(),
+            },
+            crate::theme::status_ink(cx).danger,
+            cx,
+        )),
+        (ToolStatus::InProgress, _) | (ToolStatus::Pending, _) => None,
+        (_, true) => Some(row_note("deleted", cx.theme().muted_foreground, cx)),
+        _ => line_counts(added, removed, cx)
+            .map(|pair| pair.text_size(OBJECT_TEXT).into_any_element()),
+    };
+
+    let mut row = ActivityRow::new(
+        ("tool", fold_key(target)).into(),
+        RowMark::of(t.call.status),
+        group_icon(presented.kind.into()),
+        presented.action,
+    )
+    .object(object)
+    .meta(meta)
+    .fold(detail.is_some().then_some(open));
+    row.struck = deleted;
 
     div()
         .v_flex()
-        .gap_2()
         .w_full()
-        .p_3()
-        .rounded(cx.theme().radius)
+        .min_w_0()
+        .child(activity_row(row, toggle, cx))
+        .children(
+            open.then_some(())
+                .and(detail)
+                .map(|detail| detail_frame(session, t, target, detail, cx)),
+        )
+}
+
+/// What a step opens into, chosen by what the step is.
+enum Detail {
+    /// A command and whatever it printed.
+    Command { command: String, output: String },
+    /// One or more file edits.
+    Diffs,
+    /// A list of what was looked at, and how many lines of it were dropped to
+    /// keep the box bounded.
+    Lines {
+        lines: Vec<SharedString>,
+        hidden: usize,
+    },
+    /// A picture the step produced.
+    Image(std::sync::Arc<Vec<u8>>),
+}
+
+impl Detail {
+    /// The whole of what the box holds, as text.
+    ///
+    /// **What Copy hands over, and why there is a Copy at all.** The rows here
+    /// are drawn from plain elements, which the renderer does not let a drag
+    /// select -- the one selectable text in the transcript is the agent's prose,
+    /// and it is selectable because it goes through a markdown renderer that
+    /// owns its own selection. A diff cannot: its three columns are layout, and
+    /// running them through that renderer to gain a drag would cost the columns.
+    /// So the block answers in whole rather than in part, which is also what
+    /// somebody pasting a failure into a bug report wants.
+    fn text(&self, rows: &[String]) -> Option<String> {
+        match self {
+            Self::Command { command, output } => Some(match output.is_empty() {
+                true => command.clone(),
+                false => format!("{command}\n\n{output}"),
+            }),
+            Self::Lines { lines, .. } => Some(
+                lines
+                    .iter()
+                    .map(|l| l.to_string())
+                    .collect::<Vec<_>>()
+                    .join("\n"),
+            ),
+            Self::Diffs => Some(rows.join("\n")),
+            // Bytes are not text, and a clipboard image is a different feature.
+            Self::Image(_) => None,
+        }
+    }
+}
+
+fn tool_detail(
+    t: &ToolItem,
+    presented: &activity::Presentation,
+    root: &Path,
+    live: Option<&onehand_core::chat::TermView>,
+) -> Option<Detail> {
+    if t.call.kind == ToolKind::Execute {
+        let command = onehand_core::chat::redact(t.call.title.trim());
+        let mut output = t
+            .call
+            .content
+            .iter()
+            .filter_map(|c| match c {
+                ToolContent::Text(text) => Some(onehand_core::chat::redact(text)),
+                _ => None,
+            })
+            .collect::<Vec<_>>()
+            .join("\n");
+        // A running command's output is not in its card yet. Appended rather
+        // than substituted, since a step can have said something of its own
+        // before the terminal it opened started printing.
+        if let Some(view) = live.filter(|view| !view.output.is_empty()) {
+            if !output.is_empty() {
+                output.push('\n');
+            }
+            output.push_str(&onehand_core::chat::redact(&view.output));
+        }
+        return (!command.is_empty()).then_some(Detail::Command { command, output });
+    }
+    if t.call
+        .content
+        .iter()
+        .any(|c| matches!(c, ToolContent::Diff { .. }))
+    {
+        return Some(Detail::Diffs);
+    }
+    if let Some(ToolContent::Image(bytes)) = t
+        .call
+        .content
+        .iter()
+        .find(|c| matches!(c, ToolContent::Image(_)))
+    {
+        return Some(Detail::Image(bytes.clone()));
+    }
+    // A read or a search says what it looked at, one line each — the paths a
+    // merged row stands for, or whatever the tool printed back.
+    let all: Vec<SharedString> = t
+        .call
+        .content
+        .iter()
+        .filter_map(|c| match c {
+            ToolContent::Text(text) => Some(text.as_str()),
+            _ => None,
+        })
+        .flat_map(|text| text.lines())
+        .map(|line| SharedString::from(onehand_core::chat::redact(line)))
+        .collect();
+    // Bounded, and the bound is counted rather than swallowed: a list cut at
+    // sixty with nothing said is a list claiming the step looked at sixty
+    // things.
+    let hidden = all.len().saturating_sub(MAX_MONO_LINES);
+    let lines: Vec<SharedString> = all.into_iter().take(MAX_MONO_LINES).collect();
+    match lines.is_empty() {
+        true => {
+            let subject = path_for_display(root, &presented.subject);
+            (!subject.trim().is_empty()).then(|| Detail::Lines {
+                lines: vec![subject.into()],
+                hidden: 0,
+            })
+        }
+        false => Some(Detail::Lines { lines, hidden }),
+    }
+}
+
+/// The box a row opens into: set in to the row's own words, one step off the
+/// frame it sits in, and carrying nothing but the text.
+fn detail_frame(
+    session: &Entity<ChatSession>,
+    t: &ToolItem,
+    target: TranscriptItemId,
+    detail: Detail,
+    cx: &App,
+) -> gpui::Div {
+    let copy = detail.text(&diff_text(t));
+    div()
+        .w_full()
+        .min_w_0()
+        .pl(DETAIL_INSET)
+        .pr(ROW_PAD_X)
+        .pb(FRAME_PAD)
+        .child(
+            div()
+                .relative()
+                .w_full()
+                .min_w_0()
+                .overflow_hidden()
+                .rounded(radius_block(cx))
+                .border_1()
+                .border_color(cx.theme().border)
+                // **A step off the frame and no more.** It has to read as a
+                // layer rather than as a card somebody dropped in, and the
+                // frame it sits in is already on the reading surface — so the
+                // whole of the difference is one step of the ramp.
+                .bg(cx.theme().muted.opacity(0.4))
+                .font_family(cx.theme().mono_font_family.clone())
+                .text_size(OBJECT_TEXT)
+                .line_height(relative(CODE_LH))
+                .map(|box_| match detail {
+                    Detail::Command { command, output } => {
+                        command_detail(session, t, target, &command, &output, box_, cx)
+                    }
+                    Detail::Diffs => diff_detail(session, t, target, box_, cx),
+                    // An image has an edge of its own already -- the box it is
+                    // in -- so it fills it rather than sitting inside a second
+                    // one.
+                    Detail::Image(bytes) => box_.map(|box_| match session.read(cx).image(&bytes) {
+                        Some(handle) => box_.child(gpui::img(handle).max_w_full()),
+                        None => box_.child(
+                            div()
+                                .px(DIFF_TEXT_PAD)
+                                .text_color(cx.theme().muted_foreground)
+                                .child(format!("[unrecognized image, {} bytes]", bytes.len())),
+                        ),
+                    }),
+                    Detail::Lines { lines, hidden } => box_
+                        .children(lines.into_iter().map(|line| {
+                            div()
+                                .w_full()
+                                .min_w_0()
+                                .px(DIFF_TEXT_PAD)
+                                .text_color(cx.theme().muted_foreground)
+                                .child(line)
+                        }))
+                        .children((hidden > 0).then(|| {
+                            div()
+                                .w_full()
+                                .min_w_0()
+                                .px(DIFF_TEXT_PAD)
+                                .text_color(cx.theme().muted_foreground.opacity(0.7))
+                                .child(format!("and {hidden} more lines"))
+                        })),
+                })
+                // **Drawn always, never waiting to be hovered.** A control that
+                // appears under the pointer is one nobody finds who was not
+                // already reaching for it -- and this is the box whose text is
+                // most likely to be wanted somewhere else: pasted into a shell,
+                // quoted in a bug report, kept as the record of what ran.
+                //
+                // It covers the tail of the first line, which is the trade the
+                // column it would otherwise reserve costs every line below.
+                // What a first line carries is its opening, and that is the
+                // part it keeps.
+                .children(copy.map(|text| {
+                    div()
+                        .absolute()
+                        .top(TIGHT_GAP)
+                        .right(TIGHT_GAP)
+                        .rounded(radius_control(cx))
+                        .bg(cx.theme().muted)
+                        .child(
+                            copy_button(("detail-copy", fold_key(target)), text)
+                                .tooltip("Copy this"),
+                        )
+                })),
+        )
+}
+
+/// A diff's rows as the lines they would be in a file.
+fn diff_text(t: &ToolItem) -> Vec<String> {
+    let mut out = Vec::new();
+    for key in 0..t.call.content.len() {
+        let Some(rows) = t.diff_rows.get(&key) else {
+            continue;
+        };
+        for row in rows {
+            out.push(match row {
+                DiffRow::Context(l) => format!(" {l}"),
+                DiffRow::Added(l) => format!("+{l}"),
+                DiffRow::Removed(l) => format!("-{l}"),
+                DiffRow::Skipped(n) => format!("@@ {n} unchanged lines @@"),
+            });
+        }
+    }
+    out
+}
+
+/// Where whatever a row opens into is set in to: the row's own words, with the
+/// frame's inset kept on the right and the foot.
+fn detail_well(body: impl IntoElement) -> gpui::Div {
+    div()
+        .w_full()
+        .min_w_0()
+        .pl(DETAIL_INSET)
+        .pr(ROW_PAD_X)
+        .pb(FRAME_PAD)
+        .child(body)
+}
+
+/// The fixed box a mark sits in, dropped onto the line its neighbours read on.
+///
+/// One function because every row has two or three of them and they all need
+/// the same correction: written out per call site, the first one somebody added
+/// without it is a mark a pixel above the words beside it, which reads as the
+/// row having come apart rather than as anything measurable.
+fn mark_slot(size: Rems) -> gpui::Div {
+    div()
+        .size(size)
+        .flex_none()
+        .mt(GLYPH_DROP)
+        .h_flex()
+        .items_center()
+        .justify_center()
+}
+
+/// A detail that has outgrown its box, scrolling inside it and nowhere else.
+///
+/// **The wheel has to be taken in the capture phase.** The transcript is a
+/// `gpui::list`, which registers its own wheel listener before its children
+/// have any say — so a box that merely sets `overflow_y_scroll` is a box the
+/// wheel slides the *conversation* behind, and the reader finds themselves
+/// somewhere else in the turn while trying to read one command's output.
+/// [`ScrollableMask`] sits as a sibling of the scrolled box, consumes the
+/// vertical delta before the list sees it, and hands it back at the edges so a
+/// detail scrolled to its end lets the transcript carry on — which is what
+/// every platform scroller does and what a reader expects without knowing it.
+///
+/// An element of its own because the handle has to outlive the frame: it is
+/// keyed state, and keyed state needs the window.
+#[derive(IntoElement)]
+struct ScrollBody {
+    key: usize,
+    max_h: Rems,
+    children: Vec<gpui::AnyElement>,
+}
+
+impl RenderOnce for ScrollBody {
+    fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
+        let key = self.key;
+        let scroll = window
+            .use_keyed_state(("detail-scroll-state", key), cx, |_, _| {
+                ScrollHandle::default()
+            })
+            .read(cx)
+            .clone();
+
+        div()
+            .id(("detail-frame", key))
+            .relative()
+            .w_full()
+            .min_w_0()
+            .max_h(self.max_h)
+            .child(
+                div()
+                    .id(("detail-scroll", key))
+                    .v_flex()
+                    .w_full()
+                    .min_w_0()
+                    .max_h(self.max_h)
+                    .overflow_y_scroll()
+                    .track_scroll(&scroll)
+                    .children(self.children),
+            )
+            .child(contain_wheel(scroll.clone()))
+            .child(Scrollbar::vertical(&scroll).mode(ScrollbarMode::Always))
+    }
+}
+
+/// Take the wheel for a box that has somewhere to go, and never hand it back.
+///
+/// **Two conditions, and the first is the one a first attempt forgets.** A box
+/// shorter than its own cap has nothing to scroll, so it takes nothing: consumed
+/// there, an opened detail is a dead patch of the transcript, where hovering
+/// stops the conversation moving for a box that was not going to move either.
+///
+/// **Then contained, not chained.** The component library's mask stops at the
+/// edge and lets the delta bubble — which is what a browser does by default, and is
+/// wrong here: these boxes are a few lines tall inside a transcript that is
+/// hundreds, so a reader who reaches the end of one command's output has the
+/// whole conversation take off under their finger. What they were doing was
+/// reading *this*, and arriving at its last line is not a request to leave it.
+///
+/// Registered in the **capture** phase for the reason the library's is: the
+/// transcript is a `gpui::list`, which registers its own wheel listener after
+/// its children paint, so in the bubble phase it runs first and has already
+/// spent the delta. `should_handle_scroll` rather than a bare bounds test, so
+/// the box stays inert under a popup or a dialog.
+///
+/// A `canvas` rather than an element of its own: the whole of what this needs
+/// is a hitbox and one listener, and both are reachable from the two callbacks
+/// a canvas already hands out.
+fn contain_wheel(scroll: ScrollHandle) -> impl IntoElement {
+    gpui::canvas(
+        move |bounds, window, _| window.insert_hitbox(bounds, gpui::HitboxBehavior::Normal),
+        move |_, hitbox, window, _| {
+            let view = window.current_view();
+            let line_height = window.line_height();
+            let id = hitbox.id;
+            window.on_mouse_event(
+                move |event: &gpui::ScrollWheelEvent, phase, window, cx: &mut App| {
+                    if !(phase.capture() && id.should_handle_scroll(window)) {
+                        return;
+                    }
+                    // **A box with nothing to scroll takes nothing.** This is
+                    // the half the first version got wrong: it consumed the
+                    // wheel wherever it was drawn, so an opened detail shorter
+                    // than its own cap became a dead patch of the transcript --
+                    // hover it and the conversation stopped moving, for a box
+                    // that had nothing to move either.
+                    //
+                    // Last frame's measurement, like everything else measured
+                    // here. The first frame after a detail opens has no travel
+                    // recorded yet and lets one event past, which is a frame
+                    // nobody can see.
+                    let travel = scroll.max_offset().y.max(gpui::px(0.));
+                    if travel <= gpui::px(0.) {
+                        return;
+                    }
+                    let delta = event.delta.pixel_delta(line_height).y;
+                    // The current offset is clamped too: a bubbled event can
+                    // push the shared offset past the edge unclamped, and that
+                    // transient overscroll reads as room that is not there.
+                    let mut offset = scroll.offset();
+                    let current = offset.y.clamp(-travel, gpui::px(0.));
+                    let next = (current + delta).clamp(-travel, gpui::px(0.));
+                    if next != current {
+                        offset.y = next;
+                        scroll.set_offset(offset);
+                        cx.notify(view);
+                    }
+                    // **And where there *is* travel, at the edge most of all.**
+                    // Reaching the end of a box a few lines tall is not a
+                    // request to leave it, and handing the delta on there is
+                    // the whole of what this exists to stop.
+                    cx.stop_propagation();
+                },
+            );
+        },
+    )
+    .absolute()
+    .top_0()
+    .left_0()
+    .size_full()
+}
+
+/// A detail's body, scrolling inside its box only once it has been opened.
+fn scrolled(open: bool, key: usize, body: gpui::Div) -> gpui::AnyElement {
+    match open {
+        true => ScrollBody {
+            key,
+            max_h: DETAIL_OPEN_H,
+            children: vec![body.into_any_element()],
+        }
+        .into_any_element(),
+        false => body.into_any_element(),
+    }
+}
+
+/// The arrow of a disclosure, in a slot it keeps whether or not it is drawn.
+///
+/// **Reserved, not conditional.** A row that grew one on gaining something to
+/// open would shift every word beside it, and a column of them down a block
+/// would come out ragged for a reason about the rows rather than the arrows.
+fn chevron_slot(fold: Option<bool>, cx: &App) -> gpui::Div {
+    mark_slot(CHEVRON_SLOT).children(fold.map(|open| {
+        Icon::new(match open {
+            true => IconName::ChevronDown,
+            false => IconName::ChevronRight,
+        })
+        .size(CHEVRON_MARK)
+        .text_color(cx.theme().muted_foreground)
+    }))
+}
+
+/// The box a detail is drawn in, without the row wrapper around it.
+fn plain_box(cx: &App) -> gpui::Div {
+    div()
+        .w_full()
+        .min_w_0()
+        .overflow_hidden()
+        .rounded(radius_block(cx))
         .border_1()
         .border_color(cx.theme().border)
-        .child(header)
-        .children(sections)
+        .bg(cx.theme().muted.opacity(0.4))
+        .font_family(cx.theme().mono_font_family.clone())
+        .text_size(OBJECT_TEXT)
+        .line_height(relative(CODE_LH))
+}
+
+/// A command, then what it printed.
+///
+/// **No `IN` and no `OUT`.** The `$` says which is which, and the rule under it
+/// says where one ends — two labels in a fixed column were four characters of
+/// chrome per section and a column taken off the widest text in the transcript.
+fn command_detail(
+    session: &Entity<ChatSession>,
+    t: &ToolItem,
+    target: TranscriptItemId,
+    command: &str,
+    output: &str,
+    box_: gpui::Div,
+    cx: &App,
+) -> gpui::Div {
+    let open = t.out_open.contains(&0);
+    let lines: Vec<&str> = output.lines().collect();
+    // **Always the tail, opened or closed.** An output says what happened at
+    // its end -- the error, the summary line, the prompt coming back -- so the
+    // collapsed preview shows the last few. Opened from the *top* instead, as
+    // this did, a two-hundred-line build jumped from its last five lines to its
+    // first sixty and dropped the rest with nothing saying so: the one part
+    // somebody opened the box to read is the part that went away.
+    let cap = match open {
+        true => MAX_MONO_LINES,
+        false => PREVIEW_OUT,
+    };
+    let hidden = lines.len().saturating_sub(cap);
+    let shown: Vec<SharedString> = lines
+        .iter()
+        .skip(hidden)
+        .map(|line| SharedString::from(line.to_string()))
+        .collect();
+    let danger = crate::theme::status_ink(cx).danger;
+
+    box_.v_flex()
+        .child(
+            div()
+                .w_full()
+                .min_w_0()
+                .h_flex()
+                .items_start()
+                .gap(TIGHT_GAP)
+                .py(STACK_GAP)
+                .px(FRAME_PAD)
+                .child(
+                    div()
+                        .flex_none()
+                        .text_color(cx.theme().muted_foreground.opacity(0.7))
+                        .child("$"),
+                )
+                .child(
+                    div()
+                        .flex_1()
+                        .min_w_0()
+                        .text_color(cx.theme().foreground)
+                        .child(command.to_string()),
+                ),
+        )
+        .children((!shown.is_empty()).then(|| {
+            div()
+                .w_full()
+                .min_w_0()
+                .border_t_1()
+                .border_color(cx.theme().border)
+                .child(
+                    div()
+                        .relative()
+                        .w_full()
+                        .min_w_0()
+                        // **Collapsed it does not scroll at all.** A preview
+                        // short enough to read whole has nothing to scroll, and
+                        // a box that scrolled anyway would be a second scroller
+                        // under the reader's finger for no reason.
+                        .child(scrolled(
+                            open,
+                            fold_key(target),
+                            div().v_flex().w_full().min_w_0().py(STACK_GAP).children(
+                                shown.into_iter().map(|line| {
+                                    // A failure names itself in what it printed,
+                                    // so the ink follows the words rather than
+                                    // the row: an error in the middle of a
+                                    // hundred quiet lines is the one somebody
+                                    // is looking for.
+                                    let bad = is_error_line(&line);
+                                    div()
+                                        .w_full()
+                                        .min_w_0()
+                                        .px(FRAME_PAD)
+                                        .text_color(match bad {
+                                            true => danger,
+                                            false => cx.theme().muted_foreground,
+                                        })
+                                        .child(line)
+                                }),
+                            ),
+                        ))
+                        // **The cut fades at the top, because the tail is what
+                        // was kept.** A command's failure is the last thing it
+                        // printed, so the preview is its end and what is hidden
+                        // is above it.
+                        .when(hidden > 0, |body| {
+                            body.child(div().absolute().top_0().left_0().right_0().h(SMOKE_OUT).bg(
+                                gpui::linear_gradient(
+                                    180.,
+                                    gpui::linear_color_stop(cx.theme().muted, 0.15),
+                                    gpui::linear_color_stop(cx.theme().muted.alpha(0.), 1.),
+                                ),
+                            ))
+                        }),
+                )
+        }))
+        .children((hidden > 0 || open).then(|| {
+            fold_pill(
+                session,
+                target,
+                // Opened, the box is still bounded -- so the control says
+                // what is *still* cut rather than claiming the whole of it is
+                // on screen.
+                match (open, hidden) {
+                    (true, 0) => "Show less".to_string(),
+                    (true, n) => format!("Show less · {n} earlier lines not shown"),
+                    (false, n) => format!("Show {n} earlier lines"),
+                },
+                open,
+                cx,
+            )
+        }))
+}
+
+/// Whether a line of output is the part somebody went looking for.
+fn is_error_line(line: &str) -> bool {
+    let lower = line.trim_start().to_ascii_lowercase();
+    ["error", "failed", "panic", "fatal", "assertion"]
+        .iter()
+        .any(|mark| lower.starts_with(mark))
+}
+
+/// Every edit the step made, one diff after another.
+fn diff_detail(
+    session: &Entity<ChatSession>,
+    t: &ToolItem,
+    target: TranscriptItemId,
+    box_: gpui::Div,
+    cx: &App,
+) -> gpui::Div {
+    let open = t.out_open.contains(&0);
+    let changed: usize = t
+        .diff_summary
+        .iter()
+        .map(|(_, plus, minus)| plus + minus)
+        .sum();
+    // **Offered rather than drawn.** A diff this size is searched and not read,
+    // and every line of it is an element in a list that is already virtualising
+    // rows for the same reason.
+    if changed > LARGE_DIFF && !open {
+        return box_.child(
+            div()
+                .w_full()
+                .min_w_0()
+                .py(STACK_GAP)
+                .px(FRAME_PAD)
+                .text_color(cx.theme().muted_foreground)
+                .child(format!("Large diff · {changed} changed lines"))
+                .child(fold_pill(session, target, "Load diff", false, cx)),
+        );
+    }
+
+    let root = session.read(cx).chat.root.clone();
+    let mut budget = MAX_DIFF_LINES;
+    let mut rows: Vec<gpui::AnyElement> = Vec::new();
+    let files = t
+        .call
+        .content
+        .iter()
+        .filter(|c| matches!(c, ToolContent::Diff { .. }))
+        .count();
+    for (key, content) in t.call.content.iter().enumerate() {
+        let ToolContent::Diff { path, .. } = content else {
+            continue;
+        };
+        // **A header only where there is more than one file**, and it is the
+        // way into the editor: reviewing a diff and wanting to touch it up is
+        // one motion, not two. With a single file the row above already names
+        // it, and a second copy an inch under the first says nothing twice.
+        if files > 1 {
+            rows.push(diff_path(session, &root, key, path, cx));
+        }
+        let hunks = t.diff_rows.get(&key).map(Vec::as_slice).unwrap_or_default();
+        rows.extend(diff_rows(hunks, &mut budget, cx));
+    }
+    let total = rows.len();
+    let shown = match open {
+        true => total,
+        false => total.min(PREVIEW_DIFF),
+    };
+    let hidden = total - shown;
+    rows.truncate(shown);
+
+    box_.child(
+        div()
+            .relative()
+            .w_full()
+            .min_w_0()
+            .child(scrolled(
+                open,
+                fold_key(target),
+                div().v_flex().w_full().min_w_0().children(rows),
+            ))
+            // The cut fades at the foot: a diff opens on its change, so what is
+            // held back is what comes after.
+            .when(hidden > 0, |body| {
+                body.child(
+                    div()
+                        .absolute()
+                        .bottom_0()
+                        .left_0()
+                        .right_0()
+                        .h(SMOKE_DIFF)
+                        .bg(gpui::linear_gradient(
+                            0.,
+                            gpui::linear_color_stop(cx.theme().muted, 0.15),
+                            gpui::linear_color_stop(cx.theme().muted.alpha(0.), 1.),
+                        )),
+                )
+            }),
+    )
+    .children((hidden > 0 || open).then(|| {
+        fold_pill(
+            session,
+            target,
+            match open {
+                true => "Show less".to_string(),
+                false => format!("Show {hidden} more lines"),
+            },
+            open,
+            cx,
+        )
+    }))
+}
+
+/// Which file the rows under it belong to, and the way into it.
+fn diff_path(
+    session: &Entity<ChatSession>,
+    root: &Path,
+    key: usize,
+    path: &str,
+    cx: &App,
+) -> gpui::AnyElement {
+    let shown = path_for_display(root, path);
+    // Resolved here, where the project root is known: the Workbench opens
+    // whatever path it is handed, and a relative one there resolves against the
+    // process working directory.
+    let full = onehand_core::editor::resolve_in_root(root, path);
+    let session = session.clone();
+    crate::controls::action(("diff-path", key))
+        .ghost()
+        .w_full()
+        .min_w_0()
+        .h_auto()
+        .py(TIGHT_GAP)
+        .px(DIFF_TEXT_PAD)
+        .rounded_none()
+        .label(shown)
+        .text_color(crate::theme::hue_ink(cx.theme().blue, cx))
+        .on_click(move |_, _, cx: &mut App| {
+            session.update(cx, |_, cx| {
+                cx.emit(super::session::ChatEvent::OpenFile(full.clone()))
+            });
+        })
         .into_any_element()
 }
 
-/// The part of a tool row after its semantic action.
-///
-/// Native file/search tools often repeat the action in both ACP's kind and its
-/// title (`Edit Edit package.json`, `Read Read src/lib.rs`). Their structured
-/// kind already lets core recover the actual subject, so use that. Execute and
-/// unknown tools keep the agent-authored description because it is commonly a
-/// useful task-level summary rather than a raw target.
-fn tool_descriptor(t: &ToolItem, root: &Path) -> String {
-    let presented = activity::presentation(t);
-    let descriptor = match t.call.kind {
-        ToolKind::Execute | ToolKind::Other => {
-            t.call.description.as_deref().unwrap_or(&t.call.title)
+/// One diff, as three columns that hold whatever the text does.
+fn diff_rows(hunks: &[DiffRow], budget: &mut usize, cx: &App) -> Vec<gpui::AnyElement> {
+    let status = crate::theme::status_ink(cx);
+    let mut out = Vec::new();
+    let mut n = 0usize;
+    for line in hunks {
+        if *budget == 0 {
+            break;
         }
-        _ if !presented.subject.trim().is_empty() => &presented.subject,
-        _ => t.call.description.as_deref().unwrap_or(&t.call.title),
-    };
-    let descriptor = if show_tool_kind(t) {
-        strip_action_prefix(descriptor, tool_label(t.call.kind))
-    } else {
-        descriptor.trim()
-    };
-    let descriptor = if matches!(
-        t.call.kind,
-        ToolKind::Edit | ToolKind::Read | ToolKind::Delete | ToolKind::Move
-    ) {
-        path_for_display(root, descriptor)
-    } else {
-        descriptor.to_string()
-    };
-    header_line(&descriptor)
+        *budget -= 1;
+        // **A skipped run is a line of its own, in the ink that means it can be
+        // opened.** Blue is the transcript's one word for "there is more behind
+        // this", and an elided run is exactly that -- left in the quiet ink it
+        // read as a remark about the file rather than as a way into it.
+        if let DiffRow::Skipped(count) = line {
+            out.push(
+                div()
+                    .w_full()
+                    .min_w_0()
+                    .px(DIFF_TEXT_PAD)
+                    .bg(crate::theme::hue_ink(cx.theme().blue, cx).alpha(0.06))
+                    .text_size(rems(0.71875))
+                    .text_color(crate::theme::hue_ink(cx.theme().blue, cx))
+                    .child(format!("{count} unchanged lines"))
+                    .into_any_element(),
+            );
+            n += count;
+            continue;
+        }
+        n += 1;
+        let (sign, ink, wash) = match line {
+            DiffRow::Added(_) => ("+", status.success, Some(status.success.alpha(0.08))),
+            DiffRow::Removed(_) => ("−", status.danger, Some(status.danger.alpha(0.08))),
+            _ => (" ", cx.theme().muted_foreground, None),
+        };
+        let text = match line {
+            DiffRow::Context(l) | DiffRow::Added(l) | DiffRow::Removed(l) => l.clone(),
+            DiffRow::Skipped(_) => unreachable!(),
+        };
+        out.push(
+            div()
+                .h_flex()
+                // **Top, not centre.** A line that wraps has to keep its number
+                // and its sign level with its *first* row, or the column down
+                // the side stops being a ruler the moment anything is long.
+                .items_start()
+                .w_full()
+                .min_w_0()
+                .when_some(wash, |row, wash| row.bg(wash))
+                .child(
+                    div()
+                        .flex_none()
+                        .w(DIFF_NUM_W)
+                        .px(DIFF_NUM_PAD)
+                        .text_right()
+                        .whitespace_nowrap()
+                        .text_color(cx.theme().muted_foreground.opacity(0.6))
+                        .child(format!("{n}")),
+                )
+                .child(
+                    div()
+                        .flex_none()
+                        .w(DIFF_SIGN_W)
+                        .text_center()
+                        .text_color(ink)
+                        .child(sign),
+                )
+                .child(
+                    div()
+                        .flex_1()
+                        .min_w_0()
+                        .pr(DIFF_TEXT_PAD)
+                        .text_color(cx.theme().foreground)
+                        .child(text),
+                )
+                .into_any_element(),
+        );
+    }
+    out
 }
 
-/// A tool header is one line even when the raw command is a heredoc or a small
-/// script. The exact newlines remain in the expandable `IN` body; the header is
-/// only its compact index entry.
-fn header_line(value: &str) -> String {
-    value
-        .lines()
-        .map(str::trim)
-        .filter(|line| !line.is_empty())
-        .collect::<Vec<_>>()
-        .join(" ")
+/// The control that opens a detail and the one that shuts it, which are one
+/// control.
+///
+/// A pill rather than a bare word: it sits *over* the fade at the cut, so it
+/// needs a plate of its own or it is read against the text it is covering.
+fn fold_pill(
+    session: &Entity<ChatSession>,
+    target: TranscriptItemId,
+    label: impl Into<SharedString>,
+    open: bool,
+    cx: &App,
+) -> gpui::Div {
+    let session = session.clone();
+    div()
+        .w_full()
+        .h_flex()
+        .justify_center()
+        // Opened, the control is outside the scrolling box and needs the rule
+        // that says so; closed, it is floating over the fade and must not draw
+        // a second edge across it.
+        .when(open, |row| row.border_t_1().border_color(cx.theme().border))
+        .py(STACK_GAP)
+        .child(
+            crate::controls::action(("detail-fold", fold_key(target)))
+                .ghost()
+                .py(PILL_PAD_Y)
+                .px(PILL_PAD_X)
+                .h_auto()
+                .rounded_full()
+                .border_1()
+                .border_color(cx.theme().border)
+                .bg(cx.theme().muted)
+                .label(label.into())
+                .on_click(move |_, _, cx: &mut App| {
+                    session.update(cx, |s, cx| {
+                        s.chat.toggle_tool_output(target, 0);
+                        cx.notify();
+                    });
+                }),
+        )
 }
 
 fn path_for_display(root: &Path, value: &str) -> String {
@@ -1013,337 +2179,6 @@ fn path_for_display(root: &Path, value: &str) -> String {
         .unwrap_or(path)
         .to_string_lossy()
         .into_owned()
-}
-
-/// A human description already names an execute step (`Dump backend routes`,
-/// `Rebuild after the fix`). Prefixing every one with `Run` adds no meaning and
-/// makes a long audit read like a command log. Raw commands keep the kind label
-/// because it is the only prose saying what that machine text is.
-fn show_tool_kind(t: &ToolItem) -> bool {
-    t.call.kind != ToolKind::Execute
-        || t.call
-            .description
-            .as_deref()
-            .is_none_or(|description| description.trim().is_empty())
-}
-
-fn is_settled(t: &ToolItem) -> bool {
-    matches!(t.call.status, ToolStatus::Completed | ToolStatus::Failed)
-}
-
-fn strip_action_prefix<'a>(value: &'a str, action: &str) -> &'a str {
-    let value = value.trim();
-    let Some(head) = value.get(..action.len()) else {
-        return value;
-    };
-    let Some(rest) = value.get(action.len()..) else {
-        return value;
-    };
-    if head.eq_ignore_ascii_case(action)
-        && rest
-            .chars()
-            .next()
-            .is_some_and(|c| c.is_whitespace() || matches!(c, ':' | '—' | '-'))
-    {
-        rest.trim_start_matches(|c: char| c.is_whitespace() || matches!(c, ':' | '—' | '-'))
-    } else {
-        value
-    }
-}
-
-/// One `IN` / `OUT` / `EDIT` body section.
-fn section(
-    session: &Entity<ChatSession>,
-    t: &ToolItem,
-    target: TranscriptItemId,
-    key: usize,
-    content: &ToolContent,
-    diff_budget: &mut usize,
-    cx: &App,
-) -> gpui::AnyElement {
-    match content {
-        ToolContent::Text(text) => {
-            labeled("OUT", out_well(session, t, target, key, text, cx), cx).into_any_element()
-        }
-        ToolContent::Diff { path, .. } => labeled(
-            "EDIT",
-            diff(
-                session,
-                key,
-                path,
-                t.diff_rows.get(&key).map(Vec::as_slice).unwrap_or_default(),
-                diff_budget,
-                cx,
-            ),
-            cx,
-        )
-        .into_any_element(),
-        ToolContent::Terminal(id) => {
-            // The live stream for this terminal, if it is still running; a
-            // finished one has already been flattened into a `Text` section by
-            // the model at turn end.
-            let view = session.read(cx).chat.terminals.get(id);
-            // Borrowed, not cloned: the buffer runs to tens of kilobytes and
-            // only its last few lines are ever drawn, so copying it whole is
-            // the whole output copied per redraw to read the tail of it.
-            let body = view.map(|v| v.output.as_str()).unwrap_or_default();
-            let exit = view.and_then(|v| v.exited.then_some(v.exit_code));
-            labeled(
-                "OUT",
-                div()
-                    .v_flex()
-                    .gap_1()
-                    .child(mono_well(body, MAX_TERM_LINES, cx))
-                    .when_some(exit, |well, code| {
-                        let code = code.unwrap_or(0);
-                        well.child(
-                            div()
-                                .text_xs()
-                                .text_color(if code == 0 {
-                                    crate::theme::status_ink(cx).success
-                                } else {
-                                    crate::theme::status_ink(cx).danger
-                                })
-                                .child(format!("exited ({code})")),
-                        )
-                    }),
-                cx,
-            )
-            .into_any_element()
-        }
-        // An image result, shown inline rather than described.
-        ToolContent::Image(bytes) => labeled(
-            "OUT",
-            match session.read(cx).image(bytes) {
-                Some(handle) => gpui::img(handle)
-                    .max_w_full()
-                    .rounded(cx.theme().radius)
-                    .into_any_element(),
-                // Unidentifiable bytes: say so rather than draw a broken frame.
-                None => div()
-                    .text_xs()
-                    .text_color(cx.theme().muted_foreground)
-                    .child(format!("[unrecognized image, {} bytes]", bytes.len()))
-                    .into_any_element(),
-            },
-            cx,
-        )
-        .into_any_element(),
-    }
-}
-
-/// A gutter tag plus its body: a fixed-width column naming what the section is
-/// (`IN`, `OUT`, `EDIT`, `ERR`) beside the content itself, so a card holding
-/// several kinds of output reads as one table rather than as stacked blocks.
-fn labeled<E: IntoElement>(tag: &'static str, body: E, cx: &App) -> impl IntoElement + use<E> {
-    div()
-        .h_flex()
-        .items_start()
-        .gap_2()
-        .w_full()
-        .child(
-            div()
-                .w(SECTION_TAG_W)
-                .flex_none()
-                .text_xs()
-                .text_color(cx.theme().muted_foreground)
-                .child(tag),
-        )
-        .child(div().flex_1().min_w_0().child(body))
-}
-
-/// A tool's text output: the tail, short by default, opened on request.
-///
-/// **Two bounds, and they answer different questions.** The fold is about
-/// reading — twelve lines of a build log is enough to see what happened, and a
-/// card that pours sixty lines into the transcript buries the answer that
-/// follows it. The hard cap is about the frame: every line is an element, so
-/// the well cannot be allowed to draw whatever the agent happened to `cat`.
-/// Opening a well lifts the first bound and never the second, and what is
-/// still cut is said on screen.
-///
-/// The fold state is the model's, keyed by this section's index within the
-/// card (`ToolItem::out_open`), so it survives the turn's later updates and
-/// the archive.
-fn out_well(
-    session: &Entity<ChatSession>,
-    t: &ToolItem,
-    target: TranscriptItemId,
-    key: usize,
-    blob: &str,
-    cx: &App,
-) -> impl IntoElement + use<> {
-    let open = t.out_open.contains(&key);
-    let cap = if open {
-        MAX_MONO_LINES
-    } else {
-        MONO_FOLD_LINES
-    };
-    let (tail, hidden) = tail_lines(blob, cap);
-
-    div()
-        .v_flex()
-        .gap_1()
-        .w_full()
-        .child(mono_lines(tail, hidden, cx))
-        // Nothing to reveal and nothing revealed: no control. A "Show 0 more"
-        // is a button that has to be clicked to learn it does nothing.
-        .when(hidden > 0 || open, |well| {
-            well.child(
-                // Spelled out rather than folded into one number: an id built
-                // by arithmetic on two indices is an id that collides the day
-                // one of them grows past whatever multiplier was assumed.
-                crate::controls::action(SharedString::from(format!(
-                    "out-fold-{}-{key}",
-                    fold_key(target)
-                )))
-                .ghost()
-                .xsmall()
-                .label(if open {
-                    "Show less".to_string()
-                } else {
-                    format!("Show {hidden} more line(s)")
-                })
-                .on_click({
-                    let session = session.clone();
-                    move |_, _, cx: &mut App| {
-                        session.update(cx, |s, cx| {
-                            s.chat.toggle_tool_output(target, key);
-                            cx.notify();
-                        });
-                    }
-                }),
-            )
-        })
-}
-
-/// The last `cap` lines of `blob`, and how many were left off the front.
-///
-/// **One pass.** Both answers come from the same walk, and the walk is over
-/// whatever the agent happened to `cat` — a blob big enough for the count to
-/// cost is exactly one big enough that counting it twice per redraw is felt.
-fn tail_lines(blob: &str, cap: usize) -> (Vec<SharedString>, usize) {
-    let mut tail: std::collections::VecDeque<&str> = std::collections::VecDeque::new();
-    let mut hidden = 0usize;
-    for line in blob.lines() {
-        tail.push_back(line);
-        if tail.len() > cap {
-            tail.pop_front();
-            hidden += 1;
-        }
-    }
-    (
-        tail.into_iter()
-            .map(|l| SharedString::from(l.to_string()))
-            .collect(),
-        hidden,
-    )
-}
-
-/// Mono text, one row per line, capped. The tail is *reported*, never silently
-/// dropped — a truncated well that looks complete is worse than a short one.
-fn mono_well(blob: &str, cap: usize, cx: &App) -> impl IntoElement + use<> {
-    let (lines, hidden) = tail_lines(blob, cap);
-    mono_lines(lines, hidden, cx)
-}
-
-/// The well itself, once the lines to draw are known.
-fn mono_lines(lines: Vec<SharedString>, hidden: usize, cx: &App) -> impl IntoElement + use<> {
-    well(cx)
-        .v_flex()
-        .when(hidden > 0, |well| {
-            well.child(
-                div()
-                    .text_color(cx.theme().muted_foreground)
-                    .child(format!("… {hidden} earlier line(s) hidden")),
-            )
-        })
-        .children(lines.into_iter().map(|l| div().child(l)))
-}
-
-/// A unified diff. `budget` is shared across every hunk of one card.
-///
-/// `hunks` are the ones core computed when the edit landed — ACP sends whole
-/// files with no hunk offsets, so rendering the payload literally spent the
-/// budget on the unchanged head of the file before ever reaching the edit.
-///
-/// `key` distinguishes this section from the card's others for GPUI's element
-/// ids; it is the section's index, which is unique within the one parent that
-/// scopes them.
-fn diff(
-    session: &Entity<ChatSession>,
-    key: usize,
-    path: &str,
-    hunks: &[DiffRow],
-    budget: &mut usize,
-    cx: &App,
-) -> impl IntoElement + use<> {
-    let status = crate::theme::status_ink(cx);
-    let (removed, added) = (status.danger, status.success);
-    let context = cx.theme().muted_foreground;
-    let display_path = path_for_display(&session.read(cx).chat.root, path);
-    let mut rows = Vec::new();
-
-    let mut push = |sign: &'static str, line: &str, color: gpui::Hsla, rows: &mut Vec<_>| {
-        if *budget == 0 {
-            return;
-        }
-        *budget -= 1;
-        rows.push(
-            div()
-                .text_color(color)
-                .child(format!("{sign}{line}"))
-                .into_any_element(),
-        );
-    };
-
-    for line in hunks {
-        match line {
-            DiffRow::Context(l) => push(" ", l, context, &mut rows),
-            DiffRow::Removed(l) => push("-", l, removed, &mut rows),
-            DiffRow::Added(l) => push("+", l, added, &mut rows),
-            // The elided run is stated, not dropped: an unmarked gap reads as
-            // adjacent lines and hides that the file is longer than the card.
-            DiffRow::Skipped(n) => push("", &format!("… {n} unchanged"), context, &mut rows),
-        }
-    }
-
-    well(cx)
-        .v_flex()
-        .child(
-            // The path header is the way into the editor: reviewing a diff and
-            // wanting to touch it up is one motion, not two.
-            crate::controls::action(("diff-path", key))
-                .link()
-                .compact()
-                // Keyed by the section's position in the card, not by the
-                // path's *length* -- two diffs whose paths happened to be the
-                // same number of characters shared one id.
-                .text_color(context)
-                .label(display_path)
-                .on_click({
-                    // Resolved here, where the session -- and so the project
-                    // root -- is known. The Workbench opens whatever path it is
-                    // handed, and a relative one there resolves against the
-                    // process working directory.
-                    let path =
-                        onehand_core::editor::resolve_in_root(&session.read(cx).chat.root, path);
-                    let session = session.clone();
-                    move |_, _, cx: &mut App| {
-                        session.update(cx, |_, cx| {
-                            cx.emit(super::session::ChatEvent::OpenFile(path.clone()))
-                        });
-                    }
-                }),
-        )
-        .children(rows)
-        .when(*budget == 0, |well| {
-            well.child(
-                div()
-                    .text_color(context)
-                    .child(format!("… diff truncated at {MAX_DIFF_LINES} lines")),
-            )
-        })
 }
 
 // ── plan / TodoWrite ────────────────────────────────────────────────────────
@@ -1375,36 +2210,54 @@ fn plan(
             // Pending draws a dot rather than an icon: there is no glyph for
             // "not started" that is not just noise, and the row still needs to
             // occupy the marker column so the contents stay aligned.
-            let (mark, color) = match entry.status {
-                PlanStatus::Completed => {
-                    (Some(IconName::Check), crate::theme::status_ink(cx).success)
-                }
-                PlanStatus::InProgress => (
-                    Some(IconName::Calendar),
-                    crate::theme::status_ink(cx).warning,
-                ),
-                PlanStatus::Pending => (None, cx.theme().muted_foreground),
+            // **The box never changes size, only what is in it.** A plan is
+            // worked through while it is on screen, so an entry moving from
+            // pending to running to done is the one thing here guaranteed to
+            // happen under the reader's eye — and a marker that grew or shrank
+            // as it changed would reflow every line beneath it each time.
+            let ink = match entry.status {
+                PlanStatus::Completed => crate::theme::status_ink(cx).success,
+                PlanStatus::InProgress => crate::theme::status_ink(cx).warning,
+                PlanStatus::Pending => cx.theme().muted_foreground,
             };
             div()
                 .h_flex()
-                .gap_2()
+                .items_center()
+                .gap(PART_GAP)
+                .w_full()
+                .min_w_0()
+                .h(BUTTON_H)
                 .child(
                     div()
                         .flex_none()
-                        .w_4()
+                        .size(PLAN_BOX)
                         .h_flex()
                         .items_center()
                         .justify_center()
-                        .text_color(color)
-                        .map(|slot| match mark {
-                            Some(icon) => slot.child(Icon::new(icon).size_3()),
-                            None => slot.child(div().size(PLAN_DOT).rounded_full().bg(color)),
+                        .rounded(radius_tag(cx))
+                        .border_1()
+                        .border_color(ink)
+                        .text_color(ink)
+                        .map(|box_| match entry.status {
+                            PlanStatus::Completed => {
+                                box_.child(Icon::new(IconName::Check).size_3())
+                            }
+                            // Running is the border alone, because a second
+                            // glyph in this column would have to be learned
+                            // before the column could be read at all.
+                            PlanStatus::InProgress => box_,
+                            // A dot rather than an empty box: nothing at all
+                            // reads as a box that failed to draw its tick.
+                            PlanStatus::Pending => {
+                                box_.child(div().size(PLAN_DOT).rounded_full().bg(ink))
+                            }
                         }),
                 )
                 .child(
                     div()
                         .flex_1()
                         .min_w_0()
+                        .truncate()
                         // A struck-through line is finished work: the eye skips
                         // it and lands on what is left, which is the only part
                         // of a plan anyone is reading it for.
@@ -1421,17 +2274,23 @@ fn plan(
     } else {
         0
     };
+    let total = p.entries.len().max(1);
     // The header and checklist are separate regions of the card. The list is
     // intentionally denser inside itself, but it must not pull its first row
     // closer to the title than a tool card pulls detail to its header.
     let body = (!rows.is_empty() || hidden > 0).then(|| {
         div()
             .v_flex()
-            .gap_1()
+            .w_full()
+            .min_w_0()
+            .pt(PART_GAP)
             .children(rows)
             .when(hidden > 0, |list| {
                 list.child(
                     div()
+                        .h(BUTTON_H)
+                        .h_flex()
+                        .items_center()
                         .text_xs()
                         .text_color(cx.theme().muted_foreground)
                         .child(format!("+{hidden} more")),
@@ -1441,10 +2300,11 @@ fn plan(
 
     div()
         .v_flex()
-        .gap_2()
         .w_full()
-        .p_3()
-        .rounded(cx.theme().radius)
+        .min_w_0()
+        .py(FRAME_PAD)
+        .px(TEXT_PAD_X)
+        .rounded(radius_block(cx))
         .border_1()
         .border_color(cx.theme().border)
         // A checklist is the agent's working notes, drawn at the size the rest
@@ -1456,6 +2316,8 @@ fn plan(
             crate::controls::action(("plan", fold_key(target)))
                 .ghost()
                 .w_full()
+                .min_w_0()
+                .h(LINE_H)
                 .p_0()
                 .on_click({
                     let session = session.clone();
@@ -1466,23 +2328,52 @@ fn plan(
                         });
                     }
                 })
-                .icon(Icon::new(IconName::CircleCheck))
-                .label("Plan")
-                // Collapsed, the header is the whole card, so it has to say
-                // what the list said: how much of it is done.
                 .child(
                     div()
-                        .flex_1()
+                        .h_flex()
+                        .items_center()
+                        .gap(PART_GAP)
+                        .w_full()
                         .min_w_0()
-                        .text_xs()
-                        .text_color(cx.theme().muted_foreground)
-                        .child(format!("{done}/{} done", p.entries.len())),
-                )
-                .child(Icon::new(if open {
-                    IconName::ChevronDown
-                } else {
-                    IconName::ChevronRight
-                })),
+                        .child(chevron_slot(Some(open), cx))
+                        .child(
+                            div()
+                                .flex_none()
+                                .font_semibold()
+                                .text_color(cx.theme().foreground)
+                                .child("Plan"),
+                        )
+                        .child(div().flex_1())
+                        // Collapsed, the header is the whole card, so it has to
+                        // say what the list said: how much of it is done.
+                        .child(
+                            div()
+                                .flex_none()
+                                .text_xs()
+                                .text_color(cx.theme().muted_foreground)
+                                .child(format!("{done}/{}", p.entries.len())),
+                        ),
+                ),
+        )
+        // **The same count as a length.** The figure beside the title is exact
+        // and is read a digit at a time; this is the one that answers "nearly
+        // done or barely started" without being read at all. A rule's weight
+        // rather than a control's, because it is not one — nothing here can be
+        // dragged, and a bar thick enough to look draggable says it can.
+        .child(
+            div()
+                .w_full()
+                .h(PLAN_BAR_H)
+                .mt(STACK_GAP)
+                .rounded_full()
+                .bg(cx.theme().border)
+                .child(
+                    div()
+                        .h_full()
+                        .w(relative(done as f32 / total as f32))
+                        .rounded_full()
+                        .bg(crate::theme::status_ink(cx).success),
+                ),
         )
         .children(body)
 }
@@ -1687,7 +2578,7 @@ impl RenderOnce for CommandBlock {
         // fold is holding back, or a box scrolled somewhere above its own end.
         let more_below = folded || scroll.max_offset().y - scroll.offset().y.abs() > gpui::px(1.);
 
-        well(cx)
+        plain_box(cx)
             .relative()
             .rounded(cx.theme().radius)
             .border_1()
@@ -1881,6 +2772,258 @@ fn command_cwd(root: &Path) -> Option<(SharedString, SharedString)> {
 /// Characters of the working directory the meta line carries.
 const MAX_CWD: usize = 48;
 
+// ── the record a settled exchange leaves ────────────────────────────────────
+//
+// **What is left of a question or a grant once it is answered is one line.**
+// While either is waiting it is the block everything stops for, and it is not
+// drawn here at all -- it is pinned above the composer, where the answer is
+// given. Afterwards there is nothing left to decide, and what the transcript
+// owes a reader is the fact: the agent asked this, the user said that.
+//
+// Drawn as a card it was the loudest thing in the conversation for the rest of
+// the conversation's life -- a heading, a rule, a body, a footer and a shadow,
+// repeated per exchange, so three questions in a row cost most of a screen to
+// say three sentences. As rows they join the block of steps around them, which
+// is also where they belong: answering a question is one of the things that
+// happened during that piece of work.
+
+/// The settled record of a grant.
+fn permission_record(
+    session: &Entity<ChatSession>,
+    p: &PermItem,
+    choice: &str,
+    target: TranscriptItemId,
+    cx: &App,
+) -> gpui::AnyElement {
+    let denied = p
+        .req
+        .options
+        .iter()
+        .find(|option| option.name == choice)
+        .is_some_and(|option| option.weight() == PermissionWeight::Deny);
+    let status = crate::theme::status_ink(cx);
+    let toggle = {
+        let session = session.clone();
+        move |_: &ClickEvent, _: &mut Window, cx: &mut App| {
+            session.update(cx, |s, cx| {
+                s.chat.toggle_permission(target);
+                cx.notify();
+            });
+        }
+    };
+
+    let row = ActivityRow::new(
+        ("perm-record", fold_key(target)).into(),
+        // A refusal is not a failure -- nothing went wrong, somebody decided
+        // -- so it is not the danger cross a failed step carries. It is the
+        // struck-out words and the pill that say what happened.
+        match denied {
+            true => RowMark::Refused,
+            false => RowMark::Done,
+        },
+        user_icon(),
+        match denied {
+            true => "Denied",
+            false => "Allowed",
+        },
+    )
+    .object(Some(Object::plain(activity::first_line_trunc(
+        p.command(),
+        160,
+    ))))
+    .meta(Some(
+        pill(
+            choice.to_string(),
+            match denied {
+                true => status.danger,
+                false => cx.theme().muted_foreground,
+            },
+            cx,
+        )
+        .into_any_element(),
+    ))
+    .fold(Some(p.expanded));
+    let mut row = row;
+    row.struck = denied;
+
+    div()
+        .v_flex()
+        .w_full()
+        .min_w_0()
+        .child(activity_row(row, toggle, cx))
+        .when(p.expanded, |block| {
+            // The whole command and where it would have run: the two facts the
+            // row cut down to one line, in the one place that has room for
+            // them.
+            block.child(detail_well(
+                plain_box(cx)
+                    .v_flex()
+                    .child(
+                        div()
+                            .w_full()
+                            .min_w_0()
+                            .py(STACK_GAP)
+                            .px(FRAME_PAD)
+                            .text_color(cx.theme().foreground)
+                            .child(onehand_core::chat::redact(p.command())),
+                    )
+                    .children(command_cwd(&session.read(cx).chat.root).map(|(shown, _)| {
+                        div()
+                            .w_full()
+                            .min_w_0()
+                            .border_t_1()
+                            .border_color(cx.theme().border)
+                            .py(STACK_GAP)
+                            .px(FRAME_PAD)
+                            .text_color(cx.theme().muted_foreground)
+                            .child(format!("in {shown}"))
+                    })),
+            ))
+        })
+        .into_any_element()
+}
+
+/// The settled record of a question.
+fn ask_record(
+    session: &Entity<ChatSession>,
+    a: &AskItem,
+    answer: &str,
+    target: TranscriptItemId,
+    cx: &App,
+) -> gpui::AnyElement {
+    let pairs = ask_pairs(a);
+    // One question is already said whole by the row; several are a list worth
+    // opening, and the count is what says there is one.
+    let many = pairs.len() > 1;
+    let toggle = {
+        let session = session.clone();
+        move |_: &ClickEvent, _: &mut Window, cx: &mut App| {
+            session.update(cx, |s, cx| {
+                s.chat.toggle_ask(target);
+                cx.notify();
+            });
+        }
+    };
+
+    let row = ActivityRow::new(
+        ("ask-record", fold_key(target)).into(),
+        RowMark::Done,
+        user_icon(),
+        "Asked",
+    )
+    .object(Some(Object::plain(match many {
+        // The prompt that introduced the form, with the answers in the
+        // column beside it -- a strip of question titles would be the
+        // form's own chrome rather than what came of it.
+        true => a.req.message.to_string(),
+        false => pairs
+            .first()
+            .map(|(question, _)| question.to_string())
+            .unwrap_or_else(|| a.req.message.to_string()),
+    })))
+    .meta(Some(match many {
+        true => pill(
+            format!("{} answers", pairs.len()),
+            cx.theme().muted_foreground,
+            cx,
+        )
+        .into_any_element(),
+        false => pill(answer.to_string(), cx.theme().muted_foreground, cx).into_any_element(),
+    }))
+    .fold(many.then_some(a.expanded));
+
+    div()
+        .v_flex()
+        .w_full()
+        .min_w_0()
+        .child(activity_row(row, toggle, cx))
+        .when(many && a.expanded, |block| {
+            block.child(detail_well(
+                div()
+                    .v_flex()
+                    .w_full()
+                    .min_w_0()
+                    // **No rules between the pairs.** They are one answer given
+                    // in several parts, not several records -- ruled apart they
+                    // read as separate exchanges with the agent, which is the
+                    // one thing a form is not.
+                    .children(pairs.into_iter().map(|(question, chosen)| {
+                        div()
+                            .h_flex()
+                            .items_center()
+                            .justify_between()
+                            .gap(PART_GAP)
+                            .w_full()
+                            .min_w_0()
+                            .h(BUTTON_H)
+                            .child(
+                                div()
+                                    .flex_1()
+                                    .min_w_0()
+                                    .truncate()
+                                    .text_color(cx.theme().muted_foreground)
+                                    .child(question),
+                            )
+                            .child(div().flex_none().max_w(relative(0.5)).child(pill(
+                                chosen,
+                                cx.theme().foreground,
+                                cx,
+                            )))
+                    })),
+            ))
+        })
+        .into_any_element()
+}
+
+/// Each question of a settled form paired with what was chosen for it.
+///
+/// A typed answer and a picked one come back the same shape, because from the
+/// far side of the exchange they are the same thing: what the user said. Which
+/// of the two it was is carried by weight, not by a different control.
+fn ask_pairs(a: &AskItem) -> Vec<(SharedString, SharedString)> {
+    a.req
+        .fields
+        .iter()
+        .enumerate()
+        .map(|(f, field)| {
+            let question = field
+                .title
+                .clone()
+                .or_else(|| field.description.clone())
+                .unwrap_or_else(|| format!("Question {}", f + 1));
+            let typed = a.custom.get(f).map(String::as_str).unwrap_or("").trim();
+            let chosen = match typed.is_empty() {
+                false => typed.to_string(),
+                true => {
+                    let picks = a.picked.get(f).cloned().unwrap_or_default();
+                    let choices = match &field.kind {
+                        ElicitKind::Select(c) | ElicitKind::MultiSelect(c) => c.as_slice(),
+                        ElicitKind::Text => &[],
+                    };
+                    picks
+                        .iter()
+                        .filter_map(|&i| choices.get(i).map(|c| c.label.to_string()))
+                        .collect::<Vec<_>>()
+                        .join(" · ")
+                }
+            };
+            (
+                SharedString::from(question),
+                SharedString::from(match chosen.is_empty() {
+                    true => "skipped".to_string(),
+                    false => chosen,
+                }),
+            )
+        })
+        .collect()
+}
+
+/// The mark on a row that is about the person rather than the agent.
+fn user_icon() -> SharedString {
+    use gpui_component::IconNamed as _;
+    IconName::User.path()
+}
+
 pub(super) fn permission(
     session: &Entity<ChatSession>,
     p: &PermItem,
@@ -1888,6 +3031,9 @@ pub(super) fn permission(
     well: Option<gpui::Pixels>,
     cx: &App,
 ) -> impl IntoElement + use<> {
+    if let Some(choice) = p.resolved.as_deref() {
+        return permission_record(session, p, choice, target, cx);
+    }
     let idx = live_index(target);
     let (shown, hidden) = p.shown_lines();
     let block = CommandBlock {
@@ -1991,28 +3137,12 @@ pub(super) fn permission(
                         .tooltip(move |window, cx| Tooltip::new(full.clone()).build(window, cx))
                 })),
         )
-        .map(|card| match (&p.resolved, idx) {
-            // Resolved, or living in read-only history where no rpc id is
-            // answerable: what is drawn is the record of what was decided, not
-            // controls that could still decide it.
-            (Some(choice), _) => card
-                .child(div().w_full().h_px().bg(cx.theme().border))
-                .child(
-                    div()
-                        .h_flex()
-                        .items_center()
-                        .gap_1p5()
-                        .w_full()
-                        .px_4()
-                        .py_2()
-                        .text_xs()
-                        .text_color(cx.theme().muted_foreground)
-                        .child(Icon::new(IconName::Check).size_3())
-                        .child(choice.clone()),
-                )
-                .into_any_element(),
-            (None, None) => card.into_any_element(),
-            (None, Some(idx)) => permission_keys(
+        // A card replayed from the archive carries an rpc id no running adapter
+        // issued: showing controls would invite an answer nobody is waiting
+        // for. An answered one never reaches here -- it is a row.
+        .map(|card| match idx {
+            None => card.into_any_element(),
+            Some(idx) => permission_keys(
                 card.child(permission_footer(session, p, idx, cx)),
                 session,
                 p,
@@ -2020,6 +3150,7 @@ pub(super) fn permission(
                 cx,
             ),
         })
+        .into_any_element()
 }
 
 /// Enter allows once, Esc denies — and only while the card holds the caret.
@@ -2205,8 +3336,11 @@ pub(super) fn ask(
     target: TranscriptItemId,
     cx: &App,
 ) -> impl IntoElement + use<> {
+    if let Some(answer) = a.resolved.as_deref() {
+        return ask_record(session, a, answer, target, cx);
+    }
     let idx = live_index(target);
-    let live = idx.is_some() && a.resolved.is_none();
+    let live = idx.is_some();
     let counter = (live && a.req.fields.len() > 1).then(|| {
         format!(
             "Question {} of {}",
@@ -2259,26 +3393,12 @@ pub(super) fn ask(
                         .child(line)
                 })),
         )
-        .map(|card| match (&a.resolved, idx) {
-            (Some(answer), _) => card
-                .child(
-                    div()
-                        .h_flex()
-                        .items_center()
-                        .gap_1p5()
-                        .px_4()
-                        .py_2()
-                        .text_xs()
-                        .text_color(cx.theme().muted_foreground)
-                        .child(Icon::new(IconName::Check).size_3())
-                        .child(answer.clone()),
-                )
-                .into_any_element(),
-            // A question replayed from the archive carries an rpc id no running
-            // adapter issued: showing controls would invite an answer nobody
-            // is waiting for.
-            (None, None) => card.into_any_element(),
-            (None, Some(idx)) => ask_form(card, session, a, target, idx, cx),
+        // A question replayed from the archive carries an rpc id no running
+        // adapter issued: showing controls would invite an answer nobody is
+        // waiting for. An answered one never reaches here -- it is a row.
+        .map(|card| match idx {
+            None => card.into_any_element(),
+            Some(idx) => ask_form(card, session, a, target, idx, cx),
         })
 }
 
@@ -3091,31 +4211,51 @@ fn ask_form(
 /// what stops it reading as one more line of the answer without claiming to be
 /// quoted output.
 fn notice(text: &str, level: NoticeLevel, cx: &App) -> impl IntoElement + use<> {
-    let error = level == NoticeLevel::Error;
+    if level != NoticeLevel::Error {
+        // **A line down the middle of the column, with nothing around it.** A
+        // remark is the transcript speaking about itself rather than either
+        // side speaking, and the centre is the one lane neither of them uses —
+        // so it needs no box, no rule and no mark to be told apart from the
+        // conversation running past it.
+        return div()
+            .h_flex()
+            .items_center()
+            .justify_center()
+            .w_full()
+            .h(LINE_H)
+            .text_xs()
+            .text_color(cx.theme().muted_foreground)
+            .child(div().min_w_0().truncate().child(text.to_string()))
+            .into_any_element();
+    }
+
+    // A failure is a banner: the full width of the column, its own edge, and
+    // the mark anchored to the first line so a message that wraps to three
+    // lines does not carry the icon down the middle of itself.
     div()
         .h_flex()
         .items_start()
-        .gap_2()
+        .gap(TEXT_PAD_Y)
         .w_full()
-        .when(error, |row| {
-            row.p_2()
-                .rounded(cx.theme().radius)
-                .bg(cx.theme().danger.opacity(0.1))
-        })
-        .when(!error, |row| row.text_xs())
-        .text_color(if error {
-            crate::theme::status_ink(cx).danger
-        } else {
-            cx.theme().muted_foreground
-        })
-        .when(error, |row| {
-            row.child(
-                div()
-                    .flex_none()
-                    .child(Icon::new(IconName::TriangleAlert).size_4()),
-            )
-        })
+        .min_w_0()
+        .py(PART_GAP)
+        .px(FRAME_PAD)
+        .rounded(radius_block(cx))
+        .border_1()
+        .border_color(crate::theme::status_ink(cx).danger)
+        .bg(cx.theme().danger.opacity(0.1))
+        .text_color(crate::theme::status_ink(cx).danger)
+        .child(
+            div()
+                .size(MARK_SLOT)
+                .flex_none()
+                .h_flex()
+                .items_center()
+                .justify_center()
+                .child(Icon::new(IconName::TriangleAlert).size(MARK_SIZE)),
+        )
         .child(div().flex_1().min_w_0().child(text.to_string()))
+        .into_any_element()
 }
 
 // ── activity strip ──────────────────────────────────────────────────────────
@@ -3129,77 +4269,674 @@ fn notice(text: &str, level: NoticeLevel, cx: &App) -> impl IntoElement + use<> 
 pub fn runs(items: &[(TranscriptItemId, &ChatItem)]) -> Vec<Run> {
     let mut out: Vec<Run> = Vec::new();
     for &(target, item) in items {
-        let group = fold_group(item);
-        match (group, out.last_mut()) {
-            // Same coarse section as the run being built: extend it.
-            (Some(g), Some(Run::Activity { group, members })) if *group == g => {
-                members.push(target);
-            }
-            (Some(g), _) => out.push(Run::Activity {
-                group: g,
+        match (is_activity(item), out.last_mut()) {
+            // Still the same stretch of work: extend it.
+            (true, Some(Run::Activity { members })) => members.push(target),
+            (true, _) => out.push(Run::Activity {
                 members: vec![target],
             }),
-            (None, _) => out.push(Run::Single(target)),
-        }
-    }
-    // A run of one is just that item; folding it would hide a row and save
-    // nothing.
-    for run in &mut out {
-        if let Run::Activity { members, .. } = run
-            && members.len() < MIN_ACTIVITY_RUN
-        {
-            *run = Run::Single(members[0]);
+            (false, _) => out.push(Run::Single(target)),
         }
     }
     out
 }
 
-/// Only settled work may collapse into history. Pending and running tools
-/// remain standalone cards; completed and failed tools are both terminal
-/// records. A thought joins history only after its timer has settled.
-fn fold_group(item: &ChatItem) -> Option<activity::ActivityGroup> {
+/// Whether an item is part of what the agent *did* rather than what it said.
+///
+/// **Every status, and no kind boundary.** What a cluster is bounded by is the
+/// agent's own words: everything between two paragraphs is one thing it did
+/// between saying two things, however many kinds of work that took and whatever
+/// state each is in. Splitting on the kind instead gave three reads and a
+/// command two headers with nothing between them, which is two claims about one
+/// stretch of work; splitting on the status put a running step outside the
+/// cluster it belonged to and left it there once it finished.
+///
+/// A settled question and a settled grant are in it too. While either is
+/// waiting it is pinned above the composer and not in the transcript at all;
+/// what is left afterwards is a record of one exchange, which is one line of
+/// the same list a step is a line of.
+fn is_activity(item: &ChatItem) -> bool {
     match item {
-        ChatItem::Tool(tool) if is_settled(tool) => activity::group(item),
-        ChatItem::Thought(thought) if thought.elapsed_secs.is_some() => activity::group(item),
+        ChatItem::Tool(_) | ChatItem::Thought(_) => true,
+        ChatItem::Permission(p) => p.resolved.is_some(),
+        ChatItem::Ask(a) => a.resolved.is_some(),
+        _ => false,
+    }
+}
+
+/// The kind a stretch of one cluster's members shares, for the rows drawn
+/// inside the opened frame.
+///
+/// The cluster's own line no longer needs this — it names kinds of work in its
+/// sentence and carries the *status* in its mark — but the frame under it is
+/// still a list grouped by what the work was.
+/// The kind a run of adjacent members shares, for the rows the frame lists —
+/// and `None` for a step that stands on its own whatever is beside it.
+///
+/// **Only reads merge.** Three files looked at in a row are one thing the agent
+/// did, and `Read 3 files` opening into the three paths is what a reader wants
+/// of them. Two edits are not: each carries its own diff, which is the thing
+/// somebody opened the block to see, and folding them behind one row puts the
+/// diff two clicks away to save a line. The same goes for two commands, whose
+/// output is the point of each.
+pub fn section_group(item: &ChatItem) -> Option<activity::ActivityGroup> {
+    match item {
+        ChatItem::Tool(tool)
+            if activity::presentation(tool).kind == activity::ActivityKind::Inspect =>
+        {
+            activity::group(item)
+        }
         _ => None,
     }
 }
 
 pub enum Run {
     Single(TranscriptItemId),
+    /// Every adjacent activity between two of the agent's paragraphs, which is
+    /// one cluster and draws one muted line.
     Activity {
-        group: activity::ActivityGroup,
         members: Vec<TranscriptItemId>,
     },
 }
 
-/// The collapsed header for a run of quiet steps.
-pub fn activity_strip(
-    group: activity::ActivityGroup,
-    summary: String,
+/// A cluster of activity, drawn as one muted line that opens into a frame.
+///
+/// **The line is the whole of what the transcript shows by default.** Everything
+/// the agent did between two of its own paragraphs is one thing it did, and a
+/// reader skimming wants one answer about it — what sort of work, and did
+/// anything break. That fits in a sentence, and a sentence needs no border, no
+/// fill and no rule: it sits on the reading surface at the same left edge as
+/// the prose either side of it, in the ink a marginal note is set in.
+///
+/// **The frame only exists once it is asked for.** Drawn always, it was a box
+/// the height of a paragraph standing between two paragraphs, for steps nobody
+/// had asked to see — the detail claiming the space of the answer. Opened, it
+/// is the investigation, and then it can have every edge it needs.
+pub fn cluster(
+    plan: &super::viewport::ActivityPlan,
+    open: bool,
+    on_click: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static,
+    id: gpui::ElementId,
+    body: Vec<gpui::AnyElement>,
+    cx: &App,
+) -> gpui::AnyElement {
+    div()
+        .v_flex()
+        // **The line shrinks to its sentence, and this is what lets it.** A
+        // column flex stretches its children across by default, and the line is
+        // a library `Button` -- which centres its own content and offers no way
+        // out of it. Stretched, the sentence came out down the middle of the
+        // column with the prose above and below it starting at the left edge,
+        // which reads as a caption for the paragraph rather than as a note
+        // beside it. The frame below is unaffected: it asks for the full width
+        // itself.
+        .items_start()
+        .w_full()
+        .min_w_0()
+        .gap(STACK_GAP)
+        .child(cluster_line(plan, open, on_click, id, cx))
+        .when(open, |cluster| {
+            cluster.child(
+                div()
+                    .v_flex()
+                    .w_full()
+                    .min_w_0()
+                    .rounded(radius_block(cx))
+                    .border_1()
+                    .border_color(cx.theme().border)
+                    // **The edge and nothing else.** A fill would make this a
+                    // second surface inside the reading one, which is a slab of
+                    // another colour standing between two paragraphs for as
+                    // long as it is open -- and it is not needed: the border
+                    // already says where the detail begins and ends, and what
+                    // separates the rows inside it is their own hairlines. It
+                    // also keeps the hover fill on those rows legible, which
+                    // against a surface already a step off the reading one had
+                    // half the contrast to work with.
+                    //
+                    // The rules between its rows run the full width, so without
+                    // this each ends in a square nib a pixel outside the
+                    // rounded edge above it.
+                    .overflow_hidden()
+                    .children(body),
+            )
+        })
+        .into_any_element()
+}
+
+/// The collapsed line, which is also the control that opens the frame.
+fn cluster_line(
+    plan: &super::viewport::ActivityPlan,
     open: bool,
     on_click: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static,
     id: gpui::ElementId,
     cx: &App,
 ) -> gpui::AnyElement {
-    let (name, icon) = activity_identity(group);
-    ghost_row(
-        Icon::empty().path(icon),
-        id,
+    let summary = &plan.summary;
+    // **A run of text, not a row of columns.** The sentence is read as a
+    // sentence, so the verbs sit inside it rather than in a column of their
+    // own — and the whole thing shrinks to what it says instead of ruling a
+    // line across the column.
+    let mut sentence = div()
+        .h_flex()
+        .items_center()
+        .min_w_0()
+        .overflow_hidden()
+        .whitespace_nowrap()
+        .children(summary.running.as_ref().map(|part| {
+            div()
+                .flex_none()
+                .whitespace_nowrap()
+                .child(format!("{}{}", part.verb, part.rest))
+        }));
+    for (n, part) in summary.done.iter().enumerate() {
+        let lead = match (n, summary.running.is_some()) {
+            (0, false) => "",
+            (0, true) => " · ",
+            _ => ", ",
+        };
+        sentence = sentence
+            .child(div().flex_none().child(lead))
+            .child(
+                div()
+                    .flex_none()
+                    .whitespace_nowrap()
+                    .child(part.verb.clone()),
+            )
+            .child(div().min_w_0().truncate().child(part.rest.clone()));
+    }
+
+    // **A stateful `div`, not the app's button wrapper.** The wrapper is a
+    // library `Button`, and reaching its hover state from the call site meant
+    // going through three layers -- the button's own refinement, the
+    // `Stateful<Div>` underneath it, and the group-hitbox registry a
+    // `group_hover` resolves against. Two attempts at that changed nothing on
+    // screen. `hover` on a stateful div is the primitive all three are built
+    // out of: it styles the element whose own hitbox the pointer is over, with
+    // nothing in between to go wrong.
+    //
+    // What it costs is the keyboard, which a `Button` would have carried. The
+    // rail's rows made the same trade for the same kind of reason.
+    div()
+        .id(id)
+        .h_flex()
+        .items_center()
+        .gap(STACK_GAP)
+        .h(rems(1.75))
+        // **Shrink to the sentence.** A control the width of the column is a
+        // bar, and a bar is a thing in the transcript rather than a note in the
+        // margin of one. Past the column it truncates instead.
+        .w_auto()
+        .max_w_full()
+        .min_w_0()
+        .cursor_pointer()
+        .text_size(CLUSTER_TEXT)
+        // **A weight is a request, like a family.** It lands only where the
+        // resolved face carries that cut; where it does not, the platform hands
+        // back the nearest it has. Nothing here depends on it: the ink carries
+        // the line on its own, and this is the second channel, not the first.
+        .font_weight(gpui::FontWeight::EXTRA_LIGHT)
+        .text_color(cx.theme().muted_foreground)
+        // **Hover is the ink and the weight, and no fill.** Both are the line's
+        // own two channels turned up rather than a plate put behind it -- which
+        // is what a note in the margin has to do, since a rectangle appearing
+        // between two paragraphs is the chrome answering instead of the thing
+        // hovered. The meaning colours on the counts are set per child and are
+        // left alone.
+        .hover(|line| {
+            line.font_weight(gpui::FontWeight::NORMAL)
+                .text_color(crate::theme::meta_ink(cx))
+        })
+        .on_click(move |event, window, cx| on_click(event, window, cx))
+        .child(sentence)
+        // **What went wrong is not counted here.** The line carries what the
+        // work *was*; how it came out is the business of the rows inside it,
+        // each of which names its own failure and its own exit code. A tally
+        // on the outside is a number nobody can act on without opening the
+        // block anyway, and it was the loudest thing on a line whose whole job
+        // is to stay behind the answer above it.
+        // The total, after the sentence and before the counts: it is about the
+        // *work* rather than about the files. Only where something reported
+        // one, or a cluster whose steps never said would claim to have taken no
+        // time at all.
+        //
+        // **And only once the cluster has stopped.** While a step is still
+        // going the number is the total of what has already settled, which is
+        // not the elapsed time of anything a reader can see: it sits next to a
+        // line saying work is in flight and reads as that work's duration,
+        // frozen. The line already says it is running; how long it took is an
+        // answer, and an answer belongs after the fact.
+        .children((summary.running.is_none() && summary.seconds > 0).then(|| {
+            div()
+                .flex_none()
+                .whitespace_nowrap()
+                .font_family(cx.theme().mono_font_family.clone())
+                .child(elapsed(summary.seconds))
+        }))
+        .children(line_counts(summary.added, summary.removed, cx))
+        // **Last, as it is on every row inside the frame.** The arrow means the
+        // same thing in both places, and a control that moves ends of the line
+        // depending on which kind of row it is on is one the eye has to find
+        // twice.
+        .child(
+            mark_slot(CHEVRON_SLOT).child(
+                Icon::new(match open {
+                    true => IconName::ChevronDown,
+                    false => IconName::ChevronRight,
+                })
+                .size(CHEVRON_MARK),
+            ),
+        )
+        .into_any_element()
+}
+
+/// How many file rows a turn's summary lists before the rest fold into one.
+///
+/// **Eight, ordered by how much of each file the turn touched.** A turn that
+/// rewrites a package writes fifty files, and a block listing all of them is
+/// the thing it was meant to replace: something to scroll rather than read.
+/// The eight that matter are the eight it changed most, and the rest are a
+/// count -- which is the honest shape, since somebody asking "what happened to
+/// the other forty" wants the list and not the table.
+const SUMMARY_ROWS: usize = 8;
+
+/// How many diff lines one opened file row draws before it stops.
+const SUMMARY_DIFF: usize = 400;
+
+/// The height of the bar that says how much of a file the turn touched.
+const RATIO_H: Rems = rems(0.25);
+const RATIO_W: Rems = rems(3.);
+
+/// What a finished turn did to the working tree.
+///
+/// **A result, not a record.** The clusters above it say what the agent did in
+/// the order it did it, which is the question "how did it get here"; this says
+/// what is different now, which is the question somebody actually has to act
+/// on. A file written three times is three entries up there and one row here,
+/// deliberately: the two are not the same list drawn twice.
+pub(super) fn turn_summary(
+    session: &Entity<ChatSession>,
+    plan: &super::viewport::ChangePlan,
+    open: bool,
+    on_toggle: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static,
+    cx: &App,
+) -> gpui::AnyElement {
+    let changes = &plan.changes;
+    let anchor = plan.anchor;
+    // **`fold_key`, never the bare index.** History and Live indices overlap,
+    // so a resumed conversation can hand two different rows one id -- which is
+    // how two elements come to share one piece of retained state.
+    let key = fold_key(anchor);
+
+    let head = div()
+        .id(("turn-summary", key))
+        .h_flex()
+        .items_center()
+        .gap(PART_GAP)
+        .w_full()
+        .min_w_0()
+        .px(ROW_PAD_X)
+        .py(ROW_PAD_Y)
+        .cursor_pointer()
+        // **One step above the reading size.** This is where a turn ends, and
+        // the thing a reader scrolling past a long answer is looking for. Every
+        // other line in the block is at or below the transcript's own size, so
+        // the step is what makes the block have a top rather than a first row.
+        .text_size(CLUSTER_TEXT)
+        .text_color(cx.theme().foreground)
+        .hover(|row| row.text_color(crate::theme::meta_ink(cx)))
+        .on_click(move |event, window, cx| on_toggle(event, window, cx))
+        .child(
+            mark_slot(CHEVRON_SLOT).child(
+                Icon::new(match open {
+                    true => IconName::ChevronDown,
+                    false => IconName::ChevronRight,
+                })
+                .size(CHEVRON_MARK),
+            ),
+        )
+        .child(
+            div()
+                .flex_none()
+                .whitespace_nowrap()
+                .child(match changes.files.len() {
+                    1 => "1 file changed".to_string(),
+                    n => format!("{n} files changed"),
+                }),
+        )
+        .children(line_counts(changes.added, changes.removed, cx))
+        .child(div().flex_1().min_w_0())
+        // Right-aligned, because it is the one number here that is about the
+        // turn rather than about the tree.
+        .children(changes.seconds.map(|secs| {
+            div()
+                .flex_none()
+                .whitespace_nowrap()
+                .text_size(TEXT)
+                .text_color(cx.theme().muted_foreground)
+                .child(elapsed(secs))
+        }));
+
+    let card = div()
+        .v_flex()
+        .w_full()
+        .min_w_0()
+        .rounded(cx.theme().radius_lg)
+        .border_1()
+        .border_color(cx.theme().border)
+        .child(head);
+
+    if !open {
+        return card.into_any_element();
+    }
+
+    // Most-changed first, and only where there are more than fit: under the
+    // cap the order the turn touched them in is the order the reader watched
+    // it happen, which is worth more than a ranking.
+    //
+    // **The rest are behind a control, not cut off.** Whether they are showing
+    // is kept in the section fold set keyed by the turn's prompt -- a prompt is
+    // a run of its own and never a section's anchor, so that set has room for
+    // this the same way the activity set has room for the block itself.
+    let mut listed: Vec<&onehand_core::chat::FileChange> = changes.files.iter().collect();
+    let over = listed.len().saturating_sub(SUMMARY_ROWS);
+    let rest_open = session.read(cx).section_is_open(anchor);
+    if over > 0 {
+        listed.sort_by_key(|b| std::cmp::Reverse(b.touched()));
+        if !rest_open {
+            listed.truncate(SUMMARY_ROWS);
+        }
+    }
+
+    let paths: Vec<String> = changes.files.iter().map(|f| f.path.clone()).collect();
+    let all_open = paths
+        .iter()
+        .all(|path| session.read(cx).file_is_open(anchor, path));
+
+    card.child(
+        div()
+            .v_flex()
+            .w_full()
+            .min_w_0()
+            .border_t_1()
+            .border_color(cx.theme().border)
+            .children(
+                listed
+                    .into_iter()
+                    .map(|file| file_row(session, plan, file, cx)),
+            )
+            // **What was left out says so, says how many, and opens.** A list
+            // silently cut at eight is a list claiming the turn touched eight
+            // files; one that says how many were dropped and cannot show them
+            // is a question with no answer in the room.
+            .children((over > 0).then(|| {
+                div()
+                    .id(("turn-rest", key))
+                    .w_full()
+                    .px(ROW_PAD_X)
+                    .py(ROW_PAD_Y)
+                    .cursor_pointer()
+                    .text_size(OBJECT_TEXT)
+                    .text_color(cx.theme().muted_foreground)
+                    .hover(|row| row.text_color(crate::theme::meta_ink(cx)))
+                    .on_click({
+                        let session = session.clone();
+                        move |_, _, cx: &mut App| {
+                            session.update(cx, |session, cx| {
+                                session.toggle_section(anchor);
+                                cx.notify();
+                            });
+                        }
+                    })
+                    .child(match rest_open {
+                        true => "Show the most changed only".to_string(),
+                        false => format!("and {over} more, least changed"),
+                    })
+            })),
+    )
+    .child(
         div()
             .h_flex()
-            .items_baseline()
-            .gap_2()
+            .items_center()
+            .gap(PART_GAP)
+            .w_full()
             .min_w_0()
-            .overflow_hidden()
-            .child(div().flex_none().font_semibold().child(name))
-            .child(div().min_w_0().truncate().child(summary))
-            .into_any_element(),
-        None,
-        Some(open),
-        on_click,
-        cx,
+            .px(ROW_PAD_X)
+            .py(ROW_PAD_Y)
+            .border_t_1()
+            .border_color(cx.theme().border)
+            .child(
+                crate::controls::action(("turn-diff-all", key))
+                    .ghost()
+                    .xsmall()
+                    .label(match all_open {
+                        true => "Hide every diff",
+                        false => "Show every diff",
+                    })
+                    .on_click({
+                        let session = session.clone();
+                        let body = plan.body.clone();
+                        move |_, _, cx: &mut App| {
+                            session.update(cx, |session, cx| {
+                                session.toggle_every_file(anchor, &paths, &body);
+                                cx.notify();
+                            });
+                        }
+                    }),
+            ),
     )
+    .into_any_element()
+}
+
+/// One file of a turn's summary, and its diff when it is open.
+fn file_row(
+    session: &Entity<ChatSession>,
+    plan: &super::viewport::ChangePlan,
+    file: &onehand_core::chat::FileChange,
+    cx: &App,
+) -> gpui::AnyElement {
+    use onehand_core::chat::FileVerdict;
+
+    let status = crate::theme::status_ink(cx);
+    let anchor = plan.anchor;
+    let open = session.read(cx).file_is_open(anchor, &file.path);
+    let gone = file.verdict == FileVerdict::Deleted;
+    let (mark, ink) = match file.verdict {
+        FileVerdict::Added => ("A", status.success),
+        FileVerdict::Modified => ("M", status.warning),
+        FileVerdict::Deleted => ("D", status.danger),
+    };
+    // The folder is context for the name, so it is a step quieter than it --
+    // the same two strengths a completion row puts a name and its folder at.
+    let (folder, name) = match file.path.rfind('/') {
+        Some(at) => file.path.split_at(at + 1),
+        None => ("", file.path.as_str()),
+    };
+
+    let row = div()
+        .id(gpui::ElementId::NamedInteger(
+            SharedString::from(format!("turn-file-{}", file.path)),
+            fold_key(anchor) as u64,
+        ))
+        .h_flex()
+        .items_center()
+        .gap(PART_GAP)
+        .w_full()
+        .min_w_0()
+        .px(ROW_PAD_X)
+        .py(TIGHT_GAP)
+        .cursor_pointer()
+        .text_size(OBJECT_TEXT)
+        .text_color(cx.theme().muted_foreground)
+        // **Ink, not a plate**, which is what every other row inside a frame
+        // answers a hover with -- a fill here would make one list in the
+        // transcript behave unlike the list an inch above it.
+        .hover(|row| row.text_color(crate::theme::meta_ink(cx)))
+        .on_click({
+            let session = session.clone();
+            let path = file.path.clone();
+            let body = plan.body.clone();
+            move |_, _, cx: &mut App| {
+                session.update(cx, |session, cx| {
+                    session.toggle_file(anchor, &path, &body);
+                    cx.notify();
+                });
+            }
+        })
+        // **A letter in its own ink, not a coloured dot.** Four states that a
+        // reader has to tell apart on a dense row is more than colour alone
+        // carries, and the letter is the one every diff tool already uses.
+        .child(
+            div()
+                .flex_none()
+                .w(KIND_ICON)
+                .font_family(cx.theme().mono_font_family.clone())
+                .text_color(ink)
+                .child(mark),
+        )
+        .child(
+            div()
+                .flex_1()
+                .min_w_0()
+                .truncate()
+                .when(gone, |path| path.line_through())
+                .child(folder.to_string()),
+        )
+        .child(
+            div()
+                .flex_none()
+                .min_w_0()
+                .truncate()
+                .text_color(cx.theme().foreground)
+                .when(gone, |name| name.line_through())
+                .child(name.to_string()),
+        )
+        .children(line_counts(file.added, file.removed, cx))
+        .child(ratio_bar(file, cx));
+
+    if !open {
+        return row.into_any_element();
+    }
+
+    // Taken when the row was opened, not now: this runs on every frame the row
+    // is on screen, and the diff behind it is an LCS over two whole files.
+    let hunks: Vec<DiffRow> = session
+        .read(cx)
+        .file_diff(anchor, &file.path)
+        .unwrap_or_default()
+        .to_vec();
+    let mut budget = SUMMARY_DIFF;
+    div()
+        .v_flex()
+        .w_full()
+        .min_w_0()
+        .child(row)
+        .child(
+            div()
+                .v_flex()
+                .w_full()
+                .min_w_0()
+                .border_t_1()
+                .border_color(cx.theme().border)
+                .font_family(cx.theme().mono_font_family.clone())
+                .text_size(FENCE_TEXT)
+                .children(diff_rows(&hunks, &mut budget, cx)),
+        )
+        .into_any_element()
+}
+
+/// How much of a file the turn touched, as a bar.
+///
+/// **Of the file and not of the turn.** Twenty lines changed is most of a
+/// short file and nothing at all in a long one, and the number beside it
+/// cannot say which -- so the bar is the only thing here answering "was this
+/// rewritten or nudged". The untouched remainder is what gives it that scale,
+/// which is why it is drawn rather than left as empty space.
+fn ratio_bar(file: &onehand_core::chat::FileChange, cx: &App) -> gpui::Div {
+    let status = crate::theme::status_ink(cx);
+    // Against the larger of the file and what was done to it: a file emptied
+    // by the turn has no lines left to be a proportion of.
+    let whole = file.total.max(file.touched()).max(1) as f32;
+    let share = |n: usize| gpui::relative(n as f32 / whole);
+    div()
+        .flex_none()
+        .h_flex()
+        .items_center()
+        .w(RATIO_W)
+        .h(RATIO_H)
+        .rounded(radius_tag(cx))
+        .overflow_hidden()
+        .bg(cx.theme().border)
+        .children((file.added > 0).then(|| div().h_full().w(share(file.added)).bg(status.success)))
+        .children(
+            (file.removed > 0).then(|| div().h_full().w(share(file.removed)).bg(status.danger)),
+        )
+}
+
+/// A stretch of one kind of work inside an opened cluster.
+///
+/// **A row that stands for a section and a row that is one step are the same
+/// row.** Collapsed they are indistinguishable, and the only difference is what
+/// each opens into: one unfolds a command and its output, the other unfolds the
+/// steps it stands for — children at a shorter height, set in to where the
+/// parent's verb starts, carrying no frame and separated only by hairlines.
+pub fn activity_group(
+    section: &super::viewport::Section,
+    open: bool,
+    on_click: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static,
+    id: gpui::ElementId,
+    rows: Vec<gpui::AnyElement>,
+    cx: &App,
+) -> gpui::AnyElement {
+    let (name, icon) = activity_identity(section.group);
+
+    div()
+        .v_flex()
+        .w_full()
+        .min_w_0()
+        .child(activity_row(
+            ActivityRow::new(id, RowMark::of_run(section.outcome), icon, name)
+                .object(Some(Object::plain(section.summary.clone())))
+                .meta((section.outcome.errors > 0).then(|| {
+                    div()
+                        .flex_none()
+                        .whitespace_nowrap()
+                        .text_xs()
+                        .text_color(crate::theme::status_ink(cx).danger)
+                        .child(match section.outcome.errors {
+                            1 => "1 error".to_string(),
+                            n => format!("{n} errors"),
+                        })
+                        .into_any_element()
+                }))
+                .fold(Some(open)),
+            on_click,
+            cx,
+        ))
+        .when(open, |block| {
+            block.child(
+                div()
+                    .v_flex()
+                    .w_full()
+                    .min_w_0()
+                    .pl(DETAIL_INSET)
+                    .pr(ROW_PAD_X)
+                    .pb(FRAME_PAD)
+                    .children(rows),
+            )
+        })
+        .into_any_element()
+}
+
+/// The hairline that separates one row of a block from the next.
+pub fn rule(cx: &App) -> gpui::Div {
+    div().w_full().flex_none().h_px().bg(cx.theme().border)
+}
+
+/// The drawing that stands for a kind of work, in the column every row keeps
+/// for one.
+fn group_icon(group: activity::ActivityGroup) -> SharedString {
+    activity_identity(group).1
 }
 
 /// Stable identity for a semantic activity section: its name, and the asset
@@ -3236,26 +4973,17 @@ fn activity_identity(group: activity::ActivityGroup) -> (&'static str, SharedStr
 pub fn activity_summary(members: &[&ChatItem]) -> String {
     let mut counts = [0usize; 10];
     let mut reason_secs = 0u64;
-    let mut running = false;
-    let mut failed = false;
     for item in members {
         let kind = match item {
             ChatItem::Thought(th) => {
                 counts[8] += 1;
                 if let Some(secs) = th.elapsed_secs {
                     reason_secs += secs;
-                } else {
-                    running = true;
                 }
                 continue;
             }
             ChatItem::Tool(tool) => {
                 let p = activity::presentation(tool);
-                running |= matches!(
-                    tool.call.status,
-                    ToolStatus::Pending | ToolStatus::InProgress
-                );
-                failed |= matches!(tool.call.status, ToolStatus::Failed);
                 if p.kind == activity::ActivityKind::Change {
                     // One MultiEdit is one tool step but can touch many files;
                     // the summary names files, so count its distinct paths.
@@ -3281,187 +5009,398 @@ pub fn activity_summary(members: &[&ChatItem]) -> String {
         counts[index] += 1;
     }
 
+    // **Nouns, with no verb on any of them.** The row this lands in already
+    // carries one, in full ink and a weight up, two columns to the left -- so
+    // a phrase that opened with its own gave `Ran · Ran 7 commands`, which is
+    // the same word twice within an inch and the count pushed a column right
+    // for it.
     let mut phrases = Vec::new();
     let counted = [
-        (0, "Inspected", "file", "files"),
-        (1, "Searched", "time", "times"),
-        (2, "Fetched", "resource", "resources"),
-        (3, "Changed", "file", "files"),
-        (4, "Ran", "test", "tests"),
-        (5, "Ran", "check", "checks"),
-        (6, "Built", "target", "targets"),
-        (7, "Ran", "command", "commands"),
-        (9, "Used", "tool", "tools"),
+        (0, "file", "files"),
+        (1, "search", "searches"),
+        (2, "resource", "resources"),
+        (3, "file", "files"),
+        (4, "test", "tests"),
+        (5, "check", "checks"),
+        (6, "target", "targets"),
+        (7, "command", "commands"),
+        (9, "tool", "tools"),
     ];
-    for (index, action, singular, plural) in counted {
+    for (index, singular, plural) in counted {
         let count = counts[index];
         if count > 0 {
             phrases.push(format!(
-                "{action} {count} {}",
+                "{count} {}",
                 if count == 1 { singular } else { plural }
             ));
         }
     }
     if counts[8] > 0 {
-        phrases.push(if reason_secs > 0 {
-            format!("Reasoned {reason_secs}s")
-        } else {
-            "Reasoned".to_string()
+        phrases.push(match reason_secs > 0 {
+            true => format!("{reason_secs}s reasoning"),
+            false => "reasoning".to_string(),
         });
     }
 
     let mut label = phrases.join(" · ");
     if label.is_empty() {
-        label.push_str("Activity");
-    }
-    if failed {
-        label.push_str(" · failed");
-    } else if running {
-        label.push_str(" · running");
+        label.push_str("activity");
     }
     label
 }
 
 // ── shared bits ─────────────────────────────────────────────────────────────
 
-/// A chevroned ghost row: the quiet disclosure shape shared by thoughts and
-/// settled tool steps. No card, no border — just an icon, what the row says, an
-/// optional note at the right edge and the chevron, so completed history reads
-/// as a record rather than a stack of attention boxes.
+/// What the fixed slot at the head of an activity row holds.
 ///
-/// `fold` is `None` for a row with nothing behind it: a chevron on a row that
-/// cannot open is an invitation to click something that does nothing.
+/// **Four drawings, one box.** The whole point of the slot is that a step going
+/// from waiting to running to done swaps what is in it and moves nothing else
+/// on the row — so a group of ten rows finishing one at a time is a column of
+/// marks changing in place rather than ten lines of text nudging sideways.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum RowMark {
+    Waiting,
+    Running,
+    Done,
+    /// Something in the run failed and the run went on to succeed anyway.
+    ///
+    /// **A tick, in the warning tint rather than the danger one.** A run marked
+    /// red because one of seven commands exited non-zero is an alarm for
+    /// something already dealt with, and a reader who has learned that the red
+    /// mark usually means nothing has learned to ignore the one that means
+    /// something. The count of what went wrong is still said, in words, at the
+    /// other end of the row.
+    Recovered,
+    Failed,
+    /// A step somebody refused. Not a failure — nothing went wrong, a decision
+    /// was taken — so it is the one mark here that is neither the tick nor the
+    /// danger cross.
+    Refused,
+}
+
+impl RowMark {
+    /// How a whole run reads: by how it ended, not by its worst moment.
+    pub fn of_run(run: onehand_core::chat::RunOutcome) -> Self {
+        use onehand_core::chat::Outcome;
+        match run.outcome {
+            Outcome::Running => Self::Running,
+            Outcome::Clean => Self::Done,
+            Outcome::Recovered => Self::Recovered,
+            Outcome::Failed => Self::Failed,
+        }
+    }
+
+    fn of(status: ToolStatus) -> Self {
+        match status {
+            ToolStatus::Pending => Self::Waiting,
+            ToolStatus::InProgress => Self::Running,
+            ToolStatus::Completed => Self::Done,
+            ToolStatus::Failed => Self::Failed,
+        }
+    }
+
+    /// Draw the mark into a slot the caller has already sized.
+    ///
+    /// **The slot is the caller's and the drawing is this.** A parent's slot
+    /// and a child's are two sizes on purpose — the difference is what tells
+    /// the levels apart before a word is read — so the box cannot be decided
+    /// here, and the glyph inside it takes whatever size the caller is drawing
+    /// at. Written as one function returning its own box, a child row got its
+    /// parent's mark and the two levels lined up exactly.
+    fn draw(self, cx: &App) -> gpui::Div {
+        let status = crate::theme::status_ink(cx);
+        let slot = mark_slot(KIND_ICON);
+        let ink = match self {
+            Self::Waiting => cx.theme().muted_foreground.opacity(0.5),
+            Self::Running => return slot.child(Spinner::new().xsmall()),
+            Self::Done => status.success,
+            Self::Recovered => status.warning,
+            Self::Failed => status.danger,
+            // Refused is not a failure -- nothing went wrong, somebody decided
+            // -- so it takes the quiet ink and says the rest in words.
+            Self::Refused => cx.theme().muted_foreground,
+        };
+        slot.child(div().size(STATUS_DOT).rounded_full().bg(ink))
+    }
+}
+
+/// One row of an activity block, and the one shape every step takes.
 ///
-/// **Every row of this shape is one size**, and the reason is what a group of
-/// them looks like when it opens. A thought used to be drawn a step larger than
-/// a strip, on the grounds that it names a block rather than summarising work —
-/// but a `Reasoned` strip holds thoughts *and* `Think` tool steps, so an opened
-/// one put 14px rows beside 12px ones under a 12px header, with the children
-/// louder than the group naming them. Weight still separates a name from a
-/// summary; size no longer has to.
-fn ghost_row(
-    icon: impl Into<Icon>,
+/// **One anatomy, and every column holds its place on every row.** Left to
+/// right: how it went, what sort of work it was, what it did, what it did it to,
+/// whatever is worth saying at the end, and the arrow. Adding a kind of activity
+/// must not add a column; only what the row opens into differs.
+struct ActivityRow {
     id: gpui::ElementId,
-    body: gpui::AnyElement,
-    trailing: Option<gpui::AnyElement>,
+    mark: RowMark,
+    /// The block's drawing for the sort of work.
+    kind: SharedString,
+    /// What was done, in the reading face: `Read`, `Ran`, `Edited`.
+    verb: SharedString,
+    /// What it was done to, in the machine face. A path arrives split so the
+    /// directory can recede behind the name.
+    object: Option<Object>,
+    /// Whatever the row is worth saying at its end — a line count, a result
+    /// count, an exit code.
+    meta: Option<gpui::AnyElement>,
+    /// A file that is gone, which is the one state that strikes its own name
+    /// out rather than only marking the ends of the row.
+    struck: bool,
     fold: Option<bool>,
+}
+
+/// What a row was pointed at.
+///
+/// **Split at the last separator, because the two halves are read
+/// differently.** A reader scanning a column of paths is looking for the name;
+/// the directory above it is only there for the times two names are the same,
+/// and at one weight it takes the eye first every time it is long. So the
+/// directory recedes a step and the name keeps the reading ink.
+#[derive(Clone)]
+struct Object {
+    dir: Option<SharedString>,
+    name: SharedString,
+}
+
+impl Object {
+    /// A path, split; anything else whole.
+    fn path(value: impl Into<SharedString>) -> Self {
+        let value: SharedString = value.into();
+        match value.rfind('/') {
+            // A command is not a path and must not be cut at its last slash.
+            Some(_) if value.contains(char::is_whitespace) => Self {
+                dir: None,
+                name: value,
+            },
+            Some(at) => Self {
+                dir: Some(value[..=at].to_string().into()),
+                name: value[at + 1..].to_string().into(),
+            },
+            None => Self {
+                dir: None,
+                name: value,
+            },
+        }
+    }
+
+    fn plain(value: impl Into<SharedString>) -> Self {
+        Self {
+            dir: None,
+            name: value.into(),
+        }
+    }
+}
+
+impl ActivityRow {
+    fn new(
+        id: gpui::ElementId,
+        mark: RowMark,
+        kind: SharedString,
+        verb: impl Into<SharedString>,
+    ) -> Self {
+        Self {
+            id,
+            mark,
+            kind,
+            verb: verb.into(),
+            object: None,
+            meta: None,
+            struck: false,
+            fold: None,
+        }
+    }
+
+    fn object(mut self, object: Option<Object>) -> Self {
+        self.object = object;
+        self
+    }
+
+    fn meta(mut self, meta: Option<gpui::AnyElement>) -> Self {
+        self.meta = meta;
+        self
+    }
+
+    fn fold(mut self, fold: Option<bool>) -> Self {
+        self.fold = fold;
+        self
+    }
+}
+
+fn activity_row(
+    row: ActivityRow,
     on_click: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static,
     cx: &App,
 ) -> gpui::AnyElement {
-    let interactive = fold.is_some();
-    let content = div()
-        .h_flex()
-        .items_center()
-        .gap_2()
-        .w_full()
-        .min_w_0()
-        .text_xs()
-        .text_color(cx.theme().muted_foreground)
-        // Every non-text affordance occupies the same row slot. Their actual
-        // drawings may be smaller, but their centres no longer depend on the
-        // SVG's or font's own bounding box.
-        .child(
-            div()
-                .size_4()
-                .flex_none()
-                .h_flex()
-                .justify_center()
-                .child(Icon::new(icon).size_4()),
-        )
-        .child(
-            div()
-                .min_w_0()
-                .flex_shrink(1.)
-                .when(interactive, |label| {
-                    label.group_hover("ghost-disclosure", |label| {
-                        label.text_color(cx.theme().foreground)
-                    })
-                })
-                .child(body),
-        )
-        // Exceptional state is part of what this label says, not a separate
-        // right-hand status column. Its explicit semantic colour survives the
-        // label's hover treatment.
-        .children(trailing)
-        // The chevron belongs to the complete label cluster, so it follows the
-        // descriptor/status rather than being pushed to a distant rail.
-        .children(fold.map(|open| {
-            div().size_4().flex_none().h_flex().justify_center().child(
-                Icon::new(if open {
-                    IconName::ChevronDown
-                } else {
-                    IconName::ChevronRight
-                })
-                .size_3(),
-            )
-        }))
-        .child(div().flex_1());
-
-    if interactive {
-        crate::controls::action(id)
-            .ghost()
-            .group("ghost-disclosure")
+    let interactive = row.fold.is_some();
+    let id = row.id.clone();
+    // **The layout and the ink sit on the row itself, not on a box inside it.**
+    // A hover styles the element whose hitbox the pointer is over, and text
+    // colour cascades *down* -- so a wrapper that hovers over a child which has
+    // already set its own colour changes nothing. Everything that should lift
+    // therefore inherits, and the one thing that should not says so.
+    // Generic over the element, because the interactive row is a
+    // `Stateful<Div>` and the inert one is a plain `Div`: both are `Styled` and
+    // `ParentElement`, which is the whole of what dressing a row needs.
+    fn dress<E>(row_div: E, row: ActivityRow, cx: &App) -> E
+    where
+        E: Styled + ParentElement,
+    {
+        row_div
+            .h_flex()
+            .items_center()
+            .gap(PART_GAP)
             .w_full()
             .min_w_0()
-            .p_0()
-            .child(content)
+            .py(ROW_PAD_Y)
+            .px(ROW_PAD_X)
+            .text_color(cx.theme().muted_foreground)
+            // **A disc in the ink the state means, and nothing else in the
+            // slot.** A tick and a cross are two drawings to read at a size
+            // where both are a handful of strokes; a disc is one shape wherever
+            // it appears, so what the column carries is a colour -- and a
+            // colour is read without being looked at.
+            .child(row.mark.draw(cx))
+            .child(
+                mark_slot(KIND_ICON).child(Icon::new(Icon::empty().path(row.kind)).size(KIND_ICON)),
+            )
+            .child(
+                div()
+                    .flex_none()
+                    .whitespace_nowrap()
+                    .text_size(VERB_TEXT)
+                    // The one part held at the reading ink, so it does not lift
+                    // with the rest: it is already as bright as this row goes.
+                    .text_color(cx.theme().foreground)
+                    .child(row.verb),
+            )
+            .children(row.object.map(|object| {
+                div()
+                    .flex_1()
+                    .min_w_0()
+                    .h_flex()
+                    .items_center()
+                    .overflow_hidden()
+                    .whitespace_nowrap()
+                    .font_family(cx.theme().mono_font_family.clone())
+                    .text_size(OBJECT_TEXT)
+                    .when(row.struck, |o| o.line_through())
+                    .children(object.dir.map(|dir| {
+                        div()
+                            .flex_none()
+                            .text_color(cx.theme().muted_foreground.opacity(0.7))
+                            .child(dir)
+                    }))
+                    .child(div().min_w_0().truncate().child(object.name))
+            }))
+            .child(div().flex_1().min_w_0())
+            .children(row.meta)
+            .child(chevron_slot(row.fold, cx))
+    }
+
+    match interactive {
+        // **The same hover the cluster's line takes: ink, and no plate.** A
+        // fill behind a row is the row answering as a surface, and these rows
+        // are a list inside a frame that is already one. The weight is left
+        // alone here and only here: the verb is `flex_none`, so a heavier one
+        // would move where the object column starts, and a block of rows whose
+        // columns shift under the pointer is the one thing the frame is for.
+        true => div()
+            .id(id)
+            .cursor_pointer()
+            .hover(|row| row.text_color(crate::theme::meta_ink(cx)))
             .on_click(on_click)
-            .into_any_element()
-    } else {
-        div().id(id).w_full().child(content).into_any_element()
+            .map(|row_div| dress(row_div, row, cx))
+            .into_any_element(),
+        // Nothing to open, so nothing to press: a pointer on a row that does
+        // not answer is a promise the row cannot keep.
+        false => dress(div(), row, cx).into_any_element(),
     }
 }
 
-/// Completed work is the common case: a compact check next to its descriptor
-/// confirms it without building a bright right-hand column of repeated
-/// `done`s. States that still need attention remain words.
-fn completed_mark(status: ToolStatus, cx: &App) -> Option<gpui::AnyElement> {
-    matches!(status, ToolStatus::Completed).then(|| {
-        div()
-            .size_4()
-            .flex_none()
-            .h_flex()
-            .justify_center()
-            .child(
-                Icon::new(IconName::Check)
-                    .size_3()
-                    .text_color(crate::theme::status_ink(cx).success),
-            )
-            .into_any_element()
-    })
-}
-
-fn status_note(status: ToolStatus, cx: &App) -> Option<gpui::AnyElement> {
-    let (label, color) = match status {
-        ToolStatus::Pending => ("pending", cx.theme().muted_foreground),
-        ToolStatus::InProgress => ("running", crate::theme::status_ink(cx).warning),
-        ToolStatus::Failed => ("failed", crate::theme::status_ink(cx).danger),
-        ToolStatus::Completed => return None,
-    };
+/// The lines a change added and removed, mono and each side in the ink it
+/// means.
+///
+/// **The one pair in the transcript a reader takes in without reading**, which
+/// is why it is one function and not three: a row inside a cluster, the line
+/// standing for the cluster and the block closing the turn all draw it, and
+/// three copies of "mono, tight gap, success then danger" is three places for
+/// one of them to drift.
+///
+/// `None` where nothing changed, and **`−0` is never drawn**, which colour is
+/// what forces: a zero set in the ink that means "this went" is the colour of a
+/// loss that did not happen. The text size is the caller's, since the three
+/// rows it lands on are not all at one size.
+fn line_counts(added: usize, removed: usize, cx: &App) -> Option<gpui::Div> {
+    if added == 0 && removed == 0 {
+        return None;
+    }
+    let status = crate::theme::status_ink(cx);
     Some(
         div()
+            .h_flex()
+            .items_center()
+            .gap(TIGHT_GAP)
             .flex_none()
-            .text_xs()
-            .text_color(color)
-            .child(label)
-            .into_any_element(),
+            .whitespace_nowrap()
+            .font_family(cx.theme().mono_font_family.clone())
+            .children(
+                (added > 0).then(|| div().text_color(status.success).child(format!("+{added}"))),
+            )
+            .children(
+                (removed > 0).then(|| div().text_color(status.danger).child(format!("−{removed}"))),
+            ),
     )
 }
 
-fn tool_icon(kind: ToolKind) -> IconName {
-    match kind {
-        ToolKind::Execute => IconName::SquareTerminal,
-        ToolKind::Edit => IconName::File,
-        ToolKind::Read => IconName::File,
-        ToolKind::Search => IconName::Search,
-        ToolKind::Think => IconName::Undo,
-        ToolKind::Fetch => IconName::Globe,
-        ToolKind::Delete => IconName::Delete,
-        ToolKind::Move => IconName::ArrowRight,
-        ToolKind::Other => IconName::Settings2,
+/// A duration, at the coarseness somebody reads it at.
+///
+/// **Seconds up to a minute, then minutes.** A step that took four hundred and
+/// twelve seconds is a step that took seven minutes, and the extra two digits
+/// are two digits the eye has to divide before it means anything.
+fn elapsed(secs: u64) -> String {
+    match secs {
+        0..=59 => format!("{secs}s"),
+        _ => format!("{}m {}s", secs / 60, secs % 60),
     }
 }
 
+/// A word at the end of a row, in the quiet ink or in one that means something.
+fn row_note(text: impl Into<SharedString>, ink: gpui::Hsla, cx: &App) -> gpui::AnyElement {
+    div()
+        .flex_none()
+        .whitespace_nowrap()
+        .font_family(cx.theme().mono_font_family.clone())
+        .text_size(OBJECT_TEXT)
+        .text_color(ink)
+        .child(text.into())
+        .into_any_element()
+}
+
+/// A word in a ring: the one shape a state takes wherever one is named.
+pub(super) fn pill(label: impl Into<SharedString>, ink: gpui::Hsla, cx: &App) -> gpui::Div {
+    div()
+        .flex_none()
+        .h(PILL_H)
+        .px(PART_GAP)
+        .h_flex()
+        .items_center()
+        .whitespace_nowrap()
+        .overflow_hidden()
+        .rounded(radius_control(cx))
+        .border_1()
+        .border_color(cx.theme().border)
+        .text_xs()
+        .text_color(ink)
+        .child(div().min_w_0().truncate().child(label.into()))
+}
+
+/// What sort of work a tool kind is, in a word.
+///
+/// **Only the blocking cards print this now.** A transcript row says what was
+/// done with the verb core classified it as — "Inspected", "Ran tests",
+/// "Built" — which is finer than a kind and is the thing a reader is scanning
+/// for. These are what is left: the word a permission card uses to say what it
+/// is being asked to allow, where there is no step yet to have a verb.
 fn tool_label(kind: ToolKind) -> &'static str {
     match kind {
         ToolKind::Execute => "Run",
@@ -3478,7 +5417,7 @@ fn tool_label(kind: ToolKind) -> &'static str {
 
 /// A stable element id per item. History and live indices overlap, so the
 /// source has to be part of the key or two items share one id.
-fn fold_key(target: TranscriptItemId) -> usize {
+pub(super) fn fold_key(target: TranscriptItemId) -> usize {
     match target {
         TranscriptItemId::History(i) => i * 2,
         TranscriptItemId::Live(i) => i * 2 + 1,
@@ -3534,6 +5473,110 @@ mod tests {
             .collect()
     }
 
+    /// Every named step, at the app's own rem size.
+    fn steps() -> Vec<(&'static str, f32)> {
+        vec![
+            ("HAIR_GAP", HAIR_GAP.0),
+            ("TIGHT_GAP", TIGHT_GAP.0),
+            ("STACK_GAP", STACK_GAP.0),
+            ("PART_GAP", PART_GAP.0),
+            ("FRAME_PAD", FRAME_PAD.0),
+            ("BLOCK_GAP", BLOCK_GAP.0),
+            ("TURN_GAP", TURN_GAP.0),
+            ("TEXT_PAD_X", TEXT_PAD_X.0),
+            ("TEXT_PAD_Y", TEXT_PAD_Y.0),
+            ("ROW_PAD_Y", ROW_PAD_Y.0),
+            ("ROW_PAD_X", ROW_PAD_X.0),
+            ("STATUS_DOT", STATUS_DOT.0),
+            ("KIND_ICON", KIND_ICON.0),
+            ("CHEVRON_SLOT", CHEVRON_SLOT.0),
+            ("PILL_PAD_Y", PILL_PAD_Y.0),
+            ("PILL_PAD_X", PILL_PAD_X.0),
+            ("PILL_H", PILL_H.0),
+            ("BUTTON_H", BUTTON_H.0),
+            ("LINE_H", LINE_H.0),
+            ("MARK_SLOT", MARK_SLOT.0),
+            ("MARK_SIZE", MARK_SIZE.0),
+            ("DIFF_NUM_PAD", DIFF_NUM_PAD.0),
+            ("DIFF_SIGN_W", DIFF_SIGN_W.0),
+            ("DIFF_TEXT_PAD", DIFF_TEXT_PAD.0),
+            ("PLAN_BOX", PLAN_BOX.0),
+            ("THUMB_W", THUMB_W.0),
+            ("THUMB_H", THUMB_H.0),
+            ("SMOKE_DIFF", SMOKE_DIFF.0),
+            ("SMOKE_OUT", SMOKE_OUT.0),
+            ("DETAIL_OPEN_H", DETAIL_OPEN_H.0),
+        ]
+    }
+
+    /// Nothing in the transcript is sized off the scale.
+    ///
+    /// The point of a scale is that the *next* value is chosen from it rather
+    /// than measured by eye, and nothing about a rem constant stops somebody
+    /// writing `rems(0.7)`. This is what says so out loud — and it fails on the
+    /// value's name, so the failure names the step that left the ladder rather
+    /// than printing a number.
+    #[test]
+    fn every_step_is_on_the_scale() {
+        // Half a step is a step nobody can see, so the ladder skips no rung it
+        // does not use and admits no rung between two it does.
+        const SCALE: &[f32] = &[
+            2., 4., 6., 8., 10., 12., 14., 16., 18., 20., 24., 28., 32., 40., 44., 62., 64., 92.,
+            320.,
+        ];
+        for (name, rems) in steps() {
+            let px = rems * 16.;
+            assert!(
+                SCALE.iter().any(|step| (step - px).abs() < 0.01),
+                "{name} is {px}px, which is not a step of the scale"
+            );
+        }
+    }
+
+    /// What is inside a thing is closer than what surrounds it, at every level.
+    ///
+    /// This is the one rule the whole arrangement rests on: it is what makes a
+    /// turn boundary readable without a rule across the column, and the first
+    /// thing to break when one gap is nudged to fix the look of one block.
+    #[test]
+    fn the_gaps_nest_and_so_do_the_corners() {
+        let ladder = [
+            ("HAIR_GAP", HAIR_GAP.0),
+            ("TIGHT_GAP", TIGHT_GAP.0),
+            ("STACK_GAP", STACK_GAP.0),
+            ("PART_GAP", PART_GAP.0),
+            ("BLOCK_GAP", BLOCK_GAP.0),
+            ("TURN_GAP", TURN_GAP.0),
+        ];
+        for pair in ladder.windows(2) {
+            let [(inner, a), (outer, b)] = pair else {
+                unreachable!()
+            };
+            assert!(a < b, "{inner} must stay under {outer}");
+        }
+
+        // **A row's words start after its padding, its state disc and its kind
+        // icon**, and whatever that row opens is set in to the same place —
+        // written as a sum in one spot and a number in the other, the two
+        // drifted the first time either column moved.
+        assert_eq!(
+            DETAIL_INSET.0,
+            ROW_PAD_X.0 + STATUS_DOT.0 + PART_GAP.0 + KIND_ICON.0 + PART_GAP.0
+        );
+        // The marks and the type, each inside what holds it: a disc inside the
+        // slot that keeps its column (which is what lets a spinner take its
+        // place), the arrow quietest of the three, and what a row did it *to*
+        // a step under what it says it did.
+        let inside = [
+            ("STATUS_DOT", STATUS_DOT.0, "KIND_ICON", KIND_ICON.0),
+            ("CHEVRON_MARK", CHEVRON_MARK.0, "KIND_ICON", KIND_ICON.0),
+            ("OBJECT_TEXT", OBJECT_TEXT.0, "VERB_TEXT", VERB_TEXT.0),
+        ];
+        for (inner, a, outer, b) in inside {
+            assert!(a < b, "{inner} must stay under {outer}");
+        }
+    }
+
     #[test]
     fn every_activity_group_has_its_own_name_and_icon() {
         let groups = [
@@ -3563,29 +5606,47 @@ mod tests {
         assert_eq!(icons.len(), groups.len());
     }
 
+    /// **A cluster of one is still a cluster.** It was the exception —
+    /// a lone step drew itself bare — which meant the transcript had two ways
+    /// of saying the same thing and which one a reader got depended on whether
+    /// the agent happened to do a second thing afterwards.
     #[test]
-    fn a_lone_quiet_step_is_not_folded() {
-        // Folding one row behind a disclosure hides it and saves nothing.
+    fn one_step_is_still_a_cluster() {
         let items = vec![thought(3)];
         let runs = runs(&targets(&items));
-        assert!(matches!(runs.as_slice(), [Run::Single(_)]));
-    }
-
-    #[test]
-    fn adjacent_steps_of_one_section_fold_together() {
-        let items = vec![
-            tool(ToolKind::Read, "Read src/a.rs"),
-            tool(ToolKind::Read, "Read src/b.rs"),
-        ];
-        let runs = runs(&targets(&items));
         assert!(
-            matches!(runs.as_slice(), [Run::Activity { members, .. }] if members.len() == 2),
-            "two reads are one Explored run"
+            matches!(runs.as_slice(), [Run::Activity { members }] if members.len() == 1),
+            "a lone step is a cluster of one"
         );
     }
 
+    /// **A cluster is bounded by the agent's words and by nothing else.** Kinds
+    /// of work used to bound it too, so three reads and a command between one
+    /// paragraph and the next drew two headers — two claims about one stretch
+    /// of work, with nothing between them to explain the seam.
     #[test]
-    fn only_unsettled_tools_stay_out_of_activity() {
+    fn every_kind_of_work_between_two_paragraphs_is_one_cluster() {
+        let items = vec![
+            tool(ToolKind::Read, "Read src/a.rs"),
+            tool(ToolKind::Read, "Read src/b.rs"),
+            tool(ToolKind::Execute, "cargo build"),
+            tool(ToolKind::Edit, "src/a.rs"),
+            thought(2),
+        ];
+        let runs = runs(&targets(&items));
+        assert!(
+            matches!(runs.as_slice(), [Run::Activity { members }] if members.len() == 5),
+            "{} runs, wanted one",
+            runs.len()
+        );
+    }
+
+    /// **A step's status does not decide which cluster it is in.** Running work
+    /// used to sit outside, and move in when it finished — so the row count
+    /// changed every few seconds mid-turn, and a step that had been a card
+    /// became a line in a list somebody was already reading.
+    #[test]
+    fn what_a_step_is_doing_does_not_move_it_between_clusters() {
         let items = vec![
             tool_with_status(ToolKind::Read, "Read src/pending.rs", ToolStatus::Pending),
             tool_with_status(ToolKind::Read, "Read src/live-a.rs", ToolStatus::InProgress),
@@ -3594,15 +5655,11 @@ mod tests {
             tool(ToolKind::Read, "Read src/done-b.rs"),
         ];
         let runs = runs(&targets(&items));
-        assert!(matches!(
-            runs.as_slice(),
-            [
-                Run::Single(_),
-                Run::Single(_),
-                Run::Activity { members, .. }
-            ]
-                if members.len() == 3
-        ));
+        assert!(
+            matches!(runs.as_slice(), [Run::Activity { members }] if members.len() == 5),
+            "{} runs, wanted one",
+            runs.len()
+        );
     }
 
     #[test]
@@ -3616,31 +5673,40 @@ mod tests {
             tool(ToolKind::Read, "Read src/c.rs"),
         ];
         let runs = runs(&targets(&items));
-        assert!(matches!(
-            runs.as_slice(),
-            [Run::Activity { .. }, Run::Single(_), Run::Single(_)]
-        ));
+        assert!(
+            matches!(
+                runs.as_slice(),
+                [
+                    Run::Activity { members: before },
+                    Run::Single(_),
+                    Run::Activity { members: after }
+                ] if before.len() == 2 && after.len() == 1
+            ),
+            "the notice between them is what makes two clusters of one"
+        );
     }
 
     #[test]
     fn summary_aggregates_repeated_steps() {
         let items = [thought(3), thought(3), thought(4), thought(5), thought(6)];
         let bodies: Vec<&ChatItem> = items.iter().collect();
-        assert_eq!(activity_summary(&bodies), "Reasoned 21s");
+        assert_eq!(activity_summary(&bodies), "21s reasoning");
 
         let reads = [
             tool(ToolKind::Read, "Read src/a.rs"),
             tool(ToolKind::Read, "Read src/b.rs"),
         ];
         let bodies: Vec<&ChatItem> = reads.iter().collect();
-        assert_eq!(activity_summary(&bodies), "Inspected 2 files");
+        assert_eq!(activity_summary(&bodies), "2 files");
 
         let failed_reads = [
             tool(ToolKind::Read, "Read src/a.rs"),
             tool_with_status(ToolKind::Read, "Read src/b.rs", ToolStatus::Failed),
         ];
+        // **The state is no longer in the summary**, and neither is the verb.
+        // The row this lands in carries both, two columns to the left.
         let bodies: Vec<&ChatItem> = failed_reads.iter().collect();
-        assert_eq!(activity_summary(&bodies), "Inspected 2 files · failed");
+        assert_eq!(activity_summary(&bodies), "2 files");
 
         let multi_edit = ChatItem::Tool(ToolItem::new(ToolCall {
             id: "multi-edit".into(),
@@ -3661,50 +5727,120 @@ mod tests {
                 },
             ],
         }));
-        assert_eq!(activity_summary(&[&multi_edit]), "Changed 2 files");
+        assert_eq!(activity_summary(&[&multi_edit]), "2 files");
     }
 
+    /// **A path is split so the name can lead.** A reader scanning a column of
+    /// them is looking for the file; the directory above it is only there for
+    /// the times two names are the same, and at one weight it takes the eye
+    /// first every time it is long.
     #[test]
-    fn tool_descriptor_does_not_repeat_its_action() {
-        let ChatItem::Tool(edit) = tool(ToolKind::Edit, "Edit src/lib.rs") else {
-            unreachable!();
-        };
-        let root = Path::new("/tmp/project");
-        assert_eq!(tool_descriptor(&edit, root), "src/lib.rs");
+    fn a_row_splits_a_path_and_leaves_a_command_whole() {
+        let file = Object::path("crates/app/src/chat/pane.rs");
+        assert_eq!(file.dir.as_deref(), Some("crates/app/src/chat/"));
+        assert_eq!(file.name.as_ref(), "pane.rs");
 
-        let ChatItem::Tool(run) = tool(ToolKind::Execute, "Run cargo test") else {
-            unreachable!();
-        };
-        assert_eq!(tool_descriptor(&run, root), "cargo test");
+        let bare = Object::path("README.md");
+        assert_eq!(bare.dir, None);
+        assert_eq!(bare.name.as_ref(), "README.md");
 
-        let multiline = ToolItem::new(ToolCall {
-            id: "script".into(),
-            title: "python3 - <<'PY'\nprint('ok')\nPY".into(),
-            description: None,
-            kind: ToolKind::Execute,
-            status: ToolStatus::Completed,
-            content: Vec::new(),
-        });
+        // A command holds slashes and is not a path: cut at the last one it
+        // would quote something nobody ran.
+        let command = Object::path("cargo test -p onehand --manifest-path ./Cargo.toml");
+        assert_eq!(command.dir, None);
+        assert!(command.name.contains("cargo test"));
+    }
+
+    /// Output is read for the line that went wrong, so that line is the one
+    /// the ink follows — not the row it sits in.
+    #[test]
+    fn the_line_that_went_wrong_is_the_one_marked() {
+        assert!(is_error_line("error[E0433]: failed to resolve"));
+        assert!(is_error_line("  FAILED: 1 test"));
+        assert!(is_error_line("panicked at src/lib.rs:4"));
+        assert!(!is_error_line("test result: ok. 34 passed"));
+        assert!(!is_error_line("   Compiling onehand v0.1.0"));
+    }
+
+    /// The mark a run's row carries reads its ending, not its worst moment.
+    #[test]
+    fn a_fixed_failure_is_not_an_alarm() {
+        use onehand_core::chat::{Outcome, RunOutcome};
+        let mark = |outcome| RowMark::of_run(RunOutcome { outcome, errors: 0 });
+        assert!(matches!(mark(Outcome::Clean), RowMark::Done));
+        assert!(matches!(mark(Outcome::Recovered), RowMark::Recovered));
+        assert!(matches!(mark(Outcome::Failed), RowMark::Failed));
+        assert!(matches!(mark(Outcome::Running), RowMark::Running));
+    }
+
+    /// **Two clusters never stand next to each other.**
+    ///
+    /// It is the rule the whole arrangement rests on: a cluster is bounded by
+    /// the agent's words, so two of them with nothing between is one stretch of
+    /// work claiming to be two — and drawn, that is two muted lines a reader has
+    /// to work out the seam between.
+    #[test]
+    fn two_clusters_never_stand_next_to_each_other() {
+        let items = vec![
+            ChatItem::User(onehand_core::chat::UserMsg::text("go")),
+            tool(ToolKind::Read, "a.rs"),
+            thought(2),
+            tool(ToolKind::Execute, "cargo build"),
+            tool_with_status(ToolKind::Read, "b.rs", ToolStatus::InProgress),
+            ChatItem::Agent(Md::parse("done")),
+            tool(ToolKind::Edit, "a.rs"),
+            ChatItem::notice("interrupted"),
+            tool(ToolKind::Read, "c.rs"),
+        ];
+        let runs = runs(&targets(&items));
+        let mut previous_was_cluster = false;
+        for run in &runs {
+            let cluster = matches!(run, Run::Activity { .. });
+            assert!(
+                !(cluster && previous_was_cluster),
+                "two clusters with nothing between them"
+            );
+            previous_was_cluster = cluster;
+        }
+        // And what does bound one is prose, a prompt, or a notice — three
+        // boundaries here, so four clusters.
         assert_eq!(
-            tool_descriptor(&multiline, root),
-            "python3 - <<'PY' print('ok') PY"
+            runs.iter()
+                .filter(|run| matches!(run, Run::Activity { .. }))
+                .count(),
+            3
         );
-        assert!(show_tool_kind(&run), "a raw command still needs `Run`");
+    }
 
-        let mut described = run;
-        described.call.description = Some("Run the regression suite".into());
-        assert_eq!(
-            tool_descriptor(&described, root),
-            "Run the regression suite"
-        );
+    /// **A line of this project's own code fits the reading column.**
+    ///
+    /// The column used to be set by prose alone, which left a diff 74 columns
+    /// wide against the 100 `rustfmt` writes at — so nearly every line of
+    /// nearly every diff wrapped, in the one block somebody opens the
+    /// transcript to read when something has broken. The cap is derived from
+    /// that instead, and this is what keeps it derived: shift any inset between
+    /// the column and the text and the sum moves, rather than the diff quietly
+    /// getting tighter.
+    #[test]
+    fn a_hundred_columns_of_this_projects_code_fits() {
+        // Every inset between the edge of the column and a diff's first
+        // character, at the deepest place one is drawn: inside a child row's
+        // own detail.
+        // Every inset between the edge of the column and a diff's first
+        // character: the row's own detail inset, the frame's right margin, the
+        // detail box's border, and the diff's number and sign columns.
+        let chrome = DETAIL_INSET.0
+            + ROW_PAD_X.0
+            + 2. / 16.
+            + DIFF_NUM_W.0
+            + DIFF_SIGN_W.0
+            + DIFF_TEXT_PAD.0;
+        let text = CODE_TEXT.0 * MONO_ADVANCE * DIFF_COLUMNS;
         assert!(
-            !show_tool_kind(&described),
-            "the human description replaces the redundant kind label"
+            CONTENT_COLUMN.0 >= chrome + text,
+            "{DIFF_COLUMNS} columns need {:.2}rem and the column caps at {:.2}rem",
+            chrome + text,
+            CONTENT_COLUMN.0
         );
-
-        let ChatItem::Tool(absolute) = tool(ToolKind::Edit, "/tmp/project/src/main.rs") else {
-            unreachable!();
-        };
-        assert_eq!(tool_descriptor(&absolute, root), "src/main.rs");
     }
 }
