@@ -684,11 +684,24 @@ fn user(u: &UserMsg, uid: usize, room: Room, cx: &App) -> impl IntoElement + use
         }))
         .children((!u.text.trim().is_empty()).then(|| {
             div()
+                .id(("prompt", uid))
                 .v_flex()
                 .items_end()
                 // The control belongs to the bubble rather than following it.
                 .gap(BUBBLE_TAIL_GAP)
                 .max_w(relative(share))
+                // **The hover belongs to the whole message, not to the row it
+                // reveals.** Put on the row itself it asked the reader to find
+                // a transparent strip a few pixels tall before it would show
+                // them what was in it -- which is the same as not being there.
+                // The wrapper shrinks to the bubble, so the region that answers
+                // is the thing somebody is pointing at.
+                //
+                // It works by cascade rather than by naming a group: text
+                // colour inherits, so the row is drawn in whatever this says
+                // and the bubble, which sets its own ink, is untouched.
+                .text_color(cx.theme().transparent)
+                .hover(|turn| turn.text_color(cx.theme().muted_foreground))
                 .child(
                     div()
                         .w_full()
@@ -756,15 +769,14 @@ impl RenderOnce for PromptCopy {
             .h(BUTTON_H)
             .cursor_pointer()
             .text_xs()
-            // Transparent rather than absent: the row is laid out whichever it
-            // is, so nothing under the bubble moves when the pointer arrives.
-            // A press keeps it up, or the answer would vanish with the pointer
-            // that caused it.
-            .text_color(match copied {
-                true => crate::theme::status_ink(cx).success,
-                false => cx.theme().transparent,
+            // **No colour of its own until it has something to say.** The ink
+            // is the message's, inherited, so the row appears when the message
+            // is pointed at rather than when this thin strip is. Once pressed
+            // it takes its own, which is also what keeps the answer up after
+            // the pointer has gone.
+            .when(copied, |row| {
+                row.text_color(crate::theme::status_ink(cx).success)
             })
-            .hover(|row| row.text_color(cx.theme().muted_foreground))
             .child(
                 Icon::new(match copied {
                     true => IconName::Check,

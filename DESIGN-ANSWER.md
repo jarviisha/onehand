@@ -1019,13 +1019,20 @@ The **only** block with a fill, and the only one on the right.
   but a fenced span is how somebody says "this is a name, not a word", and
   losing it makes a path in the middle of a sentence unfindable. Only *matched*
   pairs count; a lone backtick is a backtick.
-- **Copy sits under the bubble, on its right edge, and appears by inheriting.**
-  The usual way to show a child on hover is to name a group on an ancestor and
-  ask for it by name, which resolves through a registry; text colour cascades,
-  so the row is drawn transparent and the hover on its own container turns the
-  ink up — one primitive, no registry. The row is laid out either way, so
-  nothing moves when the pointer arrives, and a press holds the answer up on a
-  timer rather than until the pointer leaves.
+- **Copy sits under the bubble, on its right edge, and appears when the message
+  is pointed at.** The hover belongs to the whole message, not to the row it
+  reveals: put on the row itself it asked the reader to find a transparent strip
+  a few pixels tall before it would show them what was in it, which is the same
+  as not being there. The wrapper shrinks to the bubble, so the region that
+  answers is the thing somebody is pointing at.
+
+  It works by **cascade rather than by naming a group**: the usual way to show a
+  child on hover resolves a group name through a registry, while text colour
+  simply inherits — so the wrapper turns the ink up and the row, which sets none
+  of its own, comes with it; the bubble, which sets its own, does not. The row is
+  laid out either way, so nothing moves when the pointer arrives, and a press
+  gives the row a colour of its own — which is also what holds the answer up
+  after the pointer has gone, until a timer takes it back.
 - **A turn opens above the prompt and does not close below it.** The space over
   a question is what a reader scrolling back finds the last one by, so it is the
   widest boundary inside the conversation — twice what two blocks of one answer
