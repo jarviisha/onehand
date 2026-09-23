@@ -12,9 +12,10 @@
 use super::composer::{Composer, ComposerEvent};
 use super::conversation::{Conversation, SessionPhase};
 use super::session::{ChatEvent, ChatSession};
-use super::transcript;
+use super::transcript::{self, radius_tag};
 use super::viewport::{self, FindState, RunKind};
 use gpui::prelude::FluentBuilder as _;
+use gpui::{Animation, AnimationExt as _};
 use gpui::{
     App, AppContext, Context, Div, ElementId, Entity, EventEmitter, FocusHandle, Focusable,
     InteractiveElement, IntoElement, ListState, ParentElement, Rems, Render, SharedString,
@@ -2343,22 +2344,27 @@ impl ChatPane {
 
     /// The widest the elapsed column ever has to be.
     ///
-    /// **Reserved, not measured.** The whole point of the column is that
-    /// nothing after it moves when `9s` becomes `10s` or `59s` becomes
-    /// `1m 00s`, and a box that shrink-wraps its digits moves on every one of
-    /// those. Held at the longest shape the format produces, in the mono face
-    /// whose digits are all one width -- both halves are needed, since a
-    /// proportional face slides the text inside the box even when the box holds
-    /// still.
+    /// **Reserved, not measured, and the digits sit against its right edge.**
+    /// The whole point of the column is that nothing after it moves when `9s`
+    /// becomes `10s` or `59s` becomes `1m 00s`, and a box that shrink-wraps its
+    /// digits moves on every one of those. Held at the longest shape the format
+    /// produces, in the mono face whose digits are all one width -- both halves
+    /// are needed, since a proportional face slides the text inside the box even
+    /// when the box holds still. Right-aligned so the two shapes end on one
+    /// edge rather than starting on one, which is where the eye is: what
+    /// follows the clock begins at the same place whatever the clock says.
     const CLOCK_W: Rems = rems(3.25);
 
-    /// The line that says a turn is still going, pinned above the composer.
+    /// The mark that says a turn is alive, and how far it travels.
     ///
-    /// **Chrome, and it has to read as chrome.** It sits directly under an
-    /// answer that is streaming, so every channel it could compete on is given
-    /// up: the ink is the secondary one end to end, only the spinner keeps the
-    /// accent, and the row's height is fixed whatever it holds. What it is for
-    /// is answering "is this still alive" at a glance, and nothing more.
+    /// **A square that rises and falls rather than a spinner.** A spinner is a
+    /// wait with no progress in it, which is what this is not: the thing it
+    /// stands beside is a clock counting up and a sentence that changes. The
+    /// travel is bounded by a slot tall enough for the whole of it, so the row
+    /// beside it never moves.
+    const PULSE_SIZE: Rems = rems(0.5);
+    const PULSE_RISE: Rems = rems(0.1875);
+
     fn working_strip(&self, cx: &App) -> gpui::AnyElement {
         let running = self
             .active_conversation()
@@ -2390,44 +2396,99 @@ impl ChatPane {
             0..=59 => format!("{elapsed}s"),
             _ => format!("{}m {:02}s", elapsed / 60, elapsed % 60),
         };
-        let dot = |cx: &App| {
-            div()
-                .flex_none()
-                .text_color(cx.theme().muted_foreground.opacity(0.6))
-                .child("·")
-        };
 
-        div()
+        // **Only what is actually there.** A separator standing between a thing
+        // and nothing is punctuation for a clause that was never written, and
+        // the clock never takes one at all: it is the row's own left edge
+        // rather than one side of a pair.
+        let mut parts: Vec<gpui::AnyElement> = Vec::new();
+        if running > 0 {
+            parts.push(
+                div()
+                    .flex_none()
+                    .whitespace_nowrap()
+                    .child(match running {
+                        1 => "1 task".to_string(),
+                        n => format!("{n} tasks"),
+                    })
+                    .into_any_element(),
+            );
+        }
+        if let Some(status) = status {
+            // The one part that gives way: it is the agent's own words about
+            // what it is doing, and the only thing here whose length nothing
+            // bounds.
+            parts.push(
+                div()
+                    .flex_1()
+                    .min_w_0()
+                    .truncate()
+                    .child(status)
+                    .into_any_element(),
+            );
+        }
+
+        let rise = Self::PULSE_RISE.0;
+        let mut row = div()
             .h_flex()
             .items_center()
             .gap_2()
             .h(rems(1.5))
             .text_xs()
-            // **One ink for the words, the accent for the spinner alone.** A
+            // **One ink for the words, the accent for the mark alone.** A
             // status line tinted to be noticed is a status line competing with
             // the answer arriving above it.
             .text_color(cx.theme().muted_foreground)
-            .child(Spinner::new().xsmall())
+            .child(
+                div()
+                    .flex_none()
+                    .relative()
+                    .w(Self::PULSE_SIZE)
+                    .h(rems(Self::PULSE_SIZE.0 + rise * 2.))
+                    .child(
+                        div()
+                            .absolute()
+                            .left_0()
+                            .size(Self::PULSE_SIZE)
+                            .rounded(radius_tag(cx))
+                            .bg(cx.theme().primary)
+                            .with_animation(
+                                "turn-pulse",
+                                // Capped well under the frame rate: this is a
+                                // mark keeping time, not something being
+                                // watched, and an uncapped repeat redraws the
+                                // whole window on every frame for as long as a
+                                // turn runs.
+                                Animation::new(std::time::Duration::from_millis(1_100))
+                                    .repeat()
+                                    .with_max_fps(30.),
+                                move |square, t| {
+                                    let phase = t * std::f32::consts::TAU;
+                                    square.top(rems(rise * (1. - phase.cos())))
+                                },
+                            ),
+                    ),
+            )
             .child(
                 div()
                     .flex_none()
                     .w(Self::CLOCK_W)
+                    .text_right()
                     .font_family(cx.theme().mono_font_family.clone())
                     .child(clock),
-            )
-            .children((running > 0).then(|| dot(cx)))
-            .children((running > 0).then(|| {
-                div().flex_none().whitespace_nowrap().child(match running {
-                    1 => "1 task".to_string(),
-                    n => format!("{n} tasks"),
-                })
-            }))
-            .children(status.as_ref().map(|_| dot(cx)))
-            // The one part that gives way: it is the agent's own words about
-            // what it is doing, and the only thing here whose length nothing
-            // bounds.
-            .children(status.map(|status| div().flex_1().min_w_0().truncate().child(status)))
-            .into_any_element()
+            );
+        for (n, part) in parts.into_iter().enumerate() {
+            if n > 0 {
+                row = row.child(
+                    div()
+                        .flex_none()
+                        .text_color(cx.theme().muted_foreground.opacity(0.6))
+                        .child("·"),
+                );
+            }
+            row = row.child(part);
+        }
+        row.into_any_element()
     }
 
     /// Notice a turn starting and ending, and keep its clock true.

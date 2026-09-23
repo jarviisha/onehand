@@ -658,13 +658,28 @@ directly under an answer that is streaming: the ink is the secondary one end to
 end, only the spinner keeps the accent, no surface or shadow under it, and the
 row's height is fixed whatever it holds.
 
-**The elapsed column is reserved, not measured.** The whole point of it is that
-nothing after it moves when `9s` becomes `10s` or `59s` becomes `1m 00s`, and a
-box that shrink-wraps its digits moves on every one of those. It is held at the
-longest shape the format produces, in the mono face whose digits are all one
-width — both halves are needed, since a proportional face slides the text inside
-the box even when the box holds still. Only the agent's own words give way, and
-they truncate rather than wrap.
+**The elapsed column is reserved, not measured, and its digits sit against its
+right edge.** The whole point of it is that nothing after it moves when `9s`
+becomes `10s` or `59s` becomes `1m 00s`, and a box that shrink-wraps its digits
+moves on every one of those. It is held at the longest shape the format
+produces, in the mono face whose digits are all one width — both halves are
+needed, since a proportional face slides the text inside the box even when the
+box holds still. Right-aligned so the two shapes end on one edge rather than
+starting on one: what follows the clock begins at the same place whatever the
+clock says. Only the agent's own words give way, and they truncate rather than
+wrap.
+
+**The mark is a square that rises and falls, not a spinner.** A spinner is a
+wait with no progress in it, which is what this is not — the thing it stands
+beside is a clock counting up and a sentence that changes. It travels inside a
+slot tall enough for the whole of it, so the row beside it never moves, and its
+repeat is capped well under the frame rate: it is a mark keeping time rather
+than something being watched.
+
+**A separator only stands between two things that are both there.** The clock
+never takes one at all — it is the row's own left edge rather than one side of a
+pair — so a line carrying nothing but a status runs straight from the clock into
+the words.
 
 **The clock wakes once a second and not otherwise.** Drawn from the render pass
 it would be a frame timer; asked for on a one-second tick it redraws at the rate

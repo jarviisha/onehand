@@ -327,7 +327,7 @@ fn corner(base: gpui::Pixels, step: f32) -> gpui::Pixels {
 }
 
 /// A kind mark, a checkbox: the tightest corner drawn anywhere here.
-fn radius_tag(cx: &App) -> gpui::Pixels {
+pub(super) fn radius_tag(cx: &App) -> gpui::Pixels {
     corner(cx.theme().radius, -4.)
 }
 /// A button, a status pill, an inline mark, a callout's open side.
