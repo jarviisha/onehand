@@ -673,18 +673,17 @@ typeface on a row of text. Two faces on one line do not share a baseline, so the
 clock sat a shade off everything beside it, which reads as the row not being on
 one line at all.
 
-**The mark is a square that rises and falls, not a spinner.** A spinner is a
+**The mark is a square that swells and shrinks, not a spinner.** A spinner is a
 wait with no progress in it, which is what this is not — the thing it stands
 beside is a clock counting up and a sentence that changes. It is drawn in the
 ink that says work is going well, and its repeat is capped well under the frame
 rate: it is a mark keeping time rather than something being watched.
 
-**Its travel is symmetric about the row's middle**, and that is the whole of why
-it can sit on a line of text. Swung from one end of its slot to the other it is
-centred on average and never centred at rest, so it reads as a mark hanging
-above the words beside it — which is what a reader sees as "not on the same
-line" whatever the box around it is doing. The slot is tall enough for the whole
-swing either way, so nothing beside it moves.
+**It grows about its own centre, and the slot around it never changes size.**
+Growing a box on a row of text pushes that row's baseline around, and a mark
+that moved the words beside it every second would be worse than no mark. So the
+slot is held at the largest the square ever gets and the square is centred
+inside it: what breathes is the ink, and the space it occupies is constant.
 
 **A separator only stands between two things that are both there.** The clock
 never takes one at all — it is the row's own left edge rather than one side of a

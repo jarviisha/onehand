@@ -2361,21 +2361,20 @@ impl ChatPane {
     /// left for them to prevent.
     const CLOCK_W: Rems = rems(3.25);
 
-    /// The mark that says a turn is alive, and how far it travels.
+    /// The mark that says a turn is alive, and how far it breathes.
     ///
-    /// **A square that rises and falls rather than a spinner.** A spinner is a
-    /// wait with no progress in it, which is what this is not: the thing it
+    /// **A square that swells and shrinks rather than a spinner.** A spinner is
+    /// a wait with no progress in it, which is what this is not: the thing it
     /// stands beside is a clock counting up and a sentence that changes.
     ///
-    /// **The travel is symmetric about the row's middle**, and that is the
-    /// whole of why it can sit on a line of text at all. Swung from one end of
-    /// its slot to the other it is centred on average and never centred at
-    /// rest, so it reads as a mark hanging above the words it stands beside --
-    /// which is what a reader sees as "not on the same line" whatever the box
-    /// around it is doing. The slot is tall enough for the whole swing either
-    /// way, so nothing beside it moves.
+    /// **It grows about its own centre, and the slot around it never changes
+    /// size.** Growing a box on a row of text pushes that row's baseline
+    /// around, and a mark that moved the words beside it every second would be
+    /// worse than no mark. So the slot is held at the largest the square ever
+    /// gets and the square is centred inside it: what breathes is the ink, and
+    /// the space it occupies is constant.
     const PULSE_SIZE: Rems = rems(0.75);
-    const PULSE_RISE: Rems = rems(0.1875);
+    const PULSE_MIN: Rems = rems(0.375);
 
     fn working_strip(&self, cx: &App) -> gpui::AnyElement {
         let running = self
@@ -2440,7 +2439,7 @@ impl ChatPane {
             );
         }
 
-        let rise = Self::PULSE_RISE.0;
+        let (big, small) = (Self::PULSE_SIZE.0, Self::PULSE_MIN.0);
         let mut row = div()
             .h_flex()
             .items_center()
@@ -2454,14 +2453,12 @@ impl ChatPane {
             .child(
                 div()
                     .flex_none()
-                    .relative()
-                    .w(Self::PULSE_SIZE)
-                    .h(rems(Self::PULSE_SIZE.0 + rise * 2.))
+                    .size(Self::PULSE_SIZE)
+                    .flex()
+                    .items_center()
+                    .justify_center()
                     .child(
                         div()
-                            .absolute()
-                            .left_0()
-                            .size(Self::PULSE_SIZE)
                             .rounded(radius_tag(cx))
                             .bg(crate::theme::status_ink(cx).success)
                             .with_animation(
@@ -2475,13 +2472,13 @@ impl ChatPane {
                                     .repeat()
                                     .with_max_fps(30.),
                                 move |square, t| {
-                                    // Swung about the middle of the slot, which
-                                    // is the row's own middle: the resting
-                                    // position and the average position are the
-                                    // same place, and that place is the line
-                                    // the words sit on.
+                                    // Centred by the slot rather than by an
+                                    // offset of its own, so the growth is even
+                                    // on all four sides and the arithmetic has
+                                    // nowhere to be wrong.
                                     let phase = t * std::f32::consts::TAU;
-                                    square.top(rems(rise * (1. + phase.sin())))
+                                    let swell = (1. + phase.sin()) / 2.;
+                                    square.size(rems(small + (big - small) * swell))
                                 },
                             ),
                     ),
