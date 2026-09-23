@@ -1176,9 +1176,20 @@ and its first paragraph — is **one cluster**, and a cluster is **one muted lin
   finished buries the one part of it still changing. The step in flight is not
   counted among the things that have been done. When it settles the line changes
   in place; its height, its position and its cap do not.
-- **How the cluster went is said in words, not in a glyph.** How many failed sits
-  beside the sentence in the danger ink, as a number rather than a state — so not
-  a pill; and a cluster still working leads its sentence with what it is doing.
+- **The line says what the work was, not how it came out.** It carried a tally of
+  what failed, in the danger ink, and that was the loudest thing on a line whose
+  whole job is to stay behind the answer above it — for a number nobody can act
+  on without opening the block anyway. How it came out is the business of the
+  rows inside, each of which names its own failure and its own exit code. A
+  cluster still working does lead its sentence with what it is doing, because
+  that is what the work *is* at that moment.
+
+  **What this costs is stated plainly: a collapsed line no longer says whether
+  anything broke.** Reading only the header lines of a long turn tells you what
+  the agent did and not whether it worked, which was an earlier criterion. The
+  trade was asked for; the way back, if the quiet costs too much, is a mark
+  rather than a count — one disc in the danger ink, which says *something here*
+  without spending the line's one loud slot on arithmetic.
   (The *rows inside* it still carry marks, and those read the section's ending
   rather than its worst moment: quiet, `warning` where a failure was recovered
   from, `danger` where the section ended on one.)

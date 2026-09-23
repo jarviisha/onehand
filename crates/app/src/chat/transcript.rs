@@ -4425,17 +4425,12 @@ fn cluster_line(
         })
         .on_click(move |event, window, cx| on_click(event, window, cx))
         .child(sentence)
-        // How many went wrong, said in the ink that means it.
-        .children((summary.errors > 0).then(|| {
-            div()
-                .flex_none()
-                .whitespace_nowrap()
-                .text_color(status.danger)
-                .child(match summary.errors {
-                    1 => " · 1 error".to_string(),
-                    n => format!(" · {n} errors"),
-                })
-        }))
+        // **What went wrong is not counted here.** The line carries what the
+        // work *was*; how it came out is the business of the rows inside it,
+        // each of which names its own failure and its own exit code. A tally
+        // on the outside is a number nobody can act on without opening the
+        // block anyway, and it was the loudest thing on a line whose whole job
+        // is to stay behind the answer above it.
         // The total, after the sentence and before the counts: it is about the
         // *work* rather than about the files. Only where something reported
         // one, or a cluster whose steps never said would claim to have taken no
