@@ -27,7 +27,8 @@ those come back over ACP's terminal extension and render inline in the transcrip
 > any more: gpui-component's theme is the look (decision D1), so both describe *structure and
 > behaviour* while every colour, radius and size is read from `cx.theme()` at the call site. They are
 > binding, and source files still cite neither of them — see *Code describes; it never cites* under
-> **Rules**.
+> **Rules**. The `design-contract` skill carries the same rules and triggers on any change the user
+> can see; it points at the two files rather than restating them, because both move with the UI.
 
 ## Commands
 
