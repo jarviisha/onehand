@@ -1551,9 +1551,25 @@ Listed because a missing feature nobody wrote down reads as a bug in the ones th
   file, and it carries no line — ACP's diff payload has no hunk offsets. Core holds no parser for
   these tokens either: the feature is the detection pass, and a parser written ahead of it is a
   guess at an interface nobody has designed.
-- **A fenced code block inside prose cannot fold independently.** `TextViewStyle::code_block` is
-  shared by every block and has nowhere to keep per-block fold state. Supporting it means owning a
-  custom Markdown code-block renderer; the current compromise is a height cap and Copy button.
+- **A fenced code block inside prose has no header, and cannot fold independently.** What the
+  renderer opens to a caller is one `StyleRefinement` for the container and one closure for a box it
+  pins to the top-right corner itself — so the surface (edge, corner, padding, size, leading) is
+  ours, and a header *row* carrying a file path, a language and a copy is not: there is no slot
+  above the code to put one in, the copy's position is written by the library, and
+  `TextViewStyle::code_block` is one style for every block with nowhere to keep per-block fold
+  state. The language is said in the corner box instead, since that is the only slot there is.
+
+  **Owning the block is reachable and costs selection.** `TextView::markdown_block_parser` runs
+  *before* the built-in conversion and can intercept `mdast::Node::Code`, and
+  `markdown_block_renderer` then draws it — that is the supported hook, and `SyntaxHighlighter` is
+  public so highlighting survives. What does not is selection: the element that carries it,
+  `text::Inline`, is `pub(crate)`, so a hand-rolled block would draw `StyledText` and lose the drag.
+  Trading a header for the ability to select code is the wrong way round.
+
+  **The comment scope cannot be retinted either.** `TextViewStyle::highlight_theme` is a public
+  field, but `ThemeStyle::color` inside it is private with no setter and no constructor — reachable
+  only by round-tripping through its `Deserialize`, which means writing a colour literal back in,
+  and a literal is the one thing the theme exists to stop.
 - **The terminal has no `APP_KEYPAD`.** The numeric keypad's application mode is unimplemented,
   because gpui does not report a keypad key differently from the digit above it. The keys work; they
   always send the ordinary form. The rest of the required full-screen terminal behaviour is present.

@@ -775,7 +775,8 @@ the reader can see.
 | Such a row's *verb* — `Inspected`, `Explored`, `Reasoned` | semibold, at `text_xs` |
 | Such a row's *summary* or descriptor | regular + `muted_foreground`, at `text_xs` |
 | Meta — tags, status, timings, counts, attachment rows | `text_xs` + `muted_foreground` |
-| Code, diffs, terminal, `IN`/`OUT` bodies, fenced blocks | the theme's mono family, one size, leading tightened from the prose default |
+| Code, diffs, terminal bodies | the theme's mono family, one size, leading tightened from the prose default |
+| A fenced block inside an answer | the same family, a hair smaller, and looser between lines — see below |
 
 **Every well of machine text is one well.** A tool's output, a diff, a live
 terminal and a fenced block quoted inside an answer are the same claim — a
@@ -784,6 +785,28 @@ The last of them arrives through a different renderer and has to be given those
 values explicitly; left to itself it draws at a pixel size of its own, and the
 same command reads at one size in a tool card and another when quoted back in
 prose.
+
+**A fenced block is the exception, and the only one.** The other three are quoted
+*machine* text inside chrome — a card's output, a diff, a terminal — while a
+fenced block is something the agent chose to show in the middle of a sentence,
+read at the pace of the prose around it. So it sits a hair under the shared size
+and breathes more between its lines. It also **carries no fill**: the renderer
+gives one, and the user's own bubble is filled too, so a quotation and a thing
+somebody said read as the same object at a glance. A filled surface in the
+transcript means one thing only — *this was typed by the person reading it* —
+and everything else is an edge on the reading surface, which is the language the
+activity block already speaks.
+
+**What the block cannot have is a header.** The renderer opens one style
+refinement for the container and one closure for a box it pins to the top-right
+corner itself, so the surface is the caller's and a header *row* carrying a path,
+a language and a copy is not: there is no slot above the code, and the copy's
+position is the library's. The language is said in that corner box, because it is
+the only slot there is. Owning the block outright is reachable — the markdown
+block parser runs before the built-in conversion and can intercept a code node —
+but the element that carries selection is private to the library, so a
+hand-rolled block would trade the ability to select code for a header. That is
+the wrong way round.
 
 **Prose leading is wrong for a diff.** The golden ratio is right for a
 paragraph and wrong for two hundred lines each carrying two thirds of a blank

@@ -115,6 +115,15 @@ const CLUSTER_TEXT: Rems = TEXT;
 /// output, and the two are free to move apart. Nothing else marks them the
 /// same — a well is mono, tinted and padded, a card header is none of those.
 const WORK_TEXT: Rems = rems(0.8125);
+/// A fenced block inside an answer: its own size and leading.
+///
+/// **Split from the size the other wells share, and only here.** A tool's
+/// output, a diff and a live terminal are quoted *machine* text inside chrome;
+/// a fenced block is something the agent chose to show in the middle of a
+/// sentence, read at the pace of the prose around it. It sits a hair under the
+/// others and breathes more between lines for that reason.
+const FENCE_TEXT: Rems = rems(0.78125);
+const FENCE_LEADING: f32 = 1.75;
 /// Leading for those wells, as a multiple of the size above.
 ///
 /// Prose is set at the golden ratio, which is right for a paragraph and wrong
@@ -853,7 +862,25 @@ fn md_view(
         Some(state) => TextView::new(state)
             .selectable(true)
             .style(prose_style(window, cx))
-            .code_block_actions(|block, _, _| copy_button("copy-code", block.code()))
+            // **The language, beside the copy.** A block that does not say what
+            // it is leaves a reader guessing from the syntax -- and this
+            // floating corner is the only slot the renderer opens, so it is
+            // where the label has to go until the block is ours to lay out.
+            .code_block_actions(|block, _, cx| {
+                div()
+                    .h_flex()
+                    .items_center()
+                    .gap(TIGHT_GAP)
+                    .children(block.lang().filter(|l| !l.trim().is_empty()).map(|lang| {
+                        div()
+                            .flex_none()
+                            .pl(TIGHT_GAP)
+                            .text_size(OBJECT_TEXT)
+                            .text_color(cx.theme().muted_foreground)
+                            .child(lang)
+                    }))
+                    .child(copy_button("copy-code", block.code()))
+            })
             .into_any_element(),
         None => div().child(md.source.clone()).into_any_element(),
     }
@@ -921,13 +948,22 @@ fn prose_style(window: &Window, cx: &App) -> TextViewStyle {
             StyleRefinement::default()
                 .max_h(MAX_CODE_BLOCK_H)
                 .overflow_hidden()
-                .py(TEXT_PAD_Y)
-                .px(FRAME_PAD)
+                .py(FRAME_PAD)
+                .px(TEXT_PAD_X)
                 .rounded(radius_block(cx))
                 .border_1()
                 .border_color(cx.theme().border)
-                .text_size(CODE_TEXT)
-                .line_height(relative(CODE_LEADING)),
+                // **Nothing behind it, which is the point.** The renderer fills
+                // a fenced block with the well step, and the user's own bubble
+                // is filled too -- so a quotation and a thing somebody said
+                // came out as the same object at a glance. A filled surface in
+                // the transcript now means one thing only: this was typed by
+                // the person reading it. Everything else is an edge on the
+                // reading surface, which is the language the activity block
+                // already speaks.
+                .bg(cx.theme().transparent)
+                .text_size(FENCE_TEXT)
+                .line_height(relative(FENCE_LEADING)),
         )
         // A table is read across, so its cells are wider than they are tall:
         // padding a cell evenly leaves the columns crowded and the rows loose,
