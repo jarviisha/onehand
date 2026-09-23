@@ -91,6 +91,11 @@ pub struct RunPlan {
 pub struct ChangePlan {
     pub anchor: TranscriptItemId,
     pub changes: onehand_core::chat::TurnChanges,
+    /// What this block does if nobody has said otherwise -- true only for the
+    /// last finished turn. Carried so the toggle knows which way "untouched"
+    /// currently points, and so the renderer does not have to work it out
+    /// again from a plan it cannot see the rest of.
+    pub opens_itself: bool,
     /// The turn's own items, so a file row opened later can be diffed without
     /// the whole conversation being diffed now.
     pub body: Vec<TranscriptItemId>,
@@ -257,7 +262,15 @@ impl Viewport {
     /// holds it: the projection needs one bit per activity run and nothing else
     /// about a session, and taking only what it needs is what lets the run
     /// layout be tested without opening a window.
-    pub fn replan(&mut self, chat: &Chat, folds: u64, is_open: impl Fn(TranscriptItemId) -> bool) {
+    pub fn replan(
+        &mut self,
+        chat: &Chat,
+        folds: u64,
+        is_open: impl Fn(TranscriptItemId) -> bool,
+        // Asked with the default in hand, since what "untouched" means for a
+        // turn summary changes as the conversation grows. See `close_turns`.
+        turn_open: impl Fn(TranscriptItemId, bool) -> bool,
+    ) {
         let key = PlanKey {
             revision: chat.revision(),
             history: chat.history.len(),
@@ -342,7 +355,7 @@ impl Viewport {
             });
         }
 
-        let plan = close_turns(chat, plan, &is_open);
+        let plan = close_turns(chat, plan, &turn_open);
 
         let diverged = self
             .plan
@@ -775,7 +788,7 @@ impl Viewport {
 fn close_turns(
     chat: &Chat,
     plan: Vec<RunPlan>,
-    is_open: &impl Fn(TranscriptItemId) -> bool,
+    is_open: &impl Fn(TranscriptItemId, bool) -> bool,
 ) -> Vec<RunPlan> {
     let mut out: Vec<RunPlan> = Vec::with_capacity(plan.len());
     // The turn being walked: where it began, and what it has done so far.
@@ -786,9 +799,14 @@ fn close_turns(
     // the turn that just ended -- and a conversation that kept every one of
     // them open would be a column of tables with the reading between them.
     // Sending the next prompt is what puts the one above away, which is the
-    // moment the reader stopped asking. The fold set holds the *exceptions* to
-    // that rather than the state, so opening an old one and closing the newest
-    // both survive the next turn arriving.
+    // moment the reader stopped asking.
+    //
+    // **Which is why the fold is asked with its default in hand.** A reader who
+    // decided about this block keeps that decision; one who never touched it
+    // follows the rule above. Recorded the other way round -- a set of
+    // exceptions to whatever the default happens to be -- the recorded fact
+    // changes meaning when the default moves under it, and a block closed while
+    // it was newest sprang open the moment the next prompt went out.
     let closer = |anchor: TranscriptItemId, body: &[TranscriptItemId], newest: bool| {
         let items: Vec<&ChatItem> = body.iter().filter_map(|&t| item(chat, t)).collect();
         onehand_core::chat::turn_changes(&items).map(|changes| RunPlan {
@@ -798,8 +816,9 @@ fn close_turns(
                 anchor,
                 changes,
                 body: body.to_vec(),
+                opens_itself: newest,
             }),
-            open: newest != is_open(anchor),
+            open: is_open(anchor, newest),
             kind: RunKind::Compact,
         })
     };
@@ -1078,6 +1097,45 @@ mod tests {
         }))
     }
 
+    /// A block closed by hand stays closed once its turn stops being newest.
+    ///
+    /// The default moves -- a summary opens itself while its turn is the last
+    /// and is a line afterwards -- so a fold recorded as "the exception to the
+    /// default" records a fact that changes meaning underneath it. Written that
+    /// way, a block the reader closed sprang open the moment the next prompt
+    /// went out.
+    #[test]
+    fn a_turn_summary_keeps_the_answer_it_was_given() {
+        let mut chat = chat();
+        chat.items.push(ChatItem::User(UserMsg::text("fix it")));
+        chat.items.push(wrote("src/lib.rs", "a\nb\n", "1\n2\n3\n"));
+
+        // The reader closes it while it is the newest turn.
+        let closed = std::cell::RefCell::new(std::collections::HashMap::new());
+        let decide = |anchor: TranscriptItemId, default: bool| {
+            *closed.borrow().get(&anchor).unwrap_or(&default)
+        };
+
+        let mut viewport = Viewport::default();
+        viewport.replan(&chat, 0, |_| false, decide);
+        assert_eq!(viewport.run(4).map(|r| r.open), Some(true), "newest opens");
+
+        closed.borrow_mut().insert(TranscriptItemId::Live(3), false);
+        viewport.replan(&chat, 1, |_| false, decide);
+        assert_eq!(viewport.run(4).map(|r| r.open), Some(false));
+
+        // A second turn arrives. The first is no longer the newest, and the
+        // answer it was given still holds.
+        chat.items.push(ChatItem::User(UserMsg::text("now this")));
+        chat.items.push(wrote("src/main.rs", "x\n", "x\ny\n"));
+        viewport.replan(&chat, 2, |_| false, decide);
+        assert_eq!(
+            viewport.run(4).map(|r| r.open),
+            Some(false),
+            "closed by hand, and it stays closed"
+        );
+    }
+
     /// A finished turn that wrote something closes on a row of its own, and a
     /// turn still writing does not.
     ///
@@ -1091,14 +1149,14 @@ mod tests {
         chat.busy = true;
 
         let mut viewport = Viewport::default();
-        viewport.replan(&chat, 0, |_| false);
+        viewport.replan(&chat, 0, |_| false, |_, default| default);
         // 0: answer · 1: the old cluster · 2: the prompt · 3: the write ·
         // 4: the line saying the turn is running. Nothing closes it yet.
         assert_eq!(viewport.run(4).map(|r| r.changes.is_some()), Some(false));
         assert!(viewport.run(5).is_none());
 
         chat.busy = false;
-        viewport.replan(&chat, 0, |_| false);
+        viewport.replan(&chat, 0, |_| false, |_, default| default);
         let closing = viewport.run(4).and_then(|run| run.changes.as_ref());
         let closing = closing.expect("the turn closes on what it wrote");
         // Hung off the prompt that began the turn, which is what folds it.
@@ -1114,7 +1172,7 @@ mod tests {
     #[test]
     fn quiet_steps_collapse_into_one_row() {
         let mut viewport = Viewport::default();
-        viewport.replan(&chat(), 0, |_| false);
+        viewport.replan(&chat(), 0, |_| false, |_, default| default);
 
         assert_eq!(viewport.run(0).map(|r| r.members.len()), Some(1));
         assert_eq!(
@@ -1136,7 +1194,7 @@ mod tests {
     #[test]
     fn an_item_inside_a_strip_still_names_a_row() {
         let mut viewport = Viewport::default();
-        viewport.replan(&chat(), 0, |_| false);
+        viewport.replan(&chat(), 0, |_| false, |_, default| default);
 
         assert_eq!(viewport.run_of(TranscriptItemId::Live(0)), Some(0));
         assert_eq!(viewport.run_of(TranscriptItemId::Live(1)), Some(1));
@@ -1171,7 +1229,7 @@ mod tests {
         let mut chat = chat();
         chat.items.push(permission(None));
         let mut viewport = Viewport::default();
-        viewport.replan(&chat, 0, |_| false);
+        viewport.replan(&chat, 0, |_| false, |_, default| default);
 
         assert_eq!(
             viewport.run_of(TranscriptItemId::Live(3)),
@@ -1188,7 +1246,7 @@ mod tests {
         chat.items.push(permission(Some("Allow once")));
         chat.items.push(ChatItem::Agent(Md::parse("done")));
         let mut viewport = Viewport::default();
-        viewport.replan(&chat, 0, |_| false);
+        viewport.replan(&chat, 0, |_| false, |_, default| default);
 
         let card = viewport.run_of(TranscriptItemId::Live(3));
         let after = viewport.run_of(TranscriptItemId::Live(4));
@@ -1203,21 +1261,21 @@ mod tests {
     fn an_unchanged_transcript_is_not_laid_out_twice() {
         let mut chat = chat();
         let mut viewport = Viewport::default();
-        viewport.replan(&chat, 0, |_| false);
+        viewport.replan(&chat, 0, |_| false, |_, default| default);
         assert_eq!(viewport.run(1).map(|r| r.open), Some(false));
 
         // Someone opened the strip, but the viewport was not told: same
         // revision, same folds count, so the answer it already has stands.
-        viewport.replan(&chat, 0, |_| true);
+        viewport.replan(&chat, 0, |_| true, |_, default| default);
         assert_eq!(viewport.run(1).map(|r| r.open), Some(false));
 
         // Toggling a fold is a change, and it is counted.
-        viewport.replan(&chat, 1, |_| true);
+        viewport.replan(&chat, 1, |_| true, |_, default| default);
         assert_eq!(viewport.run(1).map(|r| r.open), Some(true));
 
         // So is the transcript growing.
         chat.items.push(read("Read src/c.rs"));
-        viewport.replan(&chat, 1, |_| true);
+        viewport.replan(&chat, 1, |_| true, |_, default| default);
         assert_eq!(viewport.run(1).map(|r| r.members.len()), Some(3));
     }
 
@@ -1245,7 +1303,7 @@ mod tests {
         chat.busy = true;
 
         let mut viewport = Viewport::default();
-        viewport.replan(&chat, 0, |_| false);
+        viewport.replan(&chat, 0, |_| false, |_, default| default);
 
         // 0: old answer · 1: old reads · 2: prompt · 3: the completed reads of
         // the live turn · 4: checkpoint · 5: the two reads changing right now,
@@ -1277,7 +1335,7 @@ mod tests {
             tool.call.status = ToolStatus::Completed;
         }
         chat.busy = false;
-        viewport.replan(&chat, 0, |_| false);
+        viewport.replan(&chat, 0, |_| false, |_, default| default);
         assert_eq!(viewport.run(5).map(|r| r.members.len()), before);
         assert_eq!(viewport.run(5).map(|r| r.open), Some(false));
         assert!(viewport.run(6).is_none());
@@ -1327,18 +1385,18 @@ mod tests {
     fn a_new_prompt_asks_to_be_held_at_the_top() {
         let mut chat = chat();
         let mut viewport = Viewport::default();
-        viewport.replan(&chat, 0, |_| false);
+        viewport.replan(&chat, 0, |_| false, |_, default| default);
         assert!(!viewport.holding(), "nothing was asked");
 
         chat.items.push(ChatItem::User(UserMsg::text("and now?")));
-        viewport.replan(&chat, 0, |_| false);
+        viewport.replan(&chat, 0, |_| false, |_, default| default);
         assert!(viewport.holding());
 
         // The answer to it is not another question, so the hold stands: it is
         // ended by the answer growing tall enough to need the room, which is a
         // measurement rather than a layout.
         chat.items.push(ChatItem::Agent(Md::parse("this")));
-        viewport.replan(&chat, 0, |_| false);
+        viewport.replan(&chat, 0, |_| false, |_, default| default);
         assert!(viewport.holding());
     }
 
@@ -1352,7 +1410,7 @@ mod tests {
         chat.items.push(ChatItem::Agent(Md::parse("this")));
 
         let mut viewport = Viewport::default();
-        viewport.replan(&chat, 0, |_| false);
+        viewport.replan(&chat, 0, |_| false, |_, default| default);
         assert!(!viewport.holding());
     }
 
@@ -1374,7 +1432,7 @@ mod tests {
     #[test]
     fn the_streaming_run_is_measured_again_without_moving_the_reader() {
         let mut viewport = Viewport::default();
-        viewport.replan(&chat(), 0, |_| false);
+        viewport.replan(&chat(), 0, |_| false, |_, default| default);
         let state = viewport.list_state(true, ROOM);
         let count = state.item_count();
         assert!(count > 0);
@@ -1419,7 +1477,7 @@ mod tests {
         chat.busy = true;
 
         let mut viewport = Viewport::default();
-        viewport.replan(&chat, 0, |_| false);
+        viewport.replan(&chat, 0, |_| false, |_, default| default);
         let state = viewport.list_state(true, ROOM);
         let count = state.item_count();
 
@@ -1440,7 +1498,7 @@ mod tests {
                 content: None,
             },
         ));
-        viewport.replan(&chat, 0, |_| false);
+        viewport.replan(&chat, 0, |_| false, |_, default| default);
         let state = viewport.list_state(true, ROOM);
 
         assert_eq!(
@@ -1474,7 +1532,7 @@ mod tests {
         chat.busy = true;
 
         let mut viewport = Viewport::default();
-        viewport.replan(&chat, 0, |_| false);
+        viewport.replan(&chat, 0, |_| false, |_, default| default);
         let _ = viewport.list_state(true, ROOM);
         // 0: answer · 1: the cluster · 2: answer · 3: the running read, which
         // is a cluster of one · 4: the line saying the turn is still going.
@@ -1491,14 +1549,14 @@ mod tests {
                 content: None,
             },
         ));
-        viewport.replan(&chat, 0, |_| false);
+        viewport.replan(&chat, 0, |_| false, |_, default| default);
         assert_eq!(viewport.changed_from, 3, "the row that changed shape");
 
         // A later replan must not paint over a divergence still owed to the
         // list -- the note is the earliest one, not the newest.
         chat.items
             .push(read_with_status("Read src/d.rs", ToolStatus::InProgress));
-        viewport.replan(&chat, 0, |_| false);
+        viewport.replan(&chat, 0, |_| false, |_, default| default);
         assert_eq!(
             viewport.changed_from, 3,
             "an append is not the whole answer"
@@ -1521,11 +1579,11 @@ mod tests {
     fn jumping_to_the_latest_lands_on_the_held_question() {
         let mut chat = chat();
         let mut viewport = Viewport::default();
-        viewport.replan(&chat, 0, |_| false);
+        viewport.replan(&chat, 0, |_| false, |_, default| default);
         let _ = viewport.list_state(false, ROOM);
 
         chat.items.push(ChatItem::User(UserMsg::text("and now?")));
-        viewport.replan(&chat, 0, |_| false);
+        viewport.replan(&chat, 0, |_| false, |_, default| default);
         let state = viewport.list_state(true, ROOM);
         assert!(viewport.holding(), "a question just asked is held");
         let question = viewport.run_of(TranscriptItemId::Live(3)).unwrap();
@@ -1556,7 +1614,7 @@ mod tests {
     #[test]
     fn jumping_with_nothing_held_follows_the_tail_again() {
         let mut viewport = Viewport::default();
-        viewport.replan(&chat(), 0, |_| false);
+        viewport.replan(&chat(), 0, |_| false, |_, default| default);
         let state = viewport.list_state(false, ROOM);
         state.scroll_to(ListOffset {
             item_ix: 0,
@@ -1574,8 +1632,8 @@ mod tests {
     #[test]
     fn unfolding_moves_no_row() {
         let (chat, mut folded, mut open) = (chat(), Viewport::default(), Viewport::default());
-        folded.replan(&chat, 0, |_| false);
-        open.replan(&chat, 0, |_| true);
+        folded.replan(&chat, 0, |_| false, |_, default| default);
+        open.replan(&chat, 0, |_| true, |_, default| default);
 
         for item in 0..3 {
             let target = TranscriptItemId::Live(item);

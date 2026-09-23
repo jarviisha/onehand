@@ -1498,6 +1498,15 @@ Listed because a missing feature nobody wrote down reads as a bug in the ones th
 - **An accepted mention is plain text, not a token.** It inserts the whole path, so a long one is
   as wide as it reads; there is no single-unit deletion and no hover carrying the full path. That
   needs the input to own a span it treats atomically, which `Input` does not offer.
+- **A turn ending settles the steps it left in flight** (`Chat::settle_running_steps`,
+  beside `cancel_pending_permissions`). Nothing more arrives for a call the adapter never
+  finished — a cancelled turn is the ordinary way that happens — so a step left `InProgress`
+  stays that way for the rest of the conversation, and everything downstream reads it as
+  live: its cluster says it is still running and never reports how long it took, and the
+  line at the foot of the transcript counts it among the steps in flight for every later
+  turn. It settles to `Failed` and not `Completed`: what is known is that it never reported
+  finishing, and a card claiming a write went through is the one reading a transcript
+  cannot recover from.
 - **An exit status only exists for a command run through ACP's terminal extension.** The protocol
   carries one nowhere else, so an adapter reporting a failure as a plain `tool_call` has no code to
   give and the row says `failed` rather than `exit N`. Recovering it from the output was considered

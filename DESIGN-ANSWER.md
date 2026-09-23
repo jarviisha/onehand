@@ -673,9 +673,10 @@ line below is already saying the work is in flight.
 **The last finished turn opens itself and every older one is a line.** A
 conversation that kept them all open is a column of tables with the reading
 between them; sending the next prompt is what puts the one above away, which is
-the moment the reader stopped asking. The fold set holds the *exceptions* rather
-than the state, so opening an old block and closing the newest both survive the
-next turn arriving.
+the moment the reader stopped asking. **A reader who decided keeps their
+decision** — the fold records the answer given, not the exception to a default,
+because that default moves: recorded the other way round, a block closed while
+its turn was newest sprang open the moment the next prompt went out.
 
 Each file is a row: **a letter in its own ink** — added, modified, deleted —
 rather than a coloured dot, because three states on a dense row is more than
@@ -704,10 +705,12 @@ is the order the reader watched it happen. A list silently cut at eight is a
 list claiming the turn touched eight files; one that says how many were dropped
 and cannot show them is a question with no answer in the room.
 
-**The diffs are computed when a row is opened and never before.** A conversation
+**The diffs are computed when a row is opened, once, and kept.** A conversation
 holds every turn it has had, and diffing every file of every one of them on the
-chance somebody expands one is work paid a thousand times to be used once. What
-the block carries is counts, which the model had already worked out.
+chance somebody expands one is work paid a thousand times to be used once — and
+taking it in the renderer instead is worse still, since that runs on every frame
+the row is on screen and an LCS over two whole files builds a table megabytes
+wide. What the block carries is counts, which the model had already worked out.
 
 **It is derived and never stored.** The diffs it adds up are already in the
 transcript and in the archive, so a summary written down beside them is a second

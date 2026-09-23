@@ -150,7 +150,13 @@ fn redact_authority(text: &str) -> String {
             .find(|c: char| c.is_whitespace() || matches!(c, '/' | '"' | '\'' | ';'))
             .unwrap_or(tail.len());
         let (authority, after) = tail.split_at(end);
-        match authority.find('@').and_then(|at| {
+        // **The last `@`, never the first.** A password may contain one -- it
+        // is a legal character there and a common one -- so splitting at the
+        // first leaves everything after it outside the span that gets masked:
+        // `postgres://sa:p@ssw0rd@host` came back having hidden the `p` and
+        // printed the rest of the password. The authority's own separator is
+        // the final `@`, because everything before it is the userinfo.
+        match authority.rfind('@').and_then(|at| {
             let user = &authority[..at];
             user.find(':').map(|colon| (colon, at))
         }) {
@@ -639,6 +645,26 @@ mod tests {
         assert!(!turn_file_diff(&items, "src/lib.rs").is_empty());
     }
 
+    /// A failed edit is not part of what a turn wrote.
+    ///
+    /// The diff on a failed call is what the agent proposed, not what is on
+    /// disk -- counting it puts a file in a list headed "what this turn wrote"
+    /// that the turn did not write.
+    #[test]
+    fn a_failed_edit_is_not_counted_as_written() {
+        let mut failed = wrote("nope", &[("src/gone.rs", "a\n", "b\n")]);
+        if let ChatItem::Tool(tool) = &mut failed {
+            tool.call.status = ToolStatus::Failed;
+        }
+        let items = [failed, wrote("ok", &[("src/lib.rs", "x\n", "x\ny\n")])];
+        let items: Vec<&ChatItem> = items.iter().collect();
+
+        let changes = turn_changes(&items).expect("one file was written");
+        assert_eq!(changes.files.len(), 1);
+        assert_eq!(changes.files[0].path, "src/lib.rs");
+        assert!(turn_file_diff(&items, "src/gone.rs").is_empty());
+    }
+
     /// A turn that only read files has nothing to summarise.
     #[test]
     fn a_turn_that_wrote_nothing_has_no_summary() {
@@ -674,6 +700,14 @@ mod tests {
         assert!(!masked.contains("s3cret"), "{masked}");
         assert!(masked.contains("sa:"), "{masked}");
         assert!(masked.contains("10.0.0.5"), "{masked}");
+
+        // **A password may hold an `@` of its own**, which is legal and common.
+        // Split at the first one, everything after it fell outside the masked
+        // span and was printed.
+        let awkward = "psql postgres://sa:p@ssw0rd@10.0.0.5:5432/app";
+        let masked = redact(awkward);
+        assert!(!masked.contains("ssw0rd"), "{masked}");
+        assert!(masked.contains("10.0.0.5:5432/app"), "{masked}");
 
         // A word that merely ends in the letters of a secret is not one.
         assert_eq!(redact("--bypass=true"), "--bypass=true");
@@ -983,6 +1017,14 @@ pub fn turn_changes(items: &[&ChatItem]) -> Option<TurnChanges> {
         let ChatItem::Tool(tool) = item else {
             continue;
         };
+        // **An edit that failed did not happen.** The diff on a failed call is
+        // what the agent proposed, not what is on disk, and counting it puts a
+        // file in a list headed "what this turn wrote" that the turn did not
+        // write. The step is still in the transcript above, in the cluster it
+        // failed in, saying so.
+        if tool.call.status == crate::acp::ToolStatus::Failed {
+            continue;
+        }
         for section in &tool.call.content {
             let ToolContent::Diff { path, old, new } = section else {
                 continue;
@@ -1061,6 +1103,11 @@ pub fn turn_file_diff(items: &[&ChatItem], path: &str) -> Vec<crate::diff::Row> 
         let ChatItem::Tool(tool) = item else {
             continue;
         };
+        // Same rule as the counts: a failed edit is not part of what the turn
+        // did to this file.
+        if tool.call.status == crate::acp::ToolStatus::Failed {
+            continue;
+        }
         for section in &tool.call.content {
             let ToolContent::Diff { path: at, old, new } = section else {
                 continue;

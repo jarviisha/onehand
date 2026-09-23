@@ -2005,6 +2005,7 @@ impl Chat {
                 // cancelled turn, or an adapter that moved on) resolves them
                 // as cancelled — protocol-correct, and the buttons disable.
                 self.cancel_pending_permissions();
+                self.settle_running_steps();
                 // Fold finished terminals into their cards so the `terminals` map
                 // only ever holds live ones (the turn is over → no more updates).
                 self.flatten_exited_terminals();
@@ -2294,6 +2295,46 @@ impl Chat {
     /// would echo an rpc id a since-restarted adapter never issued), and the
     /// rail dot stays stuck on "waiting for you". With no live `tx`
     /// (disconnected) the cards are still resolved locally.
+    /// Close off every step the turn left in flight.
+    ///
+    /// **A turn ending is the last word on its own steps.** Nothing more will
+    /// arrive for a call the adapter never settled -- a cancelled turn is the
+    /// ordinary way that happens, and an adapter that simply moved on is the
+    /// other -- so a step left `InProgress` stays that way for the rest of the
+    /// conversation. Everything downstream reads it as live: the cluster it is
+    /// in says it is still running and never reports how long it took, and the
+    /// line at the foot of the transcript counts it among the steps in flight
+    /// for every later turn.
+    ///
+    /// **`Failed` and not `Completed`.** What is known is that it did not
+    /// report finishing; calling that success is the one reading the transcript
+    /// cannot recover from, since a card claiming a write went through is worse
+    /// than one saying it is unclear. This is the same answer
+    /// `cancel_pending_permissions` gives a dangling card one line above.
+    fn settle_running_steps(&mut self) {
+        for item in &mut self.items {
+            if let ChatItem::Tool(tool) = item {
+                if !matches!(
+                    tool.call.status,
+                    ToolStatus::Pending | ToolStatus::InProgress
+                ) {
+                    continue;
+                }
+                tool.call.status = ToolStatus::Failed;
+                // Timed here for the same reason a settling update is: this is
+                // the moment the step stopped, and a step that never settles
+                // has no duration at all.
+                if tool.elapsed_secs.is_none() {
+                    tool.elapsed_secs =
+                        Some(tool.started.map(|s| s.elapsed().as_secs()).unwrap_or(0));
+                }
+                // The same seed a failure arriving as an update leaves, so a
+                // reader can see what the step had said before it stopped.
+                tool.fold = true;
+            }
+        }
+    }
+
     pub(crate) fn cancel_pending_permissions(&mut self) {
         for it in &mut self.items {
             match it {
@@ -4462,6 +4503,42 @@ mod tests {
 
     /// The reducer says the turn settled, rather than every caller matching on
     /// the event a second time to find out.
+    /// A turn ending settles the steps it left in flight.
+    ///
+    /// Nothing more arrives for a call the adapter never finished -- a
+    /// cancelled turn is the ordinary way that happens -- so a step left
+    /// running stays that way for the rest of the conversation, and everything
+    /// downstream reads it as live.
+    #[test]
+    fn a_turn_ending_settles_what_it_left_running() {
+        let mut chat = Chat::new(1, std::path::PathBuf::from("/tmp/p"), "a".into(), None);
+        chat.busy = true;
+        chat.items.push(ChatItem::Tool(ToolItem::new(ToolCall {
+            id: "slow".into(),
+            title: "cargo build".into(),
+            description: None,
+            kind: crate::acp::ToolKind::Execute,
+            status: ToolStatus::InProgress,
+            content: Vec::new(),
+        })));
+
+        chat.apply(AcpEvent::TurnEnded {
+            stop_reason: "cancelled".into(),
+        });
+
+        let ChatItem::Tool(tool) = &chat.items[0] else {
+            panic!("the step is still there");
+        };
+        // Failed and not completed: what is known is that it never reported
+        // finishing, and a card claiming a write went through is the one
+        // reading a transcript cannot recover from.
+        assert_eq!(tool.call.status, ToolStatus::Failed);
+        assert!(
+            tool.elapsed_secs.is_some(),
+            "it stopped, so it has a length"
+        );
+    }
+
     #[test]
     fn the_turn_ending_is_reported_once() {
         let (mut chat, _rx) = chat_with_tx();

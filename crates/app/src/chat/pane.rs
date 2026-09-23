@@ -3251,10 +3251,12 @@ impl ChatPane {
         let session = session.read(cx);
         let handle = self.handle.clone();
         let conv = self.active_conversation_mut()?;
-        conv.viewport
-            .replan(&session.chat, session.folds_revision(), |anchor| {
-                session.activity_is_open(anchor)
-            });
+        conv.viewport.replan(
+            &session.chat,
+            session.folds_revision(),
+            |anchor| session.activity_is_open(anchor),
+            |anchor, default| session.turn_is_open(anchor, default),
+        );
         let state = conv.viewport.list_state(session.chat.busy, room);
         // Asked for once the state exists, and only then: the list is what
         // knows it has been scrolled, and the pane is what draws the control
@@ -3370,13 +3372,14 @@ impl ChatPane {
                         let anchor = plan_changes.anchor;
                         let this = self.handle.clone();
                         let folded = session.clone();
+                        let default = plan_changes.opens_itself;
                         transcript::turn_summary(
                             session,
                             plan_changes,
                             plan.open,
                             move |_, _, cx: &mut App| {
                                 folded.update(cx, |session, cx| {
-                                    session.toggle_activity(anchor);
+                                    session.toggle_turn(anchor, default);
                                     cx.notify();
                                 });
                                 let _ = this.update(cx, |_: &mut Self, cx| cx.notify());
@@ -3386,9 +3389,9 @@ impl ChatPane {
                     }
                     None => self.working_strip(cx),
                 };
-                return column(rems(BLOCK_GAP.0 * 2.), margin, vec![body], cx).into_any_element();
+                return column(rems(BLOCK_GAP.0 * 2.), margin, vec![body]).into_any_element();
             }
-            return column(lead, margin, body(&plan.members, &room), cx).into_any_element();
+            return column(lead, margin, body(&plan.members, &room)).into_any_element();
         };
 
         let anchor = plan.members[0];
@@ -3425,11 +3428,10 @@ impl ChatPane {
                     // session's own notify redraws the session, not the plan.
                     let _ = this.update(cx, |_: &mut Self, cx| cx.notify());
                 },
-                ("activity", anchor.index()).into(),
+                ("activity", transcript::fold_key(anchor)).into(),
                 inside,
                 cx,
             )],
-            cx,
         )
         .into_any_element()
     }
@@ -3503,7 +3505,7 @@ impl ChatPane {
                         });
                         let _ = this.update(cx, |_: &mut Self, cx| cx.notify());
                     },
-                    ("section", anchor.index()).into(),
+                    ("section", transcript::fold_key(anchor)).into(),
                     match open {
                         true => body(&section.members, room),
                         false => Vec::new(),
@@ -4576,8 +4578,7 @@ fn lead_gap(previous: Option<RunKind>, this: RunKind) -> Rems {
 /// that shrinks with its panel. Width lives here rather than around each item
 /// because a run is what the virtual list draws; activity summaries drawn by
 /// the pane and their steps must share the same two edges.
-fn column(lead: Rems, margin: Rems, content: Vec<gpui::AnyElement>, cx: &App) -> gpui::Div {
-    let _ = cx;
+fn column(lead: Rems, margin: Rems, content: Vec<gpui::AnyElement>) -> gpui::Div {
     div()
         .h_flex()
         .w_full()

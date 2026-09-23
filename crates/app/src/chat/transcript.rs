@@ -1263,7 +1263,17 @@ fn tool(
     let root = session.read(cx).chat.root.clone();
     let presented = activity::presentation(t);
     let open = t.is_open();
-    let detail = tool_detail(t, &presented, &root);
+    // **The live stream, while there is one.** A command that is still running
+    // has its output in the session's terminal map rather than in the card --
+    // the model folds it in at turn end -- so a detail built from the card's
+    // own sections alone draws an empty box under a `cargo build` for as long
+    // as the build takes, which is exactly when somebody is looking at it.
+    let live: Option<&onehand_core::chat::TermView> =
+        t.call.content.iter().find_map(|section| match section {
+            ToolContent::Terminal(id) => session.read(cx).chat.terminals.get(id),
+            _ => None,
+        });
+    let detail = tool_detail(t, &presented, &root, live);
     let toggle = {
         let session = session.clone();
         move |_: &ClickEvent, _: &mut Window, cx: &mut App| {
@@ -1289,9 +1299,19 @@ fn tool(
         _ => Some(Object::path(path_for_display(&root, &presented.subject))),
     };
     let meta = match (t.call.status, deleted) {
-        (ToolStatus::Failed, _) => {
-            Some(row_note("failed", crate::theme::status_ink(cx).danger, cx))
-        }
+        // **The code where there is one, the word where there is not.** Only a
+        // command run through the terminal extension reports a status, so a
+        // failure arriving as a plain tool call has nothing but the word --
+        // and printing `failed` over a step that told us it exited 101 throws
+        // away the one thing that says *what* went wrong.
+        (ToolStatus::Failed, _) => Some(row_note(
+            match t.exit_code {
+                Some(code) => format!("exit {code}"),
+                None => "failed".to_string(),
+            },
+            crate::theme::status_ink(cx).danger,
+            cx,
+        )),
         (ToolStatus::InProgress, _) | (ToolStatus::Pending, _) => None,
         (_, true) => Some(row_note("deleted", cx.theme().muted_foreground, cx)),
         _ => line_counts(added, removed, cx)
@@ -1327,8 +1347,12 @@ enum Detail {
     Command { command: String, output: String },
     /// One or more file edits.
     Diffs,
-    /// A list of what was looked at.
-    Lines(Vec<SharedString>),
+    /// A list of what was looked at, and how many lines of it were dropped to
+    /// keep the box bounded.
+    Lines {
+        lines: Vec<SharedString>,
+        hidden: usize,
+    },
     /// A picture the step produced.
     Image(std::sync::Arc<Vec<u8>>),
 }
@@ -1350,7 +1374,7 @@ impl Detail {
                 true => command.clone(),
                 false => format!("{command}\n\n{output}"),
             }),
-            Self::Lines(lines) => Some(
+            Self::Lines { lines, .. } => Some(
                 lines
                     .iter()
                     .map(|l| l.to_string())
@@ -1364,10 +1388,15 @@ impl Detail {
     }
 }
 
-fn tool_detail(t: &ToolItem, presented: &activity::Presentation, root: &Path) -> Option<Detail> {
+fn tool_detail(
+    t: &ToolItem,
+    presented: &activity::Presentation,
+    root: &Path,
+    live: Option<&onehand_core::chat::TermView>,
+) -> Option<Detail> {
     if t.call.kind == ToolKind::Execute {
         let command = onehand_core::chat::redact(t.call.title.trim());
-        let output = t
+        let mut output = t
             .call
             .content
             .iter()
@@ -1377,6 +1406,15 @@ fn tool_detail(t: &ToolItem, presented: &activity::Presentation, root: &Path) ->
             })
             .collect::<Vec<_>>()
             .join("\n");
+        // A running command's output is not in its card yet. Appended rather
+        // than substituted, since a step can have said something of its own
+        // before the terminal it opened started printing.
+        if let Some(view) = live.filter(|view| !view.output.is_empty()) {
+            if !output.is_empty() {
+                output.push('\n');
+            }
+            output.push_str(&onehand_core::chat::redact(&view.output));
+        }
         return (!command.is_empty()).then_some(Detail::Command { command, output });
     }
     if t.call
@@ -1396,7 +1434,7 @@ fn tool_detail(t: &ToolItem, presented: &activity::Presentation, root: &Path) ->
     }
     // A read or a search says what it looked at, one line each — the paths a
     // merged row stands for, or whatever the tool printed back.
-    let lines: Vec<SharedString> = t
+    let all: Vec<SharedString> = t
         .call
         .content
         .iter()
@@ -1406,14 +1444,21 @@ fn tool_detail(t: &ToolItem, presented: &activity::Presentation, root: &Path) ->
         })
         .flat_map(|text| text.lines())
         .map(|line| SharedString::from(onehand_core::chat::redact(line)))
-        .take(MAX_MONO_LINES)
         .collect();
+    // Bounded, and the bound is counted rather than swallowed: a list cut at
+    // sixty with nothing said is a list claiming the step looked at sixty
+    // things.
+    let hidden = all.len().saturating_sub(MAX_MONO_LINES);
+    let lines: Vec<SharedString> = all.into_iter().take(MAX_MONO_LINES).collect();
     match lines.is_empty() {
         true => {
             let subject = path_for_display(root, &presented.subject);
-            (!subject.trim().is_empty()).then(|| Detail::Lines(vec![subject.into()]))
+            (!subject.trim().is_empty()).then(|| Detail::Lines {
+                lines: vec![subject.into()],
+                hidden: 0,
+            })
         }
-        false => Some(Detail::Lines(lines)),
+        false => Some(Detail::Lines { lines, hidden }),
     }
 }
 
@@ -1467,14 +1512,23 @@ fn detail_frame(
                                 .child(format!("[unrecognized image, {} bytes]", bytes.len())),
                         ),
                     }),
-                    Detail::Lines(lines) => box_.children(lines.into_iter().map(|line| {
-                        div()
-                            .w_full()
-                            .min_w_0()
-                            .px(DIFF_TEXT_PAD)
-                            .text_color(cx.theme().muted_foreground)
-                            .child(line)
-                    })),
+                    Detail::Lines { lines, hidden } => box_
+                        .children(lines.into_iter().map(|line| {
+                            div()
+                                .w_full()
+                                .min_w_0()
+                                .px(DIFF_TEXT_PAD)
+                                .text_color(cx.theme().muted_foreground)
+                                .child(line)
+                        }))
+                        .children((hidden > 0).then(|| {
+                            div()
+                                .w_full()
+                                .min_w_0()
+                                .px(DIFF_TEXT_PAD)
+                                .text_color(cx.theme().muted_foreground.opacity(0.7))
+                                .child(format!("and {hidden} more lines"))
+                        })),
                 })
                 // **Drawn always, never waiting to be hovered.** A control that
                 // appears under the pointer is one nobody finds who was not
@@ -1738,14 +1792,20 @@ fn command_detail(
 ) -> gpui::Div {
     let open = t.out_open.contains(&0);
     let lines: Vec<&str> = output.lines().collect();
-    let hidden = match open {
-        true => 0,
-        false => lines.len().saturating_sub(PREVIEW_OUT),
+    // **Always the tail, opened or closed.** An output says what happened at
+    // its end -- the error, the summary line, the prompt coming back -- so the
+    // collapsed preview shows the last few. Opened from the *top* instead, as
+    // this did, a two-hundred-line build jumped from its last five lines to its
+    // first sixty and dropped the rest with nothing saying so: the one part
+    // somebody opened the box to read is the part that went away.
+    let cap = match open {
+        true => MAX_MONO_LINES,
+        false => PREVIEW_OUT,
     };
+    let hidden = lines.len().saturating_sub(cap);
     let shown: Vec<SharedString> = lines
         .iter()
         .skip(hidden)
-        .take(MAX_MONO_LINES)
         .map(|line| SharedString::from(line.to_string()))
         .collect();
     let danger = crate::theme::status_ink(cx).danger;
@@ -1831,9 +1891,13 @@ fn command_detail(
             fold_pill(
                 session,
                 target,
-                match open {
-                    true => "Show less".to_string(),
-                    false => format!("Show {hidden} earlier lines"),
+                // Opened, the box is still bounded -- so the control says
+                // what is *still* cut rather than claiming the whole of it is
+                // on screen.
+                match (open, hidden) {
+                    (true, 0) => "Show less".to_string(),
+                    (true, n) => format!("Show less · {n} earlier lines not shown"),
+                    (false, n) => format!("Show {n} earlier lines"),
                 },
                 open,
                 cx,
@@ -4499,7 +4563,10 @@ pub(super) fn turn_summary(
 ) -> gpui::AnyElement {
     let changes = &plan.changes;
     let anchor = plan.anchor;
-    let key = anchor.index();
+    // **`fold_key`, never the bare index.** History and Live indices overlap,
+    // so a resumed conversation can hand two different rows one id -- which is
+    // how two elements come to share one piece of retained state.
+    let key = fold_key(anchor);
 
     let head = div()
         .id(("turn-summary", key))
@@ -4648,9 +4715,10 @@ pub(super) fn turn_summary(
                     })
                     .on_click({
                         let session = session.clone();
+                        let body = plan.body.clone();
                         move |_, _, cx: &mut App| {
                             session.update(cx, |session, cx| {
-                                session.toggle_every_file(anchor, &paths);
+                                session.toggle_every_file(anchor, &paths, &body);
                                 cx.notify();
                             });
                         }
@@ -4688,7 +4756,7 @@ fn file_row(
     let row = div()
         .id(gpui::ElementId::NamedInteger(
             SharedString::from(format!("turn-file-{}", file.path)),
-            anchor.index() as u64,
+            fold_key(anchor) as u64,
         ))
         .h_flex()
         .items_center()
@@ -4707,9 +4775,10 @@ fn file_row(
         .on_click({
             let session = session.clone();
             let path = file.path.clone();
+            let body = plan.body.clone();
             move |_, _, cx: &mut App| {
                 session.update(cx, |session, cx| {
-                    session.toggle_file(anchor, &path);
+                    session.toggle_file(anchor, &path, &body);
                     cx.notify();
                 });
             }
@@ -4749,9 +4818,13 @@ fn file_row(
         return row.into_any_element();
     }
 
-    let hunks = session.read(cx).with_turn_items(&plan.body, |items| {
-        onehand_core::chat::turn_file_diff(items, &file.path)
-    });
+    // Taken when the row was opened, not now: this runs on every frame the row
+    // is on screen, and the diff behind it is an LCS over two whole files.
+    let hunks: Vec<DiffRow> = session
+        .read(cx)
+        .file_diff(anchor, &file.path)
+        .unwrap_or_default()
+        .to_vec();
     let mut budget = SUMMARY_DIFF;
     div()
         .v_flex()
@@ -5344,7 +5417,7 @@ fn tool_label(kind: ToolKind) -> &'static str {
 
 /// A stable element id per item. History and live indices overlap, so the
 /// source has to be part of the key or two items share one id.
-fn fold_key(target: TranscriptItemId) -> usize {
+pub(super) fn fold_key(target: TranscriptItemId) -> usize {
     match target {
         TranscriptItemId::History(i) => i * 2,
         TranscriptItemId::Live(i) => i * 2 + 1,
