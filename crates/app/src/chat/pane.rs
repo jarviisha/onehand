@@ -69,13 +69,13 @@ const SIDE_MARGIN: Rems = rems(1.25);
 const SIDE_MARGIN_NARROW: Rems = rems(0.75);
 /// Where a panel stops being wide enough to hold the column off its edges.
 const NARROW_PANEL: Rems = rems(30.);
-/// The pill offering the way back to the end of the conversation.
+/// The disc offering the way back to the end of the conversation.
 ///
 /// A step above the controls in the card below it, because it is the one thing
 /// on screen floating over the conversation with nothing around it — and a step
-/// under the card's own height, because it is not part of that card.
+/// under the card's own height, because it is not part of that card. Square, so
+/// the full radius makes it a circle: it holds one arrow and nothing else.
 const JUMP_PILL_H: Rems = rems(1.625);
-const JUMP_PILL_PAD: Rems = rems(0.75);
 /// The conversation header, which is the one row in the panel that never
 /// scrolls and so the edge every other measurement here is taken from.
 const HEADER_H: Rems = rems(2.75);
@@ -3849,10 +3849,16 @@ impl ChatPane {
                         well.child(
                             div()
                                 .absolute()
-                                // Held off the composer rather than resting on
-                                // it: two floating surfaces touching read as
-                                // one surface with a notch taken out of it.
-                                .bottom(floor + BLOCK_GAP.to_pixels(window.rem_size()))
+                                // **Measured from the composer's own top edge,
+                                // not from where the transcript comes to rest.**
+                                // It was placed against that resting line, which
+                                // is deliberately the widest space in the
+                                // conversation -- so the control floated most of
+                                // an inch clear of the thing it belongs beside.
+                                // Held off by a block's gap and no more: two
+                                // floating surfaces touching read as one surface
+                                // with a notch taken out of it.
+                                .bottom(overlay_h + BLOCK_GAP.to_pixels(window.rem_size()))
                                 .left_0()
                                 .right_0()
                                 .h_flex()
@@ -3874,10 +3880,20 @@ impl ChatPane {
                                                 // half-height means here -- not
                                                 // a measured size.
                                                 .rounded(px(9999.))
-                                                .h(JUMP_PILL_H)
-                                                .px(JUMP_PILL_PAD)
+                                                // **The arrow alone.** The
+                                                // words named what was down
+                                                // there, which the transcript
+                                                // itself says the moment the
+                                                // control is used -- and a
+                                                // label on a thing floating
+                                                // over the conversation is a
+                                                // sentence competing with the
+                                                // one being read. What it
+                                                // means is in the tooltip,
+                                                // where a control that needs
+                                                // explaining keeps it.
+                                                .size(JUMP_PILL_H)
                                                 .icon(Icon::new(IconName::ChevronDown))
-                                                .label("New activity")
                                                 .tooltip("Jump to the latest activity")
                                                 .on_click(cx.listener(
                                                     |pane: &mut Self, _, _, cx| {

@@ -648,7 +648,18 @@ column, the transcript keeps left and right padding equal to the composer's
 visible corner radius, preserving the same spacing rhythm within their shared
 outer width.
 
-The composer, the jump-to-latest pill and the completion popup are floating
+**The way back to the end of the conversation is one arrow on a disc**, held a
+block's gap above the composer's own top edge. It carried the words *New
+activity*, which name what is down there — something the transcript says for
+itself the moment the control is used — and a label on a thing floating over a
+conversation is a sentence competing with the one being read; what it means is
+in the tooltip, where a control that needs explaining keeps it. It is measured
+from the composer's edge and **not** from where the transcript comes to rest:
+that resting line is deliberately the widest space in the conversation, and
+placed against it the control floated most of an inch clear of the thing it
+belongs beside.
+
+The composer, that disc and the completion popup are floating
 controls, so they take the opaque `popover` surface and a clear elevation
 shadow. Transcript content may continue scrolling behind their bounds, but it
 must never show through **or visually merge with them** — and the second half is
