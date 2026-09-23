@@ -1,20 +1,20 @@
-//! What one step of a run says on its own line, and what a run of them says as
-//! a whole.
+//! What a run of steps says about itself: the sentence standing for a cluster,
+//! how the run came out, and what a whole turn did to the working tree.
 //!
-//! **A child line is a footnote, not a second copy of its parent.** The row
-//! above it has already named the verb and the kind of work; what is left for a
-//! child to say is which one of the seven it was — and the only thing that
-//! answers that is what the step was pointed at and what it did there. So a
-//! line here is `target · action`, and everything a reader could not tell two
-//! steps apart by is dropped: the directory change, the variable that was set
-//! first, the prefix all seven of them share.
+//! **Secrets are taken out here, and only here.** A connection string is the
+//! single most common thing an agent types at a database, and it carries a
+//! password in the middle of it -- so [`redact`] exists once, for every kind of
+//! step and for the expanded command as much as for the summary.
 //!
-//! **Secrets never reach a line.** A connection string is the single most
-//! common thing an agent types at a database, and it carries a password in the
-//! middle of it — so redaction happens on the way in, once, for every kind of
-//! step and for the expanded command as much as for the summary. There is no
-//! path from a tool's title to the screen that does not pass through
-//! [`redact`], which is the only arrangement that can be checked.
+//! **It is a convention and not an invariant, and saying so is the point.**
+//! Nothing in the type system stops a renderer printing a tool's title
+//! straight, and there is no guard counting the call sites: the ones that
+//! matter are the handful in the transcript that draw a command or its
+//! arguments, and each calls this by hand. A doc here claiming the path is
+//! closed would be the one thing worse than an open path -- a reader who stops
+//! checking. If that ever needs to be real, the shape is a wrapper type that
+//! can only be built by going through [`redact`], not a sentence in a module
+//! header.
 
 use crate::acp::ToolKind;
 use crate::chat::activity::{self, ActivityKind};
@@ -25,7 +25,7 @@ use crate::chat::model::ChatItem;
 /// Round dots rather than asterisks: an asterisk is a shell glob and a wildcard
 /// in half the query languages an agent types, so a masked argument set in them
 /// reads as a command somebody could have run.
-pub const MASK: &str = "••••••";
+pub(crate) const MASK: &str = "••••••";
 
 /// Key names whose value is a secret.
 ///
@@ -178,10 +178,10 @@ fn redact_authority(text: &str) -> String {
 fn redact_flags(text: &str) -> String {
     let spans = token_spans(text);
     let mut masked: Vec<(usize, usize, String)> = Vec::new();
-    let mut mask_next: Option<()> = None;
+    let mut mask_next = false;
     for &(start, end) in &spans {
         let token = &text[start..end];
-        if mask_next.take().is_some() && !token.starts_with('-') {
+        if std::mem::take(&mut mask_next) && !token.starts_with('-') {
             // A flag followed by another flag took no argument after all.
             masked.push((start, end, MASK.to_string()));
             continue;
@@ -197,7 +197,7 @@ fn redact_flags(text: &str) -> String {
             continue;
         }
         if SECRET_FLAGS.contains(&token) {
-            mask_next = Some(());
+            mask_next = true;
         }
     }
 
@@ -230,333 +230,6 @@ fn token_spans(text: &str) -> Vec<(usize, usize)> {
         spans.push((from, text.len()));
     }
     spans
-}
-
-/// One step of a run, as the line a child row draws.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct StepLine {
-    /// `target · action`, already redacted and already stripped of whatever it
-    /// shares with its neighbours.
-    pub summary: String,
-    /// This step is the one before it, run again after it failed.
-    pub retry: bool,
-}
-
-/// Flags whose next argument names what a command is pointed *at*.
-const TARGET_FLAGS: &[&str] = &[
-    "-S",
-    "-h",
-    "-H",
-    "--host",
-    "--server",
-    "--hostname",
-    "-d",
-    "--database",
-    "-f",
-    "--file",
-    "-C",
-    "--directory",
-    "--url",
-];
-
-/// Flags whose next argument is what a command *does* there.
-const ACTION_FLAGS: &[&str] = &[
-    "-Q",
-    "-q",
-    "-c",
-    "-e",
-    "-i",
-    "--query",
-    "--command",
-    "--eval",
-    "--execute",
-    "--input-file",
-];
-
-/// The two things that tell one step from the next: what it was pointed at, and
-/// what it did there.
-///
-/// **A heuristic, and deliberately a shallow one.** Every client names its host
-/// and its query differently and there is no parsing a shell for real, so this
-/// reads the flags the common ones use, then falls back on shape: something
-/// holding an `@` or looking like an address is a target, something holding a
-/// path separator is a file, and the first word that is neither is what the
-/// command was asked to do. Where it finds nothing it says so by returning
-/// nothing, and the caller prints the shortened command instead — which is
-/// worse to read and never wrong.
-pub fn target_and_action(command: &str) -> (Option<String>, Option<String>) {
-    let tokens = shell_tokens(command);
-    let refs: Vec<&str> = tokens.iter().map(String::as_str).collect();
-    let mut target = None;
-    let mut action = None;
-    let mut i = 0;
-    while i < refs.len() {
-        let token = refs[i];
-        if target.is_none() && TARGET_FLAGS.contains(&token) {
-            target = refs.get(i + 1).map(|value| value.to_string());
-            i += 2;
-            continue;
-        }
-        if action.is_none() && ACTION_FLAGS.contains(&token) {
-            action = refs.get(i + 1).map(|value| value.to_string());
-            i += 2;
-            continue;
-        }
-        i += 1;
-    }
-    // Shape, where no flag said so. A flag's own argument is never re-read as
-    // one of these, which is why this runs as a second pass.
-    let flagged: Vec<&str> = refs
-        .iter()
-        .copied()
-        .filter(|token| !token.starts_with('-'))
-        .collect();
-    if target.is_none() {
-        target = flagged
-            .iter()
-            .skip(1)
-            .find(|token| looks_like_host(token))
-            .map(|token| token.to_string());
-    }
-    if target.is_none() {
-        target = flagged
-            .iter()
-            .skip(1)
-            .find(|token| token.contains('/') || token.contains('.'))
-            .map(|token| activity::short_path(token));
-    }
-    if action.is_none() {
-        // **Every word after the program, not the first one.** Taken as the
-        // first alone, `docker compose up` and `docker compose down` both came
-        // out as `compose` -- two rows reading the same because the word that
-        // differed was one past where this stopped looking.
-        let words: Vec<&str> = flagged
-            .iter()
-            .skip(1)
-            .copied()
-            .filter(|token| Some(token.to_string()) != target && !looks_like_host(token))
-            .collect();
-        action = (!words.is_empty()).then(|| words.join(" "));
-    }
-    (
-        target.map(|t| activity::first_line_trunc(&t, 60)),
-        action.map(|a| activity::first_line_trunc(&a, 90)),
-    )
-}
-
-fn looks_like_host(token: &str) -> bool {
-    if token.contains('@') {
-        return true;
-    }
-    // An address, or a name with a port on it. A bare dotted word is left to
-    // the path branch, which is right far more often than not.
-    let head = token.split(['/', ',']).next().unwrap_or(token);
-    head.contains(':') && !head.contains("://") && head.split(':').count() == 2
-        || head
-            .split('.')
-            .all(|part| !part.is_empty() && part.chars().all(|c| c.is_ascii_digit()))
-            && head.split('.').count() == 4
-}
-
-/// Split on whitespace, keeping a quoted run together and dropping its quotes.
-fn shell_tokens(command: &str) -> Vec<String> {
-    let mut out = Vec::new();
-    let mut current = String::new();
-    let mut quote: Option<char> = None;
-    for c in command.chars() {
-        match quote {
-            Some(q) if c == q => quote = None,
-            Some(_) => current.push(c),
-            None if matches!(c, '"' | '\'') => quote = Some(c),
-            None if c.is_whitespace() => {
-                if !current.is_empty() {
-                    out.push(std::mem::take(&mut current));
-                }
-            }
-            None => current.push(c),
-        }
-    }
-    if !current.is_empty() {
-        out.push(current);
-    }
-    out
-}
-
-/// What one step was pointed at and what it did there, before the run it
-/// belongs to has had its say.
-///
-/// `target` is `None` for anything that is not a command: a file already *is*
-/// its own target, and a thought has neither.
-fn step_parts(item: &ChatItem) -> (Option<String>, Option<String>) {
-    match item {
-        ChatItem::Thought(thought) => (None, thought.elapsed_secs.map(|secs| format!("{secs}s"))),
-        ChatItem::Permission(p) => (
-            None,
-            Some(redact(&activity::first_line_trunc(&p.req.title, 240))),
-        ),
-        ChatItem::Ask(a) => (None, Some(activity::first_line_trunc(&a.req.message, 240))),
-        ChatItem::Tool(tool) => {
-            let presented = activity::presentation(tool);
-            match presented.kind {
-                // A command is the case this is all for: it is the one subject
-                // that is a whole sentence rather than a name, and seven of
-                // them in a row are seven near-identical sentences.
-                ActivityKind::Run
-                | ActivityKind::Test
-                | ActivityKind::Check
-                | ActivityKind::Build
-                | ActivityKind::Other
-                    if tool.call.kind == ToolKind::Execute =>
-                {
-                    let command = redact(&presented.subject);
-                    match target_and_action(&command) {
-                        (target, Some(action)) if Some(&action) != target.as_ref() => {
-                            (target, Some(action))
-                        }
-                        // Nothing told the two apart, so the command itself is
-                        // the line: worse to read than a pair, and never wrong.
-                        _ => (None, Some(command)),
-                    }
-                }
-                _ => (
-                    None,
-                    Some(redact(&activity::short_path(&presented.subject))),
-                ),
-            }
-        }
-        _ => (None, None),
-    }
-}
-
-/// Whether a step failed, for the rules that are about outcomes.
-fn failed(item: &ChatItem) -> bool {
-    matches!(item, ChatItem::Tool(tool) if tool.call.status == crate::acp::ToolStatus::Failed)
-}
-
-/// Every step of a run, as the lines its child rows draw — and the one thing
-/// they all have in common, which belongs to the row above them.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct RunLines {
-    pub lines: Vec<StepLine>,
-    /// What every step in the run was pointed at, where that is one thing.
-    ///
-    /// **It moves up to the parent.** Seven commands against one database are
-    /// seven lines each opening with the same address, which is the column that
-    /// tells them apart spent on the part that does not — so the address is
-    /// said once, in the row that stands for all seven, and the children are
-    /// left with only what differs.
-    pub shared: Option<String>,
-}
-
-/// Read a run's steps as a set.
-///
-/// **As a set, not one at a time.** What a reader needs from seven lines is the
-/// part that differs — so a target they all share is lifted out, a prefix they
-/// all share is taken off, and a step that is the one before it run again after
-/// a failure is marked rather than left looking like a duplicate. All three
-/// rules need the neighbours, which is why this takes the run rather than the
-/// step.
-pub fn step_lines(members: &[&ChatItem]) -> RunLines {
-    let parts: Vec<(Option<String>, Option<String>)> =
-        members.iter().map(|item| step_parts(item)).collect();
-
-    // One target for the whole run, or none: two different addresses have to
-    // stay on the lines that name them.
-    let targets: Vec<&String> = parts.iter().filter_map(|(t, _)| t.as_ref()).collect();
-    let shared = (targets.len() == parts.len() && targets.len() > 1)
-        .then(|| targets.first().copied())
-        .flatten()
-        .filter(|first| targets.iter().all(|t| t == first))
-        .cloned();
-
-    let mut summaries: Vec<String> = parts
-        .iter()
-        .map(|(target, action)| {
-            let action = action.clone().unwrap_or_default();
-            match target {
-                // Said once above, so not said again here.
-                Some(_) if shared.is_some() => action,
-                Some(target) if !action.is_empty() => format!("{target} · {action}"),
-                Some(target) => target.clone(),
-                None => action,
-            }
-        })
-        .collect();
-
-    // **The shared opening comes off only where nothing else told the lines
-    // apart.** Two queries against one server already differ by their query, so
-    // cutting the words they happen to open with leaves `1` beside
-    // `name FROM sys.databases` -- the prefix rule doing damage in exactly the
-    // case the target-and-action rule had already handled. Where every line is
-    // a bare command it is the only rule there is, and `docker compose up`
-    // beside `docker compose down` needs it.
-    if parts.iter().all(|(target, _)| target.is_none()) {
-        strip_shared_prefix(&mut summaries);
-    }
-
-    let lines = summaries
-        .into_iter()
-        .enumerate()
-        .map(|(n, summary)| {
-            // A retry is the step after a failure that was pointed at the same
-            // place: the words are near enough identical that without saying so
-            // the list reads as one line printed twice.
-            let retry = n > 0
-                && members.get(n - 1).is_some_and(|prev| failed(prev))
-                && members
-                    .get(n)
-                    .zip(members.get(n - 1))
-                    .is_some_and(|(now, prev)| same_target(now, prev));
-            StepLine { summary, retry }
-        })
-        .collect();
-    RunLines { lines, shared }
-}
-
-fn same_target(a: &ChatItem, b: &ChatItem) -> bool {
-    let subject = |item: &ChatItem| match item {
-        ChatItem::Tool(tool) => Some(activity::presentation(tool).subject),
-        _ => None,
-    };
-    match (subject(a), subject(b)) {
-        (Some(a), Some(b)) => {
-            let (a, b) = (redact(&a), redact(&b));
-            a == b || target_and_action(&a).0 == target_and_action(&b).0
-        }
-        _ => false,
-    }
-}
-
-/// Take off whatever every line begins with.
-///
-/// **Whole words, and never all of a line.** Cutting at a character boundary
-/// leaves a line starting mid-token, which is unreadable in a way the shared
-/// prefix never was; and a run whose lines are all identical would otherwise be
-/// stripped down to nothing at all, which is the one case where the shared part
-/// is the only thing there is to say.
-fn strip_shared_prefix(lines: &mut [String]) {
-    if lines.len() < 2 {
-        return;
-    }
-    let words: Vec<Vec<String>> = lines
-        .iter()
-        .map(|line| line.split_whitespace().map(str::to_string).collect())
-        .collect();
-    let shortest = words.iter().map(Vec::len).min().unwrap_or(0);
-    let mut shared = 0;
-    while shared < shortest.saturating_sub(1)
-        && words
-            .iter()
-            .all(|line| line.get(shared) == words[0].get(shared))
-    {
-        shared += 1;
-    }
-    if shared == 0 {
-        return;
-    }
-    for (line, words) in lines.iter_mut().zip(words.iter()) {
-        *line = words[shared..].join(" ");
-    }
 }
 
 /// One kind of work in a cluster, as it reads in the line standing for it.
@@ -1024,42 +697,6 @@ mod tests {
         assert_eq!(redact(plain), plain);
     }
 
-    #[test]
-    fn two_steps_of_a_run_do_not_read_the_same() {
-        let members = [
-            run(
-                "sqlcmd -S 10.0.0.5 -U sa -P x -Q \"SELECT 1\"",
-                ToolStatus::Completed,
-            ),
-            run(
-                "sqlcmd -S 10.0.0.5 -U sa -P x -Q \"SELECT name FROM sys.databases\"",
-                ToolStatus::Completed,
-            ),
-        ];
-        let refs: Vec<&ChatItem> = members.iter().collect();
-        let run = step_lines(&refs);
-        assert_ne!(run.lines[0].summary, run.lines[1].summary, "{run:?}");
-        assert!(run.lines[0].summary.contains("SELECT 1"), "{run:?}");
-        // The one thing both were pointed at moves up to the parent, so the
-        // children are left with only what differs.
-        assert_eq!(run.shared.as_deref(), Some("10.0.0.5"), "{run:?}");
-        assert!(!run.lines[0].summary.contains("10.0.0.5"), "{run:?}");
-        // The secret is gone from the line as well as from the command.
-        assert!(!run.lines[1].summary.contains(" x"), "{run:?}");
-    }
-
-    #[test]
-    fn a_step_run_again_after_a_failure_says_so() {
-        let members = [
-            run("sqlcmd -S 10.0.0.5 -Q \"SELECT 1\"", ToolStatus::Failed),
-            run("sqlcmd -S 10.0.0.5 -Q \"SELECT 1\"", ToolStatus::Completed),
-        ];
-        let refs: Vec<&ChatItem> = members.iter().collect();
-        let run = step_lines(&refs);
-        assert!(!run.lines[0].retry);
-        assert!(run.lines[1].retry, "{run:?}");
-    }
-
     fn read(title: &str) -> ChatItem {
         ChatItem::Tool(ToolItem::new(ToolCall {
             id: title.into(),
@@ -1268,35 +905,6 @@ mod tests {
             Outcome::Running
         );
     }
-
-    /// A subcommand is not always the first word after the program.
-    #[test]
-    fn a_nested_subcommand_reaches_the_word_that_differs() {
-        let members = [
-            run("docker compose up -d", ToolStatus::Completed),
-            run("docker compose down", ToolStatus::Completed),
-        ];
-        let refs: Vec<&ChatItem> = members.iter().collect();
-        let lines = step_lines(&refs).lines;
-        assert_ne!(lines[0].summary, lines[1].summary, "{lines:?}");
-        assert!(lines[0].summary.contains("up"), "{lines:?}");
-        assert!(lines[1].summary.contains("down"), "{lines:?}");
-    }
-
-    #[test]
-    fn a_shared_opening_is_taken_off_every_line_but_never_all_of_one() {
-        let mut lines = vec![
-            "docker compose up".to_string(),
-            "docker compose down".to_string(),
-        ];
-        strip_shared_prefix(&mut lines);
-        assert_eq!(lines, vec!["up", "down"]);
-
-        // Identical lines keep what they have: the shared part is all there is.
-        let mut same = vec!["cargo test".to_string(), "cargo test".to_string()];
-        strip_shared_prefix(&mut same);
-        assert_eq!(same, vec!["test", "test"]);
-    }
 }
 /// What a turn did to one file, end to end.
 ///
@@ -1306,6 +914,12 @@ mod tests {
 /// protocol never sends the other one -- an adapter reports it as one file
 /// gone and another arrived, and a fourth verdict here would be one this can
 /// never actually return.
+///
+/// **`Deleted` is a guess, and the only one available.** A file emptied and a
+/// file removed arrive identically -- a section whose new text is empty -- so
+/// this reads the commoner of the two. What it costs is the letter on the row;
+/// the counts and the bar are right either way, since a file with nothing left
+/// in it has no untouched remainder whichever happened to it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FileVerdict {
     Added,

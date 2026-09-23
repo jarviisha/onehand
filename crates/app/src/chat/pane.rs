@@ -2405,7 +2405,9 @@ impl ChatPane {
                     .count()
             })
             .unwrap_or(0);
-        let status = self.active_chat(cx).and_then(|chat| chat.activity_status());
+        let status = self
+            .active_chat(cx)
+            .and_then(|chat| chat.activity_status().or_else(|| working_word(chat)));
 
         let elapsed = self.turn_began.map_or(0, |began| began.elapsed().as_secs());
         let clock = match elapsed {
@@ -4513,6 +4515,42 @@ impl ChatPane {
 /// step and the turn read as sitting slightly low; and a folded strip pulled the
 /// answer *after* it up to 0.25rem, gluing prose to an index row it has nothing
 /// to do with.
+/// What the running line says when the model has nothing to add.
+///
+/// **The model goes quiet on purpose, and this is the one place that is
+/// wrong.** `Chat::activity_status` says nothing while a thought or a tool is
+/// live, because the transcript's own block is already saying it a few lines
+/// up -- which was right while the only other reader was a notification. The
+/// running line is *below* those blocks and says nothing else, so the two
+/// states a reader most wants a word for came out as a mark and a clock.
+///
+/// Read off the live items rather than asked for, so the layer below keeps
+/// reporting exactly what it reported before.
+fn working_word(chat: &Chat) -> Option<String> {
+    match chat.items.last()? {
+        ChatItem::Thought(thought) if thought.elapsed_secs.is_none() => {
+            Some("Thinking…".to_string())
+        }
+        ChatItem::Tool(tool)
+            if matches!(
+                tool.call.status,
+                onehand_core::acp::ToolStatus::InProgress | onehand_core::acp::ToolStatus::Pending
+            ) =>
+        {
+            // The step's own verb and object, which is the sentence the
+            // cluster line would say about it -- not the raw tool title, which
+            // is where a path or a whole command would come from.
+            let shown = onehand_core::chat::activity::presentation(tool);
+            Some(
+                format!("{} {}", shown.action, shown.subject)
+                    .trim()
+                    .to_string(),
+            )
+        }
+        _ => None,
+    }
+}
+
 fn lead_gap(previous: Option<RunKind>, this: RunKind) -> Rems {
     // The first run rests on the list's own top padding.
     let Some(previous) = previous else {
@@ -4872,9 +4910,59 @@ fn status_badge(
 mod tests {
     use super::{
         BLOCK_GAP, COMPACT_GAP, RunKind, SessionSignal, TranscriptItemId, away_from_tail, lead_gap,
-        rems, restart_needs_arming, switching_away, viewport, waits_alone,
+        rems, restart_needs_arming, switching_away, viewport, waits_alone, working_word,
     };
     use onehand_core::chat::Link;
+
+    /// The running line always has a word, including where the model is quiet.
+    ///
+    /// `Chat::activity_status` says nothing while a thought or a tool is live,
+    /// because the transcript's own block a few lines up is already saying it.
+    /// The running line sits *below* those blocks and says nothing else, so
+    /// without a word of its own the two states a reader most wants named came
+    /// out as a mark and a clock.
+    #[test]
+    fn a_running_line_is_never_wordless() {
+        use onehand_core::acp::{ToolCall, ToolKind, ToolStatus};
+        use onehand_core::chat::{Chat, ChatItem, Md, Thought, ToolItem};
+
+        let mut chat = Chat::new(
+            1,
+            std::path::PathBuf::from("/tmp/project"),
+            "claude".to_string(),
+            None,
+        );
+        chat.busy = true;
+        // Past the handshake: while it is still connecting the model has a
+        // sentence of its own and this never runs.
+        chat.link = Link::Connected;
+
+        chat.items.push(ChatItem::Thought(Thought {
+            md: Md::parse("weighing it up"),
+            started: None,
+            elapsed_secs: None,
+            expanded: false,
+        }));
+        assert_eq!(chat.activity_status(), None, "the model stays quiet");
+        assert_eq!(working_word(&chat).as_deref(), Some("Thinking…"));
+
+        chat.items.push(ChatItem::Tool(ToolItem::new(ToolCall {
+            id: "w".into(),
+            title: "Write src/lib.rs".into(),
+            description: None,
+            kind: ToolKind::Edit,
+            status: ToolStatus::InProgress,
+            content: Vec::new(),
+        })));
+        assert_eq!(chat.activity_status(), None);
+        let word = working_word(&chat).expect("a step in flight names itself");
+        assert!(word.contains("src/lib.rs"), "{word}");
+
+        // A settled transcript has nothing to say, and says nothing.
+        chat.busy = false;
+        chat.items.clear();
+        assert_eq!(working_word(&chat), None);
+    }
 
     /// The two sides of a prompt are one space, so they are one number —
     /// whatever sits above the prompt and whatever follows it.

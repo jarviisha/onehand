@@ -683,7 +683,10 @@ colour alone carries and the letter is what every diff tool already uses; the
 folder a step quieter than the file's own name, which is the two strengths a
 completion row puts a name and its folder at; that file's `+N −M`; and a bar
 saying how much of it the turn touched. A deleted file's path is struck through.
-Clicking the row opens **the turn's diff for that file** — from before its first
+Rows **hover on ink and never on a fill**, which is what every other row inside
+a frame answers a hover with: a plate here would make one list in the transcript
+behave unlike the list an inch above it. Clicking the row opens **the turn's
+diff for that file** — from before its first
 edit to after its last, in the same renderer every other diff in the transcript
 goes through.
 
@@ -692,13 +695,14 @@ short file and nothing at all in a long one, and the number beside it cannot say
 which — so the bar is the only thing answering "was this rewritten or nudged",
 and the untouched remainder is what gives it that scale.
 
-**Eight rows, then a count.** A turn that rewrites a package writes fifty files,
-and a block listing all of them is the thing it was meant to replace: something
-to scroll rather than read. Over the cap they are ordered by how much of each
-file the turn touched and the rest say how many were left out — under it, the
-order the turn touched them in is kept, since that is the order the reader
-watched it happen. A list silently cut at eight is a list claiming the turn
-touched eight files.
+**Eight rows, then a control.** A turn that rewrites a package writes fifty
+files, and a block listing all of them is the thing it was meant to replace:
+something to scroll rather than read. Over the cap they are ordered by how much
+of each file the turn touched, and what was left out **says how many and
+opens** — under the cap the order the turn touched them in is kept, since that
+is the order the reader watched it happen. A list silently cut at eight is a
+list claiming the turn touched eight files; one that says how many were dropped
+and cannot show them is a question with no answer in the room.
 
 **The diffs are computed when a row is opened and never before.** A conversation
 holds every turn it has had, and diffing every file of every one of them on the
@@ -712,8 +716,14 @@ revisited, so a copy written at the end of a turn could not be corrected if it
 ever did.
 
 **A turn that is still going says so on one line at the end of the transcript**:
-a spinner, the time it has been running, how many steps are in flight, and what
-the agent says it is doing. It is a row of the conversation rather than
+a mark, the time it has been running, how many steps are in flight, and what the
+agent says it is doing — **and it always has that last word.** The model goes
+quiet while a thought or a step is live, because the transcript's own block a
+few lines up is already saying it, which was right while the only other reader
+was a notification; this line sits *below* those blocks and says nothing else,
+so the two states a reader most wants named were coming out as a mark and a
+clock. It reads the live items for a word of its own rather than asking the
+model to report differently. It is a row of the conversation rather than
 something floating over the composer, so it sits where the next block will
 appear and in the same reading column — and so it scrolls away with everything
 else, which is the trade. **It takes the widest boundary in the conversation**,

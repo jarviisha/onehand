@@ -357,9 +357,10 @@ impl ChatSession {
 
     /// Whether `path`'s diff is showing under the turn anchored at `anchor`.
     pub fn file_is_open(&self, anchor: TranscriptItemId, path: &str) -> bool {
-        self.file_open
-            .iter()
-            .any(|(at, seen)| *at == anchor && seen == path)
+        // **Built and asked, not scanned.** This is answered once per file row
+        // per frame, so walking the set turns a turn's worth of rows into a
+        // quadratic over what the whole conversation has open.
+        self.file_open.contains(&(anchor, path.to_string()))
     }
 
     /// Show or hide `path`'s diff under the turn anchored at `anchor`.

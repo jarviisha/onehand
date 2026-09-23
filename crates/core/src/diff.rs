@@ -44,7 +44,7 @@ pub enum Row {
 ///
 /// The whole point is that the caller's render budget is spent on *changes*, so
 /// a long file with a small edit still shows the edit.
-pub fn rows(old: &str, new: &str) -> Vec<Row> {
+pub(crate) fn rows(old: &str, new: &str) -> Vec<Row> {
     let a: Vec<&str> = split(old);
     let b: Vec<&str> = split(new);
     with_context(&script(&a, &b))

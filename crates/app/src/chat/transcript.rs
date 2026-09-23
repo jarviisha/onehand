@@ -1294,7 +1294,8 @@ fn tool(
         }
         (ToolStatus::InProgress, _) | (ToolStatus::Pending, _) => None,
         (_, true) => Some(row_note("deleted", cx.theme().muted_foreground, cx)),
-        _ => line_counts(added, removed, cx),
+        _ => line_counts(added, removed, cx)
+            .map(|pair| pair.text_size(OBJECT_TEXT).into_any_element()),
     };
 
     let mut row = ActivityRow::new(
@@ -4348,7 +4349,6 @@ fn cluster_line(
     cx: &App,
 ) -> gpui::AnyElement {
     let summary = &plan.summary;
-    let status = crate::theme::status_ink(cx);
     // **A run of text, not a row of columns.** The sentence is read as a
     // sentence, so the verbs sit inside it rather than in a column of their
     // own — and the whole thing shrinks to what it says instead of ruling a
@@ -4449,29 +4449,7 @@ fn cluster_line(
                 .font_family(cx.theme().mono_font_family.clone())
                 .child(elapsed(summary.seconds))
         }))
-        // **Mono, and each side in the ink it means.** A diff's two numbers are
-        // the one pair here a reader takes in without reading. A side that is
-        // zero is not drawn: `−0` in the danger ink is the colour of something
-        // having gone when nothing did.
-        .children((summary.added > 0 || summary.removed > 0).then(|| {
-            div()
-                .h_flex()
-                .items_center()
-                .gap(TIGHT_GAP)
-                .flex_none()
-                .whitespace_nowrap()
-                .font_family(cx.theme().mono_font_family.clone())
-                .children((summary.added > 0).then(|| {
-                    div()
-                        .text_color(status.success)
-                        .child(format!("+{}", summary.added))
-                }))
-                .children((summary.removed > 0).then(|| {
-                    div()
-                        .text_color(status.danger)
-                        .child(format!("−{}", summary.removed))
-                }))
-        }))
+        .children(line_counts(summary.added, summary.removed, cx))
         // **Last, as it is on every row inside the frame.** The arrow means the
         // same thing in both places, and a control that moves ends of the line
         // depending on which kind of row it is on is one the eye has to find
@@ -4559,7 +4537,7 @@ pub(super) fn turn_summary(
                     n => format!("{n} files changed"),
                 }),
         )
-        .child(count_pair(changes.added, changes.removed, cx))
+        .children(line_counts(changes.added, changes.removed, cx))
         .child(div().flex_1().min_w_0())
         // Right-aligned, because it is the one number here that is about the
         // turn rather than about the tree.
@@ -4588,11 +4566,19 @@ pub(super) fn turn_summary(
     // Most-changed first, and only where there are more than fit: under the
     // cap the order the turn touched them in is the order the reader watched
     // it happen, which is worth more than a ranking.
+    //
+    // **The rest are behind a control, not cut off.** Whether they are showing
+    // is kept in the section fold set keyed by the turn's prompt -- a prompt is
+    // a run of its own and never a section's anchor, so that set has room for
+    // this the same way the activity set has room for the block itself.
     let mut listed: Vec<&onehand_core::chat::FileChange> = changes.files.iter().collect();
     let over = listed.len().saturating_sub(SUMMARY_ROWS);
+    let rest_open = session.read(cx).section_is_open(anchor);
     if over > 0 {
         listed.sort_by_key(|b| std::cmp::Reverse(b.touched()));
-        listed.truncate(SUMMARY_ROWS);
+        if !rest_open {
+            listed.truncate(SUMMARY_ROWS);
+        }
     }
 
     let paths: Vec<String> = changes.files.iter().map(|f| f.path.clone()).collect();
@@ -4612,16 +4598,33 @@ pub(super) fn turn_summary(
                     .into_iter()
                     .map(|file| file_row(session, plan, file, cx)),
             )
-            // **What was left out says so, and says how many.** A list silently
-            // cut at eight is a list claiming the turn touched eight files.
+            // **What was left out says so, says how many, and opens.** A list
+            // silently cut at eight is a list claiming the turn touched eight
+            // files; one that says how many were dropped and cannot show them
+            // is a question with no answer in the room.
             .children((over > 0).then(|| {
                 div()
+                    .id(("turn-rest", key))
                     .w_full()
                     .px(ROW_PAD_X)
                     .py(ROW_PAD_Y)
+                    .cursor_pointer()
                     .text_size(OBJECT_TEXT)
                     .text_color(cx.theme().muted_foreground)
-                    .child(format!("and {over} more, least changed"))
+                    .hover(|row| row.text_color(crate::theme::meta_ink(cx)))
+                    .on_click({
+                        let session = session.clone();
+                        move |_, _, cx: &mut App| {
+                            session.update(cx, |session, cx| {
+                                session.toggle_section(anchor);
+                                cx.notify();
+                            });
+                        }
+                    })
+                    .child(match rest_open {
+                        true => "Show the most changed only".to_string(),
+                        false => format!("and {over} more, least changed"),
+                    })
             })),
     )
     .child(
@@ -4655,25 +4658,6 @@ pub(super) fn turn_summary(
             ),
     )
     .into_any_element()
-}
-
-/// The `+N −M` pair, mono and each side in the ink it means.
-///
-/// A side that is zero is not drawn: `−0` set in the danger ink is the colour
-/// of something having gone when nothing did.
-fn count_pair(added: usize, removed: usize, cx: &App) -> gpui::Div {
-    let status = crate::theme::status_ink(cx);
-    div()
-        .h_flex()
-        .items_center()
-        .gap(TIGHT_GAP)
-        .flex_none()
-        .whitespace_nowrap()
-        .font_family(cx.theme().mono_font_family.clone())
-        .children((added > 0).then(|| div().text_color(status.success).child(format!("+{added}"))))
-        .children(
-            (removed > 0).then(|| div().text_color(status.danger).child(format!("−{removed}"))),
-        )
 }
 
 /// One file of a turn's summary, and its diff when it is open.
@@ -4716,7 +4700,10 @@ fn file_row(
         .cursor_pointer()
         .text_size(OBJECT_TEXT)
         .text_color(cx.theme().muted_foreground)
-        .hover(|row| row.bg(cx.theme().secondary.opacity(0.5)))
+        // **Ink, not a plate**, which is what every other row inside a frame
+        // answers a hover with -- a fill here would make one list in the
+        // transcript behave unlike the list an inch above it.
+        .hover(|row| row.text_color(crate::theme::meta_ink(cx)))
         .on_click({
             let session = session.clone();
             let path = file.path.clone();
@@ -4755,7 +4742,7 @@ fn file_row(
                 .when(gone, |name| name.line_through())
                 .child(name.to_string()),
         )
-        .child(count_pair(file.added, file.removed, cx))
+        .children(line_counts(file.added, file.removed, cx))
         .child(ratio_bar(file, cx));
 
     if !open {
@@ -4813,7 +4800,7 @@ fn ratio_bar(file: &onehand_core::chat::FileChange, cx: &App) -> gpui::Div {
         )
 }
 
-/// A stretch of one kind of work inside an opened cluster./// A stretch of one kind of work inside an opened cluster.
+/// A stretch of one kind of work inside an opened cluster.
 ///
 /// **A row that stands for a section and a row that is one step are the same
 /// row.** Collapsed they are indistinguishable, and the only difference is what
@@ -5257,11 +5244,20 @@ fn activity_row(
     }
 }
 
-/// The counts at the end of a row that changed a file./// The counts at the end of a row that changed a file.
+/// The lines a change added and removed, mono and each side in the ink it
+/// means.
 ///
-/// **`−0` is not drawn**, which colour is what forces: a zero set in the ink
-/// that means "this went" is the colour of a loss that did not happen.
-fn line_counts(added: usize, removed: usize, cx: &App) -> Option<gpui::AnyElement> {
+/// **The one pair in the transcript a reader takes in without reading**, which
+/// is why it is one function and not three: a row inside a cluster, the line
+/// standing for the cluster and the block closing the turn all draw it, and
+/// three copies of "mono, tight gap, success then danger" is three places for
+/// one of them to drift.
+///
+/// `None` where nothing changed, and **`−0` is never drawn**, which colour is
+/// what forces: a zero set in the ink that means "this went" is the colour of a
+/// loss that did not happen. The text size is the caller's, since the three
+/// rows it lands on are not all at one size.
+fn line_counts(added: usize, removed: usize, cx: &App) -> Option<gpui::Div> {
     if added == 0 && removed == 0 {
         return None;
     }
@@ -5274,14 +5270,12 @@ fn line_counts(added: usize, removed: usize, cx: &App) -> Option<gpui::AnyElemen
             .flex_none()
             .whitespace_nowrap()
             .font_family(cx.theme().mono_font_family.clone())
-            .text_size(OBJECT_TEXT)
             .children(
                 (added > 0).then(|| div().text_color(status.success).child(format!("+{added}"))),
             )
             .children(
                 (removed > 0).then(|| div().text_color(status.danger).child(format!("−{removed}"))),
-            )
-            .into_any_element(),
+            ),
     )
 }
 

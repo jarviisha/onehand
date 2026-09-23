@@ -1540,7 +1540,14 @@ Listed because a missing feature nobody wrote down reads as a bug in the ones th
   because nothing in the app writes files back: the first `old` of each path in
   a turn is the snapshot it would need, so the missing half is a write path plus
   a second snapshot for undoing the undo, and both belong in core beside
-  `editor::save_blocking` rather than in a renderer.
+  `editor::save_blocking` rather than in a renderer. A *suggested commit
+  message* is absent for a different reason — writing one means asking the
+  model, and the mechanical sentence a renderer could manage ("Update 3 files")
+  is worse than none; there is no commit path either, only `gitstat`'s read.
+  And `Deleted` is a **guess**: a file emptied and a file removed arrive as the
+  same thing, a diff section whose new text is empty, so the letter on the row
+  reads the commoner of the two while the counts and the bar stay right either
+  way.
 - **The remote bridge does not stream the transcript.** A finished turn carries the *end* of the
   agent's last answer (`Chat::answer_tail`) and nothing else: no tool cards, no diffs, no reasoning,
   nothing mid-turn. That excerpt is there because "finished a turn" alone is a notification whose only
