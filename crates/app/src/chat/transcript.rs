@@ -4435,7 +4435,14 @@ fn cluster_line(
         // *work* rather than about the files. Only where something reported
         // one, or a cluster whose steps never said would claim to have taken no
         // time at all.
-        .children((summary.seconds > 0).then(|| {
+        //
+        // **And only once the cluster has stopped.** While a step is still
+        // going the number is the total of what has already settled, which is
+        // not the elapsed time of anything a reader can see: it sits next to a
+        // line saying work is in flight and reads as that work's duration,
+        // frozen. The line already says it is running; how long it took is an
+        // answer, and an answer belongs after the fact.
+        .children((summary.running.is_none() && summary.seconds > 0).then(|| {
             div()
                 .flex_none()
                 .whitespace_nowrap()

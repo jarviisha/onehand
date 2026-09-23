@@ -1179,7 +1179,12 @@ and its first paragraph — is **one cluster**, and a cluster is **one muted lin
   once when it settled, not a clock: a live figure is a number the line re-reads
   every frame and never comes to rest on. It is drawn only where something
   actually reported one, or a cluster whose steps never said would claim to have
-  taken no time at all. The whole line is the control.
+  taken no time at all — and **only once the cluster has stopped**: while a step
+  is still going the sum is of what has already settled, which is not the
+  duration of anything a reader can see, and it sits next to a line saying work
+  is in flight and reads as that work's, frozen. The line already says it is
+  running; how long it took is an answer, and an answer belongs after the fact.
+  The whole line is the control.
 - **Hovering is the ink and the weight, and no fill at all** — the line's own two
   channels turned up rather than a plate put behind it, which is what a note in
   the margin has to do: a rectangle appearing between two paragraphs every time
