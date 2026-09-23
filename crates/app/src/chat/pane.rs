@@ -2359,7 +2359,12 @@ impl ChatPane {
     /// share a baseline, so the clock sat a shade off everything beside it,
     /// which reads as the row not being on one line at all. There is no jump
     /// left for them to prevent.
-    const CLOCK_W: Rems = rems(3.25);
+    ///
+    /// **Held at what the longest form actually needs and no wider.** Reserved
+    /// generously it is dead space that never goes away, and right-aligned
+    /// digits put all of it on the *left* -- so every short clock read as the
+    /// mark beside it having drifted away from the words.
+    const CLOCK_W: Rems = rems(2.75);
 
     /// The mark that says a turn is alive, and how far it breathes.
     ///
@@ -2443,7 +2448,7 @@ impl ChatPane {
         let mut row = div()
             .h_flex()
             .items_center()
-            .gap_2()
+            .gap_1p5()
             .h(rems(1.5))
             .text_xs()
             // **One ink for the words, the accent for the mark alone.** A
