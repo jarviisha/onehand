@@ -653,7 +653,12 @@ a spinner, the time it has been running, how many steps are in flight, and what
 the agent says it is doing. It is a row of the conversation rather than
 something floating over the composer, so it sits where the next block will
 appear and in the same reading column — and so it scrolls away with everything
-else, which is the trade. It is chrome and has to read as chrome, since it sits
+else, which is the trade. **It takes the widest boundary in the conversation**,
+the one a prompt gets, and ignores the cadence the run above it asked for: every
+other gap there is between two things the agent said, while this one is between
+what it said and the app talking about it. At a block's distance it read as one
+more entry in the turn — worst directly under a cluster, where the two closed
+ranks and the status line looked like another folded step. It is chrome and has to read as chrome, since it sits
 directly under an answer that is streaming: the ink is the secondary one end to
 end, only the spinner keeps the accent, no surface or shadow under it, and the
 row's height is fixed whatever it holds.

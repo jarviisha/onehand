@@ -3351,8 +3351,22 @@ impl ChatPane {
             // The run the layout appends while a turn is live carries no
             // transcript item, because what it reports is the turn rather than
             // anything in it.
+            //
+            // **It takes the widest boundary in the conversation**, the one a
+            // prompt gets, and ignores the cadence the run above it asked for.
+            // Every other gap here is between two things the agent said; this
+            // one is between what it said and the app talking about it, and set
+            // at a block's distance the line read as one more entry in the
+            // turn -- worst directly under a cluster, where the two closed
+            // ranks and the status line looked like another folded step.
             if plan.members.is_empty() {
-                return column(lead, margin, vec![self.working_strip(cx)], cx).into_any_element();
+                return column(
+                    rems(BLOCK_GAP.0 * 2.),
+                    margin,
+                    vec![self.working_strip(cx)],
+                    cx,
+                )
+                .into_any_element();
             }
             return column(lead, margin, body(&plan.members, &room), cx).into_any_element();
         };
