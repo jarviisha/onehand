@@ -658,23 +658,33 @@ directly under an answer that is streaming: the ink is the secondary one end to
 end, only the spinner keeps the accent, no surface or shadow under it, and the
 row's height is fixed whatever it holds.
 
-**The elapsed column is reserved, not measured, and its digits sit against its
-right edge.** The whole point of it is that nothing after it moves when `9s`
-becomes `10s` or `59s` becomes `1m 00s`, and a box that shrink-wraps its digits
-moves on every one of those. It is held at the longest shape the format
-produces, in the mono face whose digits are all one width — both halves are
-needed, since a proportional face slides the text inside the box even when the
-box holds still. Right-aligned so the two shapes end on one edge rather than
-starting on one: what follows the clock begins at the same place whatever the
-clock says. Only the agent's own words give way, and they truncate rather than
-wrap.
+**The elapsed column is reserved, and its digits sit against its right edge.**
+The whole point of it is that nothing after it moves when `9s` becomes `10s` or
+`59s` becomes `1m 0s`, and a box that shrink-wraps its digits moves on every one
+of those. Fixing the box and putting the digits at its right edge is the whole
+of the fix: what follows the clock begins at the same place whatever the clock
+says, and the digits grow leftward into room that was already spoken for. Only
+the agent's own words give way, and they truncate rather than wrap.
+
+**It is drawn in the row's own face and not in mono**, which the reserved box is
+what makes affordable. Tabular digits answer a narrower question — that the text
+inside a shrink-wrapping box not slide — and they answer it by putting a second
+typeface on a row of text. Two faces on one line do not share a baseline, so the
+clock sat a shade off everything beside it, which reads as the row not being on
+one line at all.
 
 **The mark is a square that rises and falls, not a spinner.** A spinner is a
 wait with no progress in it, which is what this is not — the thing it stands
-beside is a clock counting up and a sentence that changes. It travels inside a
-slot tall enough for the whole of it, so the row beside it never moves, and its
-repeat is capped well under the frame rate: it is a mark keeping time rather
-than something being watched.
+beside is a clock counting up and a sentence that changes. It is drawn in the
+ink that says work is going well, and its repeat is capped well under the frame
+rate: it is a mark keeping time rather than something being watched.
+
+**Its travel is symmetric about the row's middle**, and that is the whole of why
+it can sit on a line of text. Swung from one end of its slot to the other it is
+centred on average and never centred at rest, so it reads as a mark hanging
+above the words beside it — which is what a reader sees as "not on the same
+line" whatever the box around it is doing. The slot is tall enough for the whole
+swing either way, so nothing beside it moves.
 
 **A separator only stands between two things that are both there.** The clock
 never takes one at all — it is the row's own left edge rather than one side of a

@@ -2344,25 +2344,37 @@ impl ChatPane {
 
     /// The widest the elapsed column ever has to be.
     ///
-    /// **Reserved, not measured, and the digits sit against its right edge.**
-    /// The whole point of the column is that nothing after it moves when `9s`
-    /// becomes `10s` or `59s` becomes `1m 00s`, and a box that shrink-wraps its
-    /// digits moves on every one of those. Held at the longest shape the format
-    /// produces, in the mono face whose digits are all one width -- both halves
-    /// are needed, since a proportional face slides the text inside the box even
-    /// when the box holds still. Right-aligned so the two shapes end on one
-    /// edge rather than starting on one, which is where the eye is: what
-    /// follows the clock begins at the same place whatever the clock says.
+    /// **Reserved, and the digits sit against its right edge.** The whole point
+    /// of the column is that nothing after it moves when `9s` becomes `10s` or
+    /// `59s` becomes `1m 0s`, and a box that shrink-wraps its digits moves on
+    /// every one of those. Fixing the box and putting the digits at its right
+    /// edge is the whole of the fix: what follows the clock begins at the same
+    /// place whatever the clock says, and the digits grow leftward into room
+    /// that was already spoken for.
+    ///
+    /// **Drawn in the row's own face, not in mono**, which the reserved box is
+    /// what makes affordable. Tabular digits answer a narrower question -- that
+    /// the text inside a shrink-wrapping box not slide -- and they answer it by
+    /// putting a second typeface on a row of text. Two faces on one line do not
+    /// share a baseline, so the clock sat a shade off everything beside it,
+    /// which reads as the row not being on one line at all. There is no jump
+    /// left for them to prevent.
     const CLOCK_W: Rems = rems(3.25);
 
     /// The mark that says a turn is alive, and how far it travels.
     ///
     /// **A square that rises and falls rather than a spinner.** A spinner is a
     /// wait with no progress in it, which is what this is not: the thing it
-    /// stands beside is a clock counting up and a sentence that changes. The
-    /// travel is bounded by a slot tall enough for the whole of it, so the row
-    /// beside it never moves.
-    const PULSE_SIZE: Rems = rems(0.5);
+    /// stands beside is a clock counting up and a sentence that changes.
+    ///
+    /// **The travel is symmetric about the row's middle**, and that is the
+    /// whole of why it can sit on a line of text at all. Swung from one end of
+    /// its slot to the other it is centred on average and never centred at
+    /// rest, so it reads as a mark hanging above the words it stands beside --
+    /// which is what a reader sees as "not on the same line" whatever the box
+    /// around it is doing. The slot is tall enough for the whole swing either
+    /// way, so nothing beside it moves.
+    const PULSE_SIZE: Rems = rems(0.75);
     const PULSE_RISE: Rems = rems(0.1875);
 
     fn working_strip(&self, cx: &App) -> gpui::AnyElement {
@@ -2394,7 +2406,7 @@ impl ChatPane {
         let elapsed = self.turn_began.map_or(0, |began| began.elapsed().as_secs());
         let clock = match elapsed {
             0..=59 => format!("{elapsed}s"),
-            _ => format!("{}m {:02}s", elapsed / 60, elapsed % 60),
+            _ => format!("{}m {}s", elapsed / 60, elapsed % 60),
         };
 
         // **Only what is actually there.** A separator standing between a thing
@@ -2408,8 +2420,8 @@ impl ChatPane {
                     .flex_none()
                     .whitespace_nowrap()
                     .child(match running {
-                        1 => "1 task".to_string(),
-                        n => format!("{n} tasks"),
+                        1 => "1 running task".to_string(),
+                        n => format!("{n} running tasks"),
                     })
                     .into_any_element(),
             );
@@ -2451,7 +2463,7 @@ impl ChatPane {
                             .left_0()
                             .size(Self::PULSE_SIZE)
                             .rounded(radius_tag(cx))
-                            .bg(cx.theme().primary)
+                            .bg(crate::theme::status_ink(cx).success)
                             .with_animation(
                                 "turn-pulse",
                                 // Capped well under the frame rate: this is a
@@ -2463,20 +2475,18 @@ impl ChatPane {
                                     .repeat()
                                     .with_max_fps(30.),
                                 move |square, t| {
+                                    // Swung about the middle of the slot, which
+                                    // is the row's own middle: the resting
+                                    // position and the average position are the
+                                    // same place, and that place is the line
+                                    // the words sit on.
                                     let phase = t * std::f32::consts::TAU;
-                                    square.top(rems(rise * (1. - phase.cos())))
+                                    square.top(rems(rise * (1. + phase.sin())))
                                 },
                             ),
                     ),
             )
-            .child(
-                div()
-                    .flex_none()
-                    .w(Self::CLOCK_W)
-                    .text_right()
-                    .font_family(cx.theme().mono_font_family.clone())
-                    .child(clock),
-            );
+            .child(div().flex_none().w(Self::CLOCK_W).text_right().child(clock));
         for (n, part) in parts.into_iter().enumerate() {
             if n > 0 {
                 row = row.child(
