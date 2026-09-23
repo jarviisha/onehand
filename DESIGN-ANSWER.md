@@ -648,6 +648,29 @@ column, the transcript keeps left and right padding equal to the composer's
 visible corner radius, preserving the same spacing rhythm within their shared
 outer width.
 
+**A turn that is still going says so on one pinned line**, above the composer
+with the other pinned strips: a spinner, the time it has been running, how many
+steps are in flight, and what the agent says it is doing — then the way to stop
+it, right-aligned. It is chrome and has to read as chrome, since it sits
+directly under an answer that is streaming: the ink is the secondary one end to
+end, only the spinner keeps the accent, and the row's height is fixed whatever
+it holds.
+
+**The elapsed column is reserved, not measured.** The whole point of it is that
+nothing after it moves when `9s` becomes `10s` or `59s` becomes `1m 00s`, and a
+box that shrink-wraps its digits moves on every one of those. It is held at the
+longest shape the format produces, in the mono face whose digits are all one
+width — both halves are needed, since a proportional face slides the text inside
+the box even when the box holds still. Only the agent's own words give way, and
+they truncate rather than wrap.
+
+**The clock wakes once a second and not otherwise.** Drawn from the render pass
+it would be a frame timer; asked for on a one-second tick it redraws at the rate
+the thing it draws actually changes, and it stands down while the window is not
+in front of the user. The count is read off a start instant rather than
+accumulated, so coming back to the window shows the right number rather than the
+number of ticks that were drawn.
+
 **The way back to the end of the conversation is one arrow on a disc**, held a
 block's gap above the composer's own top edge. It carried the words *New
 activity*, which name what is down there — something the transcript says for

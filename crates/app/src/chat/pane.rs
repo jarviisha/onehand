@@ -345,6 +345,22 @@ pub struct ChatPane {
     /// is silent: focus handed to an input that is not on screen leaves the
     /// window with nothing focused at all.
     composer_drawn: bool,
+    /// When the turn on screen started, and the ticker keeping its clock true.
+    ///
+    /// **Stamped here because the model does not carry it.** A turn's start is
+    /// `pub(crate)` in core, and the status line is not a good enough reason to
+    /// widen it -- so the pane notices `busy` going up and reads its own clock.
+    /// What that costs is honest and small: a session switched away from and
+    /// back, or an app restarted mid-turn, starts the count again. It is a
+    /// liveness reading, not a measurement, and the measured figure a turn
+    /// leaves behind is the answer's own footer.
+    ///
+    /// The task is the other half. A clock that only redrew when something else
+    /// did would sit at `0s` through a minute of silence, which is the one
+    /// stretch it exists for; this wakes once a second while a turn is live and
+    /// does nothing at all when one is not.
+    turn_began: Option<std::time::Instant>,
+    ticker: Option<gpui::Task<()>>,
 }
 
 impl ChatPane {
@@ -408,6 +424,8 @@ impl ChatPane {
                 git: None,
                 composer_h: Default::default(),
                 composer_drawn: false,
+                turn_began: None,
+                ticker: None,
             }
         })
     }
@@ -2237,7 +2255,7 @@ impl ChatPane {
     /// The transcript is what leaves it out — see the projection — so the card
     /// is never drawn twice.
     fn pinned(
-        &self,
+        &mut self,
         session: &Entity<ChatSession>,
         // A pinned card rests on the composer rather than inside the list, but
         // what it must not outgrow is the same panel.
@@ -2282,6 +2300,10 @@ impl ChatPane {
         // is where the prompt it holds was written and where it will reappear
         // if the queue is cancelled.
         pinned.extend(self.connecting_strip(cx).map(IntoElement::into_any_element));
+        pinned.extend(
+            self.working_strip(window, cx)
+                .map(IntoElement::into_any_element),
+        );
         pinned.extend(self.queued_strip(cx).map(IntoElement::into_any_element));
         pinned
     }
@@ -2321,6 +2343,148 @@ impl ChatPane {
                 .child(Spinner::new().xsmall())
                 .child(status),
         )
+    }
+
+    /// The widest the elapsed column ever has to be.
+    ///
+    /// **Reserved, not measured.** The whole point of the column is that
+    /// nothing after it moves when `9s` becomes `10s` or `59s` becomes
+    /// `1m 00s`, and a box that shrink-wraps its digits moves on every one of
+    /// those. Held at the longest shape the format produces, in the mono face
+    /// whose digits are all one width -- both halves are needed, since a
+    /// proportional face slides the text inside the box even when the box holds
+    /// still.
+    const CLOCK_W: Rems = rems(3.25);
+
+    /// The line that says a turn is still going, pinned above the composer.
+    ///
+    /// **Chrome, and it has to read as chrome.** It sits directly under an
+    /// answer that is streaming, so every channel it could compete on is given
+    /// up: the ink is the secondary one end to end, only the spinner keeps the
+    /// accent, and the row's height is fixed whatever it holds. What it is for
+    /// is answering "is this still alive" at a glance, and nothing more.
+    fn working_strip(
+        &mut self,
+        window: &Window,
+        cx: &mut Context<Self>,
+    ) -> Option<impl IntoElement + use<>> {
+        let chat = self.active_chat(cx)?;
+        // A turn that has not started, or one whose connection has not: the
+        // connecting strip is already speaking for the second.
+        let live = chat.busy && chat.link != Link::Connecting;
+        let status = chat.activity_status();
+        // Steps of *this* turn still going. Counted from the live items, which
+        // is where a running tool is, and never from the archive.
+        let running = chat
+            .items
+            .iter()
+            .filter(|item| {
+                matches!(
+                    item,
+                    onehand_core::chat::ChatItem::Tool(tool)
+                        if matches!(
+                            tool.call.status,
+                            onehand_core::acp::ToolStatus::InProgress
+                                | onehand_core::acp::ToolStatus::Pending
+                        )
+                )
+            })
+            .count();
+
+        if !live {
+            // The clock is the turn's, so it goes with it.
+            self.turn_began = None;
+            self.ticker = None;
+            return None;
+        }
+        let began = *self.turn_began.get_or_insert_with(std::time::Instant::now);
+        self.start_ticker(window, cx);
+
+        let elapsed = began.elapsed().as_secs();
+        let clock = match elapsed {
+            0..=59 => format!("{elapsed}s"),
+            _ => format!("{}m {:02}s", elapsed / 60, elapsed % 60),
+        };
+        let dot = |cx: &App| {
+            div()
+                .flex_none()
+                .text_color(cx.theme().muted_foreground.opacity(0.6))
+                .child("·")
+        };
+
+        Some(
+            transcript::floating_card(cx)
+                .h_flex()
+                .items_center()
+                .gap_2()
+                .h(rems(2.))
+                .px_3()
+                .text_xs()
+                // **One ink for the words, the accent for the spinner alone.**
+                // A status line tinted to be noticed is a status line competing
+                // with the answer arriving above it.
+                .text_color(cx.theme().muted_foreground)
+                .child(Spinner::new().xsmall())
+                .child(
+                    div()
+                        .flex_none()
+                        .w(Self::CLOCK_W)
+                        .font_family(cx.theme().mono_font_family.clone())
+                        .child(clock),
+                )
+                .children((running > 0).then(|| dot(cx)))
+                .children((running > 0).then(|| {
+                    div().flex_none().whitespace_nowrap().child(match running {
+                        1 => "1 task".to_string(),
+                        n => format!("{n} tasks"),
+                    })
+                }))
+                .children(status.as_ref().map(|_| dot(cx)))
+                // The one part that gives way: it is the agent's own words
+                // about what it is doing, and the only thing here whose length
+                // nothing bounds.
+                .children(status.map(|status| div().flex_1().min_w_0().truncate().child(status)))
+                .child(div().flex_1().min_w_0())
+                .child(
+                    div()
+                        .flex_none()
+                        .whitespace_nowrap()
+                        .text_color(cx.theme().muted_foreground.opacity(0.7))
+                        .child("Stop to cancel"),
+                ),
+        )
+    }
+
+    /// Wake once a second while a turn is live, and not otherwise.
+    ///
+    /// **Not a frame timer**, which is what a clock drawn from the render pass
+    /// would become: this asks for a redraw at the rate the thing it draws
+    /// actually changes. It stands down while the window is not the one in
+    /// front of the user -- the seconds keep passing either way, and the count
+    /// is read off a start instant rather than accumulated, so coming back to
+    /// the window shows the right number rather than the number of ticks that
+    /// were drawn.
+    fn start_ticker(&mut self, window: &Window, cx: &mut Context<Self>) {
+        if self.ticker.is_some() || !window.is_window_active() {
+            return;
+        }
+        self.ticker = Some(cx.spawn(async move |pane, cx| {
+            loop {
+                cx.background_executor()
+                    .timer(std::time::Duration::from_secs(1))
+                    .await;
+                let live = pane.update(cx, |pane: &mut Self, cx| {
+                    let live = pane.turn_began.is_some();
+                    if live {
+                        cx.notify();
+                    }
+                    live
+                });
+                if !matches!(live, Ok(true)) {
+                    break;
+                }
+            }
+        }));
     }
 
     /// What is waiting for this turn to end, and the way to take it back.
