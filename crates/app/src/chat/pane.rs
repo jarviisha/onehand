@@ -120,19 +120,12 @@ struct OverlayRoom {
     well: Option<gpui::Pixels>,
 }
 
-/// The space at a turn boundary — above a prompt, and between a prompt and the
-/// answer replying to it.
+/// The space between two ordinary blocks of one turn, and the step every other
+/// gap in the conversation is written against.
 ///
-/// A turn is the unit the eye scrolls looking for. Given the same gap as the
-/// blocks *within* a turn, a long conversation is one undifferentiated column
-/// with nothing saying where the last question was asked.
-///
-/// All three of these are the transcript's own scale, read from the one place
-/// that holds it: they are the outermost steps of the same ladder the blocks
-/// inside a turn are spaced on, and kept here as separate numbers they were
-/// free to stop being a ladder at all.
-const TURN_GAP: Rems = transcript::TURN_GAP;
-/// The space between two ordinary blocks of one turn.
+/// Read from the transcript's own scale: it is the outermost step of the same
+/// ladder the blocks inside a turn are spaced on, and kept here as a separate
+/// number it was free to stop being a ladder at all.
 const BLOCK_GAP: Rems = transcript::BLOCK_GAP;
 /// The space between two collapsed history rows, which are an index and are
 /// read as one.
@@ -4233,11 +4226,15 @@ fn lead_gap(previous: Option<RunKind>, this: RunKind) -> Rems {
         return rems(0.);
     };
     match (previous, this) {
-        // A turn boundary, taken from either side: above the prompt it opens
-        // the turn, below it separates the question from its answer. At the gap
-        // blocks within a turn take, the first row under a prompt reads as one
-        // more line of the question.
-        (RunKind::Prompt, _) | (_, RunKind::Prompt) => TURN_GAP,
+        // **A turn opens above the prompt and not below it.** The space over a
+        // question is what a reader scrolling back finds the last one by, so it
+        // is the widest boundary inside the conversation -- twice what two
+        // blocks of one answer take. Under it the answer is the *reply*, and a
+        // gap as wide as the one above would cut the question off from the
+        // thing answering it. They were symmetrical, which said the prompt
+        // belonged to neither side.
+        (_, RunKind::Prompt) => rems(BLOCK_GAP.0 * 2.),
+        (RunKind::Prompt, _) => BLOCK_GAP,
         // Index entries close ranks with each other and with nothing else.
         (RunKind::Compact, RunKind::Compact) => COMPACT_GAP,
         _ => BLOCK_GAP,
@@ -4581,8 +4578,8 @@ fn status_badge(
 #[cfg(test)]
 mod tests {
     use super::{
-        BLOCK_GAP, COMPACT_GAP, RunKind, SessionSignal, TURN_GAP, TranscriptItemId, away_from_tail,
-        lead_gap, restart_needs_arming, switching_away, viewport, waits_alone,
+        BLOCK_GAP, COMPACT_GAP, RunKind, SessionSignal, TranscriptItemId, away_from_tail, lead_gap,
+        rems, restart_needs_arming, switching_away, viewport, waits_alone,
     };
     use onehand_core::chat::Link;
 
@@ -4594,21 +4591,33 @@ mod tests {
     /// plus the prompt's, and it therefore changed with what happened to
     /// precede it while the gap below never did.
     #[test]
-    fn a_prompt_is_spaced_the_same_above_and_below() {
+    fn a_prompt_opens_a_turn_and_does_not_close_one() {
+        // Above: the widest boundary in the conversation, whatever precedes it
+        // -- that space is what a reader scrolling back finds the last question
+        // by.
         for above in [RunKind::Block, RunKind::Compact, RunKind::Prompt] {
             assert_eq!(
                 lead_gap(Some(above), RunKind::Prompt),
-                TURN_GAP,
+                rems(BLOCK_GAP.0 * 2.),
                 "{above:?} above a prompt"
             );
         }
-        for below in [RunKind::Block, RunKind::Compact, RunKind::Prompt] {
+        // Below: an ordinary block gap, because what follows is the *reply*.
+        // Symmetrical, the two said the prompt belonged to neither side.
+        for below in [RunKind::Block, RunKind::Compact] {
             assert_eq!(
                 lead_gap(Some(RunKind::Prompt), below),
-                TURN_GAP,
+                BLOCK_GAP,
                 "{below:?} below a prompt"
             );
         }
+        // **A prompt under a prompt is still a turn opening**, and opening wins
+        // over closing: somebody who asked twice without waiting asked two
+        // questions, and the space has to say so from the side that knows.
+        assert_eq!(
+            lead_gap(Some(RunKind::Prompt), RunKind::Prompt),
+            rems(BLOCK_GAP.0 * 2.),
+        );
     }
 
     /// Index rows close ranks with each other and with nothing else. The old

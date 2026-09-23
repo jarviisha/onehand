@@ -998,10 +998,40 @@ Ask · Notice` — plus the activity block and the chrome rows (§6).
 ### 5.1 User prompt
 The **only** block with a fill, and the only one on the right.
 
-- Body: filled, rounded, no border, shrink-to-fit against the right edge and
-  bounded to a fraction of the row before it wraps. A one-line question
-  stretched edge to edge is shaped exactly like an answer, and the shape is
-  what the eye reads first.
+- Body: filled on the ramp's own bubble step, with a hairline only to hold the
+  shape where the two surfaces get close. Shrink-to-fit against the right edge
+  and bounded to a fraction of the reading column before it wraps — a one-line
+  question stretched edge to edge is shaped exactly like an answer, and the
+  shape is what the eye reads first. **Its right edge is the column's**, the same
+  edge the agent's prose ends at; what made them look unaligned is that prose is
+  ragged-right and never reaches it, while a fill does.
+- **The one corner in the transcript that is not nearly square**, and its tail
+  corner brought back down to a control's. Everything else here is a bounded
+  region of a document and takes the tight ladder for that reason; this is the
+  one block shaped like a thing somebody *said*, and a bubble rounded evenly is
+  a lozenge that could belong to either side. Its padding is the one pair off
+  the spacing scale: a corner has to be cleared before it can be padded, and at
+  the scale's own steps the text either crowded the curve or stood a whole step
+  clear of it and left the bubble hollow.
+- **A backtick pair is the one mark read as markup.** The prompt is drawn as
+  typed — run through the markdown renderer it would turn `**/*.rs` into bold
+  and `# 1` into a heading, the transcript misquoting the person who wrote it —
+  but a fenced span is how somebody says "this is a name, not a word", and
+  losing it makes a path in the middle of a sentence unfindable. Only *matched*
+  pairs count; a lone backtick is a backtick.
+- **Copy sits under the bubble, on its right edge, and appears by inheriting.**
+  The usual way to show a child on hover is to name a group on an ancestor and
+  ask for it by name, which resolves through a registry; text colour cascades,
+  so the row is drawn transparent and the hover on its own container turns the
+  ink up — one primitive, no registry. The row is laid out either way, so
+  nothing moves when the pointer arrives, and a press holds the answer up on a
+  timer rather than until the pointer leaves.
+- **A turn opens above the prompt and does not close below it.** The space over
+  a question is what a reader scrolling back finds the last one by, so it is the
+  widest boundary inside the conversation — twice what two blocks of one answer
+  take. Under it the answer is the *reply*, and a gap as wide as the one above
+  would cut the question off from the thing answering it. The two were
+  symmetrical, which said the prompt belonged to neither side.
 - Attachments stack **above** the bubble and **outside** it, on the same right
   edge, each a bounded thumbnail for an image (§12) with a quiet caption under
   it — kind icon, file name, and a `danger` "not sent" mark on anything the
@@ -1014,8 +1044,7 @@ The **only** block with a fill, and the only one on the right.
   answer is about the wrong picture.
 - The bubble itself is drawn only when something was typed, so an
   attachment-only prompt is the files alone.
-- *(Not rendered: the per-message footer with Copy / Select text, and the
-  long-prompt clamp with "Show full message".)*
+- *(Not rendered: the long-prompt clamp with "Show full message".)*
 
 ### 5.2 Agent answer
 Markdown prose starts directly on the transcript's shared left axis. There is

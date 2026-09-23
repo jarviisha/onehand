@@ -351,8 +351,15 @@ pub(super) fn radius_block(cx: &App) -> gpui::Pixels {
     cx.theme().radius
 }
 /// A user's bubble, and nothing else.
+///
+/// **The one corner in the transcript that is not nearly square.** Everything
+/// else here is a bounded region of a document and takes the tight ladder for
+/// that reason; this is the one block shaped like a thing somebody *said*, and
+/// the roundness is what says so before a word of it is read. Its own tail
+/// corner comes back down to a control's, which is what points the shape at the
+/// side the prompt came from.
 fn radius_bubble(cx: &App) -> gpui::Pixels {
-    cx.theme().radius_lg
+    corner(cx.theme().radius_lg, 6.)
 }
 /// Width a question's tab label is elided at. Only a *tab* is ever elided.
 const ASK_TAB_W: Rems = rems(8.75);
@@ -425,8 +432,25 @@ const THUMB_H: Rems = rems(3.875);
 ///
 /// The wider figure is for a narrow panel, where the column is already short
 /// enough that holding a fifth of it clear costs more than the edge is worth.
-const USER_BUBBLE_MAX: f32 = 0.85;
+const USER_BUBBLE_MAX: f32 = 0.78;
 const USER_BUBBLE_MAX_NARROW: f32 = 0.9;
+/// The bubble's own padding, and the one pair here off the spacing scale.
+///
+/// **A corner has to be cleared before it can be padded.** At the scale's own
+/// steps the text either crowded the 14px curve at the two ends of every line
+/// or stood a whole step clear of it and left the bubble looking hollow; these
+/// two are the pair that sits the words just outside the arc. Named and kept
+/// together so the reason travels with them, and deliberately not entered in
+/// the scale's own list: they are an optical fit to a radius, the way
+/// [`GLYPH_DROP`] is an optical fit to a baseline.
+const BUBBLE_PAD_Y: Rems = rems(0.6875);
+const BUBBLE_PAD_X: Rems = rems(0.9375);
+/// Between the bubble and the control offered under it.
+///
+/// Closer than anything else in the transcript: the control belongs to the
+/// bubble rather than following it, and at any of the scale's steps it read as
+/// a separate thing that happened to be beneath.
+const BUBBLE_TAIL_GAP: Rems = rems(0.1875);
 /// The body of a blocking card, bounded and scrolling inside itself.
 ///
 /// **The controls have to outlive the content.** A permission names a command
@@ -660,36 +684,178 @@ fn user(u: &UserMsg, uid: usize, room: Room, cx: &App) -> impl IntoElement + use
         }))
         .children((!u.text.trim().is_empty()).then(|| {
             div()
-                .relative()
+                .v_flex()
+                .items_end()
+                // The control belongs to the bubble rather than following it.
+                .gap(BUBBLE_TAIL_GAP)
                 .max_w(relative(share))
-                .py(TEXT_PAD_Y)
-                .px(TEXT_PAD_X)
-                .rounded(radius_bubble(cx))
-                // **The corner nearest the speaker is the tight one.** A bubble
-                // rounded evenly is a lozenge that could belong to either side;
-                // one corner cut back points at the edge the prompt came from,
-                // which is the whole of what the right-hand lane is saying.
-                .rounded_br(radius_tag(cx))
-                .border_1()
-                .border_color(cx.theme().border)
-                .bg(cx.theme().secondary)
-                .text_color(cx.theme().secondary_foreground)
-                .child(u.text.clone())
-                // **A Copy, because a drag cannot take this either.** What the
-                // user typed is drawn as typed -- deliberately, since a prompt
-                // run through the markdown renderer would turn `**/*.rs` into
-                // bold and a backtick into a code span, which is the transcript
-                // misquoting the person who wrote it. That renderer is also the
-                // only thing here that owns a selection, so the two cannot both
-                // be had until the transcript grows a selection of its own.
-                //
-                // Outside the bubble rather than over it: the bubble is the
-                // shortest block in the transcript and a control laid on it
-                // covers the sentence it is offering to copy.
-                .child(div().absolute().top_0().left(rems(-1.75)).child(
-                    copy_button(("copy-prompt", uid), u.text.clone()).tooltip("Copy this prompt"),
-                ))
+                .child(
+                    div()
+                        .w_full()
+                        .py(BUBBLE_PAD_Y)
+                        .px(BUBBLE_PAD_X)
+                        .rounded(radius_bubble(cx))
+                        // **The corner nearest the speaker is the tight one.**
+                        // A bubble rounded evenly is a lozenge that could
+                        // belong to either side; one corner brought back down
+                        // to a control's points the shape at the edge the
+                        // prompt came from, which is the whole of what the
+                        // right-hand lane is saying.
+                        .rounded_br(radius_control(cx))
+                        // **The one filled surface in the transcript**, on the
+                        // ramp's own step for it. Everything else is an edge on
+                        // the reading surface, so a fill means one thing here:
+                        // this was typed by the person reading it. The hairline
+                        // is only to hold the shape where the two get close.
+                        .border_1()
+                        .border_color(cx.theme().border)
+                        .bg(cx.theme().secondary)
+                        .text_color(cx.theme().secondary_foreground)
+                        .child(prompt_text(&u.text, cx)),
+                )
+                .child(PromptCopy {
+                    key: uid,
+                    text: u.text.clone().into(),
+                })
         }))
+}
+
+/// The control under a prompt: hidden until the turn is pointed at, and
+/// answering when it is pressed.
+///
+/// **An element of its own, because it has to remember two things the frame
+/// does not.** Whether it was just pressed — which needs keyed state, and keyed
+/// state needs the window — and a timer to take that back a second later.
+///
+/// **It appears by inheriting, not by being revealed.** The usual way to show a
+/// child on hover is to name a group on an ancestor and ask for it by name from
+/// the child, which resolves through a registry and has already failed twice in
+/// this file. Text colour cascades, so the row is drawn transparent and the
+/// hover on its own container turns the ink up: one primitive, no registry, and
+/// the space is held either way because the row is always laid out.
+#[derive(IntoElement)]
+struct PromptCopy {
+    key: usize,
+    text: SharedString,
+}
+
+impl RenderOnce for PromptCopy {
+    fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
+        let key = self.key;
+        let done = window.use_keyed_state(("prompt-copied", key), cx, |_, _| false);
+        let copied = *done.read(cx);
+        let text = self.text.clone();
+
+        div()
+            .id(("prompt-copy", key))
+            .h_flex()
+            .items_center()
+            .justify_end()
+            .gap(TIGHT_GAP)
+            .flex_none()
+            .h(BUTTON_H)
+            .cursor_pointer()
+            .text_xs()
+            // Transparent rather than absent: the row is laid out whichever it
+            // is, so nothing under the bubble moves when the pointer arrives.
+            // A press keeps it up, or the answer would vanish with the pointer
+            // that caused it.
+            .text_color(match copied {
+                true => crate::theme::status_ink(cx).success,
+                false => cx.theme().transparent,
+            })
+            .hover(|row| row.text_color(cx.theme().muted_foreground))
+            .child(
+                Icon::new(match copied {
+                    true => IconName::Check,
+                    false => IconName::Copy,
+                })
+                .size(MARK_SIZE),
+            )
+            .child(match copied {
+                true => "Copied",
+                false => "Copy",
+            })
+            .on_click(move |_, window, cx| {
+                cx.write_to_clipboard(gpui::ClipboardItem::new_string(text.to_string()));
+                done.update(cx, |done, cx| {
+                    *done = true;
+                    cx.notify();
+                });
+                // Taken back on a timer rather than on the next pointer move:
+                // an answer that only clears when the mouse happens to leave is
+                // one that is still claiming to have just happened a minute
+                // later.
+                let done = done.clone();
+                window
+                    .spawn(cx, async move |cx| {
+                        cx.background_executor()
+                            .timer(std::time::Duration::from_millis(1_200))
+                            .await;
+                        done.update(cx, |done, cx| {
+                            *done = false;
+                            cx.notify();
+                        });
+                    })
+                    .detach();
+            })
+    }
+}
+
+/// What the user typed, with the spans they fenced in backticks set apart.
+///
+/// **Drawn as typed, and this is the one exception.** A prompt run through the
+/// markdown renderer would turn `**/*.rs` into bold and `# 1` into a heading —
+/// the transcript misquoting the person who wrote it — so the text is drawn
+/// verbatim. A backtick pair is the one mark a reader means as markup even here,
+/// because it is how they say "this is a name, not a word", and losing it makes
+/// a path in the middle of a sentence unfindable.
+///
+/// Only *matched* pairs count. A lone backtick is a backtick, which is what
+/// somebody typing about shell quoting meant by it.
+fn prompt_text(text: &str, cx: &App) -> gpui::AnyElement {
+    let spans = code_spans(text);
+    if spans.is_empty() {
+        // Nothing to set apart, so nothing pays for the run machinery.
+        return div().child(text.to_string()).into_any_element();
+    }
+    let chip = gpui::HighlightStyle {
+        // **A fill, and no corner.** A highlight run paints a rectangle behind
+        // its glyphs and there is no radius on it — the rounded chip this wants
+        // would need the text laid out by hand. The fill and the face together
+        // are still enough to read as one.
+        background_color: Some(cx.theme().muted),
+        color: Some(cx.theme().secondary_foreground),
+        ..Default::default()
+    };
+    let mono = cx.theme().mono_font_family.clone();
+    gpui::StyledText::new(text.to_string())
+        .with_highlights(spans.iter().map(|range| (range.clone(), chip)))
+        .with_font_family_overrides(spans.into_iter().map(|range| (range, mono.clone())))
+        .into_any_element()
+}
+
+/// The byte ranges of every matched backtick pair, contents only, in order.
+///
+/// Returned sorted and non-overlapping because both run APIs require it, and a
+/// scan that pairs each opening tick with the next closing one is sorted by
+/// construction.
+fn code_spans(text: &str) -> Vec<std::ops::Range<usize>> {
+    let mut out = Vec::new();
+    let mut open: Option<usize> = None;
+    for (at, c) in text.char_indices() {
+        if c != '`' {
+            continue;
+        }
+        match open.take() {
+            // An empty pair marks nothing, and a zero-width run is a run the
+            // layout has to carry for no glyph.
+            Some(from) if at > from => out.push(from..at),
+            Some(_) => {}
+            None => open = Some(at + 1),
+        }
+    }
+    out
 }
 
 /// One attached file: what it is, and — for a picture — what it looks like.
