@@ -2495,14 +2495,19 @@ impl ChatPane {
             .flex_none()
             .h(HEADER_H)
             .px_4()
-            // **A rule under it.** The list clips at exactly this line, so the
-            // conversation is cut off rather than running out: without an edge
-            // there, a paragraph sliced through the middle of its first row
-            // reads as a rendering fault. The fade at the other end of the list
-            // is the opposite answer to the opposite problem -- nothing is
-            // above this row for the text to dissolve into.
-            .border_b_1()
-            .border_color(cx.theme().border)
+            // **No rule under it.** A hairline is an edge between two surfaces,
+            // and there are not two here: the header and the transcript are one
+            // reading surface, and what separates them is that one is a row of
+            // controls and the other is prose -- which the muted ink and the
+            // spacing already say. The panels either side of this one draw
+            // their own edges and nothing else does, so a line across the top of
+            // the conversation was the last one left marking an inside.
+            //
+            // It was tried, on the reasoning that the list clips at exactly this
+            // line and an unmarked cut reads as a rendering fault. What that
+            // costs is a rule drawn permanently for a state the reader is only
+            // in while scrolling -- and the fade at the other end of the list is
+            // the answer that shape of problem actually takes.
             .text_color(cx.theme().muted_foreground)
             .child(self.title_control(title, busy, archive, cx))
             .children(badge.map(|(signal, text)| status_badge(signal, text, cx)))
