@@ -74,8 +74,23 @@ pub struct RunPlan {
     pub members: Vec<TranscriptItemId>,
     /// `Some` when this run draws as one row standing for several steps.
     pub strip: Option<ActivityPlan>,
+    /// `Some` on the row closing a finished turn, which stands for no item at
+    /// all: it is what the turn *did*, read back out of the steps above it.
+    pub changes: Option<ChangePlan>,
     pub open: bool,
     pub kind: RunKind,
+}
+
+/// What a finished turn wrote, and the prompt it hangs off.
+///
+/// **Keyed by the prompt that began the turn**, and folded through the same
+/// set an activity cluster is. A prompt is a run of its own and never a
+/// cluster's anchor, so the two uses of that set cannot collide -- and a
+/// fourth fold set for one row would be a fourth place to reconcile whenever
+/// a conversation is rebuilt.
+pub struct ChangePlan {
+    pub anchor: TranscriptItemId,
+    pub changes: onehand_core::chat::TurnChanges,
 }
 
 impl RunPlan {
@@ -263,6 +278,7 @@ impl Viewport {
                 transcript::Run::Single(target) => RunPlan {
                     members: vec![target],
                     strip: None,
+                    changes: None,
                     open: true,
                     kind: item(chat, target).map_or(RunKind::Block, single_kind),
                 },
@@ -280,6 +296,7 @@ impl Viewport {
                             summary: cluster_summary(&bodies),
                             sections: sections(chat, &members),
                         }),
+                        changes: None,
                         open,
                         members,
                         // Folded it is one muted line; opened it is a frame with
@@ -316,10 +333,13 @@ impl Viewport {
             plan.push(RunPlan {
                 members: Vec::new(),
                 strip: None,
+                changes: None,
                 open: true,
                 kind: RunKind::Compact,
             });
         }
+
+        let plan = close_turns(chat, plan, &is_open);
 
         let diverged = self
             .plan
@@ -736,6 +756,62 @@ impl Viewport {
     }
 }
 
+/// Put a row closing every finished turn into `plan`.
+///
+/// **Derived here and never stored.** The diffs it adds up are already in the
+/// transcript and in the archive, so a summary written down beside them is a
+/// second copy that can disagree with the first -- and `items.jsonl` is
+/// appended to and never revisited, so a copy written at the end of a turn
+/// could not be corrected if it ever did. Recomputing it is a walk of the
+/// turn's own steps, which is work the cluster lines above it are already
+/// doing.
+///
+/// **A cancelled turn still gets one.** What was written before the stop is on
+/// disk exactly as if the turn had run to the end, and that is the moment a
+/// reader most needs to be told which files those were.
+fn close_turns(
+    chat: &Chat,
+    plan: Vec<RunPlan>,
+    is_open: &impl Fn(TranscriptItemId) -> bool,
+) -> Vec<RunPlan> {
+    let mut out: Vec<RunPlan> = Vec::with_capacity(plan.len());
+    // The turn being walked: where it began, and what it has done so far.
+    let mut turn: Option<(TranscriptItemId, Vec<&ChatItem>)> = None;
+
+    let closer = |anchor: TranscriptItemId, body: &[&ChatItem]| {
+        onehand_core::chat::turn_changes(body).map(|changes| RunPlan {
+            members: Vec::new(),
+            strip: None,
+            changes: Some(ChangePlan { anchor, changes }),
+            open: is_open(anchor),
+            kind: RunKind::Compact,
+        })
+    };
+
+    for run in plan {
+        if run.kind == RunKind::Prompt {
+            if let Some((anchor, body)) = turn.take()
+                && let Some(row) = closer(anchor, &body)
+            {
+                out.push(row);
+            }
+            turn = run.members.first().map(|&head| (head, Vec::new()));
+        } else if let Some((_, body)) = turn.as_mut() {
+            body.extend(run.members.iter().filter_map(|&t| item(chat, t)));
+        }
+        out.push(run);
+    }
+    // The last turn closes only once it has stopped: a running one is still
+    // writing, and a total that grows under the eye is not a summary.
+    if !chat.busy
+        && let Some((anchor, body)) = turn
+        && let Some(row) = closer(anchor, &body)
+    {
+        out.push(row);
+    }
+    out
+}
+
 /// The transcript as one addressed sequence: read-only history first, then the
 /// live tail — minus whatever is currently pinned above the composer.
 ///
@@ -769,6 +845,13 @@ fn draws_the_same(was: &RunPlan, now: &RunPlan) -> bool {
         && was.open == now.open
         && was.kind == now.kind
         && was.strip.as_ref().map(|s| &s.summary) == now.strip.as_ref().map(|s| &s.summary)
+        // **Compared in full, unlike a cluster's.** The two rows that carry no
+        // members at all -- the line saying a turn is running and the line
+        // saying what it wrote -- are otherwise indistinguishable from each
+        // other and from every other empty run, so without this the list keeps
+        // a one-line height for a row that has become a list of files.
+        && was.changes.as_ref().map(|c| (c.anchor, &c.changes))
+            == now.changes.as_ref().map(|c| (c.anchor, &c.changes))
 }
 
 /// Split a cluster into the stretches of one kind of work the frame lists.
@@ -955,6 +1038,49 @@ mod tests {
             read("Read src/b.rs"),
         ];
         chat
+    }
+
+    fn wrote(path: &str, added: usize, removed: usize) -> ChatItem {
+        let mut tool = ToolItem::new(ToolCall {
+            id: format!("write {path}"),
+            title: format!("Write {path}"),
+            description: None,
+            kind: ToolKind::Edit,
+            status: ToolStatus::Completed,
+            content: Vec::new(),
+        });
+        tool.diff_summary = vec![(path.to_string(), added, removed)];
+        ChatItem::Tool(tool)
+    }
+
+    /// A finished turn that wrote something closes on a row of its own, and a
+    /// turn still writing does not.
+    ///
+    /// A total that grows under the eye is not a summary, and the line saying
+    /// the turn is running is already there saying so.
+    #[test]
+    fn a_finished_turn_closes_on_what_it_wrote() {
+        let mut chat = chat();
+        chat.items.push(ChatItem::User(UserMsg::text("fix it")));
+        chat.items.push(wrote("src/lib.rs", 10, 2));
+        chat.busy = true;
+
+        let mut viewport = Viewport::default();
+        viewport.replan(&chat, 0, |_| false);
+        // 0: answer · 1: the old cluster · 2: the prompt · 3: the write ·
+        // 4: the line saying the turn is running. Nothing closes it yet.
+        assert_eq!(viewport.run(4).map(|r| r.changes.is_some()), Some(false));
+        assert!(viewport.run(5).is_none());
+
+        chat.busy = false;
+        viewport.replan(&chat, 0, |_| false);
+        let closing = viewport.run(4).and_then(|run| run.changes.as_ref());
+        let closing = closing.expect("the turn closes on what it wrote");
+        // Hung off the prompt that began the turn, which is what folds it.
+        assert_eq!(closing.anchor, TranscriptItemId::Live(3));
+        assert_eq!(closing.changes.files.len(), 1);
+        assert_eq!((closing.changes.added, closing.changes.removed), (10, 2));
+        assert!(viewport.run(5).is_none());
     }
 
     #[test]

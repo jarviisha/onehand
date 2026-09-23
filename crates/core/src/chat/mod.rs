@@ -26,8 +26,8 @@ pub use model::{
     MODE_SELECTOR,
 };
 pub use steps::{
-    cluster_summary, redact, run_outcome, step_lines, ClusterSummary, Outcome, RunLines,
-    RunOutcome, StepLine, SummaryPart,
+    cluster_summary, redact, run_outcome, step_lines, turn_changes, ClusterSummary, FileChange,
+    Outcome, RunLines, RunOutcome, StepLine, SummaryPart, TurnChanges,
 };
 pub use store::{
     commit, conv_dir, conversations_dir, delete, list_conversations, load, now_secs, ConfigPick,

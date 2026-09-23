@@ -3360,13 +3360,31 @@ impl ChatPane {
             // turn -- worst directly under a cluster, where the two closed
             // ranks and the status line looked like another folded step.
             if plan.members.is_empty() {
-                return column(
-                    rems(BLOCK_GAP.0 * 2.),
-                    margin,
-                    vec![self.working_strip(cx)],
-                    cx,
-                )
-                .into_any_element();
+                // The other memberless row: what a finished turn wrote. It
+                // takes the same wide boundary, and for the same reason -- it
+                // is the app talking about the turn rather than part of it.
+                let body = match &plan.changes {
+                    Some(plan_changes) => {
+                        let anchor = plan_changes.anchor;
+                        let this = self.handle.clone();
+                        let folded = session.clone();
+                        transcript::turn_changes(
+                            &plan_changes.changes,
+                            plan.open,
+                            move |_, _, cx: &mut App| {
+                                folded.update(cx, |session, cx| {
+                                    session.toggle_activity(anchor);
+                                    cx.notify();
+                                });
+                                let _ = this.update(cx, |_: &mut Self, cx| cx.notify());
+                            },
+                            ("changes", anchor.index()).into(),
+                            cx,
+                        )
+                    }
+                    None => self.working_strip(cx),
+                };
+                return column(rems(BLOCK_GAP.0 * 2.), margin, vec![body], cx).into_any_element();
             }
             return column(lead, margin, body(&plan.members, &room), cx).into_any_element();
         };
@@ -4928,6 +4946,7 @@ mod tests {
                 summary: onehand_core::chat::ClusterSummary::default(),
                 sections: Vec::new(),
             }),
+            changes: None,
             open,
             // What the layout classifies an opened group as: a block's worth
             // of reading, which is what the run *after* it has to answer to.

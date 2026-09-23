@@ -1512,6 +1512,17 @@ Listed because a missing feature nobody wrote down reads as a bug in the ones th
   keys, so a conversation written before they existed still loads and simply has nothing to say
   about either. Nothing reads the duration per row — it is summed onto the line standing for the
   cluster, where one number answers "how long was that" without twenty rows each answering it.
+- **A turn's closing summary is derived, never persisted.** A finished turn ends
+  on a line saying how many files it wrote and the turn's `+N −M`, opening into a
+  row per file — `onehand_core::chat::turn_changes` over that turn's own steps,
+  rebuilt on every replan rather than written into `items.jsonl`. The diffs it
+  adds up are already in the archive, and that file is appended to and never
+  revisited, so a copy written at the end of a turn could not be corrected if the
+  two ever disagreed. It is one row per *file* and not per edit: a turn that
+  writes, tests and writes again is one row, because the question is what is
+  different now and the route is what the clusters above it already are. A
+  cancelled turn still gets one; a running turn does not, since a total growing
+  under the eye is not a summary.
 - **The remote bridge does not stream the transcript.** A finished turn carries the *end* of the
   agent's last answer (`Chat::answer_tail`) and nothing else: no tool cards, no diffs, no reasoning,
   nothing mid-turn. That excerpt is there because "finished a turn" alone is a notification whose only

@@ -648,6 +648,35 @@ column, the transcript keeps left and right padding equal to the composer's
 visible corner radius, preserving the same spacing rhythm within their shared
 outer width.
 
+**A finished turn closes on one line saying what it wrote**: how many files
+changed and the turn's own `+N −M`, opening into a row per file with that file's
+numbers beside it. It is the only line in a turn whose counts are the *turn's* —
+each cluster above it says what one stretch of work was, so a turn with three
+stretches leaves three numbers nothing adds up, and "what did that do to my
+tree" is the question none of them answers. It takes the same ink, weight, hover
+and chevron as the lines it closes, because it is read in the same pass as them,
+and it folds through the same set they do, keyed by the prompt that began the
+turn — a prompt is a run of its own and never a cluster's anchor, so the two
+uses cannot collide.
+
+**It is derived and never stored.** The diffs it adds up are already in the
+transcript and in the archive, so a summary written down beside them is a second
+copy that can disagree with the first — and the archive is appended to and never
+revisited, so a copy written at the end of a turn could not be corrected if it
+ever did.
+
+**One row per file, not one per edit.** A turn writes a file, runs the tests,
+fixes it and writes it again, and three rows naming that file are the agent's
+route rather than the result. The individual writes are still each in the
+transcript, in the cluster they happened in, which is where the route is what is
+being read.
+
+**A cancelled turn still gets one.** What was written before the stop is on disk
+exactly as if the turn had run to the end, and that is the moment a reader most
+needs to be told which files those were. A turn still *running* gets none: a
+total that grows under the eye is not a summary, and the line below is already
+saying the work is in flight.
+
 **A turn that is still going says so on one line at the end of the transcript**:
 a spinner, the time it has been running, how many steps are in flight, and what
 the agent says it is doing. It is a row of the conversation rather than

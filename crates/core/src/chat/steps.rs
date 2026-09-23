@@ -902,6 +902,65 @@ mod tests {
         }))
     }
 
+    fn wrote(id: &str, diffs: &[(&str, usize, usize)]) -> ChatItem {
+        let mut tool = ToolItem::new(ToolCall {
+            id: id.into(),
+            title: id.into(),
+            description: None,
+            kind: ToolKind::Edit,
+            status: ToolStatus::Completed,
+            content: Vec::new(),
+        });
+        tool.diff_summary = diffs
+            .iter()
+            .map(|(path, plus, minus)| ((*path).to_string(), *plus, *minus))
+            .collect();
+        ChatItem::Tool(tool)
+    }
+
+    /// A file written more than once in a turn is one row, not one per write.
+    ///
+    /// The question the summary answers is what is different now, and three
+    /// rows naming one file answer how the agent got there instead -- which
+    /// the transcript above it is already the full account of.
+    #[test]
+    fn a_file_written_twice_is_summed_into_one_row() {
+        let items = [
+            wrote("first", &[("src/lib.rs", 10, 2)]),
+            run("cargo test", ToolStatus::Failed),
+            wrote("again", &[("src/lib.rs", 3, 1), ("src/main.rs", 4, 0)]),
+        ];
+        let items: Vec<&ChatItem> = items.iter().collect();
+        let changes = turn_changes(&items).expect("something was written");
+
+        assert_eq!(
+            changes.files,
+            vec![
+                FileChange {
+                    path: "src/lib.rs".into(),
+                    added: 13,
+                    removed: 3
+                },
+                // In the order the turn first touched them, which is the order
+                // the reader watched it happen in.
+                FileChange {
+                    path: "src/main.rs".into(),
+                    added: 4,
+                    removed: 0
+                },
+            ]
+        );
+        assert_eq!((changes.added, changes.removed), (17, 3));
+    }
+
+    /// A turn that only read files has nothing to summarise.
+    #[test]
+    fn a_turn_that_wrote_nothing_has_no_summary() {
+        let items = [run("rg todo", ToolStatus::Completed)];
+        let items: Vec<&ChatItem> = items.iter().collect();
+        assert_eq!(turn_changes(&items), None);
+    }
+
     #[test]
     fn a_secret_never_reaches_a_line() {
         let connection = "sqlcmd -S 10.0.0.5 -U sa -P Hunter2 \
@@ -1225,4 +1284,65 @@ mod tests {
         strip_shared_prefix(&mut same);
         assert_eq!(same, vec!["test", "test"]);
     }
+}
+
+/// One file a turn touched, with everything that happened to it in that turn
+/// added together.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FileChange {
+    pub path: String,
+    pub added: usize,
+    pub removed: usize,
+}
+
+/// What a whole turn did to the working tree.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TurnChanges {
+    /// In the order the turn first touched each, which is the order the
+    /// reader watched it happen in.
+    pub files: Vec<FileChange>,
+    pub added: usize,
+    pub removed: usize,
+}
+
+/// Every file `items` touched, once each.
+///
+/// **One row per file and not one per edit.** A turn writes a file, runs the
+/// tests, fixes it and writes it again, and three rows saying `src/lib.rs` is
+/// the agent's route rather than the result -- which is the question this
+/// answers: what is different now. The individual writes are still each in the
+/// transcript, in the cluster they happened in, where the route is what is
+/// being read.
+///
+/// `None` where nothing was written. A turn that only read files has nothing
+/// to summarise, and a line saying so is a line that appears after every
+/// question and reports nothing.
+pub fn turn_changes(items: &[&ChatItem]) -> Option<TurnChanges> {
+    let mut files: Vec<FileChange> = Vec::new();
+    for item in items {
+        let ChatItem::Tool(tool) = item else {
+            continue;
+        };
+        for (path, plus, minus) in &tool.diff_summary {
+            match files.iter_mut().find(|seen| seen.path == *path) {
+                Some(seen) => {
+                    seen.added += plus;
+                    seen.removed += minus;
+                }
+                None => files.push(FileChange {
+                    path: path.clone(),
+                    added: *plus,
+                    removed: *minus,
+                }),
+            }
+        }
+    }
+    if files.is_empty() {
+        return None;
+    }
+    Some(TurnChanges {
+        added: files.iter().map(|f| f.added).sum(),
+        removed: files.iter().map(|f| f.removed).sum(),
+        files,
+    })
 }

@@ -4488,6 +4488,120 @@ fn cluster_line(
         .into_any_element()
 }
 
+/// What a finished turn wrote: one muted line, opening into a file per row.
+///
+/// **The same line a cluster draws, saying a different thing.** A reader
+/// scanning a conversation for "what did that one do to my tree" is asking the
+/// question the cluster lines above cannot answer between them -- each says
+/// what one stretch of work was, and a turn with three stretches leaves three
+/// numbers nothing adds up. So this is the only line in a turn whose counts are
+/// the turn's, and it takes the same ink, weight, hover and chevron as the
+/// lines it closes, because it is read in the same pass as them.
+pub(super) fn turn_changes(
+    changes: &onehand_core::chat::TurnChanges,
+    open: bool,
+    on_click: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static,
+    id: gpui::ElementId,
+    cx: &App,
+) -> gpui::AnyElement {
+    let status = crate::theme::status_ink(cx);
+    let counts = |added: usize, removed: usize, cx: &App| {
+        div()
+            .h_flex()
+            .items_center()
+            .gap(TIGHT_GAP)
+            .flex_none()
+            .whitespace_nowrap()
+            .font_family(cx.theme().mono_font_family.clone())
+            // A side that is zero is not drawn: `−0` set in the danger ink is
+            // the colour of something having gone when nothing did.
+            .children(
+                (added > 0).then(|| div().text_color(status.success).child(format!("+{added}"))),
+            )
+            .children(
+                (removed > 0).then(|| div().text_color(status.danger).child(format!("−{removed}"))),
+            )
+    };
+
+    let line = div()
+        .id(id)
+        .h_flex()
+        .items_center()
+        .gap(STACK_GAP)
+        .h(rems(1.75))
+        .w_auto()
+        .max_w_full()
+        .min_w_0()
+        .cursor_pointer()
+        .text_size(CLUSTER_TEXT)
+        .font_weight(gpui::FontWeight::EXTRA_LIGHT)
+        .text_color(cx.theme().muted_foreground)
+        .hover(|line| {
+            line.font_weight(gpui::FontWeight::NORMAL)
+                .text_color(crate::theme::meta_ink(cx))
+        })
+        .on_click(move |event, window, cx| on_click(event, window, cx))
+        .child(
+            div()
+                .flex_none()
+                .whitespace_nowrap()
+                .child(match changes.files.len() {
+                    1 => "1 file changed".to_string(),
+                    n => format!("{n} files changed"),
+                }),
+        )
+        .child(counts(changes.added, changes.removed, cx))
+        .child(
+            mark_slot(CHEVRON_SLOT).child(
+                Icon::new(match open {
+                    true => IconName::ChevronDown,
+                    false => IconName::ChevronRight,
+                })
+                .size(CHEVRON_MARK),
+            ),
+        );
+
+    if !open {
+        return line.into_any_element();
+    }
+
+    // Set in to where the line's own words start, as an opened cluster's rows
+    // are: the list is what the line stands for, so it reads as being under it
+    // rather than beside it.
+    div()
+        .v_flex()
+        .items_start()
+        .w_full()
+        .min_w_0()
+        .child(line)
+        .child(
+            div()
+                .v_flex()
+                .w_full()
+                .min_w_0()
+                .pl(ROW_PAD_X)
+                .text_size(OBJECT_TEXT)
+                .text_color(cx.theme().muted_foreground)
+                .children(changes.files.iter().map(|file| {
+                    div()
+                        .h_flex()
+                        .items_center()
+                        .gap(STACK_GAP)
+                        .w_full()
+                        .min_w_0()
+                        .h(rems(1.5))
+                        .child(
+                            // The path gives way and nothing else does: it is
+                            // the only part of the row whose length nothing
+                            // bounds.
+                            div().flex_1().min_w_0().truncate().child(file.path.clone()),
+                        )
+                        .child(counts(file.added, file.removed, cx))
+                })),
+        )
+        .into_any_element()
+}
+
 /// A stretch of one kind of work inside an opened cluster./// A stretch of one kind of work inside an opened cluster.
 ///
 /// **A row that stands for a section and a row that is one step are the same
