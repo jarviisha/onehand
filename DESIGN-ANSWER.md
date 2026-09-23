@@ -648,34 +648,68 @@ column, the transcript keeps left and right padding equal to the composer's
 visible corner radius, preserving the same spacing rhythm within their shared
 outer width.
 
-**A finished turn closes on one line saying what it wrote**: how many files
-changed and the turn's own `+N −M`, opening into a row per file with that file's
-numbers beside it. It is the only line in a turn whose counts are the *turn's* —
-each cluster above it says what one stretch of work was, so a turn with three
-stretches leaves three numbers nothing adds up, and "what did that do to my
-tree" is the question none of them answers. It takes the same ink, weight, hover
-and chevron as the lines it closes, because it is read in the same pass as them,
-and it folds through the same set they do, keyed by the prompt that began the
-turn — a prompt is a run of its own and never a cluster's anchor, so the two
-uses cannot collide.
+**A finished turn closes on a block saying what it did to the working tree**,
+and it is a *result* rather than a record. The clusters above it say what the
+agent did in the order it did it, which answers "how did it get here"; this says
+what is different now, which is what somebody has to act on. A file written
+three times is three entries up there and one row here, deliberately — the two
+are not the same list drawn twice.
+
+Its head is **one step above the reading size**: this is where a turn ends and
+what a reader scrolling past a long answer is looking for, and every other line
+in the block is at or below the transcript's own size, so the step is what gives
+the block a top rather than a first row. It carries the file count, the turn's
+own `+N −M` in mono with each side in the ink it means, and — right-aligned,
+because it is the one number about the turn rather than about the tree — how
+long the turn took. It takes the surface language of an activity group: no fill
+of its own, one hairline border, the theme's large radius, and each tier ruled
+off the next in that same border colour.
+
+**Only where something was written.** A turn that read and answered gets no
+block at all, never a block reporting nothing, and a turn still running gets
+none either: a total that grows under the eye is not a summary, and the status
+line below is already saying the work is in flight.
+
+**The last finished turn opens itself and every older one is a line.** A
+conversation that kept them all open is a column of tables with the reading
+between them; sending the next prompt is what puts the one above away, which is
+the moment the reader stopped asking. The fold set holds the *exceptions* rather
+than the state, so opening an old block and closing the newest both survive the
+next turn arriving.
+
+Each file is a row: **a letter in its own ink** — added, modified, deleted —
+rather than a coloured dot, because three states on a dense row is more than
+colour alone carries and the letter is what every diff tool already uses; the
+folder a step quieter than the file's own name, which is the two strengths a
+completion row puts a name and its folder at; that file's `+N −M`; and a bar
+saying how much of it the turn touched. A deleted file's path is struck through.
+Clicking the row opens **the turn's diff for that file** — from before its first
+edit to after its last, in the same renderer every other diff in the transcript
+goes through.
+
+**The bar is of the file, not of the turn.** Twenty lines changed is most of a
+short file and nothing at all in a long one, and the number beside it cannot say
+which — so the bar is the only thing answering "was this rewritten or nudged",
+and the untouched remainder is what gives it that scale.
+
+**Eight rows, then a count.** A turn that rewrites a package writes fifty files,
+and a block listing all of them is the thing it was meant to replace: something
+to scroll rather than read. Over the cap they are ordered by how much of each
+file the turn touched and the rest say how many were left out — under it, the
+order the turn touched them in is kept, since that is the order the reader
+watched it happen. A list silently cut at eight is a list claiming the turn
+touched eight files.
+
+**The diffs are computed when a row is opened and never before.** A conversation
+holds every turn it has had, and diffing every file of every one of them on the
+chance somebody expands one is work paid a thousand times to be used once. What
+the block carries is counts, which the model had already worked out.
 
 **It is derived and never stored.** The diffs it adds up are already in the
 transcript and in the archive, so a summary written down beside them is a second
 copy that can disagree with the first — and the archive is appended to and never
 revisited, so a copy written at the end of a turn could not be corrected if it
 ever did.
-
-**One row per file, not one per edit.** A turn writes a file, runs the tests,
-fixes it and writes it again, and three rows naming that file are the agent's
-route rather than the result. The individual writes are still each in the
-transcript, in the cluster they happened in, which is where the route is what is
-being read.
-
-**A cancelled turn still gets one.** What was written before the stop is on disk
-exactly as if the turn had run to the end, and that is the moment a reader most
-needs to be told which files those were. A turn still *running* gets none: a
-total that grows under the eye is not a summary, and the line below is already
-saying the work is in flight.
 
 **A turn that is still going says so on one line at the end of the transcript**:
 a spinner, the time it has been running, how many steps are in flight, and what

@@ -902,20 +902,23 @@ mod tests {
         }))
     }
 
-    fn wrote(id: &str, diffs: &[(&str, usize, usize)]) -> ChatItem {
-        let mut tool = ToolItem::new(ToolCall {
+    /// A write of `new` over `old` at `path`.
+    fn wrote(id: &str, diffs: &[(&str, &str, &str)]) -> ChatItem {
+        ChatItem::Tool(ToolItem::new(ToolCall {
             id: id.into(),
             title: id.into(),
             description: None,
             kind: ToolKind::Edit,
             status: ToolStatus::Completed,
-            content: Vec::new(),
-        });
-        tool.diff_summary = diffs
-            .iter()
-            .map(|(path, plus, minus)| ((*path).to_string(), *plus, *minus))
-            .collect();
-        ChatItem::Tool(tool)
+            content: diffs
+                .iter()
+                .map(|(path, old, new)| crate::acp::ToolContent::Diff {
+                    path: (*path).to_string(),
+                    old: Some((*old).to_string()),
+                    new: (*new).to_string(),
+                })
+                .collect(),
+        }))
     }
 
     /// A file written more than once in a turn is one row, not one per write.
@@ -926,31 +929,41 @@ mod tests {
     #[test]
     fn a_file_written_twice_is_summed_into_one_row() {
         let items = [
-            wrote("first", &[("src/lib.rs", 10, 2)]),
+            wrote("first", &[("src/lib.rs", "a\nb\n", "1\n2\n3\n")]),
             run("cargo test", ToolStatus::Failed),
-            wrote("again", &[("src/lib.rs", 3, 1), ("src/main.rs", 4, 0)]),
+            wrote(
+                "again",
+                &[
+                    ("src/lib.rs", "1\n2\n3\n", "1\n9\n3\n"),
+                    ("src/main.rs", "x\n", "x\ny\n"),
+                ],
+            ),
         ];
         let items: Vec<&ChatItem> = items.iter().collect();
         let changes = turn_changes(&items).expect("something was written");
 
+        let named: Vec<(&str, usize, usize, usize)> = changes
+            .files
+            .iter()
+            .map(|f| (f.path.as_str(), f.added, f.removed, f.total))
+            .collect();
         assert_eq!(
-            changes.files,
-            vec![
-                FileChange {
-                    path: "src/lib.rs".into(),
-                    added: 13,
-                    removed: 3
-                },
-                // In the order the turn first touched them, which is the order
-                // the reader watched it happen in.
-                FileChange {
-                    path: "src/main.rs".into(),
-                    added: 4,
-                    removed: 0
-                },
-            ]
+            named,
+            // In the order the turn first touched them, which is the order the
+            // reader watched it happen in, and the counts of both writes added
+            // together.
+            vec![("src/lib.rs", 4, 3, 3), ("src/main.rs", 1, 0, 2)]
         );
-        assert_eq!((changes.added, changes.removed), (17, 3));
+        assert_eq!((changes.added, changes.removed), (5, 3));
+        // Both existed before the turn and both survive it.
+        assert!(changes
+            .files
+            .iter()
+            .all(|f| f.verdict == FileVerdict::Modified));
+
+        // The turn's diff for a file written twice runs from before the first
+        // write to after the last, not from the last write alone.
+        assert!(!turn_file_diff(&items, "src/lib.rs").is_empty());
     }
 
     /// A turn that only read files has nothing to summarise.
@@ -1285,6 +1298,20 @@ mod tests {
         assert_eq!(same, vec!["test", "test"]);
     }
 }
+/// What a turn did to one file, end to end.
+///
+/// **Only three, because the protocol carries only three.** A diff section is
+/// a path, the text before and the text after, so a file that appeared has no
+/// before and one that went has no after. A *rename* is two paths and the
+/// protocol never sends the other one -- an adapter reports it as one file
+/// gone and another arrived, and a fourth verdict here would be one this can
+/// never actually return.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FileVerdict {
+    Added,
+    Modified,
+    Deleted,
+}
 
 /// One file a turn touched, with everything that happened to it in that turn
 /// added together.
@@ -1293,6 +1320,17 @@ pub struct FileChange {
     pub path: String,
     pub added: usize,
     pub removed: usize,
+    pub verdict: FileVerdict,
+    /// Lines the file has once the turn is over, which is what the untouched
+    /// part of a ratio bar is a part *of*. Zero for a file that went.
+    pub total: usize,
+}
+
+impl FileChange {
+    /// How much of this file the turn touched, which is what orders the list.
+    pub fn touched(&self) -> usize {
+        self.added + self.removed
+    }
 }
 
 /// What a whole turn did to the working tree.
@@ -1303,6 +1341,9 @@ pub struct TurnChanges {
     pub files: Vec<FileChange>,
     pub added: usize,
     pub removed: usize,
+    /// How long the turn took, from the prompt going out to the turn ending.
+    /// Absent on a replayed or legacy turn, which carries no timestamps.
+    pub seconds: Option<u64>,
 }
 
 /// Every file `items` touched, once each.
@@ -1314,25 +1355,56 @@ pub struct TurnChanges {
 /// transcript, in the cluster they happened in, where the route is what is
 /// being read.
 ///
+/// `items` is the whole turn, the prompt that began it included: the prompt is
+/// what carries the two moments the duration is the difference between.
+///
 /// `None` where nothing was written. A turn that only read files has nothing
 /// to summarise, and a line saying so is a line that appears after every
 /// question and reports nothing.
 pub fn turn_changes(items: &[&ChatItem]) -> Option<TurnChanges> {
+    use crate::acp::ToolContent;
+
     let mut files: Vec<FileChange> = Vec::new();
     for item in items {
         let ChatItem::Tool(tool) = item else {
             continue;
         };
-        for (path, plus, minus) in &tool.diff_summary {
+        for section in &tool.call.content {
+            let ToolContent::Diff { path, old, new } = section else {
+                continue;
+            };
+            let (plus, minus) = crate::chat::model::line_change_counts(old.as_deref(), new);
+            // **The verdict is the turn's, not this edit's.** A file created
+            // and then edited again was still created by this turn, and a file
+            // whose last edit emptied it is gone however it started -- so the
+            // first edit decides whether it arrived and the last whether it
+            // survived.
+            let gone = new.is_empty();
+            let total = match gone {
+                true => 0,
+                false => new.lines().count(),
+            };
             match files.iter_mut().find(|seen| seen.path == *path) {
                 Some(seen) => {
                     seen.added += plus;
                     seen.removed += minus;
+                    seen.total = total;
+                    seen.verdict = match (seen.verdict, gone) {
+                        (_, true) => FileVerdict::Deleted,
+                        (FileVerdict::Added, false) => FileVerdict::Added,
+                        (_, false) => FileVerdict::Modified,
+                    };
                 }
                 None => files.push(FileChange {
                     path: path.clone(),
-                    added: *plus,
-                    removed: *minus,
+                    added: plus,
+                    removed: minus,
+                    verdict: match (old.is_none(), gone) {
+                        (_, true) => FileVerdict::Deleted,
+                        (true, false) => FileVerdict::Added,
+                        (false, false) => FileVerdict::Modified,
+                    },
+                    total,
                 }),
             }
         }
@@ -1343,6 +1415,51 @@ pub fn turn_changes(items: &[&ChatItem]) -> Option<TurnChanges> {
     Some(TurnChanges {
         added: files.iter().map(|f| f.added).sum(),
         removed: files.iter().map(|f| f.removed).sum(),
+        seconds: items.iter().find_map(|item| match item {
+            ChatItem::User(user) => user
+                .sent_at
+                .zip(user.completed_at)
+                .map(|(out, back)| back.saturating_sub(out)),
+            _ => None,
+        }),
         files,
     })
+}
+
+/// The turn's net diff for one file: what it looked like before the turn's
+/// first edit against what it looks like after the last.
+///
+/// **Computed when a row is opened and never before.** A conversation holds
+/// every turn it has had, and diffing every file of every one of them on the
+/// chance somebody expands one is work paid a thousand times to be used once.
+/// What the summary carries is counts, which the model had already worked out.
+///
+/// **The turn's diff and not the last edit's**, which is the rule the counts
+/// follow too: a file written, tested and written again shows what changed
+/// about it, not what the final touch-up was.
+pub fn turn_file_diff(items: &[&ChatItem], path: &str) -> Vec<crate::diff::Row> {
+    use crate::acp::ToolContent;
+
+    let mut before: Option<&str> = None;
+    let mut after = "";
+    let mut seen = false;
+    for item in items {
+        let ChatItem::Tool(tool) = item else {
+            continue;
+        };
+        for section in &tool.call.content {
+            let ToolContent::Diff { path: at, old, new } = section else {
+                continue;
+            };
+            if at != path {
+                continue;
+            }
+            if !seen {
+                before = old.as_deref();
+                seen = true;
+            }
+            after = new;
+        }
+    }
+    crate::diff::rows(before.unwrap_or_default(), after)
 }

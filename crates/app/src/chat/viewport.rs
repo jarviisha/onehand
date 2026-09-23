@@ -91,6 +91,9 @@ pub struct RunPlan {
 pub struct ChangePlan {
     pub anchor: TranscriptItemId,
     pub changes: onehand_core::chat::TurnChanges,
+    /// The turn's own items, so a file row opened later can be diffed without
+    /// the whole conversation being diffed now.
+    pub body: Vec<TranscriptItemId>,
 }
 
 impl RunPlan {
@@ -776,28 +779,48 @@ fn close_turns(
 ) -> Vec<RunPlan> {
     let mut out: Vec<RunPlan> = Vec::with_capacity(plan.len());
     // The turn being walked: where it began, and what it has done so far.
-    let mut turn: Option<(TranscriptItemId, Vec<&ChatItem>)> = None;
+    let mut turn: Option<(TranscriptItemId, Vec<TranscriptItemId>)> = None;
 
-    let closer = |anchor: TranscriptItemId, body: &[&ChatItem]| {
-        onehand_core::chat::turn_changes(body).map(|changes| RunPlan {
+    // **The last finished turn opens itself; every older one is a line.** The
+    // block answers "what did that do to my tree", which is a question about
+    // the turn that just ended -- and a conversation that kept every one of
+    // them open would be a column of tables with the reading between them.
+    // Sending the next prompt is what puts the one above away, which is the
+    // moment the reader stopped asking. The fold set holds the *exceptions* to
+    // that rather than the state, so opening an old one and closing the newest
+    // both survive the next turn arriving.
+    let closer = |anchor: TranscriptItemId, body: &[TranscriptItemId], newest: bool| {
+        let items: Vec<&ChatItem> = body.iter().filter_map(|&t| item(chat, t)).collect();
+        onehand_core::chat::turn_changes(&items).map(|changes| RunPlan {
             members: Vec::new(),
             strip: None,
-            changes: Some(ChangePlan { anchor, changes }),
-            open: is_open(anchor),
+            changes: Some(ChangePlan {
+                anchor,
+                changes,
+                body: body.to_vec(),
+            }),
+            open: newest != is_open(anchor),
             kind: RunKind::Compact,
         })
     };
 
+    // Which prompt begins the last turn, since that is the one that opens.
+    let newest = plan
+        .iter()
+        .rev()
+        .find(|run| run.kind == RunKind::Prompt)
+        .and_then(|run| run.members.first().copied());
+
     for run in plan {
         if run.kind == RunKind::Prompt {
             if let Some((anchor, body)) = turn.take()
-                && let Some(row) = closer(anchor, &body)
+                && let Some(row) = closer(anchor, &body, Some(anchor) == newest)
             {
                 out.push(row);
             }
-            turn = run.members.first().map(|&head| (head, Vec::new()));
+            turn = run.members.first().map(|&head| (head, run.members.clone()));
         } else if let Some((_, body)) = turn.as_mut() {
-            body.extend(run.members.iter().filter_map(|&t| item(chat, t)));
+            body.extend(run.members.iter().copied());
         }
         out.push(run);
     }
@@ -805,7 +828,7 @@ fn close_turns(
     // writing, and a total that grows under the eye is not a summary.
     if !chat.busy
         && let Some((anchor, body)) = turn
-        && let Some(row) = closer(anchor, &body)
+        && let Some(row) = closer(anchor, &body, Some(anchor) == newest)
     {
         out.push(row);
     }
@@ -1040,17 +1063,19 @@ mod tests {
         chat
     }
 
-    fn wrote(path: &str, added: usize, removed: usize) -> ChatItem {
-        let mut tool = ToolItem::new(ToolCall {
+    fn wrote(path: &str, old: &str, new: &str) -> ChatItem {
+        ChatItem::Tool(ToolItem::new(ToolCall {
             id: format!("write {path}"),
             title: format!("Write {path}"),
             description: None,
             kind: ToolKind::Edit,
             status: ToolStatus::Completed,
-            content: Vec::new(),
-        });
-        tool.diff_summary = vec![(path.to_string(), added, removed)];
-        ChatItem::Tool(tool)
+            content: vec![onehand_core::acp::ToolContent::Diff {
+                path: path.to_string(),
+                old: Some(old.to_string()),
+                new: new.to_string(),
+            }],
+        }))
     }
 
     /// A finished turn that wrote something closes on a row of its own, and a
@@ -1062,7 +1087,7 @@ mod tests {
     fn a_finished_turn_closes_on_what_it_wrote() {
         let mut chat = chat();
         chat.items.push(ChatItem::User(UserMsg::text("fix it")));
-        chat.items.push(wrote("src/lib.rs", 10, 2));
+        chat.items.push(wrote("src/lib.rs", "a\nb\n", "1\n2\n3\n"));
         chat.busy = true;
 
         let mut viewport = Viewport::default();
@@ -1079,7 +1104,10 @@ mod tests {
         // Hung off the prompt that began the turn, which is what folds it.
         assert_eq!(closing.anchor, TranscriptItemId::Live(3));
         assert_eq!(closing.changes.files.len(), 1);
-        assert_eq!((closing.changes.added, closing.changes.removed), (10, 2));
+        assert_eq!((closing.changes.added, closing.changes.removed), (3, 2));
+        // The block the last finished turn gets opens itself; every older one
+        // is a line until somebody asks.
+        assert_eq!(viewport.run(4).map(|r| r.open), Some(true));
         assert!(viewport.run(5).is_none());
     }
 

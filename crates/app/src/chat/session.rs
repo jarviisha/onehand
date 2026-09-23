@@ -208,6 +208,14 @@ pub struct ChatSession {
     /// its first section's, so one set holding both would open a section the
     /// moment the cluster around it opened and there would be no closing it.
     section_open: HashSet<TranscriptItemId>,
+    /// Which file rows of a turn's closing summary are showing their diff,
+    /// keyed by the turn's prompt and the path.
+    ///
+    /// **A pair and not an item id, because a row is not an item.** A file
+    /// there stands for every edit the turn made to it, which is one row for
+    /// what may be four transcript items -- and the same path in two turns is
+    /// two rows that open independently.
+    file_open: HashSet<(TranscriptItemId, String)>,
     /// How many times a fold has been toggled.
     ///
     /// The run layout is built partly from these folds, so it has to be rebuilt
@@ -272,6 +280,7 @@ impl ChatSession {
                 perm_focus: HashMap::new(),
                 activity_open: HashSet::new(),
                 section_open: HashSet::new(),
+                file_open: HashSet::new(),
                 folds_revision: 0,
                 _pump: cx.spawn(async move |session, cx| {
                     let mut events = events;
@@ -344,6 +353,59 @@ impl ChatSession {
             self.section_open.insert(anchor);
         }
         self.folds_revision = self.folds_revision.wrapping_add(1);
+    }
+
+    /// Whether `path`'s diff is showing under the turn anchored at `anchor`.
+    pub fn file_is_open(&self, anchor: TranscriptItemId, path: &str) -> bool {
+        self.file_open
+            .iter()
+            .any(|(at, seen)| *at == anchor && seen == path)
+    }
+
+    /// Show or hide `path`'s diff under the turn anchored at `anchor`.
+    pub fn toggle_file(&mut self, anchor: TranscriptItemId, path: &str) {
+        let key = (anchor, path.to_string());
+        if !self.file_open.remove(&key) {
+            self.file_open.insert(key);
+        }
+        self.folds_revision = self.folds_revision.wrapping_add(1);
+    }
+
+    /// Show every file of the turn anchored at `anchor`, or hide them all if
+    /// they are already showing.
+    ///
+    /// One control for the whole block, since opening eight rows one at a time
+    /// to read a turn's diff is the block asking to be scrolled rather than
+    /// read.
+    pub fn toggle_every_file(&mut self, anchor: TranscriptItemId, paths: &[String]) {
+        let all_open = paths.iter().all(|path| self.file_is_open(anchor, path));
+        self.file_open.retain(|(at, _)| *at != anchor);
+        if !all_open {
+            self.file_open
+                .extend(paths.iter().map(|path| (anchor, path.clone())));
+        }
+        self.folds_revision = self.folds_revision.wrapping_add(1);
+    }
+
+    /// Run `f` over the transcript items `body` names.
+    ///
+    /// The summary block holds a turn's items by id rather than by value, so
+    /// this is how it reaches them when a row is opened -- and it is a closure
+    /// rather than a returned `Vec<&ChatItem>` because those borrow the chat
+    /// this session owns.
+    pub fn with_turn_items<T>(
+        &self,
+        body: &[TranscriptItemId],
+        f: impl FnOnce(&[&onehand_core::chat::ChatItem]) -> T,
+    ) -> T {
+        let items: Vec<&onehand_core::chat::ChatItem> = body
+            .iter()
+            .filter_map(|target| match target {
+                TranscriptItemId::History(i) => self.chat.history.get(*i),
+                TranscriptItemId::Live(i) => self.chat.items.get(*i),
+            })
+            .collect();
+        f(&items)
     }
 
     /// How many folds have been toggled. See the field.

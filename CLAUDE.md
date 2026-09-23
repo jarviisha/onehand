@@ -1513,16 +1513,34 @@ Listed because a missing feature nobody wrote down reads as a bug in the ones th
   about either. Nothing reads the duration per row — it is summed onto the line standing for the
   cluster, where one number answers "how long was that" without twenty rows each answering it.
 - **A turn's closing summary is derived, never persisted.** A finished turn ends
-  on a line saying how many files it wrote and the turn's `+N −M`, opening into a
-  row per file — `onehand_core::chat::turn_changes` over that turn's own steps,
-  rebuilt on every replan rather than written into `items.jsonl`. The diffs it
-  adds up are already in the archive, and that file is appended to and never
-  revisited, so a copy written at the end of a turn could not be corrected if the
-  two ever disagreed. It is one row per *file* and not per edit: a turn that
-  writes, tests and writes again is one row, because the question is what is
-  different now and the route is what the clusters above it already are. A
-  cancelled turn still gets one; a running turn does not, since a total growing
-  under the eye is not a summary.
+  on a block saying how many files it wrote, the turn's `+N −M` and how long it
+  took, opening into a row per file — `onehand_core::chat::turn_changes` over
+  that turn's own steps, rebuilt on every replan rather than written into
+  `items.jsonl`. The diffs it adds up are already in the archive, and that file
+  is appended to and never revisited, so a copy written at the end of a turn
+  could not be corrected if the two ever disagreed. It is one row per *file* and
+  not per edit: a turn that writes, tests and writes again is one row, because
+  the question is what is different now and the route is what the clusters above
+  it already are. A cancelled turn still gets one; a running turn does not, since
+  a total growing under the eye is not a summary. Opening a file row diffs that
+  file **at that moment** (`turn_file_diff`, first `old` against last `new`) and
+  never during the replan — a conversation holds every turn it has had, and
+  diffing all of them on the chance one is expanded is work paid a thousand
+  times to be used once.
+- **What the summary block cannot say, and where the data would have to come
+  from.** *Renames* are absent because ACP's diff section is `{path, old, new}`
+  and carries no second path — an adapter reports one as a delete and an add,
+  so a fourth verdict would be one `turn_changes` could never return. *Test and
+  lint results* are absent because nothing in the protocol is structured: a run
+  is a `tool_call` whose output is text, so counting passes means parsing
+  `cargo`/`jest`/`pytest` prose, which is a rule that is wrong the first time a
+  tool changes its wording. The place for it is the ACP layer — a structured
+  result on `ToolCall`, filled either by an adapter that knows what it ran or by
+  a declared per-tool parser — not a scan of the transcript. *Undo* is absent
+  because nothing in the app writes files back: the first `old` of each path in
+  a turn is the snapshot it would need, so the missing half is a write path plus
+  a second snapshot for undoing the undo, and both belong in core beside
+  `editor::save_blocking` rather than in a renderer.
 - **The remote bridge does not stream the transcript.** A finished turn carries the *end* of the
   agent's last answer (`Chat::answer_tail`) and nothing else: no tool cards, no diffs, no reasoning,
   nothing mid-turn. That excerpt is there because "finished a turn" alone is a notification whose only

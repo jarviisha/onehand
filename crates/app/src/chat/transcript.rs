@@ -4488,59 +4488,68 @@ fn cluster_line(
         .into_any_element()
 }
 
-/// What a finished turn wrote: one muted line, opening into a file per row.
+/// How many file rows a turn's summary lists before the rest fold into one.
 ///
-/// **The same line a cluster draws, saying a different thing.** A reader
-/// scanning a conversation for "what did that one do to my tree" is asking the
-/// question the cluster lines above cannot answer between them -- each says
-/// what one stretch of work was, and a turn with three stretches leaves three
-/// numbers nothing adds up. So this is the only line in a turn whose counts are
-/// the turn's, and it takes the same ink, weight, hover and chevron as the
-/// lines it closes, because it is read in the same pass as them.
-pub(super) fn turn_changes(
-    changes: &onehand_core::chat::TurnChanges,
+/// **Eight, ordered by how much of each file the turn touched.** A turn that
+/// rewrites a package writes fifty files, and a block listing all of them is
+/// the thing it was meant to replace: something to scroll rather than read.
+/// The eight that matter are the eight it changed most, and the rest are a
+/// count -- which is the honest shape, since somebody asking "what happened to
+/// the other forty" wants the list and not the table.
+const SUMMARY_ROWS: usize = 8;
+
+/// How many diff lines one opened file row draws before it stops.
+const SUMMARY_DIFF: usize = 400;
+
+/// The height of the bar that says how much of a file the turn touched.
+const RATIO_H: Rems = rems(0.25);
+const RATIO_W: Rems = rems(3.);
+
+/// What a finished turn did to the working tree.
+///
+/// **A result, not a record.** The clusters above it say what the agent did in
+/// the order it did it, which is the question "how did it get here"; this says
+/// what is different now, which is the question somebody actually has to act
+/// on. A file written three times is three entries up there and one row here,
+/// deliberately: the two are not the same list drawn twice.
+pub(super) fn turn_summary(
+    session: &Entity<ChatSession>,
+    plan: &super::viewport::ChangePlan,
     open: bool,
-    on_click: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static,
-    id: gpui::ElementId,
+    on_toggle: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static,
     cx: &App,
 ) -> gpui::AnyElement {
-    let status = crate::theme::status_ink(cx);
-    let counts = |added: usize, removed: usize, cx: &App| {
-        div()
-            .h_flex()
-            .items_center()
-            .gap(TIGHT_GAP)
-            .flex_none()
-            .whitespace_nowrap()
-            .font_family(cx.theme().mono_font_family.clone())
-            // A side that is zero is not drawn: `−0` set in the danger ink is
-            // the colour of something having gone when nothing did.
-            .children(
-                (added > 0).then(|| div().text_color(status.success).child(format!("+{added}"))),
-            )
-            .children(
-                (removed > 0).then(|| div().text_color(status.danger).child(format!("−{removed}"))),
-            )
-    };
+    let changes = &plan.changes;
+    let anchor = plan.anchor;
+    let key = anchor.index();
 
-    let line = div()
-        .id(id)
+    let head = div()
+        .id(("turn-summary", key))
         .h_flex()
         .items_center()
-        .gap(STACK_GAP)
-        .h(rems(1.75))
-        .w_auto()
-        .max_w_full()
+        .gap(PART_GAP)
+        .w_full()
         .min_w_0()
+        .px(ROW_PAD_X)
+        .py(ROW_PAD_Y)
         .cursor_pointer()
+        // **One step above the reading size.** This is where a turn ends, and
+        // the thing a reader scrolling past a long answer is looking for. Every
+        // other line in the block is at or below the transcript's own size, so
+        // the step is what makes the block have a top rather than a first row.
         .text_size(CLUSTER_TEXT)
-        .font_weight(gpui::FontWeight::EXTRA_LIGHT)
-        .text_color(cx.theme().muted_foreground)
-        .hover(|line| {
-            line.font_weight(gpui::FontWeight::NORMAL)
-                .text_color(crate::theme::meta_ink(cx))
-        })
-        .on_click(move |event, window, cx| on_click(event, window, cx))
+        .text_color(cx.theme().foreground)
+        .hover(|row| row.text_color(crate::theme::meta_ink(cx)))
+        .on_click(move |event, window, cx| on_toggle(event, window, cx))
+        .child(
+            mark_slot(CHEVRON_SLOT).child(
+                Icon::new(match open {
+                    true => IconName::ChevronDown,
+                    false => IconName::ChevronRight,
+                })
+                .size(CHEVRON_MARK),
+            ),
+        )
         .child(
             div()
                 .flex_none()
@@ -4550,56 +4559,258 @@ pub(super) fn turn_changes(
                     n => format!("{n} files changed"),
                 }),
         )
-        .child(counts(changes.added, changes.removed, cx))
-        .child(
-            mark_slot(CHEVRON_SLOT).child(
-                Icon::new(match open {
-                    true => IconName::ChevronDown,
-                    false => IconName::ChevronRight,
-                })
-                .size(CHEVRON_MARK),
-            ),
-        );
+        .child(count_pair(changes.added, changes.removed, cx))
+        .child(div().flex_1().min_w_0())
+        // Right-aligned, because it is the one number here that is about the
+        // turn rather than about the tree.
+        .children(changes.seconds.map(|secs| {
+            div()
+                .flex_none()
+                .whitespace_nowrap()
+                .text_size(TEXT)
+                .text_color(cx.theme().muted_foreground)
+                .child(elapsed(secs))
+        }));
 
-    if !open {
-        return line.into_any_element();
-    }
-
-    // Set in to where the line's own words start, as an opened cluster's rows
-    // are: the list is what the line stands for, so it reads as being under it
-    // rather than beside it.
-    div()
+    let card = div()
         .v_flex()
-        .items_start()
         .w_full()
         .min_w_0()
-        .child(line)
+        .rounded(cx.theme().radius_lg)
+        .border_1()
+        .border_color(cx.theme().border)
+        .child(head);
+
+    if !open {
+        return card.into_any_element();
+    }
+
+    // Most-changed first, and only where there are more than fit: under the
+    // cap the order the turn touched them in is the order the reader watched
+    // it happen, which is worth more than a ranking.
+    let mut listed: Vec<&onehand_core::chat::FileChange> = changes.files.iter().collect();
+    let over = listed.len().saturating_sub(SUMMARY_ROWS);
+    if over > 0 {
+        listed.sort_by_key(|b| std::cmp::Reverse(b.touched()));
+        listed.truncate(SUMMARY_ROWS);
+    }
+
+    let paths: Vec<String> = changes.files.iter().map(|f| f.path.clone()).collect();
+    let all_open = paths
+        .iter()
+        .all(|path| session.read(cx).file_is_open(anchor, path));
+
+    card.child(
+        div()
+            .v_flex()
+            .w_full()
+            .min_w_0()
+            .border_t_1()
+            .border_color(cx.theme().border)
+            .children(
+                listed
+                    .into_iter()
+                    .map(|file| file_row(session, plan, file, cx)),
+            )
+            // **What was left out says so, and says how many.** A list silently
+            // cut at eight is a list claiming the turn touched eight files.
+            .children((over > 0).then(|| {
+                div()
+                    .w_full()
+                    .px(ROW_PAD_X)
+                    .py(ROW_PAD_Y)
+                    .text_size(OBJECT_TEXT)
+                    .text_color(cx.theme().muted_foreground)
+                    .child(format!("and {over} more, least changed"))
+            })),
+    )
+    .child(
+        div()
+            .h_flex()
+            .items_center()
+            .gap(PART_GAP)
+            .w_full()
+            .min_w_0()
+            .px(ROW_PAD_X)
+            .py(ROW_PAD_Y)
+            .border_t_1()
+            .border_color(cx.theme().border)
+            .child(
+                crate::controls::action(("turn-diff-all", key))
+                    .ghost()
+                    .xsmall()
+                    .label(match all_open {
+                        true => "Hide every diff",
+                        false => "Show every diff",
+                    })
+                    .on_click({
+                        let session = session.clone();
+                        move |_, _, cx: &mut App| {
+                            session.update(cx, |session, cx| {
+                                session.toggle_every_file(anchor, &paths);
+                                cx.notify();
+                            });
+                        }
+                    }),
+            ),
+    )
+    .into_any_element()
+}
+
+/// The `+N −M` pair, mono and each side in the ink it means.
+///
+/// A side that is zero is not drawn: `−0` set in the danger ink is the colour
+/// of something having gone when nothing did.
+fn count_pair(added: usize, removed: usize, cx: &App) -> gpui::Div {
+    let status = crate::theme::status_ink(cx);
+    div()
+        .h_flex()
+        .items_center()
+        .gap(TIGHT_GAP)
+        .flex_none()
+        .whitespace_nowrap()
+        .font_family(cx.theme().mono_font_family.clone())
+        .children((added > 0).then(|| div().text_color(status.success).child(format!("+{added}"))))
+        .children(
+            (removed > 0).then(|| div().text_color(status.danger).child(format!("−{removed}"))),
+        )
+}
+
+/// One file of a turn's summary, and its diff when it is open.
+fn file_row(
+    session: &Entity<ChatSession>,
+    plan: &super::viewport::ChangePlan,
+    file: &onehand_core::chat::FileChange,
+    cx: &App,
+) -> gpui::AnyElement {
+    use onehand_core::chat::FileVerdict;
+
+    let status = crate::theme::status_ink(cx);
+    let anchor = plan.anchor;
+    let open = session.read(cx).file_is_open(anchor, &file.path);
+    let gone = file.verdict == FileVerdict::Deleted;
+    let (mark, ink) = match file.verdict {
+        FileVerdict::Added => ("A", status.success),
+        FileVerdict::Modified => ("M", status.warning),
+        FileVerdict::Deleted => ("D", status.danger),
+    };
+    // The folder is context for the name, so it is a step quieter than it --
+    // the same two strengths a completion row puts a name and its folder at.
+    let (folder, name) = match file.path.rfind('/') {
+        Some(at) => file.path.split_at(at + 1),
+        None => ("", file.path.as_str()),
+    };
+
+    let row = div()
+        .id(gpui::ElementId::NamedInteger(
+            SharedString::from(format!("turn-file-{}", file.path)),
+            anchor.index() as u64,
+        ))
+        .h_flex()
+        .items_center()
+        .gap(PART_GAP)
+        .w_full()
+        .min_w_0()
+        .px(ROW_PAD_X)
+        .py(TIGHT_GAP)
+        .cursor_pointer()
+        .text_size(OBJECT_TEXT)
+        .text_color(cx.theme().muted_foreground)
+        .hover(|row| row.bg(cx.theme().secondary.opacity(0.5)))
+        .on_click({
+            let session = session.clone();
+            let path = file.path.clone();
+            move |_, _, cx: &mut App| {
+                session.update(cx, |session, cx| {
+                    session.toggle_file(anchor, &path);
+                    cx.notify();
+                });
+            }
+        })
+        // **A letter in its own ink, not a coloured dot.** Four states that a
+        // reader has to tell apart on a dense row is more than colour alone
+        // carries, and the letter is the one every diff tool already uses.
+        .child(
+            div()
+                .flex_none()
+                .w(KIND_ICON)
+                .font_family(cx.theme().mono_font_family.clone())
+                .text_color(ink)
+                .child(mark),
+        )
+        .child(
+            div()
+                .flex_1()
+                .min_w_0()
+                .truncate()
+                .when(gone, |path| path.line_through())
+                .child(folder.to_string()),
+        )
+        .child(
+            div()
+                .flex_none()
+                .min_w_0()
+                .truncate()
+                .text_color(cx.theme().foreground)
+                .when(gone, |name| name.line_through())
+                .child(name.to_string()),
+        )
+        .child(count_pair(file.added, file.removed, cx))
+        .child(ratio_bar(file, cx));
+
+    if !open {
+        return row.into_any_element();
+    }
+
+    let hunks = session.read(cx).with_turn_items(&plan.body, |items| {
+        onehand_core::chat::turn_file_diff(items, &file.path)
+    });
+    let mut budget = SUMMARY_DIFF;
+    div()
+        .v_flex()
+        .w_full()
+        .min_w_0()
+        .child(row)
         .child(
             div()
                 .v_flex()
                 .w_full()
                 .min_w_0()
-                .pl(ROW_PAD_X)
-                .text_size(OBJECT_TEXT)
-                .text_color(cx.theme().muted_foreground)
-                .children(changes.files.iter().map(|file| {
-                    div()
-                        .h_flex()
-                        .items_center()
-                        .gap(STACK_GAP)
-                        .w_full()
-                        .min_w_0()
-                        .h(rems(1.5))
-                        .child(
-                            // The path gives way and nothing else does: it is
-                            // the only part of the row whose length nothing
-                            // bounds.
-                            div().flex_1().min_w_0().truncate().child(file.path.clone()),
-                        )
-                        .child(counts(file.added, file.removed, cx))
-                })),
+                .border_t_1()
+                .border_color(cx.theme().border)
+                .font_family(cx.theme().mono_font_family.clone())
+                .text_size(FENCE_TEXT)
+                .children(diff_rows(&hunks, &mut budget, cx)),
         )
         .into_any_element()
+}
+
+/// How much of a file the turn touched, as a bar.
+///
+/// **Of the file and not of the turn.** Twenty lines changed is most of a
+/// short file and nothing at all in a long one, and the number beside it
+/// cannot say which -- so the bar is the only thing here answering "was this
+/// rewritten or nudged". The untouched remainder is what gives it that scale,
+/// which is why it is drawn rather than left as empty space.
+fn ratio_bar(file: &onehand_core::chat::FileChange, cx: &App) -> gpui::Div {
+    let status = crate::theme::status_ink(cx);
+    // Against the larger of the file and what was done to it: a file emptied
+    // by the turn has no lines left to be a proportion of.
+    let whole = file.total.max(file.touched()).max(1) as f32;
+    let share = |n: usize| gpui::relative(n as f32 / whole);
+    div()
+        .flex_none()
+        .h_flex()
+        .items_center()
+        .w(RATIO_W)
+        .h(RATIO_H)
+        .rounded(radius_tag(cx))
+        .overflow_hidden()
+        .bg(cx.theme().border)
+        .children((file.added > 0).then(|| div().h_full().w(share(file.added)).bg(status.success)))
+        .children(
+            (file.removed > 0).then(|| div().h_full().w(share(file.removed)).bg(status.danger)),
+        )
 }
 
 /// A stretch of one kind of work inside an opened cluster./// A stretch of one kind of work inside an opened cluster.

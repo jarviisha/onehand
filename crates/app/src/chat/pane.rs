@@ -3368,8 +3368,9 @@ impl ChatPane {
                         let anchor = plan_changes.anchor;
                         let this = self.handle.clone();
                         let folded = session.clone();
-                        transcript::turn_changes(
-                            &plan_changes.changes,
+                        transcript::turn_summary(
+                            session,
+                            plan_changes,
                             plan.open,
                             move |_, _, cx: &mut App| {
                                 folded.update(cx, |session, cx| {
@@ -3378,7 +3379,6 @@ impl ChatPane {
                                 });
                                 let _ = this.update(cx, |_: &mut Self, cx| cx.notify());
                             },
-                            ("changes", anchor.index()).into(),
                             cx,
                         )
                     }
