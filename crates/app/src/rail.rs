@@ -420,9 +420,10 @@ fn signal_hint(signal: SessionSignal) -> &'static str {
 /// What a signal is called where there is room for a name but not a sentence.
 ///
 /// Separate from [`signal_hint`], which is what to *do* about the state: a
-/// tooltip is read on purpose and can afford a clause, a badge is read in
-/// passing and can afford two words. Both live here so the rail's mark and the
-/// conversation header's badge cannot end up calling one condition two things.
+/// tooltip is read on purpose and can afford a clause, while this is read in
+/// passing and can afford two words. Both live here so no two readers of one
+/// condition can end up calling it two things -- today the remote bridge's
+/// session listing is the other one.
 pub(crate) fn signal_word(signal: SessionSignal) -> &'static str {
     match signal {
         SessionSignal::Lost => "Disconnected",
@@ -448,9 +449,11 @@ pub(crate) fn signal_word(signal: SessionSignal) -> &'static str {
 /// The tints follow the transcript's conventions, so the same colour means the
 /// same thing wherever it appears.
 ///
-/// Shared with the conversation header's badge, which says the same thing about
-/// the session on screen: two shapes for one condition would be a code with two
-/// spellings, and only one of them ever learned.
+/// **This is the only place a signal is drawn.** It was shared with a badge in
+/// the conversation header, which said the same thing about the session on
+/// screen; that badge is gone, and one consequence is worth knowing here -- a
+/// lost adapter is reported by this mark and nothing else, so a hidden rail
+/// leaves it reported nowhere.
 pub(crate) fn signal_mark(signal: SessionSignal, cx: &App) -> impl IntoElement + use<> {
     let hint = signal_hint(signal);
     let theme = cx.theme();
@@ -471,9 +474,9 @@ pub(crate) fn signal_mark(signal: SessionSignal, cx: &App) -> impl IntoElement +
         .map(|mark| match signal {
             // A plain dot, not a spinner: this is a state a row carries for
             // minutes at a time, and the only thing moving on an otherwise
-            // still rail pulls the eye for as long as it runs. The tooltip and
-            // the header's badge say "Working" in words; the dot only has to
-            // say the row is not idle.
+            // still rail pulls the eye for as long as it runs. The tooltip
+            // says "Working" in words and so does the running line at the foot
+            // of the transcript; the dot only has to say the row is not idle.
             SessionSignal::Busy => mark.child(dot(warning)),
             // The shape this app already uses for "something is wrong".
             SessionSignal::Lost => mark.child(
