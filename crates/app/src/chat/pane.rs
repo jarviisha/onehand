@@ -19,7 +19,7 @@ use gpui::{Animation, AnimationExt as _};
 use gpui::{
     App, AppContext, Context, Div, ElementId, Entity, EventEmitter, FocusHandle, Focusable,
     InteractiveElement, IntoElement, ListState, ParentElement, Rems, Render, SharedString,
-    Stateful, StatefulInteractiveElement, Styled, Window, div, list, px, rems,
+    Stateful, StatefulInteractiveElement, Styled, Window, div, list, px, relative, rems,
 };
 use gpui_component::button::ButtonVariants as _;
 use gpui_component::dialog::{DialogClose, DialogFooter};
@@ -80,6 +80,18 @@ const JUMP_PILL_H: Rems = rems(1.625);
 /// The conversation header, which is the one row in the panel that never
 /// scrolls and so the edge every other measurement here is taken from.
 const HEADER_H: Rems = rems(2.75);
+/// How little of the conversation's name and its badge the header will settle
+/// for before it stops taking room from them.
+///
+/// The controls at the other end cannot shrink — the component library writes
+/// `flex_shrink_0` over whatever a call site asks for — so before this floor
+/// existed the name was the only thing in the row that could give way, and it
+/// gave way all of it: a panel dragged narrow left six icons and an ellipsis
+/// where the conversation used to be named. Below this the row is simply
+/// narrower than its own furniture and the controls clip again, which is the
+/// trade taken on purpose: a name cut to two characters names nothing, while a
+/// panel this narrow has already stopped being a place a conversation is read.
+const HEADER_NAME_MIN: Rems = rems(8.);
 /// The narrower cap the composer and the surfaces that belong to it take.
 ///
 /// **A message being written is not a message being read.** The transcript's
@@ -2744,8 +2756,42 @@ impl ChatPane {
             // in while scrolling -- and the fade at the other end of the list is
             // the answer that shape of problem actually takes.
             .text_color(cx.theme().muted_foreground)
-            .child(self.title_control(title, busy, archive, cx))
-            .children(badge.map(|(signal, text)| status_badge(signal, text, cx)))
+            // **The name gives way before the controls do, and both stop at a
+            // floor.** The library's button is `flex_shrink_0` and writes that
+            // over anything the call site asked for, so a title sitting in this
+            // row directly held its full width however narrow the panel became
+            // -- and what went over the right edge was every control after it,
+            // find through *Close session*, clipped away with nothing on screen
+            // to say they were there. The box is what shrinks and the name
+            // ellipsizes inside it, since a name half-read still names the
+            // conversation while a button that is not drawn cannot be pressed.
+            //
+            // The floor is the other half of that, and it was learnt the hard
+            // way: with the name as the only thing in the row able to give, it
+            // gave all of it, and a narrow panel came out as six icons over an
+            // ellipsis. `HEADER_NAME_MIN` is where the taking stops.
+            //
+            // The badge is inside this box rather than beside it so that it
+            // stays against the name it is about: the box's floor would
+            // otherwise open a gap between them whenever the name was short
+            // enough for the floor to be what set the width.
+            .child(
+                div()
+                    .h_flex()
+                    .items_center()
+                    .gap_2()
+                    .flex_initial()
+                    .min_w(HEADER_NAME_MIN)
+                    .child(
+                        div()
+                            .h_flex()
+                            .items_center()
+                            .flex_initial()
+                            .min_w_0()
+                            .child(self.title_control(title, busy, archive, cx)),
+                    )
+                    .children(badge.map(|(signal, text)| status_badge(signal, text, cx))),
+            )
             .child(div().flex_1())
             // Hiding the rail must not be a one-way door: with it gone there is
             // no workspace name, no project list and no session list, and the
@@ -3044,7 +3090,7 @@ impl ChatPane {
             .font_semibold()
             .child(title.clone());
         if !live && project.is_none() {
-            return div().flex_none().min_w_0().child(name).into_any_element();
+            return div().min_w_0().child(name).into_any_element();
         }
         let project = project.map(|project| (project.pinned, project.is_repo));
 
@@ -3058,11 +3104,26 @@ impl ChatPane {
             .gap_1()
             .flex_initial()
             .min_w_0()
+            // Capped at the box around it rather than at a width of its own: the
+            // component writes `flex_shrink_0` over whatever the call site asked
+            // for, so a maximum is the only thing left that still makes this
+            // button narrow when the panel is. A short name is unaffected, since
+            // the cap is a ceiling and not a width.
+            .max_w_full()
             .overflow_hidden()
             .px_1p5()
             .py_0p5()
             .rounded(radius)
-            .label(title)
+            // A child and not `.label()`, because the library draws a label
+            // `flex_none` with nothing to ellipsize it, so the name kept its full
+            // width inside a button that had just been told to give way.
+            .child(
+                div()
+                    .min_w_0()
+                    .truncate()
+                    .line_height(relative(1.))
+                    .child(title),
+            )
             .dropdown_caret(true)
             .text_color(cx.theme().foreground)
             .font_semibold();
@@ -4891,6 +4952,10 @@ fn status_badge(
 ) -> impl IntoElement + use<> {
     div()
         .flex_initial()
+        // Without this its own floor is whatever it has to say, so the cap above
+        // bounded it while the panel was wide and nothing did while the panel was
+        // narrow -- which is the one case the cap exists for.
+        .min_w_0()
         .h_flex()
         .items_center()
         .gap_1p5()
