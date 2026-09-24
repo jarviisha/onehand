@@ -62,9 +62,16 @@ One window hosts exactly one workspace. The frame is a navigation **rail** plus 
   everything done to the conversation — rename, the exports, resume another,
   restart, and, alone in the danger tint, delete. Its hover brings a background
   and a chevron whose space is held either way, so the name does not shift under
-  the pointer about to press it. Beside it, a **badge** carries what the session
-  is doing: the rail's own signal mark plus a few words, colour in the mark and
-  the words muted, so a routine *Working…* is not as loud as a dead agent.
+  the pointer about to press it. **Nothing sits beside it.** A badge carrying
+  what the session is doing did, and every word of it was said twice —
+  connecting, working and awaiting approval all appear on the running line at
+  the foot of the transcript, and the rail's row for that session carries the
+  same mark for the same condition. A second copy in the one row that never
+  scrolls is something permanently on screen restating what is already on
+  screen, and it took its room from the name, which is the only thing in the row
+  nothing else says. What it cost is the one state neither of those puts into
+  words: a lost adapter is now the rail's mark and its tooltip, and not a
+  sentence here.
   **No hairline under the row.** A hairline is an edge between two surfaces and
   there are not two here: the header and the transcript are one reading surface,
   and what tells them apart is that one is a row of controls and the other is
@@ -75,12 +82,11 @@ One window hosts exactly one workspace. The frame is a navigation **rail** plus 
   session*. There is no `⋯`; a menu button beside the name it acts on says
   nothing the name could not say itself.
   **Narrowing the panel takes the name first and the controls last, and stops
-  at a floor.** The name ellipsizes and the badge truncates beside it while
-  every control keeps its full size — a name half-read still names the
-  conversation, and a reader can finish it in the rail or in the menu behind it,
-  where a control pushed off the edge is gone with nothing on screen to say it
-  was ever there. But the name and its badge keep a minimum between them, below
-  which nothing more is taken: a name cut to two characters names nothing, so
+  at a floor.** The name ellipsizes while every control keeps its full size — a
+  name half-read still names the conversation, and a reader can finish it in the
+  rail or in the menu behind it, where a control pushed off the edge is gone
+  with nothing on screen to say it was ever there. But the name keeps a
+  minimum, below which nothing more is taken: a name cut to two characters names nothing, so
   past that point the row is simply narrower than its own furniture and the
   controls clip. That is a width at which the panel has stopped being a place a
   conversation is read.

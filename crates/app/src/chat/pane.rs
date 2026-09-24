@@ -2693,30 +2693,7 @@ impl ChatPane {
                 .map(|project| project.label.to_string())
                 .unwrap_or_default()
         });
-        // Nothing while a live thought or a running tool is already saying it:
-        // the status line answers "is anything happening", and repeating what
-        // the block above says is noise, not reassurance.
-        let status = chat.and_then(Chat::activity_status);
         let busy = chat.is_some_and(|chat| chat.busy);
-        let signal = self.active.and_then(|uid| self.signal(uid, cx));
-        // What the badge says, or nothing at all.
-        //
-        // **Two sources, in this order.** The activity status is the specific
-        // sentence -- which agent is being connected to, that approval is what
-        // is being waited on -- so it wins wherever there is one. Where there is
-        // not, a signal that is *not* busy still has something to say, and
-        // saying it here is new: a dead adapter used to leave this header
-        // silent, with only the rail's small triangle to notice. Busy with no
-        // status is the case that stays silent on purpose, because it means the
-        // transcript's own last block is already spelling out what is running.
-        let badge = match (status, signal) {
-            (Some(text), signal) => Some((signal, SharedString::from(text))),
-            (None, Some(signal)) if !matches!(signal, SessionSignal::Busy) => Some((
-                Some(signal),
-                SharedString::from(crate::rail::signal_word(signal)),
-            )),
-            _ => None,
-        };
         // A conversation the agent has not named yet has no directory to remove:
         // nothing is written until the first turn ends. The menu says so by
         // refusing rather than by hiding the entry, which would make the whole
@@ -2770,27 +2747,13 @@ impl ChatPane {
             // way: with the name as the only thing in the row able to give, it
             // gave all of it, and a narrow panel came out as six icons over an
             // ellipsis. `HEADER_NAME_MIN` is where the taking stops.
-            //
-            // The badge is inside this box rather than beside it so that it
-            // stays against the name it is about: the box's floor would
-            // otherwise open a gap between them whenever the name was short
-            // enough for the floor to be what set the width.
             .child(
                 div()
                     .h_flex()
                     .items_center()
-                    .gap_2()
                     .flex_initial()
                     .min_w(HEADER_NAME_MIN)
-                    .child(
-                        div()
-                            .h_flex()
-                            .items_center()
-                            .flex_initial()
-                            .min_w_0()
-                            .child(self.title_control(title, busy, archive, cx)),
-                    )
-                    .children(badge.map(|(signal, text)| status_badge(signal, text, cx))),
+                    .child(self.title_control(title, busy, archive, cx)),
             )
             .child(div().flex_1())
             // Hiding the rail must not be a one-way door: with it gone there is
@@ -4925,56 +4888,6 @@ struct HistoryRow {
     open: bool,
     agent: SharedString,
     dir: PathBuf,
-}
-
-/// How wide the header's status badge may get.
-///
-/// In rems, like every other size here, so it scales with the panel's own zoom.
-/// The badge sits between the conversation's name and the row's controls and is
-/// the least important of the three: what it says is either already visible in
-/// the transcript or is a state the rail is marking too, so it truncates rather
-/// than pushing either of its neighbours around.
-const BADGE_MAX_W: f32 = 14.;
-
-/// What the session is doing, beside the name of the conversation doing it.
-///
-/// **A pill, not a line of grey text.** It used to be exactly that -- the same
-/// muted ink as the header around it, at the same weight, so "Connecting to
-/// Claude Code…" read as part of the title rather than as a state that would go
-/// away. A filled shape with an edge is what separates the two: the name is ink
-/// on the surface, this is a thing sitting on it.
-///
-/// **The mark is the rail's own** ([`crate::rail::signal_mark`]), so one
-/// condition keeps one shape everywhere it appears -- a spinner for a turn in
-/// flight, a triangle for a lost adapter, a dot for a parked question -- and it
-/// brings its own tooltip with it. The colour lives in the mark and the words
-/// stay muted: tinting the whole badge would make a routine "Working…" as loud
-/// as a dead agent.
-fn status_badge(
-    signal: Option<SessionSignal>,
-    text: SharedString,
-    cx: &App,
-) -> impl IntoElement + use<> {
-    div()
-        .flex_initial()
-        // Without this its own floor is whatever it has to say, so the cap above
-        // bounded it while the panel was wide and nothing did while the panel was
-        // narrow -- which is the one case the cap exists for.
-        .min_w_0()
-        .h_flex()
-        .items_center()
-        .gap_1p5()
-        .max_w(rems(BADGE_MAX_W))
-        .px_2()
-        .py_0p5()
-        .rounded_full()
-        .bg(cx.theme().muted)
-        .border_1()
-        .border_color(cx.theme().border)
-        .text_xs()
-        .text_color(cx.theme().muted_foreground)
-        .children(signal.map(|signal| crate::rail::signal_mark(signal, cx)))
-        .child(div().min_w_0().truncate().child(text))
 }
 
 #[cfg(test)]

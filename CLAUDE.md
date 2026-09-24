@@ -641,13 +641,17 @@ plus `sendMessage` and `answerCallbackQuery`. Everything that is not the wire is
   controls that go on that page, since neither has anything to act on; the terminal, the Workbench
   and the way back to a hidden rail stay, because all three are about the project and dropping the
   row took them away at the one moment there is no conversation to reach them from.
-  Beside the name is a **status badge**: a pill carrying the rail's own `signal_mark` — one condition,
-  one shape everywhere — and either `Chat::activity_status` (the specific sentence: which agent is
-  being connected to, that approval is what is awaited) or, where there is none, the signal's short
-  name from `rail::signal_word`. Colour lives in the mark and the words stay muted, so a routine
-  *Working…* is not as loud as a dead agent. Busy with no activity status stays silent, because that
-  means the transcript's own last block is already saying what is running — but a **lost adapter now
-  says so here**, where the header used to be blank and only the rail's small triangle knew.
+  **There is no status badge beside the name.** There was one — a pill with the rail's own
+  `signal_mark` and either `Chat::activity_status` or the signal's short word — and what it said was
+  said twice: connecting, working and awaiting approval are all on the running line at the foot of
+  the transcript, a few inches below and nearer what they are about, while the rail's row for this
+  session carries the same mark for the same condition. A second copy in the one row that never
+  scrolls is a thing permanently on screen restating what is already on screen, and it took its room
+  from the conversation's own name, which is the only thing in that row nothing else says.
+  **What went with it** is the one state neither of those two spells out in words: a lost adapter
+  now shows as the rail's mark and its tooltip rather than as a sentence in this header. That is the
+  cost, taken deliberately; `Chat::activity_status` stays and still feeds the running line, the
+  project page and the pane's own state.
   The right-hand end carries the row's controls (`ChatPane::header_control`, one builder so the call
   sites cannot drift): find, the past-conversations menu, the terminal, the Workbench, the way back
   to a hidden rail, and last
