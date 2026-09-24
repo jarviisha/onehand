@@ -487,10 +487,11 @@ impl Render for Workbench {
                     .border_1()
                     .border_color(cx.theme().border)
                     .rounded(cx.theme().radius_lg)
-                    // The chrome surface, which is what the outline and the gap
-                    // cannot say by themselves: that this panel is *about* the
-                    // work rather than part of it. The terminal takes the same
-                    // step, both through one function so the two cannot drift.
+                    // The surface a dock card draws on, which is the reading
+                    // surface -- so this fill says nothing the border above it
+                    // does not, and is here to stop the panel inheriting
+                    // whatever is behind it. The terminal takes the same answer,
+                    // both through one function so the two cannot drift.
                     .bg(crate::theme::chrome(cx))
                     // `overflow_hidden` is what the rounding needs: the strip's
                     // hairline runs the full width and the file tree's own

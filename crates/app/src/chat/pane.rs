@@ -80,14 +80,14 @@ const JUMP_PILL_H: Rems = rems(1.625);
 /// The conversation header, which is the one row in the panel that never
 /// scrolls and so the edge every other measurement here is taken from.
 const HEADER_H: Rems = rems(2.75);
-/// How little of the conversation's name and its badge the header will settle
-/// for before it stops taking room from them.
+/// How little of the conversation's name the header will settle for before it
+/// stops taking room from it.
 ///
-/// The controls at the other end cannot shrink — the component library writes
-/// `flex_shrink_0` over whatever a call site asks for — so before this floor
-/// existed the name was the only thing in the row that could give way, and it
-/// gave way all of it: a panel dragged narrow left six icons and an ellipsis
-/// where the conversation used to be named. Below this the row is simply
+/// The controls at the other end are icon buttons at a fixed size and nothing
+/// asks them to shrink, so before this floor existed the name was the only
+/// thing in the row that could give way, and it gave way all of it: a panel
+/// dragged narrow left six icons and an ellipsis where the conversation used to
+/// be named. Below this the row is simply
 /// narrower than its own furniture and the controls clip again, which is the
 /// trade taken on purpose: a name cut to two characters names nothing, while a
 /// panel this narrow has already stopped being a place a conversation is read.
@@ -2733,15 +2733,16 @@ impl ChatPane {
             // in while scrolling -- and the fade at the other end of the list is
             // the answer that shape of problem actually takes.
             .text_color(cx.theme().muted_foreground)
-            // **The name gives way before the controls do, and both stop at a
-            // floor.** The library's button is `flex_shrink_0` and writes that
-            // over anything the call site asked for, so a title sitting in this
-            // row directly held its full width however narrow the panel became
-            // -- and what went over the right edge was every control after it,
-            // find through *Close session*, clipped away with nothing on screen
-            // to say they were there. The box is what shrinks and the name
-            // ellipsizes inside it, since a name half-read still names the
-            // conversation while a button that is not drawn cannot be pressed.
+            // **The name gives way before the controls do, and it stops at a
+            // floor.** What held the whole row open was the library drawing a
+            // button's label in a `flex_none` box with nothing to ellipsize it:
+            // the button could shrink and its label could not, so the name kept
+            // its full width and what went over the right edge was every control
+            // after it, find through *Close session*, clipped away with nothing
+            // on screen to say they were there. A truncating child in place of
+            // the label is the whole of the fix, since a name half-read still
+            // names the conversation while a button that is not drawn cannot be
+            // pressed.
             //
             // The floor is the other half of that, and it was learnt the hard
             // way: with the name as the only thing in the row able to give, it
@@ -3068,14 +3069,20 @@ impl ChatPane {
             .h_flex()
             .items_center()
             .gap_1()
+            // **These two are what make the name give way, and they do reach
+            // the button.** The component sets `flex_shrink_0` on its own root,
+            // but it clones the call site's refinement before that and refines
+            // the root with it again afterwards (`button/button.rs:499`, `:526`
+            // and `:607`) -- and refining writes every `Some` of the later
+            // refinement over the earlier one, so `flex_initial`'s
+            // `flex_shrink: Some(1.)` is what survives.
+            //
+            // Worth spelling out because the opposite was believed here for a
+            // while, and a `max_w_full` was added to work around a constraint
+            // that was never in force. Nothing else about the button changed
+            // when it came back out.
             .flex_initial()
             .min_w_0()
-            // Capped at the box around it rather than at a width of its own: the
-            // component writes `flex_shrink_0` over whatever the call site asked
-            // for, so a maximum is the only thing left that still makes this
-            // button narrow when the panel is. A short name is unaffected, since
-            // the cap is a ceiling and not a width.
-            .max_w_full()
             .overflow_hidden()
             .px_1p5()
             .py_0p5()

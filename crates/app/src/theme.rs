@@ -187,11 +187,12 @@ fn paint(colors: &mut ThemeConfigColors, ramp: &Ramp) {
     // Written from the steps already named rather than added to the `Ramp`,
     // because none of them is a new step:
     //
-    // - The rail's own fill is no longer this: it asks for the chrome step by
-    //   name at its call site, the way the two docks do, because that is one
-    //   answer with one spelling and a token carrying it would be a second.
-    //   What this token still decides is the fallback for anything in the
-    //   library that reads it without going through the rail.
+    // - The rail's own fill is no longer this: it names the well at its call
+    //   site, because this token is the reading surface and the library applies
+    //   it before the caller's refinement, so left alone it would bring the
+    //   panel up level with the conversation beside it. What this token still
+    //   decides is the fallback for anything in the library that reads it
+    //   without going through the rail.
     // - Its ink is the ramp's quiet ink. A rail row is a name to aim at, not a
     //   sentence to read, and at prose strength a column of thirty of them
     //   out-shouted the conversation they exist to get you to.

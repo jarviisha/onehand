@@ -1229,8 +1229,10 @@ centre is the chat, right dock the Workbench, bottom dock the terminal.
   ask says something unless the user is looking at *the conversation that asked*: an agent waiting is
   an agent standing still for as long as it takes to notice, and reading one conversation is exactly
   when a dot on another row goes unseen. A lost adapter is on that same wider rule and is deliberately
-  never put on the desktop at all, since the rail's mark and the conversation header both carry it for
-  as long as it is true. The table has no wildcard arm, so a fourth kind of news cannot be added
+  never put on the desktop at all, since the rail's row for that session marks it for as long as it is
+  true. **That rests on one mark now and not two** — the conversation header carried it as well until
+  the badge beside the name went, so hiding the rail is a way to be left with no report of a dead
+  agent anywhere; see *Known gaps*. The table has no wildcard arm, so a fourth kind of news cannot be added
   without deciding what each place does with it. It is sent at critical urgency so most desktops will not fade it while the agent is
   still blocked. The *moment* an ask parks is `ApplyOutcome::asked_user` — the reducer's answer, not
   `Chat::awaiting_permission`, which stays true for as long as the card is up and would re-announce a
@@ -1507,6 +1509,15 @@ back is smaller than carrying a table that says the feature is wired up.
 
 Listed because a missing feature nobody wrote down reads as a bug in the ones that exist:
 
+- **A lost adapter is reported by the rail's mark alone.** Nothing else on screen says it: the
+  conversation header used to carry the same condition in words, and the badge that did went with
+  everything else that row was saying twice. It is deliberately kept off the desktop too — an agent
+  that has stopped answering is a standing condition rather than news, and a notification for one
+  would fire again on every reconnection attempt. So with the rail hidden (`Ctrl+Shift+B`) or a panel
+  maximized, a dead agent is announced nowhere at all. The two ways out, neither taken yet, are to put
+  the mark back on the header for that one condition — not the whole badge, since what the badge
+  otherwise said is on the running line already — or to let this one kind of news reach the desktop
+  after all, which means deciding how often it may repeat.
 - **No command palette** (`Ctrl+Shift+P`). It is a feature — a command registry plus a filtered
   popup — not a keymap entry.
 - **The completion popup has no argument step.** A command that takes one is accepted like any
