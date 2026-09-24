@@ -2598,8 +2598,8 @@ impl ChatPane {
     /// keystroke is a route only someone who already knows it can take.
     ///
     /// **The name carries the conversation's own menu**, and the right-hand end
-    /// carries what is about the *window*: the past conversations, the two
-    /// docks, the way back to a hidden rail, and closing the session. That
+    /// carries what is about the *window*: the way back to a hidden rail, the
+    /// past conversations, the two docks, and last, closing the session. That
     /// split is why there is no ••• here any more — a menu button
     /// beside the name it acts on says nothing the name could not say itself, and
     /// the things in it were all things done to the conversation the name is.

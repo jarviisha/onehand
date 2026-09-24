@@ -361,9 +361,9 @@ pub fn spawn_pty(
 /// about the panel rather than about the palette: a grid fills every cell it has
 /// not been told otherwise about with its default background, so that value has
 /// to be the one the panel around it is drawn in or the shell sits in a
-/// rectangle of a different shade. Both callers hand it the chrome step, which
-/// is what their panels use; the parameter is there so neither has to guess what
-/// the other did.
+/// rectangle of a different shade. Both callers hand it whatever their own card
+/// is drawn in, through one function so the two cannot answer differently; the
+/// parameter is there so neither has to guess what the other did.
 ///
 /// It is the *black* half of the ANSI pair in a dark palette, too, and
 /// deliberately still is: a program asking for black means "the background",

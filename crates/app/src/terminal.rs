@@ -418,8 +418,9 @@ impl Render for TerminalPanel {
                     .border_1()
                     .border_color(cx.theme().border)
                     .rounded(cx.theme().radius_lg)
-                    // The chrome surface, as the Workbench takes it, and the
-                    // grid below is handed the same value as its own background
+                    // The surface a dock card draws on, as the Workbench takes
+                    // it, and the grid below is handed the same value as its own
+                    // background
                     // -- so a shell is the card rather than a plate laid on it.
                     .bg(crate::theme::dock_surface(cx))
                     // The strip's hairline runs the full width of the panel, so

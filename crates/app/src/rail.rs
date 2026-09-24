@@ -1296,9 +1296,8 @@ pub fn rail(
         .w_full()
         // **The well, asked for by name rather than through the sidebar
         // token.** The rail sat on the reading surface for a while, separated
-        // from the conversation by the hairline down its edge alone, which is
-        // the one piece of chrome in the window still dressed as a place text
-        // is read.
+        // from the conversation by the hairline down its edge alone -- the one
+        // piece of chrome in the window still dressed as a place text is read.
         //
         // The well, asked for here rather than left to the library's own
         // `sidebar` token: that token ships with a value of its own and the ramp
@@ -1822,7 +1821,7 @@ fn tab_bar(active: RailTab, cx: &mut Context<Shell>) -> impl IntoElement + use<>
     //
     // It was `background`, on the reasoning that a raised plate is drawn in the
     // surface the control sits on -- which was true while the rail was drawn in
-    // that surface too. The rail is on the chrome step now, so the plate became
+    // that surface too. The rail is drawn in the well now, so the plate became
     // the one thing in the window painted a step *below* what it sits on: a hole
     // rather than a plate, and at this size the shadow under it is not enough to
     // say which.

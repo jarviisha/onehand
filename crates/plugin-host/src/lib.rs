@@ -1,8 +1,9 @@
 //! What the app hands its built-in plugins, and what they hand back.
 //!
 //! The things a plugin needs that it cannot reach into the binary for — a
-//! button that answers the pointer, the derivation of status ink, and the chrome
-//! surface a panel is drawn on — plus the Workbench mode contract itself.
+//! button that answers the pointer, the derivation of status ink, and the
+//! surface a dock panel's card is drawn on — plus the Workbench mode contract
+//! itself.
 
 // Nothing here is `pub` unless the binary names it: `dead_code` stops at a
 // `pub` item in a library, so one that lost its last caller looks exactly like
