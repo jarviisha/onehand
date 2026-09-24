@@ -1510,6 +1510,17 @@ back is smaller than carrying a table that says the feature is wired up.
 
 Listed because a missing feature nobody wrote down reads as a bug in the ones that exist:
 
+- **The conversation title's menu button has no accessible name.** It draws the name as a child
+  rather than through the component's `label`, because a label is drawn `flex_none` with nothing to
+  ellipsize it and held the whole header row open however narrow the panel became. The library builds
+  a button's accessible name out of `label` and nothing else, and the only setter is an inherent
+  method on the base button it keeps in a private field — so the two cannot both be had from this
+  component. The route out is `controls::MenuTrigger`, which already exists for the rail's rows:
+  a `Stateful<Div>` does implement gpui's `StatefulInteractiveElement`, so `aria_label` reaches it,
+  and the label's own flex behaviour would be ours. What that costs is rebuilding the ghost hover
+  fill and the caret this component gives for free. The icon buttons along the rest of that row have
+  never had names either and carry tooltips instead, so this is one control short of a row that was
+  already short.
 - **There is no search in the transcript**, and the removal was deliberate rather than pending. It
   matched whole *items* and never occurrences, so a word said ten times in one answer was one hit
   with no mark on the word itself, and a hit in text a block had truncated was counted, scrolled to

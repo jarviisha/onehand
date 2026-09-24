@@ -3018,6 +3018,13 @@ impl ChatPane {
             // blade and takes the foot off every `g`, `y` and `đ` in the name.
             // The button's height is fixed and its contents are centred, so
             // there is nothing for a taller line box to push around.
+            //
+            // **What this costs is the button's accessible name**, and there is
+            // no way to pay it back through this component: the library builds
+            // that name out of `label` alone, and the only setter for it is an
+            // inherent method on the base button it keeps in a private field.
+            // Putting the name back means not using this component for the
+            // title at all.
             .child(div().min_w_0().truncate().child(title))
             .dropdown_caret(true)
             .text_color(cx.theme().foreground)
@@ -3627,21 +3634,29 @@ pub enum ChatPaneEvent {
     /// window's chrome, and a dock panel has no business reaching outside the
     /// dock to draw it.
     ShowRail,
-    /// The Workbench is closed and the user asked for it.
+    /// The user pressed the Workbench button in the conversation's header.
     ///
     /// Announced rather than acted on for the same reason as the rail: the
     /// Workbench is a dock, the dock is the window's arrangement, and the panel
     /// sitting in the middle of it does not get to rearrange the window. It
-    /// also does not know the three-state rule the keystroke follows — which
-    /// mode to open on, and that a press while it is open and focused closes
-    /// it — and two places deciding that would drift apart.
-    ToggleWorkbench,
-    /// The terminal dock is closed and the user asked for it.
+    /// also does not know which mode the Workbench would come back on, and two
+    /// places deciding that would drift apart.
     ///
-    /// Announced rather than acted on for exactly the reasons above: the dock is
-    /// the window's arrangement, and whether it opens, focuses or closes on this
-    /// press is the same three-state rule `Ctrl+Shift+\`` follows — one place
-    /// decides it or the two drift apart.
+    /// **Open or closed, and not the third state the key has.** A key has one
+    /// binding to serve every case, so an open-but-unfocused panel is focused
+    /// rather than closed -- there is nothing else to reach it with. A button
+    /// can see the dock, and the caret when it is pressed is almost always back
+    /// in the composer, so the third state made the first press do nothing a
+    /// presser could see.
+    ToggleWorkbench,
+    /// The user pressed the terminal button in the conversation's header.
+    ///
+    /// Announced rather than acted on for exactly the reasons above, and open
+    /// or closed for the same one -- with one condition of its own: an open
+    /// dock holding no shell is opened *into* rather than closed, because that
+    /// is what closing the last tab leaves and the press there means "start
+    /// one". The key is `` Ctrl+` ``, unshifted, because the shifted form
+    /// cannot be typed.
     ToggleTerminal,
     /// Restart the agent on the conversation showing.
     ///

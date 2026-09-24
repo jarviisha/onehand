@@ -695,8 +695,15 @@ impl Shell {
                             shell.show_workbench(mode, window, cx);
                         }
                     }
+                    // The dock having a shell in it is the same condition
+                    // `show_terminal` guards its own close with, and for the
+                    // same reason: an open dock holding nothing is what closing
+                    // the last tab leaves, the panel there offers *New
+                    // terminal*, and this button's tooltip offers to open one
+                    // too. Closing on that press would answer neither.
                     E::ToggleTerminal => {
-                        if shell.dock.read(cx).is_dock_open(DockPlacement::Bottom, cx) {
+                        let open = shell.dock.read(cx).is_dock_open(DockPlacement::Bottom, cx);
+                        if open && shell.terminal.read(cx).has_shell() {
                             shell.set_terminal_visible(false, window, cx);
                         } else {
                             shell.show_terminal(window, cx);
@@ -2371,7 +2378,13 @@ impl Shell {
         self.last_panel = FocusedPanel::Terminal;
         let open = self.dock.read(cx).is_dock_open(DockPlacement::Bottom, cx);
         let focused = self.terminal.focus_handle(cx).contains_focused(window, cx);
-        if open && focused {
+        // **An open dock with nothing in it is not a dock to close.** Closing
+        // the last tab's ✕ leaves exactly that, and the panel it leaves offers
+        // *New terminal* -- so a press here means "open one", which is what
+        // falling through does. Closed instead, the one gesture that reaches an
+        // empty terminal took it off screen, and the way back up asked for a
+        // shell the user had just been offered.
+        if open && focused && self.terminal.read(cx).has_shell() {
             self.set_terminal_visible(false, window, cx);
             return;
         }
