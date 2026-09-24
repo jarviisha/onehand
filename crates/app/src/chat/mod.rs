@@ -9,7 +9,7 @@
 //!   showing and draws it, and owns almost nothing about any one of them.
 //!
 //! - [`viewport`] — how one transcript looks on screen: the run layout the
-//!   virtual list draws, its scroll position, and the find bar.
+//!   virtual list draws, and its scroll position.
 //! - [`transcript`] — one element per `ChatItem`. Its block structure is the
 //!   transcript's own design language; every colour, radius and size in it is
 //!   read from `cx.theme()` at the call site, because the component library's

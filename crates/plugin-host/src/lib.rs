@@ -85,7 +85,7 @@ pub fn action(id: impl Into<ElementId>) -> Button {
 /// not been told otherwise about with its palette's default background, so a
 /// second copy of this answer is visible as a rectangle of the wrong shade
 /// behind a running program.
-pub fn chrome(cx: &App) -> Hsla {
+pub fn dock_surface(cx: &App) -> Hsla {
     cx.theme().background
 }
 

@@ -5,9 +5,9 @@
 //! showing and draws it, and what belongs to a single session lives on that
 //! session rather than here. Switching is a lookup, not a save/restore.
 //!
-//! What is left at this level is chrome — the composer widget, the find bar,
-//! the zoom, the window handle — plus the one question the pane alone can
-//! answer, which is which conversation the user is looking at.
+//! What is left at this level is chrome — the composer widget, the zoom, the
+//! window handle — plus the one question the pane alone can answer, which is
+//! which conversation the user is looking at.
 
 use super::composer::{Composer, ComposerEvent};
 use super::conversation::{Conversation, SessionPhase};
@@ -503,10 +503,10 @@ impl ChatPane {
 
     /// Put down everything that belonged to the session leaving the screen.
     ///
-    /// One place, because these three are the same rule wearing three hats:
+    /// One place, because both of these are the same rule wearing two hats:
     /// each is pane-level state whose meaning is a single conversation. Spread
-    /// across the call sites, the find bar's reset was written once and the
-    /// other two not at all.
+    /// across the call sites they were written at some of them and not others,
+    /// which is a session opening onto the previous one's half-typed prompt.
     fn leave_shown_session(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         // An arming press only speaks for the conversation it was made on.
         self.restart_armed = None;
@@ -2586,7 +2586,7 @@ impl ChatPane {
     ///
     /// Separate from the composer's row because the two answer different
     /// questions. The composer's controls are about the message being written —
-    /// what to attach, which mode to send it in, whether to send it at all. Find,
+    /// what to attach, which mode to send it in, whether to send it at all.
     /// Export, Restart and Close are about the conversation as a whole, and
     /// mixing them into one row of seven buttons made every one of them equally
     /// easy to hit by accident.
@@ -2598,8 +2598,9 @@ impl ChatPane {
     /// keystroke is a route only someone who already knows it can take.
     ///
     /// **The name carries the conversation's own menu**, and the right-hand end
-    /// carries only what is about the *window*: find, and the way back to the
-    /// Workbench. That split is why there is no ••• here any more — a menu button
+    /// carries what is about the *window*: the past conversations, the two
+    /// docks, the way back to a hidden rail, and closing the session. That
+    /// split is why there is no ••• here any more — a menu button
     /// beside the name it acts on says nothing the name could not say itself, and
     /// the things in it were all things done to the conversation the name is.
     fn header(&self, cx: &mut Context<Self>) -> impl IntoElement + use<> {
@@ -2655,7 +2656,7 @@ impl ChatPane {
             // button's label in a `flex_none` box with nothing to ellipsize it:
             // the button could shrink and its label could not, so the name kept
             // its full width and what went over the right edge was every control
-            // after it, find through *Close session*, clipped away with nothing
+            // after it, the archive menu through *Close session*, clipped with nothing
             // on screen to say they were there. A truncating child in place of
             // the label is the whole of the fix, since a name half-read still
             // names the conversation while a button that is not drawn cannot be
@@ -2712,7 +2713,16 @@ impl ChatPane {
             // has no business knowing a dock is where the Workbench lives.
             .child(
                 header_control("workbench", IconName::PanelRight, cx)
-                    .tooltip("Show the Workbench")
+                    // **Both directions, because the button does both.** It
+                    // said "Show the Workbench" while it was a three-state
+                    // control that could only ever open from here, and kept
+                    // saying it after it became a plain toggle -- so the one
+                    // press a user most wants named, the one that puts the
+                    // panel away, was the press the tooltip denied existed.
+                    // Which way it will go this time is not said, since that
+                    // needs a dock fact pushed down here and the panel on
+                    // screen already answers it.
+                    .tooltip("Show or hide the Workbench")
                     .on_click(cx.listener(|_: &mut Self, _, _, cx| {
                         cx.emit(ChatPaneEvent::ToggleWorkbench);
                     })),
@@ -2902,8 +2912,14 @@ impl ChatPane {
             .flex_none()
             .child(
                 header_control("terminal", IconName::SquareTerminal, cx)
+                    // What it says is about the *shell*, which is the fact
+                    // this pane is pushed and the one the icon cannot carry.
+                    // Which way the press will go is left out for the reason
+                    // the Workbench's is: the panel on screen answers it, and
+                    // saying it would need a second fact pushed down here to
+                    // keep in step.
                     .tooltip(if live {
-                        "A shell is running here — show the terminal"
+                        "A shell is running here — show or hide the terminal"
                     } else {
                         "Open a shell in this project"
                     })
@@ -4949,7 +4965,7 @@ mod tests {
 
     /// Re-selecting the session already on screen is not a switch. It happens
     /// on every rail click and on every window activation, so treating it as
-    /// one would throw the find bar away while the user was typing in it.
+    /// one would stash the draft out from under somebody still typing it.
     #[test]
     fn reselecting_the_shown_session_changes_nothing() {
         assert!(!switching_away(Some(7), 7));

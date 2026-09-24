@@ -492,7 +492,7 @@ impl Render for Workbench {
                     // does not, and is here to stop the panel inheriting
                     // whatever is behind it. The terminal takes the same answer,
                     // both through one function so the two cannot drift.
-                    .bg(crate::theme::chrome(cx))
+                    .bg(crate::theme::dock_surface(cx))
                     // `overflow_hidden` is what the rounding needs: the strip's
                     // hairline runs the full width and the file tree's own
                     // border runs the full height, so without it both draw

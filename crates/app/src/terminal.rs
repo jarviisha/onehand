@@ -149,7 +149,7 @@ impl TerminalPanel {
             &root,
             Program::Shell,
             crate::zoom::term_font_size(self.zoom),
-            crate::theme::chrome(cx),
+            crate::theme::dock_surface(cx),
             cx,
             move |window, cx| {
                 let _ = panel.update(cx, |panel: &mut Self, cx| panel.reap(window, cx));
@@ -271,7 +271,7 @@ impl TerminalPanel {
             return;
         }
         self.terminal_theme = current;
-        let colors = terminal_palette(crate::theme::chrome(cx), cx);
+        let colors = terminal_palette(crate::theme::dock_surface(cx), cx);
         for set in self.shells.values() {
             for tab in &set.tabs {
                 tab.set_palette(colors.clone(), cx);
@@ -421,7 +421,7 @@ impl Render for TerminalPanel {
                     // The chrome surface, as the Workbench takes it, and the
                     // grid below is handed the same value as its own background
                     // -- so a shell is the card rather than a plate laid on it.
-                    .bg(crate::theme::chrome(cx))
+                    .bg(crate::theme::dock_surface(cx))
                     // The strip's hairline runs the full width of the panel, so
                     // without this it draws straight through the corners the
                     // radius just cut.

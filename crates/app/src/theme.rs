@@ -35,11 +35,16 @@ use std::rc::Rc;
 /// name the guard against using a raw status fill as text points at.
 pub(crate) use onehand_plugin_host::status_ink;
 
-/// The chrome surface is the plugin host's for the same reason, and named
-/// through this module for the same one: the Neovim mode hands it to a terminal
-/// grid as that grid's background, and a second copy of the answer is a panel
-/// and the shell inside it disagreeing about what colour the panel is.
-pub(crate) use onehand_plugin_host::chrome;
+/// The surface a dock panel's card draws on is the plugin host's for the same
+/// reason, and named through this module for the same one: the Neovim mode
+/// hands it to a terminal grid as that grid's background, and a second copy of
+/// the answer is a panel and the shell inside it disagreeing about what colour
+/// the panel is.
+///
+/// It was called `chrome` while it was a step off the reading surface. It is
+/// that surface now, so the word had come to name the opposite of what the
+/// function returns -- and its own first line said so.
+pub(crate) use onehand_plugin_host::dock_surface;
 
 /// One mode's surfaces, and the ink that has to be legible on each.
 ///

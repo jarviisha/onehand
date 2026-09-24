@@ -122,7 +122,7 @@ Tests are inline `#[cfg(test)]` modules — there is no `tests/` directory.
 | `crates/app` | `onehand` | the GPUI front end + the binary |
 | `crates/core` | `onehand-core` | GUI-free logic: config, the workspace tree, ACP, the chat model, the remote bridge, editor rules, completion, git status, worktree rules, the directory flatten |
 | `crates/plugin-api` | `onehand-plugin-api` | GUI-free plugin IDs, descriptors, capabilities and registration contract |
-| `crates/plugin-host` | `onehand-plugin-host` | the Workbench mode contract, the remote-channel factory type, and the three things a plugin cannot reach into the binary for: the button wrapper, status ink and the chrome surface |
+| `crates/plugin-host` | `onehand-plugin-host` | the Workbench mode contract, the remote-channel factory type, and the three things a plugin cannot reach into the binary for: the button wrapper, status ink and the surface a dock card draws on |
 | `crates/terminal-ui` | `onehand-terminal-ui` | shared PTY/grid ownership used by the terminal dock and Neovim |
 | `plugins/builtin/*` | built-in plugins | Editor, Files, Markdown, Neovim and Telegram contributions compiled into the binary |
 | `vendor/gpui-terminal` | `gpui-terminal` | a vendored terminal grid + the interaction layer upstream never had |
@@ -313,13 +313,15 @@ outgrown the read's size bound, a Neovim that would not start — and a second c
 of the derivation is a second place for a raw status fill to be used as ink,
 which is the mistake `crate::theme::status_ink` exists to prevent.
 
-**The chrome surface is there for the same reason**, and is the sharpest case of
+**The dock card's surface is there for the same reason**, and is the sharpest case of
 it: the Neovim mode hands a terminal grid the surface it is sitting on, because a
 grid fills every cell it has not been told otherwise about with its default
 background. A second copy of the answer is a panel and the shell inside it
 disagreeing about what colour the panel is, which shows up as a rectangle of the
-wrong shade behind a running program. `onehand_plugin_host::chrome` is the one
-definition and `crate::theme::chrome` is the app's name for it.
+wrong shade behind a running program. `onehand_plugin_host::dock_surface` is the one
+definition and `crate::theme::dock_surface` is the app's name for it. It was called `chrome` while
+it was a step off the reading surface; it is that surface now, so the word had come to name the
+opposite of what the function returns.
 
 **The button wrapper lives here, not in the app.** A built-in plugin draws
 buttons and cannot reach into the binary hosting it, so a copy in each half is
@@ -714,7 +716,7 @@ and hide buttons at the other end.
 
 **It draws itself as a card floating in its dock**: inset on every side but the seam, one border, one
 radius, `overflow_hidden` so the strip's hairline and the file tree's own border stop at the rounded
-corners, and `crate::theme::chrome` under it — which is the reading surface, the same one the
+corners, and `crate::theme::dock_surface` under it — which is the reading surface, the same one the
 conversation is on, so the border and the inset are the whole of what says where the panel begins.
 The terminal takes the same answer, both through one function so the two cannot drift.
 **The seam is flush, and that is the resize grip's doing**: the dock's grip is a fixed band a few
@@ -731,7 +733,7 @@ and a dock drawn edge to edge reads as the window having been *divided* — two 
 a line, which is what the arrangement stops being the moment either dock closes and the conversation
 takes the space back.
 
-**`chrome` is the reading surface, and a dock card is marked by its border alone.** It was the ramp's
+**`dock_surface` is the reading surface, and a dock card is marked by its border alone.** It was the ramp's
 well step, one notch up from the conversation — which in the dark palette made the two docks the
 *lighter* regions on screen with the conversation as the dark gap between them. Lighter reads as
 nearer, so two panels that are about the work were drawn in front of the work, and with both open the
@@ -852,7 +854,7 @@ shutdown to forget.
 
 **It is a card in its dock, the Workbench's shape exactly** — inset on every side but the seam, which
 here is the top, one border, one radius, `overflow_hidden` so the strip's hairline stops at the
-corners, `crate::theme::chrome` under it and `track_focus` on the outer box so the gap belongs to the
+corners, `crate::theme::dock_surface` under it and `track_focus` on the outer box so the gap belongs to the
 panel. Two docks answering "where does this panel begin" differently would read as two separate
 decisions, and that includes which side is flush: each is flush against its own dock's resize grip,
 for the reason given there. **Its right edge stays inset although a grip runs down that too** — the
@@ -866,7 +868,7 @@ since the inset is fixed while the dock is dragged.
 **The grid is drawn in the panel's own surface**, and has to be told which one rather than reading the
 theme: a terminal fills every cell it has not been told otherwise about with its palette's default
 background, so `terminal_palette` takes the surface as an argument and `spawn_pty` passes it through.
-Both callers hand it `chrome` — the terminal dock from the app, the Neovim mode from the plugin host
+Both callers hand it `dock_surface` — the terminal dock from the app, the Neovim mode from the plugin host
 — and the parameter is there so neither has to guess what the other did. Two consequences worth
 knowing: whatever that value is, it is also ANSI *black*, deliberately, since a program asking for
 black means "the background" and answering with anything else puts a plate of the wrong shade behind

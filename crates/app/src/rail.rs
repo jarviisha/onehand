@@ -1294,11 +1294,11 @@ pub fn rail(
         // collapse the rail at all, it hides it.
         .collapsible(SidebarCollapsible::None)
         .w_full()
-        // **The docks' surface, asked for by name rather than through the
-        // sidebar token.** The rail sat on the reading surface, separated from
-        // the conversation by the hairline down its edge alone; with both docks
-        // now drawn a step off that surface it was the one piece of chrome still
-        // pretending to be a place text is read.
+        // **The well, asked for by name rather than through the sidebar
+        // token.** The rail sat on the reading surface for a while, separated
+        // from the conversation by the hairline down its edge alone, which is
+        // the one piece of chrome in the window still dressed as a place text
+        // is read.
         //
         // The well, asked for here rather than left to the library's own
         // `sidebar` token: that token ships with a value of its own and the ramp
@@ -1321,9 +1321,9 @@ pub fn rail(
         .bg(cx.theme().muted)
         // **No line down the rail's edge, because the fill is the edge.**
         // `Sidebar` draws a 1px right border of its own and this turns it off:
-        // the rail is on the chrome surface and the conversation beside it is
-        // on the reading surface, and a surface that changes at a seam already
-        // says where the seam is. Ruled as well, it was a line drawn along a
+        // the rail is on the well and the conversation beside it is on the
+        // reading surface, and a surface that changes at a seam already says
+        // where the seam is. Ruled as well, it was a line drawn along a
         // boundary that was not in doubt.
         //
         // **What makes that safe to say is a number rather than a taste**: those

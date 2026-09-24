@@ -1,12 +1,12 @@
 //! What the transcript looks like on screen: the run layout the virtual list
-//! draws, the list's own scroll and measurement state, and the find bar.
+//! draws, and the list's own scroll and measurement state.
 //!
-//! These three are one thing wearing three names. The list draws *runs*, not
-//! items, so its item count is the run count; the find bar hits an *item*, and
-//! scrolling to it means knowing which run holds it. Kept apart, the pairing
-//! was implicit — a plan on the pane and a scroll position on the session, made
-//! to line up by the order two calls happened in — and the find bar could not
-//! scroll at all, because nothing on either side could turn a hit into a row.
+//! These two are one thing wearing two names. The list draws *runs*, not items,
+//! so its item count is the run count — while everything that wants to be
+//! *taken* somewhere names an item, and getting there means knowing which run
+//! holds it. Kept apart, the pairing was implicit: a plan on the pane and a
+//! scroll position on the session, made to line up by the order two calls
+//! happened in, with nothing on either side able to turn an item into a row.
 
 use super::transcript;
 use gpui::{App, FollowMode, ListAlignment, ListOffset, ListState, Pixels, Window, px};
@@ -534,8 +534,8 @@ impl Viewport {
         // conversation. It cost the room its whole reason to exist: one notch
         // of the wheel and a short answer dropped back onto the composer.
         //
-        // So this is not a latch. A wheel, a drag or a jump to a find hit takes
-        // the position over, and coming back to the question takes it back --
+        // So this is not a latch. A wheel or a drag takes the position over,
+        // and coming back to the question takes it back --
         // and either way the room stays exactly as it is, see [`Hold::reading`].
         let at_rest = top.item_ix >= count || (top.item_ix == run && top.offset_in_item <= px(1.));
         hold.reading = !at_rest;
@@ -744,10 +744,11 @@ impl Viewport {
 
     /// Which run draws `target`.
     ///
-    /// The find bar hits an item; the list scrolls to a row, and a row is a
-    /// run. This is the translation between the two, and without it Next and
-    /// Previous could only change a number on screen.
-    pub fn run_of(&self, target: TranscriptItemId) -> Option<usize> {
+    /// The list scrolls to a row, and a row is a run -- while the thing being
+    /// scrolled to is named as an item. This is the translation between the
+    /// two, and the held prompt is what asks for it: keeping a question at the
+    /// top of the frame means knowing which row that question is drawn in.
+    fn run_of(&self, target: TranscriptItemId) -> Option<usize> {
         self.plan
             .iter()
             .position(|run| run.members.contains(&target))
@@ -1103,8 +1104,8 @@ mod tests {
         assert!(viewport.run(2).is_none(), "three items, two rows");
     }
 
-    /// The find bar counts *items* and the list scrolls to *rows*. An item
-    /// folded inside a strip still has a row to be taken to -- the strip's.
+    /// A scroll target is named as an *item* and the list scrolls to *rows*. An
+    /// item folded inside a strip still has a row to be taken to -- the strip's.
     #[test]
     fn an_item_inside_a_strip_still_names_a_row() {
         let mut viewport = Viewport::default();
@@ -1541,8 +1542,8 @@ mod tests {
     }
 
     /// The assumption the scroll target rests on: opening a strip changes what
-    /// a row *draws*, never how many rows there are. If it moved them, the
-    /// unfold that follows a find would scroll the user somewhere else.
+    /// a row *draws*, never how many rows there are. If it moved them, every
+    /// row index taken before an unfold would point somewhere else after it.
     #[test]
     fn unfolding_moves_no_row() {
         let (chat, mut folded, mut open) = (chat(), Viewport::default(), Viewport::default());
