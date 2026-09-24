@@ -19,7 +19,7 @@ use gpui::{Animation, AnimationExt as _};
 use gpui::{
     App, AppContext, Context, Div, ElementId, Entity, EventEmitter, FocusHandle, Focusable,
     InteractiveElement, IntoElement, ListState, ParentElement, Rems, Render, SharedString,
-    Stateful, StatefulInteractiveElement, Styled, Window, div, list, px, relative, rems,
+    Stateful, StatefulInteractiveElement, Styled, Window, div, list, px, rems,
 };
 use gpui_component::button::ButtonVariants as _;
 use gpui_component::dialog::{DialogClose, DialogFooter};
@@ -3120,13 +3120,15 @@ impl ChatPane {
             // A child and not `.label()`, because the library draws a label
             // `flex_none` with nothing to ellipsize it, so the name kept its full
             // width inside a button that had just been told to give way.
-            .child(
-                div()
-                    .min_w_0()
-                    .truncate()
-                    .line_height(relative(1.))
-                    .child(title),
-            )
+            // **No line height of its own**, although the library's own label
+            // pins one at exactly the font size. It can afford to: its label
+            // does not clip, so a descender simply hangs out of the line box.
+            // This one has `truncate` on it for the ellipsis, and that brings
+            // `overflow_hidden` with it -- which turns the same line box into a
+            // blade and takes the foot off every `g`, `y` and `đ` in the name.
+            // The button's height is fixed and its contents are centred, so
+            // there is nothing for a taller line box to push around.
+            .child(div().min_w_0().truncate().child(title))
             .dropdown_caret(true)
             .text_color(cx.theme().foreground)
             .font_semibold();
