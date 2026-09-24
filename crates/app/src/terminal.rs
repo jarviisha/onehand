@@ -615,16 +615,16 @@ impl TerminalPanel {
                                 tab.bg(cx.theme().accent)
                                     .text_color(cx.theme().accent_foreground)
                             })
-                            // **The reading surface, not the well.** The well
-                            // is what this strip is drawn in now, so a hover
-                            // fill taken from it was a fill nobody could see.
-                            // Sunk on a chrome panel means stepping back toward
-                            // the conversation's own surface -- darker here,
-                            // lighter in the light palette, and a real step in
-                            // both because it is the ramp's own pair read from
-                            // the other end.
+                            // **The well, not the reading surface.** This panel
+                            // draws on the reading surface, so sinking a row
+                            // into it is the ordinary step up from there. It was
+                            // the reading surface itself while the panel was
+                            // filled with the well, when a fill taken from the
+                            // well was one nobody could see -- the same pair of
+                            // values, read from whichever end the panel is
+                            // standing on.
                             .when(i != active, |tab| {
-                                tab.hover(|tab| tab.bg(cx.theme().background))
+                                tab.hover(|tab| tab.bg(cx.theme().muted))
                             })
                             .child(
                                 Icon::new(IconName::SquareTerminal)

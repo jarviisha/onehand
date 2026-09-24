@@ -140,12 +140,12 @@ impl TerminalThemeKey {
         Self {
             dark: theme.mode.is_dark(),
             colors: [
-                // The well, which is half of the chrome step the panels hand in
-                // as the grid's surface -- the reading surface below being the
-                // other half, and already here. Neither is read in this file;
-                // they are watched because a key blind to one of them would let
-                // every live grid keep painting the old surface after a change
-                // that moved only that one.
+                // The reading surface, which is what the panels hand in as the
+                // grid's surface, and the well beside it, which is what they
+                // hand in when that answer moves. Neither is read in this file;
+                // they are watched because a key blind to either would let every
+                // live grid keep painting the old surface after a change that
+                // moved only that one.
                 theme.muted,
                 theme.background,
                 theme.foreground,

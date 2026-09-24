@@ -465,10 +465,10 @@ mod tests {
             theme.background,
             STEP,
         );
-        // The rail is drawn in the well (`onehand_plugin_host::chrome`), so its
-        // marked row is measured against *that* and not against the reading
-        // surface. Both of these have been wrong: the fill was invisible when it
-        // was `hover`, and shouted when it was the reading surface.
+        // The rail is drawn in the well, so its marked row is measured against
+        // *that* and not against the reading surface. Both of these have been
+        // wrong: the fill was invisible when it was `hover`, and shouted when it
+        // was the reading surface.
         check(
             "a marked row against the rail it sits in",
             theme.sidebar_accent,

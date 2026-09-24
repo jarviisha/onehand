@@ -74,6 +74,16 @@ One window hosts exactly one workspace. The frame is a navigation **rail** plus 
   terminal, the Workbench, the way back to a hidden rail, and last *Close
   session*. There is no `⋯`; a menu button beside the name it acts on says
   nothing the name could not say itself.
+  **Narrowing the panel takes the name first and the controls last, and stops
+  at a floor.** The name ellipsizes and the badge truncates beside it while
+  every control keeps its full size — a name half-read still names the
+  conversation, and a reader can finish it in the rail or in the menu behind it,
+  where a control pushed off the edge is gone with nothing on screen to say it
+  was ever there. But the name and its badge keep a minimum between them, below
+  which nothing more is taken: a name cut to two characters names nothing, so
+  past that point the row is simply narrower than its own furniture and the
+  controls clip. That is a width at which the panel has stopped being a place a
+  conversation is read.
   **The agent pane is mounted as a bare panel, not a tab group**, so this is the
   only chrome it has: one tab that can never gain a sibling is not a tab, it is
   the conversation's own name printed a second time directly above the header
@@ -195,46 +205,45 @@ One window hosts exactly one workspace. The frame is a navigation **rail** plus 
   looked at). Nothing replaced it at the rail: that seam is a change of surface
   now, so `Sidebar`'s own right border is switched off too. The two docks are
   marked by their cards.
-- **The rail is drawn on the chrome surface too**, asked for by name at its call
-  site rather than through the sidebar token — that value is derived from two
-  ramp steps at the moment it is asked, and a token carrying it would be a second
-  spelling that drifts. It sat on the reading surface, held apart from the
-  conversation by the hairline down its edge alone, and with both docks a step
-  off that surface it was the last piece of chrome still dressed as a place text
-  is read. **The hairline goes with the change**: the fill is the edge, and a
-  rule beside it is a line drawn along a boundary that was not in doubt — which
-  is safe to say because those two surfaces are the ramp's asserted pair, 1.15
-  apart at worst. Its own **marked row is a ramp step of its own**, quieter than
-  any surface pair and lifting rather than sinking: the faintest existing step is
-  1.04 against the rail's new surface and the reading surface is 1.19, a hole
-  punched through the panel rather than a row raised out of it.
+- **The rail is the one panel lifted off the reading surface**, drawn in the
+  ramp's well and asking for it by name rather than through the sidebar token,
+  which ships with a value of its own and would come up level with the
+  conversation. It is the only panel that is not about the work at all — a
+  workspace, its projects, its sessions — which is what the step now says. The
+  two docks took the same one for a while, and sharing it made lifted mean
+  nothing more precise than "not the conversation". **The hairline goes with the
+  fill**: the fill is the edge, and a rule beside it is a line drawn along a
+  boundary that was not in doubt — safe to say because those two surfaces are
+  the ramp's asserted pair, 1.15 apart at worst. Its own **marked row is a ramp
+  step of its own**, quieter than any surface pair and lifting rather than
+  sinking: the faintest existing step is 1.04 against the rail's surface and the
+  reading surface is 1.19, a hole punched through the panel rather than a row
+  raised out of it.
 - **Both docks are drawn as cards floating in their dock** — inset on every side
-  but the seam, one border, one radius, and the **chrome** surface under them:
-  the step
-  that says a panel is *about* the work rather than part of it, which the status
-  bar takes too and nothing else does. That step **is the well**, and has to be:
-  a midpoint was tried and measures 1.07 against the reading surface, under the
-  1.14 floor the ramp's tests hold every surface pair to — and the light palette
-  has only 1.15 between white and the well to divide, so nothing between them
-  clears that floor twice. What it costs is that a well drawn *on* chrome is the
-  panel's own value: the reading surface is what one becomes there, which is the
-  same asserted pair read from the other end. **The seam is flush and the rest
-  are inset** — the Workbench's left edge, the terminal's top, each being the
-  edge that dock is dragged by: the resize grip is a fixed band a few pixels
-  either side of the dock's own edge, so a card held off there leaves the one
-  line a user reads as draggable outside the only place a drag is taken, and the
-  panel is resized from a strip of apparently empty surface. Flush, the border
-  is the grip — and nothing is lost, because the reading surface on the other
-  side of that seam is what the gap was showing. The gap on the other three
-  belongs to the panel — a click in it is a click on that panel.
-  **The change of surface alone was tried and is not enough.** A dock drawn edge
-  to edge in a different fill reads as the window having been *divided*, two
-  regions meeting along a line — which is what the arrangement stops being the
-  moment either dock closes and the conversation takes the space back. The gap is
-  what says a dock is something put down on the window rather than a piece of it.
-  The terminal is the one this costs something: its grid measures its own bounds
-  and resizes the PTY to match, so the inset is a column of cells and half a
-  row. Paid once rather than growing with the panel.
+  but the seam, one border, one radius, and **the reading surface under them**,
+  the same one the conversation is on. The border is the whole of what says
+  where a panel begins. They were filled a step off the conversation, which in
+  the dark palette made them the *lighter* regions on screen with the
+  conversation as the dark gap between them: lighter reads as nearer, so two
+  panels about the work were drawn in front of the work, and with both open the
+  conversation was the one region nothing had raised. **A smaller step in the
+  same direction is not the answer and a step the other way does not exist** —
+  halving it measures 1.07 against the reading surface, under the 1.14 floor the
+  ramp's tests hold every surface pair to, and going down instead would need a
+  value below a near-black surface. What the flip gives back is the well
+  *inside* a panel: a hover fill or a code block sunk into a dock is the well
+  again, where on a filled card it had to borrow the reading surface to be seen.
+  **The seam is flush and the rest are inset** — the Workbench's left edge, the
+  terminal's top, each being the edge that dock is dragged by: the resize grip is
+  a fixed band a few pixels either side of the dock's own edge, so a card held
+  off there leaves the one line a user reads as draggable outside the only place
+  a drag is taken, and the panel is resized from a strip of apparently empty
+  surface. Flush, the border is the grip. The gap on the other three belongs to
+  the panel — a click in it is a click on that panel, and it is what says a dock
+  is something put down on the window rather than a piece of it. The terminal is
+  the one this costs something: its grid measures its own bounds and resizes the
+  PTY to match, so the inset is a column of cells and half a row. Paid once
+  rather than growing with the panel.
 - **A terminal grid is drawn in the surface of the panel holding it**, in the
   dock and in the Neovim mode alike, so a shell is that panel rather than a plate
   laid on it. It has to be *told* which surface that is — a grid fills every cell

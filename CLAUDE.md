@@ -710,36 +710,42 @@ and hide buttons at the other end.
 
 **It draws itself as a card floating in its dock**: inset on every side but the seam, one border, one
 radius, `overflow_hidden` so the strip's hairline and the file tree's own border stop at the rounded
-corners, and `crate::theme::chrome` under it — the step that says a panel is *about* the work rather
-than part of it. The terminal takes the same step, both through one function so the two cannot drift;
-everything else — the conversation, the rail, a dialog — stays on the reading surface.
+corners, and `crate::theme::chrome` under it — which is the reading surface, the same one the
+conversation is on, so the border and the inset are the whole of what says where the panel begins.
+The terminal takes the same answer, both through one function so the two cannot drift.
 **The seam is flush, and that is the resize grip's doing**: the dock's grip is a fixed band a few
 pixels either side of the dock's own edge and there is no hook to move it, so an inset there leaves
 the one line a user reads as draggable sitting outside the only place a drag is taken — the panel
 resized from a strip of apparently empty surface while the border did nothing. Flush, the border *is*
-the grip. It costs nothing to look at, because what is on the other side is the conversation on the
-same reading surface the gap was showing: the card still stands off its neighbour by whatever that
-neighbour keeps clear. The other three stay inset, since a card held off nothing reads as part of the
-window, and `track_focus` stays on the *outer* box so the gap belongs to the panel and a click
-landing in it is a click on the Workbench. **The change of surface alone was tried and is not
-enough**: a dock drawn edge to edge in a different fill reads as the window having been *divided*,
-two regions meeting along a line, which is what the arrangement stops being the moment either dock
-closes and the conversation takes the space back.
+the grip. It costs nothing to look at, because what is on the other side is the conversation on that
+same surface: the card still stands off its neighbour by whatever that neighbour keeps clear. The
+other three stay inset, since a card held off nothing reads as part of the window, and `track_focus`
+stays on the *outer* box so the gap belongs to the panel and a click landing in it is a click on the
+Workbench. **The gap is doing the work a fill used to share**: with both cards level with the
+conversation it is what says a dock is something put down on the window rather than a piece of it,
+and a dock drawn edge to edge reads as the window having been *divided* — two regions meeting along
+a line, which is what the arrangement stops being the moment either dock closes and the conversation
+takes the space back.
 
-**`chrome` is the ramp's well step, and it has to be — there is no room for a third surface.** A
-midpoint was tried, on the reasoning that a whole panel drawn in the fill a quoted command takes is a
-slab of it the height of the window. It measures **1.07** against the reading surface in both
-palettes, under the **1.14** floor the ramp's own tests hold every surface pair to — and the light
-palette has only 1.15 between white and the well to divide in the first place, so no value between
-them can clear that floor twice. Half a step is a step nobody can see, and a seam carried by one is a
-seam that is not drawn.
-**What it costs**: anything *sunk into* a chrome panel cannot be the well, because the panel already
-is. The reading surface is what a well becomes there — below the panel in the dark palette, above it
-in the light one, 1.15/1.19 apart either way since it is the same asserted pair read from the other
-end. Three places take it for that reason: the Markdown mode's code blocks (the component library's
-default for one is the well, so it names its own), and the hover fill on both tab strips. A
-*selected* thing takes `accent` instead, 1.30/1.53 from here. The rail's filled row is the exception
-and has a ramp step of its own (`marked`) — see the rail, below.
+**`chrome` is the reading surface, and a dock card is marked by its border alone.** It was the ramp's
+well step, one notch up from the conversation — which in the dark palette made the two docks the
+*lighter* regions on screen with the conversation as the dark gap between them. Lighter reads as
+nearer, so two panels that are about the work were drawn in front of the work, and with both open the
+one region nothing had raised was the one being read.
+**Neither a smaller step nor a step the other way is available**, which is why it is no step rather
+than a quieter one. A midpoint was tried, on the reasoning that a whole panel drawn in the fill a
+quoted command takes is a slab of it the height of the window: it measures **1.07** against the
+reading surface in both palettes, under the **1.14** floor the ramp's own tests hold every surface
+pair to — and the light palette has only 1.15 between white and the well to divide in the first
+place, so no value between them can clear that floor twice. Half a step is a step nobody can see.
+Going *down* instead would need a value below a near-black reading surface, and there is none.
+**What the flip gives back** is the well *inside* a panel. While the card was the well, anything sunk
+into it had to borrow the reading surface to be seen; now those are the well again — the Markdown
+mode's code blocks (which still name their own fill rather than take the component library's default,
+so the next surface change is one edit in one place) and the hover fill on both tab strips. A
+*selected* thing takes `accent`. **The rail keeps the well and is now the only panel that has it** —
+the one panel not about the work at all — with its filled row on a ramp step of its own (`marked`);
+see the rail, below.
 
 - **Editor** (`Ctrl+Shift+E`): the project's file tree down the left, the buffers opened out of it on
   the right, one draggable divider between them. A quick editor, not an IDE: buffers in the plugin,
@@ -853,16 +859,16 @@ touching with no gap between them. **It is the one this costs something**: the g
 bounds and resizes the PTY to match, so the inset is a column of cells and half a row — paid once,
 since the inset is fixed while the dock is dragged.
 
-**The grid is drawn in that same chrome step**, and has to be told so rather than reading the theme:
-a terminal fills every cell it has not been told otherwise about with its palette's default
+**The grid is drawn in the panel's own surface**, and has to be told which one rather than reading the
+theme: a terminal fills every cell it has not been told otherwise about with its palette's default
 background, so `terminal_palette` takes the surface as an argument and `spawn_pty` passes it through.
 Both callers hand it `chrome` — the terminal dock from the app, the Neovim mode from the plugin host
 — and the parameter is there so neither has to guess what the other did. Two consequences worth
-knowing: in the dark palette that value is also ANSI *black*, deliberately, since a program asking
-for black means "the background" and answering with the reading surface would put a dark plate behind
-the runs that asked to disappear; and `TerminalThemeKey` watches the chrome token even though it does
-not read it, or a change that moved that step and nothing else would leave every live grid painting
-the old surface.
+knowing: whatever that value is, it is also ANSI *black*, deliberately, since a program asking for
+black means "the background" and answering with anything else puts a plate of the wrong shade behind
+the runs that asked to disappear; and `TerminalThemeKey` watches both the reading surface and the
+well even though it reads neither, or a change that moved only the one in force would leave every
+live grid painting the old surface.
 
 **Lazy about roots, not about the clock.** A launch restoring a saved layout used to mount the panel
 and stop, so a user who left the terminal open was met on the next launch by an empty dock asking
@@ -949,12 +955,13 @@ hard-coded to `None`.
 centre is the chat, right dock the Workbench, bottom dock the terminal.
 
 - The **rail** ([rail.rs](crates/app/src/rail.rs), gpui-component's `Sidebar`) is app chrome and
-  lives *outside* the dock, so a layout restore cannot lose it. **It is drawn on
-  `crate::theme::chrome`**, the docks' own surface, asked for at the call site rather than through
-  the `sidebar` token: that value is derived from two ramp steps when it is asked, while the ramp
-  writes fixed values into token names, so a token carrying it would be a second spelling of one
-  answer and the two would drift the first time either end moved. The library applies the caller's
-  refinement after its own `bg`, which is what lets it win. **`Sidebar`'s right border goes off with
+  lives *outside* the dock, so a layout restore cannot lose it. **It is drawn in the ramp's well and
+  is now the only panel in the window lifted off the reading surface**, asked for at the call site
+  rather than left to the `sidebar` token, which ships a value of its own and would bring the panel
+  up level with the conversation beside it. The library applies the caller's refinement after its own
+  `bg`, which is what lets it win. The two docks took this same step for a while, which made lifted
+  mean nothing more precise than "not the conversation"; they are flat on the reading surface now,
+  marked by their cards, and what is left is the one panel that is not about the work at all. **`Sidebar`'s right border goes off with
   it** (`border_r_0`): the fill is the edge, and a rule beside it draws a line along a boundary that
   was not in doubt. That flag has been both ways — it had to be *on* while the rail was still on the
   reading surface, and off before that, when the library's drag handle ruled the same seam in the
@@ -1003,7 +1010,7 @@ centre is the chat, right dock the Workbench, bottom dock the terminal.
   header): *Projects* is the tree, *All sessions* is every session in the workspace, flat. **The
   selected half is `accent` with the ink that goes on it** — the same spelling the terminal's tabs
   and the Workbench's mode chips use, so one condition keeps one code. It was the reading surface,
-  which worked while the rail was drawn in that surface too; once the rail moved to the chrome step
+  which worked while the rail was drawn in that surface too; once the rail moved into the well
   the plate became the one thing in the window painted a step *below* what it sits on, which is a
   hole rather than a plate, and the `shadow_sm` under it could not say otherwise at that size. The
   shadow went with the change: a fill that differs lifts by itself, and the component library's own
