@@ -579,7 +579,6 @@ pub fn item(
     session: &Entity<ChatSession>,
     it: &ChatItem,
     target: TranscriptItemId,
-    find_emphasis: Option<bool>,
     room: Room,
     window: &Window,
     cx: &App,
@@ -602,22 +601,7 @@ pub fn item(
 
     // Width is owned by the pane's run so an activity summary drawn by the
     // pane and the steps rendered here always share the same two edges.
-    div()
-        .w_full()
-        .min_w_0()
-        // Search used to move to a matching item without marking what in the
-        // viewport had changed. Keep the marker on the row's existing box so
-        // opening or closing Find never changes transcript geometry. Every hit
-        // gets the quiet list fill; the current hit gets the stronger selected
-        // fill used by the find controls themselves.
-        .when_some(find_emphasis, |row, current| {
-            row.rounded(radius_control(cx)).bg(if current {
-                cx.theme().accent.opacity(0.35)
-            } else {
-                cx.theme().list_hover
-            })
-        })
-        .child(body)
+    div().w_full().min_w_0().child(body)
 }
 
 // ── user prompt — filled, shrink-to-fit, against the right edge ─────────────

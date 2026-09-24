@@ -77,9 +77,9 @@ One window hosts exactly one workspace. The frame is a navigation **rail** plus 
   and what tells them apart is that one is a row of controls and the other is
   prose — which the muted ink and the spacing already say.
   The right-hand end carries what is about the **window**, a size up and a tone
-  down — big enough to aim at, muted enough not to out-shout the name: find, the
-  terminal, the Workbench, the way back to a hidden rail, and last *Close
-  session*. There is no `⋯`; a menu button beside the name it acts on says
+  down — big enough to aim at, muted enough not to out-shout the name: the past
+  conversations, the terminal, the Workbench, the way back to a hidden rail, and
+  last *Close session*. There is no `⋯`; a menu button beside the name it acts on says
   nothing the name could not say itself.
   **Narrowing the panel takes the name first and the controls last, and stops
   at a floor.** The name ellipsizes while every control keeps its full size — a

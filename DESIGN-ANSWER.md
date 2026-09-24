@@ -211,8 +211,8 @@ are the same picture — so the list is handed back to **following its tail**
 there, and from then on the transcript scrolls with the stream. There is no
 jump, because there is nothing left to jump between.
 
-**Scrolling ends the hold as a scroll, not as a layout.** A wheel, a drag or a
-jump to a find hit takes the position over — the hold was for the question
+**Scrolling ends the hold as a scroll, not as a layout.** A wheel or a drag
+takes the position over — the hold was for the question
 arriving, not a place the reader has to fight — but the room under the turn
 stays exactly the size it was. Taking it away underneath somebody who has just
 scrolled would move the conversation while they are reading it, which is the one
@@ -1014,7 +1014,6 @@ by meaning:
 | The one item selected among several | `accent` / `accent_foreground` |
 | Hover on a row that is there to be picked | `list_hover` |
 | The single primary action of a blocking card | `primary` |
-| Marking a find hit | `list_hover` on every matching item; a stronger accent wash on the current item |
 
 **Prose ink is not white on a dark surface.** There the ink is the bright thing
 in the room, and near-white on near-black runs about four times the contrast a
@@ -1693,7 +1692,7 @@ Transient rows that are not answers:
 - **The session header**, above the transcript: what this conversation is
   called and the things done *to* it — the name is itself the menu, holding
   Rename, the exports, Resume in this session, Restart and, alone in the danger
-  tint, Delete. Beside it on the right: Find, a menu of the project's past
+  tint, Delete. Beside it on the right: a menu of the project's past
   conversations each opening as a session of its own beside this one, and the
   two ways back to something the window has put away — the rail, while it is
   hidden, and the Workbench — then Close session. **There is no `•••`**: a menu

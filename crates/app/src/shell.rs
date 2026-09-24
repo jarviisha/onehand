@@ -38,7 +38,6 @@ gpui::actions!(
         ToggleTerminal,
         OpenNeovim,
         FocusComposer,
-        ToggleFind,
         RestartSession,
         ZoomIn,
         ZoomOut,
@@ -158,7 +157,6 @@ pub fn init_keymap(cx: &mut App) {
         // and the shifted form is a keystroke that can be typed.
         gpui::KeyBinding::new("ctrl-shift-n", OpenNeovim, None),
         gpui::KeyBinding::new("ctrl-shift-a", FocusComposer, None),
-        gpui::KeyBinding::new("ctrl-shift-f", ToggleFind, None),
         gpui::KeyBinding::new("ctrl-shift-r", RestartSession, None),
         // Closing a session is the counterpart to restarting one, and sits next
         // to it in the namespace for that reason.
@@ -3381,12 +3379,6 @@ impl Render for Shell {
                         .update(cx, |pane, cx| pane.focus_composer(window, cx));
                 }),
             )
-            .on_action(cx.listener(|shell: &mut Self, _: &ToggleFind, window, cx| {
-                shell.last_panel = FocusedPanel::Chat;
-                shell
-                    .chat
-                    .update(cx, |pane, cx| pane.toggle_find(window, cx));
-            }))
             .on_action(
                 cx.listener(|shell: &mut Self, _: &RestartSession, window, cx| {
                     shell.restart_session(window, cx);

@@ -13,7 +13,7 @@ use super::composer::{Composer, ComposerEvent};
 use super::conversation::{Conversation, SessionPhase};
 use super::session::{ChatEvent, ChatSession};
 use super::transcript::{self, radius_tag};
-use super::viewport::{self, FindState, RunKind};
+use super::viewport::{self, RunKind};
 use gpui::prelude::FluentBuilder as _;
 use gpui::{Animation, AnimationExt as _};
 use gpui::{
@@ -24,7 +24,7 @@ use gpui::{
 use gpui_component::button::ButtonVariants as _;
 use gpui_component::dialog::{DialogClose, DialogFooter};
 use gpui_component::dock::{Panel, PanelControl, PanelEvent};
-use gpui_component::input::{Input, InputEvent, InputState};
+use gpui_component::input::InputEvent;
 use gpui_component::menu::{DropdownMenu as _, PopupMenuItem};
 use gpui_component::spinner::Spinner;
 use gpui_component::{ActiveTheme, Icon, IconName, Sizable as _, StyledExt, WindowExt as _};
@@ -254,13 +254,6 @@ pub struct ChatPane {
     conversations: HashMap<u64, Conversation>,
     active: Option<u64>,
     composer: Entity<Composer>,
-    /// The transcript find bar's query, and where in the hits it is.
-    ///
-    /// Per pane rather than per session: the bar is chrome over whichever
-    /// transcript is showing, and carrying a stale query across a session
-    /// switch would show hit counts for a conversation nobody is reading --
-    /// which is why every path that changes what is showing drops it.
-    find: Option<FindState>,
     /// This pane's window, so a turn ending can ask whether *this* window is
     /// the active one.
     ///
@@ -424,7 +417,6 @@ impl ChatPane {
                 conversations: HashMap::new(),
                 active: None,
                 composer,
-                find: None,
                 zoom: crate::zoom::Zoom::default(),
                 restart_armed: None,
                 window: window.window_handle(),
@@ -516,9 +508,6 @@ impl ChatPane {
     /// across the call sites, the find bar's reset was written once and the
     /// other two not at all.
     fn leave_shown_session(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        // The query is chrome over whichever transcript is showing; a hit count
-        // for a conversation nobody is reading is worse than no bar.
-        self.find = None;
         // An arming press only speaks for the conversation it was made on.
         self.restart_armed = None;
         // The composer is emptied *unconditionally*, so "no session showing"
@@ -863,11 +852,9 @@ impl ChatPane {
             self.restart_armed = None;
         }
         if self.active == Some(uid) {
+            // What the composer still holds is dropped by the next `show`,
+            // which treats an unaddressed draft as unaddressed.
             self.active = None;
-            // Nothing is showing for the bar to be searching. What the composer
-            // still holds is dropped by the next `show`, which treats an
-            // unaddressed draft as unaddressed.
-            self.find = None;
         }
         // The conversation just closed is the one most likely to be wanted back,
         // and until this read lands the menu still lists it as open.
@@ -1869,76 +1856,6 @@ impl ChatPane {
         }
     }
 
-    /// Open the find bar, or close it if it is already open.
-    pub fn toggle_find(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        match self.find.take() {
-            Some(_) => {}
-            None => {
-                let query =
-                    cx.new(|cx| InputState::new(window, cx).placeholder("Find in transcript…"));
-                cx.subscribe(&query, |pane: &mut Self, _, event: &InputEvent, cx| {
-                    if matches!(event, InputEvent::Change) {
-                        // A new query invalidates where we were in the old one.
-                        if let Some(find) = &mut pane.find {
-                            find.current = 0;
-                        }
-                        cx.notify();
-                    }
-                })
-                .detach();
-                query.focus_handle(cx).focus(window, cx);
-                self.find = Some(FindState::new(query));
-            }
-        }
-        cx.notify();
-    }
-
-    /// Step through the hits, wrapping, and scroll the new one into view.
-    /// `delta` is +1 / -1.
-    ///
-    /// Scrolling happens here and **not** while the query is being typed. Every
-    /// keystroke changes the hit list, so revealing on each one would drag the
-    /// transcript around under a user who is still deciding what to search for;
-    /// Next and Previous are the presses that mean "take me there".
-    fn step_find(&mut self, delta: isize, cx: &mut Context<Self>) {
-        let hits = self.matches(cx);
-        if hits.is_empty() {
-            return;
-        }
-        let Some(find) = &mut self.find else {
-            return;
-        };
-        let next = find.current as isize + delta;
-        find.current = next.rem_euclid(hits.len() as isize) as usize;
-        let target = hits[find.current].target;
-
-        // A hit inside a collapsed activity strip is one the user is told about
-        // and cannot see, so the strip that holds it opens. The run's position
-        // does not move: folding decides what a run draws, never how many runs
-        // there are.
-        if let Some(anchor) = self
-            .active_conversation()
-            .and_then(|conv| conv.viewport.reveal(target))
-            && let Some(session) = self.session()
-        {
-            session.update(cx, |session, cx| {
-                session.toggle_activity(anchor);
-                cx.notify();
-            });
-        }
-        cx.notify();
-    }
-
-    fn matches(&mut self, cx: &App) -> Vec<onehand_core::chat::TranscriptMatch> {
-        let Some(chat) = self.active_chat(cx) else {
-            return Vec::new();
-        };
-        let Some(find) = &mut self.find else {
-            return Vec::new();
-        };
-        find.matches(chat, cx)
-    }
-
     /// Write the whole conversation to a Markdown file.
     pub fn export(&mut self, cx: &mut Context<Self>) {
         let Some(chat) = self.active_chat(cx) else {
@@ -2772,19 +2689,6 @@ impl ChatPane {
                         })),
                 )
             })
-            // Only where there is a transcript to search. On the project page
-            // this would open a bar over a list of past conversations and report
-            // no matches for every word in them, which is a control that can
-            // only fail.
-            .when(live, |header| {
-                header.child(
-                    header_control("find", IconName::Search, cx)
-                        .tooltip("Find in this conversation")
-                        .on_click(cx.listener(|pane: &mut Self, _, window, cx| {
-                            pane.toggle_find(window, cx);
-                        })),
-                )
-            })
             // Only while a session is showing, and for a reason worth stating:
             // this is the same list the project page draws, and that page is
             // exactly what the centre of the window shows when there is no
@@ -3208,70 +3112,6 @@ impl ChatPane {
         .into_any_element()
     }
 
-    /// The find bar, when it is open.
-    fn find_bar(&mut self, cx: &mut Context<Self>) -> Option<impl IntoElement + use<>> {
-        let hits = self.matches(cx).len();
-        let find = self.find.as_mut()?;
-        // The transcript grows under an open bar, so the cursor is clamped
-        // against the live hit list rather than trusted from last frame.
-        if find.current >= hits {
-            find.current = 0;
-        }
-        let position = if hits == 0 {
-            "no matches".to_string()
-        } else {
-            format!("{} of {hits}", find.current + 1)
-        };
-        let query = find.query.clone();
-
-        Some(
-            div()
-                .h_flex()
-                .items_center()
-                .gap_2()
-                .w_full()
-                .px_4()
-                .py_2()
-                .border_b_1()
-                .border_color(cx.theme().border)
-                .child(div().flex_1().child(Input::new(&query)))
-                .child(
-                    div()
-                        .flex_none()
-                        .text_xs()
-                        .text_color(cx.theme().muted_foreground)
-                        .child(position),
-                )
-                .child(
-                    crate::controls::action("find-prev")
-                        .ghost()
-                        .xsmall()
-                        .icon(Icon::new(IconName::ChevronUp))
-                        .on_click(cx.listener(|pane: &mut Self, _, _, cx| {
-                            pane.step_find(-1, cx);
-                        })),
-                )
-                .child(
-                    crate::controls::action("find-next")
-                        .ghost()
-                        .xsmall()
-                        .icon(Icon::new(IconName::ChevronDown))
-                        .on_click(cx.listener(|pane: &mut Self, _, _, cx| {
-                            pane.step_find(1, cx);
-                        })),
-                )
-                .child(
-                    crate::controls::action("find-close")
-                        .ghost()
-                        .xsmall()
-                        .icon(Icon::new(IconName::Close))
-                        .on_click(cx.listener(|pane: &mut Self, _, window, cx| {
-                            pane.toggle_find(window, cx);
-                        })),
-                ),
-        )
-    }
-
     fn busy(&self, cx: &App) -> bool {
         self.active_chat(cx).is_some_and(|chat| chat.busy)
     }
@@ -3357,18 +3197,8 @@ impl ChatPane {
                     .iter()
                     .filter_map(|&target| {
                         viewport::item(chat, target).map(|item| {
-                            let find_emphasis =
-                                self.find.as_ref().and_then(|find| find.emphasis(target));
-                            transcript::item(
-                                session,
-                                item,
-                                target,
-                                find_emphasis,
-                                room.clone(),
-                                window,
-                                cx,
-                            )
-                            .into_any_element()
+                            transcript::item(session, item, target, room.clone(), window, cx)
+                                .into_any_element()
                         })
                     })
                     .collect()
@@ -3496,18 +3326,8 @@ impl ChatPane {
                     .iter()
                     .filter_map(|&target| {
                         viewport::item(chat, target).map(|item| {
-                            let find_emphasis =
-                                self.find.as_ref().and_then(|find| find.emphasis(target));
-                            transcript::item(
-                                session,
-                                item,
-                                target,
-                                find_emphasis,
-                                room.clone(),
-                                window,
-                                cx,
-                            )
-                            .into_any_element()
+                            transcript::item(session, item, target, room.clone(), window, cx)
+                                .into_any_element()
                         })
                     })
                     .collect()
@@ -4099,7 +3919,6 @@ impl ChatPane {
             .size_full()
             .v_flex()
             .child(self.header(cx))
-            .children(self.find_bar(cx).map(|bar| bar.into_any_element()))
             .child(
                 div()
                     .relative()

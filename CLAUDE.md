@@ -611,7 +611,7 @@ plus `sendMessage` and `answerCallbackQuery`. Everything that is not the wire is
   the permission mode on the right — left is the project, right is the turn. The branch is a
   control rather than a label, emitting `ChatPaneEvent::Project` so the shell opens the same menu
   the rail's project rows carry, branch rename included.
-- `pane.rs` — what the shell mounts: session switching, the resume picker, the project page, the find bar, unseen
+- `pane.rs` — what the shell mounts: session switching, the resume picker, the project page, unseen
   badges, and the run plan the virtualized list reads.
   **The transcript stops being drawn at the composer's middle** and fades into the surface over the
   last few lines before it (`SMOKE`): the overlay is transparent around its surfaces, so an unclipped
@@ -637,8 +637,8 @@ plus `sendMessage` and `answerCallbackQuery`. Everything that is not the wire is
   The two facts that menu needs — pinned, and whether it is a git repository — are pushed by
   `Shell::sync_project_facts` from the three moments either changes (arriving at a project, pinning
   one, a git sweep landing), and the arrival push must happen **after** `clear_active`, which builds
-  the page's state fresh and would throw an earlier one away. Find and *Close session* are the two
-  controls that go on that page, since neither has anything to act on; the terminal, the Workbench
+  the page's state fresh and would throw an earlier one away. *Close session* is the one control that
+  goes on that page, since it has nothing to act on; the terminal, the Workbench
   and the way back to a hidden rail stay, because all three are about the project and dropping the
   row took them away at the one moment there is no conversation to reach them from.
   **There is no status badge beside the name.** There was one — a pill with the rail's own
@@ -653,7 +653,7 @@ plus `sendMessage` and `answerCallbackQuery`. Everything that is not the wire is
   cost, taken deliberately; `Chat::activity_status` stays and still feeds the running line, the
   project page and the pane's own state.
   The right-hand end carries the row's controls (`ChatPane::header_control`, one builder so the call
-  sites cannot drift): find, the past-conversations menu, the terminal, the Workbench, the way back
+  sites cannot drift): the past-conversations menu, the terminal, the Workbench, the way back
   to a hidden rail, and last
   *Close session*, offered only while there is one. The terminal button carries a **dot in success ink
   at its corner while a shell is alive** — a child process outliving a closed dock is the one thing
@@ -691,7 +691,7 @@ plus `sendMessage` and `answerCallbackQuery`. Everything that is not the wire is
   conversation, and a session closing, which is when somebody is most likely to want it back.
 
 The **model** is core's (`onehand_core::chat`): `Chat` + `apply(AcpEvent)`, the conversation store, the
-find pass, and the activity-run rules. `ChatSession` derefs to it, which is what lets the whole
+Markdown export and the activity-run rules. `ChatSession` derefs to it, which is what lets the whole
 renderer read `chat.items` / `chat.busy` without knowing where the model lives.
 
 ### Workbench
@@ -1300,8 +1300,7 @@ centre is the chat, right dock the Workbench, bottom dock the terminal.
 
 App commands occupy an exact `Ctrl+Shift` namespace so plain Ctrl keys stay usable inside a PTY:
 `B` rail · `E` Workbench Editor, tree included · `M` Workbench Markdown ·
-`N` Workbench Neovim · `A` composer ·
-`F` find · `R` guarded restart ·
+`N` Workbench Neovim · `A` composer · `R` guarded restart ·
 `W` guarded close · `K` maximize. Plus `` Ctrl+` `` terminal, `Ctrl+S` save, `Ctrl+1…9` session by position, `Ctrl+Tab` session by recency,
 `Ctrl+=`/`Ctrl+-`/`Ctrl+0` zoom, and inside the composer `Up`/`Down` (its completion list) and
 `Ctrl+V` (an image or a file on the clipboard becomes an attachment; text is handed back to the input).
@@ -1509,6 +1508,15 @@ back is smaller than carrying a table that says the feature is wired up.
 
 Listed because a missing feature nobody wrote down reads as a bug in the ones that exist:
 
+- **There is no search in the transcript**, and the removal was deliberate rather than pending. It
+  matched whole *items* and never occurrences, so a word said ten times in one answer was one hit
+  with no mark on the word itself, and a hit in text a block had truncated was counted, scrolled to
+  and still not on screen. Worse, the two halves disagreed about what the transcript *is*: the pass
+  read the whole model while the render plan drops a parked permission or question, which are drawn
+  above the composer — so a query matching one was counted in "3 of 7" and Next moved the number and
+  nothing else. Rebuilding it means per-occurrence offsets through the markdown renderer, which is
+  the same span machinery a drag-selection across blocks would need; the two should be built
+  together or not at all.
 - **A lost adapter is reported by the rail's mark alone.** Nothing else on screen says it: the
   conversation header used to carry the same condition in words, and the badge that did went with
   everything else that row was saying twice. It is deliberately kept off the desktop too — an agent

@@ -9,11 +9,9 @@
 //! scroll at all, because nothing on either side could turn a hit into a row.
 
 use super::transcript;
-use gpui::{App, Entity, FollowMode, ListAlignment, ListOffset, ListState, Pixels, Window, px};
-use gpui_component::input::InputState;
+use gpui::{App, FollowMode, ListAlignment, ListOffset, ListState, Pixels, Window, px};
 use onehand_core::chat::{
-    ActivityGroup, Chat, ChatItem, RunOutcome, TranscriptItemId, TranscriptMatch, cluster_summary,
-    compute_matches, run_outcome,
+    ActivityGroup, Chat, ChatItem, RunOutcome, TranscriptItemId, cluster_summary, run_outcome,
 };
 
 /// One cluster of activity: the muted line, and what is under it once opened.
@@ -754,22 +752,6 @@ impl Viewport {
             .iter()
             .position(|run| run.members.contains(&target))
     }
-
-    /// Scroll `target`'s run into view, and return its anchor if that run is a
-    /// folded activity strip.
-    ///
-    /// The caller unfolds it. A hit counted as "3 of 7" that sits inside a
-    /// collapsed strip is a hit the user is told about and cannot see, and
-    /// unfolding does not move the run: folding changes what a run draws, never
-    /// how many runs there are, so the index scrolled to stays the right one.
-    pub fn reveal(&self, target: TranscriptItemId) -> Option<TranscriptItemId> {
-        let ix = self.run_of(target)?;
-        let run = &self.plan[ix];
-        if let Some((state, _)) = &self.list {
-            state.scroll_to_reveal_item(ix);
-        }
-        (run.strip.is_some() && !run.open).then(|| run.members[0])
-    }
 }
 
 /// Put a row closing every finished turn into `plan`.
@@ -975,74 +957,6 @@ pub fn item(chat: &Chat, target: TranscriptItemId) -> Option<&ChatItem> {
     match target {
         TranscriptItemId::History(i) => chat.history.get(i),
         TranscriptItemId::Live(i) => chat.items.get(i),
-    }
-}
-
-/// The find bar's state while it is open.
-pub struct FindState {
-    pub query: Entity<InputState>,
-    /// Index of the current hit. Clamped against the live hit list on render,
-    /// because the transcript can grow under an open find bar.
-    pub current: usize,
-    /// The last search and what it was a search of.
-    ///
-    /// The bar redraws its hit count every frame, and computing it reads every
-    /// item's searchable text -- the whole conversation, while the user is
-    /// mid-word in the query box.
-    ///
-    /// Keyed by the transcript's revision, which is the only key that is
-    /// honest: a match can appear inside an item that is already there, so a
-    /// key made of how many items there are would go on reporting the count
-    /// from before a streaming answer said the word being searched for.
-    cache: Option<Cached>,
-}
-
-struct Cached {
-    query: String,
-    revision: u64,
-    hits: Vec<TranscriptMatch>,
-}
-
-impl FindState {
-    pub fn new(query: Entity<InputState>) -> Self {
-        Self {
-            query,
-            current: 0,
-            cache: None,
-        }
-    }
-
-    /// Every item matching the current query.
-    pub fn matches(&mut self, chat: &Chat, cx: &App) -> Vec<TranscriptMatch> {
-        let query = self.query.read(cx).value().to_string();
-        let revision = chat.revision();
-
-        if let Some(cached) = &self.cache
-            && cached.query == query
-            && cached.revision == revision
-        {
-            return cached.hits.clone();
-        }
-
-        let hits = compute_matches(chat, &query);
-        self.cache = Some(Cached {
-            query,
-            revision,
-            hits: hits.clone(),
-        });
-        hits
-    }
-
-    /// How `target` participates in the current result set.
-    ///
-    /// The list renderer runs after the pane's main render has populated the
-    /// cache, so it can decorate visible rows without rescanning the entire
-    /// transcript once per row. `None` also covers an empty query and a cache
-    /// invalidated by a transcript update; the next pane render refreshes it.
-    pub fn emphasis(&self, target: TranscriptItemId) -> Option<bool> {
-        let cached = self.cache.as_ref()?;
-        let position = cached.hits.iter().position(|hit| hit.target == target)?;
-        Some(position == self.current)
     }
 }
 
