@@ -420,9 +420,10 @@ fn signal_hint(signal: SessionSignal) -> &'static str {
 /// What a signal is called where there is room for a name but not a sentence.
 ///
 /// Separate from [`signal_hint`], which is what to *do* about the state: a
-/// tooltip is read on purpose and can afford a clause, a badge is read in
-/// passing and can afford two words. Both live here so the rail's mark and the
-/// conversation header's badge cannot end up calling one condition two things.
+/// tooltip is read on purpose and can afford a clause, while this is read in
+/// passing and can afford two words. Both live here so no two readers of one
+/// condition can end up calling it two things -- today the remote bridge's
+/// session listing is the other one.
 pub(crate) fn signal_word(signal: SessionSignal) -> &'static str {
     match signal {
         SessionSignal::Lost => "Disconnected",
@@ -448,9 +449,11 @@ pub(crate) fn signal_word(signal: SessionSignal) -> &'static str {
 /// The tints follow the transcript's conventions, so the same colour means the
 /// same thing wherever it appears.
 ///
-/// Shared with the conversation header's badge, which says the same thing about
-/// the session on screen: two shapes for one condition would be a code with two
-/// spellings, and only one of them ever learned.
+/// **This is the only place a signal is drawn.** It was shared with a badge in
+/// the conversation header, which said the same thing about the session on
+/// screen; that badge is gone, and one consequence is worth knowing here -- a
+/// lost adapter is reported by this mark and nothing else, so a hidden rail
+/// leaves it reported nowhere.
 pub(crate) fn signal_mark(signal: SessionSignal, cx: &App) -> impl IntoElement + use<> {
     let hint = signal_hint(signal);
     let theme = cx.theme();
@@ -471,9 +474,9 @@ pub(crate) fn signal_mark(signal: SessionSignal, cx: &App) -> impl IntoElement +
         .map(|mark| match signal {
             // A plain dot, not a spinner: this is a state a row carries for
             // minutes at a time, and the only thing moving on an otherwise
-            // still rail pulls the eye for as long as it runs. The tooltip and
-            // the header's badge say "Working" in words; the dot only has to
-            // say the row is not idle.
+            // still rail pulls the eye for as long as it runs. The tooltip
+            // says "Working" in words and so does the running line at the foot
+            // of the transcript; the dot only has to say the row is not idle.
             SessionSignal::Busy => mark.child(dot(warning)),
             // The shape this app already uses for "something is wrong".
             SessionSignal::Lost => mark.child(
@@ -1291,28 +1294,35 @@ pub fn rail(
         // collapse the rail at all, it hides it.
         .collapsible(SidebarCollapsible::None)
         .w_full()
-        // **The docks' surface, asked for by name rather than through the
-        // sidebar token.** The rail sat on the reading surface, separated from
-        // the conversation by the hairline down its edge alone; with both docks
-        // now drawn a step off that surface it was the one piece of chrome still
-        // pretending to be a place text is read.
+        // **The well, asked for by name rather than through the sidebar
+        // token.** The rail sat on the reading surface for a while, separated
+        // from the conversation by the hairline down its edge alone -- the one
+        // piece of chrome in the window still dressed as a place text is read.
         //
-        // Set here and not in the ramp because `chrome` is derived from two of
-        // the ramp's own steps at the moment it is asked, while the ramp writes
-        // fixed values into token names -- so a token carrying it would be a
-        // second spelling of one answer, and the two would drift the first time
-        // either end moved. The library applies the caller's refinement after
-        // its own `bg`, which is what lets this win.
+        // The well, asked for here rather than left to the library's own
+        // `sidebar` token: that token ships with a value of its own and the ramp
+        // writes the reading surface into it, so the panel would come up level
+        // with the conversation beside it. The library applies the caller's
+        // refinement after its own `bg`, which is what lets this win.
+        //
+        // **The rail is the only panel in the window still lifted off the
+        // reading surface**, and it is the only one that is not about the work:
+        // a workspace, its projects, its sessions. The two dock cards used to
+        // take the same step, which made lifted mean nothing more precise than
+        // "not the conversation", and with both docks open left the conversation
+        // as the one region on screen that nothing had raised. They are flat on
+        // the reading surface now, marked by their borders, so this step says
+        // what it always meant to.
         //
         // Nothing else about the rail moves with it: `sidebar_accent` and the
         // selected fill are both well clear of this step in either palette, so a
         // hovered row and a marked one still read.
-        .bg(crate::theme::chrome(cx))
+        .bg(cx.theme().muted)
         // **No line down the rail's edge, because the fill is the edge.**
         // `Sidebar` draws a 1px right border of its own and this turns it off:
-        // the rail is on the chrome surface and the conversation beside it is
-        // on the reading surface, and a surface that changes at a seam already
-        // says where the seam is. Ruled as well, it was a line drawn along a
+        // the rail is on the well and the conversation beside it is on the
+        // reading surface, and a surface that changes at a seam already says
+        // where the seam is. Ruled as well, it was a line drawn along a
         // boundary that was not in doubt.
         //
         // **What makes that safe to say is a number rather than a taste**: those
@@ -1811,7 +1821,7 @@ fn tab_bar(active: RailTab, cx: &mut Context<Shell>) -> impl IntoElement + use<>
     //
     // It was `background`, on the reasoning that a raised plate is drawn in the
     // surface the control sits on -- which was true while the rail was drawn in
-    // that surface too. The rail is on the chrome step now, so the plate became
+    // that surface too. The rail is drawn in the well now, so the plate became
     // the one thing in the window painted a step *below* what it sits on: a hole
     // rather than a plate, and at this size the shadow under it is not enough to
     // say which.

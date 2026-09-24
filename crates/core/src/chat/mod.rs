@@ -9,7 +9,7 @@
 
 pub mod activity;
 pub mod attention;
-pub mod find;
+mod export;
 pub mod model;
 pub mod steps;
 pub mod store;
@@ -18,7 +18,7 @@ pub use activity::{
     first_line_trunc, group, presentation, ActivityGroup, ActivityKind, Presentation,
 };
 pub use attention::{Attention, Presence, Telling};
-pub use find::{compute_matches, export_markdown, item_search_text, TranscriptMatch};
+pub use export::export_markdown;
 pub use model::{
     ApplyOutcome, AskItem, AskRow, Away, Chat, ChatItem, Link, Md, MdId, NoticeLevel, PermItem,
     PlanItem, QueuedPrompt, Selector, SelectorChoice, SubmitBlock, TermView, Thought, ToolItem,

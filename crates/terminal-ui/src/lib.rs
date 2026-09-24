@@ -140,12 +140,13 @@ impl TerminalThemeKey {
         Self {
             dark: theme.mode.is_dark(),
             colors: [
-                // The well, which is half of the chrome step the panels hand in
-                // as the grid's surface -- the reading surface below being the
-                // other half, and already here. Neither is read in this file;
-                // they are watched because a key blind to one of them would let
-                // every live grid keep painting the old surface after a change
-                // that moved only that one.
+                // The well, and then the reading surface -- which is the one
+                // the panels currently hand in as the grid's surface, the well
+                // being what they handed in before and what they would hand in
+                // if that answer moved again. Neither is read in this file; they
+                // are watched because a key blind to either would let every live
+                // grid keep painting the old surface after a change that moved
+                // only that one.
                 theme.muted,
                 theme.background,
                 theme.foreground,
@@ -360,9 +361,9 @@ pub fn spawn_pty(
 /// about the panel rather than about the palette: a grid fills every cell it has
 /// not been told otherwise about with its default background, so that value has
 /// to be the one the panel around it is drawn in or the shell sits in a
-/// rectangle of a different shade. Both callers hand it the chrome step, which
-/// is what their panels use; the parameter is there so neither has to guess what
-/// the other did.
+/// rectangle of a different shade. Both callers hand it whatever their own card
+/// is drawn in, through one function so the two cannot answer differently; the
+/// parameter is there so neither has to guess what the other did.
 ///
 /// It is the *black* half of the ANSI pair in a dark palette, too, and
 /// deliberately still is: a program asking for black means "the background",

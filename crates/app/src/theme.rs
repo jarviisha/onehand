@@ -35,11 +35,16 @@ use std::rc::Rc;
 /// name the guard against using a raw status fill as text points at.
 pub(crate) use onehand_plugin_host::status_ink;
 
-/// The chrome surface is the plugin host's for the same reason, and named
-/// through this module for the same one: the Neovim mode hands it to a terminal
-/// grid as that grid's background, and a second copy of the answer is a panel
-/// and the shell inside it disagreeing about what colour the panel is.
-pub(crate) use onehand_plugin_host::chrome;
+/// The surface a dock panel's card draws on is the plugin host's for the same
+/// reason, and named through this module for the same one: the Neovim mode
+/// hands it to a terminal grid as that grid's background, and a second copy of
+/// the answer is a panel and the shell inside it disagreeing about what colour
+/// the panel is.
+///
+/// It was called `chrome` while it was a step off the reading surface. It is
+/// that surface now, so the word had come to name the opposite of what the
+/// function returns -- and its own first line said so.
+pub(crate) use onehand_plugin_host::dock_surface;
 
 /// One mode's surfaces, and the ink that has to be legible on each.
 ///
@@ -187,11 +192,12 @@ fn paint(colors: &mut ThemeConfigColors, ramp: &Ramp) {
     // Written from the steps already named rather than added to the `Ramp`,
     // because none of them is a new step:
     //
-    // - The rail's own fill is no longer this: it asks for the chrome step by
-    //   name at its call site, the way the two docks do, because that is one
-    //   answer with one spelling and a token carrying it would be a second.
-    //   What this token still decides is the fallback for anything in the
-    //   library that reads it without going through the rail.
+    // - The rail's own fill is no longer this: it names the well at its call
+    //   site, because this token is the reading surface and the library applies
+    //   it before the caller's refinement, so left alone it would bring the
+    //   panel up level with the conversation beside it. What this token still
+    //   decides is the fallback for anything in the library that reads it
+    //   without going through the rail.
     // - Its ink is the ramp's quiet ink. A rail row is a name to aim at, not a
     //   sentence to read, and at prose strength a column of thirty of them
     //   out-shouted the conversation they exist to get you to.
@@ -465,10 +471,10 @@ mod tests {
             theme.background,
             STEP,
         );
-        // The rail is drawn in the well (`onehand_plugin_host::chrome`), so its
-        // marked row is measured against *that* and not against the reading
-        // surface. Both of these have been wrong: the fill was invisible when it
-        // was `hover`, and shouted when it was the reading surface.
+        // The rail is drawn in the well, so its marked row is measured against
+        // *that* and not against the reading surface. Both of these have been
+        // wrong: the fill was invisible when it was `hover`, and shouted when it
+        // was the reading surface.
         check(
             "a marked row against the rail it sits in",
             theme.sidebar_accent,

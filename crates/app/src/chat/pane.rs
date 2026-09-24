@@ -5,15 +5,15 @@
 //! showing and draws it, and what belongs to a single session lives on that
 //! session rather than here. Switching is a lookup, not a save/restore.
 //!
-//! What is left at this level is chrome — the composer widget, the find bar,
-//! the zoom, the window handle — plus the one question the pane alone can
-//! answer, which is which conversation the user is looking at.
+//! What is left at this level is chrome — the composer widget, the zoom, the
+//! window handle — plus the one question the pane alone can answer, which is
+//! which conversation the user is looking at.
 
 use super::composer::{Composer, ComposerEvent};
 use super::conversation::{Conversation, SessionPhase};
 use super::session::{ChatEvent, ChatSession};
 use super::transcript::{self, radius_tag};
-use super::viewport::{self, FindState, RunKind};
+use super::viewport::{self, RunKind};
 use gpui::prelude::FluentBuilder as _;
 use gpui::{Animation, AnimationExt as _};
 use gpui::{
@@ -24,7 +24,7 @@ use gpui::{
 use gpui_component::button::ButtonVariants as _;
 use gpui_component::dialog::{DialogClose, DialogFooter};
 use gpui_component::dock::{Panel, PanelControl, PanelEvent};
-use gpui_component::input::{Input, InputEvent, InputState};
+use gpui_component::input::InputEvent;
 use gpui_component::menu::{DropdownMenu as _, PopupMenuItem};
 use gpui_component::spinner::Spinner;
 use gpui_component::{ActiveTheme, Icon, IconName, Sizable as _, StyledExt, WindowExt as _};
@@ -80,6 +80,18 @@ const JUMP_PILL_H: Rems = rems(1.625);
 /// The conversation header, which is the one row in the panel that never
 /// scrolls and so the edge every other measurement here is taken from.
 const HEADER_H: Rems = rems(2.75);
+/// How little of the conversation's name the header will settle for before it
+/// stops taking room from it.
+///
+/// The controls at the other end are icon buttons at a fixed size and nothing
+/// asks them to shrink, so before this floor existed the name was the only
+/// thing in the row that could give way, and it gave way all of it: a panel
+/// dragged narrow left six icons and an ellipsis where the conversation used to
+/// be named. Below this the row is simply
+/// narrower than its own furniture and the controls clip again, which is the
+/// trade taken on purpose: a name cut to two characters names nothing, while a
+/// panel this narrow has already stopped being a place a conversation is read.
+const HEADER_NAME_MIN: Rems = rems(8.);
 /// The narrower cap the composer and the surfaces that belong to it take.
 ///
 /// **A message being written is not a message being read.** The transcript's
@@ -242,13 +254,6 @@ pub struct ChatPane {
     conversations: HashMap<u64, Conversation>,
     active: Option<u64>,
     composer: Entity<Composer>,
-    /// The transcript find bar's query, and where in the hits it is.
-    ///
-    /// Per pane rather than per session: the bar is chrome over whichever
-    /// transcript is showing, and carrying a stale query across a session
-    /// switch would show hit counts for a conversation nobody is reading --
-    /// which is why every path that changes what is showing drops it.
-    find: Option<FindState>,
     /// This pane's window, so a turn ending can ask whether *this* window is
     /// the active one.
     ///
@@ -412,7 +417,6 @@ impl ChatPane {
                 conversations: HashMap::new(),
                 active: None,
                 composer,
-                find: None,
                 zoom: crate::zoom::Zoom::default(),
                 restart_armed: None,
                 window: window.window_handle(),
@@ -499,14 +503,11 @@ impl ChatPane {
 
     /// Put down everything that belonged to the session leaving the screen.
     ///
-    /// One place, because these three are the same rule wearing three hats:
+    /// One place, because both of these are the same rule wearing two hats:
     /// each is pane-level state whose meaning is a single conversation. Spread
-    /// across the call sites, the find bar's reset was written once and the
-    /// other two not at all.
+    /// across the call sites they were written at some of them and not others,
+    /// which is a session opening onto the previous one's half-typed prompt.
     fn leave_shown_session(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        // The query is chrome over whichever transcript is showing; a hit count
-        // for a conversation nobody is reading is worse than no bar.
-        self.find = None;
         // An arming press only speaks for the conversation it was made on.
         self.restart_armed = None;
         // The composer is emptied *unconditionally*, so "no session showing"
@@ -851,11 +852,9 @@ impl ChatPane {
             self.restart_armed = None;
         }
         if self.active == Some(uid) {
+            // What the composer still holds is dropped by the next `show`,
+            // which treats an unaddressed draft as unaddressed.
             self.active = None;
-            // Nothing is showing for the bar to be searching. What the composer
-            // still holds is dropped by the next `show`, which treats an
-            // unaddressed draft as unaddressed.
-            self.find = None;
         }
         // The conversation just closed is the one most likely to be wanted back,
         // and until this read lands the menu still lists it as open.
@@ -1857,76 +1856,6 @@ impl ChatPane {
         }
     }
 
-    /// Open the find bar, or close it if it is already open.
-    pub fn toggle_find(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        match self.find.take() {
-            Some(_) => {}
-            None => {
-                let query =
-                    cx.new(|cx| InputState::new(window, cx).placeholder("Find in transcript…"));
-                cx.subscribe(&query, |pane: &mut Self, _, event: &InputEvent, cx| {
-                    if matches!(event, InputEvent::Change) {
-                        // A new query invalidates where we were in the old one.
-                        if let Some(find) = &mut pane.find {
-                            find.current = 0;
-                        }
-                        cx.notify();
-                    }
-                })
-                .detach();
-                query.focus_handle(cx).focus(window, cx);
-                self.find = Some(FindState::new(query));
-            }
-        }
-        cx.notify();
-    }
-
-    /// Step through the hits, wrapping, and scroll the new one into view.
-    /// `delta` is +1 / -1.
-    ///
-    /// Scrolling happens here and **not** while the query is being typed. Every
-    /// keystroke changes the hit list, so revealing on each one would drag the
-    /// transcript around under a user who is still deciding what to search for;
-    /// Next and Previous are the presses that mean "take me there".
-    fn step_find(&mut self, delta: isize, cx: &mut Context<Self>) {
-        let hits = self.matches(cx);
-        if hits.is_empty() {
-            return;
-        }
-        let Some(find) = &mut self.find else {
-            return;
-        };
-        let next = find.current as isize + delta;
-        find.current = next.rem_euclid(hits.len() as isize) as usize;
-        let target = hits[find.current].target;
-
-        // A hit inside a collapsed activity strip is one the user is told about
-        // and cannot see, so the strip that holds it opens. The run's position
-        // does not move: folding decides what a run draws, never how many runs
-        // there are.
-        if let Some(anchor) = self
-            .active_conversation()
-            .and_then(|conv| conv.viewport.reveal(target))
-            && let Some(session) = self.session()
-        {
-            session.update(cx, |session, cx| {
-                session.toggle_activity(anchor);
-                cx.notify();
-            });
-        }
-        cx.notify();
-    }
-
-    fn matches(&mut self, cx: &App) -> Vec<onehand_core::chat::TranscriptMatch> {
-        let Some(chat) = self.active_chat(cx) else {
-            return Vec::new();
-        };
-        let Some(find) = &mut self.find else {
-            return Vec::new();
-        };
-        find.matches(chat, cx)
-    }
-
     /// Write the whole conversation to a Markdown file.
     pub fn export(&mut self, cx: &mut Context<Self>) {
         let Some(chat) = self.active_chat(cx) else {
@@ -2657,7 +2586,7 @@ impl ChatPane {
     ///
     /// Separate from the composer's row because the two answer different
     /// questions. The composer's controls are about the message being written —
-    /// what to attach, which mode to send it in, whether to send it at all. Find,
+    /// what to attach, which mode to send it in, whether to send it at all.
     /// Export, Restart and Close are about the conversation as a whole, and
     /// mixing them into one row of seven buttons made every one of them equally
     /// easy to hit by accident.
@@ -2669,8 +2598,9 @@ impl ChatPane {
     /// keystroke is a route only someone who already knows it can take.
     ///
     /// **The name carries the conversation's own menu**, and the right-hand end
-    /// carries only what is about the *window*: find, and the way back to the
-    /// Workbench. That split is why there is no ••• here any more — a menu button
+    /// carries what is about the *window*: the way back to a hidden rail, the
+    /// past conversations, the two docks, and last, closing the session. That
+    /// split is why there is no ••• here any more — a menu button
     /// beside the name it acts on says nothing the name could not say itself, and
     /// the things in it were all things done to the conversation the name is.
     fn header(&self, cx: &mut Context<Self>) -> impl IntoElement + use<> {
@@ -2681,30 +2611,7 @@ impl ChatPane {
                 .map(|project| project.label.to_string())
                 .unwrap_or_default()
         });
-        // Nothing while a live thought or a running tool is already saying it:
-        // the status line answers "is anything happening", and repeating what
-        // the block above says is noise, not reassurance.
-        let status = chat.and_then(Chat::activity_status);
         let busy = chat.is_some_and(|chat| chat.busy);
-        let signal = self.active.and_then(|uid| self.signal(uid, cx));
-        // What the badge says, or nothing at all.
-        //
-        // **Two sources, in this order.** The activity status is the specific
-        // sentence -- which agent is being connected to, that approval is what
-        // is being waited on -- so it wins wherever there is one. Where there is
-        // not, a signal that is *not* busy still has something to say, and
-        // saying it here is new: a dead adapter used to leave this header
-        // silent, with only the rail's small triangle to notice. Busy with no
-        // status is the case that stays silent on purpose, because it means the
-        // transcript's own last block is already spelling out what is running.
-        let badge = match (status, signal) {
-            (Some(text), signal) => Some((signal, SharedString::from(text))),
-            (None, Some(signal)) if !matches!(signal, SessionSignal::Busy) => Some((
-                Some(signal),
-                SharedString::from(crate::rail::signal_word(signal)),
-            )),
-            _ => None,
-        };
         // A conversation the agent has not named yet has no directory to remove:
         // nothing is written until the first turn ends. The menu says so by
         // refusing rather than by hiding the entry, which would make the whole
@@ -2744,8 +2651,29 @@ impl ChatPane {
             // in while scrolling -- and the fade at the other end of the list is
             // the answer that shape of problem actually takes.
             .text_color(cx.theme().muted_foreground)
-            .child(self.title_control(title, busy, archive, cx))
-            .children(badge.map(|(signal, text)| status_badge(signal, text, cx)))
+            // **The name gives way before the controls do, and it stops at a
+            // floor.** What held the whole row open was the library drawing a
+            // button's label in a `flex_none` box with nothing to ellipsize it:
+            // the button could shrink and its label could not, so the name kept
+            // its full width and what went over the right edge was every control
+            // after it, the archive menu through *Close session*, clipped with nothing
+            // on screen to say they were there. A truncating child in place of
+            // the label is the whole of the fix, since a name half-read still
+            // names the conversation while a button that is not drawn cannot be
+            // pressed.
+            //
+            // The floor is the other half of that, and it was learnt the hard
+            // way: with the name as the only thing in the row able to give, it
+            // gave all of it, and a narrow panel came out as six icons over an
+            // ellipsis. `HEADER_NAME_MIN` is where the taking stops.
+            .child(
+                div()
+                    .h_flex()
+                    .items_center()
+                    .flex_initial()
+                    .min_w(HEADER_NAME_MIN)
+                    .child(self.title_control(title, busy, archive, cx)),
+            )
             .child(div().flex_1())
             // Hiding the rail must not be a one-way door: with it gone there is
             // no workspace name, no project list and no session list, and the
@@ -2762,19 +2690,6 @@ impl ChatPane {
                         })),
                 )
             })
-            // Only where there is a transcript to search. On the project page
-            // this would open a bar over a list of past conversations and report
-            // no matches for every word in them, which is a control that can
-            // only fail.
-            .when(live, |header| {
-                header.child(
-                    header_control("find", IconName::Search, cx)
-                        .tooltip("Find in this conversation")
-                        .on_click(cx.listener(|pane: &mut Self, _, window, cx| {
-                            pane.toggle_find(window, cx);
-                        })),
-                )
-            })
             // Only while a session is showing, and for a reason worth stating:
             // this is the same list the project page draws, and that page is
             // exactly what the centre of the window shows when there is no
@@ -2784,18 +2699,30 @@ impl ChatPane {
             // Beside the Workbench button: both are docks this panel is
             // sitting between, and a closed one leaves nothing on screen at all
             // -- no edge, no strip, no name -- so the route to it belongs with
-            // the panel that took the space. Which mode it opens on and whether
-            // a second press closes it are the shell's rules.
+            // the panel that took the space. Both are a plain open-or-close and
+            // not the three-state rule their keys follow, which is the shell's
+            // to apply: a key has one binding and no other way to reach an open
+            // panel, while a button can see the dock and is pressed with the
+            // caret back in the composer.
             .child(self.terminal_control(cx))
             // The Workbench closed leaves nothing on screen at all -- no strip,
             // no edge, no name -- so without this the file tree and the editor
             // exist only for someone who remembers two keystrokes. Offered from
-            // here rather than done here: which mode it opens on and whether a
-            // second press closes it are the shell's rules, and the chat has no
-            // business knowing a dock is where the Workbench lives.
+            // here rather than done here: which mode it opens on, and closing it
+            // rather than focusing it, are both the shell's rules, and the chat
+            // has no business knowing a dock is where the Workbench lives.
             .child(
                 header_control("workbench", IconName::PanelRight, cx)
-                    .tooltip("Show the Workbench")
+                    // **Both directions, because the button does both.** It
+                    // said "Show the Workbench" while it was a three-state
+                    // control that could only ever open from here, and kept
+                    // saying it after it became a plain toggle -- so the one
+                    // press a user most wants named, the one that puts the
+                    // panel away, was the press the tooltip denied existed.
+                    // Which way it will go this time is not said, since that
+                    // needs a dock fact pushed down here and the panel on
+                    // screen already answers it.
+                    .tooltip("Show or hide the Workbench")
                     .on_click(cx.listener(|_: &mut Self, _, _, cx| {
                         cx.emit(ChatPaneEvent::ToggleWorkbench);
                     })),
@@ -2985,8 +2912,14 @@ impl ChatPane {
             .flex_none()
             .child(
                 header_control("terminal", IconName::SquareTerminal, cx)
+                    // What it says is about the *shell*, which is the fact
+                    // this pane is pushed and the one the icon cannot carry.
+                    // Which way the press will go is left out for the reason
+                    // the Workbench's is: the panel on screen answers it, and
+                    // saying it would need a second fact pushed down here to
+                    // keep in step.
                     .tooltip(if live {
-                        "A shell is running here — show the terminal"
+                        "A shell is running here — show or hide the terminal"
                     } else {
                         "Open a shell in this project"
                     })
@@ -3044,7 +2977,7 @@ impl ChatPane {
             .font_semibold()
             .child(title.clone());
         if !live && project.is_none() {
-            return div().flex_none().min_w_0().child(name).into_any_element();
+            return div().min_w_0().child(name).into_any_element();
         }
         let project = project.map(|project| (project.pinned, project.is_repo));
 
@@ -3056,13 +2989,43 @@ impl ChatPane {
             .h_flex()
             .items_center()
             .gap_1()
+            // **These two are what make the name give way, and they do reach
+            // the button.** The component sets `flex_shrink_0` on its own root,
+            // but it clones the call site's refinement before that and refines
+            // the root with it again afterwards (`button/button.rs:499`, `:526`
+            // and `:607`) -- and refining writes every `Some` of the later
+            // refinement over the earlier one, so `flex_initial`'s
+            // `flex_shrink: Some(1.)` is what survives.
+            //
+            // Worth spelling out because the opposite was believed here for a
+            // while, and a `max_w_full` was added to work around a constraint
+            // that was never in force. Nothing else about the button changed
+            // when it came back out.
             .flex_initial()
             .min_w_0()
             .overflow_hidden()
             .px_1p5()
             .py_0p5()
             .rounded(radius)
-            .label(title)
+            // A child and not `.label()`, because the library draws a label
+            // `flex_none` with nothing to ellipsize it, so the name kept its full
+            // width inside a button that had just been told to give way.
+            // **No line height of its own**, although the library's own label
+            // pins one at exactly the font size. It can afford to: its label
+            // does not clip, so a descender simply hangs out of the line box.
+            // This one has `truncate` on it for the ellipsis, and that brings
+            // `overflow_hidden` with it -- which turns the same line box into a
+            // blade and takes the foot off every `g`, `y` and `đ` in the name.
+            // The button's height is fixed and its contents are centred, so
+            // there is nothing for a taller line box to push around.
+            //
+            // **What this costs is the button's accessible name**, and there is
+            // no way to pay it back through this component: the library builds
+            // that name out of `label` alone, and the only setter for it is an
+            // inherent method on the base button it keeps in a private field.
+            // Putting the name back means not using this component for the
+            // title at all.
+            .child(div().min_w_0().truncate().child(title))
             .dropdown_caret(true)
             .text_color(cx.theme().foreground)
             .font_semibold();
@@ -3172,70 +3135,6 @@ impl ChatPane {
         .into_any_element()
     }
 
-    /// The find bar, when it is open.
-    fn find_bar(&mut self, cx: &mut Context<Self>) -> Option<impl IntoElement + use<>> {
-        let hits = self.matches(cx).len();
-        let find = self.find.as_mut()?;
-        // The transcript grows under an open bar, so the cursor is clamped
-        // against the live hit list rather than trusted from last frame.
-        if find.current >= hits {
-            find.current = 0;
-        }
-        let position = if hits == 0 {
-            "no matches".to_string()
-        } else {
-            format!("{} of {hits}", find.current + 1)
-        };
-        let query = find.query.clone();
-
-        Some(
-            div()
-                .h_flex()
-                .items_center()
-                .gap_2()
-                .w_full()
-                .px_4()
-                .py_2()
-                .border_b_1()
-                .border_color(cx.theme().border)
-                .child(div().flex_1().child(Input::new(&query)))
-                .child(
-                    div()
-                        .flex_none()
-                        .text_xs()
-                        .text_color(cx.theme().muted_foreground)
-                        .child(position),
-                )
-                .child(
-                    crate::controls::action("find-prev")
-                        .ghost()
-                        .xsmall()
-                        .icon(Icon::new(IconName::ChevronUp))
-                        .on_click(cx.listener(|pane: &mut Self, _, _, cx| {
-                            pane.step_find(-1, cx);
-                        })),
-                )
-                .child(
-                    crate::controls::action("find-next")
-                        .ghost()
-                        .xsmall()
-                        .icon(Icon::new(IconName::ChevronDown))
-                        .on_click(cx.listener(|pane: &mut Self, _, _, cx| {
-                            pane.step_find(1, cx);
-                        })),
-                )
-                .child(
-                    crate::controls::action("find-close")
-                        .ghost()
-                        .xsmall()
-                        .icon(Icon::new(IconName::Close))
-                        .on_click(cx.listener(|pane: &mut Self, _, window, cx| {
-                            pane.toggle_find(window, cx);
-                        })),
-                ),
-        )
-    }
-
     fn busy(&self, cx: &App) -> bool {
         self.active_chat(cx).is_some_and(|chat| chat.busy)
     }
@@ -3321,18 +3220,8 @@ impl ChatPane {
                     .iter()
                     .filter_map(|&target| {
                         viewport::item(chat, target).map(|item| {
-                            let find_emphasis =
-                                self.find.as_ref().and_then(|find| find.emphasis(target));
-                            transcript::item(
-                                session,
-                                item,
-                                target,
-                                find_emphasis,
-                                room.clone(),
-                                window,
-                                cx,
-                            )
-                            .into_any_element()
+                            transcript::item(session, item, target, room.clone(), window, cx)
+                                .into_any_element()
                         })
                     })
                     .collect()
@@ -3460,18 +3349,8 @@ impl ChatPane {
                     .iter()
                     .filter_map(|&target| {
                         viewport::item(chat, target).map(|item| {
-                            let find_emphasis =
-                                self.find.as_ref().and_then(|find| find.emphasis(target));
-                            transcript::item(
-                                session,
-                                item,
-                                target,
-                                find_emphasis,
-                                room.clone(),
-                                window,
-                                cx,
-                            )
-                            .into_any_element()
+                            transcript::item(session, item, target, room.clone(), window, cx)
+                                .into_any_element()
                         })
                     })
                     .collect()
@@ -3755,21 +3634,29 @@ pub enum ChatPaneEvent {
     /// window's chrome, and a dock panel has no business reaching outside the
     /// dock to draw it.
     ShowRail,
-    /// The Workbench is closed and the user asked for it.
+    /// The user pressed the Workbench button in the conversation's header.
     ///
     /// Announced rather than acted on for the same reason as the rail: the
     /// Workbench is a dock, the dock is the window's arrangement, and the panel
     /// sitting in the middle of it does not get to rearrange the window. It
-    /// also does not know the three-state rule the keystroke follows — which
-    /// mode to open on, and that a press while it is open and focused closes
-    /// it — and two places deciding that would drift apart.
-    ToggleWorkbench,
-    /// The terminal dock is closed and the user asked for it.
+    /// also does not know which mode the Workbench would come back on, and two
+    /// places deciding that would drift apart.
     ///
-    /// Announced rather than acted on for exactly the reasons above: the dock is
-    /// the window's arrangement, and whether it opens, focuses or closes on this
-    /// press is the same three-state rule `Ctrl+Shift+\`` follows — one place
-    /// decides it or the two drift apart.
+    /// **Open or closed, and not the third state the key has.** A key has one
+    /// binding to serve every case, so an open-but-unfocused panel is focused
+    /// rather than closed -- there is nothing else to reach it with. A button
+    /// can see the dock, and the caret when it is pressed is almost always back
+    /// in the composer, so the third state made the first press do nothing a
+    /// presser could see.
+    ToggleWorkbench,
+    /// The user pressed the terminal button in the conversation's header.
+    ///
+    /// Announced rather than acted on for exactly the reasons above, and open
+    /// or closed for the same one -- with one condition of its own: an open
+    /// dock holding no shell is opened *into* rather than closed, because that
+    /// is what closing the last tab leaves and the press there means "start
+    /// one". The key is `` Ctrl+` ``, unshifted, because the shifted form
+    /// cannot be typed.
     ToggleTerminal,
     /// Restart the agent on the conversation showing.
     ///
@@ -4063,7 +3950,6 @@ impl ChatPane {
             .size_full()
             .v_flex()
             .child(self.header(cx))
-            .children(self.find_bar(cx).map(|bar| bar.into_any_element()))
             .child(
                 div()
                     .relative()
@@ -4861,52 +4747,6 @@ struct HistoryRow {
     dir: PathBuf,
 }
 
-/// How wide the header's status badge may get.
-///
-/// In rems, like every other size here, so it scales with the panel's own zoom.
-/// The badge sits between the conversation's name and the row's controls and is
-/// the least important of the three: what it says is either already visible in
-/// the transcript or is a state the rail is marking too, so it truncates rather
-/// than pushing either of its neighbours around.
-const BADGE_MAX_W: f32 = 14.;
-
-/// What the session is doing, beside the name of the conversation doing it.
-///
-/// **A pill, not a line of grey text.** It used to be exactly that -- the same
-/// muted ink as the header around it, at the same weight, so "Connecting to
-/// Claude Code…" read as part of the title rather than as a state that would go
-/// away. A filled shape with an edge is what separates the two: the name is ink
-/// on the surface, this is a thing sitting on it.
-///
-/// **The mark is the rail's own** ([`crate::rail::signal_mark`]), so one
-/// condition keeps one shape everywhere it appears -- a spinner for a turn in
-/// flight, a triangle for a lost adapter, a dot for a parked question -- and it
-/// brings its own tooltip with it. The colour lives in the mark and the words
-/// stay muted: tinting the whole badge would make a routine "Working…" as loud
-/// as a dead agent.
-fn status_badge(
-    signal: Option<SessionSignal>,
-    text: SharedString,
-    cx: &App,
-) -> impl IntoElement + use<> {
-    div()
-        .flex_initial()
-        .h_flex()
-        .items_center()
-        .gap_1p5()
-        .max_w(rems(BADGE_MAX_W))
-        .px_2()
-        .py_0p5()
-        .rounded_full()
-        .bg(cx.theme().muted)
-        .border_1()
-        .border_color(cx.theme().border)
-        .text_xs()
-        .text_color(cx.theme().muted_foreground)
-        .children(signal.map(|signal| crate::rail::signal_mark(signal, cx)))
-        .child(div().min_w_0().truncate().child(text))
-}
-
 #[cfg(test)]
 mod tests {
     use super::{
@@ -5140,7 +4980,7 @@ mod tests {
 
     /// Re-selecting the session already on screen is not a switch. It happens
     /// on every rail click and on every window activation, so treating it as
-    /// one would throw the find bar away while the user was typing in it.
+    /// one would stash the draft out from under somebody still typing it.
     #[test]
     fn reselecting_the_shown_session_changes_nothing() {
         assert!(!switching_away(Some(7), 7));

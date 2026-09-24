@@ -487,11 +487,12 @@ impl Render for Workbench {
                     .border_1()
                     .border_color(cx.theme().border)
                     .rounded(cx.theme().radius_lg)
-                    // The chrome surface, which is what the outline and the gap
-                    // cannot say by themselves: that this panel is *about* the
-                    // work rather than part of it. The terminal takes the same
-                    // step, both through one function so the two cannot drift.
-                    .bg(crate::theme::chrome(cx))
+                    // The surface a dock card draws on, which is the reading
+                    // surface -- so this fill says nothing the border above it
+                    // does not, and is here to stop the panel inheriting
+                    // whatever is behind it. The terminal takes the same answer,
+                    // both through one function so the two cannot drift.
+                    .bg(crate::theme::dock_surface(cx))
                     // `overflow_hidden` is what the rounding needs: the strip's
                     // hairline runs the full width and the file tree's own
                     // border runs the full height, so without it both draw
@@ -543,12 +544,14 @@ fn mode_tab(
                 .text_color(cx.theme().accent_foreground)
         })
         // Muted until the pointer arrives, so three words in a row do not
-        // out-shout what is under them. The hover fill is the reading surface
-        // and not the well, for the reason the terminal's tabs take the same
-        // one: the well is what this strip is drawn in.
+        // out-shout what is under them. The hover fill is the well, for the
+        // reason the terminal's tabs take the same one: the panel is on the
+        // reading surface, so sinking a row into it is a step up from there.
+        // It was the reading surface itself while this panel was drawn in the
+        // well and a fill taken from that was one nobody could see.
         .when(!selected, |tab| {
             tab.text_color(cx.theme().muted_foreground)
-                .hover(|tab| tab.bg(cx.theme().background))
+                .hover(|tab| tab.bg(cx.theme().muted))
         })
         .child(label)
         .on_click(cx.listener(move |panel: &mut Workbench, _, _, cx| {

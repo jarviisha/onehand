@@ -377,14 +377,15 @@ fn doc_style(rem: gpui::Pixels, cx: &App) -> TextViewStyle {
         gpui::StyleRefinement::default()
             .p(gpui::rems(0.75))
             .text_size(gpui::rems(0.8125))
-            // **The fill is named here rather than left to the library**, whose
-            // default for a code block is the well step -- which is the value
-            // the Workbench panel around this document is itself drawn in, so a
-            // block would come out invisible with only its padding to say it
-            // was there. On a chrome panel the sunk thing is the reading
-            // surface: below the panel in the dark palette, above it in the
-            // light one, and a real step either way.
-            .bg(cx.theme().background),
+            // **The fill is named here rather than left to the library**, which
+            // would be the same value -- but only for as long as the panel
+            // around this document stays on the reading surface. It was drawn in
+            // the well for a while, and a block that borrowed the library's
+            // default then came out invisible with only its padding to say it
+            // was there; the sunk thing had to be the reading surface instead.
+            // Written out, a panel that changes surface again is one edit in one
+            // place rather than a block that quietly disappears.
+            .bg(cx.theme().muted),
     );
     style.heading_base_font_size = rem;
     style

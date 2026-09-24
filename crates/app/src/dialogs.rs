@@ -967,11 +967,6 @@ pub const SHORTCUTS: &[Shortcut] = &[
         keys: &["ctrl-shift-a"],
     },
     Shortcut {
-        label: "Ctrl+Shift+F",
-        what: "Find in the transcript",
-        keys: &["ctrl-shift-f"],
-    },
-    Shortcut {
         label: "Ctrl+Shift+R",
         what: "Restart the agent (twice, mid-turn)",
         keys: &["ctrl-shift-r"],

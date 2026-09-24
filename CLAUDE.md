@@ -122,7 +122,7 @@ Tests are inline `#[cfg(test)]` modules — there is no `tests/` directory.
 | `crates/app` | `onehand` | the GPUI front end + the binary |
 | `crates/core` | `onehand-core` | GUI-free logic: config, the workspace tree, ACP, the chat model, the remote bridge, editor rules, completion, git status, worktree rules, the directory flatten |
 | `crates/plugin-api` | `onehand-plugin-api` | GUI-free plugin IDs, descriptors, capabilities and registration contract |
-| `crates/plugin-host` | `onehand-plugin-host` | the Workbench mode contract, the remote-channel factory type, and the three things a plugin cannot reach into the binary for: the button wrapper, status ink and the chrome surface |
+| `crates/plugin-host` | `onehand-plugin-host` | the Workbench mode contract, the remote-channel factory type, and the three things a plugin cannot reach into the binary for: the button wrapper, status ink and the surface a dock card draws on |
 | `crates/terminal-ui` | `onehand-terminal-ui` | shared PTY/grid ownership used by the terminal dock and Neovim |
 | `plugins/builtin/*` | built-in plugins | Editor, Files, Markdown, Neovim and Telegram contributions compiled into the binary |
 | `vendor/gpui-terminal` | `gpui-terminal` | a vendored terminal grid + the interaction layer upstream never had |
@@ -313,13 +313,15 @@ outgrown the read's size bound, a Neovim that would not start — and a second c
 of the derivation is a second place for a raw status fill to be used as ink,
 which is the mistake `crate::theme::status_ink` exists to prevent.
 
-**The chrome surface is there for the same reason**, and is the sharpest case of
+**The dock card's surface is there for the same reason**, and is the sharpest case of
 it: the Neovim mode hands a terminal grid the surface it is sitting on, because a
 grid fills every cell it has not been told otherwise about with its default
 background. A second copy of the answer is a panel and the shell inside it
 disagreeing about what colour the panel is, which shows up as a rectangle of the
-wrong shade behind a running program. `onehand_plugin_host::chrome` is the one
-definition and `crate::theme::chrome` is the app's name for it.
+wrong shade behind a running program. `onehand_plugin_host::dock_surface` is the one
+definition and `crate::theme::dock_surface` is the app's name for it. It was called `chrome` while
+it was a step off the reading surface; it is that surface now, so the word had come to name the
+opposite of what the function returns.
 
 **The button wrapper lives here, not in the app.** A built-in plugin draws
 buttons and cannot reach into the binary hosting it, so a copy in each half is
@@ -611,7 +613,7 @@ plus `sendMessage` and `answerCallbackQuery`. Everything that is not the wire is
   the permission mode on the right — left is the project, right is the turn. The branch is a
   control rather than a label, emitting `ChatPaneEvent::Project` so the shell opens the same menu
   the rail's project rows carry, branch rename included.
-- `pane.rs` — what the shell mounts: session switching, the resume picker, the project page, the find bar, unseen
+- `pane.rs` — what the shell mounts: session switching, the resume picker, the project page, unseen
   badges, and the run plan the virtualized list reads.
   **The transcript stops being drawn at the composer's middle** and fades into the surface over the
   last few lines before it (`SMOKE`): the overlay is transparent around its surfaces, so an unclipped
@@ -637,19 +639,23 @@ plus `sendMessage` and `answerCallbackQuery`. Everything that is not the wire is
   The two facts that menu needs — pinned, and whether it is a git repository — are pushed by
   `Shell::sync_project_facts` from the three moments either changes (arriving at a project, pinning
   one, a git sweep landing), and the arrival push must happen **after** `clear_active`, which builds
-  the page's state fresh and would throw an earlier one away. Find and *Close session* are the two
-  controls that go on that page, since neither has anything to act on; the terminal, the Workbench
+  the page's state fresh and would throw an earlier one away. *Close session* is the one control that
+  goes on that page, since it has nothing to act on; the terminal, the Workbench
   and the way back to a hidden rail stay, because all three are about the project and dropping the
   row took them away at the one moment there is no conversation to reach them from.
-  Beside the name is a **status badge**: a pill carrying the rail's own `signal_mark` — one condition,
-  one shape everywhere — and either `Chat::activity_status` (the specific sentence: which agent is
-  being connected to, that approval is what is awaited) or, where there is none, the signal's short
-  name from `rail::signal_word`. Colour lives in the mark and the words stay muted, so a routine
-  *Working…* is not as loud as a dead agent. Busy with no activity status stays silent, because that
-  means the transcript's own last block is already saying what is running — but a **lost adapter now
-  says so here**, where the header used to be blank and only the rail's small triangle knew.
+  **There is no status badge beside the name.** There was one — a pill with the rail's own
+  `signal_mark` and either `Chat::activity_status` or the signal's short word — and what it said was
+  said twice: connecting, working and awaiting approval are all on the running line at the foot of
+  the transcript, a few inches below and nearer what they are about, while the rail's row for this
+  session carries the same mark for the same condition. A second copy in the one row that never
+  scrolls is a thing permanently on screen restating what is already on screen, and it took its room
+  from the conversation's own name, which is the only thing in that row nothing else says.
+  **What went with it** is the one state neither of those two spells out in words: a lost adapter
+  now shows as the rail's mark and its tooltip rather than as a sentence in this header. That is the
+  cost, taken deliberately; `Chat::activity_status` stays and still feeds the running line, the
+  project page and the pane's own state.
   The right-hand end carries the row's controls (`ChatPane::header_control`, one builder so the call
-  sites cannot drift): find, the past-conversations menu, the terminal, the Workbench, the way back
+  sites cannot drift): the past-conversations menu, the terminal, the Workbench, the way back
   to a hidden rail, and last
   *Close session*, offered only while there is one. The terminal button carries a **dot in success ink
   at its corner while a shell is alive** — a child process outliving a closed dock is the one thing
@@ -687,7 +693,7 @@ plus `sendMessage` and `answerCallbackQuery`. Everything that is not the wire is
   conversation, and a session closing, which is when somebody is most likely to want it back.
 
 The **model** is core's (`onehand_core::chat`): `Chat` + `apply(AcpEvent)`, the conversation store, the
-find pass, and the activity-run rules. `ChatSession` derefs to it, which is what lets the whole
+Markdown export and the activity-run rules. `ChatSession` derefs to it, which is what lets the whole
 renderer read `chat.items` / `chat.busy` without knowing where the model lives.
 
 ### Workbench
@@ -710,36 +716,42 @@ and hide buttons at the other end.
 
 **It draws itself as a card floating in its dock**: inset on every side but the seam, one border, one
 radius, `overflow_hidden` so the strip's hairline and the file tree's own border stop at the rounded
-corners, and `crate::theme::chrome` under it — the step that says a panel is *about* the work rather
-than part of it. The terminal takes the same step, both through one function so the two cannot drift;
-everything else — the conversation, the rail, a dialog — stays on the reading surface.
+corners, and `crate::theme::dock_surface` under it — which is the reading surface, the same one the
+conversation is on, so the border and the inset are the whole of what says where the panel begins.
+The terminal takes the same answer, both through one function so the two cannot drift.
 **The seam is flush, and that is the resize grip's doing**: the dock's grip is a fixed band a few
 pixels either side of the dock's own edge and there is no hook to move it, so an inset there leaves
 the one line a user reads as draggable sitting outside the only place a drag is taken — the panel
 resized from a strip of apparently empty surface while the border did nothing. Flush, the border *is*
-the grip. It costs nothing to look at, because what is on the other side is the conversation on the
-same reading surface the gap was showing: the card still stands off its neighbour by whatever that
-neighbour keeps clear. The other three stay inset, since a card held off nothing reads as part of the
-window, and `track_focus` stays on the *outer* box so the gap belongs to the panel and a click
-landing in it is a click on the Workbench. **The change of surface alone was tried and is not
-enough**: a dock drawn edge to edge in a different fill reads as the window having been *divided*,
-two regions meeting along a line, which is what the arrangement stops being the moment either dock
-closes and the conversation takes the space back.
+the grip. It costs nothing to look at, because what is on the other side is the conversation on that
+same surface: the card still stands off its neighbour by whatever that neighbour keeps clear. The
+other three stay inset, since a card held off nothing reads as part of the window, and `track_focus`
+stays on the *outer* box so the gap belongs to the panel and a click landing in it is a click on the
+Workbench. **The gap is doing the work a fill used to share**: with both cards level with the
+conversation it is what says a dock is something put down on the window rather than a piece of it,
+and a dock drawn edge to edge reads as the window having been *divided* — two regions meeting along
+a line, which is what the arrangement stops being the moment either dock closes and the conversation
+takes the space back.
 
-**`chrome` is the ramp's well step, and it has to be — there is no room for a third surface.** A
-midpoint was tried, on the reasoning that a whole panel drawn in the fill a quoted command takes is a
-slab of it the height of the window. It measures **1.07** against the reading surface in both
-palettes, under the **1.14** floor the ramp's own tests hold every surface pair to — and the light
-palette has only 1.15 between white and the well to divide in the first place, so no value between
-them can clear that floor twice. Half a step is a step nobody can see, and a seam carried by one is a
-seam that is not drawn.
-**What it costs**: anything *sunk into* a chrome panel cannot be the well, because the panel already
-is. The reading surface is what a well becomes there — below the panel in the dark palette, above it
-in the light one, 1.15/1.19 apart either way since it is the same asserted pair read from the other
-end. Three places take it for that reason: the Markdown mode's code blocks (the component library's
-default for one is the well, so it names its own), and the hover fill on both tab strips. A
-*selected* thing takes `accent` instead, 1.30/1.53 from here. The rail's filled row is the exception
-and has a ramp step of its own (`marked`) — see the rail, below.
+**`dock_surface` is the reading surface, and a dock card is marked by its border alone.** It was the ramp's
+well step, one notch up from the conversation — which in the dark palette made the two docks the
+*lighter* regions on screen with the conversation as the dark gap between them. Lighter reads as
+nearer, so two panels that are about the work were drawn in front of the work, and with both open the
+one region nothing had raised was the one being read.
+**Neither a smaller step nor a step the other way is available**, which is why it is no step rather
+than a quieter one. A midpoint was tried, on the reasoning that a whole panel drawn in the fill a
+quoted command takes is a slab of it the height of the window: it measures **1.07** against the
+reading surface in both palettes, under the **1.14** floor the ramp's own tests hold every surface
+pair to — and the light palette has only 1.15 between white and the well to divide in the first
+place, so no value between them can clear that floor twice. Half a step is a step nobody can see.
+Going *down* instead would need a value below a near-black reading surface, and there is none.
+**What the flip gives back** is the well *inside* a panel. While the card was the well, anything sunk
+into it had to borrow the reading surface to be seen; now those are the well again — the Markdown
+mode's code blocks (which still name their own fill rather than take the component library's default,
+so the next surface change is one edit in one place) and the hover fill on both tab strips. A
+*selected* thing takes `accent`. **The rail keeps the well and is now the only panel that has it** —
+the one panel not about the work at all — with its filled row on a ramp step of its own (`marked`);
+see the rail, below.
 
 - **Editor** (`Ctrl+Shift+E`): the project's file tree down the left, the buffers opened out of it on
   the right, one draggable divider between them. A quick editor, not an IDE: buffers in the plugin,
@@ -842,7 +854,7 @@ shutdown to forget.
 
 **It is a card in its dock, the Workbench's shape exactly** — inset on every side but the seam, which
 here is the top, one border, one radius, `overflow_hidden` so the strip's hairline stops at the
-corners, `crate::theme::chrome` under it and `track_focus` on the outer box so the gap belongs to the
+corners, `crate::theme::dock_surface` under it and `track_focus` on the outer box so the gap belongs to the
 panel. Two docks answering "where does this panel begin" differently would read as two separate
 decisions, and that includes which side is flush: each is flush against its own dock's resize grip,
 for the reason given there. **Its right edge stays inset although a grip runs down that too** — the
@@ -853,16 +865,16 @@ touching with no gap between them. **It is the one this costs something**: the g
 bounds and resizes the PTY to match, so the inset is a column of cells and half a row — paid once,
 since the inset is fixed while the dock is dragged.
 
-**The grid is drawn in that same chrome step**, and has to be told so rather than reading the theme:
-a terminal fills every cell it has not been told otherwise about with its palette's default
+**The grid is drawn in the panel's own surface**, and has to be told which one rather than reading the
+theme: a terminal fills every cell it has not been told otherwise about with its palette's default
 background, so `terminal_palette` takes the surface as an argument and `spawn_pty` passes it through.
-Both callers hand it `chrome` — the terminal dock from the app, the Neovim mode from the plugin host
+Both callers hand it `dock_surface` — the terminal dock from the app, the Neovim mode from the plugin host
 — and the parameter is there so neither has to guess what the other did. Two consequences worth
-knowing: in the dark palette that value is also ANSI *black*, deliberately, since a program asking
-for black means "the background" and answering with the reading surface would put a dark plate behind
-the runs that asked to disappear; and `TerminalThemeKey` watches the chrome token even though it does
-not read it, or a change that moved that step and nothing else would leave every live grid painting
-the old surface.
+knowing: whatever that value is, it is also ANSI *black*, deliberately, since a program asking for
+black means "the background" and answering with anything else puts a plate of the wrong shade behind
+the runs that asked to disappear; and `TerminalThemeKey` watches both the reading surface and the
+well even though it reads neither, or a change that moved only the one in force would leave every
+live grid painting the old surface.
 
 **Lazy about roots, not about the clock.** A launch restoring a saved layout used to mount the panel
 and stop, so a user who left the terminal open was met on the next launch by an empty dock asking
@@ -949,12 +961,13 @@ hard-coded to `None`.
 centre is the chat, right dock the Workbench, bottom dock the terminal.
 
 - The **rail** ([rail.rs](crates/app/src/rail.rs), gpui-component's `Sidebar`) is app chrome and
-  lives *outside* the dock, so a layout restore cannot lose it. **It is drawn on
-  `crate::theme::chrome`**, the docks' own surface, asked for at the call site rather than through
-  the `sidebar` token: that value is derived from two ramp steps when it is asked, while the ramp
-  writes fixed values into token names, so a token carrying it would be a second spelling of one
-  answer and the two would drift the first time either end moved. The library applies the caller's
-  refinement after its own `bg`, which is what lets it win. **`Sidebar`'s right border goes off with
+  lives *outside* the dock, so a layout restore cannot lose it. **It is drawn in the ramp's well and
+  is now the only panel in the window lifted off the reading surface**, asked for at the call site
+  rather than left to the `sidebar` token, which ships a value of its own and would bring the panel
+  up level with the conversation beside it. The library applies the caller's refinement after its own
+  `bg`, which is what lets it win. The two docks took this same step for a while, which made lifted
+  mean nothing more precise than "not the conversation"; they are flat on the reading surface now,
+  marked by their cards, and what is left is the one panel that is not about the work at all. **`Sidebar`'s right border goes off with
   it** (`border_r_0`): the fill is the edge, and a rule beside it draws a line along a boundary that
   was not in doubt. That flag has been both ways — it had to be *on* while the rail was still on the
   reading surface, and off before that, when the library's drag handle ruled the same seam in the
@@ -1003,7 +1016,7 @@ centre is the chat, right dock the Workbench, bottom dock the terminal.
   header): *Projects* is the tree, *All sessions* is every session in the workspace, flat. **The
   selected half is `accent` with the ink that goes on it** — the same spelling the terminal's tabs
   and the Workbench's mode chips use, so one condition keeps one code. It was the reading surface,
-  which worked while the rail was drawn in that surface too; once the rail moved to the chrome step
+  which worked while the rail was drawn in that surface too; once the rail moved into the well
   the plate became the one thing in the window painted a step *below* what it sits on, which is a
   hole rather than a plate, and the `shadow_sm` under it could not say otherwise at that size. The
   shadow went with the change: a fill that differs lifts by itself, and the component library's own
@@ -1218,8 +1231,10 @@ centre is the chat, right dock the Workbench, bottom dock the terminal.
   ask says something unless the user is looking at *the conversation that asked*: an agent waiting is
   an agent standing still for as long as it takes to notice, and reading one conversation is exactly
   when a dot on another row goes unseen. A lost adapter is on that same wider rule and is deliberately
-  never put on the desktop at all, since the rail's mark and the conversation header both carry it for
-  as long as it is true. The table has no wildcard arm, so a fourth kind of news cannot be added
+  never put on the desktop at all, since the rail's row for that session marks it for as long as it is
+  true. **That rests on one mark now and not two** — the conversation header carried it as well until
+  the badge beside the name went, so hiding the rail is a way to be left with no report of a dead
+  agent anywhere; see *Known gaps*. The table has no wildcard arm, so a fourth kind of news cannot be added
   without deciding what each place does with it. It is sent at critical urgency so most desktops will not fade it while the agent is
   still blocked. The *moment* an ask parks is `ApplyOutcome::asked_user` — the reducer's answer, not
   `Chat::awaiting_permission`, which stays true for as long as the card is up and would re-announce a
@@ -1287,8 +1302,7 @@ centre is the chat, right dock the Workbench, bottom dock the terminal.
 
 App commands occupy an exact `Ctrl+Shift` namespace so plain Ctrl keys stay usable inside a PTY:
 `B` rail · `E` Workbench Editor, tree included · `M` Workbench Markdown ·
-`N` Workbench Neovim · `A` composer ·
-`F` find · `R` guarded restart ·
+`N` Workbench Neovim · `A` composer · `R` guarded restart ·
 `W` guarded close · `K` maximize. Plus `` Ctrl+` `` terminal, `Ctrl+S` save, `Ctrl+1…9` session by position, `Ctrl+Tab` session by recency,
 `Ctrl+=`/`Ctrl+-`/`Ctrl+0` zoom, and inside the composer `Up`/`Down` (its completion list) and
 `Ctrl+V` (an image or a file on the clipboard becomes an attachment; text is handed back to the input).
@@ -1309,7 +1323,16 @@ and the tie goes to the app, which binds after the library. The composer claims 
 while a list is open, so the keys otherwise still move the caret.
 
 Panel shortcuts are three-state: closed opens and focuses, open-but-unfocused focuses,
-open-and-focused closes.
+open-and-focused closes. **A button is not**, and the two in the conversation's header were the
+last ones that were. A key has one binding to serve every case, which is what earns the third
+state — there is no other gesture to reach an open-but-unfocused panel with. A button can see the
+dock it names, and the caret when one is pressed is almost always back in the composer the user was
+typing in, so the third state made the first press do nothing a presser could see and the second
+one close it. `ChatPaneEvent::ToggleWorkbench`/`ToggleTerminal` branch on the dock and hand the
+closing half to `hide_workbench`/`set_terminal_visible` — the same two calls each panel's own hide
+button already makes, so the control on either side of the seam does the same thing. Opening still
+goes through the three-state call, since everything that one does on the way — the mode, the shell,
+the caret — is wanted here too.
 
 **Zoom is per panel** ([zoom.rs](crates/app/src/zoom.rs)) and overrides the *rem base* for that
 panel's subtree, so everything sized in rems scales together — which is why sizes must be rems and
@@ -1487,6 +1510,35 @@ back is smaller than carrying a table that says the feature is wired up.
 
 Listed because a missing feature nobody wrote down reads as a bug in the ones that exist:
 
+- **The conversation title's menu button has no accessible name.** It draws the name as a child
+  rather than through the component's `label`, because a label is drawn `flex_none` with nothing to
+  ellipsize it and held the whole header row open however narrow the panel became. The library builds
+  a button's accessible name out of `label` and nothing else, and the only setter is an inherent
+  method on the base button it keeps in a private field — so the two cannot both be had from this
+  component. The route out is `controls::MenuTrigger`, which already exists for the rail's rows:
+  a `Stateful<Div>` does implement gpui's `StatefulInteractiveElement`, so `aria_label` reaches it,
+  and the label's own flex behaviour would be ours. What that costs is rebuilding the ghost hover
+  fill and the caret this component gives for free. The icon buttons along the rest of that row have
+  never had names either and carry tooltips instead, so this is one control short of a row that was
+  already short.
+- **There is no search in the transcript**, and the removal was deliberate rather than pending. It
+  matched whole *items* and never occurrences, so a word said ten times in one answer was one hit
+  with no mark on the word itself, and a hit in text a block had truncated was counted, scrolled to
+  and still not on screen. Worse, the two halves disagreed about what the transcript *is*: the pass
+  read the whole model while the render plan drops a parked permission or question, which are drawn
+  above the composer — so a query matching one was counted in "3 of 7" and Next moved the number and
+  nothing else. Rebuilding it means per-occurrence offsets through the markdown renderer, which is
+  the same span machinery a drag-selection across blocks would need; the two should be built
+  together or not at all.
+- **A lost adapter is reported by the rail's mark alone.** Nothing else on screen says it: the
+  conversation header used to carry the same condition in words, and the badge that did went with
+  everything else that row was saying twice. It is deliberately kept off the desktop too — an agent
+  that has stopped answering is a standing condition rather than news, and a notification for one
+  would fire again on every reconnection attempt. So with the rail hidden (`Ctrl+Shift+B`) or a panel
+  maximized, a dead agent is announced nowhere at all. The two ways out, neither taken yet, are to put
+  the mark back on the header for that one condition — not the whole badge, since what the badge
+  otherwise said is on the running line already — or to let this one kind of news reach the desktop
+  after all, which means deciding how often it may repeat.
 - **No command palette** (`Ctrl+Shift+P`). It is a feature — a command registry plus a filtered
   popup — not a keymap entry.
 - **The completion popup has no argument step.** A command that takes one is accepted like any

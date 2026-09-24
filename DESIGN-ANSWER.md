@@ -211,8 +211,8 @@ are the same picture — so the list is handed back to **following its tail**
 there, and from then on the transcript scrolls with the stream. There is no
 jump, because there is nothing left to jump between.
 
-**Scrolling ends the hold as a scroll, not as a layout.** A wheel, a drag or a
-jump to a find hit takes the position over — the hold was for the question
+**Scrolling ends the hold as a scroll, not as a layout.** A wheel or a drag
+takes the position over — the hold was for the question
 arriving, not a place the reader has to fight — but the room under the turn
 stays exactly the size it was. Taking it away underneath somebody who has just
 scrolled would move the conversation while they are reading it, which is the one
@@ -1014,7 +1014,6 @@ by meaning:
 | The one item selected among several | `accent` / `accent_foreground` |
 | Hover on a row that is there to be picked | `list_hover` |
 | The single primary action of a blocking card | `primary` |
-| Marking a find hit | `list_hover` on every matching item; a stronger accent wash on the current item |
 
 **Prose ink is not white on a dark surface.** There the ink is the bright thing
 in the room, and near-white on near-black runs about four times the contrast a
@@ -1691,18 +1690,23 @@ say a machine produced this text, and here the tint is what carries the meaning.
 Transient rows that are not answers:
 
 - **The session header**, above the transcript: what this conversation is
-  called, what it is doing, and the things done *to* it — Find, and a `•••`
-  holding Export, Resume in this session, Restart and Close; and a menu of the
-  project's past conversations, each opening as a session of its own beside this
-  one. Plus the two
-  ways back to something the window has put away: the rail, while it is hidden,
-  and the Workbench. Those are here because **the pane is mounted as a bare
-  panel with no tab bar**, and this row is the only chrome it has.
+  called and the things done *to* it — the name is itself the menu, holding
+  Rename, the exports, Resume in this session, Restart and, alone in the danger
+  tint, Delete. Beside it on the right: a menu of the project's past
+  conversations each opening as a session of its own beside this one, and the
+  two ways back to something the window has put away — the rail, while it is
+  hidden, and the Workbench — then Close session. **There is no `•••`**: a menu
+  button beside the name it acts on says nothing the name could not say itself.
+  Those controls are here because **the pane is mounted as a bare panel with no
+  tab bar**, and this row is the only chrome it has.
   Drawn **quiet** — muted, no weight — because it names what is already on
-  screen, and chrome that draws the eye is taking it from the conversation.
-  A **hairline beneath it** separates the chrome from the answers: the two are
-  read differently, and without the line the title reads as the first thing the
-  conversation said.
+  screen, and chrome that draws the eye is taking it from the conversation. The
+  name is the one exception, in full ink and a weight up, because it is the only
+  thing in the row nothing else on screen says.
+  **No hairline beneath it.** A hairline is an edge between two surfaces and
+  there are not two here: the header and the transcript are one reading surface,
+  and what tells them apart is that one is a row of controls and the other is
+  prose.
   Separate from the composer's row because the two answer different questions.
   The composer's controls are about the message being written; these are about
   the conversation as a whole, and one row of seven buttons made every one of
@@ -1711,12 +1715,16 @@ Transient rows that are not answers:
   restart does, and a menu that has to be opened twice to be believed is a worse
   warning than an item that will not go.
 - **Empty hint** before a session has been picked or a first prompt sent.
-- **Turn status**, from the model rather than the view (`Chat::activity_status`),
-  drawn in the header beside the title: "Waiting for your approval…" while a
-  permission is parked, else a working line — and **nothing** while a live
-  thought or a running tool is already saying it. The status exists to answer
-  "is anything happening"; repeating what the block above already says is noise,
-  not reassurance.
+- **Turn status**, from the model rather than the view (`Chat::activity_status`):
+  "Waiting for your approval…" while a permission is parked, else a working line
+  — and **nothing** while a live thought or a running tool is already saying it.
+  The status exists to answer "is anything happening"; repeating what the block
+  above already says is noise, not reassurance. It is drawn on the **running
+  line at the foot of the transcript**, and *(no longer in the header)*: a badge
+  beside the title said the same thing a second time, in the one row that never
+  scrolls, and took its room from the name. What that costs is one state the
+  running line has no words for: a lost adapter, which is now marked on the
+  rail's row for the session and nowhere else on screen.
 - **Jump to the latest** — a round `New activity` button resting on the composer's top edge,
   shown only while the list is scrolled away from its end *by the reader* — never
   while a newly asked question is being held at the top of the panel. It floats

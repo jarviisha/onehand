@@ -1,19 +1,17 @@
 //! What the transcript looks like on screen: the run layout the virtual list
-//! draws, the list's own scroll and measurement state, and the find bar.
+//! draws, and the list's own scroll and measurement state.
 //!
-//! These three are one thing wearing three names. The list draws *runs*, not
-//! items, so its item count is the run count; the find bar hits an *item*, and
-//! scrolling to it means knowing which run holds it. Kept apart, the pairing
-//! was implicit — a plan on the pane and a scroll position on the session, made
-//! to line up by the order two calls happened in — and the find bar could not
-//! scroll at all, because nothing on either side could turn a hit into a row.
+//! These two are one thing wearing two names. The list draws *runs*, not items,
+//! so its item count is the run count — while everything that wants to be
+//! *taken* somewhere names an item, and getting there means knowing which run
+//! holds it. Kept apart, the pairing was implicit: a plan on the pane and a
+//! scroll position on the session, made to line up by the order two calls
+//! happened in, with nothing on either side able to turn an item into a row.
 
 use super::transcript;
-use gpui::{App, Entity, FollowMode, ListAlignment, ListOffset, ListState, Pixels, Window, px};
-use gpui_component::input::InputState;
+use gpui::{App, FollowMode, ListAlignment, ListOffset, ListState, Pixels, Window, px};
 use onehand_core::chat::{
-    ActivityGroup, Chat, ChatItem, RunOutcome, TranscriptItemId, TranscriptMatch, cluster_summary,
-    compute_matches, run_outcome,
+    ActivityGroup, Chat, ChatItem, RunOutcome, TranscriptItemId, cluster_summary, run_outcome,
 };
 
 /// One cluster of activity: the muted line, and what is under it once opened.
@@ -536,8 +534,8 @@ impl Viewport {
         // conversation. It cost the room its whole reason to exist: one notch
         // of the wheel and a short answer dropped back onto the composer.
         //
-        // So this is not a latch. A wheel, a drag or a jump to a find hit takes
-        // the position over, and coming back to the question takes it back --
+        // So this is not a latch. A wheel or a drag takes the position over,
+        // and coming back to the question takes it back --
         // and either way the room stays exactly as it is, see [`Hold::reading`].
         let at_rest = top.item_ix >= count || (top.item_ix == run && top.offset_in_item <= px(1.));
         hold.reading = !at_rest;
@@ -746,29 +744,14 @@ impl Viewport {
 
     /// Which run draws `target`.
     ///
-    /// The find bar hits an item; the list scrolls to a row, and a row is a
-    /// run. This is the translation between the two, and without it Next and
-    /// Previous could only change a number on screen.
-    pub fn run_of(&self, target: TranscriptItemId) -> Option<usize> {
+    /// The list scrolls to a row, and a row is a run -- while the thing being
+    /// scrolled to is named as an item. This is the translation between the
+    /// two, and the held prompt is what asks for it: keeping a question at the
+    /// top of the frame means knowing which row that question is drawn in.
+    fn run_of(&self, target: TranscriptItemId) -> Option<usize> {
         self.plan
             .iter()
             .position(|run| run.members.contains(&target))
-    }
-
-    /// Scroll `target`'s run into view, and return its anchor if that run is a
-    /// folded activity strip.
-    ///
-    /// The caller unfolds it. A hit counted as "3 of 7" that sits inside a
-    /// collapsed strip is a hit the user is told about and cannot see, and
-    /// unfolding does not move the run: folding changes what a run draws, never
-    /// how many runs there are, so the index scrolled to stays the right one.
-    pub fn reveal(&self, target: TranscriptItemId) -> Option<TranscriptItemId> {
-        let ix = self.run_of(target)?;
-        let run = &self.plan[ix];
-        if let Some((state, _)) = &self.list {
-            state.scroll_to_reveal_item(ix);
-        }
-        (run.strip.is_some() && !run.open).then(|| run.members[0])
     }
 }
 
@@ -978,74 +961,6 @@ pub fn item(chat: &Chat, target: TranscriptItemId) -> Option<&ChatItem> {
     }
 }
 
-/// The find bar's state while it is open.
-pub struct FindState {
-    pub query: Entity<InputState>,
-    /// Index of the current hit. Clamped against the live hit list on render,
-    /// because the transcript can grow under an open find bar.
-    pub current: usize,
-    /// The last search and what it was a search of.
-    ///
-    /// The bar redraws its hit count every frame, and computing it reads every
-    /// item's searchable text -- the whole conversation, while the user is
-    /// mid-word in the query box.
-    ///
-    /// Keyed by the transcript's revision, which is the only key that is
-    /// honest: a match can appear inside an item that is already there, so a
-    /// key made of how many items there are would go on reporting the count
-    /// from before a streaming answer said the word being searched for.
-    cache: Option<Cached>,
-}
-
-struct Cached {
-    query: String,
-    revision: u64,
-    hits: Vec<TranscriptMatch>,
-}
-
-impl FindState {
-    pub fn new(query: Entity<InputState>) -> Self {
-        Self {
-            query,
-            current: 0,
-            cache: None,
-        }
-    }
-
-    /// Every item matching the current query.
-    pub fn matches(&mut self, chat: &Chat, cx: &App) -> Vec<TranscriptMatch> {
-        let query = self.query.read(cx).value().to_string();
-        let revision = chat.revision();
-
-        if let Some(cached) = &self.cache
-            && cached.query == query
-            && cached.revision == revision
-        {
-            return cached.hits.clone();
-        }
-
-        let hits = compute_matches(chat, &query);
-        self.cache = Some(Cached {
-            query,
-            revision,
-            hits: hits.clone(),
-        });
-        hits
-    }
-
-    /// How `target` participates in the current result set.
-    ///
-    /// The list renderer runs after the pane's main render has populated the
-    /// cache, so it can decorate visible rows without rescanning the entire
-    /// transcript once per row. `None` also covers an empty query and a cache
-    /// invalidated by a transcript update; the next pane render refreshes it.
-    pub fn emphasis(&self, target: TranscriptItemId) -> Option<bool> {
-        let cached = self.cache.as_ref()?;
-        let position = cached.hits.iter().position(|hit| hit.target == target)?;
-        Some(position == self.current)
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::Viewport;
@@ -1189,8 +1104,8 @@ mod tests {
         assert!(viewport.run(2).is_none(), "three items, two rows");
     }
 
-    /// The find bar counts *items* and the list scrolls to *rows*. An item
-    /// folded inside a strip still has a row to be taken to -- the strip's.
+    /// A scroll target is named as an *item* and the list scrolls to *rows*. An
+    /// item folded inside a strip still has a row to be taken to -- the strip's.
     #[test]
     fn an_item_inside_a_strip_still_names_a_row() {
         let mut viewport = Viewport::default();
@@ -1627,8 +1542,8 @@ mod tests {
     }
 
     /// The assumption the scroll target rests on: opening a strip changes what
-    /// a row *draws*, never how many rows there are. If it moved them, the
-    /// unfold that follows a find would scroll the user somewhere else.
+    /// a row *draws*, never how many rows there are. If it moved them, every
+    /// row index taken before an unfold would point somewhere else after it.
     #[test]
     fn unfolding_moves_no_row() {
         let (chat, mut folded, mut open) = (chat(), Viewport::default(), Viewport::default());

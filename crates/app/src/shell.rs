@@ -38,7 +38,6 @@ gpui::actions!(
         ToggleTerminal,
         OpenNeovim,
         FocusComposer,
-        ToggleFind,
         RestartSession,
         ZoomIn,
         ZoomOut,
@@ -158,7 +157,6 @@ pub fn init_keymap(cx: &mut App) {
         // and the shifted form is a keystroke that can be typed.
         gpui::KeyBinding::new("ctrl-shift-n", OpenNeovim, None),
         gpui::KeyBinding::new("ctrl-shift-a", FocusComposer, None),
-        gpui::KeyBinding::new("ctrl-shift-f", ToggleFind, None),
         gpui::KeyBinding::new("ctrl-shift-r", RestartSession, None),
         // Closing a session is the counterpart to restarting one, and sits next
         // to it in the namespace for that reason.
@@ -669,14 +667,48 @@ impl Shell {
                     }
                     E::WorkTreeTouched => shell.refresh_worktree(cx),
                     E::ShowRail => shell.show_rail(cx),
-                    // On whichever mode it is already carrying, so the button
-                    // means "show me the Workbench" rather than "show me the
-                    // files" -- the two keys are how a mode is chosen.
+                    // **Open or closed, and never the keys' third state.** A key
+                    // has one binding to serve every case, so it earns the rule
+                    // that an open-but-unfocused panel is focused rather than
+                    // closed -- there is no other gesture to reach it with. A
+                    // button is not in that position: it can see the dock, and
+                    // the caret when it is pressed is almost always in the
+                    // composer the user was typing in, which made the first
+                    // press on an open panel do nothing a presser could see and
+                    // the second one close it. The panels' own hide buttons
+                    // already work this way, and these are the same control
+                    // drawn on the other side of the seam.
+                    //
+                    // Opening still goes through the three-state call, since
+                    // everything it does on the way -- the mode, the shell, the
+                    // caret -- is wanted here too.
+                    //
+                    // The Workbench opens on whichever mode it is already
+                    // carrying, so the button means "show me the Workbench"
+                    // rather than "show me the files": the two keys are how a
+                    // mode is chosen.
                     E::ToggleWorkbench => {
-                        let mode = shell.workbench.read(cx).mode();
-                        shell.show_workbench(mode, window, cx);
+                        if shell.dock.read(cx).is_dock_open(DockPlacement::Right, cx) {
+                            shell.hide_workbench(window, cx);
+                        } else {
+                            let mode = shell.workbench.read(cx).mode();
+                            shell.show_workbench(mode, window, cx);
+                        }
                     }
-                    E::ToggleTerminal => shell.show_terminal(window, cx),
+                    // The dock having a shell in it is the same condition
+                    // `show_terminal` guards its own close with, and for the
+                    // same reason: an open dock holding nothing is what closing
+                    // the last tab leaves, the panel there offers *New
+                    // terminal*, and this button's tooltip offers to open one
+                    // too. Closing on that press would answer neither.
+                    E::ToggleTerminal => {
+                        let open = shell.dock.read(cx).is_dock_open(DockPlacement::Bottom, cx);
+                        if open && shell.terminal.read(cx).has_shell() {
+                            shell.set_terminal_visible(false, window, cx);
+                        } else {
+                            shell.show_terminal(window, cx);
+                        }
+                    }
                     // Every one of these acts on the selected project, because
                     // the page that offers them is what shows when the selected
                     // project has nothing running in it.
@@ -2346,7 +2378,13 @@ impl Shell {
         self.last_panel = FocusedPanel::Terminal;
         let open = self.dock.read(cx).is_dock_open(DockPlacement::Bottom, cx);
         let focused = self.terminal.focus_handle(cx).contains_focused(window, cx);
-        if open && focused {
+        // **An open dock with nothing in it is not a dock to close.** Closing
+        // the last tab's ✕ leaves exactly that, and the panel it leaves offers
+        // *New terminal* -- so a press here means "open one", which is what
+        // falling through does. Closed instead, the one gesture that reaches an
+        // empty terminal took it off screen, and the way back up asked for a
+        // shell the user had just been offered.
+        if open && focused && self.terminal.read(cx).has_shell() {
             self.set_terminal_visible(false, window, cx);
             return;
         }
@@ -3354,12 +3392,6 @@ impl Render for Shell {
                         .update(cx, |pane, cx| pane.focus_composer(window, cx));
                 }),
             )
-            .on_action(cx.listener(|shell: &mut Self, _: &ToggleFind, window, cx| {
-                shell.last_panel = FocusedPanel::Chat;
-                shell
-                    .chat
-                    .update(cx, |pane, cx| pane.toggle_find(window, cx));
-            }))
             .on_action(
                 cx.listener(|shell: &mut Self, _: &RestartSession, window, cx| {
                     shell.restart_session(window, cx);

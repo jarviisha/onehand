@@ -149,7 +149,7 @@ impl TerminalPanel {
             &root,
             Program::Shell,
             crate::zoom::term_font_size(self.zoom),
-            crate::theme::chrome(cx),
+            crate::theme::dock_surface(cx),
             cx,
             move |window, cx| {
                 let _ = panel.update(cx, |panel: &mut Self, cx| panel.reap(window, cx));
@@ -271,7 +271,7 @@ impl TerminalPanel {
             return;
         }
         self.terminal_theme = current;
-        let colors = terminal_palette(crate::theme::chrome(cx), cx);
+        let colors = terminal_palette(crate::theme::dock_surface(cx), cx);
         for set in self.shells.values() {
             for tab in &set.tabs {
                 tab.set_palette(colors.clone(), cx);
@@ -418,10 +418,11 @@ impl Render for TerminalPanel {
                     .border_1()
                     .border_color(cx.theme().border)
                     .rounded(cx.theme().radius_lg)
-                    // The chrome surface, as the Workbench takes it, and the
-                    // grid below is handed the same value as its own background
+                    // The surface a dock card draws on, as the Workbench takes
+                    // it, and the grid below is handed the same value as its own
+                    // background
                     // -- so a shell is the card rather than a plate laid on it.
-                    .bg(crate::theme::chrome(cx))
+                    .bg(crate::theme::dock_surface(cx))
                     // The strip's hairline runs the full width of the panel, so
                     // without this it draws straight through the corners the
                     // radius just cut.
@@ -615,16 +616,16 @@ impl TerminalPanel {
                                 tab.bg(cx.theme().accent)
                                     .text_color(cx.theme().accent_foreground)
                             })
-                            // **The reading surface, not the well.** The well
-                            // is what this strip is drawn in now, so a hover
-                            // fill taken from it was a fill nobody could see.
-                            // Sunk on a chrome panel means stepping back toward
-                            // the conversation's own surface -- darker here,
-                            // lighter in the light palette, and a real step in
-                            // both because it is the ramp's own pair read from
-                            // the other end.
+                            // **The well, not the reading surface.** This panel
+                            // draws on the reading surface, so sinking a row
+                            // into it is the ordinary step up from there. It was
+                            // the reading surface itself while the panel was
+                            // filled with the well, when a fill taken from the
+                            // well was one nobody could see -- the same pair of
+                            // values, read from whichever end the panel is
+                            // standing on.
                             .when(i != active, |tab| {
-                                tab.hover(|tab| tab.bg(cx.theme().background))
+                                tab.hover(|tab| tab.bg(cx.theme().muted))
                             })
                             .child(
                                 Icon::new(IconName::SquareTerminal)
