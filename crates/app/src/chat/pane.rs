@@ -2830,15 +2830,18 @@ impl ChatPane {
             // Beside the Workbench button: both are docks this panel is
             // sitting between, and a closed one leaves nothing on screen at all
             // -- no edge, no strip, no name -- so the route to it belongs with
-            // the panel that took the space. Which mode it opens on and whether
-            // a second press closes it are the shell's rules.
+            // the panel that took the space. Both are a plain open-or-close and
+            // not the three-state rule their keys follow, which is the shell's
+            // to apply: a key has one binding and no other way to reach an open
+            // panel, while a button can see the dock and is pressed with the
+            // caret back in the composer.
             .child(self.terminal_control(cx))
             // The Workbench closed leaves nothing on screen at all -- no strip,
             // no edge, no name -- so without this the file tree and the editor
             // exist only for someone who remembers two keystrokes. Offered from
-            // here rather than done here: which mode it opens on and whether a
-            // second press closes it are the shell's rules, and the chat has no
-            // business knowing a dock is where the Workbench lives.
+            // here rather than done here: which mode it opens on, and closing it
+            // rather than focusing it, are both the shell's rules, and the chat
+            // has no business knowing a dock is where the Workbench lives.
             .child(
                 header_control("workbench", IconName::PanelRight, cx)
                     .tooltip("Show the Workbench")

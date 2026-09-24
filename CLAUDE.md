@@ -1316,7 +1316,16 @@ and the tie goes to the app, which binds after the library. The composer claims 
 while a list is open, so the keys otherwise still move the caret.
 
 Panel shortcuts are three-state: closed opens and focuses, open-but-unfocused focuses,
-open-and-focused closes.
+open-and-focused closes. **A button is not**, and the two in the conversation's header were the
+last ones that were. A key has one binding to serve every case, which is what earns the third
+state — there is no other gesture to reach an open-but-unfocused panel with. A button can see the
+dock it names, and the caret when one is pressed is almost always back in the composer the user was
+typing in, so the third state made the first press do nothing a presser could see and the second
+one close it. `ChatPaneEvent::ToggleWorkbench`/`ToggleTerminal` branch on the dock and hand the
+closing half to `hide_workbench`/`set_terminal_visible` — the same two calls each panel's own hide
+button already makes, so the control on either side of the seam does the same thing. Opening still
+goes through the three-state call, since everything that one does on the way — the mode, the shell,
+the caret — is wanted here too.
 
 **Zoom is per panel** ([zoom.rs](crates/app/src/zoom.rs)) and overrides the *rem base* for that
 panel's subtree, so everything sized in rems scales together — which is why sizes must be rems and

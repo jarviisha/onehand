@@ -669,14 +669,41 @@ impl Shell {
                     }
                     E::WorkTreeTouched => shell.refresh_worktree(cx),
                     E::ShowRail => shell.show_rail(cx),
-                    // On whichever mode it is already carrying, so the button
-                    // means "show me the Workbench" rather than "show me the
-                    // files" -- the two keys are how a mode is chosen.
+                    // **Open or closed, and never the keys' third state.** A key
+                    // has one binding to serve every case, so it earns the rule
+                    // that an open-but-unfocused panel is focused rather than
+                    // closed -- there is no other gesture to reach it with. A
+                    // button is not in that position: it can see the dock, and
+                    // the caret when it is pressed is almost always in the
+                    // composer the user was typing in, which made the first
+                    // press on an open panel do nothing a presser could see and
+                    // the second one close it. The panels' own hide buttons
+                    // already work this way, and these are the same control
+                    // drawn on the other side of the seam.
+                    //
+                    // Opening still goes through the three-state call, since
+                    // everything it does on the way -- the mode, the shell, the
+                    // caret -- is wanted here too.
+                    //
+                    // The Workbench opens on whichever mode it is already
+                    // carrying, so the button means "show me the Workbench"
+                    // rather than "show me the files": the two keys are how a
+                    // mode is chosen.
                     E::ToggleWorkbench => {
-                        let mode = shell.workbench.read(cx).mode();
-                        shell.show_workbench(mode, window, cx);
+                        if shell.dock.read(cx).is_dock_open(DockPlacement::Right, cx) {
+                            shell.hide_workbench(window, cx);
+                        } else {
+                            let mode = shell.workbench.read(cx).mode();
+                            shell.show_workbench(mode, window, cx);
+                        }
                     }
-                    E::ToggleTerminal => shell.show_terminal(window, cx),
+                    E::ToggleTerminal => {
+                        if shell.dock.read(cx).is_dock_open(DockPlacement::Bottom, cx) {
+                            shell.set_terminal_visible(false, window, cx);
+                        } else {
+                            shell.show_terminal(window, cx);
+                        }
+                    }
                     // Every one of these acts on the selected project, because
                     // the page that offers them is what shows when the selected
                     // project has nothing running in it.
