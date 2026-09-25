@@ -472,8 +472,10 @@ pub(crate) fn rail_row(
 /// (`secondary_hover`, `secondary_active`), so the control behaves like the
 /// library button it is dressed as.
 ///
-/// **The seam of the split control is the caret's left border**; this half
-/// only squares its right edge when it is about to be joined, which is the
+/// **The seam of the split control is a sliver of the well between the
+/// halves**, drawn by the caller's gap — a border in the hairline token sat
+/// on this fill with next to no contrast and disappeared. This half only
+/// squares its right edge when it is about to be joined, which is also the
 /// caller's call.
 pub(crate) fn rail_row_filled(
     id: &'static str,
@@ -1870,7 +1872,7 @@ fn new_session_block(
     let choosable = projects.len() > 1 || agents.len() > 1;
     let target = cx.entity().downgrade();
 
-    let (radius, hairline) = (cx.theme().radius, cx.theme().border);
+    let radius = cx.theme().radius;
     let (fill, fill_fg, hover_fill, open_fill) = (
         cx.theme().secondary,
         cx.theme().secondary_foreground,
@@ -1899,6 +1901,14 @@ fn new_session_block(
         .items_center()
         .w_full()
         .min_w_0()
+        // The seam between the halves is a sliver of the well showing
+        // through, not a border: a hairline in the border token sits on the
+        // secondary fill with next to no contrast and disappeared there. The
+        // well against that fill is the exact contrast that makes the button
+        // itself visible, so the seam it draws can never be fainter than the
+        // control it splits. With no caret there is one child and the gap
+        // draws nothing.
+        .gap(px(1.))
         .child(div().flex_1().min_w_0().child(primary))
         .when(choosable, |bar| {
             // The sentence names whichever section the menu will actually
@@ -1912,11 +1922,11 @@ fn new_session_block(
             };
             // The other half of one filled control, drawn as a div rather
             // than a library button so the two halves share one fill and one
-            // hover rule exactly. Its left border is the seam; hovering
-            // either half lights that half alone, which is what says the
-            // control is split. `MenuTrigger` because a div is not
-            // `Selectable` on its own, and the open state takes the triple's
-            // third step so a held-open caret reads as pressed.
+            // hover rule exactly. The seam between the halves is the bar's
+            // 1px gap of well; hovering either half lights that half alone,
+            // which is what says the control is split. `MenuTrigger` because
+            // a div is not `Selectable` on its own, and the open state takes
+            // the triple's third step so a held-open caret reads as pressed.
             //
             // Sized to the header row beside it rather than to the ••• the
             // menus share a look with: this is the right half of that
@@ -1934,8 +1944,6 @@ fn new_session_block(
                 .text_color(fill_fg)
                 .cursor_pointer()
                 .hover(move |half| half.bg(hover_fill))
-                .border_l_1()
-                .border_color(hairline)
                 .rounded_r(radius)
                 .tooltip(move |window, cx| Tooltip::new(says).build(window, cx))
                 .child(Icon::new(IconName::ChevronDown).size_4());
