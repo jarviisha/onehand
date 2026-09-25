@@ -42,7 +42,7 @@ One window hosts exactly one workspace. The frame is a navigation **rail** plus 
 
 ```
 ┌────────────────┬──────────────────────────────┬───────────────┐
-│ workspace      │ title ⌄ · status   ⌕ ▣ ▤ ✕   │               │
+│ workspace      │ title ⌄            ⌕ ⏻ ▤ ▣   │               │
 │ + New session  │                              │   Workbench   │
 │                │        agent pane            │  (right dock, │
 │ PROJECTS       │      (centre panel)          │   closed by   │

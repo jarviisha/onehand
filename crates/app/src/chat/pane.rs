@@ -2708,15 +2708,19 @@ impl ChatPane {
             // rather than last: the cluster reads outward from the name by
             // what each control is about -- this and the past conversations
             // act on the session the name names, the dock pair on the window
-            // around it -- and a ✕ at the row's far edge put the one control
-            // that ends something where a pointer drifts. It keeps the
+            // around it -- and the row's far edge, where a pointer drifts, is
+            // the wrong seat for the one control that ends something. It keeps the
             // conversation -- the transcript is written at the end of every turn
             // and closing costs nothing that is not already on disk -- which is
             // why it can be a control on the row while deleting stays behind the
             // name, two presses and a warning away.
             .when(live, |header| {
                 header.child(
-                    header_control("close-session", IconName::Close, cx)
+                    // A power mark and not an ×: what the press does is switch
+                    // the running agent off, keeping every word, and every ×
+                    // in the row's reach says "dismiss this" -- beside two
+                    // dock toggles it read as closing a panel.
+                    header_control("close-session", crate::icons::Icon::Power, cx)
                         .tooltip("Close this session and its agent")
                         .on_click(cx.listener(|_: &mut Self, _, _, cx| {
                             cx.emit(ChatPaneEvent::CloseSession);
@@ -4728,11 +4732,15 @@ fn project_menu(
 ///
 /// Built in one place because the alternative is four call sites that each have
 /// to remember two things, and the one that forgets is the one that looks wrong.
-fn header_control(id: &'static str, icon: IconName, cx: &App) -> gpui_component::button::Button {
+fn header_control(
+    id: &'static str,
+    icon: impl Into<Icon>,
+    cx: &App,
+) -> gpui_component::button::Button {
     crate::controls::action(id)
         .ghost()
         .small()
-        .icon(Icon::new(icon))
+        .icon(icon.into())
         .text_color(cx.theme().muted_foreground)
 }
 

@@ -103,6 +103,7 @@ icons! {
     GitBranch => "git-branch",
     Paperclip => "paperclip",
     PlusLight => "plus-light",
+    Power => "power",
     Shield => "shield",
     SquarePen => "square-pen",
     SquareSlash => "square-slash",
