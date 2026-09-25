@@ -16,14 +16,18 @@
 //! that way, and the library's own default is overridden exactly once rather
 //! than at forty call sites that each have to remember.
 
+use std::rc::Rc;
+
 use gpui::{
-    App, Div, ElementId, Hsla, InteractiveElement, Interactivity, IntoElement, ParentElement as _,
-    SharedString, Stateful, StyleRefinement, Styled, Window, div, px,
+    App, Context, DismissEvent, Div, ElementId, Entity, Focusable as _, Hsla, InteractiveElement,
+    Interactivity, IntoElement, ParentElement as _, SharedString, Stateful, StyleRefinement,
+    Styled, Window, div, px, rems,
 };
 use gpui_component::Selectable;
 use gpui_component::StyledExt as _;
 use gpui_component::button::Button;
-use gpui_component::menu::{DropdownMenu, PopupMenuItem};
+use gpui_component::menu::{DropdownMenu, PopupMenu, PopupMenuItem};
+use gpui_component::popover::Popover;
 
 /// A button that answers the pointer, which is every button this app draws.
 ///
@@ -88,6 +92,92 @@ pub(crate) fn menu_row<E: IntoElement>(
 pub(crate) fn menu_item(label: impl Into<SharedString>) -> PopupMenuItem {
     let label = label.into();
     menu_row(move |_, _| div().child(label.clone()))
+}
+
+/// A menu that opens *below* its trigger, left-aligned to it.
+///
+/// The library's own `dropdown_menu` cannot say "below": every corner anchor
+/// it offers pins a corner of the *menu* to the *top* of the trigger --
+/// `TopLeft` lays the menu's first row over the control that opened it, and
+/// `BottomLeft` hangs the whole menu above -- and the side-positioned path its
+/// selects and tooltips use is not reachable from a menu trigger. What this
+/// rides instead is the popover's own offset mechanism: [`Popover`] applies
+/// the caller's style refinement to the popup's content, and a `top` inset
+/// there is exactly how the popover nudges its own popup off its trigger.
+/// The open state, the second-press close and the focus hand-off stay the
+/// library's, and the click-out dismiss is the menu's own mouse-down-out.
+/// What the inset moves is the *drawn* menu, which carries its own hitbox;
+/// the popover's occluding wrapper stays where the positioner put it, over
+/// the trigger.
+///
+/// **This mirrors the popover wiring inside
+/// [`gpui_component::menu::DropdownMenu`]** -- the slot, the build-on-open,
+/// the focus, the dismiss subscription -- and has to, because that wiring is
+/// private to the library. Bumping the `gpui-component` rev means diffing
+/// this function against it.
+///
+/// Two ceilings, both accepted for a trigger sitting at the top of its
+/// panel. The inset lands *after* the positioner has clamped the popup into
+/// the viewport, so in a window shorter than the menu the last rows overhang
+/// the bottom edge rather than flipping above the trigger. And the inset
+/// restates the small button's height rather than reading the trigger's, so
+/// a taller trigger would sit under the menu's first row; nothing hands one
+/// over today.
+///
+/// The menu entity is kept in window state and built once per open, not once
+/// per frame: the content closure runs on every render while the popup is up,
+/// and a menu rebuilt each frame forgets which row the keyboard was on.
+/// Emptying the slot on dismiss is what lets the menu entity go -- the
+/// subscription that empties it is keyed on the menu and holds the slot, so
+/// a slot never emptied is a menu never dropped -- and the slot itself is
+/// collected by the window a frame after the popup closes, since nothing
+/// accesses it while closed.
+pub(crate) fn menu_below(
+    id: &'static str,
+    trigger: Button,
+    build: impl Fn(PopupMenu, &mut Window, &mut Context<PopupMenu>) -> PopupMenu + 'static,
+) -> Popover {
+    let build = Rc::new(build);
+    // The popover's id is derived from the trigger's rather than shared with
+    // it: the popover wraps the trigger, and two nested elements under one id
+    // is a collision the library avoids the same way.
+    Popover::new(SharedString::from(format!("popover:{id}")))
+        .appearance(false)
+        .overlay_closable(false)
+        .trigger(trigger)
+        // The trigger is one of the app's small square controls, 1.5rem tall;
+        // the quarter rem on top of that keeps the menu's edge off it. In
+        // rems, so a zoomed panel moves the menu with the button it belongs
+        // to. A taller trigger would need this taking the height as an
+        // argument; nothing hands one over today.
+        .top(rems(1.75))
+        .content(move |_, window, cx| {
+            let slot = window.use_keyed_state((ElementId::from(id), "menu-below"), cx, |_, _| {
+                None::<Entity<PopupMenu>>
+            });
+            match slot.read(cx).clone() {
+                Some(menu) => menu,
+                None => {
+                    let build = build.clone();
+                    let menu = PopupMenu::build(window, cx, move |menu, window, cx| {
+                        build(menu, window, cx)
+                    });
+                    slot.update(cx, |state, _| *state = Some(menu.clone()));
+                    menu.focus_handle(cx).focus(window, cx);
+                    let popover = cx.entity();
+                    window
+                        .subscribe(&menu, cx, {
+                            let slot = slot.clone();
+                            move |_, _: &DismissEvent, window, cx| {
+                                popover.update(cx, |state, cx| state.dismiss(window, cx));
+                                slot.update(cx, |state, _| *state = None);
+                            }
+                        })
+                        .detach();
+                    menu
+                }
+            }
+        })
 }
 
 /// A hand-made row used whole as the trigger for a dropdown menu.

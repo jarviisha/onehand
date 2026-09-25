@@ -3009,9 +3009,11 @@ impl ChatPane {
         let this = cx.entity();
 
         // The same small ghost button as the rest of the header's controls,
-        // so one row keeps one kind of control. `TopLeft` pins the menu's
-        // top-left corner to the mark, which is what puts the popup directly
-        // under the dots that were pressed.
+        // so one row keeps one kind of control. The menu goes through the
+        // below-anchored builder rather than the library's dropdown, because
+        // the dropdown's every anchor opens the menu *over* its trigger and
+        // the ask here is that the popup land under the dots that were
+        // pressed.
         let trigger = header_control("conversation-menu", IconName::EllipsisVertical, cx).tooltip(
             match project.is_some() {
                 true => "Everything done to this project",
@@ -3019,18 +3021,26 @@ impl ChatPane {
             },
         );
         let row = div().h_flex().items_center().gap_1().min_w_0().child(name);
+        let mount = move |menu: gpui_component::popover::Popover| {
+            row.child(div().flex_none().child(menu)).into_any_element()
+        };
 
+        // Two ids, not one: the popover's open state and its held menu are
+        // keyed by this string, and the pane can flip between the project
+        // page and a live session while the menu is up -- under a shared key
+        // the survivor would be the other state's menu, its rows aimed at
+        // things that are gone.
         if let Some((pinned, is_repo)) = project {
-            return row
-                .child(div().flex_none().child(trigger.dropdown_menu_with_anchor(
-                    gpui::Anchor::TopLeft,
-                    project_menu(pinned, is_repo, this),
-                )))
-                .into_any_element();
+            return mount(crate::controls::menu_below(
+                "project-menu",
+                trigger,
+                project_menu(pinned, is_repo, this),
+            ));
         }
 
-        row.child(div().flex_none().child(trigger.dropdown_menu_with_anchor(
-            gpui::Anchor::TopLeft,
+        mount(crate::controls::menu_below(
+            "conversation-menu",
+            trigger,
             move |menu, _, cx| {
                 let danger = crate::theme::status_ink(cx).danger;
                 let (rename, export, history) = (this.clone(), this.clone(), this.clone());
@@ -3123,8 +3133,7 @@ impl ChatPane {
                     }),
                 )
             },
-        )))
-        .into_any_element()
+        ))
     }
 
     fn busy(&self, cx: &App) -> bool {
