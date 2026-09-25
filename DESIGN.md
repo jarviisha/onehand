@@ -42,7 +42,7 @@ One window hosts exactly one workspace. The frame is a navigation **rail** plus 
 
 ```
 ┌────────────────┬──────────────────────────────┬───────────────┐
-│ workspace      │ title ⌄            ⌕ ⍈ ▤ ▣   │               │
+│ workspace      │ title ⋮            ⌕ ⍈ ▤ ▣   │               │
 │ + New session  │                              │   Workbench   │
 │                │        agent pane            │  (right dock, │
 │ PROJECTS       │      (centre panel)          │   closed by   │
@@ -57,12 +57,18 @@ One window hosts exactly one workspace. The frame is a navigation **rail** plus 
 ```
 
 - The **agent pane's header** is the row above the transcript, and it is split by
-  what a control is *about*. **The conversation's name is the menu**: it is the
-  one thing on the row drawn in full ink and weight, and pressing it opens
-  everything done to the conversation — rename, the exports, resume another,
-  restart, and, alone in the danger tint, delete. Its hover brings a background
-  and a chevron whose space is held either way, so the name does not shift under
-  the pointer about to press it. **Nothing sits beside it.** A badge carrying
+  what a control is *about*. **The conversation's name is prose and the
+  vertical-dots mark at its end is its menu**: the name is the one thing on the
+  row drawn in full ink and weight, and pressing the dots opens everything done
+  to the conversation — rename, the exports, resume another, restart, and,
+  alone in the danger tint, delete. The menu is anchored to the mark, so it
+  opens directly under the dots that were pressed rather than under whatever
+  width the name happened to be; and with the menu off the name, the name is
+  free to give way — it truncates while the mark never shrinks, so narrowing
+  the panel shortens the name and never takes the control. The mark also
+  carries a tooltip, which the name-as-button never could: the library builds
+  a button's accessible name from its label alone, and the name had to be a
+  child to ellipsize at all. **No badge sits beside it.** A badge carrying
   what the session is doing did, and every word of it was said twice —
   connecting, working and awaiting approval all appear on the running line at
   the foot of the transcript, and the rail's row for that session carries the
@@ -86,9 +92,9 @@ One window hosts exactly one workspace. The frame is a navigation **rail** plus 
   Workbench, always** — its dock is the window's right edge, so the outermost
   control moves the outermost panel. That is also why *Close session* stands
   before the docks rather than at the end: the far edge is where a pointer
-  drifts, and it is the one control on the row that ends something. There is
-  no `⋯`; a menu button beside the name it acts on says nothing the name could
-  not say itself.
+  drifts, and it is the one control on the row that ends something. The
+  vertical dots beside the name are the row's one menu mark, and everything
+  behind them is done to the conversation the name beside them is.
   **Narrowing the panel takes the name first and the controls last, and stops
   at a floor.** The name ellipsizes while every control keeps its full size — a
   name half-read still names the conversation, and a reader can finish it in the

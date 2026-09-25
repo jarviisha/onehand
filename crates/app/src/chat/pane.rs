@@ -2597,16 +2597,16 @@ impl ChatPane {
     /// nowhere else to be offered from, and a route that exists only as a
     /// keystroke is a route only someone who already knows it can take.
     ///
-    /// **The name carries the conversation's own menu**, and every other
+    /// **The name names the conversation and the vertical-dots mark beside it
+    /// carries its menu**, and every other
     /// control sits on the side of what it acts on: the way back to a hidden
     /// rail at the row's left edge, the side the rail returns to, and the
     /// right-hand end reading outward from the name — the past conversations
     /// and closing the session, which act on the session the name names, then
     /// the terminal and last the Workbench, whose dock is the window's right
-    /// edge, so the outermost control moves the outermost panel. That
-    /// split is why there is no ••• here any more — a menu button
-    /// beside the name it acts on says nothing the name could not say itself, and
-    /// the things in it were all things done to the conversation the name is.
+    /// edge, so the outermost control moves the outermost panel. The dots are
+    /// the row's one menu mark, and everything behind them is something done
+    /// to the conversation the name beside them is.
     fn header(&self, cx: &mut Context<Self>) -> impl IntoElement + use<> {
         let chat = self.active_chat(cx);
         let title = chat.and_then(Chat::conversation_title).unwrap_or_else(|| {
@@ -2963,14 +2963,18 @@ impl ChatPane {
 
     /// The name of the conversation on screen, and everything done *to* it.
     ///
-    /// **The name is the control.** It is the loudest thing in the header --
+    /// **The name is prose and the vertical-dots mark beside it is the
+    /// control.** The name stays the loudest thing in the header --
     /// full-strength ink and semibold against a row that is otherwise muted --
     /// because it is the one thing there that answers "which conversation is
-    /// this", and it was drawn in the same grey as the status beside it. What
-    /// says it can be pressed is the hover: the background arrives and a chevron
-    /// appears at its end. The chevron's space is held whether or not it is
-    /// drawn, so the name does not move under the pointer that is about to
-    /// press it.
+    /// this". The menu lives on the mark and not on the name, so the popup
+    /// opens directly under the dots that were pressed rather than under
+    /// whatever width the name happened to be that frame -- and the name is
+    /// free to give way: it truncates while the mark is `flex_none`, so
+    /// narrowing the panel shortens the name and never takes the control.
+    /// The mark also carries a tooltip, which the name-as-button never could:
+    /// the library builds a button's accessible name from `label` alone, and
+    /// the name had to be a child to ellipsize at all.
     ///
     /// **The project page gets the same control**, naming the project instead
     /// and holding what is done to a project. Same shape on purpose: on that
@@ -2993,166 +2997,133 @@ impl ChatPane {
         let live = self.active_chat(cx).is_some();
         let project = (!live).then_some(self.empty.as_ref()).flatten();
         let name = div()
+            .min_w_0()
             .truncate()
             .text_color(cx.theme().foreground)
             .font_semibold()
-            .child(title.clone());
+            .child(title);
         if !live && project.is_none() {
             return div().min_w_0().child(name).into_any_element();
         }
         let project = project.map(|project| (project.pinned, project.is_repo));
-
-        let radius = cx.theme().radius;
         let this = cx.entity();
 
-        let row = crate::controls::action("conversation-title")
-            .ghost()
-            .h_flex()
-            .items_center()
-            .gap_1()
-            // **These two are what make the name give way, and they do reach
-            // the button.** The component sets `flex_shrink_0` on its own root,
-            // but it clones the call site's refinement before that and refines
-            // the root with it again afterwards (`button/button.rs:499`, `:526`
-            // and `:607`) -- and refining writes every `Some` of the later
-            // refinement over the earlier one, so `flex_initial`'s
-            // `flex_shrink: Some(1.)` is what survives.
-            //
-            // Worth spelling out because the opposite was believed here for a
-            // while, and a `max_w_full` was added to work around a constraint
-            // that was never in force. Nothing else about the button changed
-            // when it came back out.
-            .flex_initial()
-            .min_w_0()
-            .overflow_hidden()
-            .px_1p5()
-            .py_0p5()
-            .rounded(radius)
-            // A child and not `.label()`, because the library draws a label
-            // `flex_none` with nothing to ellipsize it, so the name kept its full
-            // width inside a button that had just been told to give way.
-            // **No line height of its own**, although the library's own label
-            // pins one at exactly the font size. It can afford to: its label
-            // does not clip, so a descender simply hangs out of the line box.
-            // This one has `truncate` on it for the ellipsis, and that brings
-            // `overflow_hidden` with it -- which turns the same line box into a
-            // blade and takes the foot off every `g`, `y` and `đ` in the name.
-            // The button's height is fixed and its contents are centred, so
-            // there is nothing for a taller line box to push around.
-            //
-            // **What this costs is the button's accessible name**, and there is
-            // no way to pay it back through this component: the library builds
-            // that name out of `label` alone, and the only setter for it is an
-            // inherent method on the base button it keeps in a private field.
-            // Putting the name back means not using this component for the
-            // title at all.
-            .child(div().min_w_0().truncate().child(title))
-            .dropdown_caret(true)
-            .text_color(cx.theme().foreground)
-            .font_semibold();
+        // The same small ghost button as the rest of the header's controls,
+        // so one row keeps one kind of control. `TopLeft` pins the menu's
+        // top-left corner to the mark, which is what puts the popup directly
+        // under the dots that were pressed.
+        let trigger = header_control("conversation-menu", IconName::EllipsisVertical, cx).tooltip(
+            match project.is_some() {
+                true => "Everything done to this project",
+                false => "Everything done to this conversation",
+            },
+        );
+        let row = div().h_flex().items_center().gap_1().min_w_0().child(name);
 
         if let Some((pinned, is_repo)) = project {
-            let target = this.clone();
             return row
-                .dropdown_menu_with_anchor(
+                .child(div().flex_none().child(trigger.dropdown_menu_with_anchor(
                     gpui::Anchor::TopLeft,
-                    project_menu(pinned, is_repo, target),
-                )
+                    project_menu(pinned, is_repo, this),
+                )))
                 .into_any_element();
         }
 
-        row.dropdown_menu_with_anchor(gpui::Anchor::TopLeft, move |menu, _, cx| {
-            let danger = crate::theme::status_ink(cx).danger;
-            let (rename, export, history) = (this.clone(), this.clone(), this.clone());
-            let (restart, remove) = (this.clone(), this.clone());
-            let archive = archive.clone();
-            menu.item(
-                crate::controls::menu_item("Rename…")
-                    .icon(Icon::new(crate::icons::Icon::SquarePen))
-                    .on_click(move |_, _, cx: &mut App| {
-                        rename.update(cx, |_: &mut Self, cx| cx.emit(ChatPaneEvent::Rename));
-                    }),
-            )
-            .item(
-                crate::controls::menu_item("Export as Markdown…")
-                    .icon(Icon::new(IconName::ExternalLink))
-                    .on_click(move |_, _, cx: &mut App| {
-                        export.update(cx, |pane: &mut Self, cx| pane.export(cx));
-                    }),
-            )
-            // Named and refusing rather than absent. The transcript is held
-            // in a shape JSON can carry and this is the format another tool
-            // reads; leaving it out entirely would say the opposite.
-            .item(
-                PopupMenuItem::new("Export as JSON… (not yet)")
-                    .icon(Icon::new(IconName::File))
-                    .disabled(true),
-            )
-            .separator()
-            .item(
-                // Named for what it does *to this session*, because the
-                // header now carries a control that reaches the same
-                // archives and leaves the session alone: this one swaps
-                // what the conversation on screen is, and the difference
-                // between the two is the whole question.
-                //
-                // Disabled mid-turn rather than guarded by a second click:
-                // going back to the picker throws the running turn away
-                // exactly as a restart does, and a menu that has to be
-                // opened twice to be believed is a worse warning than an
-                // item that will not go.
-                match busy {
-                    true => PopupMenuItem::new("Resume in this session…"),
-                    false => crate::controls::menu_item("Resume in this session…"),
-                }
-                .icon(Icon::new(IconName::Undo))
-                .disabled(busy)
-                .on_click(move |_, _, cx: &mut App| {
-                    history.update(cx, |pane: &mut Self, cx| pane.show_history(cx));
-                }),
-            )
-            .item(
-                crate::controls::menu_item("Restart the agent")
-                    .icon(Icon::new(IconName::Redo))
-                    .on_click(move |_, _, cx: &mut App| {
-                        restart.update(cx, |_: &mut Self, cx| cx.emit(ChatPaneEvent::Restart));
-                    }),
-            )
-            .separator()
-            .item(
-                // The only entry here that ends something for good.
-                // Closing the session -- which keeps every word of this on
-                // disk -- is a control of its own at the other end of the
-                // header, so the two are never one press apart.
-                {
-                    let row = move |_: &mut Window, _: &mut App| {
-                        div().text_color(danger).child("Delete conversation")
-                    };
-                    // Nothing on disk to remove until the first turn has
-                    // ended, so until then this refuses -- and a refusal
-                    // keeps the library's own cursor, since a pointer over
-                    // it would promise a press that does nothing.
-                    match archive.is_none() {
-                        true => PopupMenuItem::element(row),
-                        false => crate::controls::menu_row(row),
+        row.child(div().flex_none().child(trigger.dropdown_menu_with_anchor(
+            gpui::Anchor::TopLeft,
+            move |menu, _, cx| {
+                let danger = crate::theme::status_ink(cx).danger;
+                let (rename, export, history) = (this.clone(), this.clone(), this.clone());
+                let (restart, remove) = (this.clone(), this.clone());
+                let archive = archive.clone();
+                menu.item(
+                    crate::controls::menu_item("Rename…")
+                        .icon(Icon::new(crate::icons::Icon::SquarePen))
+                        .on_click(move |_, _, cx: &mut App| {
+                            rename.update(cx, |_: &mut Self, cx| cx.emit(ChatPaneEvent::Rename));
+                        }),
+                )
+                .item(
+                    crate::controls::menu_item("Export as Markdown…")
+                        .icon(Icon::new(IconName::ExternalLink))
+                        .on_click(move |_, _, cx: &mut App| {
+                            export.update(cx, |pane: &mut Self, cx| pane.export(cx));
+                        }),
+                )
+                // Named and refusing rather than absent. The transcript is held
+                // in a shape JSON can carry and this is the format another tool
+                // reads; leaving it out entirely would say the opposite.
+                .item(
+                    PopupMenuItem::new("Export as JSON… (not yet)")
+                        .icon(Icon::new(IconName::File))
+                        .disabled(true),
+                )
+                .separator()
+                .item(
+                    // Named for what it does *to this session*, because the
+                    // header now carries a control that reaches the same
+                    // archives and leaves the session alone: this one swaps
+                    // what the conversation on screen is, and the difference
+                    // between the two is the whole question.
+                    //
+                    // Disabled mid-turn rather than guarded by a second click:
+                    // going back to the picker throws the running turn away
+                    // exactly as a restart does, and a menu that has to be
+                    // opened twice to be believed is a worse warning than an
+                    // item that will not go.
+                    match busy {
+                        true => PopupMenuItem::new("Resume in this session…"),
+                        false => crate::controls::menu_item("Resume in this session…"),
                     }
-                }
-                .icon(Icon::new(IconName::Delete).text_color(danger))
-                // An entry that can only report that it has nothing to do is
-                // one the eye has to learn to skip, so it is refused rather
-                // than hidden -- the menu keeps its shape between one turn
-                // and the next.
-                .disabled(archive.is_none())
-                .on_click(move |_, _, cx: &mut App| {
-                    let Some(dir) = archive.clone() else {
-                        return;
-                    };
-                    remove.update(cx, |_: &mut Self, cx| {
-                        cx.emit(ChatPaneEvent::DeleteConversation(dir))
-                    });
-                }),
-            )
-        })
+                    .icon(Icon::new(IconName::Undo))
+                    .disabled(busy)
+                    .on_click(move |_, _, cx: &mut App| {
+                        history.update(cx, |pane: &mut Self, cx| pane.show_history(cx));
+                    }),
+                )
+                .item(
+                    crate::controls::menu_item("Restart the agent")
+                        .icon(Icon::new(IconName::Redo))
+                        .on_click(move |_, _, cx: &mut App| {
+                            restart.update(cx, |_: &mut Self, cx| cx.emit(ChatPaneEvent::Restart));
+                        }),
+                )
+                .separator()
+                .item(
+                    // The only entry here that ends something for good.
+                    // Closing the session -- which keeps every word of this on
+                    // disk -- is a control of its own at the other end of the
+                    // header, so the two are never one press apart.
+                    {
+                        let row = move |_: &mut Window, _: &mut App| {
+                            div().text_color(danger).child("Delete conversation")
+                        };
+                        // Nothing on disk to remove until the first turn has
+                        // ended, so until then this refuses -- and a refusal
+                        // keeps the library's own cursor, since a pointer over
+                        // it would promise a press that does nothing.
+                        match archive.is_none() {
+                            true => PopupMenuItem::element(row),
+                            false => crate::controls::menu_row(row),
+                        }
+                    }
+                    .icon(Icon::new(IconName::Delete).text_color(danger))
+                    // An entry that can only report that it has nothing to do is
+                    // one the eye has to learn to skip, so it is refused rather
+                    // than hidden -- the menu keeps its shape between one turn
+                    // and the next.
+                    .disabled(archive.is_none())
+                    .on_click(move |_, _, cx: &mut App| {
+                        let Some(dir) = archive.clone() else {
+                            return;
+                        };
+                        remove.update(cx, |_: &mut Self, cx| {
+                            cx.emit(ChatPaneEvent::DeleteConversation(dir))
+                        });
+                    }),
+                )
+            },
+        )))
         .into_any_element()
     }
 
@@ -4721,7 +4692,7 @@ fn project_menu(
     }
 }
 
-/// One of the header's right-hand controls.
+/// One of the header's controls.
 ///
 /// **Bigger and quieter than the library's default.** Two changes that pull in
 /// opposite directions and are one decision: at the smallest size these were

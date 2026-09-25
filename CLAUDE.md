@@ -622,9 +622,13 @@ plus `sendMessage` and `answerCallbackQuery`. Everything that is not the wire is
   drawn between the list and every control, so what it takes is the conversation alone, and it ends
   at the clip rather than at the card, which is narrower than the panel.
   Its **header is the panel's only chrome** (the dock draws the conversation bare), and it is split by
-  what a control is *about*. **The conversation's name is itself the menu** — full-strength ink and
-  semibold against an otherwise muted row, with the hover background and a chevron whose space is held
-  whether or not it is drawn, so the name does not shift under the pointer. Behind it: *Rename…*,
+  what a control is *about*. **The conversation's name is prose and the vertical-dots mark at its
+  end is its menu** — the name full-strength ink and semibold against an otherwise muted row, the
+  mark the same small ghost button as the row's other controls, with the popup anchored to the mark
+  so it opens directly under the dots that were pressed. The name truncates while the mark never
+  shrinks, so narrowing the panel shortens the name and never takes the control; and the mark
+  carries a tooltip, which the name-as-button never could — the library builds a button's
+  accessible name from its label alone, and the name had to be a child to ellipsize. Behind it: *Rename…*,
   *Export as Markdown…*, *Export as JSON…* (named and disabled — it is planned, and leaving it out
   would say otherwise), *Resume in this session…* — named for what it does *to this session*, since
   the header now carries a control reaching the same archives that leaves the session alone —
@@ -668,9 +672,9 @@ plus `sendMessage` and `answerCallbackQuery`. Everything that is not the wire is
   muted so four icons in a row do not out-shout the conversation's name beside them; the library's
   hover fill brings the ink back on the one about to be pressed. **Closing is a control and deleting is
   not**, and that is the split: closing keeps every word — the transcript is written at the end of
-  every turn — while deleting is the one thing the app cannot undo, so it stays behind the name, two
-  presses and a warning away, and the two are never adjacent. There is no ••• — a menu button beside
-  the name it acts on says nothing the name could not say itself.
+  every turn — while deleting is the one thing the app cannot undo, so it stays behind the dots, two
+  presses and a warning away, and the two are never adjacent. The vertical dots beside the name are
+  the row's one menu mark, and everything behind them is done to the conversation the name is.
   **The past-conversations menu** (`ChatPane::history_control`) is the one route to an archive that
   keeps the session on screen: picking a row emits `StartSession { agent, resume }`, so the old
   conversation comes up as a second session and the current one stays where it is in the rail. The
@@ -1512,17 +1516,13 @@ back is smaller than carrying a table that says the feature is wired up.
 
 Listed because a missing feature nobody wrote down reads as a bug in the ones that exist:
 
-- **The conversation title's menu button has no accessible name.** It draws the name as a child
-  rather than through the component's `label`, because a label is drawn `flex_none` with nothing to
-  ellipsize it and held the whole header row open however narrow the panel became. The library builds
-  a button's accessible name out of `label` and nothing else, and the only setter is an inherent
-  method on the base button it keeps in a private field — so the two cannot both be had from this
-  component. The route out is `controls::MenuTrigger`, which already exists for the rail's rows:
-  a `Stateful<Div>` does implement gpui's `StatefulInteractiveElement`, so `aria_label` reaches it,
-  and the label's own flex behaviour would be ours. What that costs is rebuilding the ghost hover
-  fill and the caret this component gives for free. The icon buttons along the rest of that row have
-  never had names either and carry tooltips instead, so this is one control short of a row that was
-  already short.
+- **The header's icon buttons have no accessible names, the conversation menu's dots included.**
+  The library builds a button's accessible name out of `label` and nothing else, and the only
+  setter is an inherent method on the base button it keeps in a private field — so an icon-only
+  button cannot be given one through this component. Every control on the row carries a tooltip
+  instead. The menu used to be the name itself, drawn as a child so it could ellipsize, which was
+  the same gap in a worse place; moving the menu onto the vertical-dots mark made the name plain
+  prose and left one uniform row of tooltipped icon buttons.
 - **There is no search in the transcript**, and the removal was deliberate rather than pending. It
   matched whole *items* and never occurrences, so a word said ten times in one answer was one hit
   with no mark on the word itself, and a hit in text a block had truncated was counted, scrolled to
