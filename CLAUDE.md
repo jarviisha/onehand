@@ -1075,12 +1075,10 @@ centre is the chat, right dock the Workbench, bottom dock the terminal.
   name and *New session*, taller, at a larger text size and a weight up, with the identity's icon in
   full ink rather than muted. At the list's own scale they read as its first two entries, which is
   what they are not. **The 16px icon column does not move** — only the row around it grows, or the
-  header's labels would sit a few pixels off every label below them. **_Add project…_ is a row here
-  only while the workspace has no project**, where it is the one thing to do and the list under it
-  is empty; with projects in the rail it lives in the workspace menu behind the name, beside the
-  rest of what acts on the whole workspace. It was a standing row between the two, which is a
-  permanent line above all day's work for something done once per project — and before that it was
-  the last row *inside* the Projects group, which is a place a tab bar cannot have.
+  header's labels would sit a few pixels off every label below them. *Add project…* sits between
+  them, quieter than either: it is what a workspace with no project needs first and it is about the
+  workspace rather than about the list, and it is done once per project where *New session* is done
+  all day. It was the last row *inside* the Projects group, which is a place a tab bar cannot have.
 - **The caret beside *New session* picks the project** (`rail::new_session_menu`), and the row itself
   is unchanged: one click still starts the default agent on the selected project. What the menu adds
   is the two things that click has to choose silently — every project in the workspace under *Start
@@ -1096,9 +1094,8 @@ centre is the chat, right dock the Workbench, bottom dock the terminal.
   shape, after the second copy of it appeared here.
 - **The workspace identity row *is* the switcher** (`rail::workspace_menu`) — the whole row opens the
   menu, and nothing marks it but the hover, the pointer and the tooltip: no chevron, because a caret
-  on the rail's topmost row competed with the primary action directly below it. The menu is
-  *Add project…* alone above a separator — the one entry about what is *in* this workspace rather
-  than about which one is on screen — then the recents list, each row named by
+  on the rail's topmost row competed with the primary action directly below it. The menu is the
+  recents list — each row named by
   its folder with the parent path beside it (shortened from the *front*, since a path is read from
   its tail), the one on screen checked and unpickable — then *Open workspace…* and *New workspace…*.
   **The tooltip leads with the workspace's name**, because this row is the one place that name is

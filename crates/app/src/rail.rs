@@ -1537,25 +1537,21 @@ pub fn rail(
                     workspace_target,
                     cx,
                 ))
-                // **Only while there is no project**, where it is the one thing
-                // to do and the list below it is empty. With projects in the
-                // rail it is a permanent row for something done once per
-                // project, above a list of all day's work, and it lives in the
-                // workspace menu behind the name instead -- which is where the
-                // rest of what acts on the whole workspace already is.
-                .when(window_state.workspace.roots.is_empty(), |header| {
-                    header.child(
-                        rail_row("rail-add-project", IconName::FolderOpen, "Add project…", cx)
-                            .text_color(cx.theme().muted_foreground)
-                            .tooltip(|window, cx| {
-                                Tooltip::new("Add a project root to this workspace")
-                                    .build(window, cx)
-                            })
-                            .on_click(cx.listener(|shell: &mut Shell, _: &ClickEvent, _, cx| {
-                                shell.add_root(cx);
-                            })),
-                    )
-                })
+                // Above *New session*, because it is what a workspace with no
+                // project needs first and because both of them are about the
+                // workspace rather than about the list underneath. Quieter than
+                // the primary action right below it: adding a project is done
+                // once per project, starting a session is done all day.
+                .child(
+                    rail_row("rail-add-project", IconName::FolderOpen, "Add project…", cx)
+                        .text_color(cx.theme().muted_foreground)
+                        .tooltip(|window, cx| {
+                            Tooltip::new("Add a project root to this workspace").build(window, cx)
+                        })
+                        .on_click(cx.listener(|shell: &mut Shell, _: &ClickEvent, _, cx| {
+                            shell.add_root(cx);
+                        })),
+                )
                 .child(new_session_block(window_state_shell, window_state, cx))
                 // The hairline is where the header stops being about the
                 // workspace and starts being about the list: everything above
@@ -1720,27 +1716,7 @@ fn workspace_menu(
 ) -> impl Fn(PopupMenu, &mut Window, &mut Context<PopupMenu>) -> PopupMenu + 'static {
     move |menu, _, cx| {
         let muted = cx.theme().muted_foreground;
-        let add = shell.clone();
-        // First, and alone above the separator: it is the one entry here about
-        // what is *in* this workspace rather than about which workspace is on
-        // screen. It was a standing row in the rail's header, which is a
-        // permanent line for something done once per project -- the rail still
-        // offers it there while the workspace has no project at all, since
-        // then it is the only thing to do.
-        let mut menu = menu
-            .item(
-                // The project row's own icon, and deliberately not the
-                // `FolderOpen` two rows below: that one is *Open workspace…*,
-                // and one drawing for two different destinations in one menu
-                // is the icon saying less than nothing.
-                crate::controls::menu_item("Add project…")
-                    .icon(Icon::new(IconName::Folder))
-                    .on_click(move |_, _, cx: &mut App| {
-                        add.update(cx, |shell: &mut Shell, cx| shell.add_root(cx))
-                            .ok();
-                    }),
-            )
-            .separator();
+        let mut menu = menu;
         // No heading over nothing: a workspace that has never been bound
         // has no recents, and the two actions below stand on their own.
         if !recents.is_empty() {
