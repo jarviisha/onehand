@@ -596,17 +596,52 @@ fn session_menu(
 /// two disagree about — and it is a footnote either way: small, muted, capped,
 /// and never the thing the row is read for.
 enum Note {
-    /// Which agent runs it. Worth saying only where there is more than one to
-    /// be — with a single configured agent it is the same word on every row,
-    /// and a column of identical words is what the conversation's title
-    /// replaced — and only where the row's own label is *not* already that
-    /// word, which is why this is resolved inside the row rather than by the
-    /// caller.
-    Agent,
-    /// Which project it belongs to. What a row outside the tree has lost: the
-    /// tree said it by where the row sat, and the flat list has nowhere to put
-    /// that but here.
+    /// A row in the tree, nested under its project's folder row.
+    ///
+    /// It carries which agent runs it, and only where `among_many` says that
+    /// is a question this project has more than one answer to. **The count is
+    /// the project's sessions and not the configured agent menu**, which is
+    /// what it used to be: three agents in the settings file put the same
+    /// truncated word on every session of every project, including the nine
+    /// projects running one agent apiece — and a column of identical words is
+    /// what the conversation's title replaced. What decides it is whether the
+    /// rows beside this one disagree.
+    ///
+    /// Gated again inside the row on the label *not* already being that word,
+    /// which is why the string is resolved there rather than by the caller.
+    Agent { among_many: bool },
+    /// A row in the flat list, standing on its own. It carries which project
+    /// it belongs to: what a row outside the tree has lost, since the tree
+    /// said it by where the row sat and the flat list has nowhere to put that
+    /// but here.
     Project(SharedString),
+}
+
+/// What the nest rule's inset costs a session row, in characters of its label.
+///
+/// The rule is drawn 14px in with 10px of padding after it, and [`label_cap`]
+/// counts characters at roughly 7px each. Rounded up, because being one
+/// character short of the room a row has costs an ellipsis and being one over
+/// costs a clipped word.
+const NEST_CHARS: usize = 4;
+
+impl Note {
+    /// What this row's place and its footnote take off the label's end.
+    ///
+    /// [`label_cap`] answers for a row the full width of the rail, and a
+    /// session row is never one: a nested row sits inside the nest rule's
+    /// inset, and either footnote takes its own width off the far end. While
+    /// neither was charged, the cap let a title through at a length the row had
+    /// no room for — and `SidebarMenuItem`'s label is a bare string with no
+    /// truncation of its own, so the overflow was clipped mid-word with not
+    /// even an ellipsis to say a word had been cut.
+    fn label_cost(&self, drawn: bool) -> usize {
+        let footnote = if drawn { MAX_AGENT_LABEL } else { 0 };
+        match self {
+            Note::Agent { .. } => NEST_CHARS + footnote,
+            Note::Project(_) => footnote,
+        }
+    }
 }
 
 /// One session row: nested under its root's folder row, or standing on its own
@@ -623,29 +658,29 @@ fn session_row(
     session_idx: usize,
     session: &Session,
     active: bool,
-    note: Option<Note>,
+    note: Note,
     cx: &mut Context<Shell>,
 ) -> SidebarMenuItem {
     let uid = session.uid;
     let state = shell.session_row(uid, cx);
     let signal = state.signal;
-    let label = session_label(
-        state.title.as_deref(),
-        session.title(),
-        label_cap(shell.rail_width(cx)),
-    );
-    let note = match note {
-        // Only alongside a conversation title: where the row has fallen back to
-        // the agent's name, the suffix would repeat the label it sits next to.
-        Some(Note::Agent) => state
-            .title
-            .is_some()
+    let footnote = match &note {
+        // Only alongside a conversation title, and only where the project runs
+        // more than one agent: where the row has fallen back to the agent's
+        // name, the suffix would repeat the label it sits next to.
+        Note::Agent { among_many } => (*among_many && state.title.is_some())
             .then(|| ellipsize(session.title(), MAX_AGENT_LABEL)),
         // Always: the project is the one thing the flat row cannot say any
         // other way, and it is true whether or not the conversation has a name.
-        Some(Note::Project(project)) => Some(project),
-        None => None,
+        Note::Project(project) => Some(project.clone()),
     };
+    // Resolved before the label, because what the row is carrying is what
+    // decides how much of the label fits.
+    let label = session_label(
+        state.title.as_deref(),
+        session.title(),
+        label_cap(shell.rail_width(cx)).saturating_sub(note.label_cost(footnote.is_some())),
+    );
     // A weak handle because both menu closures outlive this frame.
     let menu_target = cx.entity().downgrade();
     let suffix_target = menu_target.clone();
@@ -666,7 +701,7 @@ fn session_row(
                 .gap_1()
                 .flex_shrink(1.)
                 .min_w_0()
-                .when_some(note.clone(), |row, note| {
+                .when_some(footnote.clone(), |row, note| {
                     row.child(
                         div()
                             .max_w(MAX_AGENT_W)
@@ -702,6 +737,17 @@ fn session_row(
 /// the root's path because the label is a folder name and two projects can
 /// share one.
 ///
+/// **The branch is written out on the selected project's row alone**, and the
+/// count on every row. The branch is what you read while you are working in a
+/// project, and on the ten rows you are not in it is ten strings cut to
+/// `MAX_BRANCH_W` -- where `feat/consol…` and `feat/codoh…` say nothing to
+/// tell their projects apart and every one of them is taking width from the
+/// name that would. It is `show_branch` and not a caller that drops the
+/// argument, because the *tooltip* still carries the whole branch either way:
+/// the suffix is drawn for any repository, so hovering a quiet row still
+/// answers the question, and it is also the only hover target on the row
+/// carrying the project's untruncated name.
+///
 /// **The project's own untruncated name leads it**, because the row's label is
 /// cut to fit and `SidebarMenuItem` offers nowhere to hang a tooltip of its
 /// own -- its label is a bare string, not an element. This is the one hover
@@ -718,6 +764,7 @@ fn session_row(
 fn git_facts(
     label: SharedString,
     branch: Option<SharedString>,
+    show_branch: bool,
     changed: usize,
     path: SharedString,
     cx: &App,
@@ -732,7 +779,7 @@ fn git_facts(
         .items_center()
         .gap_1()
         .min_w_0()
-        .when_some(branch, |row, branch| {
+        .when_some(branch.filter(|_| show_branch), |row, branch| {
             row.child(
                 div()
                     .max_w(MAX_BRANCH_W)
@@ -904,12 +951,32 @@ fn project_menu(
     }
 }
 
+/// Whether naming the agent on a project's session rows tells the reader
+/// anything.
+///
+/// It does exactly when the sessions disagree about it. Configured agents are
+/// the wrong count and were the one this used: a second entry in the settings
+/// file put the same word — truncated, since it shares the row with the
+/// conversation's title — on every session of every project, including all the
+/// projects running one agent apiece. What the footnote is for is telling two
+/// rows apart, so the question it answers has to be asked of the rows.
+fn runs_more_than_one_agent<'a>(agents: impl Iterator<Item = &'a str>) -> bool {
+    let mut seen: Option<&str> = None;
+    for agent in agents {
+        match seen {
+            Some(first) if first != agent => return true,
+            Some(_) => {}
+            None => seen = Some(agent),
+        }
+    }
+    false
+}
+
 /// One folder row, with its sessions nested beneath it.
 fn folder_row(
     shell: &Shell,
     window_state: &WorkspaceWindow,
     root_idx: usize,
-    show_agent: bool,
     cx: &mut Context<Shell>,
 ) -> Row {
     let root = &window_state.workspace.roots[root_idx];
@@ -943,6 +1010,9 @@ fn folder_row(
             .iter()
             .filter_map(|session| shell.session_row(session.uid, cx).signal),
     );
+    // Whether the agent is worth naming on the rows below, answered by this
+    // project's own sessions rather than by the length of the agent menu.
+    let among_many = runs_more_than_one_agent(root.sessions.iter().map(Session::title));
     let mut children = match unfolded {
         // Folded is not "drawn and hidden": a closed project builds no rows at
         // all, which is what keeps a workspace of ten roots cheap to draw.
@@ -964,7 +1034,7 @@ fn folder_row(
                         i,
                         session,
                         is_active && active_session == i,
-                        show_agent.then_some(Note::Agent),
+                        Note::Agent { among_many },
                         cx,
                     ),
                 )
@@ -1057,6 +1127,7 @@ fn folder_row(
                         row.child(git_facts(
                             label.clone(),
                             branch.clone(),
+                            is_active,
                             changed,
                             path.clone(),
                             cx,
@@ -1214,7 +1285,7 @@ fn session_rows(
                         session_idx,
                         session,
                         Some(uid) == active,
-                        Some(Note::Project(project.clone())),
+                        Note::Project(project.clone()),
                         cx,
                     ),
                 ),
@@ -1257,7 +1328,6 @@ pub fn rail(
     // to attach its action handlers.
 ) -> impl IntoElement + use<> {
     let name = window_state.workspace.name.clone();
-    let show_agent = window_state_shell.agents(cx).len() > 1;
     let workspace_dir = window_state.workspace.storage_dir.clone();
     let workspace_recents = window_state_shell.recents(cx);
     let workspace_target = cx.entity().downgrade();
@@ -1272,7 +1342,7 @@ pub fn rail(
             .workspace
             .display_order()
             .into_iter()
-            .map(|idx| folder_row(window_state_shell, window_state, idx, show_agent, cx))
+            .map(|idx| folder_row(window_state_shell, window_state, idx, cx))
             .collect::<Vec<_>>(),
         RailTab::Sessions => session_rows(window_state_shell, window_state, cx),
     };
@@ -1361,21 +1431,25 @@ pub fn rail(
                     workspace_target,
                     cx,
                 ))
-                // Above *New session*, because it is what a workspace with no
-                // project needs first and because both of them are about the
-                // workspace rather than about the list underneath. Quieter than
-                // the primary action right below it: adding a project is done
-                // once per project, starting a session is done all day.
-                .child(
-                    rail_row("rail-add-project", IconName::FolderOpen, "Add project…", cx)
-                        .text_color(cx.theme().muted_foreground)
-                        .tooltip(|window, cx| {
-                            Tooltip::new("Add a project root to this workspace").build(window, cx)
-                        })
-                        .on_click(cx.listener(|shell: &mut Shell, _: &ClickEvent, _, cx| {
-                            shell.add_root(cx);
-                        })),
-                )
+                // **Only while there is no project**, where it is the one thing
+                // to do and the list below it is empty. With projects in the
+                // rail it is a permanent row for something done once per
+                // project, above a list of all day's work, and it lives in the
+                // workspace menu behind the name instead -- which is where the
+                // rest of what acts on the whole workspace already is.
+                .when(window_state.workspace.roots.is_empty(), |header| {
+                    header.child(
+                        rail_row("rail-add-project", IconName::FolderOpen, "Add project…", cx)
+                            .text_color(cx.theme().muted_foreground)
+                            .tooltip(|window, cx| {
+                                Tooltip::new("Add a project root to this workspace")
+                                    .build(window, cx)
+                            })
+                            .on_click(cx.listener(|shell: &mut Shell, _: &ClickEvent, _, cx| {
+                                shell.add_root(cx);
+                            })),
+                    )
+                })
                 .child(new_session_block(window_state_shell, window_state, cx))
                 // The hairline is where the header stops being about the
                 // workspace and starts being about the list: everything above
@@ -1442,6 +1516,7 @@ fn workspace_identity(
         cx.theme().sidebar_accent,
         cx.theme().sidebar_accent_foreground,
     );
+    let hover_name = name.clone();
     let row = lead_row(
         div()
             .id("workspace-identity")
@@ -1454,7 +1529,23 @@ fn workspace_identity(
             .rounded(radius)
             .cursor_pointer()
             .hover(move |row| row.bg(accent.opacity(0.8)).text_color(accent_fg))
-            .tooltip(|window, cx| Tooltip::new("Switch to another workspace").build(window, cx)),
+            // The name leads it, because this row is the one place a workspace
+            // name is written and it is written on one line: users put
+            // sentences in that field, and truncated there it could be read
+            // nowhere at all. The row is its own hover target, so the tooltip
+            // that says what a press does is also the only one that can carry
+            // the whole name.
+            .tooltip(move |window, cx| {
+                let name = hover_name.clone();
+                Tooltip::element(move |_, _| {
+                    div()
+                        .v_flex()
+                        .gap_0p5()
+                        .child(name.clone())
+                        .child("Workspaces, and the projects in this one")
+                })
+                .build(window, cx)
+            }),
     )
     // Full ink, not muted. It was the dimmest thing in the header while
     // standing for the thing the header is about, so the eye read the row
@@ -1516,7 +1607,27 @@ fn workspace_menu(
 ) -> impl Fn(PopupMenu, &mut Window, &mut Context<PopupMenu>) -> PopupMenu + 'static {
     move |menu, _, cx| {
         let muted = cx.theme().muted_foreground;
-        let mut menu = menu;
+        let add = shell.clone();
+        // First, and alone above the separator: it is the one entry here about
+        // what is *in* this workspace rather than about which workspace is on
+        // screen. It was a standing row in the rail's header, which is a
+        // permanent line for something done once per project -- the rail still
+        // offers it there while the workspace has no project at all, since
+        // then it is the only thing to do.
+        let mut menu = menu
+            .item(
+                // The project row's own icon, and deliberately not the
+                // `FolderOpen` two rows below: that one is *Open workspace…*,
+                // and one drawing for two different destinations in one menu
+                // is the icon saying less than nothing.
+                crate::controls::menu_item("Add project…")
+                    .icon(Icon::new(IconName::Folder))
+                    .on_click(move |_, _, cx: &mut App| {
+                        add.update(cx, |shell: &mut Shell, cx| shell.add_root(cx))
+                            .ok();
+                    }),
+            )
+            .separator();
         // No heading over nothing: a workspace that has never been bound
         // has no recents, and the two actions below stand on their own.
         if !recents.is_empty() {
@@ -1867,8 +1978,8 @@ fn tab_bar(active: RailTab, cx: &mut Context<Shell>) -> impl IntoElement + use<>
 #[cfg(test)]
 mod tests {
     use super::{
-        MAX_LABEL, RailTab, label_cap, new_session_hint, project_key, session_label, session_order,
-        signal_hint,
+        MAX_LABEL, Note, RailTab, label_cap, new_session_hint, project_key,
+        runs_more_than_one_agent, session_label, session_order, signal_hint,
     };
     use crate::chat::pane::SessionSignal;
     use onehand_core::config::PanelLayout;
@@ -2034,5 +2145,48 @@ mod tests {
         let label = session_label(Some(&"a".repeat(MAX_LABEL * 3)), "Claude Code", MAX_LABEL);
         assert_eq!(label.chars().count(), MAX_LABEL);
         assert!(label.ends_with('…'));
+    }
+
+    /// The footnote naming the agent is there to tell two rows apart, so the
+    /// question is asked of the rows. A project whose sessions all run one
+    /// agent gets a column of identical words out of it and nothing else —
+    /// which is what it was doing, because the count it used was the agent
+    /// menu's and a second entry there is enough to mark up every project in
+    /// the workspace.
+    #[test]
+    fn one_agent_across_a_projects_sessions_is_not_worth_saying() {
+        assert!(!runs_more_than_one_agent(std::iter::empty()));
+        assert!(!runs_more_than_one_agent(["Claude Code"].into_iter()));
+        assert!(!runs_more_than_one_agent(
+            ["Claude Code", "Claude Code", "Claude Code"].into_iter()
+        ));
+    }
+
+    /// And the other half: where they disagree it is the only thing on the row
+    /// that says which is which.
+    #[test]
+    fn two_agents_in_one_project_are_worth_saying() {
+        assert!(runs_more_than_one_agent(
+            ["Claude Code", "Mock UI"].into_iter()
+        ));
+        // The disagreement can be anywhere in the list, not only at its head.
+        assert!(runs_more_than_one_agent(
+            ["Claude Code", "Claude Code", "Mock UI"].into_iter()
+        ));
+    }
+
+    /// A row carrying a footnote has less room for its name than the rail is
+    /// wide, and a nested row less again. Uncharged, the cap let a title
+    /// through at a length the row could not draw — and the library's label is
+    /// a bare string, so what came of the overflow was a word cut in half with
+    /// no ellipsis anywhere to say one had been.
+    #[test]
+    fn a_footnote_and_a_nest_each_cost_the_name_room() {
+        let bare = Note::Agent { among_many: false }.label_cost(false);
+        let noted = Note::Agent { among_many: true }.label_cost(true);
+        let flat = Note::Project("onehand".into()).label_cost(true);
+        assert!(noted > bare, "a footnote has to cost something");
+        assert!(bare > 0, "the nest rule's inset costs room on its own");
+        assert!(noted > flat, "a nested row is the narrower of the two");
     }
 }

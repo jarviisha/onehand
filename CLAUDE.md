@@ -982,7 +982,17 @@ centre is the chat, right dock the Workbench, bottom dock the terminal.
   row lists its sessions, each row selecting root *and* session in one click. A session row is named
   by its **conversation** (`Chat::conversation_title` — the first prompt, or a rename), falling back
   to the agent's name until it has been prompted; the agent's name rides in the suffix only where
-  more than one is configured. A trailing mark appears only while that session carries a signal, and
+  **that project's own sessions disagree about it** (`rail::runs_more_than_one_agent`). The count
+  used to be the configured agent menu's, which is the wrong set: a second entry in `onehand.toml`
+  put the same word — truncated to `MAX_AGENT_LABEL`, since it shares the row with the
+  conversation's title — on every session of every project, including the nine running one agent
+  apiece. A footnote is for telling two rows apart, so the question is asked of the rows.
+  **What a row carries is charged against its label's cap** (`rail::Note::label_cost`): the nest
+  rule's inset for a tree row, the footnote's width for either kind. `label_cap` answers for a row
+  the full width of the rail and a session row is never one — and `SidebarMenuItem`'s label is a
+  bare string with no truncation of its own, so an uncharged cap let a title through at a length
+  the row could not draw and the overflow was clipped mid-word with no ellipsis to say so.
+  A trailing mark appears only while that session carries a signal, and
   **the one state that is wrong has a shape of its own**: a warning icon for a lost adapter, because
   that is the mark that must not depend on colour. The other three are one dot in three tints — a
   warning dot for busy, an accent dot for a parked question, a success dot for a turn finished
@@ -994,7 +1004,13 @@ centre is the chat, right dock the Workbench, bottom dock the terminal.
   holds the session on screen**, only the selected project starts expanded, and a project with no
   sessions expands into a *Start a session* row rather than into nothing. Branch and
   change count ride in the suffix — the count as a badge, not a coloured number — with the full
-  branch, the count in words and the root's path in a tooltip. The primary *New session* button names
+  branch, the count in words and the root's path in a tooltip. **The branch is written out on the
+  selected row alone**: it is what you read while working *in* a project, and on the ten rows you
+  are not in it is ten strings cut to `MAX_BRANCH_W`, where `feat/consol…` and `feat/codoh…` say
+  nothing to tell their projects apart while taking the width from the name that would. The count
+  stays on every row, because it is a signal rather than detail, and the suffix is still drawn for
+  any repository — so the tooltip answers *which branch* on a quiet row too, and the one hover
+  target carrying the project's untruncated name survives. The primary *New session* button names
   the project it would start in, in its tooltip.
 - **Selecting a project and folding it away are two different targets.** While the whole row
   toggled, every click on a project both switched to it *and* snapped its sessions shut, so reaching
@@ -1047,10 +1063,12 @@ centre is the chat, right dock the Workbench, bottom dock the terminal.
   name and *New session*, taller, at a larger text size and a weight up, with the identity's icon in
   full ink rather than muted. At the list's own scale they read as its first two entries, which is
   what they are not. **The 16px icon column does not move** — only the row around it grows, or the
-  header's labels would sit a few pixels off every label below them. *Add project…* sits between
-  them, quieter than either: it is what a workspace with no project needs first and it is about the
-  workspace rather than about the list, and it is done once per project where *New session* is done
-  all day. It was the last row *inside* the Projects group, which is a place a tab bar cannot have.
+  header's labels would sit a few pixels off every label below them. **_Add project…_ is a row here
+  only while the workspace has no project**, where it is the one thing to do and the list under it
+  is empty; with projects in the rail it lives in the workspace menu behind the name, beside the
+  rest of what acts on the whole workspace. It was a standing row between the two, which is a
+  permanent line above all day's work for something done once per project — and before that it was
+  the last row *inside* the Projects group, which is a place a tab bar cannot have.
 - **The caret beside *New session* picks the project** (`rail::new_session_menu`), and the row itself
   is unchanged: one click still starts the default agent on the selected project. What the menu adds
   is the two things that click has to choose silently — every project in the workspace under *Start
@@ -1066,10 +1084,14 @@ centre is the chat, right dock the Workbench, bottom dock the terminal.
   shape, after the second copy of it appeared here.
 - **The workspace identity row *is* the switcher** (`rail::workspace_menu`) — the whole row opens the
   menu, and nothing marks it but the hover, the pointer and the tooltip: no chevron, because a caret
-  on the rail's topmost row competed with the primary action directly below it. The menu is the
-  recents list — each row named by
+  on the rail's topmost row competed with the primary action directly below it. The menu is
+  *Add project…* alone above a separator — the one entry about what is *in* this workspace rather
+  than about which one is on screen — then the recents list, each row named by
   its folder with the parent path beside it (shortened from the *front*, since a path is read from
   its tail), the one on screen checked and unpickable — then *Open workspace…* and *New workspace…*.
+  **The tooltip leads with the workspace's name**, because this row is the one place that name is
+  written and it is written on one line: users put sentences in that field, and truncated there
+  with nothing but *"Switch to another workspace"* on hover it could be read nowhere at all.
   **Nothing is replaced in place**: every entry funnels through `Shell::open_recent` /
   `open_or_focus`, so a pick opens another window or focuses the one already showing that folder.
   **This is now the only copy of that list.** Settings drew it too, as a column of ghost buttons each
