@@ -94,10 +94,11 @@ arrow-up-light = "lucide:arrow-up"
 # was correct, not that permission is being asked for.
 zap = "lucide:zap"
 shield = "lucide:shield"
-# The conversation header's *Close session*. What that button does is end the
-# running agent while keeping every word of the conversation, and every mark
-# the bundled set has for ending something is an × — `close`, `circle-x`,
+# The conversation header's *Close session*. What that button does is end a
+# session while keeping every word of the conversation, and every mark the
+# bundled set has for ending something is an × — `close`, `circle-x`,
 # `window-close` — which says "dismiss this", and drawn beside two dock
-# toggles reads as closing a panel. A power mark says the running thing is
-# being switched off, which is the half of the action the × could not carry.
-power = "lucide:power"
+# toggles reads as closing a panel. The exit-door arrow is the mark apps
+# already use for ending a session by name, and unlike a power mark it does
+# not read as quitting the whole app.
+log-out = "lucide:log-out"

@@ -2716,11 +2716,12 @@ impl ChatPane {
             // name, two presses and a warning away.
             .when(live, |header| {
                 header.child(
-                    // A power mark and not an ×: what the press does is switch
-                    // the running agent off, keeping every word, and every ×
-                    // in the row's reach says "dismiss this" -- beside two
-                    // dock toggles it read as closing a panel.
-                    header_control("close-session", crate::icons::Icon::Power, cx)
+                    // The exit-door arrow and not an ×: this ends a session
+                    // while keeping every word, and every × in the row's
+                    // reach says "dismiss this" -- beside two dock toggles it
+                    // read as closing a panel, and a power mark read as
+                    // quitting the whole app.
+                    header_control("close-session", crate::icons::Icon::LogOut, cx)
                         .tooltip("Close this session and its agent")
                         .on_click(cx.listener(|_: &mut Self, _, _, cx| {
                             cx.emit(ChatPaneEvent::CloseSession);
