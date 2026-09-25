@@ -984,14 +984,28 @@ centre is the chat, right dock the Workbench, bottom dock the terminal.
   to the agent's name until it has been prompted; the agent's name rides in the suffix only where
   **that project's own sessions disagree about it** (`rail::runs_more_than_one_agent`). The count
   used to be the configured agent menu's, which is the wrong set: a second entry in `onehand.toml`
-  put the same word — truncated to `MAX_AGENT_LABEL`, since it shares the row with the
-  conversation's title — on every session of every project, including the nine running one agent
+  put the same word on every session of every project, including the nine running one agent
   apiece. A footnote is for telling two rows apart, so the question is asked of the rows.
-  **What a row carries is charged against its label's cap** (`rail::Note::label_cost`): the nest
-  rule's inset for a tree row, the footnote's width for either kind. `label_cap` answers for a row
-  the full width of the rail and a session row is never one — and `SidebarMenuItem`'s label is a
-  bare string with no truncation of its own, so an uncharged cap let a title through at a length
-  the row could not draw and the overflow was clipped mid-word with no ellipsis to say so.
+  **Every list row is the rail's own** (`rail::RailRow`), not the library's `SidebarMenuItem`,
+  because that component holds its label as a bare string in its own clipping box — no tooltip
+  hook, no ellipsis, nowhere to hang a fade — so every answer to an overlong name was a guess made
+  outside the row about what would fit inside it (a character cap derived from the rail's width
+  through an assumed glyph, charged again for the nest inset and the footnote, wrong by a
+  character either way). **A name that runs out of room now fades into the row's own fill**
+  (`rail::faded`) instead of being cut at a character with an ellipsis: the cut happens in pixels
+  where the room actually ends, an ellipsis asserts "there is more" even when the name fit
+  exactly, and the fade only takes text that is actually leaving. The overlay is painted in the
+  row's composited surface per state (`rail::row_surfaces`) — rest, hover via `group_hover`,
+  active — because a fade into the resting colour over a hovered row is a smudge on exactly the
+  row being looked at; painted right it is invisible wherever the name already ended, so nothing
+  needs to know whether the name overflowed. **Every row carries its full text on hover**: the
+  conversation's whole title on a session row; the project's name, branch, change count in words
+  and root path on a folder row — which also covers the project that is neither a repository nor
+  changed, the one row the old suffix-tooltip could not reach. The label is still cost-capped at
+  `LABEL_SHAPE_CAP` characters, far past what the widest rail can draw — a fit rule in pixels, a
+  cost bound in characters, and the bound must never be the visible cut.
+  `Sidebar` itself stays: the frame, the scroll and the header/footer slots are the half of the
+  component worth keeping, and its `Clone` child bound is why `RailRow`'s handlers ride in `Rc`s.
   A trailing mark appears only while that session carries a signal, and
   **the one state that is wrong has a shape of its own**: a warning icon for a lost adapter, because
   that is the mark that must not depend on colour. The other three are one dot in three tints — a
@@ -1004,14 +1018,12 @@ centre is the chat, right dock the Workbench, bottom dock the terminal.
   holds the session on screen**, only the selected project starts expanded, and a project with no
   sessions expands into a *Start a session* row rather than into nothing. Branch and
   change count ride in the suffix — the count as a badge, not a coloured number — with the full
-  branch, the count in words and the root's path in a tooltip. **The branch is written out on the
-  selected row alone**: it is what you read while working *in* a project, and on the ten rows you
-  are not in it is ten strings cut to `MAX_BRANCH_W`, where `feat/consol…` and `feat/codoh…` say
+  branch, the count in words and the root's path on the row's own hover. **The branch is written
+  out on the selected row alone**: it is what you read while working *in* a project, and on the
+  ten rows you are not in it is ten strings cut short, where `feat/consol` and `feat/codoh` say
   nothing to tell their projects apart while taking the width from the name that would. The count
-  stays on every row, because it is a signal rather than detail, and the suffix is still drawn for
-  any repository — so the tooltip answers *which branch* on a quiet row too, and the one hover
-  target carrying the project's untruncated name survives. The primary *New session* button names
-  the project it would start in, in its tooltip.
+  stays on every row, because it is a signal rather than detail. The primary *New session* button
+  names the project it would start in, in its tooltip.
 - **Selecting a project and folding it away are two different targets.** While the whole row
   toggled, every click on a project both switched to it *and* snapped its sessions shut, so reaching
   a session in the project just arrived at meant clicking the row a second time to undo what the
@@ -1021,7 +1033,7 @@ centre is the chat, right dock the Workbench, bottom dock the terminal.
   Going to a project is asking what is in it, so `Shell::select_root` reveals; only the caret puts
   it away again.
 - **The fold belongs to the window, not to the row** (`Shell::folds` / `project_unfolded`), and the
-  rail draws the nesting itself rather than through `SidebarMenuItem::children`. gpui keeps an
+  rail draws the nesting itself rather than through the library's submenu. gpui keeps an
   element's state only across consecutive frames its key is *accessed* in, and the tab showing the
   flat list draws no project row at all — so a row-owned fold was destroyed on every tab switch and
   re-seeded on the way back, springing a folded project open and snapping an unfolded one shut. By

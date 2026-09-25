@@ -24,69 +24,255 @@ use crate::shell::Shell;
 use crate::state::WorkspaceWindow;
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
-    Anchor, App, ClickEvent, Context, Div, ElementId, InteractiveElement, IntoElement,
-    ParentElement, SharedString, Stateful, StatefulInteractiveElement, Styled, WeakEntity, Window,
-    div, px,
+    Anchor, AnyElement, App, ClickEvent, Context, Div, ElementId, Hsla, InteractiveElement,
+    IntoElement, ParentElement, Rems, SharedString, Stateful, StatefulInteractiveElement, Styled,
+    WeakEntity, Window, div, px, rems,
 };
 use gpui_component::button::{Button, ButtonVariants as _};
-use gpui_component::menu::{DropdownMenu as _, PopupMenu, PopupMenuItem};
-use gpui_component::sidebar::{Sidebar, SidebarCollapsible, SidebarMenuItem};
+use gpui_component::menu::{ContextMenuExt as _, DropdownMenu as _, PopupMenu, PopupMenuItem};
+use gpui_component::sidebar::{Sidebar, SidebarCollapsible};
 use gpui_component::tooltip::Tooltip;
 use gpui_component::{ActiveTheme, Icon, IconName, Side, Sizable as _, StyledExt};
 use onehand_core::agent::Session;
+use std::rc::Rc;
 
 /// Names are structural anchors, not content: cap them so a deep path cannot
-/// push the rail's width around. `SidebarMenuItem` clips its label with
-/// `overflow_x_hidden` and no ellipsis, so this is what produces the `…`.
-///
-/// This is the cap at the rail's *default* width — the width it was drawn at
-/// while the figure was chosen by eye, which is what makes that one pairing
-/// the fixed point [`label_cap`] works out from.
-///
-/// Everything else still capped by this constant rather than by [`label_cap`]
-/// is a string the rail's width does not decide: each of them already sits
-/// behind something that clips on its own — a pixel cap, one of our own
-/// truncating divs, or a popup sized by its own contents — so none of them is
-/// waiting on the drag, and the figure here is only their upper bound.
+/// push a popup's width around. This is the bound for the one place a name is
+/// still cut at a character — a menu row, which sizes its popup by its own
+/// contents and sits on a surface the rail's fade machinery knows nothing
+/// about. Every name in the rail's own list is cut in pixels instead, by
+/// [`faded`].
 const MAX_LABEL: usize = 24;
 
-/// How much of a name a rail row carries at the width the rail is drawn at.
+/// How wide the fade at the end of an overlong name is.
 ///
-/// The rail is draggable (232–320px) while this was one constant, so widening
-/// it bought nothing: every name stayed cut at the same character and the
-/// handle promised width the rows never spent. The rule is [`MAX_LABEL`] at
-/// the default width and one character per `CHAR_W` either side of it.
+/// Rems, because the fade ends *text* and zoom moves the rem base: fixed in
+/// pixels it would swallow three characters at one zoom and half of one at
+/// another.
+const FADE_W: Rems = rems(1.25);
+
+/// The two fills a rail row can be showing: at rest, and under the pointer.
 ///
-/// Characters and not pixels, because the label is a string by the time the
-/// library sees it. `CHAR_W` is an average across a proportional face, so a
-/// name in capitals cuts a character early and a name of `i`s a character
-/// late; measuring for real needs the text system, which means being inside a
-/// paint, and what being wrong here costs is one character of a name.
-fn label_cap(rail_w: f32) -> usize {
-    /// The width of one character of a name, averaged over a name.
-    const CHAR_W: f32 = 7.;
-    let default = onehand_core::config::PanelLayout::default().rail_w;
-    // Saturating on the way to `usize`, which is what a rail narrower than
-    // anything it can be dragged to would need -- and the cast already does
-    // it, so there is nothing here to guard.
-    (MAX_LABEL as f32 + (rail_w - default) / CHAR_W) as usize
+/// Worked out once and handed around because the fade at the end of a name is
+/// painted *in* them, and each has to be the composited colour actually on
+/// screen: the hover fill is the accent at eight tenths over the well, so the
+/// fade's endpoint is that blend and neither ingredient. The active row's fill
+/// does not move under the pointer, so its pair is one colour twice.
+fn row_surfaces(active: bool, cx: &App) -> (Hsla, Hsla) {
+    let well = cx.theme().muted;
+    let accent = cx.theme().sidebar_accent;
+    match active {
+        true => (well.blend(accent), well.blend(accent)),
+        false => (well, well.blend(accent.opacity(0.8))),
+    }
+}
+
+/// A name cut in pixels, fading into the row where its room ends, instead of
+/// being cut at a character with an ellipsis.
+///
+/// The cut used to be counted in characters: a cap derived from the rail's
+/// width through an assumed average glyph, charged again for the nest rule's
+/// inset and again for the footnote — three guesses about pixels made from a
+/// string, each wrong by a character or two in either direction, and a miss
+/// on the long side was a word clipped mid-letter with nothing on screen to
+/// say so. The fade is drawn where the room actually ends, so the guesses go
+/// with it. It is also the honest mark: an ellipsis written into the string
+/// asserts there is more even when the name happened to fit exactly, while a
+/// fade only takes what is actually leaving.
+///
+/// The overlay is painted in the row's own fill, which is why it takes the two
+/// surfaces instead of reading a token: what is behind the name changes under
+/// the pointer, and a fade into the resting colour over a hovered row is a
+/// smudge on exactly the row being looked at. Painted in the right colour it
+/// is invisible wherever the name already ended — a gradient into the colour
+/// it lies on — so nothing here needs to know whether the name overflowed,
+/// which is a question about pixels a string cannot answer anyway.
+fn faded(text: SharedString, group: SharedString, rest: Hsla, hovered: Hsla) -> Div {
+    fn toward(surface: Hsla) -> gpui::Background {
+        gpui::linear_gradient(
+            90.,
+            gpui::linear_color_stop(surface.alpha(0.), 0.),
+            gpui::linear_color_stop(surface, 1.),
+        )
+    }
+    div()
+        .relative()
+        .overflow_hidden()
+        .whitespace_nowrap()
+        .child(text)
+        .child(
+            div()
+                .absolute()
+                .top_0()
+                .bottom_0()
+                .right_0()
+                .w(FADE_W)
+                .bg(toward(rest))
+                .group_hover(group, move |fade| fade.bg(toward(hovered))),
+        )
+}
+
+/// One row of the rail's list, drawn by the rail itself.
+///
+/// The library's `SidebarMenuItem` drew these until the row's label had to be
+/// an element rather than a string. That component holds its label as a bare
+/// `SharedString` inside its own clipping box — no hook for a tooltip on it,
+/// no ellipsis, nowhere to hang the fade — so every answer to an overlong
+/// name was a guess made outside the row about what would fit inside it.
+/// Owning the row is what buys the label the three things it needs: the fade
+/// at its end, the full name on hover, and a cut made in pixels rather than
+/// characters.
+///
+/// Handlers ride in `Rc`s because `Sidebar` clones its content on every frame
+/// it draws — its child bound is `Clone` — and this is what makes the clone
+/// cheap.
+///
+/// No collapse handling anywhere in it: the rail never collapses to an icon
+/// column (an icon-width rail is ten identical folder icons), so a row has
+/// exactly one shape.
+#[derive(Clone)]
+struct RailRow {
+    /// One string naming the row twice over: the element id gpui keys the
+    /// row's state by, and the hover group the fade overlay watches. A row is
+    /// named by what it *is* — a project by its path, a session by its uid —
+    /// never by its place in the list, because a place changes hands when the
+    /// list re-sorts and whatever state rode on it changes hands too.
+    key: SharedString,
+    icon: Option<IconName>,
+    label: SharedString,
+    /// The full text behind the row, one line per entry, offered on hover.
+    /// What the fade cuts has to be readable somewhere, and the row itself is
+    /// the only hover target that exists on every row.
+    hint: Vec<SharedString>,
+    active: bool,
+    on_click: RowClick,
+    /// The right-click menu, on every row that has one — the same builder the
+    /// active row's ••• is handed.
+    menu: Option<RowMenu>,
+    /// Everything after the label: footnotes, marks, controls. A builder and
+    /// not an element, because elements are single-use and this row is cloned.
+    suffix: Option<RowSuffix>,
+}
+
+/// The row's handlers, named so the struct above reads as a row and not as a
+/// wall of `dyn Fn` signatures.
+type RowClick = Rc<dyn Fn(&ClickEvent, &mut Window, &mut App)>;
+type RowMenu = Rc<dyn Fn(PopupMenu, &mut Window, &mut App) -> PopupMenu>;
+type RowSuffix = Rc<dyn Fn(&mut Window, &mut App) -> AnyElement>;
+
+impl RailRow {
+    fn new(
+        key: impl Into<SharedString>,
+        label: impl Into<SharedString>,
+        on_click: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static,
+    ) -> Self {
+        Self {
+            key: key.into(),
+            icon: None,
+            label: label.into(),
+            hint: Vec::new(),
+            active: false,
+            on_click: Rc::new(on_click),
+            menu: None,
+            suffix: None,
+        }
+    }
+
+    fn icon(mut self, icon: IconName) -> Self {
+        self.icon = Some(icon);
+        self
+    }
+
+    fn active(mut self, active: bool) -> Self {
+        self.active = active;
+        self
+    }
+
+    fn hint(mut self, hint: Vec<SharedString>) -> Self {
+        self.hint = hint;
+        self
+    }
+
+    fn menu(
+        mut self,
+        menu: impl Fn(PopupMenu, &mut Window, &mut App) -> PopupMenu + 'static,
+    ) -> Self {
+        self.menu = Some(Rc::new(menu));
+        self
+    }
+
+    fn suffix(mut self, suffix: impl Fn(&mut Window, &mut App) -> AnyElement + 'static) -> Self {
+        self.suffix = Some(Rc::new(suffix));
+        self
+    }
+
+    fn render(self, window: &mut Window, cx: &mut App) -> AnyElement {
+        let (rest, hovered) = row_surfaces(self.active, cx);
+        let (accent, accent_fg) = (
+            cx.theme().sidebar_accent,
+            cx.theme().sidebar_accent_foreground,
+        );
+        let on_click = self.on_click;
+        let hint = self.hint;
+        let has_hint = !hint.is_empty();
+        let row = div()
+            .id(ElementId::Name(self.key.clone()))
+            .group(self.key.clone())
+            .h_flex()
+            .items_center()
+            .w_full()
+            .h_7()
+            .px_2()
+            .gap_x_2()
+            .rounded(cx.theme().radius)
+            .cursor_pointer()
+            .text_sm()
+            .map(|row| match self.active {
+                true => row.font_medium().bg(accent).text_color(accent_fg),
+                false =>
+                // The library's own convention for a hovered sidebar row:
+                // the selected fill at eight tenths, so a hovered row and the
+                // selected one stay apart without a second token.
+                {
+                    row.hover(move |row| row.bg(accent.opacity(0.8)).text_color(accent_fg))
+                }
+            })
+            .when_some(self.icon, |row, icon| row.child(Icon::new(icon).size_4()))
+            .child(
+                faded(self.label, self.key.clone(), rest, hovered)
+                    .flex_1()
+                    .min_w_0(),
+            )
+            .when_some(self.suffix, |row, suffix| row.child(suffix(window, cx)))
+            .on_click(move |event, window, cx| on_click(event, window, cx))
+            .when(has_hint, |row| {
+                row.tooltip(move |window, cx| {
+                    let hint = hint.clone();
+                    Tooltip::element(move |_, _| div().v_flex().gap_0p5().children(hint.clone()))
+                        .build(window, cx)
+                })
+            });
+        match self.menu {
+            Some(menu) => row
+                .context_menu(move |popup, window, cx| menu(popup, window, cx))
+                .into_any_element(),
+            None => row.into_any_element(),
+        }
+    }
 }
 
 /// One row of the rail's list, and whatever is nested under it.
 #[derive(Clone)]
 struct Row {
-    /// What the row is *called*, as opposed to where it sits.
-    key: ElementId,
-    item: SidebarMenuItem,
+    item: RailRow,
     /// A project's sessions, drawn inside its rule. Empty for every row in the
     /// flat list, which nests nothing.
-    children: Vec<(ElementId, SidebarMenuItem)>,
+    children: Vec<RailRow>,
 }
 
 impl Row {
-    fn flat(key: ElementId, item: SidebarMenuItem) -> Self {
+    fn flat(item: RailRow) -> Self {
         Self {
-            key,
             item,
             children: Vec::new(),
         }
@@ -125,15 +311,20 @@ impl Row {
 /// instead of one dash per row.
 ///
 /// This stands exactly where `SidebarMenu` stood and draws what it drew: a
-/// flex column with a gap, and the pointer for every row inside it. **The gap
-/// has to be here.** `SidebarGroup` wraps its children in `div().gap_2()
-/// .flex_col()`, and a gpui `div` starts at `display: block` while `flex_col`
-/// sets only the direction — so both of those declarations do nothing there,
-/// and the space between rows was always this column's to draw.
+/// flex column with a gap. **The gap has to be here.** `SidebarGroup` wraps
+/// its children in `div().gap_2().flex_col()`, and a gpui `div` starts at
+/// `display: block` while `flex_col` sets only the direction — so both of
+/// those declarations do nothing there, and the space between rows was always
+/// this column's to draw.
 ///
-/// Nothing here re-implements a *row*: `SidebarMenuItem` still does every bit
-/// of that drawing, and `Sidebar` and `SidebarGroup` are both generic over
-/// their item type precisely so a host can answer what a row is called.
+/// The rows inside are the rail's own ([`RailRow`]) rather than the library's,
+/// and this is the second half of the same story: the state fix above could be
+/// had by supplying our own item type *around* `SidebarMenuItem`, but the
+/// label inside it is a bare string in the library's own clipping box, and the
+/// fade, the tooltip and a cut made in pixels all need the label to be an
+/// element the rail owns. `Sidebar` is still the panel — the frame, the
+/// scroll, the header and footer slots — which is the half of the component
+/// worth keeping.
 #[derive(Clone)]
 struct KeyedMenu {
     rows: Vec<Row>,
@@ -169,29 +360,15 @@ impl gpui_component::sidebar::SidebarItem for KeyedMenu {
         window: &mut Window,
         cx: &mut App,
     ) -> impl IntoElement {
-        let collapsed = self.collapsed;
         let nest = cx.theme().sidebar_border;
         div()
             .v_flex()
             .gap_2()
-            // On the rows and not on the gaps between them. A project row and
-            // a session row are the most-clicked things in the window,
-            // `SidebarMenuItem` sets no cursor and is not `Styled` so it cannot
-            // be told to, and gpui resolves the cursor from the topmost hitbox
-            // that names one. gpui-component's own `Button` sets
-            // `cursor_default` on itself, so the ••• inside a row still keeps
-            // the arrow, which is upstream's intent.
-            .cursor_pointer()
             .children(self.rows.into_iter().map(|row| {
                 let children = row.children;
                 div()
                     .v_flex()
-                    .child(
-                        row.item
-                            .collapsed(collapsed)
-                            .render(row.key, window, cx)
-                            .into_any_element(),
-                    )
+                    .child(row.item.render(window, cx))
                     // One rule down the whole nest rather than a segment per
                     // row, which is what drawing it per child would give.
                     .when(!children.is_empty(), |block| {
@@ -204,12 +381,9 @@ impl gpui_component::sidebar::SidebarItem for KeyedMenu {
                                 .py_0p5()
                                 .border_l_1()
                                 .border_color(nest)
-                                .children(children.into_iter().map(|(key, child)| {
-                                    child
-                                        .collapsed(collapsed)
-                                        .render(key, window, cx)
-                                        .into_any_element()
-                                })),
+                                .children(
+                                    children.into_iter().map(|child| child.render(window, cx)),
+                                ),
                         )
                     })
                     .into_any_element()
@@ -223,25 +397,20 @@ impl gpui_component::sidebar::SidebarItem for KeyedMenu {
 /// same folder name and are two different projects, so a key made from what
 /// the row says would hand one project's expanded state to the other. It is
 /// the same identity pinning already uses, for the same reason.
-fn project_key(path: &std::path::Path) -> ElementId {
-    ElementId::Name(SharedString::from(format!(
-        "rail-project-{}",
-        path.display()
-    )))
+fn project_key(path: &std::path::Path) -> SharedString {
+    SharedString::from(format!("rail-project-{}", path.display()))
 }
 
 /// The branch name is the *least* important thing on a folder row -- it must
-/// never cost the project label its space. `SidebarMenuItem` gives the label
-/// `flex_1` and the suffix its natural width, so an unbounded branch wins
-/// outright: a row for `fix/architecture-hardening-and-open-telemetry` pushed
-/// its own project name to zero width. Capping the branch is what keeps the
-/// label first.
+/// never cost the project label its space. The label is `flex_1` and the
+/// suffix takes its natural width, so an unbounded branch wins outright: a row
+/// for `fix/architecture-hardening-and-open-telemetry` pushed its own project
+/// name to zero width. Capping the branch is what keeps the label first.
 const MAX_BRANCH_W: gpui::Pixels = px(72.);
 
-/// The agent's name beside a titled session row is a footnote about *how* the
-/// conversation is being run, so it is capped hard on both counts -- the title
-/// is what the user is reading the row for.
-const MAX_AGENT_LABEL: usize = 12;
+/// The footnote beside a session row's label -- the agent on a tree row, the
+/// project on a flat one -- is about *how* the conversation is being run, so
+/// it is capped hard: the title is what the user is reading the row for.
 const MAX_AGENT_W: gpui::Pixels = px(64.);
 
 fn ellipsize(s: &str, max: usize) -> SharedString {
@@ -497,6 +666,15 @@ fn dot(color: gpui::Hsla) -> impl IntoElement + use<> {
     div().size(px(6.)).rounded_full().bg(color)
 }
 
+/// More characters than the widest rail can draw, fewer than a paste.
+///
+/// A cost bound and not a fit rule: what fits is decided in pixels at the row,
+/// by the fade -- but the label is shaped on every frame the rail draws, and a
+/// conversation's derived title is free text somebody can open with a whole
+/// paragraph. The ellipsis this writes sits far behind the fade and never
+/// reaches the screen.
+const LABEL_SHAPE_CAP: usize = 80;
+
 /// What a session row is called: the conversation's own name once it has one,
 /// otherwise the agent that runs it.
 ///
@@ -504,8 +682,8 @@ fn dot(color: gpui::Hsla) -> impl IntoElement + use<> {
 /// on a root used to be labelled with its agent's name, so three sessions on
 /// one project read "Claude Code" three times and the rail could not be used to
 /// tell them apart -- which is the one thing a session-first rail is for.
-fn session_label(title: Option<&str>, agent: &str, cap: usize) -> SharedString {
-    ellipsize(title.unwrap_or(agent), cap)
+fn session_label(title: Option<&str>, agent: &str) -> SharedString {
+    ellipsize(title.unwrap_or(agent), LABEL_SHAPE_CAP)
 }
 
 /// Everything a session row offers.
@@ -617,33 +795,6 @@ enum Note {
     Project(SharedString),
 }
 
-/// What the nest rule's inset costs a session row, in characters of its label.
-///
-/// The rule is drawn 14px in with 10px of padding after it, and [`label_cap`]
-/// counts characters at roughly 7px each. Rounded up, because being one
-/// character short of the room a row has costs an ellipsis and being one over
-/// costs a clipped word.
-const NEST_CHARS: usize = 4;
-
-impl Note {
-    /// What this row's place and its footnote take off the label's end.
-    ///
-    /// [`label_cap`] answers for a row the full width of the rail, and a
-    /// session row is never one: a nested row sits inside the nest rule's
-    /// inset, and either footnote takes its own width off the far end. While
-    /// neither was charged, the cap let a title through at a length the row had
-    /// no room for — and `SidebarMenuItem`'s label is a bare string with no
-    /// truncation of its own, so the overflow was clipped mid-word with not
-    /// even an ellipsis to say a word had been cut.
-    fn label_cost(&self, drawn: bool) -> usize {
-        let footnote = if drawn { MAX_AGENT_LABEL } else { 0 };
-        match self {
-            Note::Agent { .. } => NEST_CHARS + footnote,
-            Note::Project(_) => footnote,
-        }
-    }
-}
-
 /// One session row: nested under its root's folder row, or standing on its own
 /// in the flat list.
 ///
@@ -660,7 +811,7 @@ fn session_row(
     active: bool,
     note: Note,
     cx: &mut Context<Shell>,
-) -> SidebarMenuItem {
+) -> RailRow {
     let uid = session.uid;
     let state = shell.session_row(uid, cx);
     let signal = state.signal;
@@ -669,157 +820,100 @@ fn session_row(
         // more than one agent: where the row has fallen back to the agent's
         // name, the suffix would repeat the label it sits next to.
         Note::Agent { among_many } => (*among_many && state.title.is_some())
-            .then(|| ellipsize(session.title(), MAX_AGENT_LABEL)),
+            .then(|| SharedString::from(session.title().to_string())),
         // Always: the project is the one thing the flat row cannot say any
         // other way, and it is true whether or not the conversation has a name.
         Note::Project(project) => Some(project.clone()),
     };
-    // Resolved before the label, because what the row is carrying is what
-    // decides how much of the label fits.
-    let label = session_label(
-        state.title.as_deref(),
-        session.title(),
-        label_cap(shell.rail_width(cx)).saturating_sub(note.label_cost(footnote.is_some())),
-    );
+    let label = session_label(state.title.as_deref(), session.title());
+    // The whole name, however long, for the hover: it is what the fade at the
+    // row's edge may have cut.
+    let hint = state
+        .title
+        .clone()
+        .unwrap_or_else(|| SharedString::from(session.title().to_string()));
+    // The key carries nothing about which list drew the row, because only one
+    // list is on screen at a time -- and it is the same key in both, so the
+    // row's element state survives the tab switch.
+    let key = SharedString::from(format!("rail-session-{uid}"));
+    let suffix_key = key.clone();
     // A weak handle because both menu closures outlive this frame.
     let menu_target = cx.entity().downgrade();
     let suffix_target = menu_target.clone();
 
-    SidebarMenuItem::new(label)
-        .active(active)
-        .on_click(
-            cx.listener(move |shell: &mut Shell, _: &ClickEvent, window, cx| {
-                shell.select_root_session(root_idx, session_idx, window, cx);
-            }),
-        )
-        .context_menu(session_menu(root_idx, session_idx, uid, menu_target))
-        .suffix(move |_, cx: &mut App| {
-            let suffix_target = suffix_target.clone();
-            div()
-                .h_flex()
-                .items_center()
-                .gap_1()
-                .flex_shrink(1.)
-                .min_w_0()
-                .when_some(footnote.clone(), |row, note| {
-                    row.child(
-                        div()
-                            .max_w(MAX_AGENT_W)
-                            .truncate()
-                            .text_xs()
-                            .text_color(cx.theme().muted_foreground)
-                            .child(note),
-                    )
-                })
-                .when_some(signal, |row, signal| row.child(signal_mark(signal, cx)))
-                // Offered on the **active** row only, as the project row's is:
-                // a rail where every row carries a control is a rail of
-                // controls, and the user selects a session to see what is in it
-                // before acting on it anyway. Every other row still has the
-                // same menu on right-click.
-                //
-                // The id is the session's uid and carries nothing about which
-                // list drew it, because only one list is on screen at a time.
-                .when(active, |row| {
-                    row.child(menu_button(
-                        rail_control(("session-menu", uid), IconName::Ellipsis),
-                        "What can be done with this session",
-                        session_menu(root_idx, session_idx, uid, suffix_target),
-                    ))
-                })
-        })
+    RailRow::new(
+        key,
+        label,
+        cx.listener(move |shell: &mut Shell, _: &ClickEvent, window, cx| {
+            shell.select_root_session(root_idx, session_idx, window, cx);
+        }),
+    )
+    .active(active)
+    .hint(vec![hint])
+    .menu(session_menu(root_idx, session_idx, uid, menu_target))
+    .suffix(move |_, cx: &mut App| {
+        let suffix_target = suffix_target.clone();
+        let (rest, hovered) = row_surfaces(active, cx);
+        div()
+            .h_flex()
+            .items_center()
+            .gap_1()
+            .flex_shrink(1.)
+            .min_w_0()
+            .when_some(footnote.clone(), |row, note| {
+                row.child(
+                    faded(note, suffix_key.clone(), rest, hovered)
+                        .max_w(MAX_AGENT_W)
+                        .text_xs()
+                        .text_color(cx.theme().muted_foreground),
+                )
+            })
+            .when_some(signal, |row, signal| row.child(signal_mark(signal, cx)))
+            // Offered on the **active** row only, as the project row's is:
+            // a rail where every row carries a control is a rail of
+            // controls, and the user selects a session to see what is in it
+            // before acting on it anyway. Every other row still has the
+            // same menu on right-click.
+            //
+            // The id is the session's uid and carries nothing about which
+            // list drew it, because only one list is on screen at a time.
+            .when(active, |row| {
+                row.child(menu_button(
+                    rail_control(("session-menu", uid), IconName::Ellipsis),
+                    "What can be done with this session",
+                    session_menu(root_idx, session_idx, uid, suffix_target),
+                ))
+            })
+            .into_any_element()
+    })
 }
 
-/// The git facts a folder row carries: the branch, and how many files differ.
+/// What a project row says on hover: the whole of everything the row cuts.
 ///
-/// Both are truncated hard so the project's own name keeps the row, which
-/// leaves the full text somewhere to live -- the tooltip, which also carries
-/// the root's path because the label is a folder name and two projects can
-/// share one.
-///
-/// **The branch is written out on the selected project's row alone**, and the
-/// count on every row. The branch is what you read while you are working in a
-/// project, and on the ten rows you are not in it is ten strings cut to
-/// `MAX_BRANCH_W` -- where `feat/consol…` and `feat/codoh…` say nothing to
-/// tell their projects apart and every one of them is taking width from the
-/// name that would. It is `show_branch` and not a caller that drops the
-/// argument, because the *tooltip* still carries the whole branch either way:
-/// the suffix is drawn for any repository, so hovering a quiet row still
-/// answers the question, and it is also the only hover target on the row
-/// carrying the project's untruncated name.
-///
-/// **The project's own untruncated name leads it**, because the row's label is
-/// cut to fit and `SidebarMenuItem` offers nowhere to hang a tooltip of its
-/// own -- its label is a bare string, not an element. This is the one hover
-/// target on the row that can carry the whole name, so it does. What it does
-/// not cover is a project that is neither a repository nor has changes: there
-/// is no suffix drawn there at all, so there is nothing to hover, and the
-/// answer to that one is the row type this rail does not own.
-///
-/// The count is a **badge**, not a coloured number. As a bare figure in the
-/// warning tint its colour was the whole message, and a colour is a message
-/// only to someone who already knows the code: a project with a lot of ordinary
-/// work in it read as a project in trouble. The pill says "this is a count";
-/// the tooltip says a count of what.
-fn git_facts(
-    label: SharedString,
-    branch: Option<SharedString>,
-    show_branch: bool,
+/// The full name first, then the branch, the count in words, and the root's
+/// path -- the last because the label is a folder name and two projects can
+/// share one. This used to hang off the git suffix alone, which meant a
+/// project that was neither a repository nor had changes drew no suffix and so
+/// had nothing to hover; the row is its own hover target now, so every project
+/// answers.
+fn project_hint(
+    label: &str,
+    branch: Option<&SharedString>,
     changed: usize,
-    path: SharedString,
-    cx: &App,
-) -> impl IntoElement + use<> {
-    let radius = cx.theme().radius;
-    let (badge_bg, badge_fg) = (cx.theme().secondary, cx.theme().secondary_foreground);
-    let full_branch = branch.clone();
-
-    div()
-        .id("git")
-        .h_flex()
-        .items_center()
-        .gap_1()
-        .min_w_0()
-        .when_some(branch.filter(|_| show_branch), |row, branch| {
-            row.child(
-                div()
-                    .max_w(MAX_BRANCH_W)
-                    .truncate()
-                    .child(ellipsize(&branch, MAX_LABEL)),
-            )
-        })
-        // `flex_none`: the change count is a signal, not detail. It is the one
-        // thing on this row that must survive any width.
-        .when(changed > 0, |row| {
-            row.child(
-                div()
-                    .flex_none()
-                    .px_1()
-                    .rounded(radius)
-                    .bg(badge_bg)
-                    .text_color(badge_fg)
-                    .child(format!("{changed}")),
-            )
-        })
-        .tooltip(move |window, cx| {
-            let (label, branch, path) = (label.clone(), full_branch.clone(), path.clone());
-            Tooltip::element(move |_, _| {
-                div()
-                    .v_flex()
-                    .gap_0p5()
-                    .child(label.clone())
-                    .when_some(branch.clone(), |col, branch| {
-                        col.child(format!("Branch: {branch}"))
-                    })
-                    .when(changed > 0, |col| {
-                        col.child(format!(
-                            "{changed} changed {}",
-                            if changed == 1 { "file" } else { "files" }
-                        ))
-                    })
-                    .child(path.clone())
-            })
-            .build(window, cx)
-        })
+    path: &SharedString,
+) -> Vec<SharedString> {
+    let mut hint = vec![SharedString::from(label.to_string())];
+    if let Some(branch) = branch {
+        hint.push(SharedString::from(format!("Branch: {branch}")));
+    }
+    if changed > 0 {
+        hint.push(SharedString::from(format!(
+            "{changed} changed {}",
+            if changed == 1 { "file" } else { "files" }
+        )));
+    }
+    hint.push(path.clone());
+    hint
 }
 
 /// Everything a project row offers, behind one button.
@@ -1022,21 +1116,14 @@ fn folder_row(
             .iter()
             .enumerate()
             .map(|(i, session)| {
-                (
-                    // Named by the session for the reason the project row is
-                    // named by its path: a child keyed by its place in the list
-                    // is a child that changes identity when a session above it
-                    // closes.
-                    ElementId::Name(SharedString::from(format!("rail-nested-{}", session.uid))),
-                    session_row(
-                        shell,
-                        root_idx,
-                        i,
-                        session,
-                        is_active && active_session == i,
-                        Note::Agent { among_many },
-                        cx,
-                    ),
+                session_row(
+                    shell,
+                    root_idx,
+                    i,
+                    session,
+                    is_active && active_session == i,
+                    Note::Agent { among_many },
+                    cx,
                 )
             })
             .collect::<Vec<_>>(),
@@ -1047,132 +1134,158 @@ fn folder_row(
     // window asked the user to pick a session -- from a list that was empty,
     // which is the state every freshly added project starts in.
     //
-    // The offer alone, with no "No sessions yet" above it. That line said what
-    // the empty list already said, and being the one unclickable row in a
-    // column of clickable ones it took the pointer cursor from its
-    // neighbours -- `SidebarMenuItem` is not `Styled`, so the cursor is set
-    // once on the menu they all sit in and cannot be taken back per row.
+    // The offer alone, with no "No sessions yet" above it: that line said what
+    // the empty list already said.
     if unfolded && children.is_empty() {
-        children.push((
-            ElementId::Name(SharedString::from(format!("rail-start-{root_idx}"))),
-            SidebarMenuItem::new("Start a session")
-                .icon(Icon::new(IconName::Plus))
-                .on_click(
-                    cx.listener(move |shell: &mut Shell, _: &ClickEvent, window, cx| {
-                        shell.new_session_in(root_idx, window, cx);
-                    }),
-                ),
-        ));
+        children.push(
+            RailRow::new(
+                format!("rail-start-{root_idx}"),
+                "Start a session",
+                cx.listener(move |shell: &mut Shell, _: &ClickEvent, window, cx| {
+                    shell.new_session_in(root_idx, window, cx);
+                }),
+            )
+            .icon(IconName::Plus),
+        );
     }
 
     // A weak handle because both menu closures outlive this frame.
     let menu_target = cx.entity().downgrade();
     let suffix_target = menu_target.clone();
-    let label = SharedString::from(root.label.clone());
     let key = project_key(&root.path);
+    let suffix_key = key.clone();
 
     // A weak handle for the caret, which outlives this frame as the menus do.
     let fold_target = cx.entity().downgrade();
 
     Row {
-        key,
-        item: SidebarMenuItem::new(ellipsize(&root.label, label_cap(shell.rail_width(cx))))
-            .icon(Icon::new(IconName::Folder))
-            // The selected project is marked whether or not it has sessions. While
-            // this was `is_active && sessions.is_empty()`, a project holding the
-            // conversation on screen was the one project in the rail with no mark
-            // at all -- the highlight moved to its session row and the row naming
-            // the *project* went plain, so nothing on screen said which project the
-            // user was in.
-            .active(is_active)
-            // **Selecting a project and folding it away are two different
-            // intentions, so they are two different targets.** While the whole
-            // row toggled, every click on a project both switched to it and
-            // snapped its sessions shut -- so reaching a session in the project
-            // you had just arrived at meant clicking the row a second time to
-            // undo what the first click did.
-            //
-            // Open and never toggle, which is not the same as leaving the fold
-            // alone: a row that only selected would hide the sessions of every
-            // project the user had ever folded, and arriving at one would mean
-            // hunting the caret to see what is in it -- the same extra click,
-            // in mirror image. Going to a project is asking what is in it, so
-            // `Shell::select_root` reveals; only the caret puts it away again.
-            .on_click(
-                cx.listener(move |shell: &mut Shell, _: &ClickEvent, window, cx| {
-                    shell.select_root(root_idx, window, cx);
-                }),
-            )
-            .context_menu(project_menu(root_idx, pinned, is_repo, menu_target))
-            .suffix(move |_, cx: &mut App| {
-                let (suffix_target, fold_target) = (suffix_target.clone(), fold_target.clone());
-                let fold_path = fold_path.clone();
-                div()
-                    .h_flex()
-                    .items_center()
-                    .flex_shrink(1.)
-                    .min_w_0()
-                    .gap_1()
-                    .text_xs()
-                    .text_color(cx.theme().muted_foreground)
-                    // A pinned project must say so on the row. Position alone does
-                    // not: "first in the list" is where a project can also be by
-                    // accident, so a pinned row and an ordinary top row would look
-                    // identical and the order would read as the app rearranging
-                    // things on its own.
-                    .when(pinned, |row| {
-                        row.child(Icon::new(IconName::Star).size_3().flex_none())
-                    })
-                    .when(branch.is_some() || changed > 0, |row| {
-                        row.child(git_facts(
-                            label.clone(),
-                            branch.clone(),
-                            is_active,
-                            changed,
-                            path.clone(),
-                            cx,
-                        ))
-                    })
-                    .when_some(rollup, |row, signal| row.child(signal_mark(signal, cx)))
-                    .when(is_active, |row| {
-                        row.child(menu_button(
-                            rail_control(("project-menu", root_idx), IconName::Ellipsis),
-                            "What can be done with this project",
-                            project_menu(root_idx, pinned, is_repo, suffix_target),
-                        ))
-                    })
-                    // Last, so it is in the same place on every row whatever
-                    // else the row happens to be carrying -- a control the eye
-                    // has to find is not a target, and this is the one the
-                    // whole click-reveals rule sends people to.
-                    //
-                    // `occlude`, as the ••• beside it is: the row's own click
-                    // selects the project, and putting its sessions away must
-                    // not do that on the way past.
-                    .child(
-                        div().flex_none().occlude().child(
-                            rail_control(
-                                ("project-fold", root_idx),
-                                match unfolded {
-                                    true => IconName::ChevronDown,
-                                    false => IconName::ChevronRight,
-                                },
-                            )
-                            .tooltip(match unfolded {
-                                true => "Hide this project's sessions",
-                                false => "Show this project's sessions",
-                            })
-                            .on_click(move |_, _, cx: &mut App| {
-                                let fold_path = fold_path.clone();
-                                fold_target
-                                    .update(cx, |shell: &mut Shell, cx| {
-                                        shell.toggle_fold(fold_path, cx);
-                                    })
-                                    .ok();
-                            }),
-                        ),
-                    )
+        item: RailRow::new(
+            key,
+            root.label.clone(),
+            cx.listener(move |shell: &mut Shell, _: &ClickEvent, window, cx| {
+                shell.select_root(root_idx, window, cx);
             }),
+        )
+        .icon(IconName::Folder)
+        // The full name, the branch, the count in words and the root's path,
+        // on the row itself: every part the row draws is cut to keep the
+        // name first, so the hover is where the whole of each lives.
+        .hint(project_hint(&root.label, branch.as_ref(), changed, &path))
+        // The selected project is marked whether or not it has sessions. While
+        // this was `is_active && sessions.is_empty()`, a project holding the
+        // conversation on screen was the one project in the rail with no mark
+        // at all -- the highlight moved to its session row and the row naming
+        // the *project* went plain, so nothing on screen said which project the
+        // user was in.
+        .active(is_active)
+        // **Selecting a project and folding it away are two different
+        // intentions, so they are two different targets.** While the whole
+        // row toggled, every click on a project both switched to it and
+        // snapped its sessions shut -- so reaching a session in the project
+        // you had just arrived at meant clicking the row a second time to
+        // undo what the first click did.
+        //
+        // Open and never toggle, which is not the same as leaving the fold
+        // alone: a row that only selected would hide the sessions of every
+        // project the user had ever folded, and arriving at one would mean
+        // hunting the caret to see what is in it -- the same extra click,
+        // in mirror image. Going to a project is asking what is in it, so
+        // `Shell::select_root` reveals; only the caret puts it away again.
+        // (The click handler rides in `RailRow::new` above.)
+        .menu(project_menu(root_idx, pinned, is_repo, menu_target))
+        .suffix(move |_, cx: &mut App| {
+            let (suffix_target, fold_target) = (suffix_target.clone(), fold_target.clone());
+            let fold_path = fold_path.clone();
+            let (rest, hovered) = row_surfaces(is_active, cx);
+            let radius = cx.theme().radius;
+            let (badge_bg, badge_fg) = (cx.theme().secondary, cx.theme().secondary_foreground);
+            div()
+                .h_flex()
+                .items_center()
+                .flex_shrink(1.)
+                .min_w_0()
+                .gap_1()
+                .text_xs()
+                .text_color(cx.theme().muted_foreground)
+                // A pinned project must say so on the row. Position alone does
+                // not: "first in the list" is where a project can also be by
+                // accident, so a pinned row and an ordinary top row would look
+                // identical and the order would read as the app rearranging
+                // things on its own.
+                .when(pinned, |row| {
+                    row.child(Icon::new(IconName::Star).size_3().flex_none())
+                })
+                // The branch, written out on the selected row alone. It is
+                // what you read while you are working *in* a project, and on
+                // the ten rows you are not in it is ten strings cut short --
+                // where `feat/consol` and `feat/codoh` say nothing to tell
+                // their projects apart and every one is taking width from the
+                // name that would. The row's hover carries it whole for every
+                // repository either way.
+                .when_some(branch.clone().filter(|_| is_active), |row, branch| {
+                    row.child(faded(branch, suffix_key.clone(), rest, hovered).max_w(MAX_BRANCH_W))
+                })
+                // The count on every row, and as a **badge**, not a coloured
+                // number: as a bare figure in the warning tint its colour was
+                // the whole message, and a colour is a message only to someone
+                // who already knows the code -- a project with a lot of
+                // ordinary work in it read as a project in trouble. The pill
+                // says "this is a count"; the hover says a count of what.
+                //
+                // `flex_none`: the count is a signal, not detail. It is the
+                // one thing here that must survive any width.
+                .when(changed > 0, |row| {
+                    row.child(
+                        div()
+                            .flex_none()
+                            .px_1()
+                            .rounded(radius)
+                            .bg(badge_bg)
+                            .text_color(badge_fg)
+                            .child(format!("{changed}")),
+                    )
+                })
+                .when_some(rollup, |row, signal| row.child(signal_mark(signal, cx)))
+                .when(is_active, |row| {
+                    row.child(menu_button(
+                        rail_control(("project-menu", root_idx), IconName::Ellipsis),
+                        "What can be done with this project",
+                        project_menu(root_idx, pinned, is_repo, suffix_target),
+                    ))
+                })
+                // Last, so it is in the same place on every row whatever
+                // else the row happens to be carrying -- a control the eye
+                // has to find is not a target, and this is the one the
+                // whole click-reveals rule sends people to.
+                //
+                // `occlude`, as the ••• beside it is: the row's own click
+                // selects the project, and putting its sessions away must
+                // not do that on the way past.
+                .child(
+                    div().flex_none().occlude().child(
+                        rail_control(
+                            ("project-fold", root_idx),
+                            match unfolded {
+                                true => IconName::ChevronDown,
+                                false => IconName::ChevronRight,
+                            },
+                        )
+                        .tooltip(match unfolded {
+                            true => "Hide this project's sessions",
+                            false => "Show this project's sessions",
+                        })
+                        .on_click(move |_, _, cx: &mut App| {
+                            let fold_path = fold_path.clone();
+                            fold_target
+                                .update(cx, |shell: &mut Shell, cx| {
+                                    shell.toggle_fold(fold_path, cx);
+                                })
+                                .ok();
+                        }),
+                    ),
+                )
+                .into_any_element()
+        }),
         children,
     }
 }
@@ -1267,42 +1380,35 @@ fn session_rows(
 
     let mut rows: Vec<((u8, usize), Row)> = Vec::new();
     for (root_idx, root) in window_state.workspace.roots.iter().enumerate() {
-        let project = ellipsize(&root.label, MAX_AGENT_LABEL);
+        let project = SharedString::from(root.label.clone());
         for (session_idx, session) in root.sessions.iter().enumerate() {
             let uid = session.uid;
             let signal = shell.session_row(uid, cx).signal;
             rows.push((
                 session_order(signal, recency.get(&uid).copied()),
-                Row::flat(
-                    // Named by the session and not by its place, because its
-                    // place moves the moment an agent starts working: a row keyed
-                    // by position would hand one conversation's state to another
-                    // every time the list re-sorted.
-                    ElementId::Name(SharedString::from(format!("rail-session-{uid}"))),
-                    session_row(
-                        shell,
-                        root_idx,
-                        session_idx,
-                        session,
-                        Some(uid) == active,
-                        Note::Project(project.clone()),
-                        cx,
-                    ),
-                ),
+                Row::flat(session_row(
+                    shell,
+                    root_idx,
+                    session_idx,
+                    session,
+                    Some(uid) == active,
+                    Note::Project(project.clone()),
+                    cx,
+                )),
             ));
         }
     }
 
     if rows.is_empty() {
         return vec![Row::flat(
-            "rail-no-sessions".into(),
-            SidebarMenuItem::new("Start a session")
-                .icon(Icon::new(IconName::Plus))
-                .on_click(
-                    cx.listener(|shell: &mut Shell, _: &ClickEvent, window, cx| {
-                        shell.new_session(window, cx);
-                    }),
-                ),
+            RailRow::new(
+                "rail-no-sessions",
+                "Start a session",
+                cx.listener(|shell: &mut Shell, _: &ClickEvent, window, cx| {
+                    shell.new_session(window, cx);
+                }),
+            )
+            .icon(IconName::Plus),
         )];
     }
 
@@ -1516,10 +1622,12 @@ fn workspace_identity(
         cx.theme().sidebar_accent,
         cx.theme().sidebar_accent_foreground,
     );
+    let (rest, hovered) = row_surfaces(false, cx);
     let hover_name = name.clone();
     let row = lead_row(
         div()
             .id("workspace-identity")
+            .group("workspace-identity")
             .h_flex()
             .items_center()
             .w_full()
@@ -1553,13 +1661,18 @@ fn workspace_identity(
     .child(Icon::new(IconName::LayoutDashboard).size_4())
     // Semibold rather than the header block's medium: this is the one name in
     // the window that says which workspace all of it belongs to.
+    //
+    // Faded like every list row's name, and one corner is taken knowingly:
+    // while this row's *menu* is open the trigger fills it with the accent,
+    // and a fade painted for the resting fill is then a step off -- visible
+    // only on a name long enough to fade, while its menu is open, with the
+    // pointer somewhere else. The fade cannot follow that fill because the
+    // open flag is applied by the menu host after this row is already built.
     .child(
-        div()
+        faded(name, "workspace-identity".into(), rest, hovered)
             .flex_1()
             .min_w_0()
-            .truncate()
-            .font_semibold()
-            .child(name),
+            .font_semibold(),
     );
 
     crate::controls::MenuTrigger::new(row, accent)
@@ -1978,11 +2091,10 @@ fn tab_bar(active: RailTab, cx: &mut Context<Shell>) -> impl IntoElement + use<>
 #[cfg(test)]
 mod tests {
     use super::{
-        MAX_LABEL, Note, RailTab, label_cap, new_session_hint, project_key,
-        runs_more_than_one_agent, session_label, session_order, signal_hint,
+        LABEL_SHAPE_CAP, RailTab, new_session_hint, project_key, runs_more_than_one_agent,
+        session_label, session_order, signal_hint,
     };
     use crate::chat::pane::SessionSignal;
-    use onehand_core::config::PanelLayout;
     use std::path::Path;
 
     /// A project's row has to be named by the project, because the library
@@ -2010,42 +2122,6 @@ mod tests {
             project_key(Path::new("/work/alpha/onehand")),
             project_key(Path::new("/work/alpha/onehand")),
         );
-    }
-
-    /// The rail is draggable, so the cap has to move with it.
-    ///
-    /// This is the whole point of deriving it: while it was one constant,
-    /// dragging the rail wider bought nothing at all -- every name stayed cut
-    /// at the same character, and the handle promised width the rows never
-    /// spent.
-    #[test]
-    fn a_wider_rail_shows_more_of_a_name() {
-        assert!(label_cap(PanelLayout::RAIL_MAX) > label_cap(PanelLayout::RAIL_MIN));
-    }
-
-    /// Growing with the width is not enough on its own: a rule that grows can
-    /// still be wrong at both ends of the drag, leaving a name unreadably
-    /// short where the rail is narrowest or running past what a row can draw
-    /// where it is widest. The test above cannot see either, because both
-    /// grow.
-    ///
-    /// The bounds are what the row has to be worth: sixteen characters is
-    /// about where a conversation's title stops being a title, and past forty
-    /// there is nothing left for the branch, the count and the mark that share
-    /// the row.
-    #[test]
-    fn every_width_the_rail_can_have_leaves_a_name_worth_reading() {
-        for width in [
-            PanelLayout::RAIL_MIN,
-            PanelLayout::default().rail_w,
-            PanelLayout::RAIL_MAX,
-        ] {
-            let cap = label_cap(width);
-            assert!(
-                (16..=40).contains(&cap),
-                "a {width}px rail caps a name at {cap} characters"
-            );
-        }
     }
 
     /// Every signal says something, and no two say the same thing.
@@ -2125,7 +2201,7 @@ mod tests {
     #[test]
     fn a_session_row_prefers_the_conversations_own_name() {
         assert_eq!(
-            session_label(Some("Fix the login flow"), "Claude Code", MAX_LABEL),
+            session_label(Some("Fix the login flow"), "Claude Code"),
             "Fix the login flow"
         );
     }
@@ -2134,16 +2210,18 @@ mod tests {
     /// blank row would be worse than a repeated one.
     #[test]
     fn an_unprompted_session_falls_back_to_its_agent() {
-        assert_eq!(session_label(None, "Claude Code", MAX_LABEL), "Claude Code");
+        assert_eq!(session_label(None, "Claude Code"), "Claude Code");
     }
 
-    /// A first prompt is free text and users paste paragraphs into it. The row
-    /// is a fixed-height anchor, so the cap is what keeps a pasted essay from
-    /// deciding the rail's width.
+    /// A first prompt is free text and users paste paragraphs into it. What
+    /// fits the row is the fade's business, in pixels — this bound is the cost
+    /// one, keeping a pasted essay from being shaped whole on every frame the
+    /// rail draws. It has to sit past what the widest rail can show, or the
+    /// ellipsis it writes would reach the screen and the fade would be a lie.
     #[test]
-    fn a_long_title_is_capped() {
-        let label = session_label(Some(&"a".repeat(MAX_LABEL * 3)), "Claude Code", MAX_LABEL);
-        assert_eq!(label.chars().count(), MAX_LABEL);
+    fn a_long_title_is_bounded_for_cost_not_for_fit() {
+        let label = session_label(Some(&"a".repeat(LABEL_SHAPE_CAP * 3)), "Claude Code");
+        assert_eq!(label.chars().count(), LABEL_SHAPE_CAP);
         assert!(label.ends_with('…'));
     }
 
@@ -2173,20 +2251,5 @@ mod tests {
         assert!(runs_more_than_one_agent(
             ["Claude Code", "Claude Code", "Mock UI"].into_iter()
         ));
-    }
-
-    /// A row carrying a footnote has less room for its name than the rail is
-    /// wide, and a nested row less again. Uncharged, the cap let a title
-    /// through at a length the row could not draw — and the library's label is
-    /// a bare string, so what came of the overflow was a word cut in half with
-    /// no ellipsis anywhere to say one had been.
-    #[test]
-    fn a_footnote_and_a_nest_each_cost_the_name_room() {
-        let bare = Note::Agent { among_many: false }.label_cost(false);
-        let noted = Note::Agent { among_many: true }.label_cost(true);
-        let flat = Note::Project("onehand".into()).label_cost(true);
-        assert!(noted > bare, "a footnote has to cost something");
-        assert!(bare > 0, "the nest rule's inset costs room on its own");
-        assert!(noted > flat, "a nested row is the narrower of the two");
     }
 }

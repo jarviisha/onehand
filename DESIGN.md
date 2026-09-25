@@ -388,7 +388,7 @@ the theme, will not follow the focus rules, and will have to be maintained here:
 | Need | Use |
 |------|-----|
 | Window frame, docks, panels | `Root`, `DockArea`, `Panel`, `DockItem` |
-| The rail | `Sidebar` |
+| The rail | `Sidebar` for the panel; its list rows are the app's own, because the row's name needs to be an element (the pixel fade, the full name on hover) and the library row holds it as a bare string |
 | Buttons, ghost/primary variants | `Button` + `ButtonVariants` |
 | Modals | `Dialog` |
 | Single-line and multi-line input | `InputState` + `TextInput` / `Textarea` |
