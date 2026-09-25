@@ -434,7 +434,7 @@ fn ellipsize(s: &str, max: usize) -> SharedString {
 ///
 /// Ghost, which is every row here but one: a rail is chrome the conversation
 /// sits in front of, and a column of filled rows is a panel shouting over the
-/// thing it exists to get you to. The exception is [`rail_row_outlined`], and
+/// thing it exists to get you to. The exception is [`rail_row_filled`], and
 /// it is one row.
 ///
 /// Carries its own hover, so no caller may add a second one: `hover` panics in
@@ -454,34 +454,42 @@ pub(crate) fn rail_row(
         .hover(move |row| row.bg(accent.opacity(0.8)).text_color(accent_fg))
 }
 
-/// The one row the rail draws an outline around: *New session*.
+/// The one filled row in the rail: *New session*.
 ///
-/// **An outline and not a fill**, which was tried first and is the version this
-/// replaced. A filled row is the loudest thing that can happen in a panel whose
-/// job is to get out of the way, and the fill this row used to carry is exactly
-/// what an earlier pass took off it. The hairline says the same thing for the
-/// price of one pixel: everything else on the rail is a name in a column, and
-/// this is the one thing with an edge around it.
+/// This row has now worn all three coats, and each move had a reason. A loud
+/// fill was taken off it early, because a rail is chrome and a filled row in
+/// the panel's strongest colour shouts over the thing the panel exists to get
+/// you to. The hairline outline that replaced it said "this one is different"
+/// for the price of one pixel — and said the *wrong* thing: a bordered box
+/// with a label on its left and a caret at its far end is the anatomy of an
+/// input, and the rail's one action read as a field waiting to be typed in.
+/// What tells a button from an input is the fill, so it fills — in the
+/// theme's secondary triple, which is what the component library paints an
+/// ordinary filled button with: enough fill to say *button*, nowhere near the
+/// strongest on the surface, which stays with the selected row.
 ///
-/// Ghost underneath, so it hovers like every other row — the outline marks what
-/// the control *is*, not what the pointer is doing.
+/// Hover and the open-state are the same triple's other two steps
+/// (`secondary_hover`, `secondary_active`), so the control behaves like the
+/// library button it is dressed as.
 ///
-/// **The seam is the caller's.** A split control's two halves share one line
-/// between them, so this draws three sides when it is about to be joined and
-/// four when it stands alone; the caret's own left border is the divider.
-pub(crate) fn rail_row_outlined(
+/// **The seam of the split control is the caret's left border**; this half
+/// only squares its right edge when it is about to be joined, which is the
+/// caller's call.
+pub(crate) fn rail_row_filled(
     id: &'static str,
     icon: IconName,
     label: &'static str,
-    joined: bool,
     cx: &App,
 ) -> Stateful<Div> {
-    rail_row(id, icon, label, cx)
-        .border_color(cx.theme().border)
-        .map(|row| match joined {
-            true => row.border_l_1().border_t_1().border_b_1(),
-            false => row.border_1(),
-        })
+    let (fill, fill_fg, hover) = (
+        cx.theme().secondary,
+        cx.theme().secondary_foreground,
+        cx.theme().secondary_hover,
+    );
+    row_shape(id, icon, label, cx)
+        .bg(fill)
+        .text_color(fill_fg)
+        .hover(move |row| row.bg(hover))
 }
 
 /// The column every row tone shares: everything but the fill and the hover.
@@ -535,23 +543,20 @@ fn rail_control(id: impl Into<ElementId>, icon: IconName) -> Button {
 
 /// A control in the rail that opens a menu.
 ///
-/// Three draw exactly this, so it is built once: the ••• a project row and a
-/// session row carry while active, and the caret beside *New session*. They
-/// differ in the sentence and the builder, and in nothing about the wiring —
-/// which is what the two that already existed proved, having been written out
-/// twice before this was extracted.
-///
-/// **The control is handed in rather than named**, because the caret is the one
-/// of the three that is not a free-standing ••• : it is the right half of the
-/// *New session* control, so it is sized and squared off to join the row beside
-/// it, and the only thing that can express that is the button itself.
+/// Two draw exactly this, so it is built once: the ••• a project row and a
+/// session row carry while active. They differ in the sentence and the
+/// builder, and in nothing about the wiring — which is what they proved by
+/// having been written out twice before this was extracted. (The caret beside
+/// *New session* used to be the third; it is the right half of a filled split
+/// control now, and a library button dressed to match a hand-filled half is
+/// two components pretending to be one, so it draws itself.)
 ///
 /// `occlude`, because the button sits inside something whose own click already
-/// means something — selecting a session, selecting a project, starting one —
-/// and opening a menu must not do that on its way past.
+/// means something — selecting a session, selecting a project — and opening a
+/// menu must not do that on its way past.
 ///
 /// The wrapping closure is what lets one builder serve both this and a row's
-/// right-click menu: `SidebarMenuItem::context_menu` hands its builder
+/// right-click menu: the row's context-menu host hands its builder
 /// `&mut App` while this host hands over a `&mut Context<PopupMenu>`, which
 /// derefs to it. Written once here rather than at each call site, which is
 /// where the copies of it were.
@@ -1866,16 +1871,21 @@ fn new_session_block(
     let target = cx.entity().downgrade();
 
     let (radius, hairline) = (cx.theme().radius, cx.theme().border);
-    let primary = lead_row(rail_row_outlined(
+    let (fill, fill_fg, hover_fill, open_fill) = (
+        cx.theme().secondary,
+        cx.theme().secondary_foreground,
+        cx.theme().secondary_hover,
+        cx.theme().secondary_active,
+    );
+    let primary = lead_row(rail_row_filled(
         "new-session",
         IconName::Plus,
         "New session",
-        choosable,
         cx,
     ))
-    // The two halves of one control, so the seam between them is square and
-    // the outer edges keep the radius. Only while there is a caret to join:
-    // a lone row squared off on one side reads as clipped.
+    // The two halves of one control, so the seam between them is square
+    // and the outer edges keep the radius. Only while there is a caret to
+    // join: a lone row squared off on one side reads as clipped.
     .when(choosable, |row| row.rounded_r(px(0.)))
     .tooltip(move |window, cx| Tooltip::new(hint.clone()).build(window, cx))
     .on_click(
@@ -1900,25 +1910,49 @@ fn new_session_block(
                 true => "Start a session in another project",
                 false => "Start a session with a different agent",
             };
-            bar.child(menu_button(
-                // Sized to the header row rather than to the ••• it shares a
-                // builder with: this one is the right half of the control
-                // beside it, and a control half the height of its own other
-                // half is two controls that happen to touch.
-                rail_control("new-session-target", IconName::ChevronDown)
-                    // The other half of one outlined control: its own left
-                    // border is the line between the two halves, and the other
-                    // three continue the row's. Still ghost underneath, so
-                    // hovering either half lights that half alone.
-                    .border_1()
-                    .border_color(hairline)
-                    .h_8()
-                    .w_7()
-                    .rounded_l(px(0.))
-                    .rounded_r(radius),
-                says,
-                new_session_menu(projects, active_idx, agents, target),
-            ))
+            // The other half of one filled control, drawn as a div rather
+            // than a library button so the two halves share one fill and one
+            // hover rule exactly. Its left border is the seam; hovering
+            // either half lights that half alone, which is what says the
+            // control is split. `MenuTrigger` because a div is not
+            // `Selectable` on its own, and the open state takes the triple's
+            // third step so a held-open caret reads as pressed.
+            //
+            // Sized to the header row beside it rather than to the ••• the
+            // menus share a look with: this is the right half of that
+            // control, and a control half the height of its own other half
+            // is two controls that happen to touch.
+            let caret = div()
+                .id("new-session-target")
+                .h_flex()
+                .items_center()
+                .justify_center()
+                .flex_none()
+                .h_8()
+                .w_7()
+                .bg(fill)
+                .text_color(fill_fg)
+                .cursor_pointer()
+                .hover(move |half| half.bg(hover_fill))
+                .border_l_1()
+                .border_color(hairline)
+                .rounded_r(radius)
+                .tooltip(move |window, cx| Tooltip::new(says).build(window, cx))
+                .child(Icon::new(IconName::ChevronDown).size_4());
+            // `occlude`, as every menu control in the rail: the caret sits in
+            // a row whose own click starts a session, and opening the menu
+            // must not do that on the way past.
+            // The wrap re-borrows `Context<PopupMenu>` down to the `&mut App`
+            // the builder is written against, as the ••• host does.
+            let build = new_session_menu(projects, active_idx, agents, target);
+            bar.child(
+                div().flex_none().occlude().child(
+                    crate::controls::MenuTrigger::new(caret, open_fill)
+                        .dropdown_menu_with_anchor(Anchor::TopRight, move |menu, window, cx| {
+                            build(menu, window, cx)
+                        }),
+                ),
+            )
         })
 }
 
