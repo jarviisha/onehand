@@ -654,10 +654,12 @@ plus `sendMessage` and `answerCallbackQuery`. Everything that is not the wire is
   now shows as the rail's mark and its tooltip rather than as a sentence in this header. That is the
   cost, taken deliberately; `Chat::activity_status` stays and still feeds the running line, the
   project page and the pane's own state.
-  The right-hand end carries the row's controls (`ChatPane::header_control`, one builder so the call
-  sites cannot drift): the past-conversations menu, the terminal, the Workbench, the way back
-  to a hidden rail, and last
-  *Close session*, offered only while there is one. The terminal button carries a **dot in success ink
+  The row's controls (`ChatPane::header_control`, one builder so the call sites cannot drift) each
+  sit on the side of what they act on: the way back to a hidden rail at the row's *left* edge, the
+  side the rail returns to, and the right-hand end reading outward from the name — the
+  past-conversations menu, *Close session* (offered only while there is one), the terminal, and
+  last the Workbench, always, since its dock is the window's right edge and the outermost control
+  should move the outermost panel. The terminal button carries a **dot in success ink
   at its corner while a shell is alive** — a child process outliving a closed dock is the one thing
   the icon cannot say, and closing the window is what would end it. The fact is pushed down from the
   shell (`ChatPane::set_terminal_live`, from `Shell::sync_panel_facts` and from every project switch,

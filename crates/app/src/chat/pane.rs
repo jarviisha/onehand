@@ -2597,9 +2597,13 @@ impl ChatPane {
     /// nowhere else to be offered from, and a route that exists only as a
     /// keystroke is a route only someone who already knows it can take.
     ///
-    /// **The name carries the conversation's own menu**, and the right-hand end
-    /// carries what is about the *window*: the way back to a hidden rail, the
-    /// past conversations, the two docks, and last, closing the session. That
+    /// **The name carries the conversation's own menu**, and every other
+    /// control sits on the side of what it acts on: the way back to a hidden
+    /// rail at the row's left edge, the side the rail returns to, and the
+    /// right-hand end reading outward from the name — the past conversations
+    /// and closing the session, which act on the session the name names, then
+    /// the terminal and last the Workbench, whose dock is the window's right
+    /// edge, so the outermost control moves the outermost panel. That
     /// split is why there is no ••• here any more — a menu button
     /// beside the name it acts on says nothing the name could not say itself, and
     /// the things in it were all things done to the conversation the name is.
@@ -2666,21 +2670,16 @@ impl ChatPane {
             // way: with the name as the only thing in the row able to give, it
             // gave all of it, and a narrow panel came out as six icons over an
             // ellipsis. `HEADER_NAME_MIN` is where the taking stops.
-            .child(
-                div()
-                    .h_flex()
-                    .items_center()
-                    .flex_initial()
-                    .min_w(HEADER_NAME_MIN)
-                    .child(self.title_control(title, busy, archive, cx)),
-            )
-            .child(div().flex_1())
             // Hiding the rail must not be a one-way door: with it gone there is
             // no workspace name, no project list and no session list, and the
             // way back would be a keystroke the user would have had to already
             // know. So the route rides in the header of the panel that took the
             // space -- and only while the rail is actually gone, because a
-            // button that unhides what is already on screen does nothing.
+            // button that unhides what is already on screen does nothing. It
+            // sits at the row's left edge because that is the side the rail
+            // comes back on: filed among the window controls on the right it
+            // had to be found rather than reached for, a control restoring the
+            // left panel from the opposite edge of the row.
             .when(self.rail_hidden, |header| {
                 header.child(
                     header_control("show-rail", IconName::PanelLeft, cx)
@@ -2690,12 +2689,40 @@ impl ChatPane {
                         })),
                 )
             })
+            .child(
+                div()
+                    .h_flex()
+                    .items_center()
+                    .flex_initial()
+                    .min_w(HEADER_NAME_MIN)
+                    .child(self.title_control(title, busy, archive, cx)),
+            )
+            .child(div().flex_1())
             // Only while a session is showing, and for a reason worth stating:
             // this is the same list the project page draws, and that page is
             // exactly what the centre of the window shows when there is no
             // session — offering it there too would be saying one thing twice
             // within an inch of itself.
             .when(live, |header| header.child(self.history_control(cx)))
+            // Only while there is a session to end, and *before* the docks
+            // rather than last: the cluster reads outward from the name by
+            // what each control is about -- this and the past conversations
+            // act on the session the name names, the dock pair on the window
+            // around it -- and a ✕ at the row's far edge put the one control
+            // that ends something where a pointer drifts. It keeps the
+            // conversation -- the transcript is written at the end of every turn
+            // and closing costs nothing that is not already on disk -- which is
+            // why it can be a control on the row while deleting stays behind the
+            // name, two presses and a warning away.
+            .when(live, |header| {
+                header.child(
+                    header_control("close-session", IconName::Close, cx)
+                        .tooltip("Close this session and its agent")
+                        .on_click(cx.listener(|_: &mut Self, _, _, cx| {
+                            cx.emit(ChatPaneEvent::CloseSession);
+                        })),
+                )
+            })
             // Beside the Workbench button: both are docks this panel is
             // sitting between, and a closed one leaves nothing on screen at all
             // -- no edge, no strip, no name -- so the route to it belongs with
@@ -2711,6 +2738,9 @@ impl ChatPane {
             // here rather than done here: which mode it opens on, and closing it
             // rather than focusing it, are both the shell's rules, and the chat
             // has no business knowing a dock is where the Workbench lives.
+            // Outermost on the row, always: its dock is the window's right
+            // edge, so the control that moves it holds the row's right edge --
+            // the same mapping that puts the rail's button at the left.
             .child(
                 header_control("workbench", IconName::PanelRight, cx)
                     // **Both directions, because the button does both.** It
@@ -2727,20 +2757,6 @@ impl ChatPane {
                         cx.emit(ChatPaneEvent::ToggleWorkbench);
                     })),
             )
-            // Last, and only while there is a session to end. It keeps the
-            // conversation -- the transcript is written at the end of every turn
-            // and closing costs nothing that is not already on disk -- which is
-            // why it can be a control on the row while deleting stays behind the
-            // name, two presses and a warning away.
-            .when(live, |header| {
-                header.child(
-                    header_control("close-session", IconName::Close, cx)
-                        .tooltip("Close this session and its agent")
-                        .on_click(cx.listener(|_: &mut Self, _, _, cx| {
-                            cx.emit(ChatPaneEvent::CloseSession);
-                        })),
-                )
-            })
     }
 
     /// The way back to a conversation this project has already had — as a
