@@ -51,19 +51,34 @@ const MAX_LABEL: usize = 24;
 /// another.
 const FADE_W: Rems = rems(1.25);
 
+/// The fill a hovered rail row takes: the selected fill at eight tenths,
+/// which is the component library's own convention for a hovered sidebar row,
+/// so a hovered row and the selected one stay apart without a second token.
+///
+/// One function because two kinds of reader depend on the same ingredient:
+/// the rows *paint* this over the well, and [`row_surfaces`] *composites* it
+/// over the well to know what colour is then on screen. The fade at the end
+/// of a name is invisible only while those two agree, and while the `0.8` was
+/// written out at each site there was nothing to keep them agreeing.
+fn hover_fill(cx: &App) -> Hsla {
+    cx.theme().sidebar_accent.opacity(0.8)
+}
+
 /// The two fills a rail row can be showing: at rest, and under the pointer.
 ///
 /// Worked out once and handed around because the fade at the end of a name is
 /// painted *in* them, and each has to be the composited colour actually on
-/// screen: the hover fill is the accent at eight tenths over the well, so the
-/// fade's endpoint is that blend and neither ingredient. The active row's fill
-/// does not move under the pointer, so its pair is one colour twice.
+/// screen: the hover fill is [`hover_fill`] over the well, so the fade's
+/// endpoint is that blend and neither ingredient. The active row's fill does
+/// not move under the pointer, so its pair is one colour twice.
 fn row_surfaces(active: bool, cx: &App) -> (Hsla, Hsla) {
     let well = cx.theme().muted;
-    let accent = cx.theme().sidebar_accent;
     match active {
-        true => (well.blend(accent), well.blend(accent)),
-        false => (well, well.blend(accent.opacity(0.8))),
+        true => {
+            let lit = well.blend(cx.theme().sidebar_accent);
+            (lit, lit)
+        }
+        false => (well, well.blend(hover_fill(cx))),
     }
 }
 
@@ -208,8 +223,9 @@ impl RailRow {
 
     fn render(self, window: &mut Window, cx: &mut App) -> AnyElement {
         let (rest, hovered) = row_surfaces(self.active, cx);
-        let (accent, accent_fg) = (
+        let (accent, hover, accent_fg) = (
             cx.theme().sidebar_accent,
+            hover_fill(cx),
             cx.theme().sidebar_accent_foreground,
         );
         let on_click = self.on_click;
@@ -229,13 +245,7 @@ impl RailRow {
             .text_sm()
             .map(|row| match self.active {
                 true => row.font_medium().bg(accent).text_color(accent_fg),
-                false =>
-                // The library's own convention for a hovered sidebar row:
-                // the selected fill at eight tenths, so a hovered row and the
-                // selected one stay apart without a second token.
-                {
-                    row.hover(move |row| row.bg(accent.opacity(0.8)).text_color(accent_fg))
-                }
+                false => row.hover(move |row| row.bg(hover).text_color(accent_fg)),
             })
             .when_some(self.icon, |row, icon| row.child(Icon::new(icon).size_4()))
             .child(
@@ -446,12 +456,8 @@ pub(crate) fn rail_row(
     cx: &App,
 ) -> Stateful<Div> {
     // Resolved up front: the hover closure outlives this borrow of `cx`.
-    let (accent, accent_fg) = (
-        cx.theme().sidebar_accent,
-        cx.theme().sidebar_accent_foreground,
-    );
-    row_shape(id, icon, label, cx)
-        .hover(move |row| row.bg(accent.opacity(0.8)).text_color(accent_fg))
+    let (hover, accent_fg) = (hover_fill(cx), cx.theme().sidebar_accent_foreground);
+    row_shape(id, icon, label, cx).hover(move |row| row.bg(hover).text_color(accent_fg))
 }
 
 /// The one filled row in the rail: *New session*.
@@ -468,9 +474,10 @@ pub(crate) fn rail_row(
 /// ordinary filled button with: enough fill to say *button*, nowhere near the
 /// strongest on the surface, which stays with the selected row.
 ///
-/// Hover and the open-state are the same triple's other two steps
-/// (`secondary_hover`, `secondary_active`), so the control behaves like the
-/// library button it is dressed as.
+/// Hover is the same triple's second step (`secondary_hover`). The third,
+/// `secondary_active`, marks the caret half while the menu it opened is up —
+/// the one half that *has* an open state to mark; this half acts on the press
+/// and is holding nothing open afterwards.
 ///
 /// **The seam of the split control is a sliver of the well between the
 /// halves**, drawn by the caller's gap — a border in the hairline token sat
@@ -1621,10 +1628,8 @@ fn workspace_identity(
 ) -> impl IntoElement + use<> {
     let radius = cx.theme().radius;
     // Resolved up front: the hover closure outlives this borrow of `cx`.
-    let (accent, accent_fg) = (
-        cx.theme().sidebar_accent,
-        cx.theme().sidebar_accent_foreground,
-    );
+    let accent = cx.theme().sidebar_accent;
+    let (hover, accent_fg) = (hover_fill(cx), cx.theme().sidebar_accent_foreground);
     let (rest, hovered) = row_surfaces(false, cx);
     let hover_name = name.clone();
     let row = lead_row(
@@ -1639,7 +1644,7 @@ fn workspace_identity(
             .gap_x_2()
             .rounded(radius)
             .cursor_pointer()
-            .hover(move |row| row.bg(accent.opacity(0.8)).text_color(accent_fg))
+            .hover(move |row| row.bg(hover).text_color(accent_fg))
             // The name leads it, because this row is the one place a workspace
             // name is written and it is written on one line: users put
             // sentences in that field, and truncated there it could be read
@@ -1873,7 +1878,7 @@ fn new_session_block(
     let target = cx.entity().downgrade();
 
     let radius = cx.theme().radius;
-    let (fill, fill_fg, hover_fill, open_fill) = (
+    let (fill, fill_fg, fill_hover, open_fill) = (
         cx.theme().secondary,
         cx.theme().secondary_foreground,
         cx.theme().secondary_hover,
@@ -1943,23 +1948,21 @@ fn new_session_block(
                 .bg(fill)
                 .text_color(fill_fg)
                 .cursor_pointer()
-                .hover(move |half| half.bg(hover_fill))
+                .hover(move |half| half.bg(fill_hover))
                 .rounded_r(radius)
                 .tooltip(move |window, cx| Tooltip::new(says).build(window, cx))
                 .child(Icon::new(IconName::ChevronDown).size_4());
-            // `occlude`, as every menu control in the rail: the caret sits in
-            // a row whose own click starts a session, and opening the menu
-            // must not do that on the way past.
+            // No `occlude` here, unlike the ••• menus: those sit *inside* a
+            // row whose own click means something, while this caret is the
+            // primary half's sibling with nothing behind it to protect.
             // The wrap re-borrows `Context<PopupMenu>` down to the `&mut App`
             // the builder is written against, as the ••• host does.
             let build = new_session_menu(projects, active_idx, agents, target);
             bar.child(
-                div().flex_none().occlude().child(
-                    crate::controls::MenuTrigger::new(caret, open_fill)
-                        .dropdown_menu_with_anchor(Anchor::TopRight, move |menu, window, cx| {
-                            build(menu, window, cx)
-                        }),
-                ),
+                crate::controls::MenuTrigger::new(caret, open_fill)
+                    .dropdown_menu_with_anchor(Anchor::TopRight, move |menu, window, cx| {
+                        build(menu, window, cx)
+                    }),
             )
         })
 }
