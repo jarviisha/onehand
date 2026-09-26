@@ -91,14 +91,20 @@ struct Transport {
     /// child itself — so dropping this future is what kills the adapter, and the
     /// stream owning it is what ties the agent's life to the subscription.
     ended: Pin<Box<dyn std::future::Future<Output = String> + Send>>,
-    /// The last few lines the adapter wrote to stderr.
+    /// The last lines the adapter wrote to stderr.
     ///
-    /// **An adapter that fails to start explains itself on stderr and nowhere
-    /// else.** What reaches the protocol in that case is silence — stdout closes
-    /// without a single message — so every distinct failure arrives here as the
-    /// same sentence: the adapter stopped. The reason was printed a moment
-    /// earlier and, without this, went only to *our* stderr, which nobody reads
-    /// when the app was started from a desktop icon.
+    /// **An adapter that dies explains itself on stderr and nowhere else.**
+    /// What reaches the protocol is silence — stdout closes without a further
+    /// message — so every distinct failure arrives at the reader as the same
+    /// sentence: the adapter stopped. The reason was printed a moment earlier
+    /// and, without this, went only to *our* stderr, which nobody reads when the
+    /// app was started from a desktop icon.
+    ///
+    /// **Kept for any death, not only a failure to start.** A start that never
+    /// happens is the case this was built for, but the tail costs the same at
+    /// every other one, and the alternative is deciding — at the moment
+    /// something has already gone wrong — that the reader may not see what was
+    /// said.
     ///
     /// Shared with the draining task rather than read off the pipe at failure
     /// time, because by then the pipe is closed and the process is gone.
@@ -106,58 +112,105 @@ struct Transport {
 }
 
 /// The adapter's own last words, kept for whoever has to explain its death.
-type StderrTail = std::sync::Arc<std::sync::Mutex<VecDeque<String>>>;
+type StderrTail = std::sync::Arc<std::sync::Mutex<LastWords>>;
+
+/// A bounded tail of adapter stderr, and how much of it fell off the front.
+///
+/// **The count is the half that keeps the bound honest.** Twenty lines is
+/// plenty for one tool's error block and nothing at all for its output, so a
+/// chatty adapter silently reduces to its least interesting lines. Saying how
+/// many were dropped is what stops the survivors from reading as everything
+/// that was said — the same reason the terminal extension reports a capped
+/// buffer rather than quietly shortening it.
+#[derive(Default)]
+struct LastWords {
+    kept: VecDeque<String>,
+    dropped: usize,
+}
 
 /// How many lines of adapter stderr are kept, and how wide each may be.
 ///
-/// **Enough for one tool's error block, not for its output.** The failures this
+/// **Room for the block plus whatever it arrived behind.** The failures this
 /// exists for announce themselves in a handful of lines — `npx` naming a version
-/// it cannot resolve, a runtime naming a module it cannot find — while a healthy
-/// adapter can write to stderr all day. Keeping the tail bounded on both axes is
-/// what makes it safe to leave running for the life of the session.
-const STDERR_TAIL_LINES: usize = 5;
-const STDERR_LINE_CAP: usize = 120;
+/// it cannot resolve, a runtime naming a module it cannot find — but the line
+/// that names the fault class comes *first* in such a block, so a tail sized to
+/// the block exactly loses that line to any warning printed after it. The npm
+/// error this was written for is five lines on its own; at five, one
+/// `npm warn exec` ahead of it is enough to evict the reason.
+///
+/// The width is set by paths: a module or package a runtime cannot find is
+/// named with its full path, and cutting mid-path leaves the half that is the
+/// same for every adapter.
+///
+/// Twenty lines at two hundred characters is four kilobytes per session, which
+/// is the whole cost of leaving this on. What it does *not* bound is one
+/// enormous line: the reader assembles a line before this ever sees it, so an
+/// adapter that writes a megabyte without a newline still spends it.
+const STDERR_TAIL_LINES: usize = 20;
+const STDERR_LINE_CAP: usize = 200;
 
 /// The write half of a [`Transport`], as every message-writing function takes
 /// it.
 type Outgoing = Pin<Box<dyn tokio::io::AsyncWrite + Send>>;
 
-/// Keep one stderr line, dropping the oldest once the tail is full.
-///
-/// Blank lines are skipped because tools pad their error blocks with them, and
-/// a kept blank is one of the few slots not spent on a reason.
-fn remember(kept: &mut VecDeque<String>, line: &str) {
-    let line = line.trim();
-    if line.is_empty() {
-        return;
+impl LastWords {
+    /// Keep one stderr line, dropping the oldest once the tail is full.
+    ///
+    /// Blank lines are skipped because tools pad their error blocks with them,
+    /// and a kept blank is one of the few slots not spent on a reason. A
+    /// skipped blank is not a drop: nothing was lost to report.
+    fn remember(&mut self, line: &str) {
+        let line = line.trim();
+        if line.is_empty() {
+            return;
+        }
+        if self.kept.len() == STDERR_TAIL_LINES {
+            self.kept.pop_front();
+            self.dropped += 1;
+        }
+        // Cut on a character boundary — an adapter is free to print a path, and
+        // slicing a multi-byte character in half panics rather than shortens.
+        let end = line
+            .char_indices()
+            .nth(STDERR_LINE_CAP)
+            .map_or(line.len(), |(at, _)| at);
+        self.kept.push_back(line[..end].to_string());
     }
-    if kept.len() == STDERR_TAIL_LINES {
-        kept.pop_front();
+
+    /// What the adapter said, as one line, or nothing if it said nothing.
+    ///
+    /// Joined rather than kept as separate lines because the caller folds this
+    /// into a single error string, and what draws that string decides for
+    /// itself where to wrap.
+    fn say(&self) -> Option<String> {
+        if self.kept.is_empty() {
+            return None;
+        }
+        let mut said = self.kept.iter().cloned().collect::<Vec<_>>();
+        if self.dropped > 0 {
+            said.insert(0, format!("(+{} earlier lines)", self.dropped));
+        }
+        Some(said.join(" · "))
     }
-    let end = line
-        .char_indices()
-        .nth(STDERR_LINE_CAP)
-        .map_or(line.len(), |(at, _)| at);
-    kept.push_back(line[..end].to_string());
 }
 
 /// Put the adapter's last words behind the sentence describing its death.
 ///
 /// The protocol-level sentence stays in front because it is what happened —
 /// the tail is evidence, and evidence that pushed the finding off the start of
-/// the line would be worse than none. Lines are joined rather than kept apart:
-/// this lands in a one-line banner, and a newline there buys nothing.
+/// the line would be worse than none.
 fn explain(what: String, tail: &StderrTail) -> String {
-    let said = match tail.lock() {
-        Ok(kept) => kept.iter().cloned().collect::<Vec<_>>(),
-        // A poisoned lock means the drain task panicked mid-write. That is
-        // worth neither a panic here nor a mention: the sentence we already
-        // have is still true, and it is what the reader came for.
-        Err(_) => Vec::new(),
-    };
-    match said.is_empty() {
-        true => what,
-        false => format!("{what}: {}", said.join(" · ")),
+    // A poisoned lock means the drain task panicked mid-write, which leaves the
+    // tail readable and every line before the panic still in it. Taking it
+    // anyway is what stops one panic from costing the reader the reason; the
+    // alternative degrades to silence exactly when there is most to say.
+    let said = tail
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .say();
+    match said {
+        Some(said) => format!("{what}: {said}"),
+        None => what,
     }
 }
 
@@ -186,9 +239,12 @@ impl Transport {
             let mut lines = BufReader::new(stderr).lines();
             while let Ok(Some(line)) = lines.next_line().await {
                 eprintln!("[acp:stderr] {line}");
-                if let Ok(mut kept) = sink.lock() {
-                    remember(&mut kept, &line);
-                }
+                // Taken through a poison rather than around it: a tail that
+                // stopped recording at the first panic would be empty at the
+                // one moment it is read.
+                sink.lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner)
+                    .remember(&line);
             }
         });
 
@@ -1122,8 +1178,8 @@ pub fn base64_encode(bytes: &[u8]) -> String {
 #[cfg(test)]
 mod tests {
     use super::{
-        base64_encode, connect_over, elicit_result, explain, file_uri, parse_elicitation, remember,
-        Transport, STDERR_LINE_CAP, STDERR_TAIL_LINES,
+        base64_encode, connect_over, elicit_result, explain, file_uri, parse_elicitation,
+        LastWords, Transport, STDERR_LINE_CAP, STDERR_TAIL_LINES,
     };
     use crate::acp::{AcpEvent, AcpRequest, ElicitKind, ElicitOutcome, ElicitValue};
     use futures::StreamExt as _;
@@ -1546,19 +1602,50 @@ mod tests {
     /// the banner and drop the reason.
     #[test]
     fn the_stderr_tail_keeps_the_last_lines_and_drops_the_blanks() {
-        let mut kept = std::collections::VecDeque::new();
-        remember(&mut kept, "first");
+        let mut tail = LastWords::default();
+        tail.remember("first");
         for line in ["", "   "] {
-            remember(&mut kept, line);
+            tail.remember(line);
         }
         for n in 0..STDERR_TAIL_LINES {
-            remember(&mut kept, &format!("line {n}"));
+            tail.remember(&format!("line {n}"));
         }
 
-        assert_eq!(kept.len(), STDERR_TAIL_LINES);
-        assert!(!kept.contains(&"first".to_string()), "{kept:?}");
-        assert_eq!(kept.back().map(String::as_str), Some("line 4"));
-        assert!(kept.iter().all(|l| !l.trim().is_empty()), "{kept:?}");
+        assert_eq!(tail.kept.len(), STDERR_TAIL_LINES);
+        assert!(!tail.kept.contains(&"first".to_string()), "{:?}", tail.kept);
+        assert_eq!(tail.kept.back().map(String::as_str), Some("line 19"));
+        assert!(tail.kept.iter().all(|l| !l.trim().is_empty()));
+        // The blanks were skipped, not dropped: only `first` fell off.
+        assert_eq!(tail.dropped, 1);
+    }
+
+    /// The npm block this was written for is five lines and arrives behind
+    /// whatever the tool printed first. The tail has to hold the block *and*
+    /// its preamble, or the line naming the fault class — which comes first —
+    /// is the one evicted.
+    #[test]
+    fn a_real_npm_error_block_survives_the_noise_printed_ahead_of_it() {
+        let mut tail = LastWords::default();
+        for line in ["npm warn exec", "npm warn deprecated something@1.0.0"] {
+            tail.remember(line);
+        }
+        for line in [
+            "npm error code ETARGET",
+            "npm error notarget No matching version found for zod@4.6.5.",
+            "npm error notarget In most cases you or one of your dependencies",
+            "npm error notarget are requesting a package version that doesn't exist.",
+            "npm error A complete log of this run can be found in: /tmp/x.log",
+        ] {
+            tail.remember(line);
+        }
+
+        let said = tail.say().expect("it said something");
+        assert!(said.contains("npm error code ETARGET"), "{said}");
+        assert!(
+            said.contains("No matching version found for zod@4.6.5"),
+            "{said}"
+        );
+        assert_eq!(tail.dropped, 0);
     }
 
     /// A line is cut on a character boundary, not a byte one — an adapter is
@@ -1566,11 +1653,25 @@ mod tests {
     /// slice rather than shorten the line.
     #[test]
     fn a_long_stderr_line_is_cut_without_splitting_a_character() {
-        let mut kept = std::collections::VecDeque::new();
-        remember(&mut kept, &"đường".repeat(200));
+        let mut tail = LastWords::default();
+        tail.remember(&"đường".repeat(200));
 
-        let only = kept.front().expect("one line");
+        let only = tail.kept.front().expect("one line");
         assert_eq!(only.chars().count(), STDERR_LINE_CAP);
+    }
+
+    /// A tail that dropped lines says so. Without the count the survivors read
+    /// as everything the adapter said, which is the bound lying rather than
+    /// binding.
+    #[test]
+    fn a_tail_that_lost_lines_says_how_many() {
+        let mut tail = LastWords::default();
+        for n in 0..STDERR_TAIL_LINES + 3 {
+            tail.remember(&format!("line {n}"));
+        }
+
+        let said = tail.say().expect("it said something");
+        assert!(said.starts_with("(+3 earlier lines) · "), "{said}");
     }
 
     /// What the protocol saw stays in front; the adapter's own words follow it.
@@ -1585,7 +1686,7 @@ mod tests {
         );
 
         for line in ["npm error code ETARGET", "npm error No matching version"] {
-            remember(&mut tail.lock().expect("fresh lock"), line);
+            tail.lock().expect("fresh lock").remember(line);
         }
         assert_eq!(
             explain("adapter closed stdout".into(), &tail),
