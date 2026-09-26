@@ -101,6 +101,7 @@ icons! {
     ArrowUpLight => "arrow-up-light",
     AtSign => "at-sign",
     GitBranch => "git-branch",
+    LogOut => "log-out",
     Paperclip => "paperclip",
     PlusLight => "plus-light",
     Shield => "shield",
