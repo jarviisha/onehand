@@ -210,6 +210,52 @@ pub fn add_blocking(root: &Path, branch: &str, dir: &Path) -> Result<PathBuf, St
     Ok(std::fs::canonicalize(dir).unwrap_or_else(|_| dir.to_path_buf()))
 }
 
+/// Create a worktree of `root` at `dir` on a **new** branch cut from `start`.
+///
+/// The other half of [`add_blocking`], for a caller that knows what the branch
+/// must start from rather than inheriting whatever the checkout has at HEAD —
+/// an unattended run, whose pull request would otherwise carry every commit of
+/// the branch the user happened to be on. Always `-b`: a name that already
+/// exists is git's refusal, since reusing it would start from someone else's
+/// work.
+pub fn branch_off_blocking(
+    root: &Path,
+    branch: &str,
+    dir: &Path,
+    start: &str,
+) -> Result<PathBuf, String> {
+    let out = std::process::Command::new("git")
+        .arg("-C")
+        .arg(root)
+        .args(["worktree", "add", "-b", branch])
+        .arg(dir)
+        .arg(start)
+        .output()
+        .map_err(|err| format!("git could not be run: {err}"))?;
+    if !out.status.success() {
+        return Err(git_message(&out.stderr));
+    }
+    Ok(std::fs::canonicalize(dir).unwrap_or_else(|_| dir.to_path_buf()))
+}
+
+/// Bring `origin/<branch>` up to date in the repository at `root`.
+///
+/// Blocking. The remote is `origin` by assumption, which is what `gh` itself
+/// assumes of a clone it did not make.
+pub fn fetch_blocking(root: &Path, branch: &str) -> Result<(), String> {
+    let out = std::process::Command::new("git")
+        .arg("-C")
+        .arg(root)
+        .args(["fetch", "--quiet", "origin", branch])
+        .output()
+        .map_err(|err| format!("git could not be run: {err}"))?;
+    if out.status.success() {
+        Ok(())
+    } else {
+        Err(git_message(&out.stderr))
+    }
+}
+
 /// Rename the branch that is checked out at `root`, in place.
 ///
 /// **`-m` and never `-M`.** The forced form overwrites a branch that already
@@ -458,7 +504,23 @@ mod tests {
         let again = add_blocking(&repo, "spare", &repo.parent().unwrap().join("dupe"));
         assert!(again.is_err(), "a checked-out branch cannot be split twice");
 
-        for dir in [&repo, &made, &spare] {
+        // Branching off a named start ignores what the checkout has at HEAD:
+        // a commit made on another branch does not come along.
+        git(&repo, &["checkout", "-qb", "feature"]);
+        std::fs::write(repo.join("b.txt"), "y").unwrap();
+        git(&repo, &["add", "b.txt"]);
+        git(&repo, &["commit", "-qm", "two"]);
+        let run = branch_off_blocking(&repo, "run", &worktree_dir(&repo, "run"), "main").unwrap();
+        assert!(run.join("a.txt").exists());
+        assert!(
+            !run.join("b.txt").exists(),
+            "HEAD's commit must not come along"
+        );
+        // And a name that exists is refused rather than reused.
+        let twice = branch_off_blocking(&repo, "run", &repo.parent().unwrap().join("x"), "main");
+        assert!(twice.is_err());
+
+        for dir in [&repo, &made, &spare, &run] {
             let _ = std::fs::remove_dir_all(dir);
         }
     }

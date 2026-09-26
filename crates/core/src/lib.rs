@@ -34,5 +34,6 @@ pub mod editor;
 pub mod gitstat;
 pub mod remote;
 pub mod tree;
+pub mod unattended;
 pub mod workspace;
 pub mod worktree;

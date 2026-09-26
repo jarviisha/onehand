@@ -297,6 +297,46 @@ pub struct TelegramConfig {
     pub token_env: Option<String>,
 }
 
+/// `[unattended]` — picking up small issues and working them with nobody
+/// watching.
+///
+/// **Fail-closed twice.** `enabled` is off by default, because a feature that
+/// starts an agent writing to a repository on the strength of a file nobody
+/// edited is not a default anybody chose; and the trigger label is empty by
+/// default, and an empty label picks nothing at all — forgetting to fill it in
+/// has to mean "nothing runs", not "everything runs".
+///
+/// There is no repository key: the repositories are the project roots open in
+/// the app's windows, and `gh` reads the repository from the directory.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct UnattendedConfig {
+    pub enabled: bool,
+    /// The label whose presence on an issue asks for a run.
+    pub label: String,
+    /// How often to look for one, as `"30m"`, `"2h"` or `"90s"`.
+    pub every: String,
+    /// How long a run may go before it is cancelled, in the same form.
+    pub timeout: String,
+    /// The ACP session mode a run starts in — the adapter's own id for it.
+    pub mode: String,
+    /// Which configured agent runs it; the default agent when unset.
+    pub agent: Option<String>,
+}
+
+impl Default for UnattendedConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            label: String::new(),
+            every: "30m".to_string(),
+            timeout: "45m".to_string(),
+            mode: "acceptEdits".to_string(),
+            agent: None,
+        }
+    }
+}
+
 /// The whole `onehand.toml`. (A legacy `[profile]`
 /// section in an existing file is an unknown key now — serde ignores it.)
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -313,6 +353,7 @@ pub struct AppConfig {
     pub agents: Vec<AgentSpec>,
     pub font: FontConfig,
     pub remote: RemoteConfig,
+    pub unattended: UnattendedConfig,
 }
 
 impl Default for AppConfig {
@@ -322,6 +363,7 @@ impl Default for AppConfig {
             agents: default_agents(),
             font: FontConfig::default(),
             remote: RemoteConfig::default(),
+            unattended: UnattendedConfig::default(),
         }
     }
 }
@@ -865,6 +907,17 @@ mod tests {
     /// The bridge is off unless the file asks for it, and its list starts
     /// empty — an enabled bridge with nobody on the list answers nobody, which
     /// is the failure that has to be the safe one.
+    #[test]
+    fn unattended_runs_are_off_and_pick_nothing_until_asked_for() {
+        let cfg = AppConfig::parse("").unwrap();
+        assert!(!cfg.unattended.enabled);
+        assert!(cfg.unattended.label.is_empty());
+        let cfg = AppConfig::parse("[unattended]\nlabel = \"auto\"\n").unwrap();
+        assert!(!cfg.unattended.enabled, "a missing `enabled` reads false");
+        assert_eq!(cfg.unattended.label, "auto");
+        assert_eq!(cfg.unattended.every, "30m");
+    }
+
     #[test]
     fn the_remote_bridge_is_off_until_asked_for() {
         let cfg = AppConfig::parse("").unwrap();

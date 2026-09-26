@@ -28,6 +28,14 @@ pub struct ProjectRoot {
     /// the order rows are drawn in, which is what makes it safe to toggle while
     /// sessions, editors and terminals are keyed by index and by path.
     pub pinned: bool,
+    /// Whether this root is left out of the workspace file.
+    ///
+    /// Set on the worktree an unattended run adds for itself: that root is
+    /// dropped when the run ends, and a crash between the add and the drop
+    /// would otherwise leave a checkout of one issue in the workspace for good.
+    /// Cleared when a person takes the run over, since from then on it is their
+    /// project and losing it at the next launch would lose their work's place.
+    pub transient: bool,
 }
 
 impl ProjectRoot {
@@ -39,6 +47,7 @@ impl ProjectRoot {
             sessions: Vec::new(),
             active_session: 0,
             pinned: false,
+            transient: false,
         }
     }
 
@@ -192,14 +201,22 @@ impl Workspace {
     }
 
     /// The persisted shape of this workspace (name + root paths + active index).
+    ///
+    /// Transient roots are left out, and the active index is counted among the
+    /// roots that remain — pointing at the first of them when the active root
+    /// is itself one of those left out.
     pub fn to_config(&self) -> WorkspaceConfig {
+        let kept: Vec<&ProjectRoot> = self.roots.iter().filter(|r| !r.transient).collect();
+        let active_root = self
+            .active_root()
+            .and_then(|active| kept.iter().position(|r| r.path == active.path))
+            .unwrap_or(0);
         WorkspaceConfig {
             name: self.name.clone(),
-            roots: self.roots.iter().map(|r| r.path.clone()).collect(),
-            active_root: self.active_root,
+            roots: kept.iter().map(|r| r.path.clone()).collect(),
+            active_root,
             layout: self.layout,
-            pinned: self
-                .roots
+            pinned: kept
                 .iter()
                 .filter(|root| root.pinned)
                 .map(|root| root.path.clone())
@@ -402,6 +419,22 @@ mod tests {
     fn label_uses_last_component() {
         assert_eq!(label_for(Path::new("/home/me/proj")), "proj");
         assert_eq!(label_for(Path::new("/")), "/");
+    }
+
+    #[test]
+    fn a_transient_root_is_never_written() {
+        let mut ws = Workspace::seeded("/a");
+        ws.add_root("/b");
+        let run = ws.add_root("/run");
+        ws.roots[run].transient = true;
+        ws.select_root(1);
+        let cfg = ws.to_config();
+        assert_eq!(cfg.roots, [PathBuf::from("/a"), PathBuf::from("/b")]);
+        assert_eq!(cfg.active_root, 1);
+        ws.select_root(run);
+        assert_eq!(ws.to_config().active_root, 0);
+        ws.roots[run].transient = false;
+        assert_eq!(ws.to_config().roots.len(), 3);
     }
 
     #[test]

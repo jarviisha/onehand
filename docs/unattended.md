@@ -9,7 +9,8 @@ before it runs out of issues. So the unit of work is one issue, the unit of
 context is one session, and the session is thrown away when the issue is done.
 A run is worth having only because it is *disposable*.
 
-This is a design, not a description: nothing below is built yet.
+This describes what is built. Where the build settled something the design left
+open, the section says so.
 
 ## The shape
 
@@ -47,7 +48,7 @@ precedent this follows in shape as well as in code.
 | Cancel a turn | `Chat::cancel_turn` |
 | Stop asking for permission | `Chat::set_mode` → `AcpRequest::SetMode` |
 | An isolated checkout | `worktree::add_blocking` (plus a start point, see *Base branch*), `worktree_dir_in`, `validate_branch`, `slug` |
-| Find a window that holds a root | the walk `remote::ask_windows` does — but through `OpenWindow::handle`, as `/open` does, since adding a root and minting a session both need a `Window` and `ask_windows` hands out only a `Context<Shell>` |
+| Find a window that holds a root | the walk over `Shared::windows` every remote path does; the window handle is kept for the teardown, the one step that needs a `Window` |
 | End the agent and write the transcript | `ChatPane::close` (the transcript is already written at every turn end) |
 | Talk to GitHub | the `gh` CLI, shelled out blocking like `gitstat` and `worktree` already do |
 | Config that is off until asked for | `[remote.telegram]`, copied wholesale as a shape |
@@ -57,17 +58,17 @@ API version and the JSON, so there is no HTTP client, no token in the config and
 no OAuth dance. And **no scheduler engine**: one repeating timer on the
 background executor, one interval in the config, no cron expressions.
 
-## What is new
+## Where the code is
 
-| File | Roughly | What |
-|---|---|---|
-| `crates/core/src/unattended.rs` | ~250 incl. tests | `Issue`, the five `gh` calls, `prompt_for`, `Outcome` + its sentence, `parse_every` |
-| `crates/app/src/unattended.rs` | ~300 | the tick, the live `Run`, the worktree, the subscription, the timeout, the teardown |
-| `crates/core/src/config.rs` | ~40 | `UnattendedConfig` |
-| `crates/app/src/shell.rs` | ~80 | `run_unattended` (add root by path, unsaved → mint unshown → connect → hand back) and `end_unattended` (close the session → drop the root, past the two-click guard) |
-| `crates/app/src/chat/pane.rs` | ~30 | connect a session that is not on screen, and one `pub` accessor for `Entity<ChatSession>` by uid |
-| `crates/core/src/worktree.rs` | ~15 | `add_blocking` takes a start point; a `fetch_blocking` beside it |
-| `crates/app/src/state.rs`, `shell::boot` | ~10 | the field on `Shared` and the boot call |
+| File | What |
+|---|---|
+| `crates/core/src/unattended.rs` | `Issue`, the `gh` calls, `branch_for`, `prompt_for`, `claim_comment`, `Ending` and `report`, `parse_every`, `target_dir` |
+| `crates/app/src/unattended.rs` | the tick, the live `Run`, the subscription, the timeout, the wind-down, the teardown |
+| `crates/core/src/config.rs` | `UnattendedConfig` |
+| `crates/core/src/workspace.rs` | `ProjectRoot::transient`, left out by `to_config` |
+| `crates/core/src/worktree.rs` | `branch_off_blocking` (a new branch from a named start) and `fetch_blocking` |
+| `crates/app/src/shell.rs` | `run_unattended`, `end_unattended`, `adopt_unattended`, and `forget_root`, the half of `remove_root` that asks nothing and moves nothing |
+| `crates/app/src/chat/pane.rs` | `open_unshown` and `reading` |
 
 The split is the one the crate boundary already forces: everything that can be
 decided without a window — which issue, what the prompt says, what the outcome
@@ -98,7 +99,7 @@ The rest of the vocabulary, one meaning each:
 ```toml
 [unattended]
 enabled = false          # off unless asked for
-label = "auto"           # the trigger label; empty picks nothing
+label = "auto"           # the trigger label; empty (the default) picks nothing
 every = "30m"            # how often to look
 timeout = "45m"          # a run that neither finishes nor asks is cancelled
 mode = "acceptEdits"     # the ACP session mode a run starts in
@@ -174,8 +175,9 @@ a deliberate one, not a list of whatever was once approved by hand.
    the whole of the state: no local queue file, no sqlite, nothing to reconcile
    after a crash. A run interrupted by a quit or a panic leaves an issue with no
    trigger label and the claim comment, which is written to read correctly when
-   orphaned: *"onehand started a run at <time>. If no outcome follows, the run
-   was interrupted — re-add `<label>` to retry."* It never says a run *is*
+   orphaned: *"onehand started an unattended run on this issue. If no outcome
+   follows, the run was interrupted — re-add `<label>` to retry."* The comment's
+   own timestamp says when, so the sentence carries no time. It never says a run *is*
    happening, since that is the one sentence a crash makes false. It also makes a loop impossible by construction — the label
    that would cause a second pick is gone before any work begins.
 4. **One wall-clock timeout per run, and it cancels.** An agent that neither
@@ -226,12 +228,19 @@ lazy rule itself stays as it is for everything else — it exists so a workspace
 a dozen roots does not launch a dozen agents at boot, and a run is one agent that
 was asked for.
 
-The run's root is added **by path and not saved** into the workspace file.
-`Shell::add_root` opens a folder picker and saves; a run's root is transient, and
-a crash between add and drop would otherwise leave a worktree of an issue in the
-workspace for good. Dropping it goes past `Shell::remove_root`'s two-click guard
-by closing the session first, since that guard is there for a person and the run
-has already decided.
+The run's root is added **by path and marked transient**, which
+`Workspace::to_config` leaves out. `Shell::add_root` opens a folder picker and
+saves; a run's root is transient, and a crash between add and drop would
+otherwise leave a worktree of an issue in the workspace for good — and marking
+the root rather than skipping one save is what keeps any *other* save in the
+meantime from writing it.
+
+Dropping it is `Shell::forget_root`, the half of `remove_root` that asks nothing
+and moves nothing. `remove_root` itself asks a person twice before losing live
+sessions — the run has already decided — and puts the active session back on
+screen afterwards, which takes the caret out of whatever the user was typing in.
+Only when the run's own project was the one being looked at is anything shown in
+its place.
 
 ## Base branch
 
@@ -249,9 +258,14 @@ the repository already gives.
 Each worktree is a cold build, and the worktrees are kept on purpose (see
 *Outcome*), so a `target/` per run is gigabytes per issue with nothing that ever
 cleans it. Runs therefore build into **one shared `CARGO_TARGET_DIR`** under the
-app's data directory, set in the adapter's environment for runs only. That also
-turns the second run's build from cold to incremental, which is most of what
-the timeout would otherwise be spent on.
+user's cache directory (`onehand/unattended-target`), set in the adapter's
+environment for runs only. That also turns the second run's build from cold to
+incremental, which is most of what the timeout would otherwise be spent on.
+
+It is set by starting the run's adapter through `env` rather than by threading
+an environment down through the ACP spawn: the adapter is the one process a run
+starts, and everything the agent runs inherits from it. The cost is that it is
+POSIX-only, which is marked where it is done.
 
 ## The prompt
 
@@ -267,21 +281,48 @@ reads anyway, and a second copy in a template is a copy that goes stale silently
 
 The prompt is sent on the first session event that shows a live adapter, not
 immediately: `Chat::set_mode` and `Chat::submit` both need the request channel
-the handshake installs. The pump emits on every event, so the run tries on each
-one and gives up after a connect timeout of its own.
+the handshake installs. The modes arrive ahead of that event, so the mode is
+checked against what is offered at the same moment. There is no separate
+connect timeout: an adapter that never comes up is a run that never finishes,
+and the run's own timeout already bounds that.
+
+**A mode the agent does not offer pauses the feature**, not just the run. Every
+later run would fail the same way on a fresh issue, each one spending a claim
+to say so, so the first says it on the issue and on stderr and the tick stops
+until the config is fixed and the app restarted.
 
 ## Outcome
 
+How a run stopped is an `Ending`; the comment is `report(ending, pr, branch)`.
+With a pull request found, every ending reads *"onehand opened <url>."*, with
+why the run stopped as a note under it. Without one:
+
 ```
-Opened(url)   → "onehand opened <url>."
-NoPr(tail)    → "The turn ended with no pull request on <branch>. It ended on: <tail>"
-Asked(q)      → "onehand stopped: it needs a decision. <q>"
-LinkLost      → "The agent stopped answering."
-TimedOut      → "No pull request after <timeout>; the run was cancelled."
-TakenOver     → "Taken over by hand; the run stopped watching."
+TurnEnded(tail) → "The turn ended with no pull request on <branch>. It ended on: <tail>"
+Asked(q)        → "onehand stopped: it needs a decision. <q>"
+LinkLost        → "The agent stopped answering; there is no pull request on <branch>."
+TimedOut        → "No pull request after <timeout>; the run was cancelled."
+TakenOver       → "Taken over by hand; the run stopped watching <branch>."
+Failed(why)     → "onehand could not start the run: <why>"
 ```
 
-All six are commented on the issue, and all six leave the trigger label off.
+`Failed` is the one the design did not have: everything between the claim and
+the prompt — the default branch, the fetch, the worktree, a window to put the
+session in, the mode — can refuse, and each of those is the issue's to hear
+about, since the claim has already taken its label.
+
+**A cancel winds down before the session closes.** An ask or a timeout cancels
+the turn, and it is the turn ending that writes its transcript — closing the
+session on the spot would lose the one turn the run was about. So the run waits
+for that turn to end, or thirty seconds, whichever is first.
+
+**A card a run is about to cancel is not announced.** The pane would otherwise
+send a desktop notification for a parked ask nobody is looking at, which is
+every ask a run sees — pointing somebody at a question that is gone by the time
+they arrive.
+
+All of them are commented on the issue, and all of them leave the trigger label
+off.
 Re-arming is a human putting the label back, which is the same gesture as asking
 for the run in the first place. The worktree and its branch are **left on disk**
 in every case: a run that got half way has work in it, and removing a worktree to
@@ -332,13 +373,13 @@ Core, pure, no fixtures:
 - `prompt_for` — the issue number and branch appear; the body is not truncated
   into the middle of a code fence.
 - an empty `label` yields no candidate issue, and a missing `enabled` reads false.
-- `Outcome` → sentence, one case each, so a seventh outcome cannot be added
-  without a sentence.
+- `report`, one case per `Ending` with and without a PR, matched exhaustively so
+  an ending cannot be added without a sentence being checked for it.
 - a PR found on an ending that was not a turn ending still reads `Opened`.
 - the branch name a run derives passes `validate_branch` for a title that is
   nothing but punctuation, and for one that is 300 characters long.
 
-The `gh` calls themselves are not unit-tested; they are five `Command`
+The `gh` calls themselves are not unit-tested; they are `Command`
 invocations whose failure is a string that gets commented, the same shape
 `worktree::add_blocking` already has.
 
