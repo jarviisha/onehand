@@ -109,6 +109,15 @@ struct Transport {
     /// Shared with the draining task rather than read off the pipe at failure
     /// time, because by then the pipe is closed and the process is gone.
     stderr: StderrTail,
+    /// The task filling [`Self::stderr`], so a failure can let it catch up.
+    ///
+    /// **Nothing else orders the two.** The serve loop gives up the moment
+    /// stdout ends, while the reason is carried by a separate task that may not
+    /// have been polled yet — and a child is free to close stdout *before* it
+    /// writes why, which puts the reason strictly after the event that ends the
+    /// loop. Read without waiting, the tail is then empty exactly when it
+    /// matters, and intermittently, by thread scheduling.
+    drain: Option<tokio::task::JoinHandle<()>>,
 }
 
 /// The adapter's own last words, kept for whoever has to explain its death.
@@ -148,6 +157,19 @@ struct LastWords {
 /// adapter that writes a megabyte without a newline still spends it.
 const STDERR_TAIL_LINES: usize = 20;
 const STDERR_LINE_CAP: usize = 200;
+
+/// How long a failed adapter is given to finish saying why.
+///
+/// **Bounded because the pipe can outlive the process we spawned.** Waiting for
+/// the drain to reach end-of-file is the exact wait wanted — it is how the tail
+/// is known to be complete — but the write end belongs to whoever holds it, and
+/// the adapter is a chain (`npx` runs `node` runs the agent) whose middle can
+/// die while a grandchild keeps stderr open. Unbounded, that is a hang on the
+/// one path where the app is already trying to report a failure.
+///
+/// Paid only on the way to a `Disconnected`, where nothing is watching for a
+/// quarter second.
+const STDERR_GRACE: Duration = Duration::from_millis(250);
 
 /// The write half of a [`Transport`], as every message-writing function takes
 /// it.
@@ -235,7 +257,7 @@ impl Transport {
         // debug, and keep the tail so a death can be explained afterwards.
         let tail: StderrTail = Default::default();
         let sink = tail.clone();
-        tokio::spawn(async move {
+        let drain = tokio::spawn(async move {
             let mut lines = BufReader::new(stderr).lines();
             while let Ok(Some(line)) = lines.next_line().await {
                 eprintln!("[acp:stderr] {line}");
@@ -250,6 +272,7 @@ impl Transport {
 
         Ok(Self {
             stderr: tail,
+            drain: Some(drain),
             incoming: Box::pin(BufReader::new(stdout)),
             outgoing: Box::pin(stdin),
             // The child moves in here, which is what keeps `kill_on_drop`
@@ -279,8 +302,9 @@ impl Transport {
                 incoming: Box::pin(BufReader::new(read)),
                 outgoing: Box::pin(write),
                 ended: Box::pin(std::future::pending()),
-                // No child, so nothing ever writes to it.
+                // No child, so nothing ever writes to it and nothing drains it.
                 stderr: Default::default(),
+                drain: None,
             },
             theirs,
         )
@@ -318,13 +342,20 @@ fn connect_over_result(
     let runner = stream::once(async move {
         let mut output = sender;
         let served = match transport {
-            Ok(transport) => {
-                // Taken before the transport moves into the loop, so the tail
-                // is still reachable once that loop has given up on it.
+            Ok(mut transport) => {
+                // Both taken before the transport moves into the loop, so they
+                // are still reachable once that loop has given up on it.
                 let stderr = transport.stderr.clone();
-                run(transport, &cwd, resume, &mut output)
-                    .await
-                    .map_err(|why| explain(why, &stderr))
+                let drain = transport.drain.take();
+                match run(transport, &cwd, resume, &mut output).await {
+                    Ok(()) => Ok(()),
+                    Err(why) => {
+                        if let Some(drain) = drain {
+                            let _ = tokio::time::timeout(STDERR_GRACE, drain).await;
+                        }
+                        Err(explain(why, &stderr))
+                    }
+                }
             }
             // A spawn that never started has no stderr to have written to:
             // the error already names the command and what the OS said.
@@ -357,8 +388,9 @@ async fn run(
         incoming,
         mut outgoing,
         ended,
-        // Read by the caller, which is where a failure becomes a sentence.
+        // Both read by the caller, which is where a failure becomes a sentence.
         stderr: _,
+        drain: _,
     } = transport;
     let stdin = &mut outgoing;
     let mut reader = incoming.lines();
@@ -1672,6 +1704,46 @@ mod tests {
 
         let said = tail.say().expect("it said something");
         assert!(said.starts_with("(+3 earlier lines) · "), "{said}");
+    }
+
+    /// The whole point, end to end, against a real child: a process that says
+    /// why on stderr and exits without ever speaking protocol must reach the
+    /// reader with the reason attached, not as the bare protocol sentence.
+    ///
+    /// Repeated, because the failure this guards is a race rather than a
+    /// mistake — the tail is filled by a task the serve loop does not wait for,
+    /// so a single pass can pick the scheduling that happens to work.
+    ///
+    /// **Multi-threaded on purpose.** The bridge that drives this stream in the
+    /// app builds a multi-threaded runtime, and the default test flavour is a
+    /// single thread — which is the one arrangement where the drain and the
+    /// serve loop cannot truly run at once.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn a_child_that_dies_before_speaking_carries_its_stderr_into_the_failure() {
+        for attempt in 0..20 {
+            let mut events = Box::pin(super::connect(
+                "sh".into(),
+                vec![
+                    "-c".into(),
+                    // stdout is closed *first*, so the reason is written
+                    // after the serve loop has already seen EOF — the sharpest
+                    // ordering for the tail to be read too early.
+                    "exec 1>&-; echo 'npm error code ETARGET' >&2; exit 1".into(),
+                ],
+                std::env::temp_dir(),
+                None,
+            ));
+            let mut last = None;
+            while let Some(event) = events.next().await {
+                last = Some(event);
+            }
+            match last {
+                Some(AcpEvent::Disconnected(why)) => {
+                    assert!(why.contains("ETARGET"), "attempt {attempt}: {why}")
+                }
+                other => panic!("attempt {attempt}: {other:?}"),
+            }
+        }
     }
 
     /// What the protocol saw stays in front; the adapter's own words follow it.
