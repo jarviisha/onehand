@@ -236,6 +236,72 @@ impl Workspace {
         pinned
     }
 
+    /// Move the root drawn at display position `from` to display position `to`.
+    ///
+    /// **Display positions rather than `roots` indices**, because the rail drags
+    /// what it draws and pinned roots are drawn first. The permutation is
+    /// written back into `roots`, so the order the user dropped a row into is
+    /// the order that persists and [`Self::display_order`] stays a stable
+    /// partition of it.
+    ///
+    /// A drag that would cross the pin line is **clamped to the near side of
+    /// it**: pinned roots are held at the top on purpose, and a row that
+    /// appeared to cross and then sprang back would say nothing about why. So
+    /// dropping a pinned project onto an unpinned one puts it last among the
+    /// pinned instead, and the pin stays the stronger statement.
+    pub fn move_root(&mut self, from: usize, to: usize) {
+        if from >= self.roots.len() {
+            return;
+        }
+        let mut order = self.display_order();
+        let pinned = self.roots.iter().filter(|root| root.pinned).count();
+        let (first, last) = match from < pinned {
+            true => (0, pinned - 1),
+            false => (pinned, order.len() - 1),
+        };
+        let to = to.clamp(first, last);
+        if from == to {
+            return;
+        }
+        let moved = order.remove(from);
+        order.insert(to, moved);
+        // `active_root` is the only index into `roots` this permutation can
+        // move: everything else about a root -- its fold, its terminal, its git
+        // status, its editors -- is keyed by path.
+        self.active_root = order
+            .iter()
+            .position(|&i| i == self.active_root)
+            .unwrap_or(self.active_root);
+        let mut taken: Vec<Option<ProjectRoot>> = std::mem::take(&mut self.roots)
+            .into_iter()
+            .map(Some)
+            .collect();
+        self.roots = order.into_iter().filter_map(|i| taken[i].take()).collect();
+    }
+
+    /// Move a session within its root.
+    ///
+    /// Within one root and never across: a session is an agent bound to that
+    /// project's files, so there is nowhere else for it to be.
+    pub fn move_session(&mut self, root_idx: usize, from: usize, to: usize) {
+        let Some(root) = self.roots.get_mut(root_idx) else {
+            return;
+        };
+        if from >= root.sessions.len() || to >= root.sessions.len() || from == to {
+            return;
+        }
+        let session = root.sessions.remove(from);
+        root.sessions.insert(to, session);
+        // The session on screen has to stay the session on screen: the index
+        // moved, and it is the index that says which one is showing.
+        root.active_session = match root.active_session {
+            active if active == from => to,
+            active if from < active && active <= to => active - 1,
+            active if to <= active && active < from => active + 1,
+            active => active,
+        };
+    }
+
     pub fn active_root(&self) -> Option<&ProjectRoot> {
         self.roots.get(self.active_root)
     }
@@ -406,6 +472,77 @@ mod tests {
         assert_eq!(ws.display_order(), vec![1, 0, 2]);
         ws.toggle_pin(1);
         assert_eq!(ws.display_order(), vec![0, 1, 2]);
+    }
+
+    /// A dropped project lands where it was dropped, and `active_root` still
+    /// names the project the user was in.
+    #[test]
+    fn moving_a_root_reorders_the_list_and_follows_the_active_one() {
+        let mut ws = Workspace::seeded("/a");
+        ws.add_root("/b");
+        ws.add_root("/c");
+        ws.select_root(0);
+
+        ws.move_root(0, 2);
+        assert_eq!(
+            ws.roots.iter().map(|r| r.path.clone()).collect::<Vec<_>>(),
+            [
+                PathBuf::from("/b"),
+                PathBuf::from("/c"),
+                PathBuf::from("/a")
+            ]
+        );
+        assert_eq!(
+            ws.active_root, 2,
+            "the project on screen must stay on screen"
+        );
+    }
+
+    /// Pinned roots are drawn first, so a drag out of that group is clamped to
+    /// its edge rather than silently doing nothing.
+    #[test]
+    fn a_drag_across_the_pin_line_stops_at_it() {
+        let mut ws = Workspace::seeded("/a");
+        ws.add_root("/b");
+        ws.add_root("/c");
+        ws.toggle_pin(0);
+        ws.toggle_pin(1);
+        assert_eq!(ws.display_order(), vec![0, 1, 2]);
+
+        // Display position 0 is pinned `/a`; position 2 is unpinned `/c`.
+        ws.move_root(0, 2);
+        assert_eq!(
+            ws.roots.iter().map(|r| r.path.clone()).collect::<Vec<_>>(),
+            [
+                PathBuf::from("/b"),
+                PathBuf::from("/a"),
+                PathBuf::from("/c")
+            ],
+            "it goes last among the pinned, not past them"
+        );
+        assert!(ws.roots[1].pinned, "and it is still pinned");
+    }
+
+    /// Reordering sessions keeps the one on screen on screen -- the index is
+    /// what says which that is.
+    #[test]
+    fn moving_a_session_carries_the_active_index_with_it() {
+        let mut ws = Workspace::seeded("/a");
+        ws.add_session(spec("one"), 1);
+        ws.add_session(spec("two"), 2);
+        ws.add_session(spec("three"), 3);
+        ws.select_session(0);
+
+        ws.move_session(0, 2, 0);
+        let uids: Vec<_> = ws.roots[0].sessions.iter().map(|s| s.uid).collect();
+        assert_eq!(uids, [3, 1, 2]);
+        assert_eq!(ws.roots[0].active_session, 1);
+
+        ws.move_session(0, 1, 2);
+        assert_eq!(
+            ws.roots[0].active_session, 2,
+            "the moved one is the active one"
+        );
     }
 
     /// Pins survive a save/load, and follow their project rather than its slot.

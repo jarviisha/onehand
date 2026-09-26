@@ -6,7 +6,14 @@
 //!
 //! It draws one of two lists at a time ([`RailTab`]): the project tree, which
 //! answers "what is in this workspace", and every session flat, which answers
-//! "what wants me" and sorts itself to say so.
+//! "what is running" in the order the sessions were started.
+//!
+//! **The tree's order is the user's.** A project row and a session row are each
+//! dragged to another place in it ([`ProjectDrag`], [`SessionDrag`]) — projects
+//! within their pin group, sessions within their project. The flat list is not
+//! draggable: it is in creation order across every project, which is not an
+//! order this app stores anywhere, so there would be nothing for a drop to
+//! write into.
 //!
 //! What each row *shows* is decided in `onehand-core`, not here:
 //!
@@ -24,9 +31,9 @@ use crate::shell::Shell;
 use crate::state::WorkspaceWindow;
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
-    Anchor, AnyElement, App, ClickEvent, Context, Div, ElementId, Hsla, InteractiveElement,
-    IntoElement, ParentElement, Rems, SharedString, Stateful, StatefulInteractiveElement, Styled,
-    WeakEntity, Window, div, px, rems,
+    Anchor, AnyElement, App, AppContext as _, ClickEvent, Context, Div, ElementId, Hsla,
+    InteractiveElement, IntoElement, ParentElement, Rems, Render, SharedString, Stateful,
+    StatefulInteractiveElement, Styled, WeakEntity, Window, div, px, rems,
 };
 use gpui_component::button::{Button, ButtonVariants as _};
 use gpui_component::menu::{ContextMenuExt as _, DropdownMenu as _, PopupMenu, PopupMenuItem};
@@ -189,6 +196,15 @@ struct RailRow {
     /// Everything after the label: footnotes, marks, controls. A builder and
     /// not an element, because elements are single-use and this row is cloned.
     suffix: Option<RowSuffix>,
+    /// The drag-and-drop this row takes part in, if it sits in an order that
+    /// can be changed: it hangs `on_drag`, `drag_over` and `on_drop` on the
+    /// row's own box. `None` on the rows that are not in any order — the
+    /// *Start a session* offers, the empty states.
+    ///
+    /// Written at the call site rather than described to this struct, because
+    /// the payload types differ per kind of row and the indices they carry are
+    /// only in scope where the row is built.
+    reorder: Option<RowReorder>,
 }
 
 /// The row's handlers, named so the struct above reads as a row and not as a
@@ -196,6 +212,12 @@ struct RailRow {
 type RowClick = Rc<dyn Fn(&ClickEvent, &mut Window, &mut App)>;
 type RowMenu = Rc<dyn Fn(PopupMenu, &mut Window, &mut App) -> PopupMenu>;
 type RowSuffix = Rc<dyn Fn(&mut Window, &mut App) -> AnyElement>;
+type RowReorder = Rc<dyn Fn(Stateful<Div>) -> Stateful<Div>>;
+
+/// Only for `when`: a row is built conditionally in two places now, and the
+/// trait is a blanket `Sized` one with no required methods, so this is the whole
+/// of what it costs to stop writing the same `if` out as a rebind.
+impl gpui::prelude::FluentBuilder for RailRow {}
 
 impl RailRow {
     fn new(
@@ -212,6 +234,7 @@ impl RailRow {
             on_click: Rc::new(on_click),
             menu: None,
             suffix: None,
+            reorder: None,
         }
     }
 
@@ -240,6 +263,11 @@ impl RailRow {
 
     fn suffix(mut self, suffix: impl Fn(&mut Window, &mut App) -> AnyElement + 'static) -> Self {
         self.suffix = Some(Rc::new(suffix));
+        self
+    }
+
+    fn reorder(mut self, reorder: impl Fn(Stateful<Div>) -> Stateful<Div> + 'static) -> Self {
+        self.reorder = Some(Rc::new(reorder));
         self
     }
 
@@ -280,12 +308,63 @@ impl RailRow {
                         .build(window, cx)
                 })
             });
+        let row = match self.reorder {
+            Some(reorder) => reorder(row),
+            None => row,
+        };
         match self.menu {
             Some(menu) => row
                 .context_menu(move |popup, window, cx| menu(popup, window, cx))
                 .into_any_element(),
             None => row.into_any_element(),
         }
+    }
+}
+
+/// A project row under the pointer, named by where it is *drawn*.
+///
+/// The display position and not the roots index, because that is what
+/// `Workspace::move_root` takes: the rail drags what it draws, and pinned
+/// projects are drawn first.
+#[derive(Clone, Copy)]
+struct ProjectDrag {
+    from: usize,
+}
+
+/// A session row under the pointer, named by its root and its place in it.
+///
+/// **A type of its own rather than a second variant of one drag enum**, because
+/// gpui dispatches a drop by the payload's type: two kinds in one type means a
+/// project row lights up under a session being dragged and the handler has to
+/// refuse the drop afterwards, where two types means the row never offers in
+/// the first place. The root rides along for the same reason one level down —
+/// sessions reorder inside their own project, and a row of another project must
+/// not take the drop.
+#[derive(Clone, Copy)]
+struct SessionDrag {
+    root: usize,
+    from: usize,
+}
+
+/// What follows the pointer through a drag: the row's own name, on the fill a
+/// selected row has.
+///
+/// The name and not a copy of the row, because the row's suffix is a live thing
+/// — a mark that changes, a ••• that opens a menu — and none of it means
+/// anything an inch from where it belongs. `gpui` wants an entity here, so this
+/// is the smallest one that can carry a string.
+struct DragGhost(SharedString);
+
+impl Render for DragGhost {
+    fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        div()
+            .px_2()
+            .py_0p5()
+            .rounded(cx.theme().radius)
+            .bg(cx.theme().sidebar_accent)
+            .text_sm()
+            .text_color(cx.theme().sidebar_accent_foreground)
+            .child(self.0.clone())
     }
 }
 
@@ -871,6 +950,10 @@ fn session_row(
         // other way, and it is true whether or not the conversation has a name.
         Note::Project(project) => (Some(project.clone()), NoteKind::Project),
     };
+    // Only the tree's rows are draggable: the flat list is in creation order
+    // across every project, which is not an order this app keeps anywhere, so
+    // there would be nothing for a drop to write into.
+    let in_tree = matches!(note, Note::Agent { .. });
     let label = session_label(state.title.as_deref(), session.title());
     // The whole name, however long, for the hover: it is what the fade at the
     // row's edge may have cut.
@@ -900,6 +983,8 @@ fn session_row(
     // A weak handle because both menu closures outlive this frame.
     let menu_target = cx.entity().downgrade();
     let suffix_target = menu_target.clone();
+    let drag_target = menu_target.clone();
+    let drag_label = label.clone();
 
     RailRow::new(
         key,
@@ -911,6 +996,47 @@ fn session_row(
     .active(active)
     .hint(hint)
     .menu(session_menu(root_idx, session_idx, uid, menu_target))
+    .when(in_tree, |row| {
+        let target = drag_target.clone();
+        let ghost = drag_label.clone();
+        row.reorder(move |row| {
+            let (target, ghost) = (target.clone(), ghost.clone());
+            row.on_drag(
+                SessionDrag {
+                    root: root_idx,
+                    from: session_idx,
+                },
+                move |_, _, _, cx| {
+                    let ghost = ghost.clone();
+                    cx.new(|_| DragGhost(ghost))
+                },
+            )
+            // The row the pointer is over takes the fill a hovered row has:
+            // a drop lands *at* this row's place, so the row itself is what
+            // is being aimed at and highlighting it says so. No line above
+            // or below, because there is no above or below to promise --
+            // the moved row takes this index and everything between closes
+            // up behind it.
+            // The same refusal as the drop below, and both are needed: this
+            // one is what stops the row promising a drop it will not take,
+            // that one is what stops it taking one.
+            .drag_over::<SessionDrag>(move |style, drag, _, cx| match drag.root == root_idx {
+                true => style.bg(hover_fill(cx)),
+                false => style,
+            })
+            .on_drop(move |drag: &SessionDrag, _, cx| {
+                // Another project's session, which this row has no place
+                // for: a session is an agent bound to these files.
+                if drag.root != root_idx {
+                    return;
+                }
+                let from = drag.from;
+                let _ = target.update(cx, |shell: &mut Shell, cx| {
+                    shell.move_session(root_idx, from, session_idx, cx);
+                });
+            })
+        })
+    })
     .suffix(move |_, cx: &mut App| {
         let suffix_target = suffix_target.clone();
         div()
@@ -1137,6 +1263,11 @@ fn folder_row(
     shell: &Shell,
     window_state: &WorkspaceWindow,
     root_idx: usize,
+    // Where this row is *drawn*, which is not `root_idx`: pinned projects come
+    // first. It is what a drag hands back, since a drop means "put it where
+    // this row is" and that is a place in the list rather than a place in
+    // `roots`.
+    at: usize,
     cx: &mut Context<Shell>,
 ) -> Row {
     let root = &window_state.workspace.roots[root_idx];
@@ -1222,6 +1353,8 @@ fn folder_row(
 
     // A weak handle for the caret, which outlives this frame as the menus do.
     let fold_target = cx.entity().downgrade();
+    let drag_target = cx.entity().downgrade();
+    let drag_label = root.label.clone();
 
     Row {
         item: RailRow::new(
@@ -1258,6 +1391,25 @@ fn folder_row(
         // `Shell::select_root` reveals; only the caret puts it away again.
         // (The click handler rides in `RailRow::new` above.)
         .menu(project_menu(root_idx, pinned, is_repo, menu_target))
+        // Dragged and dropped by display position: `Workspace::move_root`
+        // writes the permutation back into `roots`, so the order the row was
+        // dropped into is the order the workspace file keeps. Crossing the pin
+        // line is clamped there rather than refused here, since the row has no
+        // way to know which side of it a drop landed on.
+        .reorder(move |row| {
+            let (target, ghost) = (drag_target.clone(), drag_label.clone());
+            row.on_drag(ProjectDrag { from: at }, move |_, _, _, cx| {
+                let ghost = ghost.clone();
+                cx.new(|_| DragGhost(SharedString::from(ghost)))
+            })
+            .drag_over::<ProjectDrag>(|style, _, _, cx| style.bg(hover_fill(cx)))
+            .on_drop(move |drag: &ProjectDrag, window, cx| {
+                let from = drag.from;
+                let _ = target.update(cx, |shell: &mut Shell, cx| {
+                    shell.move_root(from, at, window, cx);
+                });
+            })
+        })
         .suffix(move |_, cx: &mut App| {
             let (suffix_target, fold_target) = (suffix_target.clone(), fold_target.clone());
             let fold_path = fold_path.clone();
@@ -1385,35 +1537,19 @@ impl RailTab {
     }
 }
 
-/// Where a session sits in the flat list: what it wants first, then when it was
-/// last looked at.
-///
-/// **The signal leads, and that is the whole feature.** A session with a parked
-/// question or a dead adapter is one the user has to do something about, and in
-/// a workspace of a dozen conversations it is exactly the one that goes unseen
-/// at the bottom of a tree. [`SessionSignal::rank`] is the order — the same one
-/// a row's mark and a project's roll-up use, so "more urgent" means one thing in
-/// the rail rather than three.
-///
-/// A session carrying no signal at all sorts last as a block, and inside that
-/// block recency decides: with nothing asking for attention, "where was I" is
-/// the only question left. A session the recency list has never seen goes to the
-/// very end rather than to the front, because a list that has not been visited
-/// is not a list that was visited long ago.
-///
-/// Pure, and separate from the rendering, because it is a rule about attention —
-/// and rules about attention are what regress silently.
-fn session_order(signal: Option<SessionSignal>, recency: Option<usize>) -> (u8, usize) {
-    (
-        signal.map_or(u8::MAX, SessionSignal::rank),
-        recency.unwrap_or(usize::MAX),
-    )
-}
-
-/// Every session in the workspace, flat, most in need of an answer first.
+/// Every session in the workspace, flat, oldest first.
 ///
 /// The row is [`session_row`], the same one the tree draws — same click, same
 /// menu, same mark. All this adds is the order and the project in the suffix.
+///
+/// **The order is when each session was made, and nothing else.** It was a
+/// signal rank first — a parked question or a dead adapter rose to the top —
+/// and what that cost is a list whose rows move under the pointer: a session
+/// that starts working, finishes, or parks an ask reorders the panel the user
+/// is aiming at. The mark on the row still says what each one wants, in a
+/// place that does not move. `Session.uid` is the workspace-wide creation
+/// counter, so sorting on it is the order the sessions were minted in across
+/// every root.
 ///
 /// A workspace with nothing running gets the offer instead of a blank panel,
 /// the way a project with no sessions does in the tree: an empty list is
@@ -1433,28 +1569,18 @@ fn session_rows(
     window_state: &WorkspaceWindow,
     cx: &mut Context<Shell>,
 ) -> Vec<Row> {
-    // Read once into a lookup rather than scanned per session: the list is
-    // walked inside a render, and a scan per row makes that quadratic in a
-    // workspace's sessions for a fact each row wants exactly once.
-    let recency: std::collections::HashMap<u64, usize> = shell
-        .recent_order()
-        .iter()
-        .enumerate()
-        .map(|(place, &uid)| (uid, place))
-        .collect();
     let active = window_state
         .workspace
         .active_root()
         .and_then(|root| root.active_session().map(|s| s.uid));
 
-    let mut rows: Vec<((u8, usize), Row)> = Vec::new();
+    let mut rows: Vec<(u64, Row)> = Vec::new();
     for (root_idx, root) in window_state.workspace.roots.iter().enumerate() {
         let project = SharedString::from(root.label.clone());
         for (session_idx, session) in root.sessions.iter().enumerate() {
             let uid = session.uid;
-            let signal = shell.session_row(uid, cx).signal;
             rows.push((
-                session_order(signal, recency.get(&uid).copied()),
+                uid,
                 Row::flat(session_row(
                     shell,
                     root_idx,
@@ -1481,11 +1607,9 @@ fn session_rows(
         )];
     }
 
-    // Stable, so two sessions whose whole key matches -- the same signal and
-    // neither one visited -- keep the order the tree puts them in rather than
-    // swapping places on every frame. Anything the recency list has seen is
-    // already separated by it.
-    rows.sort_by_key(|(order, _)| *order);
+    // No two sessions share a uid, so the order is total and nothing can swap
+    // places between frames.
+    rows.sort_unstable_by_key(|(uid, _)| *uid);
     rows.into_iter().map(|(_, row)| row).collect()
 }
 
@@ -1517,7 +1641,8 @@ pub fn rail(
             .workspace
             .display_order()
             .into_iter()
-            .map(|idx| folder_row(window_state_shell, window_state, idx, cx))
+            .enumerate()
+            .map(|(at, idx)| folder_row(window_state_shell, window_state, idx, at, cx))
             .collect::<Vec<_>>(),
         RailTab::Sessions => session_rows(window_state_shell, window_state, cx),
     };
@@ -2163,7 +2288,7 @@ fn tab_bar(active: RailTab, cx: &mut Context<Shell>) -> impl IntoElement + use<>
 mod tests {
     use super::{
         LABEL_SHAPE_CAP, RailTab, new_session_hint, project_hint, project_key,
-        runs_more_than_one_agent, session_label, session_order, signal_hint,
+        runs_more_than_one_agent, session_label, signal_hint,
     };
     use crate::chat::pane::SessionSignal;
     use gpui::SharedString;
@@ -2236,27 +2361,6 @@ mod tests {
     fn with_no_project_the_hint_asks_for_one() {
         let hint = new_session_hint(None, Some("Claude Code"));
         assert!(hint.contains("Add a project"), "{hint}");
-    }
-
-    /// The whole reason the flat list exists: a session that wants an answer
-    /// goes above one that is merely the last one looked at.
-    #[test]
-    fn a_session_wanting_an_answer_outranks_the_one_just_read() {
-        let parked = session_order(Some(SessionSignal::AwaitingUser), Some(9));
-        let just_read = session_order(None, Some(0));
-        assert!(parked < just_read, "{parked:?} vs {just_read:?}");
-    }
-
-    /// Underneath the signals, recency is what is left — and a session the
-    /// recency list has never seen has not been visited, which is the opposite
-    /// of having been visited longest ago.
-    #[test]
-    fn with_nothing_asking_the_last_one_looked_at_leads_and_the_unseen_trail() {
-        let seen = session_order(None, Some(0));
-        let older = session_order(None, Some(3));
-        let never = session_order(None, None);
-        assert!(seen < older);
-        assert!(older < never);
     }
 
     /// Two tabs, two names, and every tab in the list has one — a segmented

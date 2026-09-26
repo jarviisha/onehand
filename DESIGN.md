@@ -162,6 +162,18 @@ One window hosts exactly one workspace. The frame is a navigation **rail** plus 
   and its rows say nothing, wider and it is taking the conversation's space to
   show padding. The width is remembered per workspace; whether it is showing is
   not.
+- **The order of the rail's tree is the user's, and it is dragged.** A project is
+  dropped onto another project and a session onto another session of the same
+  project — sessions never leave their project, because a session is an agent
+  bound to that project's files. Pinned projects stay above unpinned ones: a drag
+  that would cross that line stops at it rather than silently undoing itself,
+  since the pin is the stronger statement. The row being aimed at takes the fill
+  hover would give it, which is free during a drag because hover is suspended for
+  the length of one, and no line is drawn above or below it — a drop lands *at*
+  the row it was made on. The project order is remembered per workspace; the
+  session order is not, because sessions are not persisted at all. The flat *All
+  sessions* list is not draggable: it is in the order the sessions were started,
+  which is a fact rather than an arrangement.
 - **Everything else is a dock panel**, and the arrangement persists as **five
   values, not the library's `DockAreaState`**: Workbench width, terminal height,
   whether each is open, and the rail's width. `DockAreaState` is serde and would

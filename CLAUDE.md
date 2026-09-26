@@ -1052,7 +1052,9 @@ centre is the chat, right dock the Workbench, bottom dock the terminal.
   an untouched project follows the selection. A **folded project builds no session rows at all**,
   which is what keeps a workspace of ten roots cheap.
 - **The list is two tabs, not two stacked groups** (`rail::RailTab`, a segmented `TabBar` in the
-  header): *Projects* is the tree, *All sessions* is every session in the workspace, flat. **The
+  header): *Projects* is the tree, *All sessions* is every session in the workspace, flat — the same
+  set twice, so stacked it would be one panel listing every session below the tree already holding
+  them, and the tree is what a workspace is read by. **The
   selected half is `accent` with the ink that goes on it** — the same spelling the terminal's tabs
   and the Workbench's mode chips use, so one condition keeps one code. It was the reading surface,
   which worked while the rail was drawn in that surface too; once the rail moved into the well
@@ -1065,12 +1067,14 @@ centre is the chat, right dock the Workbench, bottom dock the terminal.
   seen, `crate::theme::lift` draws the app's own, with the alpha chosen per palette. The dark one
   needs more than four times the light one, because a black shadow on white has the whole range to
   fall through and on near-black it has almost none.
-  The flat list **sorts itself by what each session wants** — `rail::session_order`, which is
-  `SessionSignal::rank` first and then recency, so a parked question or a dead adapter rises to the
-  top and a session carrying no signal at all falls into the tail in most-recently-viewed order. That
-  reordering is why they are tabs: a section that rearranges under the eye cannot sit above a tree
-  the user navigates by position. A flat row is named by its session's uid and never by its place,
-  since its place moves the moment an agent starts working.
+  The flat list **sorts by when each session was made and by nothing else** — ascending `Session.uid`,
+  which is the process-wide counter, so it is creation order across every root. It sorted by
+  `SessionSignal::rank` first and then by recency, which put a parked question or a dead adapter at
+  the top; what that cost is a list that rearranges under the pointer, since a session starting work,
+  finishing it or parking an ask moves rows in the panel being aimed at, and being looked at moved one
+  too. The mark on the row still says what each session wants, in a place that does not move. A flat
+  row is still named by its session's uid and never by its place, since a closed session shifts
+  everything under it.
   **Both lists draw the same row** (`rail::session_row`) — same click, same menu, same mark — and
   everything they disagree about is `rail::Note`, the footnote beside the mark: the agent on a tree
   row, the project on a flat one. They were briefly written out separately, which left the flat one
@@ -1152,8 +1156,34 @@ centre is the chat, right dock the Workbench, bottom dock the terminal.
   folder from the branch name and only lets the *parent* be picked; an existing branch is checked
   out and a new name is created off HEAD, one call deciding which.
 - **Pinning is explicit and changes only the drawing order.** `Workspace::display_order` is a stable
-  partition, `roots` never moves, and pins are stored by path so a root added elsewhere in the file
+  partition, pinning moves no root, and pins are stored by path so a root added elsewhere in the file
   cannot slide a pin onto another project. Nothing reorders the list on the app's own initiative.
+- **The tree's order is dragged, and the two orders do not fight.** A project row is dropped onto
+  another project row (`ProjectDrag` → `Shell::move_root` → `Workspace::move_root`) and a session row
+  onto another of the *same* project's session rows (`SessionDrag` → `Shell::move_session`). Five
+  things this owes. The numbers a project drag carries are **display positions and not `roots`
+  indices**, since the rail drags what it draws and pinned projects are drawn first; the permutation
+  is written back into `roots`, so the order somebody dropped a row into is the order the workspace
+  file keeps and `display_order` stays a stable partition of it. A drag that would **cross the pin
+  line is clamped to the near side of it** — pinned projects are held at the top on purpose, and a
+  row that appeared to cross and then sprang back would say nothing about why, so a pinned project
+  dropped on an unpinned one goes last among the pinned and stays pinned. `active_root` and
+  `active_session` are **remapped**, because they are the only indices either permutation can move —
+  everything else about a root is keyed by its path and everything else about a session by its uid —
+  and the session on screen has to stay the session on screen. A **project drag persists and a
+  session drag does not**, which is not an inconsistency: the roots' order is in the workspace file
+  and sessions are not persisted at all. And the drags are **two payload types rather than one
+  enum**, because gpui dispatches a drop by the payload's type: in one type a project row lights up
+  under a session being dragged and has to refuse the drop afterwards, where in two it never offers.
+  A session of another project is refused the same way one level down, and refused **twice** — in
+  `drag_over` so the row does not promise a drop, and in `on_drop` so it cannot take one.
+  **The flat list is deliberately not draggable**: it is in creation order across every project,
+  which is not an order stored anywhere, so a drop would have nothing to write into.
+  **The drop target is the row's own hover fill**, which is free to mean "the pointer is aiming here"
+  because gpui suppresses hover styles for the length of a drag — so the fill is not two things at
+  once. No line above or below it: a drop lands *at* the row it was made on, and everything between
+  closes up behind the row that moved. What the drag does not have is **edge autoscroll** — a
+  project past the bottom of a full rail has to be scrolled to first.
 - **A project row rolls up its sessions' signals** (`SessionSignal::most_urgent`, same rank as a
   single session's `pick`), so a collapsed project is not silent about an agent waiting or dead
   inside it.
