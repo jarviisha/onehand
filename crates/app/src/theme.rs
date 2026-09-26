@@ -171,6 +171,29 @@ fn paint(colors: &mut ThemeConfigColors, ramp: &Ramp) {
     set(&mut colors.muted_foreground, ramp.well_ink);
     set(&mut colors.secondary, ramp.bubble);
     set(&mut colors.secondary_foreground, ramp.bubble_ink);
+    // The two states a *filled button* takes, which the library keeps as slots
+    // of their own rather than deriving from the fill above. Left alone they
+    // stayed on the shipped palette, and in the dark one that palette's hover
+    // is *darker* than this ramp's bubble -- so the rail's one filled control
+    // receded toward the well under the pointer, and its pressed step landed
+    // 1.04 from the well, which is a hole rather than a button. The same
+    // collapse the sidebar tokens above are written out to avoid, on a second
+    // triple.
+    //
+    // **Both take the one step this ramp has above the bubble fill**, and that
+    // is deliberate rather than a shortage: `selected` is already the answer to
+    // "this control is the one being acted on", it moves the right way in both
+    // palettes (lighter in the dark, darker in the light), and inventing a
+    // third shade so that *held open* could differ from *pointed at* would be a
+    // ramp step existing for one caret.
+    //
+    // Their being equal is also what keeps the open state visible at all. gpui
+    // refines a hover style over the base, and `hover_style` is crate-private,
+    // so a trigger that fills itself while its menu is open cannot outrank the
+    // hover underneath it -- with two different shades the pressed one would
+    // vanish for as long as the pointer stayed on the control that opened it.
+    set(&mut colors.secondary_hover, ramp.selected);
+    set(&mut colors.secondary_active, ramp.selected);
     // `accent` is the selected fill, not the hover one. That is the library's
     // own reading of it -- a list item falls back to `accent` for the selected
     // row whenever the highlight ring is off, which here it always is -- and it
@@ -601,6 +624,53 @@ mod tests {
                 assert!(
                     slot.is_some(),
                     "{name}: {token} in the rail is left to whatever config the ramp is written over"
+                );
+            }
+        }
+    }
+
+    /// A filled button runs on the ramp in all three of its states.
+    ///
+    /// The fill alone is not enough, and that is the whole finding this
+    /// records: `secondary_hover` and `secondary_active` are slots of their
+    /// own, so a ramp that wrote only `secondary` left the app's one filled
+    /// control taking the shipped palette's other two -- whose dark hover is
+    /// *darker* than this ramp's bubble, so the button receded under the
+    /// pointer instead of lifting.
+    ///
+    /// Both halves are checked: that the steps are ours at all, and that each
+    /// moves away from the fill rather than toward the well behind it.
+    #[test]
+    fn a_filled_button_runs_on_the_ramp_in_every_state() {
+        for (name, ramp, mode) in [
+            ("light", &LIGHT, ThemeMode::Light),
+            ("dark", &DARK, ThemeMode::Dark),
+        ] {
+            let mut colors = ThemeConfigColors::default();
+            paint(&mut colors, ramp);
+            for (token, slot) in [
+                ("the fill", &colors.secondary),
+                ("the ink on it", &colors.secondary_foreground),
+                ("the hover step", &colors.secondary_hover),
+                ("the pressed step", &colors.secondary_active),
+            ] {
+                assert!(
+                    slot.is_some(),
+                    "{name}: {token} of a filled button is left to whatever config the ramp is written over"
+                );
+            }
+
+            let theme = resolve(ramp, mode);
+            // Away from the well, not toward it. A hover that closes on the
+            // surface behind the control is the shipped palette's failure, and
+            // it reads as the button going away when it is pointed at.
+            for (label, state) in [
+                ("hovered", theme.secondary_hover),
+                ("held open", theme.secondary_active),
+            ] {
+                assert!(
+                    contrast(state, theme.muted) > contrast(theme.secondary, theme.muted),
+                    "{name}: a {label} filled button sits closer to the well than its own resting fill"
                 );
             }
         }

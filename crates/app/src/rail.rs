@@ -71,6 +71,15 @@ fn hover_fill(cx: &App) -> Hsla {
 /// screen: the hover fill is [`hover_fill`] over the well, so the fade's
 /// endpoint is that blend and neither ingredient. The active row's fill does
 /// not move under the pointer, so its pair is one colour twice.
+///
+/// **That one-colour-twice arm is load-bearing, not a coincidence.** The row
+/// it belongs to sets no hover style at all, and gpui allocates the element
+/// state a group-hover repaint needs only for an element that has one — so a
+/// selected row's fade would never be told the pointer had arrived. It stays
+/// right today because there is nothing to repaint. Giving the selected row
+/// any hover treatment means giving the fade a way to hear about it first,
+/// or the fill moves under the pointer while the fade stays behind: the exact
+/// smudge the two surfaces exist to prevent, on the one row being looked at.
 fn row_surfaces(active: bool, cx: &App) -> (Hsla, Hsla) {
     let well = cx.theme().muted;
     match active {
@@ -102,6 +111,17 @@ fn row_surfaces(active: bool, cx: &App) -> (Hsla, Hsla) {
 /// is invisible wherever the name already ended — a gradient into the colour
 /// it lies on — so nothing here needs to know whether the name overflowed,
 /// which is a question about pixels a string cannot answer anyway.
+///
+/// **That last part is only true while the box is the room and not the text**,
+/// which is why the stretch is written in here rather than left to the caller.
+/// The band is pinned to this box's right edge, so on a box that shrink-wraps
+/// its string the band lands on the last glyphs of a name that *fitted* —
+/// `main` on a branch row came out as `m` dissolving into the fill, which is
+/// the ellipsis's dishonesty back again in a worse form, since nothing says a
+/// cut happened. Stretched, the right edge is where the room runs out, and the
+/// band falls on empty track for every name short enough not to reach it.
+/// Anything that cannot be stretched — a footnote capped at its own width, a
+/// menu row sized by its popup — keeps `truncate` and its ellipsis instead.
 fn faded(text: SharedString, group: SharedString, rest: Hsla, hovered: Hsla) -> Div {
     fn toward(surface: Hsla) -> gpui::Background {
         gpui::linear_gradient(
@@ -112,6 +132,8 @@ fn faded(text: SharedString, group: SharedString, rest: Hsla, hovered: Hsla) -> 
     }
     div()
         .relative()
+        .flex_1()
+        .min_w_0()
         .overflow_hidden()
         .whitespace_nowrap()
         .child(text)
@@ -248,11 +270,7 @@ impl RailRow {
                 false => row.hover(move |row| row.bg(hover).text_color(accent_fg)),
             })
             .when_some(self.icon, |row, icon| row.child(Icon::new(icon).size_4()))
-            .child(
-                faded(self.label, self.key.clone(), rest, hovered)
-                    .flex_1()
-                    .min_w_0(),
-            )
+            .child(faded(self.label, self.key.clone(), rest, hovered))
             .when_some(self.suffix, |row, suffix| row.child(suffix(window, cx)))
             .on_click(move |event, window, cx| on_click(event, window, cx))
             .when(has_hint, |row| {
@@ -809,6 +827,17 @@ enum Note {
     Project(SharedString),
 }
 
+/// Which of the two a footnote is, once its text has been resolved.
+///
+/// [`Note`] carries the text for one arm and the rule for the other, so it
+/// cannot be read a second time without re-deciding; this is what the row's
+/// hover needs in order to say *what* the word beside it is.
+#[derive(Clone, Copy)]
+enum NoteKind {
+    Agent,
+    Project,
+}
+
 /// One session row: nested under its root's folder row, or standing on its own
 /// in the flat list.
 ///
@@ -829,28 +858,45 @@ fn session_row(
     let uid = session.uid;
     let state = shell.session_row(uid, cx);
     let signal = state.signal;
-    let footnote = match &note {
+    let (footnote, note_kind) = match &note {
         // Only alongside a conversation title, and only where the project runs
         // more than one agent: where the row has fallen back to the agent's
         // name, the suffix would repeat the label it sits next to.
-        Note::Agent { among_many } => (*among_many && state.title.is_some())
-            .then(|| SharedString::from(session.title().to_string())),
+        Note::Agent { among_many } => (
+            (*among_many && state.title.is_some())
+                .then(|| SharedString::from(session.title().to_string())),
+            NoteKind::Agent,
+        ),
         // Always: the project is the one thing the flat row cannot say any
         // other way, and it is true whether or not the conversation has a name.
-        Note::Project(project) => Some(project.clone()),
+        Note::Project(project) => (Some(project.clone()), NoteKind::Project),
     };
     let label = session_label(state.title.as_deref(), session.title());
     // The whole name, however long, for the hover: it is what the fade at the
     // row's edge may have cut.
-    let hint = state
-        .title
-        .clone()
-        .unwrap_or_else(|| SharedString::from(session.title().to_string()));
+    //
+    // **And the footnote under it**, whole, because that is cut too -- at
+    // `MAX_AGENT_W`, which is narrow enough that two projects sharing a prefix
+    // clip to the same visible word. The flat list is where that bites: the
+    // footnote is the only thing on the row saying which project a session
+    // belongs to, so with it cut and unreadable anywhere the row loses the one
+    // fact it exists to carry. Named rather than repeated bare, since out of
+    // its column a word on its own does not say what it is.
+    let hint = std::iter::once(
+        state
+            .title
+            .clone()
+            .unwrap_or_else(|| SharedString::from(session.title().to_string())),
+    )
+    .chain(footnote.clone().map(|note| match note_kind {
+        NoteKind::Agent => SharedString::from(format!("Agent: {note}")),
+        NoteKind::Project => SharedString::from(format!("Project: {note}")),
+    }))
+    .collect::<Vec<_>>();
     // The key carries nothing about which list drew the row, because only one
     // list is on screen at a time -- and it is the same key in both, so the
     // row's element state survives the tab switch.
     let key = SharedString::from(format!("rail-session-{uid}"));
-    let suffix_key = key.clone();
     // A weak handle because both menu closures outlive this frame.
     let menu_target = cx.entity().downgrade();
     let suffix_target = menu_target.clone();
@@ -863,23 +909,29 @@ fn session_row(
         }),
     )
     .active(active)
-    .hint(vec![hint])
+    .hint(hint)
     .menu(session_menu(root_idx, session_idx, uid, menu_target))
     .suffix(move |_, cx: &mut App| {
         let suffix_target = suffix_target.clone();
-        let (rest, hovered) = row_surfaces(active, cx);
         div()
             .h_flex()
             .items_center()
             .gap_1()
             .flex_shrink(1.)
             .min_w_0()
+            // Capped and ellipsized rather than faded, because this box is
+            // sized by its own string: a fade pinned to the right edge of a
+            // box that shrink-wraps its text lands on the text, so a footnote
+            // short enough to fit came out dissolving anyway. Where the cut is
+            // real the `…` is honest, and what it cuts is on the row's hover.
             .when_some(footnote.clone(), |row, note| {
                 row.child(
-                    faded(note, suffix_key.clone(), rest, hovered)
+                    div()
                         .max_w(MAX_AGENT_W)
+                        .truncate()
                         .text_xs()
-                        .text_color(cx.theme().muted_foreground),
+                        .text_color(cx.theme().muted_foreground)
+                        .child(note),
                 )
             })
             .when_some(signal, |row, signal| row.child(signal_mark(signal, cx)))
@@ -1167,7 +1219,6 @@ fn folder_row(
     let menu_target = cx.entity().downgrade();
     let suffix_target = menu_target.clone();
     let key = project_key(&root.path);
-    let suffix_key = key.clone();
 
     // A weak handle for the caret, which outlives this frame as the menus do.
     let fold_target = cx.entity().downgrade();
@@ -1210,7 +1261,6 @@ fn folder_row(
         .suffix(move |_, cx: &mut App| {
             let (suffix_target, fold_target) = (suffix_target.clone(), fold_target.clone());
             let fold_path = fold_path.clone();
-            let (rest, hovered) = row_surfaces(is_active, cx);
             let radius = cx.theme().radius;
             let (badge_bg, badge_fg) = (cx.theme().secondary, cx.theme().secondary_foreground);
             div()
@@ -1236,8 +1286,13 @@ fn folder_row(
                 // their projects apart and every one is taking width from the
                 // name that would. The row's hover carries it whole for every
                 // repository either way.
+                // Ellipsized and not faded, for the reason a session row's
+                // footnote is: this box is sized by the branch name itself, so
+                // a fade at its right edge would eat the tail of `main` as
+                // readily as the tail of a name that overran. The row's hover
+                // carries the whole branch either way.
                 .when_some(branch.clone().filter(|_| is_active), |row, branch| {
-                    row.child(faded(branch, suffix_key.clone(), rest, hovered).max_w(MAX_BRANCH_W))
+                    row.child(div().max_w(MAX_BRANCH_W).truncate().child(branch))
                 })
                 // The count on every row, and as a **badge**, not a coloured
                 // number: as a bare figure in the warning tint its colour was
@@ -1676,12 +1731,7 @@ fn workspace_identity(
     // only on a name long enough to fade, while its menu is open, with the
     // pointer somewhere else. The fade cannot follow that fill because the
     // open flag is applied by the menu host after this row is already built.
-    .child(
-        faded(name, "workspace-identity".into(), rest, hovered)
-            .flex_1()
-            .min_w_0()
-            .font_semibold(),
-    );
+    .child(faded(name, "workspace-identity".into(), rest, hovered).font_semibold());
 
     crate::controls::MenuTrigger::new(row, accent)
         .dropdown_menu_with_anchor(Anchor::TopLeft, workspace_menu(current, recents, shell))
@@ -2112,10 +2162,12 @@ fn tab_bar(active: RailTab, cx: &mut Context<Shell>) -> impl IntoElement + use<>
 #[cfg(test)]
 mod tests {
     use super::{
-        LABEL_SHAPE_CAP, RailTab, new_session_hint, project_key, runs_more_than_one_agent,
-        session_label, session_order, signal_hint,
+        LABEL_SHAPE_CAP, RailTab, new_session_hint, project_hint, project_key,
+        runs_more_than_one_agent, session_label, session_order, signal_hint,
     };
     use crate::chat::pane::SessionSignal;
+    use gpui::SharedString;
+    use onehand_core::config::PanelLayout;
     use std::path::Path;
 
     /// A project's row has to be named by the project, because the library
@@ -2244,6 +2296,68 @@ mod tests {
         let label = session_label(Some(&"a".repeat(LABEL_SHAPE_CAP * 3)), "Claude Code");
         assert_eq!(label.chars().count(), LABEL_SHAPE_CAP);
         assert!(label.ends_with('…'));
+    }
+
+    /// The other end of that rope, and the load-bearing half: the cost bound
+    /// has to sit past what the widest rail can draw, or the ellipsis it
+    /// writes reaches the screen and the fade it replaced becomes a lie.
+    ///
+    /// The width tests that used to hold this end went with `label_cap`. The
+    /// figure is a *narrowest*-glyph width rather than an average one, because
+    /// what has to be impossible is the cap biting first for any string at
+    /// all — a column of `i`s is the worst case and roughly this wide at the
+    /// size a rail row is drawn.
+    #[test]
+    fn the_cost_bound_can_never_be_the_visible_cut() {
+        const NARROWEST_GLYPH: f32 = 4.;
+        let widest = PanelLayout::RAIL_MAX;
+        assert!(
+            LABEL_SHAPE_CAP as f32 * NARROWEST_GLYPH >= widest,
+            "{LABEL_SHAPE_CAP} characters can be drawn inside a {widest}px rail, \
+             so the cost cap cuts a name the fade was supposed to"
+        );
+    }
+
+    /// What a project row says on hover, in the order it says it.
+    ///
+    /// Every line here is one the row itself cuts -- the name, the branch and
+    /// the count are all capped in the row, and the path is not on the row at
+    /// all -- so this is the only place any of them is readable whole. The
+    /// path goes last because it is the longest and the least often wanted,
+    /// and the count is written in words because a bare figure beside a branch
+    /// name reads as part of it.
+    #[test]
+    fn a_projects_hover_carries_every_part_the_row_cut() {
+        let path = SharedString::from("/work/onehand");
+        let branch = SharedString::from("feat/rail");
+        let hint = project_hint("onehand", Some(&branch), 3, &path);
+        assert_eq!(
+            hint,
+            vec![
+                SharedString::from("onehand"),
+                SharedString::from("Branch: feat/rail"),
+                SharedString::from("3 changed files"),
+                path.clone(),
+            ]
+        );
+
+        // One file is one file. A count is read as prose here, so the plural
+        // has to follow it.
+        assert!(
+            project_hint("onehand", Some(&branch), 1, &path)
+                .contains(&SharedString::from("1 changed file"))
+        );
+    }
+
+    /// A project that is neither a repository nor changed is the row the old
+    /// tooltip could not reach at all: it hung off the git suffix, and that
+    /// row draws none. It still has a name and a path, and those are what the
+    /// hover is for.
+    #[test]
+    fn a_plain_folder_still_answers_on_hover() {
+        let path = SharedString::from("/work/notes");
+        let hint = project_hint("notes", None, 0, &path);
+        assert_eq!(hint, vec![SharedString::from("notes"), path]);
     }
 
     /// The footnote naming the agent is there to tell two rows apart, so the

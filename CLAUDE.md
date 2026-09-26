@@ -998,12 +998,23 @@ centre is the chat, right dock the Workbench, bottom dock the terminal.
   row's composited surface per state (`rail::row_surfaces`) — rest, hover via `group_hover`,
   active — because a fade into the resting colour over a hovered row is a smudge on exactly the
   row being looked at; painted right it is invisible wherever the name already ended, so nothing
-  needs to know whether the name overflowed. **Every row carries its full text on hover**: the
-  conversation's whole title on a session row; the project's name, branch, change count in words
-  and root path on a folder row — which also covers the project that is neither a repository nor
-  changed, the one row the old suffix-tooltip could not reach. The label is still cost-capped at
-  `LABEL_SHAPE_CAP` characters, far past what the widest rail can draw — a fit rule in pixels, a
-  cost bound in characters, and the bound must never be the visible cut.
+  needs to know whether the name overflowed. **The fade needs a box that is the room and not the
+  text**, which is why the stretch lives inside `faded` rather than at its call sites: the band is
+  pinned to its box's right edge, so on a box that shrink-wraps its string it lands on the last
+  glyphs of a name that *fitted* — `main` on a branch row came out as `m` dissolving into the
+  fill, which is the ellipsis's dishonesty back in a worse form, since nothing says a cut
+  happened. So the two **names** fade (a row's label, the workspace's) and the two capped
+  **footnotes** — the agent-or-project word beside a session, the branch beside a project — keep
+  `truncate` and its ellipsis, because each is sized by its own string and a fixed box for them
+  would reserve the width the whole arrangement exists to give the name.
+  **Every row carries its full text on hover**: the conversation's whole title and its footnote
+  named (`Agent:` / `Project:`) on a session row — the flat list is where that bites, since the
+  footnote is the only thing on the row saying which project a session belongs to; the project's
+  name, branch, change count in words and root path on a folder row, which also covers the
+  project that is neither a repository nor changed, the one row the old suffix-tooltip could not
+  reach. The label is still cost-capped at `LABEL_SHAPE_CAP` characters, far past what the widest
+  rail can draw — a fit rule in pixels, a cost bound in characters, and the bound must never be
+  the visible cut, which a test holds against `PanelLayout::RAIL_MAX`.
   `Sidebar` itself stays: the frame, the scroll and the header/footer slots are the half of the
   component worth keeping, and its `Clone` child bound is why `RailRow`'s handlers ride in `Rc`s.
   A trailing mark appears only while that session carries a signal, and
@@ -1499,7 +1510,16 @@ file the next launch reads.
 There are two palettes and the app only chooses which one is loaded — `shell::apply_appearance`
 is the single place that does it, at boot and on every change. Each is the library's own config with
 the app's surface ramp written over it (`crate::theme::install`, run once before the first mode is
-chosen); see the theme module for what is ours and what is inherited. `system` **keeps following** the desktop
+chosen); see the theme module for what is ours and what is inherited. **A token the library keeps
+as a slot of its own has to be written out, or it silently keeps the shipped palette's value** —
+the rule the sidebar tokens were already there for, and `secondary_hover` / `secondary_active` were
+the second family to be caught by it: the shipped dark hover is *darker* than this ramp's bubble, so
+the rail's one filled control receded toward the well when it was pointed at, and its pressed step
+landed 1.04 from the well, which is a hole rather than a button. Both now take the ramp's one step
+above the bubble fill, and their being equal is load-bearing rather than lazy — gpui refines a hover
+style over the base and `hover_style` is crate-private, so a trigger that fills itself while its menu
+is open cannot outrank the hover underneath it, and two different shades would hide the pressed one
+for as long as the pointer stayed on the control that opened it. `system` **keeps following** the desktop
 (each window observes its own appearance), which is also what settles the Linux startup race where the
 platform answers with its default until the desktop portal replies. An unrecognized value reads as
 `system` rather than failing the file, because the agent list is in that same file. Three things the
