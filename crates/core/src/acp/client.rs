@@ -39,7 +39,7 @@ use futures::channel::mpsc::Sender as EventTx;
 use futures::stream::{self, Stream, StreamExt};
 use futures::SinkExt;
 use serde_json::{json, Value};
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::path::{Path, PathBuf};
 use std::pin::Pin;
 use std::process::Stdio;
@@ -91,11 +91,75 @@ struct Transport {
     /// child itself — so dropping this future is what kills the adapter, and the
     /// stream owning it is what ties the agent's life to the subscription.
     ended: Pin<Box<dyn std::future::Future<Output = String> + Send>>,
+    /// The last few lines the adapter wrote to stderr.
+    ///
+    /// **An adapter that fails to start explains itself on stderr and nowhere
+    /// else.** What reaches the protocol in that case is silence — stdout closes
+    /// without a single message — so every distinct failure arrives here as the
+    /// same sentence: the adapter stopped. The reason was printed a moment
+    /// earlier and, without this, went only to *our* stderr, which nobody reads
+    /// when the app was started from a desktop icon.
+    ///
+    /// Shared with the draining task rather than read off the pipe at failure
+    /// time, because by then the pipe is closed and the process is gone.
+    stderr: StderrTail,
 }
+
+/// The adapter's own last words, kept for whoever has to explain its death.
+type StderrTail = std::sync::Arc<std::sync::Mutex<VecDeque<String>>>;
+
+/// How many lines of adapter stderr are kept, and how wide each may be.
+///
+/// **Enough for one tool's error block, not for its output.** The failures this
+/// exists for announce themselves in a handful of lines — `npx` naming a version
+/// it cannot resolve, a runtime naming a module it cannot find — while a healthy
+/// adapter can write to stderr all day. Keeping the tail bounded on both axes is
+/// what makes it safe to leave running for the life of the session.
+const STDERR_TAIL_LINES: usize = 5;
+const STDERR_LINE_CAP: usize = 120;
 
 /// The write half of a [`Transport`], as every message-writing function takes
 /// it.
 type Outgoing = Pin<Box<dyn tokio::io::AsyncWrite + Send>>;
+
+/// Keep one stderr line, dropping the oldest once the tail is full.
+///
+/// Blank lines are skipped because tools pad their error blocks with them, and
+/// a kept blank is one of the few slots not spent on a reason.
+fn remember(kept: &mut VecDeque<String>, line: &str) {
+    let line = line.trim();
+    if line.is_empty() {
+        return;
+    }
+    if kept.len() == STDERR_TAIL_LINES {
+        kept.pop_front();
+    }
+    let end = line
+        .char_indices()
+        .nth(STDERR_LINE_CAP)
+        .map_or(line.len(), |(at, _)| at);
+    kept.push_back(line[..end].to_string());
+}
+
+/// Put the adapter's last words behind the sentence describing its death.
+///
+/// The protocol-level sentence stays in front because it is what happened —
+/// the tail is evidence, and evidence that pushed the finding off the start of
+/// the line would be worse than none. Lines are joined rather than kept apart:
+/// this lands in a one-line banner, and a newline there buys nothing.
+fn explain(what: String, tail: &StderrTail) -> String {
+    let said = match tail.lock() {
+        Ok(kept) => kept.iter().cloned().collect::<Vec<_>>(),
+        // A poisoned lock means the drain task panicked mid-write. That is
+        // worth neither a panic here nor a mention: the sentence we already
+        // have is still true, and it is what the reader came for.
+        Err(_) => Vec::new(),
+    };
+    match said.is_empty() {
+        true => what,
+        false => format!("{what}: {}", said.join(" · ")),
+    }
+}
 
 impl Transport {
     /// Run `command` as a child process and talk to it over its stdio.
@@ -114,15 +178,22 @@ impl Transport {
         let stdout = child.stdout.take().ok_or("no stdout")?;
         let stderr = child.stderr.take().ok_or("no stderr")?;
 
-        // Drain stderr so the adapter never blocks on a full pipe; echo for debug.
+        // Drain stderr so the adapter never blocks on a full pipe; echo for
+        // debug, and keep the tail so a death can be explained afterwards.
+        let tail: StderrTail = Default::default();
+        let sink = tail.clone();
         tokio::spawn(async move {
             let mut lines = BufReader::new(stderr).lines();
             while let Ok(Some(line)) = lines.next_line().await {
                 eprintln!("[acp:stderr] {line}");
+                if let Ok(mut kept) = sink.lock() {
+                    remember(&mut kept, &line);
+                }
             }
         });
 
         Ok(Self {
+            stderr: tail,
             incoming: Box::pin(BufReader::new(stdout)),
             outgoing: Box::pin(stdin),
             // The child moves in here, which is what keeps `kill_on_drop`
@@ -152,6 +223,8 @@ impl Transport {
                 incoming: Box::pin(BufReader::new(read)),
                 outgoing: Box::pin(write),
                 ended: Box::pin(std::future::pending()),
+                // No child, so nothing ever writes to it.
+                stderr: Default::default(),
             },
             theirs,
         )
@@ -189,7 +262,16 @@ fn connect_over_result(
     let runner = stream::once(async move {
         let mut output = sender;
         let served = match transport {
-            Ok(transport) => run(transport, &cwd, resume, &mut output).await,
+            Ok(transport) => {
+                // Taken before the transport moves into the loop, so the tail
+                // is still reachable once that loop has given up on it.
+                let stderr = transport.stderr.clone();
+                run(transport, &cwd, resume, &mut output)
+                    .await
+                    .map_err(|why| explain(why, &stderr))
+            }
+            // A spawn that never started has no stderr to have written to:
+            // the error already names the command and what the OS said.
             Err(why) => Err(why),
         };
         if let Err(err) = served {
@@ -219,6 +301,8 @@ async fn run(
         incoming,
         mut outgoing,
         ended,
+        // Read by the caller, which is where a failure becomes a sentence.
+        stderr: _,
     } = transport;
     let stdin = &mut outgoing;
     let mut reader = incoming.lines();
@@ -1038,7 +1122,8 @@ pub fn base64_encode(bytes: &[u8]) -> String {
 #[cfg(test)]
 mod tests {
     use super::{
-        base64_encode, connect_over, elicit_result, file_uri, parse_elicitation, Transport,
+        base64_encode, connect_over, elicit_result, explain, file_uri, parse_elicitation, remember,
+        Transport, STDERR_LINE_CAP, STDERR_TAIL_LINES,
     };
     use crate::acp::{AcpEvent, AcpRequest, ElicitKind, ElicitOutcome, ElicitValue};
     use futures::StreamExt as _;
@@ -1453,6 +1538,58 @@ mod tests {
         assert_eq!(
             file_uri(Path::new("/a/tệp.txt")),
             "file:///a/t%E1%BB%87p.txt"
+        );
+    }
+
+    /// The tail keeps the *last* lines, because a tool says what went wrong
+    /// after it has finished trying — an oldest-first buffer would fill with
+    /// the banner and drop the reason.
+    #[test]
+    fn the_stderr_tail_keeps_the_last_lines_and_drops_the_blanks() {
+        let mut kept = std::collections::VecDeque::new();
+        remember(&mut kept, "first");
+        for line in ["", "   "] {
+            remember(&mut kept, line);
+        }
+        for n in 0..STDERR_TAIL_LINES {
+            remember(&mut kept, &format!("line {n}"));
+        }
+
+        assert_eq!(kept.len(), STDERR_TAIL_LINES);
+        assert!(!kept.contains(&"first".to_string()), "{kept:?}");
+        assert_eq!(kept.back().map(String::as_str), Some("line 4"));
+        assert!(kept.iter().all(|l| !l.trim().is_empty()), "{kept:?}");
+    }
+
+    /// A line is cut on a character boundary, not a byte one — an adapter is
+    /// free to print a path, and half a multi-byte character would panic the
+    /// slice rather than shorten the line.
+    #[test]
+    fn a_long_stderr_line_is_cut_without_splitting_a_character() {
+        let mut kept = std::collections::VecDeque::new();
+        remember(&mut kept, &"đường".repeat(200));
+
+        let only = kept.front().expect("one line");
+        assert_eq!(only.chars().count(), STDERR_LINE_CAP);
+    }
+
+    /// What the protocol saw stays in front; the adapter's own words follow it.
+    /// The empty case must not leave a dangling separator, since that reads as
+    /// a message the app failed to fill in.
+    #[test]
+    fn a_failure_carries_the_adapters_last_words_when_it_said_any() {
+        let tail: super::StderrTail = Default::default();
+        assert_eq!(
+            explain("adapter closed stdout".into(), &tail),
+            "adapter closed stdout"
+        );
+
+        for line in ["npm error code ETARGET", "npm error No matching version"] {
+            remember(&mut tail.lock().expect("fresh lock"), line);
+        }
+        assert_eq!(
+            explain("adapter closed stdout".into(), &tail),
+            "adapter closed stdout: npm error code ETARGET · npm error No matching version"
         );
     }
 }
