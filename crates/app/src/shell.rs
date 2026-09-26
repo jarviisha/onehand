@@ -1359,7 +1359,17 @@ impl Shell {
             return;
         }
         self.pending_remove = None;
+        self.forget_root(idx, cx);
+        window.push_notification(Notification::info(format!("Removed {label}")), cx);
+        self.show_active_session(window, cx);
+        self.save_workspace(window, cx);
+        cx.notify();
+    }
 
+    /// Drop root `idx` and everything the window keeps for it, with no question
+    /// asked and nothing on screen moved.
+    fn forget_root(&mut self, idx: usize, cx: &mut Context<Self>) {
+        let path = self.window.workspace.roots[idx].path.clone();
         // Sessions go first: dropping a chat session is what kills its adapter,
         // and the workspace tree is where their uids are recorded.
         let uids: Vec<u64> = self.window.workspace.roots[idx]
@@ -1390,10 +1400,6 @@ impl Shell {
         self.tab_cycle = None;
 
         self.window.workspace.remove_root(idx);
-        window.push_notification(Notification::info(format!("Removed {label}")), cx);
-        self.show_active_session(window, cx);
-        self.save_workspace(window, cx);
-        cx.notify();
     }
 
     /// Open the split-onto-a-branch form on a project.
@@ -3121,6 +3127,112 @@ impl Shell {
         self.start_session(agent, Some(archive), window, cx)
     }
 
+    /// The project roots an unattended run may look for issues in, in the order
+    /// the rail draws them — so pinning a project is also how it is worked
+    /// first. A run's own worktree is not one of them.
+    pub fn unattended_roots(&self) -> Vec<PathBuf> {
+        let roots = &self.window.workspace.roots;
+        self.window
+            .workspace
+            .display_order()
+            .into_iter()
+            .filter(|&i| !roots[i].transient)
+            .map(|i| roots[i].path.clone())
+            .collect()
+    }
+
+    /// Whether `root` is one of this window's projects.
+    pub fn holds_root(&self, root: &Path) -> bool {
+        self.window.workspace.roots.iter().any(|r| r.path == root)
+    }
+
+    /// Add `dir` as a transient project and start `spec` on it, off screen.
+    ///
+    /// **Nothing the user is looking at moves.** The workspace's own mint goes
+    /// to the active root, so the selection is put back the moment the session
+    /// is recorded, and the pane connects the session without showing it. The
+    /// root is transient, so the workspace file never holds it.
+    ///
+    /// `None` when `dir` is already a project here: marking a root the user
+    /// added as transient would quietly drop it from their workspace.
+    pub fn run_unattended(
+        &mut self,
+        dir: PathBuf,
+        spec: AgentSpec,
+        cx: &mut Context<Self>,
+    ) -> Option<(u64, Entity<crate::chat::session::ChatSession>)> {
+        let before = self.window.workspace.active_root;
+        let count = self.window.workspace.roots.len();
+        let idx = self.window.workspace.add_root(dir);
+        if self.window.workspace.roots.len() == count {
+            self.window.workspace.select_root(before);
+            return None;
+        }
+        self.window.workspace.roots[idx].transient = true;
+        let uid = cx.update_global::<Shared, _>(|shared, _| shared.next_uid());
+        self.window.workspace.add_session(spec.clone(), uid);
+        self.window.workspace.select_root(before);
+        let root = self.window.workspace.roots[idx].path.clone();
+        let session = self
+            .chat
+            .update(cx, |pane, cx| pane.open_unshown(uid, root, &spec, cx));
+        self.refresh_git(cx);
+        cx.notify();
+        Some((uid, session?))
+    }
+
+    /// End a run's session and drop its project.
+    ///
+    /// Not `remove_root`, whose two-click guard asks a person whether live
+    /// sessions should be lost — the run has already decided — and which puts
+    /// the active session back on screen afterwards, taking the caret with it.
+    /// A run ending while somebody types elsewhere must not move either. Only
+    /// when the run's own project was the one being looked at is there anything
+    /// to show instead. The worktree stays on disk; only the row goes.
+    pub fn end_unattended(&mut self, dir: &Path, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(idx) = self
+            .window
+            .workspace
+            .roots
+            .iter()
+            .position(|r| r.path == dir)
+        else {
+            return;
+        };
+        let was_active = self.window.workspace.active_root == idx;
+        self.forget_root(idx, cx);
+        if was_active {
+            self.show_active_session(window, cx);
+        }
+        cx.notify();
+    }
+
+    /// Keep a run's project for good: a person has taken the run over, so it
+    /// is their project now, and it is written into the workspace.
+    pub fn adopt_unattended(&mut self, dir: &Path, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(root) = self
+            .window
+            .workspace
+            .roots
+            .iter_mut()
+            .find(|r| r.path == dir)
+        else {
+            return;
+        };
+        root.transient = false;
+        self.save_workspace(window, cx);
+    }
+
+    /// Whether the user is reading `uid`'s conversation right now.
+    pub fn reading(&self, uid: u64, cx: &App) -> bool {
+        self.chat.read(cx).reading(uid, cx)
+    }
+
+    /// How `uid`'s last answer ended, for a run's report.
+    pub fn answer_tail(&self, uid: u64, cx: &App) -> Option<String> {
+        self.chat.read(cx).answer_tail(uid, cx)
+    }
+
     /// Every session this window is running, for the bridge that has to describe
     /// them to somebody who is not looking at the window.
     ///
@@ -3638,12 +3750,14 @@ pub fn boot(cx: &mut App) {
     let mono = cfg.font.monospace.clone();
     let appearance = cfg.appearance;
     let remote = cfg.remote.clone();
+    let unattended = cfg.unattended.clone();
     cx.set_global(Shared::from_config(cfg, config_path));
     init_keymap(cx);
     // After the global exists, because that is where the bridge is filed, and
     // before the first window, so a channel that takes a moment to answer has
     // already been asked by the time there is anything to announce.
     crate::remote::boot(&remote, cx);
+    crate::unattended::boot(&unattended, cx);
     // Before a mode is chosen, because choosing one applies whichever of the
     // two configs this installs.
     crate::theme::install(cx);
