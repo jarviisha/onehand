@@ -132,16 +132,31 @@ pub(crate) fn menu_item(label: impl Into<SharedString>) -> PopupMenuItem {
 /// a slot never emptied is a menu never dropped -- and the slot itself is
 /// collected by the window a frame after the popup closes, since nothing
 /// accesses it while closed.
+///
+/// # The id has to name what the menu acts on
+///
+/// Both the open state and that held menu are keyed by `id`, and **the rows
+/// are frozen at the press**: they close over whatever the builder was handed
+/// on the frame the menu opened. So an `id` that stays the same while the
+/// thing underneath changes is a menu that survives the change with its old
+/// rows and its old captures, now aimed at something else -- which for a row
+/// that deletes is the wrong thing deleted. Nothing here can detect that, and
+/// closing on any change is not the library's behaviour to give: what an `id`
+/// carrying the session's or the project's identity buys instead is that the
+/// key stops being accessed, so the window collects the state and the menu is
+/// simply gone.
+///
+/// It must also differ from the trigger's own id, since the popover wraps the
+/// trigger and two nested elements under one id collide.
 pub(crate) fn menu_below(
-    id: &'static str,
+    id: impl Into<ElementId>,
     trigger: Button,
     build: impl Fn(PopupMenu, &mut Window, &mut Context<PopupMenu>) -> PopupMenu + 'static,
 ) -> Popover {
     let build = Rc::new(build);
-    // The popover's id is derived from the trigger's rather than shared with
-    // it: the popover wraps the trigger, and two nested elements under one id
-    // is a collision the library avoids the same way.
-    Popover::new(SharedString::from(format!("popover:{id}")))
+    let id = id.into();
+    let slot_key = id.clone();
+    Popover::new(id)
         .appearance(false)
         .overlay_closable(false)
         .trigger(trigger)
@@ -152,7 +167,7 @@ pub(crate) fn menu_below(
         // argument; nothing hands one over today.
         .top(rems(1.75))
         .content(move |_, window, cx| {
-            let slot = window.use_keyed_state((ElementId::from(id), "menu-below"), cx, |_, _| {
+            let slot = window.use_keyed_state((slot_key.clone(), "menu-below"), cx, |_, _| {
                 None::<Entity<PopupMenu>>
             });
             match slot.read(cx).clone() {

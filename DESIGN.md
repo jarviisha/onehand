@@ -61,11 +61,15 @@ One window hosts exactly one workspace. The frame is a navigation **rail** plus 
   vertical-dots mark at its end is its menu**: the name is the one thing on the
   row drawn in full ink and weight, and pressing the dots opens everything done
   to the conversation — rename, the exports, resume another, restart, and,
-  alone in the danger tint, delete. The menu is anchored to the mark, so it
-  opens directly under the dots that were pressed rather than under whatever
-  width the name happened to be; and with the menu off the name, the name is
-  free to give way — it truncates while the mark never shrinks, so narrowing
-  the panel shortens the name and never takes the control. The mark also
+  alone in the danger tint, delete. The menu opens *below* the mark, which is
+  the whole of what the move bought: pressing the name opened a list over the
+  name, so the one thing the row exists to say was covered by the answer to a
+  question about it. What it costs is that the popup's edge now follows the
+  title's length instead of standing at the name's start, and that is the
+  right way round — a menu belongs under the thing that was pressed. With the
+  menu off the name, the name is also free to give way: it truncates while
+  the mark never shrinks, so narrowing the panel shortens the name and never
+  takes the control. The mark also
   carries a tooltip, which the name-as-button never could: the library builds
   a button's accessible name from its label alone, and the name had to be a
   child to ellipsize at all. **No badge sits beside it.** A badge carrying

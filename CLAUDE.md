@@ -1522,7 +1522,12 @@ Listed because a missing feature nobody wrote down reads as a bug in the ones th
   button cannot be given one through this component. Every control on the row carries a tooltip
   instead. The menu used to be the name itself, drawn as a child so it could ellipsize, which was
   the same gap in a worse place; moving the menu onto the vertical-dots mark made the name plain
-  prose and left one uniform row of tooltipped icon buttons.
+  prose and left one uniform row of tooltipped icon buttons. **The route out is
+  `controls::MenuTrigger`**, which exists already for the rail's rows: `Stateful<Div>` does
+  implement gpui's `StatefulInteractiveElement`, so `aria_label` reaches it, and what that costs is
+  rebuilding by hand what the component gives for free — the ghost hover fill, the icon sizing and
+  the selected-while-open state. Recorded rather than done, because it is the same rebuild at every
+  one of the row's controls.
 - **There is no search in the transcript**, and the removal was deliberate rather than pending. It
   matched whole *items* and never occurrences, so a word said ten times in one answer was one hit
   with no mark on the word itself, and a hit in text a block had truncated was counted, scrolled to
