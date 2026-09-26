@@ -567,6 +567,22 @@ plus `sendMessage` and `answerCallbackQuery`. Everything that is not the wire is
   bot and a method name rather than a finished URL precisely so the one place holding the credential is
   also the one place that turns a failure into words.
 
+### Unattended runs
+
+[docs/unattended.md](docs/unattended.md) is the whole account; this is the part a change elsewhere can
+break. `[unattended]` is off by default and its `label` is empty by default, which picks nothing. A tick
+on `Shared` (one per process, like the bridge) looks for the oldest open issue **you** opened that
+carries the label, in any open project, in rail order. It claims the issue by removing the label,
+branches a worktree off `origin/<default>` and mints a session there. **Neither step moves anything on
+screen**: `ChatPane::open_unshown` connects without showing, and the worktree's root is
+`ProjectRoot::transient`, which `to_config` never writes. One prompt, one turn. The pull request `gh`
+finds is the verdict, on every ending. A parked ask is cancelled, never answered — unless the user is
+reading that conversation, in which case the run is **taken over**. The same happens the moment
+anybody else puts a prompt in. Taking over clears `transient` and saves. Teardown is
+`Shell::forget_root`, never `remove_root`, because that one re-shows the active session and takes the
+caret with it. The rules that decide are core's (`onehand_core::unattended`); `gh` is the whole API
+layer.
+
 ### The chat pane
 
 [crates/app/src/chat/](crates/app/src/chat/):
