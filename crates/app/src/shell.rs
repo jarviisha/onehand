@@ -547,12 +547,6 @@ pub struct Shell {
     /// Session uids per root, most recently viewed first. What `Ctrl+Tab`
     /// walks.
     mru: HashMap<PathBuf, Vec<u64>>,
-    /// Session uids across the whole workspace, most recently viewed first.
-    ///
-    /// Separate from `mru` rather than derived from it: `mru` is per root and
-    /// several roots' lists cannot be merged back into one order, because
-    /// nothing in them records *when*.
-    recent: Vec<u64>,
     /// A `Ctrl+Tab` cycle in flight, if any.
     tab_cycle: Option<TabCycle>,
     /// A root whose removal is armed, waiting for the confirming click.
@@ -955,7 +949,6 @@ impl Shell {
                 .collect(),
             terminal_root: seed_root,
             mru: HashMap::new(),
-            recent: Vec::new(),
             tab_cycle: None,
             pending_remove: None,
             pending_close: None,
@@ -1393,7 +1386,6 @@ impl Shell {
         if self.terminal_root.as_deref() == Some(path.as_path()) {
             self.terminal_root = None;
         }
-        self.forget_recent(&uids);
         // A cycle's frozen order can name sessions that no longer exist.
         self.tab_cycle = None;
 
@@ -2015,7 +2007,6 @@ impl Shell {
         if let Some(order) = self.mru.get_mut(&path) {
             order.retain(|&seen| seen != uid);
         }
-        self.forget_recent(&[uid]);
         // A cycle's frozen order can name a session that no longer exists.
         self.tab_cycle = None;
 
@@ -2039,26 +2030,6 @@ impl Shell {
         let order = self.mru.entry(root).or_default();
         order.retain(|&seen| seen != uid);
         order.insert(0, uid);
-        // The same move, once more across the whole workspace. `Ctrl+Tab` walks
-        // *within* a root, so that list cannot answer "where was I before this
-        // project" -- and that is what breaks the tie in the rail's flat
-        // session list, underneath everything asking for attention.
-        self.recent.retain(|&seen| seen != uid);
-        self.recent.insert(0, uid);
-    }
-
-    /// Sessions the user has looked at, most recent first.
-    ///
-    /// Across every root, unlike [`Self::mru`]. Uids only: what each one is
-    /// called and which project it belongs to are the rail's to look up, and
-    /// both change under a list that would otherwise have to be told.
-    pub fn recent_order(&self) -> &[u64] {
-        &self.recent
-    }
-
-    /// Drop a session from every recency list.
-    fn forget_recent(&mut self, uids: &[u64]) {
-        self.recent.retain(|seen| !uids.contains(seen));
     }
 
     /// The active root's sessions in recency order.
@@ -2223,6 +2194,44 @@ impl Shell {
         // The project page's menu is the other place that says whether this is
         // pinned, and it says it in the label of the entry that was just used.
         self.sync_project_facts(cx);
+        cx.notify();
+    }
+
+    /// Drop a project at another place in the rail.
+    ///
+    /// Both numbers are *display* positions, which is what the rail drags; the
+    /// permutation and the pin clamp are `Workspace::move_root`'s.
+    ///
+    /// Persisted, unlike a session move: the roots' order is written into the
+    /// workspace file, so a list somebody arranged by hand comes back arranged.
+    pub fn move_root(
+        &mut self,
+        from: usize,
+        to: usize,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.window.workspace.move_root(from, to);
+        // A root index, and every one of them has just changed hands. Left
+        // armed, the confirming click for a removal would land on whichever
+        // project moved into that slot.
+        self.pending_remove = None;
+        self.save_workspace(window, cx);
+        cx.notify();
+    }
+
+    /// Drop a session at another place under its project.
+    ///
+    /// Nothing to save: sessions are not persisted, they respawn. `pending_close`
+    /// is keyed by uid rather than by place, so it survives the move.
+    pub fn move_session(
+        &mut self,
+        root_idx: usize,
+        from: usize,
+        to: usize,
+        cx: &mut Context<Self>,
+    ) {
+        self.window.workspace.move_session(root_idx, from, to);
         cx.notify();
     }
 
