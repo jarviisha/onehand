@@ -39,7 +39,7 @@ use futures::channel::mpsc::Sender as EventTx;
 use futures::stream::{self, Stream, StreamExt};
 use futures::SinkExt;
 use serde_json::{json, Value};
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::path::{Path, PathBuf};
 use std::pin::Pin;
 use std::process::Stdio;
@@ -91,11 +91,150 @@ struct Transport {
     /// child itself — so dropping this future is what kills the adapter, and the
     /// stream owning it is what ties the agent's life to the subscription.
     ended: Pin<Box<dyn std::future::Future<Output = String> + Send>>,
+    /// The last lines the adapter wrote to stderr.
+    ///
+    /// **An adapter that dies explains itself on stderr and nowhere else.**
+    /// What reaches the protocol is silence — stdout closes without a further
+    /// message — so every distinct failure arrives at the reader as the same
+    /// sentence: the adapter stopped. The reason was printed a moment earlier
+    /// and, without this, went only to *our* stderr, which nobody reads when the
+    /// app was started from a desktop icon.
+    ///
+    /// **Kept for any death, not only a failure to start.** A start that never
+    /// happens is the case this was built for, but the tail costs the same at
+    /// every other one, and the alternative is deciding — at the moment
+    /// something has already gone wrong — that the reader may not see what was
+    /// said.
+    ///
+    /// Shared with the draining task rather than read off the pipe at failure
+    /// time, because by then the pipe is closed and the process is gone.
+    stderr: StderrTail,
+    /// The task filling [`Self::stderr`], so a failure can let it catch up.
+    ///
+    /// **Nothing else orders the two.** The serve loop gives up the moment
+    /// stdout ends, while the reason is carried by a separate task that may not
+    /// have been polled yet — and a child is free to close stdout *before* it
+    /// writes why, which puts the reason strictly after the event that ends the
+    /// loop. Read without waiting, the tail is then empty exactly when it
+    /// matters, and intermittently, by thread scheduling.
+    drain: Option<tokio::task::JoinHandle<()>>,
 }
+
+/// The adapter's own last words, kept for whoever has to explain its death.
+type StderrTail = std::sync::Arc<std::sync::Mutex<LastWords>>;
+
+/// A bounded tail of adapter stderr, and how much of it fell off the front.
+///
+/// **The count is the half that keeps the bound honest.** Twenty lines is
+/// plenty for one tool's error block and nothing at all for its output, so a
+/// chatty adapter silently reduces to its least interesting lines. Saying how
+/// many were dropped is what stops the survivors from reading as everything
+/// that was said — the same reason the terminal extension reports a capped
+/// buffer rather than quietly shortening it.
+#[derive(Default)]
+struct LastWords {
+    kept: VecDeque<String>,
+    dropped: usize,
+}
+
+/// How many lines of adapter stderr are kept, and how wide each may be.
+///
+/// **Room for the block plus whatever it arrived behind.** The failures this
+/// exists for announce themselves in a handful of lines — `npx` naming a version
+/// it cannot resolve, a runtime naming a module it cannot find — but the line
+/// that names the fault class comes *first* in such a block, so a tail sized to
+/// the block exactly loses that line to any warning printed after it. The npm
+/// error this was written for is five lines on its own; at five, one
+/// `npm warn exec` ahead of it is enough to evict the reason.
+///
+/// The width is set by paths: a module or package a runtime cannot find is
+/// named with its full path, and cutting mid-path leaves the half that is the
+/// same for every adapter.
+///
+/// Twenty lines at two hundred characters is four kilobytes per session, which
+/// is the whole cost of leaving this on. What it does *not* bound is one
+/// enormous line: the reader assembles a line before this ever sees it, so an
+/// adapter that writes a megabyte without a newline still spends it.
+const STDERR_TAIL_LINES: usize = 20;
+const STDERR_LINE_CAP: usize = 200;
+
+/// How long a failed adapter is given to finish saying why.
+///
+/// **Bounded because the pipe can outlive the process we spawned.** Waiting for
+/// the drain to reach end-of-file is the exact wait wanted — it is how the tail
+/// is known to be complete — but the write end belongs to whoever holds it, and
+/// the adapter is a chain (`npx` runs `node` runs the agent) whose middle can
+/// die while a grandchild keeps stderr open. Unbounded, that is a hang on the
+/// one path where the app is already trying to report a failure.
+///
+/// Paid only on the way to a `Disconnected`, where nothing is watching for a
+/// quarter second.
+const STDERR_GRACE: Duration = Duration::from_millis(250);
 
 /// The write half of a [`Transport`], as every message-writing function takes
 /// it.
 type Outgoing = Pin<Box<dyn tokio::io::AsyncWrite + Send>>;
+
+impl LastWords {
+    /// Keep one stderr line, dropping the oldest once the tail is full.
+    ///
+    /// Blank lines are skipped because tools pad their error blocks with them,
+    /// and a kept blank is one of the few slots not spent on a reason. A
+    /// skipped blank is not a drop: nothing was lost to report.
+    fn remember(&mut self, line: &str) {
+        let line = line.trim();
+        if line.is_empty() {
+            return;
+        }
+        if self.kept.len() == STDERR_TAIL_LINES {
+            self.kept.pop_front();
+            self.dropped += 1;
+        }
+        // Cut on a character boundary — an adapter is free to print a path, and
+        // slicing a multi-byte character in half panics rather than shortens.
+        let end = line
+            .char_indices()
+            .nth(STDERR_LINE_CAP)
+            .map_or(line.len(), |(at, _)| at);
+        self.kept.push_back(line[..end].to_string());
+    }
+
+    /// What the adapter said, as one line, or nothing if it said nothing.
+    ///
+    /// Joined rather than kept as separate lines because the caller folds this
+    /// into a single error string, and what draws that string decides for
+    /// itself where to wrap.
+    fn say(&self) -> Option<String> {
+        if self.kept.is_empty() {
+            return None;
+        }
+        let mut said = self.kept.iter().cloned().collect::<Vec<_>>();
+        if self.dropped > 0 {
+            said.insert(0, format!("(+{} earlier lines)", self.dropped));
+        }
+        Some(said.join(" · "))
+    }
+}
+
+/// Put the adapter's last words behind the sentence describing its death.
+///
+/// The protocol-level sentence stays in front because it is what happened —
+/// the tail is evidence, and evidence that pushed the finding off the start of
+/// the line would be worse than none.
+fn explain(what: String, tail: &StderrTail) -> String {
+    // A poisoned lock means the drain task panicked mid-write, which leaves the
+    // tail readable and every line before the panic still in it. Taking it
+    // anyway is what stops one panic from costing the reader the reason; the
+    // alternative degrades to silence exactly when there is most to say.
+    let said = tail
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .say();
+    match said {
+        Some(said) => format!("{what}: {said}"),
+        None => what,
+    }
+}
 
 impl Transport {
     /// Run `command` as a child process and talk to it over its stdio.
@@ -114,15 +253,26 @@ impl Transport {
         let stdout = child.stdout.take().ok_or("no stdout")?;
         let stderr = child.stderr.take().ok_or("no stderr")?;
 
-        // Drain stderr so the adapter never blocks on a full pipe; echo for debug.
-        tokio::spawn(async move {
+        // Drain stderr so the adapter never blocks on a full pipe; echo for
+        // debug, and keep the tail so a death can be explained afterwards.
+        let tail: StderrTail = Default::default();
+        let sink = tail.clone();
+        let drain = tokio::spawn(async move {
             let mut lines = BufReader::new(stderr).lines();
             while let Ok(Some(line)) = lines.next_line().await {
                 eprintln!("[acp:stderr] {line}");
+                // Taken through a poison rather than around it: a tail that
+                // stopped recording at the first panic would be empty at the
+                // one moment it is read.
+                sink.lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner)
+                    .remember(&line);
             }
         });
 
         Ok(Self {
+            stderr: tail,
+            drain: Some(drain),
             incoming: Box::pin(BufReader::new(stdout)),
             outgoing: Box::pin(stdin),
             // The child moves in here, which is what keeps `kill_on_drop`
@@ -152,6 +302,9 @@ impl Transport {
                 incoming: Box::pin(BufReader::new(read)),
                 outgoing: Box::pin(write),
                 ended: Box::pin(std::future::pending()),
+                // No child, so nothing ever writes to it and nothing drains it.
+                stderr: Default::default(),
+                drain: None,
             },
             theirs,
         )
@@ -189,7 +342,23 @@ fn connect_over_result(
     let runner = stream::once(async move {
         let mut output = sender;
         let served = match transport {
-            Ok(transport) => run(transport, &cwd, resume, &mut output).await,
+            Ok(mut transport) => {
+                // Both taken before the transport moves into the loop, so they
+                // are still reachable once that loop has given up on it.
+                let stderr = transport.stderr.clone();
+                let drain = transport.drain.take();
+                match run(transport, &cwd, resume, &mut output).await {
+                    Ok(()) => Ok(()),
+                    Err(why) => {
+                        if let Some(drain) = drain {
+                            let _ = tokio::time::timeout(STDERR_GRACE, drain).await;
+                        }
+                        Err(explain(why, &stderr))
+                    }
+                }
+            }
+            // A spawn that never started has no stderr to have written to:
+            // the error already names the command and what the OS said.
             Err(why) => Err(why),
         };
         if let Err(err) = served {
@@ -219,6 +388,9 @@ async fn run(
         incoming,
         mut outgoing,
         ended,
+        // Both read by the caller, which is where a failure becomes a sentence.
+        stderr: _,
+        drain: _,
     } = transport;
     let stdin = &mut outgoing;
     let mut reader = incoming.lines();
@@ -1038,7 +1210,8 @@ pub fn base64_encode(bytes: &[u8]) -> String {
 #[cfg(test)]
 mod tests {
     use super::{
-        base64_encode, connect_over, elicit_result, file_uri, parse_elicitation, Transport,
+        base64_encode, connect_over, elicit_result, explain, file_uri, parse_elicitation,
+        LastWords, Transport, STDERR_LINE_CAP, STDERR_TAIL_LINES,
     };
     use crate::acp::{AcpEvent, AcpRequest, ElicitKind, ElicitOutcome, ElicitValue};
     use futures::StreamExt as _;
@@ -1453,6 +1626,143 @@ mod tests {
         assert_eq!(
             file_uri(Path::new("/a/tệp.txt")),
             "file:///a/t%E1%BB%87p.txt"
+        );
+    }
+
+    /// The tail keeps the *last* lines, because a tool says what went wrong
+    /// after it has finished trying — an oldest-first buffer would fill with
+    /// the banner and drop the reason.
+    #[test]
+    fn the_stderr_tail_keeps_the_last_lines_and_drops_the_blanks() {
+        let mut tail = LastWords::default();
+        tail.remember("first");
+        for line in ["", "   "] {
+            tail.remember(line);
+        }
+        for n in 0..STDERR_TAIL_LINES {
+            tail.remember(&format!("line {n}"));
+        }
+
+        assert_eq!(tail.kept.len(), STDERR_TAIL_LINES);
+        assert!(!tail.kept.contains(&"first".to_string()), "{:?}", tail.kept);
+        assert_eq!(tail.kept.back().map(String::as_str), Some("line 19"));
+        assert!(tail.kept.iter().all(|l| !l.trim().is_empty()));
+        // The blanks were skipped, not dropped: only `first` fell off.
+        assert_eq!(tail.dropped, 1);
+    }
+
+    /// The npm block this was written for is five lines and arrives behind
+    /// whatever the tool printed first. The tail has to hold the block *and*
+    /// its preamble, or the line naming the fault class — which comes first —
+    /// is the one evicted.
+    #[test]
+    fn a_real_npm_error_block_survives_the_noise_printed_ahead_of_it() {
+        let mut tail = LastWords::default();
+        for line in ["npm warn exec", "npm warn deprecated something@1.0.0"] {
+            tail.remember(line);
+        }
+        for line in [
+            "npm error code ETARGET",
+            "npm error notarget No matching version found for zod@4.6.5.",
+            "npm error notarget In most cases you or one of your dependencies",
+            "npm error notarget are requesting a package version that doesn't exist.",
+            "npm error A complete log of this run can be found in: /tmp/x.log",
+        ] {
+            tail.remember(line);
+        }
+
+        let said = tail.say().expect("it said something");
+        assert!(said.contains("npm error code ETARGET"), "{said}");
+        assert!(
+            said.contains("No matching version found for zod@4.6.5"),
+            "{said}"
+        );
+        assert_eq!(tail.dropped, 0);
+    }
+
+    /// A line is cut on a character boundary, not a byte one — an adapter is
+    /// free to print a path, and half a multi-byte character would panic the
+    /// slice rather than shorten the line.
+    #[test]
+    fn a_long_stderr_line_is_cut_without_splitting_a_character() {
+        let mut tail = LastWords::default();
+        tail.remember(&"đường".repeat(200));
+
+        let only = tail.kept.front().expect("one line");
+        assert_eq!(only.chars().count(), STDERR_LINE_CAP);
+    }
+
+    /// A tail that dropped lines says so. Without the count the survivors read
+    /// as everything the adapter said, which is the bound lying rather than
+    /// binding.
+    #[test]
+    fn a_tail_that_lost_lines_says_how_many() {
+        let mut tail = LastWords::default();
+        for n in 0..STDERR_TAIL_LINES + 3 {
+            tail.remember(&format!("line {n}"));
+        }
+
+        let said = tail.say().expect("it said something");
+        assert!(said.starts_with("(+3 earlier lines) · "), "{said}");
+    }
+
+    /// The whole point, end to end, against a real child: a process that says
+    /// why on stderr and exits without ever speaking protocol must reach the
+    /// reader with the reason attached, not as the bare protocol sentence.
+    ///
+    /// Repeated, because the failure this guards is a race rather than a
+    /// mistake — the tail is filled by a task the serve loop does not wait for,
+    /// so a single pass can pick the scheduling that happens to work.
+    ///
+    /// **Multi-threaded on purpose.** The bridge that drives this stream in the
+    /// app builds a multi-threaded runtime, and the default test flavour is a
+    /// single thread — which is the one arrangement where the drain and the
+    /// serve loop cannot truly run at once.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn a_child_that_dies_before_speaking_carries_its_stderr_into_the_failure() {
+        for attempt in 0..20 {
+            let mut events = Box::pin(super::connect(
+                "sh".into(),
+                vec![
+                    "-c".into(),
+                    // stdout is closed *first*, so the reason is written
+                    // after the serve loop has already seen EOF — the sharpest
+                    // ordering for the tail to be read too early.
+                    "exec 1>&-; echo 'npm error code ETARGET' >&2; exit 1".into(),
+                ],
+                std::env::temp_dir(),
+                None,
+            ));
+            let mut last = None;
+            while let Some(event) = events.next().await {
+                last = Some(event);
+            }
+            match last {
+                Some(AcpEvent::Disconnected(why)) => {
+                    assert!(why.contains("ETARGET"), "attempt {attempt}: {why}")
+                }
+                other => panic!("attempt {attempt}: {other:?}"),
+            }
+        }
+    }
+
+    /// What the protocol saw stays in front; the adapter's own words follow it.
+    /// The empty case must not leave a dangling separator, since that reads as
+    /// a message the app failed to fill in.
+    #[test]
+    fn a_failure_carries_the_adapters_last_words_when_it_said_any() {
+        let tail: super::StderrTail = Default::default();
+        assert_eq!(
+            explain("adapter closed stdout".into(), &tail),
+            "adapter closed stdout"
+        );
+
+        for line in ["npm error code ETARGET", "npm error No matching version"] {
+            tail.lock().expect("fresh lock").remember(line);
+        }
+        assert_eq!(
+            explain("adapter closed stdout".into(), &tail),
+            "adapter closed stdout: npm error code ETARGET · npm error No matching version"
         );
     }
 }

@@ -330,13 +330,13 @@ impl Default for AppConfig {
 ///
 /// **Not `@latest`.** Every session in this app goes through this adapter, so
 /// `@latest` meant the same onehand binary could talk to a different protocol
-/// implementation on two consecutive days, with no way to reproduce a report
-///. Bumping this is a commit, which is the point: the change is
+/// implementation on two consecutive days, with no way to reproduce a report.
+/// Bumping this is a commit, which is the point: the change is
 /// visible, bisectable, and revertable.
 ///
 /// The pin is a *default*, not a lock — `onehand.toml` and the agent manager
 /// both override it, so anyone wanting the newest adapter can still ask for it.
-pub const DEFAULT_ACP_ADAPTER: &str = "@agentclientprotocol/claude-agent-acp@0.70.0";
+pub const DEFAULT_ACP_ADAPTER: &str = "@agentclientprotocol/claude-agent-acp@0.81.2";
 
 /// The `npx` argument list that launches [`DEFAULT_ACP_ADAPTER`].
 ///
