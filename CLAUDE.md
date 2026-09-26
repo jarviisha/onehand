@@ -984,14 +984,39 @@ centre is the chat, right dock the Workbench, bottom dock the terminal.
   to the agent's name until it has been prompted; the agent's name rides in the suffix only where
   **that project's own sessions disagree about it** (`rail::runs_more_than_one_agent`). The count
   used to be the configured agent menu's, which is the wrong set: a second entry in `onehand.toml`
-  put the same word — truncated to `MAX_AGENT_LABEL`, since it shares the row with the
-  conversation's title — on every session of every project, including the nine running one agent
+  put the same word on every session of every project, including the nine running one agent
   apiece. A footnote is for telling two rows apart, so the question is asked of the rows.
-  **What a row carries is charged against its label's cap** (`rail::Note::label_cost`): the nest
-  rule's inset for a tree row, the footnote's width for either kind. `label_cap` answers for a row
-  the full width of the rail and a session row is never one — and `SidebarMenuItem`'s label is a
-  bare string with no truncation of its own, so an uncharged cap let a title through at a length
-  the row could not draw and the overflow was clipped mid-word with no ellipsis to say so.
+  **Every list row is the rail's own** (`rail::RailRow`), not the library's `SidebarMenuItem`,
+  because that component holds its label as a bare string in its own clipping box — no tooltip
+  hook, no ellipsis, nowhere to hang a fade — so every answer to an overlong name was a guess made
+  outside the row about what would fit inside it (a character cap derived from the rail's width
+  through an assumed glyph, charged again for the nest inset and the footnote, wrong by a
+  character either way). **A name that runs out of room now fades into the row's own fill**
+  (`rail::faded`) instead of being cut at a character with an ellipsis: the cut happens in pixels
+  where the room actually ends, an ellipsis asserts "there is more" even when the name fit
+  exactly, and the fade only takes text that is actually leaving. The overlay is painted in the
+  row's composited surface per state (`rail::row_surfaces`) — rest, hover via `group_hover`,
+  active — because a fade into the resting colour over a hovered row is a smudge on exactly the
+  row being looked at; painted right it is invisible wherever the name already ended, so nothing
+  needs to know whether the name overflowed. **The fade needs a box that is the room and not the
+  text**, which is why the stretch lives inside `faded` rather than at its call sites: the band is
+  pinned to its box's right edge, so on a box that shrink-wraps its string it lands on the last
+  glyphs of a name that *fitted* — `main` on a branch row came out as `m` dissolving into the
+  fill, which is the ellipsis's dishonesty back in a worse form, since nothing says a cut
+  happened. So the two **names** fade (a row's label, the workspace's) and the two capped
+  **footnotes** — the agent-or-project word beside a session, the branch beside a project — keep
+  `truncate` and its ellipsis, because each is sized by its own string and a fixed box for them
+  would reserve the width the whole arrangement exists to give the name.
+  **Every row carries its full text on hover**: the conversation's whole title and its footnote
+  named (`Agent:` / `Project:`) on a session row — the flat list is where that bites, since the
+  footnote is the only thing on the row saying which project a session belongs to; the project's
+  name, branch, change count in words and root path on a folder row, which also covers the
+  project that is neither a repository nor changed, the one row the old suffix-tooltip could not
+  reach. The label is still cost-capped at `LABEL_SHAPE_CAP` characters, far past what the widest
+  rail can draw — a fit rule in pixels, a cost bound in characters, and the bound must never be
+  the visible cut, which a test holds against `PanelLayout::RAIL_MAX`.
+  `Sidebar` itself stays: the frame, the scroll and the header/footer slots are the half of the
+  component worth keeping, and its `Clone` child bound is why `RailRow`'s handlers ride in `Rc`s.
   A trailing mark appears only while that session carries a signal, and
   **the one state that is wrong has a shape of its own**: a warning icon for a lost adapter, because
   that is the mark that must not depend on colour. The other three are one dot in three tints — a
@@ -1004,14 +1029,12 @@ centre is the chat, right dock the Workbench, bottom dock the terminal.
   holds the session on screen**, only the selected project starts expanded, and a project with no
   sessions expands into a *Start a session* row rather than into nothing. Branch and
   change count ride in the suffix — the count as a badge, not a coloured number — with the full
-  branch, the count in words and the root's path in a tooltip. **The branch is written out on the
-  selected row alone**: it is what you read while working *in* a project, and on the ten rows you
-  are not in it is ten strings cut to `MAX_BRANCH_W`, where `feat/consol…` and `feat/codoh…` say
+  branch, the count in words and the root's path on the row's own hover. **The branch is written
+  out on the selected row alone**: it is what you read while working *in* a project, and on the
+  ten rows you are not in it is ten strings cut short, where `feat/consol` and `feat/codoh` say
   nothing to tell their projects apart while taking the width from the name that would. The count
-  stays on every row, because it is a signal rather than detail, and the suffix is still drawn for
-  any repository — so the tooltip answers *which branch* on a quiet row too, and the one hover
-  target carrying the project's untruncated name survives. The primary *New session* button names
-  the project it would start in, in its tooltip.
+  stays on every row, because it is a signal rather than detail. The primary *New session* button
+  names the project it would start in, in its tooltip.
 - **Selecting a project and folding it away are two different targets.** While the whole row
   toggled, every click on a project both switched to it *and* snapped its sessions shut, so reaching
   a session in the project just arrived at meant clicking the row a second time to undo what the
@@ -1021,7 +1044,7 @@ centre is the chat, right dock the Workbench, bottom dock the terminal.
   Going to a project is asking what is in it, so `Shell::select_root` reveals; only the caret puts
   it away again.
 - **The fold belongs to the window, not to the row** (`Shell::folds` / `project_unfolded`), and the
-  rail draws the nesting itself rather than through `SidebarMenuItem::children`. gpui keeps an
+  rail draws the nesting itself rather than through the library's submenu. gpui keeps an
   element's state only across consecutive frames its key is *accessed* in, and the tab showing the
   flat list draws no project row at all — so a row-owned fold was destroyed on every tab switch and
   re-seeded on the way back, springing a folded project open and snapping an unfolded one shut. By
@@ -1063,12 +1086,10 @@ centre is the chat, right dock the Workbench, bottom dock the terminal.
   name and *New session*, taller, at a larger text size and a weight up, with the identity's icon in
   full ink rather than muted. At the list's own scale they read as its first two entries, which is
   what they are not. **The 16px icon column does not move** — only the row around it grows, or the
-  header's labels would sit a few pixels off every label below them. **_Add project…_ is a row here
-  only while the workspace has no project**, where it is the one thing to do and the list under it
-  is empty; with projects in the rail it lives in the workspace menu behind the name, beside the
-  rest of what acts on the whole workspace. It was a standing row between the two, which is a
-  permanent line above all day's work for something done once per project — and before that it was
-  the last row *inside* the Projects group, which is a place a tab bar cannot have.
+  header's labels would sit a few pixels off every label below them. *Add project…* sits between
+  them, quieter than either: it is what a workspace with no project needs first and it is about the
+  workspace rather than about the list, and it is done once per project where *New session* is done
+  all day. It was the last row *inside* the Projects group, which is a place a tab bar cannot have.
 - **The caret beside *New session* picks the project** (`rail::new_session_menu`), and the row itself
   is unchanged: one click still starts the default agent on the selected project. What the menu adds
   is the two things that click has to choose silently — every project in the workspace under *Start
@@ -1084,9 +1105,8 @@ centre is the chat, right dock the Workbench, bottom dock the terminal.
   shape, after the second copy of it appeared here.
 - **The workspace identity row *is* the switcher** (`rail::workspace_menu`) — the whole row opens the
   menu, and nothing marks it but the hover, the pointer and the tooltip: no chevron, because a caret
-  on the rail's topmost row competed with the primary action directly below it. The menu is
-  *Add project…* alone above a separator — the one entry about what is *in* this workspace rather
-  than about which one is on screen — then the recents list, each row named by
+  on the rail's topmost row competed with the primary action directly below it. The menu is the
+  recents list — each row named by
   its folder with the parent path beside it (shortened from the *front*, since a path is read from
   its tail), the one on screen checked and unpickable — then *Open workspace…* and *New workspace…*.
   **The tooltip leads with the workspace's name**, because this row is the one place that name is
@@ -1490,7 +1510,16 @@ file the next launch reads.
 There are two palettes and the app only chooses which one is loaded — `shell::apply_appearance`
 is the single place that does it, at boot and on every change. Each is the library's own config with
 the app's surface ramp written over it (`crate::theme::install`, run once before the first mode is
-chosen); see the theme module for what is ours and what is inherited. `system` **keeps following** the desktop
+chosen); see the theme module for what is ours and what is inherited. **A token the library keeps
+as a slot of its own has to be written out, or it silently keeps the shipped palette's value** —
+the rule the sidebar tokens were already there for, and `secondary_hover` / `secondary_active` were
+the second family to be caught by it: the shipped dark hover is *darker* than this ramp's bubble, so
+the rail's one filled control receded toward the well when it was pointed at, and its pressed step
+landed 1.04 from the well, which is a hole rather than a button. Both now take the ramp's one step
+above the bubble fill, and their being equal is load-bearing rather than lazy — gpui refines a hover
+style over the base and `hover_style` is crate-private, so a trigger that fills itself while its menu
+is open cannot outrank the hover underneath it, and two different shades would hide the pressed one
+for as long as the pointer stayed on the control that opened it. `system` **keeps following** the desktop
 (each window observes its own appearance), which is also what settles the Linux startup race where the
 platform answers with its default until the desktop portal replies. An unrecognized value reads as
 `system` rather than failing the file, because the agent list is in that same file. Three things the
