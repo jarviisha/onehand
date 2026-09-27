@@ -76,8 +76,10 @@ fn stop(child: &mut std::process::Child) {
     #[cfg(unix)]
     {
         // ponytail: through `kill(1)` rather than a libc binding, for one call.
+        // The `--` is load-bearing: procps' `kill` reads a bare `-<pid>` as an
+        // option rather than as a process group, and does nothing.
         let _ = Command::new("kill")
-            .arg("-KILL")
+            .args(["-KILL", "--"])
             .arg(format!("-{}", child.id()))
             .stderr(Stdio::null())
             .status();
