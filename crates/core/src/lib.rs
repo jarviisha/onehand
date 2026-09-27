@@ -32,6 +32,7 @@ pub mod config;
 pub mod diff;
 pub mod editor;
 pub mod gitstat;
+pub(crate) mod process;
 pub mod remote;
 pub mod tree;
 pub mod unattended;

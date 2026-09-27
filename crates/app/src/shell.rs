@@ -3148,10 +3148,9 @@ impl Shell {
 
     /// Add `dir` as a transient project and start `spec` on it, off screen.
     ///
-    /// **Nothing the user is looking at moves.** The workspace's own mint goes
-    /// to the active root, so the selection is put back the moment the session
-    /// is recorded, and the pane connects the session without showing it. The
-    /// root is transient, so the workspace file never holds it.
+    /// **Nothing the user is looking at moves.** The root is added without
+    /// being selected and the pane connects the session without showing it.
+    /// The root is transient, so the workspace file never holds it.
     ///
     /// `None` when `dir` is already a project here: marking a root the user
     /// added as transient would quietly drop it from their workspace.
@@ -3161,17 +3160,11 @@ impl Shell {
         spec: AgentSpec,
         cx: &mut Context<Self>,
     ) -> Option<(u64, Entity<crate::chat::session::ChatSession>)> {
-        let before = self.window.workspace.active_root;
-        let count = self.window.workspace.roots.len();
-        let idx = self.window.workspace.add_root(dir);
-        if self.window.workspace.roots.len() == count {
-            self.window.workspace.select_root(before);
-            return None;
-        }
-        self.window.workspace.roots[idx].transient = true;
         let uid = cx.update_global::<Shared, _>(|shared, _| shared.next_uid());
-        self.window.workspace.add_session(spec.clone(), uid);
-        self.window.workspace.select_root(before);
+        let idx = self
+            .window
+            .workspace
+            .add_transient_root(dir, spec.clone(), uid)?;
         let root = self.window.workspace.roots[idx].path.clone();
         let session = self
             .chat

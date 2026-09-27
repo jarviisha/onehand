@@ -904,9 +904,8 @@ mod tests {
         assert_eq!(cfg.agents[0].command, "claude");
     }
 
-    /// The bridge is off unless the file asks for it, and its list starts
-    /// empty — an enabled bridge with nobody on the list answers nobody, which
-    /// is the failure that has to be the safe one.
+    /// Unattended runs are off unless asked for, and an empty label is the
+    /// default — so turning the feature on without naming a label runs nothing.
     #[test]
     fn unattended_runs_are_off_and_pick_nothing_until_asked_for() {
         let cfg = AppConfig::parse("").unwrap();
@@ -918,6 +917,9 @@ mod tests {
         assert_eq!(cfg.unattended.every, "30m");
     }
 
+    /// The bridge is off unless the file asks for it, and its list starts
+    /// empty — an enabled bridge with nobody on the list answers nobody, which
+    /// is the failure that has to be the safe one.
     #[test]
     fn the_remote_bridge_is_off_until_asked_for() {
         let cfg = AppConfig::parse("").unwrap();

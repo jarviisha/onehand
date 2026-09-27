@@ -12,8 +12,10 @@
 //! what is wrong with a name while it is being typed, and the same rule has to
 //! be the one `git worktree add` is finally handed.
 
+use crate::process::output_within;
 use crate::workspace::label_for;
 use std::path::{Path, PathBuf};
+use std::time::Duration;
 
 /// Why a branch name cannot be used, written for the person typing it.
 ///
@@ -194,16 +196,29 @@ pub(crate) fn branch_exists_blocking(root: &Path, branch: &str) -> bool {
 /// the root is not a repository — so its own words are passed through rather
 /// than folded into one message of ours.
 pub fn add_blocking(root: &Path, branch: &str, dir: &Path) -> Result<PathBuf, String> {
-    let mut cmd = std::process::Command::new("git");
-    cmd.arg("-C").arg(root).args(["worktree", "add"]);
     if branch_exists_blocking(root, branch) {
-        cmd.arg(dir).arg(branch);
+        worktree_add(root, dir, &[dir.as_os_str(), branch.as_ref()])
     } else {
-        cmd.arg("-b").arg(branch).arg(dir);
+        worktree_add(
+            root,
+            dir,
+            &["-b".as_ref(), branch.as_ref(), dir.as_os_str()],
+        )
     }
-    let out = cmd
-        .output()
-        .map_err(|err| format!("git could not be run: {err}"))?;
+}
+
+/// How long `git worktree add` may take. It is a local checkout, but a checkout
+/// can run hooks and fetch large files, and either can wait on a network.
+const ADD_LIMIT: Duration = Duration::from_secs(300);
+
+/// How long a fetch may take. A large repository over a slow link is a
+/// legitimate few minutes; an hour is a network that has gone away.
+const FETCH_LIMIT: Duration = Duration::from_secs(300);
+
+/// `git -C <root> worktree add <args>`, answering with the directory made.
+fn worktree_add(root: &Path, dir: &Path, args: &[&std::ffi::OsStr]) -> Result<PathBuf, String> {
+    let out = output_within(git(root).args(["worktree", "add"]).args(args), ADD_LIMIT)
+        .map_err(|err| format!("git worktree add {err}"))?;
     if !out.status.success() {
         return Err(git_message(&out.stderr));
     }
@@ -224,36 +239,46 @@ pub fn branch_off_blocking(
     dir: &Path,
     start: &str,
 ) -> Result<PathBuf, String> {
-    let out = std::process::Command::new("git")
-        .arg("-C")
-        .arg(root)
-        .args(["worktree", "add", "-b", branch])
-        .arg(dir)
-        .arg(start)
-        .output()
-        .map_err(|err| format!("git could not be run: {err}"))?;
-    if !out.status.success() {
-        return Err(git_message(&out.stderr));
-    }
-    Ok(std::fs::canonicalize(dir).unwrap_or_else(|_| dir.to_path_buf()))
+    worktree_add(
+        root,
+        dir,
+        &[
+            "-b".as_ref(),
+            branch.as_ref(),
+            dir.as_os_str(),
+            start.as_ref(),
+        ],
+    )
 }
 
 /// Bring `origin/<branch>` up to date in the repository at `root`.
 ///
-/// Blocking. The remote is `origin` by assumption, which is what `gh` itself
-/// assumes of a clone it did not make.
+/// The remote is `origin` by assumption, which is what `gh` itself assumes of a
+/// clone it did not make. It never waits on a person: a fetch that needs a
+/// password, a passphrase or a host key nobody is there to accept fails rather
+/// than asks.
 pub fn fetch_blocking(root: &Path, branch: &str) -> Result<(), String> {
-    let out = std::process::Command::new("git")
-        .arg("-C")
-        .arg(root)
-        .args(["fetch", "--quiet", "origin", branch])
-        .output()
-        .map_err(|err| format!("git could not be run: {err}"))?;
+    let mut cmd = git(root);
+    cmd.args(["fetch", "--quiet", "origin", branch]);
+    // Only when nothing chose an ssh command already: overriding one would
+    // throw away whatever the user configured it to do.
+    if std::env::var_os("GIT_SSH_COMMAND").is_none() {
+        cmd.env("GIT_SSH_COMMAND", "ssh -o BatchMode=yes");
+    }
+    let out = output_within(&mut cmd, FETCH_LIMIT).map_err(|err| format!("git fetch {err}"))?;
     if out.status.success() {
         Ok(())
     } else {
         Err(git_message(&out.stderr))
     }
+}
+
+/// `git -C <root>`, with every way git has of asking a person for something
+/// switched off.
+fn git(root: &Path) -> std::process::Command {
+    let mut cmd = std::process::Command::new("git");
+    cmd.arg("-C").arg(root).env("GIT_TERMINAL_PROMPT", "0");
+    cmd
 }
 
 /// Rename the branch that is checked out at `root`, in place.

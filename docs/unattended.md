@@ -63,10 +63,11 @@ background executor, one interval in the config, no cron expressions.
 | File | What |
 |---|---|
 | `crates/core/src/unattended.rs` | `Issue`, the `gh` calls, `branch_for`, `prompt_for`, `claim_comment`, `Ending` and `report`, `parse_every`, `target_dir` |
+| `crates/core/src/process.rs` | `output_within`: a command with a limit on its exit *and* its output, stopped with its whole process group |
 | `crates/app/src/unattended.rs` | the tick, the live `Run`, the subscription, the timeout, the wind-down, the teardown |
 | `crates/core/src/config.rs` | `UnattendedConfig` |
-| `crates/core/src/workspace.rs` | `ProjectRoot::transient`, left out by `to_config` |
-| `crates/core/src/worktree.rs` | `branch_off_blocking` (a new branch from a named start) and `fetch_blocking` |
+| `crates/core/src/workspace.rs` | `ProjectRoot::transient`, left out by `to_config`, and `add_transient_root`, which adds one with its session without selecting it |
+| `crates/core/src/worktree.rs` | `branch_off_blocking`, a new branch from a named start, and `fetch_blocking`; `worktree add` and the fetch both bounded and never prompting |
 | `crates/app/src/shell.rs` | `run_unattended`, `end_unattended`, `adopt_unattended`, and `forget_root`, the half of `remove_root` that asks nothing and moves nothing |
 | `crates/app/src/chat/pane.rs` | `open_unshown` and `reading` |
 
@@ -289,7 +290,10 @@ and the run's own timeout already bounds that.
 **A mode the agent does not offer pauses the feature**, not just the run. Every
 later run would fail the same way on a fresh issue, each one spending a claim
 to say so, so the first says it on the issue and on stderr and the tick stops
-until the config is fixed and the app restarted.
+until the config is fixed and the app restarted. **That first issue is spent**:
+modes are only known once the adapter is up, which is after the claim, so the
+check cannot run before one is made. Its comment names the mode and what was
+offered, and re-adding the label once the config is fixed is the retry.
 
 ## Outcome
 
@@ -301,6 +305,7 @@ why the run stopped as a note under it. Without one:
 TurnEnded(tail) → "The turn ended with no pull request on <branch>. It ended on: <tail>"
 Asked(q)        → "onehand stopped: it needs a decision. <q>"
 LinkLost        → "The agent stopped answering; there is no pull request on <branch>."
+Closed          → "The run's session was closed before it finished; there is no pull request on <branch>."
 TimedOut        → "No pull request after <timeout>; the run was cancelled."
 TakenOver       → "Taken over by hand; the run stopped watching <branch>."
 Failed(why)     → "onehand could not start the run: <why>"
@@ -315,6 +320,37 @@ about, since the claim has already taken its label.
 the turn, and it is the turn ending that writes its transcript — closing the
 session on the spot would lose the one turn the run was about. So the run waits
 for that turn to end, or thirty seconds, whichever is first.
+
+**A pull request that could not be looked for is said as that.** A failed
+`gh pr list` reads *"onehand could not tell whether a pull request was opened"*
+and never as "no pull request" — which is a claim, and one nobody checked.
+
+**What can reach a network cannot hang a run.** Every `gh` call is stopped after
+a minute, and the fetch and `git worktree add` after five — the second because a
+checkout can run hooks and fetch large files. The limit covers the output as
+well as the exit, since a program can finish while something it started (an ssh
+connection kept for reuse) still holds its pipe; the whole process group is
+stopped with it. Standard input is closed, `gh` and `git` are told never to
+prompt, and ssh runs in batch mode unless the user configured an ssh command of
+their own. The quick local reads left — whether a branch exists, where the
+repository's top is — are not bounded. A panic is caught too: before the claim
+it is treated as nothing found, after it the issue is told. Any of these would
+otherwise leave the one claim in flight forever, and no issue would be looked
+for again until a restart.
+
+**A session that vanishes settles the run at once.** Closing the window a run's
+session lives in drops the session without a `Disconnected`; the run watches for
+the release instead of waiting out its timeout and reporting the wrong ending.
+It is reported as `Closed` — not as the agent having stopped answering — unless
+a cancel was already winding down, in which case it keeps the ending it was
+heading for.
+
+**A prompt that beats the run's own is a take-over.** Somebody typing between
+the adapter coming up and the run's prompt going out owns the session, and the
+run settles as taken over rather than failing to send and closing it on them.
+Answering a card is only a take-over through the reading exception: a card
+nobody is looking at is cancelled on the spot, so there is never an answer to
+see.
 
 **A card a run is about to cancel is not announced.** The pane would otherwise
 send a desktop notification for a parked ask nobody is looking at, which is

@@ -359,6 +359,29 @@ impl Workspace {
         }
     }
 
+    /// Add `path` as a transient root holding one session, **without selecting
+    /// it** — the root an unattended run works in, which must not move what the
+    /// user is looking at. Returns its index.
+    ///
+    /// `None` when `path` is already a project: marking a root the user added as
+    /// transient would quietly drop it from their workspace file.
+    pub fn add_transient_root(
+        &mut self,
+        path: impl Into<PathBuf>,
+        spec: AgentSpec,
+        uid: u64,
+    ) -> Option<usize> {
+        let path = normalize_root(path.into());
+        if self.roots.iter().any(|r| r.path == path) {
+            return None;
+        }
+        let mut root = ProjectRoot::new(path);
+        root.transient = true;
+        root.sessions.push(Session::new(spec, uid));
+        self.roots.push(root);
+        Some(self.roots.len() - 1)
+    }
+
     pub fn select_root(&mut self, idx: usize) {
         if idx < self.roots.len() {
             self.active_root = idx;
@@ -419,6 +442,29 @@ mod tests {
     fn label_uses_last_component() {
         assert_eq!(label_for(Path::new("/home/me/proj")), "proj");
         assert_eq!(label_for(Path::new("/")), "/");
+    }
+
+    #[test]
+    fn a_run_root_arrives_with_its_session_and_moves_nothing() {
+        let mut ws = Workspace::seeded("/a");
+        ws.add_root("/b");
+        ws.select_root(0);
+        let spec = AgentSpec {
+            name: "x".into(),
+            command: "x".into(),
+            args: vec![],
+        };
+        let idx = ws.add_transient_root("/run", spec.clone(), 7).unwrap();
+        assert_eq!(
+            ws.active_root, 0,
+            "the selection stays where the user left it"
+        );
+        assert!(ws.roots[idx].transient);
+        assert_eq!(ws.roots[idx].sessions.len(), 1);
+        assert_eq!(ws.roots[idx].sessions[0].uid, 7);
+        // A folder that is already a project is refused, not marked transient.
+        assert!(ws.add_transient_root("/b", spec, 8).is_none());
+        assert!(!ws.roots[1].transient);
     }
 
     #[test]

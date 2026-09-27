@@ -19,9 +19,9 @@ use std::time::Duration;
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 pub struct Issue {
     pub number: u64,
-    pub title: String,
+    title: String,
     #[serde(default)]
-    pub body: String,
+    body: String,
 }
 
 /// `"30m"`, `"2h"`, `"90s"` as a duration.
@@ -117,8 +117,8 @@ pub fn prompt_for(issue: &Issue, branch: &str) -> String {
          {body}\n\n\
          ---\n\n\
          You are on branch `{branch}`, in a worktree of its own.\n\n\
-         1. Read the repository's own instructions (CLAUDE.md and what it points \
-         at) and follow its conventions.\n\
+         1. Read the repository's own agent instructions, and whatever they point \
+         at, and follow its conventions.\n\
          2. Run the repository's checks before committing.\n\
          3. Commit, push the branch, and open the pull request yourself with \
          `gh pr create`, referencing #{number}.\n\
@@ -136,7 +136,7 @@ pub fn prompt_for(issue: &Issue, branch: &str) -> String {
 /// the outcome leaves this as the last word on the issue, so it says that a run
 /// *started* — the comment's own timestamp says when — and never that one is
 /// happening, which is the one sentence a crash makes false.
-pub fn claim_comment(label: &str) -> String {
+fn claim_comment(label: &str) -> String {
     format!(
         "onehand started an unattended run on this issue. If no outcome follows, \
          the run was interrupted — re-add `{label}` to retry."
@@ -153,6 +153,9 @@ pub enum Ending {
     Asked(String),
     /// The adapter stopped answering.
     LinkLost,
+    /// The session went away under the run — its window was closed — before
+    /// the run had finished.
+    Closed,
     /// The run outlasted its timeout.
     TimedOut(Duration),
     /// A person acted inside the run's session.
@@ -169,29 +172,50 @@ impl Ending {
     }
 }
 
-/// The comment an ending leaves on the issue, given the pull request found on
-/// `branch`, if any.
+/// The comment an ending leaves on the issue, given what looking for a pull
+/// request on `branch` found: one, none, or a failure to look at all.
 ///
 /// **The pull request is the verdict, whatever the ending.** An agent can open
 /// it and then time out, park or lose its adapter while tidying up, and a
 /// comment saying "no pull request" beside a pull request is the worst answer
 /// available — so a PR found makes the comment about the PR, with why the run
-/// stopped as a note under it.
-pub fn report(ending: &Ending, pr: Option<&str>, branch: &str) -> String {
-    if let Some(url) = pr {
-        let note = match ending {
-            Ending::TurnEnded { .. } => None,
-            Ending::Asked(q) => Some(format!("It then stopped on a decision:\n\n{}", quoted(q))),
-            Ending::LinkLost => Some("The agent then stopped answering.".to_string()),
-            Ending::TimedOut(d) => Some(format!("The run then hit its {} timeout.", spoken(*d))),
-            Ending::TakenOver => Some("It was then taken over by hand.".to_string()),
-            Ending::Failed(why) => Some(why.clone()),
-        };
-        return match note {
-            Some(note) => format!("onehand opened {url}.\n\n{note}"),
-            None => format!("onehand opened {url}."),
-        };
+/// stopped as a note under it. For the same reason a lookup that *failed* is
+/// said as a failure and never as "none": "no pull request" is a claim, and
+/// one nobody checked is the worst answer by another route.
+pub fn report(ending: &Ending, pr: &Result<Option<String>, String>, branch: &str) -> String {
+    let head = match pr {
+        Ok(None) => return no_pr(ending, branch),
+        Ok(Some(url)) => format!("onehand opened {url}."),
+        Err(err) => {
+            format!("onehand could not tell whether a pull request was opened on `{branch}`: {err}")
+        }
+    };
+    match stopped(ending) {
+        Some(why) => format!("{head}\n\n{why}"),
+        None => head,
     }
+}
+
+/// Why the run stopped, as a note under a verdict that is about something
+/// else. `None` for the one ending that needs no explaining — the turn ending
+/// by itself — unless it left words worth quoting.
+fn stopped(ending: &Ending) -> Option<String> {
+    match ending {
+        Ending::TurnEnded { tail: None } => None,
+        Ending::TurnEnded { tail: Some(tail) } => {
+            Some(format!("The turn ended on:\n\n{}", quoted(tail)))
+        }
+        Ending::Asked(q) => Some(format!("It stopped on a decision:\n\n{}", quoted(q))),
+        Ending::LinkLost => Some("The agent stopped answering.".to_string()),
+        Ending::Closed => Some("Its session was closed before the run finished.".to_string()),
+        Ending::TimedOut(d) => Some(format!("The run hit its {} timeout.", spoken(*d))),
+        Ending::TakenOver => Some("It was taken over by hand.".to_string()),
+        Ending::Failed(why) => Some(why.clone()),
+    }
+}
+
+/// The comment when it is known that no pull request was opened.
+fn no_pr(ending: &Ending, branch: &str) -> String {
     match ending {
         Ending::TurnEnded { tail: Some(tail) } => format!(
             "The turn ended with no pull request on `{branch}`. It ended on:\n\n{}",
@@ -204,6 +228,10 @@ pub fn report(ending: &Ending, pr: Option<&str>, branch: &str) -> String {
         Ending::LinkLost => {
             format!("The agent stopped answering; there is no pull request on `{branch}`.")
         }
+        Ending::Closed => format!(
+            "The run's session was closed before it finished; there is no pull request on \
+             `{branch}`."
+        ),
         Ending::TimedOut(d) => format!(
             "No pull request after {}; the run was cancelled. Its work is on `{branch}`.",
             spoken(*d)
@@ -223,13 +251,20 @@ fn quoted(text: &str) -> String {
         .join("\n")
 }
 
+/// How long one `gh` call may take. Each is one API request; one that has not
+/// answered in this long is stuck, not slow.
+const GH_LIMIT: Duration = Duration::from_secs(60);
+
 /// Run `gh` in `root` and hand back what it printed.
 fn gh(root: &Path, args: &[&str]) -> Result<String, String> {
-    let out = Command::new("gh")
-        .args(args)
-        .current_dir(root)
-        .output()
-        .map_err(|err| format!("gh could not be run: {err}"))?;
+    let out = crate::process::output_within(
+        Command::new("gh")
+            .args(args)
+            .current_dir(root)
+            .env("GH_PROMPT_DISABLED", "1"),
+        GH_LIMIT,
+    )
+    .map_err(|err| format!("gh {}: {err}", args[0]))?;
     if out.status.success() {
         Ok(String::from_utf8_lossy(&out.stdout).trim().to_string())
     } else {
@@ -438,6 +473,7 @@ mod tests {
             Ending::TurnEnded { tail: None },
             Ending::Asked("Run rm -rf target?".into()),
             Ending::LinkLost,
+            Ending::Closed,
             Ending::TimedOut(Duration::from_secs(2700)),
             Ending::TakenOver,
             Ending::Failed("git refused".into()),
@@ -449,18 +485,25 @@ mod tests {
                 Ending::TurnEnded { .. }
                 | Ending::Asked(_)
                 | Ending::LinkLost
+                | Ending::Closed
                 | Ending::TimedOut(_)
                 | Ending::TakenOver
                 | Ending::Failed(_) => {}
             }
-            let without = report(ending, None, "onehand/issue-1");
+            let without = report(ending, &Ok(None), "onehand/issue-1");
             assert!(!without.is_empty());
             assert!(!without.contains("opened"), "{without}");
-            let with = report(ending, Some("https://x/pull/2"), "onehand/issue-1");
+            let with = report(
+                ending,
+                &Ok(Some("https://x/pull/2".into())),
+                "onehand/issue-1",
+            );
             assert!(
                 with.starts_with("onehand opened https://x/pull/2."),
                 "{with}"
             );
+            let unknown = report(ending, &Err("gh: offline".into()), "onehand/issue-1");
+            assert!(unknown.contains("gh: offline"), "{unknown}");
         }
     }
 
@@ -468,11 +511,25 @@ mod tests {
     fn a_pr_found_after_a_timeout_is_still_the_verdict() {
         let said = report(
             &Ending::TimedOut(Duration::from_secs(2700)),
-            Some("https://x/pull/2"),
+            &Ok(Some("https://x/pull/2".into())),
             "b",
         );
         assert!(said.starts_with("onehand opened https://x/pull/2."));
         assert!(said.contains("45m timeout"));
+    }
+
+    #[test]
+    fn a_pr_lookup_that_failed_never_reads_as_no_pr() {
+        for ending in [
+            Ending::TurnEnded { tail: None },
+            Ending::LinkLost,
+            Ending::TimedOut(Duration::from_secs(60)),
+            Ending::TakenOver,
+        ] {
+            let said = report(&ending, &Err("rate limited".into()), "b");
+            assert!(!said.contains("no pull request"), "{said}");
+            assert!(said.contains("could not tell"), "{said}");
+        }
     }
 
     #[test]
@@ -481,7 +538,7 @@ mod tests {
             &Ending::TurnEnded {
                 tail: Some("Should I use A\nor B?".into()),
             },
-            None,
+            &Ok(None),
             "b",
         );
         assert!(said.contains("> Should I use A\n> or B?"));
