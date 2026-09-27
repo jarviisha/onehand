@@ -11,7 +11,25 @@
       "Bash(grep -n \"DESIGN.md\\\\` is the \\\\*\\\\*binding UI contract\\\\*\\\\*\" CLAUDE.md)",
       "Bash(ps -eo pid,rss,etime,args --sort=-rss)",
       "Bash(cargo metadata *)",
-      "Bash(python3 -c \"import json,sys; d=json.load\\(sys.stdin\\); print\\('packages:', len\\(d['packages']\\)\\)\")"
+      "Bash(python3 -c \"import json,sys; d=json.load\\(sys.stdin\\); print\\('packages:', len\\(d['packages']\\)\\)\")",
+      "Bash(make check)",
+      "Bash(make test)",
+      "Bash(make test *)",
+      "Bash(make fmt)",
+      "Bash(make lint)",
+      "Bash(cargo check *)",
+      "Bash(cargo test *)",
+      "Bash(cargo build *)",
+      "Bash(git diff *)",
+      "Bash(git log *)",
+      "Bash(git show *)",
+      "Bash(git add *)",
+      "Bash(git commit *)",
+      "Bash(git push -u origin onehand/*)",
+      "Bash(gh issue view *)",
+      "Bash(gh pr create *)",
+      "Bash(gh pr view *)",
+      "Bash(gh pr list *)"
     ],
     "additionalDirectories": [
       "/home/jarviisha/.local/share/applications"
