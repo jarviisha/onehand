@@ -457,7 +457,16 @@ async fn run(
             line = reader.next_line() => {
                 let line = match line {
                     Ok(Some(l)) => l,
-                    Ok(None) => return Err("adapter closed stdout".into()),
+                    Ok(None) => {
+                        // Let it exit on its own before it is dropped. Returning
+                        // drops `ended`, and with it the child, which is killed on
+                        // drop — and a process that closes stdout first and says
+                        // why afterwards is then killed before it has said it.
+                        // Bounded, because a child that closed stdout and kept
+                        // running would otherwise hold the failure open.
+                        let _ = tokio::time::timeout(STDERR_GRACE, ended.as_mut()).await;
+                        return Err("adapter closed stdout".into());
+                    }
                     Err(e) => return Err(format!("read error: {e}")),
                 };
                 if line.trim().is_empty() {
@@ -1738,10 +1747,13 @@ mod tests {
                 "sh".into(),
                 vec![
                     "-c".into(),
-                    // stdout is closed *first*, so the reason is written
-                    // after the serve loop has already seen EOF — the sharpest
-                    // ordering for the tail to be read too early.
-                    "exec 1>&-; echo 'npm error code ETARGET' >&2; exit 1".into(),
+                    // stdout is closed *first* and the reason written a beat
+                    // later, so the serve loop has already seen EOF while the
+                    // child is still alive with something left to say. The
+                    // pause makes that ordering certain rather than a matter of
+                    // scheduling: without it the test passed on a fast machine
+                    // and failed on a loaded one.
+                    "exec 1>&-; sleep 0.1; echo 'npm error code ETARGET' >&2; exit 1".into(),
                 ],
                 std::env::temp_dir(),
                 None,
