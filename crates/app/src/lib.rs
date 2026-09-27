@@ -28,5 +28,6 @@ pub mod shell;
 mod state;
 mod terminal;
 mod theme;
+mod unattended;
 mod workbench;
 mod zoom;

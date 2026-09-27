@@ -506,6 +506,36 @@ impl ChatPane {
         cx.notify();
     }
 
+    /// Start `uid` on `root` and connect it, without putting it on screen.
+    ///
+    /// The other half of the lazy rule [`Self::show`] keeps. A session normally
+    /// connects the first time it is shown, so that a workspace of a dozen roots
+    /// does not launch a dozen agents at boot; an unattended run is one agent
+    /// that was asked for, and showing it would swap the conversation somebody
+    /// is reading for one they did not start. Nothing here needs a window — it
+    /// is showing, not connecting, that does.
+    pub fn open_unshown(
+        &mut self,
+        uid: u64,
+        root: PathBuf,
+        spec: &AgentSpec,
+        cx: &mut Context<Self>,
+    ) -> Option<Entity<ChatSession>> {
+        if let Entry::Vacant(slot) = self.conversations.entry(uid) {
+            slot.insert(Conversation::opening(root, spec.clone()));
+            self.connect(uid, None, cx);
+        }
+        self.session_of(uid).cloned()
+    }
+
+    /// Whether the user is looking at `uid`'s conversation right now.
+    ///
+    /// The same reading the desktop notification is decided from, so the two
+    /// cannot disagree about whether somebody saw a card arrive.
+    pub fn reading(&self, uid: u64, cx: &App) -> bool {
+        self.presence(cx).seeing(uid) == onehand_core::chat::Attention::Reading
+    }
+
     /// Put down everything that belonged to the session leaving the screen.
     ///
     /// One place, because both of these are the same rule wearing two hats:
@@ -1512,7 +1542,7 @@ impl ChatPane {
     ///
     /// The rule is core's, because where an answer's summary is and how to cut
     /// to it is a fact about prose rather than about a channel.
-    fn answer_tail(&self, uid: u64, cx: &App) -> Option<String> {
+    pub fn answer_tail(&self, uid: u64, cx: &App) -> Option<String> {
         self.session_of(uid)?
             .read(cx)
             .chat
@@ -1584,6 +1614,13 @@ impl ChatPane {
         root: &str,
         cx: &mut Context<Self>,
     ) {
+        // An unattended run never leaves a card up for anybody who is not
+        // already looking at it: it cancels the turn and reports on the issue.
+        // Announcing the card would send somebody to answer a question that is
+        // gone by the time they arrive.
+        if crate::unattended::is_run(uid, cx) {
+            return;
+        }
         let say = self.telling(uid, Away::Asked(ask), cx);
         if say.desktop {
             super::session::notify_awaiting_user(ask, agent.to_string(), root.to_string());

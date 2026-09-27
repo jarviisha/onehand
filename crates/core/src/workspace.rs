@@ -28,6 +28,14 @@ pub struct ProjectRoot {
     /// the order rows are drawn in, which is what makes it safe to toggle while
     /// sessions, editors and terminals are keyed by index and by path.
     pub pinned: bool,
+    /// Whether this root is left out of the workspace file.
+    ///
+    /// Set on the worktree an unattended run adds for itself: that root is
+    /// dropped when the run ends, and a crash between the add and the drop
+    /// would otherwise leave a checkout of one issue in the workspace for good.
+    /// Cleared when a person takes the run over, since from then on it is their
+    /// project and losing it at the next launch would lose their work's place.
+    pub transient: bool,
 }
 
 impl ProjectRoot {
@@ -39,6 +47,7 @@ impl ProjectRoot {
             sessions: Vec::new(),
             active_session: 0,
             pinned: false,
+            transient: false,
         }
     }
 
@@ -192,14 +201,22 @@ impl Workspace {
     }
 
     /// The persisted shape of this workspace (name + root paths + active index).
+    ///
+    /// Transient roots are left out, and the active index is counted among the
+    /// roots that remain — pointing at the first of them when the active root
+    /// is itself one of those left out.
     pub fn to_config(&self) -> WorkspaceConfig {
+        let kept: Vec<&ProjectRoot> = self.roots.iter().filter(|r| !r.transient).collect();
+        let active_root = self
+            .active_root()
+            .and_then(|active| kept.iter().position(|r| r.path == active.path))
+            .unwrap_or(0);
         WorkspaceConfig {
             name: self.name.clone(),
-            roots: self.roots.iter().map(|r| r.path.clone()).collect(),
-            active_root: self.active_root,
+            roots: kept.iter().map(|r| r.path.clone()).collect(),
+            active_root,
             layout: self.layout,
-            pinned: self
-                .roots
+            pinned: kept
                 .iter()
                 .filter(|root| root.pinned)
                 .map(|root| root.path.clone())
@@ -342,6 +359,29 @@ impl Workspace {
         }
     }
 
+    /// Add `path` as a transient root holding one session, **without selecting
+    /// it** — the root an unattended run works in, which must not move what the
+    /// user is looking at. Returns its index.
+    ///
+    /// `None` when `path` is already a project: marking a root the user added as
+    /// transient would quietly drop it from their workspace file.
+    pub fn add_transient_root(
+        &mut self,
+        path: impl Into<PathBuf>,
+        spec: AgentSpec,
+        uid: u64,
+    ) -> Option<usize> {
+        let path = normalize_root(path.into());
+        if self.roots.iter().any(|r| r.path == path) {
+            return None;
+        }
+        let mut root = ProjectRoot::new(path);
+        root.transient = true;
+        root.sessions.push(Session::new(spec, uid));
+        self.roots.push(root);
+        Some(self.roots.len() - 1)
+    }
+
     pub fn select_root(&mut self, idx: usize) {
         if idx < self.roots.len() {
             self.active_root = idx;
@@ -402,6 +442,45 @@ mod tests {
     fn label_uses_last_component() {
         assert_eq!(label_for(Path::new("/home/me/proj")), "proj");
         assert_eq!(label_for(Path::new("/")), "/");
+    }
+
+    #[test]
+    fn a_run_root_arrives_with_its_session_and_moves_nothing() {
+        let mut ws = Workspace::seeded("/a");
+        ws.add_root("/b");
+        ws.select_root(0);
+        let spec = AgentSpec {
+            name: "x".into(),
+            command: "x".into(),
+            args: vec![],
+        };
+        let idx = ws.add_transient_root("/run", spec.clone(), 7).unwrap();
+        assert_eq!(
+            ws.active_root, 0,
+            "the selection stays where the user left it"
+        );
+        assert!(ws.roots[idx].transient);
+        assert_eq!(ws.roots[idx].sessions.len(), 1);
+        assert_eq!(ws.roots[idx].sessions[0].uid, 7);
+        // A folder that is already a project is refused, not marked transient.
+        assert!(ws.add_transient_root("/b", spec, 8).is_none());
+        assert!(!ws.roots[1].transient);
+    }
+
+    #[test]
+    fn a_transient_root_is_never_written() {
+        let mut ws = Workspace::seeded("/a");
+        ws.add_root("/b");
+        let run = ws.add_root("/run");
+        ws.roots[run].transient = true;
+        ws.select_root(1);
+        let cfg = ws.to_config();
+        assert_eq!(cfg.roots, [PathBuf::from("/a"), PathBuf::from("/b")]);
+        assert_eq!(cfg.active_root, 1);
+        ws.select_root(run);
+        assert_eq!(ws.to_config().active_root, 0);
+        ws.roots[run].transient = false;
+        assert_eq!(ws.to_config().roots.len(), 3);
     }
 
     #[test]
