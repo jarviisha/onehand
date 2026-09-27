@@ -258,8 +258,21 @@ impl Transport {
         let tail: StderrTail = Default::default();
         let sink = tail.clone();
         let drain = tokio::spawn(async move {
-            let mut lines = BufReader::new(stderr).lines();
-            while let Ok(Some(line)) = lines.next_line().await {
+            // Bytes, decoded lossily, rather than lines of text: reading as
+            // text makes the first line that is not UTF-8 an error, the loop
+            // stops on it, and nothing empties the pipe after that — the reason
+            // written next is lost, and an adapter that keeps writing blocks
+            // once the pipe is full. Only a closed or broken pipe ends this.
+            let mut reader = BufReader::new(stderr);
+            let mut raw = Vec::new();
+            loop {
+                raw.clear();
+                match reader.read_until(b'\n', &mut raw).await {
+                    Ok(0) | Err(_) => break,
+                    Ok(_) => {}
+                }
+                let text = String::from_utf8_lossy(&raw);
+                let line = text.trim_end_matches(['\n', '\r']);
                 eprintln!("[acp:stderr] {line}");
                 // Taken through a poison rather than around it: a tail that
                 // stopped recording at the first panic would be empty at the
@@ -1743,6 +1756,32 @@ mod tests {
                 }
                 other => panic!("attempt {attempt}: {other:?}"),
             }
+        }
+    }
+
+    /// A line that is not UTF-8 must not end the drain. Read as text, the first
+    /// such line is an error the loop stops on, and from then on nothing
+    /// empties the pipe — so the reason printed after it is lost, and an
+    /// adapter that keeps writing blocks once the pipe fills.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn a_line_that_is_not_utf8_does_not_stop_the_drain() {
+        let mut events = Box::pin(super::connect(
+            "sh".into(),
+            vec![
+                "-c".into(),
+                r"printf '\377\376 garbage\n' >&2; echo 'npm error code ETARGET' >&2; exit 1"
+                    .into(),
+            ],
+            std::env::temp_dir(),
+            None,
+        ));
+        let mut last = None;
+        while let Some(event) = events.next().await {
+            last = Some(event);
+        }
+        match last {
+            Some(AcpEvent::Disconnected(why)) => assert!(why.contains("ETARGET"), "{why}"),
+            other => panic!("{other:?}"),
         }
     }
 
