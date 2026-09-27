@@ -467,18 +467,14 @@ fn prompt(uid: u64, session: &Entity<ChatSession>, cx: &mut App) {
 /// Whether somebody other than the run has put a prompt into the session,
 /// given whether the run has sent its own one yet.
 ///
-/// Any other prompt, or one waiting behind the turn, came from the composer or
-/// the remote bridge — and either way a person is driving.
+/// Any other prompt sent, or one waiting behind the turn, came from the
+/// composer or the remote bridge — and either way a person is driving. Counted
+/// from what was *sent*, not from the user rows in the transcript: an adapter
+/// delivers user chunks of its own mid-turn, and reading those as prompts took
+/// runs over that nobody had touched.
 fn prompted_by_someone_else(session: &Entity<ChatSession>, run_prompted: bool, cx: &App) -> bool {
-    let own = usize::from(run_prompted);
     let chat = &session.read(cx).chat;
-    chat.queued.is_some()
-        || chat
-            .items
-            .iter()
-            .filter(|item| matches!(item, onehand_core::chat::ChatItem::User(_)))
-            .nth(own)
-            .is_some()
+    chat.queued.is_some() || chat.prompts_sent > usize::from(run_prompted)
 }
 
 /// What the parked card asks, in its own words.
