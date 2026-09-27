@@ -1204,6 +1204,14 @@ pub struct Chat {
     /// the reducer is the only thing that sees a turn end, and a queue flushed
     /// from anywhere else is a queue that flushes late, twice, or never.
     pub queued: Option<QueuedPrompt>,
+    /// How many prompts this app has sent the agent.
+    ///
+    /// Not the user rows in the transcript: an adapter can deliver user chunks
+    /// of its own mid-turn, and each lands there as a user row, so counting the
+    /// rows counts things nobody here typed. This moves only when a prompt
+    /// actually goes out, which is what anything asking "has somebody else
+    /// prompted this session" needs.
+    pub prompts_sent: usize,
     pub(crate) resumed: bool,
 
     // ── composer sources (Phase 3B) ──
@@ -2518,6 +2526,7 @@ impl Chat {
         if self.tx.as_ref().is_none_or(|tx| tx.send(request).is_err()) {
             return false;
         }
+        self.prompts_sent += 1;
 
         self.push_user(
             text.to_string(),
@@ -3818,6 +3827,29 @@ mod tests {
             chat.submit_blocker("go", &[]),
             Some(SubmitBlock::NotConnected)
         );
+    }
+
+    /// Only a prompt this app sent is counted. An adapter can deliver user
+    /// chunks of its own mid-turn, and each lands in the transcript as a user
+    /// row; counting those as prompts is how a run nobody touched was reported
+    /// as taken over by hand.
+    #[test]
+    fn a_user_chunk_from_the_agent_is_not_a_prompt_sent() {
+        let (mut chat, _rx) = chat_with_tx();
+        assert_eq!(chat.prompts_sent, 0);
+        assert!(chat.submit("first", &[]));
+        assert_eq!(chat.prompts_sent, 1);
+        chat.apply(AcpEvent::AgentChunk("working".into()));
+        chat.apply(AcpEvent::UserChunk("echoed by the adapter".into()));
+        assert_eq!(
+            chat.items
+                .iter()
+                .filter(|item| matches!(item, ChatItem::User(_)))
+                .count(),
+            2,
+            "the transcript shows it"
+        );
+        assert_eq!(chat.prompts_sent, 1, "but nobody sent it");
     }
 
     /// A prompt written mid-turn goes when the turn does -- and only then, and
