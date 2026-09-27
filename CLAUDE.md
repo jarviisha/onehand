@@ -649,7 +649,7 @@ layer.
   would say otherwise), *Resume in this session…* — named for what it does *to this session*, since
   the header now carries a control reaching the same archives that leaves the session alone —
   *Restart the agent*, and then, alone in the
-  danger tint, *Delete conversation* — the only entry there that ends something for good. It is a
+  danger tint, *Delete conversation* — the only entry there that ends something for good.
   **The header is drawn on the project page too**, and the page no longer prints the project's name
   itself: the row names the project there and its menu is the project's (`chat::pane::project_menu`)
   — *Pin to top*/*Unpin*, *New worktree…* on repositories, *Copy project path*, *Refresh Git status*,
