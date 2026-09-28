@@ -99,20 +99,55 @@ The rest of the vocabulary, one meaning each:
 
 ```toml
 [unattended]
-enabled = false          # off unless asked for
-label = "auto"           # the trigger label; empty (the default) picks nothing
+label = "auto"           # the trigger label (the default); empty picks nothing
 every = "30m"            # how often to look
 timeout = "45m"          # a run that neither finishes nor asks is cancelled
 mode = "acceptEdits"     # the ACP session mode a run starts in
 agent = "Claude Code"    # which agent spec; the default agent when unset
 ```
 
-**Fail-closed twice, for the reason `allowed_chats` is.** `enabled = false` is
-the default because a feature that starts an agent writing to a repository on
-the strength of a file nobody edited is not a default anybody chose. And an
-**empty `label` picks nothing at all** rather than picking every issue: the
-failure of forgetting to fill it in has to be "nothing runs", not "everything
-runs".
+**The switch is per project, and there is none in this table.** Every project
+starts switched off, and a run looks only in the projects somebody switched on —
+from the project's ••• menu (on the rail and on the project page), or from the
+list of switches in Settings ▸ Workspace. Kept in the workspace file by path,
+like a pin. A feature that starts an agent writing to a repository on the
+strength of a file nobody edited is not a default anybody chose, and neither is
+one that reaches every repository the user happens to have open. A file still
+carrying the old global `enabled` key keeps loading; the key is ignored. An
+**empty `label` still picks nothing at all**, and the project's hover and the
+Settings list both say so, since a switch that is on while nothing can happen is
+the one state that looks exactly like working.
+
+**GitHub only, and said when it cannot be reached.** A project is worked only
+if its `origin` is on github.com. That is read locally, before anything asks
+GitHub, so a project somewhere else costs nothing per tick. An ssh remote is
+judged by the host ssh would reach (`ssh -G`, which connects to nothing), not by
+the word in the URL. The host there can be an alias from `~/.ssh/config`, such
+as `git@github-work:me/repo`, which is how one machine keeps two GitHub accounts
+apart, and reading the alias refused every such project. `gh` is asked who it
+is signed in as. Anything that stops a switched-on project from being worked —
+another forge, no `origin`, `gh` missing, signed out or unanswered — is kept per
+project and shown on its row, in the warning ink with the reason on hover. It is
+never left on stderr, where a switch that is on while nothing can happen would
+look exactly like one that is working. Settings ▸ Workspace heads its switches
+with the signed-in line and a *Check again*. A project is looked at when it is
+switched on, when its window opens, and on every tick — a run in progress
+included, since a tick that only looked when it was about to search left the rows
+as stale as the run was long. A tick with nothing switched on asks GitHub
+nothing, so the feature costs nobody who has not turned it on. Another forge is a
+second set of `gh`-shaped calls and is not built.
+
+**A config that cannot work is said, not only printed.** An empty label, an
+interval that does not parse, or a mode the agent does not offer stops every run.
+The reason is kept, and every switched-on row and Settings show it in the warning
+ink, while the projects and `gh` are still looked at. It used to leave the state
+unset, so a bad interval read on screen as a missing label and the GitHub line
+waited for an answer that was never going to come.
+
+**The rail says what is switched on and what is running.** A switched-on project
+row carries a pill reading `auto`, and `auto · #N` while a run is working issue N
+of that project. The run's own session is on a worktree's row of its own, so
+without the pill the project the issue belongs to would say nothing about it.
 
 **Only issues you opened.** The issue body goes into the prompt word for word,
 and the agent it goes to may run `git` and `gh` with your credentials. Anybody
@@ -122,12 +157,12 @@ stranger's text drive an agent holding your token. The tick therefore lists
 `--author @me` only. An `authors` key is the way to widen it when an audit bot
 files the issues; not added until one does.
 
-**No `repo` key.** The repositories are the project roots already open in the
-app's windows, and `gh` reads the repository out of the directory it runs in.
-Which repositories a run may touch is therefore a list the user already curates
-by hand, in the rail, and there is no second list to keep in step with it. What
-it costs is that every open root with the trigger label in its issues is fair
-game, which is exactly what the label is for.
+**No `repo` key.** `gh` reads the repository out of the directory it runs in, so
+the switched-on projects *are* the list — there is no second one to keep in step.
+Being open in the rail used to be the whole of it, which made every open project
+fair game; a label as common as `auto` then meant a repository somebody else owns,
+where you had filed an issue carrying that label for another reason, could be
+claimed, commented on and pushed to.
 
 **`mode` is the adapter's id, not ours.** Modes come back from `session/new` and
 are the adapter's to name, so the config names one rather than the app mapping a
@@ -387,8 +422,8 @@ accumulate one row per issue ever worked.
 - **Concurrency.** One run at a time; a tick during a run does nothing. Add when
   one run at a time is measurably the bottleneck, which it will not be while the
   issues are small.
-- **Cron expressions, quiet hours, a calendar.** An interval and an `enabled`
-  flag. Add when somebody actually wants runs only at night.
+- **Cron expressions, quiet hours, a calendar.** An interval and a switch per
+  project. Add when somebody actually wants runs only at night.
 - **Telegram announcements of a run.** The three announced moments are a closed
   set with no wildcard arm, so a fourth kind of news is a decision about what the
   badge, the desktop and the chat each do with it. The issue comment is the
@@ -408,7 +443,8 @@ Core, pure, no fixtures:
 - `parse_every` — `"30m"`, `"2h"`, `"90s"`, and a refusal for `"soon"`.
 - `prompt_for` — the issue number and branch appear; the body is not truncated
   into the middle of a code fence.
-- an empty `label` yields no candidate issue, and a missing `enabled` reads false.
+- an empty `label` yields no candidate issue; no project is switched on by
+  default, and the switch survives the workspace file by path.
 - `report`, one case per `Ending` with and without a PR, matched exhaustively so
   an ending cannot be added without a sentence being checked for it.
 - a PR found on an ending that was not a turn ending still reads `Opened`.

@@ -717,6 +717,7 @@ impl Shell {
                         let root_idx = shell.window.workspace.active_root;
                         match action {
                             P::TogglePin => shell.toggle_pin(root_idx, window, cx),
+                            P::ToggleUnattended => shell.toggle_unattended(root_idx, window, cx),
                             P::Worktree => shell.begin_worktree(root_idx, window, cx),
                             P::RenameBranch => shell.begin_branch_rename(window, cx),
                             P::CopyPath => shell.copy_root_path(root_idx, window, cx),
@@ -1017,12 +1018,12 @@ impl Shell {
             return;
         };
         let status = self.window.git.get(&root.path);
-        let (pinned, is_repo) = (root.pinned, status.is_some());
+        let facts = crate::chat::pane::ProjectFacts::of(root, status.is_some());
         // The same line the rail prints beside the project's name, from core's
         // own rule rather than composed again here.
         let line = status.map(|status| gpui::SharedString::from(status.label()));
         self.chat.update(cx, |pane, cx| {
-            pane.set_project_facts(pinned, is_repo, cx);
+            pane.set_project_facts(facts, cx);
             pane.set_git(line, cx);
         });
     }
@@ -2209,6 +2210,60 @@ impl Shell {
         cx.notify();
     }
 
+    /// Turn unattended runs on or off for a project, from either of the places
+    /// that offer it — the project's menu and Settings.
+    pub fn toggle_unattended(
+        &mut self,
+        root_idx: usize,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        // A run's own worktree is not a project anybody chose, and the run
+        // never searches it, so a switch on it would say `auto` over nothing.
+        if self
+            .window
+            .workspace
+            .roots
+            .get(root_idx)
+            .is_none_or(|root| root.transient)
+        {
+            return;
+        }
+        self.window.workspace.toggle_unattended(root_idx);
+        // Switched on, it is looked at straight away, so a project that can
+        // never be worked says so now and not at the next tick. Switched off,
+        // nothing is cleared: a row that is off shows nothing, and the next
+        // look over every switched-on project drops what is left.
+        if let Some(root) = self
+            .window
+            .workspace
+            .roots
+            .get(root_idx)
+            .filter(|root| root.unattended)
+        {
+            crate::unattended::check_now(root.path.clone(), cx);
+        }
+        self.save_workspace(window, cx);
+        // The project page's menu says whether this is on, in the entry that was
+        // just used.
+        self.sync_project_facts(cx);
+        cx.notify();
+    }
+
+    /// Every project the Settings list offers the switch for: name, whether it
+    /// is on, and its index. A run's own worktree is left out — it is not a
+    /// project anybody chose, and it goes when the run does.
+    pub fn unattended_choices(&self) -> Vec<(usize, SharedString, bool)> {
+        self.window
+            .workspace
+            .roots
+            .iter()
+            .enumerate()
+            .filter(|(_, root)| !root.transient)
+            .map(|(i, root)| (i, SharedString::from(root.label.clone()), root.unattended))
+            .collect()
+    }
+
     /// Drop a project at another place in the rail.
     ///
     /// Both numbers are *display* positions, which is what the rail drags; the
@@ -3135,14 +3190,14 @@ impl Shell {
 
     /// The project roots an unattended run may look for issues in, in the order
     /// the rail draws them — so pinning a project is also how it is worked
-    /// first. A run's own worktree is not one of them.
+    /// first. Only the ones the user opted in, and never a run's own worktree.
     pub fn unattended_roots(&self) -> Vec<PathBuf> {
         let roots = &self.window.workspace.roots;
         self.window
             .workspace
             .display_order()
             .into_iter()
-            .filter(|&i| !roots[i].transient)
+            .filter(|&i| roots[i].unattended && !roots[i].transient)
             .map(|i| roots[i].path.clone())
             .collect()
     }
@@ -3738,6 +3793,11 @@ fn open_window(workspace: Workspace, cx: &mut App) {
                     shell,
                 });
             });
+            // The projects it has switched on for unattended runs are looked at
+            // now, so a row that cannot work says so from the first frame and
+            // not from the first tick, half an hour in. After the push, because
+            // the look finds projects through this registry.
+            crate::unattended::recheck(cx);
         });
     })
     .detach();

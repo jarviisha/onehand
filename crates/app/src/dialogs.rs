@@ -18,6 +18,7 @@ use gpui::{
 use gpui_component::button::{ButtonGroup, ButtonVariants};
 use gpui_component::dialog::{Dialog, DialogClose, DialogTitle};
 use gpui_component::input::{Input, InputState};
+use gpui_component::switch::Switch;
 use gpui_component::{
     ActiveTheme, Disableable, Icon, IconName, Selectable, Sizable as _, StyledExt,
 };
@@ -649,6 +650,93 @@ fn workspace_page(handle: &Entity<Shell>, cx: &App) -> AnyElement {
                         }),
                 ),
         )
+        .child(unattended_section(handle, cx))
+        .into_any_element()
+}
+
+/// The per-project switch for unattended runs, as a list.
+///
+/// The same switch the project's own menu carries, gathered in one place so
+/// every project's answer can be read at once — the menu shows one project's,
+/// and only after it is opened. The label a run looks for is named, since it is
+/// the one thing a user has to put on an issue and it lives in the config file.
+fn unattended_section(handle: &Entity<Shell>, cx: &App) -> AnyElement {
+    let label = crate::unattended::label(cx);
+    let choices = handle.read(cx).unattended_choices();
+    let muted = cx.theme().muted_foreground;
+    let ink = crate::theme::status_ink(cx);
+    // The one connection every run depends on, said where the switches are:
+    // signed in, and as whom, or what to do about it. Everything a run does
+    // outside its checkout goes through `gh`, so this is the whole of "is it
+    // connected". GitHub alone, for now, and the line says so.
+    let (connection, connection_ink) = match crate::unattended::github(cx) {
+        None => ("GitHub: checking…".to_string(), muted),
+        Some(onehand_core::unattended::GitHub::SignedIn(login)) => (
+            format!("GitHub: signed in as {login}, through `gh`"),
+            ink.success,
+        ),
+        Some(github) => (
+            format!("GitHub: {}", github.problem().unwrap_or_default()),
+            ink.warning,
+        ),
+    };
+    div()
+        .v_flex()
+        .gap_2()
+        .w_full()
+        .child(div().text_xs().child("Unattended runs"))
+        .child(
+            div()
+                .h_flex()
+                .gap_2()
+                .w_full()
+                .items_center()
+                .child(
+                    div()
+                        .flex_1()
+                        .min_w_0()
+                        .text_color(connection_ink)
+                        .child(connection),
+                )
+                .child(
+                    crate::controls::action("unattended-recheck")
+                        .ghost()
+                        .label("Check again")
+                        .on_click(|_: &ClickEvent, _: &mut Window, cx: &mut App| {
+                            crate::unattended::recheck(cx);
+                        }),
+                ),
+        )
+        .child(div().text_color(muted).child(format!(
+            "An issue you opened, labelled `{label}`, in a project switched on here is \
+                 picked up by an agent, worked in a worktree of its own, and answered with \
+                 a pull request."
+        )))
+        // Whatever stops every run, said above the switches in the warning
+        // ink: with it unsaid they would look as though they did something.
+        .when_some(crate::unattended::blocked(cx), |page, why| {
+            page.child(
+                div()
+                    .text_color(ink.warning)
+                    .child(format!("Nothing will be picked up: {why}")),
+            )
+        })
+        .children(choices.into_iter().map(|(idx, name, on)| {
+            let shell = handle.clone();
+            // The switch sets no cursor of its own, and an arrow over a control
+            // that acts reads as one that does not. Held to its own width, so
+            // the empty space to the right of the name is not a target.
+            div().h_flex().child(
+                div().flex_none().cursor_pointer().child(
+                    Switch::new(("unattended", idx))
+                        .checked(on)
+                        .label(name)
+                        .on_click(move |_: &bool, window: &mut Window, cx: &mut App| {
+                            shell.update(cx, |shell, cx| shell.toggle_unattended(idx, window, cx));
+                        }),
+                ),
+            )
+        }))
         .into_any_element()
 }
 
