@@ -427,16 +427,64 @@ fn remote_host(url: &str) -> Option<&str> {
 }
 
 /// Whether `url` is a remote a run can work: one on github.com.
-fn github_remote(url: &str) -> Result<(), String> {
-    match remote_host(url) {
-        Some("github.com") => Ok(()),
-        Some(host) => Err(format!(
+///
+/// **An ssh remote is judged by the host ssh would actually reach**, which
+/// `resolve` answers. The host in an ssh URL can be an alias from the user's ssh
+/// configuration — `git@github-work:me/repo`, which is how one machine keeps
+/// two GitHub accounts apart — and reading the word in the URL refused every
+/// such project as not being on GitHub. An https remote has no alias and is
+/// read as written.
+fn github_remote(url: &str, resolve: impl Fn(&str) -> Option<String>) -> Result<(), String> {
+    let refuse = |host: &str| {
+        Err(format!(
             "its remote is on {host}, and unattended runs work with GitHub only"
-        )),
-        None => Err(
+        ))
+    };
+    let Some(host) = remote_host(url) else {
+        return Err(
             "its remote is not on GitHub, and unattended runs work with GitHub only".to_string(),
-        ),
+        );
+    };
+    if host == "github.com" {
+        return Ok(());
     }
+    if !over_ssh(url) {
+        return refuse(host);
+    }
+    match resolve(host) {
+        Some(real) if real == "github.com" => Ok(()),
+        Some(real) => refuse(&real),
+        None => refuse(host),
+    }
+}
+
+/// Whether `url` reaches its host over ssh: the scp-like form, or an `ssh`
+/// scheme.
+fn over_ssh(url: &str) -> bool {
+    match url.split_once("://") {
+        Some((scheme, _)) => scheme.contains("ssh"),
+        None => true,
+    }
+}
+
+/// The `hostname` line of what `ssh -G` printed: the host an alias stands for,
+/// after the user's ssh configuration has been applied.
+fn ssh_hostname(said: &str) -> Option<&str> {
+    said.lines()
+        .find_map(|line| line.strip_prefix("hostname "))
+        .map(str::trim)
+}
+
+/// Ask ssh which host `alias` stands for. `ssh -G` only prints the settled
+/// configuration; it connects to nothing.
+fn ssh_resolve_blocking(alias: &str) -> Option<String> {
+    let out = crate::process::output_within(
+        Command::new("ssh").arg("-G").arg(alias),
+        Duration::from_secs(10),
+    )
+    .ok()?;
+    out.status.success().then_some(())?;
+    ssh_hostname(&String::from_utf8_lossy(&out.stdout)).map(str::to_string)
 }
 
 /// Whether the project at `root` is one a run can work: a repository whose
@@ -452,7 +500,10 @@ pub fn github_project_blocking(root: &Path) -> Result<(), String> {
     if !out.status.success() {
         return Err("it has no `origin` remote to open a pull request against".to_string());
     }
-    github_remote(String::from_utf8_lossy(&out.stdout).trim())
+    github_remote(
+        String::from_utf8_lossy(&out.stdout).trim(),
+        ssh_resolve_blocking,
+    )
 }
 
 /// The repository's default branch, as GitHub has it.
@@ -667,13 +718,40 @@ mod tests {
 
     #[test]
     fn only_a_github_remote_can_be_worked() {
-        assert_eq!(github_remote("https://github.com/a/b"), Ok(()));
-        let why = github_remote("git@gitlab.com:a/b.git").unwrap_err();
+        let none = |_: &str| None;
+        assert_eq!(github_remote("https://github.com/a/b", none), Ok(()));
+        let why = github_remote("git@gitlab.com:a/b.git", none).unwrap_err();
         assert!(
             why.contains("gitlab.com") && why.contains("GitHub only"),
             "{why}"
         );
-        assert!(github_remote("/srv/git/local.git").is_err());
+        assert!(github_remote("/srv/git/local.git", none).is_err());
+    }
+
+    /// An ssh host alias — how one machine keeps two GitHub accounts apart — is
+    /// whatever ssh's own configuration says it is, not the word in the URL.
+    #[test]
+    fn an_ssh_alias_is_judged_by_the_host_it_stands_for() {
+        let config = |host: &str| (host == "github-work").then(|| "github.com".to_string());
+        assert_eq!(github_remote("git@github-work:me/repo.git", config), Ok(()));
+        assert_eq!(
+            github_remote("ssh://git@github-work/me/repo.git", config),
+            Ok(())
+        );
+        // An alias for somewhere else is still somewhere else, and says where.
+        let elsewhere = |_: &str| Some("gitlab.com".to_string());
+        let why = github_remote("git@work:me/repo.git", elsewhere).unwrap_err();
+        assert!(why.contains("gitlab.com"), "{why}");
+        // https has no alias to resolve.
+        let never = |_: &str| -> Option<String> { panic!("https is not resolved through ssh") };
+        assert!(github_remote("https://example.com/a/b", never).is_err());
+    }
+
+    #[test]
+    fn ssh_names_the_host_an_alias_resolves_to() {
+        let said = "user git\nhostname github.com\nport 22\n";
+        assert_eq!(ssh_hostname(said), Some("github.com"));
+        assert_eq!(ssh_hostname("port 22\n"), None);
     }
 
     #[test]

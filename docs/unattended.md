@@ -120,7 +120,11 @@ the one state that looks exactly like working.
 
 **GitHub only, and said when it cannot be reached.** A project is worked only
 if its `origin` is on github.com. That is read locally, before anything asks
-GitHub, so a project somewhere else costs nothing per tick. `gh` is asked who it
+GitHub, so a project somewhere else costs nothing per tick. An ssh remote is
+judged by the host ssh would reach (`ssh -G`, which connects to nothing), not by
+the word in the URL. The host there can be an alias from `~/.ssh/config`, such
+as `git@github-work:me/repo`, which is how one machine keeps two GitHub accounts
+apart, and reading the alias refused every such project. `gh` is asked who it
 is signed in as. Anything that stops a switched-on project from being worked —
 another forge, no `origin`, `gh` missing, signed out or unanswered — is kept per
 project and shown on its row, in the warning ink with the reason on hover. It is
