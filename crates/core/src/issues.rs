@@ -76,7 +76,7 @@ pub struct LocalIssue {
     /// written here. Kept after the link is gone: an issue somebody else wrote
     /// stays somebody else's, and whether a run may take it turns on that.
     #[serde(default)]
-    pub imported_from: Option<String>,
+    pub(crate) imported_from: Option<String>,
 }
 
 /// What an issue says that both sides of a sync keep: everything but its
@@ -95,12 +95,12 @@ impl Snapshot {
     /// Whether the two say the same thing. Labels are compared as a set: a
     /// forge is free to hand them back in another order, and an order is not
     /// something either side said.
-    pub fn same_as(&self, other: &Snapshot) -> bool {
+    pub(crate) fn same_as(&self, other: &Snapshot) -> bool {
         self.title == other.title
             && self.body == other.body
             && self.open == other.open
-            && self.labels.len() == other.labels.len()
             && self.labels.iter().all(|l| other.labels.contains(l))
+            && other.labels.iter().all(|l| self.labels.contains(l))
     }
 
     /// The snapshot with the differences that are not differences taken out —
@@ -142,14 +142,14 @@ pub struct Note {
 
 impl LocalIssue {
     /// Its link to the connector named `name`, if it has one.
-    pub fn link_on(&self, name: &str) -> Option<&Link> {
+    pub(crate) fn link_on(&self, name: &str) -> Option<&Link> {
         self.link.as_ref().filter(|link| link.connector == name)
     }
 
     /// Whether it was written here — never linked to anything, never brought
     /// in from anywhere. The only issues a search may take as the user's own
     /// without asking a forge.
-    pub fn written_here(&self) -> bool {
+    pub(crate) fn written_here(&self) -> bool {
         self.link.is_none() && self.imported_from.is_none()
     }
 
@@ -298,7 +298,7 @@ impl Issues {
     }
 
     /// The connector these issues are kept in step with, if any.
-    pub fn synced_with(&self) -> Option<&str> {
+    pub(crate) fn synced_with(&self) -> Option<&str> {
         self.synced_with.as_deref()
     }
 

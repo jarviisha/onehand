@@ -50,6 +50,13 @@ impl Issue {
     }
 }
 
+/// An issue kept here, as a run reads it.
+impl From<&issues::LocalIssue> for Issue {
+    fn from(kept: &issues::LocalIssue) -> Self {
+        Issue::new(kept.number, kept.title.clone(), kept.body.clone())
+    }
+}
+
 /// An open issue as the picker lists it: the issue, who opened it, and what it
 /// is labelled.
 ///
@@ -126,7 +133,7 @@ impl Tracker {
                 .listed()
                 .into_iter()
                 .filter(|i| i.written_here() && i.open && i.labels.iter().any(|l| l == label))
-                .map(|i| Issue::new(i.number, i.title.clone(), i.body.clone()))
+                .map(Issue::from)
                 .collect()),
             // Synced first, so a label put on at the forge is seen. An issue
             // brought in from the forge may be anybody's, so it is taken only
@@ -144,7 +151,7 @@ impl Tracker {
                     .into_iter()
                     .filter(|i| i.open && i.labels.iter().any(|l| l == label))
                     .filter_map(|i| {
-                        let found = Issue::new(i.number, i.title.clone(), i.body.clone());
+                        let found = Issue::from(i);
                         if i.written_here() {
                             return Some(found);
                         }
@@ -163,7 +170,7 @@ impl Tracker {
     /// its pull request names it there.
     fn open_blocking(&self, root: &Path, limit: usize) -> Result<Vec<IssueRow>, String> {
         let row = |i: &issues::LocalIssue, forge_ref: Option<String>| {
-            let issue = Issue::new(i.number, i.title.clone(), i.body.clone());
+            let issue = Issue::from(i);
             IssueRow {
                 issue: match forge_ref {
                     Some(reference) => issue.at(reference),

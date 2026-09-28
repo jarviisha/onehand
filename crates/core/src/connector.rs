@@ -65,7 +65,8 @@ pub trait Connector: Send + Sync + 'static {
 
     /// Open issues, by anybody — what a sync brings in — and, when `since` is
     /// given, at least every issue changed at or after it whatever its state,
-    /// so a closed issue edited there is still seen. At most `limit` of each.
+    /// so a closed issue edited there is still seen. At most `limit` of each;
+    /// a sync treats more than `limit` in all as a listing that was cut.
     fn issues_for_sync_blocking(
         &self,
         root: &Path,

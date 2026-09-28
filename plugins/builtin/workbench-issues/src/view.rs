@@ -221,9 +221,19 @@ impl IssuesView {
     /// press of *Sync now* — and not for the ones that only come around, which
     /// wait out [`SYNC_GAP`] since the last.
     fn sync(&mut self, now: bool, cx: &mut Context<Self>) {
-        let Some((root, file)) = self.file() else {
+        if let Some(root) = self.root.clone() {
+            self.sync_root(root, now, cx);
+        }
+    }
+
+    /// [`Self::sync`] for `root` in particular, which is what a sync that
+    /// comes back for a project needs: the one on screen may have changed
+    /// while it ran.
+    fn sync_root(&mut self, root: PathBuf, now: bool, cx: &mut Context<Self>) {
+        let Some(storage) = self.storage.as_deref() else {
             return;
         };
+        let file = issues::file_for(storage, &root);
         let Some(state) = self.roots.get_mut(&root) else {
             return;
         };
@@ -275,7 +285,7 @@ impl IssuesView {
                 }
                 cx.notify();
                 if again {
-                    view.sync(true, cx);
+                    view.sync_root(root, true, cx);
                 }
             });
         })
@@ -367,7 +377,7 @@ impl IssuesView {
                         state.form = None;
                         view.status = None;
                         cx.notify();
-                        view.sync(true, cx);
+                        view.sync_root(root, true, cx);
                         return;
                     }
                     // The form stays open with what was typed in it: a refusal
@@ -952,11 +962,16 @@ fn conflict_view(issue: &LocalIssue, cx: &mut Context<IssuesView>) -> Option<Any
                 open(ours.open),
                 open(theirs.open)
             ),
-            sync::Field::Description => format!(
-                "Description — here: {}\non {forge}: {}",
-                excerpt(&ours.body),
-                excerpt(&theirs.body)
-            ),
+            sync::Field::Description => {
+                let (here, there) = (excerpt(&ours.body), excerpt(&theirs.body));
+                if here == there {
+                    // Both begin alike and part further on, past what the line
+                    // shows: said, or the two would read as one.
+                    format!("Description — the two differ further on; here it begins: {here}")
+                } else {
+                    format!("Description — here: {here}\non {forge}: {there}")
+                }
+            }
         })
         .collect();
     let ink = status_ink(cx).warning;

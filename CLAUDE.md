@@ -916,7 +916,8 @@ see the rail, below.
   nobody disagreed with is still sent), and labels merge as a set, compared without order, and never
   conflict. **A linked issue is followed after it closes**: the forge lists every issue changed since
   the last sync (`Issues::last_synced`, asked from a day earlier since its search is by day), so a
-  closed issue edited on either side still crosses. **In and out are not
+  closed issue edited on either side still crosses; a listing cut at the cap does not move that
+  point, so what it missed is asked for again. **In and out are not
   symmetric, by decision**: every open issue on the forge is imported (capped at `SYNC_CAP`, the cut
   said), while an issue written here goes nowhere until *Publish to GitHub* — a draft that published
   itself on a timer is one nobody could write. A push that fails leaves `base` alone so the change is

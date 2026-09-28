@@ -33,7 +33,8 @@ pub struct Report {
     pub pushed: usize,
     /// Issues left waiting for a person, this sync's and earlier ones'.
     pub conflicts: usize,
-    /// Whether the forge had more open issues than [`SYNC_CAP`].
+    /// Whether the forge listed more than [`SYNC_CAP`] — open issues, and the
+    /// closed ones changed since the last sync.
     pub cut: bool,
     /// What could not be done, one line per issue. A failure on one issue
     /// never stops the rest.
@@ -158,7 +159,11 @@ pub fn sync_blocking(
         remote.truncate(SYNC_CAP);
         let mut report = reconcile(issues, root, connector, &remote, now);
         report.cut = cut;
-        issues.last_synced = now;
+        // A cut listing is not everything that changed, so the next sync asks
+        // from the same point again rather than stepping past what it missed.
+        if !cut {
+            issues.last_synced = now;
+        }
         Ok(report)
     })
 }
@@ -253,8 +258,8 @@ fn step(
         return;
     };
     let (key, base) = (link.key.clone(), link.base.clone());
-    let merge = merge(&base, &issue.snapshot(), &theirs);
     let ours = issue.snapshot();
+    let merge = merge(&base, &ours, &theirs);
     if !merge.conflicts.is_empty() {
         // What merged cleanly still lands here; the fields in conflict keep
         // this side's value, and the forge's side is kept to decide against.
@@ -680,5 +685,30 @@ mod tests {
         let (second, _) = sync_blocking(&file, Path::new("/"), &forge, 2).unwrap();
         assert!(second.revision() > first.revision());
         let _ = std::fs::remove_dir_all(file.parent().unwrap());
+    }
+
+    #[test]
+    fn a_cut_listing_does_not_move_the_point_the_next_sync_asks_from() {
+        let file = scratch("cut");
+        let root = Path::new("/");
+        let many = (1..=SYNC_CAP as u64 + 1)
+            .map(|n| (n, snap("x", true, &[])))
+            .collect();
+        let forge = Forge::with(many);
+        let report = sync_blocking(&file, root, &forge, 50).unwrap().1;
+        assert!(report.cut);
+        assert_eq!(
+            load(&file).last_synced,
+            0,
+            "what was missed is asked for again"
+        );
+        let _ = std::fs::remove_dir_all(file.parent().unwrap());
+    }
+
+    #[test]
+    fn labels_that_repeat_are_not_the_same_as_labels_that_differ() {
+        let a = snap("t", true, &["a", "a"]);
+        let b = snap("t", true, &["a", "b"]);
+        assert!(!a.same_as(&b) && !b.same_as(&a));
     }
 }
