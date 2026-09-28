@@ -674,9 +674,9 @@ fn unattended_section(handle: &Entity<Shell>, cx: &App) -> AnyElement {
             .collect(),
         Some(accounts) => accounts
             .into_iter()
-            .map(|(name, account)| match account {
-                Ok(who) => (format!("{name}: {who}"), ink.success),
-                Err(why) => (format!("{name}: {why}"), ink.warning),
+            .map(|(c, account)| match account {
+                Ok(who) => (format!("{}: {who}", c.name()), ink.success),
+                Err(why) => (format!("{}: {why}", c.name()), ink.warning),
             })
             .collect(),
     };

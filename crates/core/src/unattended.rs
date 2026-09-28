@@ -18,6 +18,8 @@ pub struct Issue {
 }
 
 impl Issue {
+    /// An issue as a connector read it: its number, its title and its body,
+    /// which may be empty.
     pub fn new(number: u64, title: String, body: String) -> Self {
         Self {
             number,
@@ -37,9 +39,10 @@ impl Issue {
 ///
 /// **Who opened it is on every row**, because the body goes into the prompt
 /// word for word and the agent runs with the user's credentials — it pushes
-/// and opens pull requests as them. The automatic search only ever takes the user's own issues for
-/// that reason; a person picking by hand may take anybody's, and the author is
-/// what lets them see whose text they are handing over.
+/// and opens pull requests as them. The automatic search only ever takes the
+/// user's own issues for that reason; a person picking by hand may take
+/// anybody's, and the author is what lets them see whose text they are handing
+/// over.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct IssueRow {
     pub issue: Issue,
@@ -396,7 +399,7 @@ pub fn claim_blocking(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::connector::Fake;
+    use crate::connector::fake::Fake;
 
     fn issue(number: u64, title: &str) -> Issue {
         Issue {
@@ -598,6 +601,14 @@ mod tests {
     fn the_oldest_issue_is_taken_first() {
         let found = candidate_blocking(&Fake::SERVING, &std::env::temp_dir(), "auto").unwrap();
         assert_eq!(found.map(|i| i.number), Some(4));
+        let none_labelled = Fake {
+            labelled: &[],
+            ..Fake::SERVING
+        };
+        assert_eq!(
+            candidate_blocking(&none_labelled, &std::env::temp_dir(), "auto"),
+            Ok(None)
+        );
     }
 
     #[test]

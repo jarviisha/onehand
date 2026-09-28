@@ -141,8 +141,8 @@ profile.
   that awaited tokio I/O directly would panic inside the UI process.
 - **Nothing in core is `pub` unless something outside the crate names it.** This is the same rule
   `crates/app` keeps by making its modules private, arrived at from the other side: core cannot hide
-  its modules, because the app and the built-in plugins import them. So the visibility is per item, and widening one
-  is a decision rather than the default. It is load-bearing for the same reason: `dead_code` stops at
+  its modules, because the app and the built-in plugins import them. So the visibility is per item,
+  and widening one is a decision rather than the default. It is load-bearing for the same reason: `dead_code` stops at
   a `pub` item in a library, so while every function here was `pub`, one that had lost its last
   caller looked exactly like a working feature to the compiler — seventeen accumulated that way, plus
   a fold-state chain and a write-only field that a repo-wide grep could not see and one compile did.

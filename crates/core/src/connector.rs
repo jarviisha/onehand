@@ -79,81 +79,90 @@ pub fn serving(connectors: &[&'static dyn Connector], root: &Path) -> Result<usi
     })
 }
 
-/// A connector for tests: it serves or refuses as told, lists `limit` issues,
-/// finds issues 9 and 4 under any label, and fails the test if asked anything
-/// else.
+/// A connector for tests.
 #[cfg(test)]
-pub(crate) struct Fake {
-    pub(crate) name: &'static str,
-    pub(crate) serves: Result<(), &'static str>,
-}
+pub(crate) mod fake {
+    use super::*;
 
-#[cfg(test)]
-impl Fake {
-    pub(crate) const SERVING: Fake = Fake {
-        name: "Forge",
-        serves: Ok(()),
-    };
-}
+    /// It serves or refuses as told, lists `limit` issues, finds the issues
+    /// numbered in `labelled` under any label, and fails the test if asked
+    /// anything else.
+    pub(crate) struct Fake {
+        pub(crate) name: &'static str,
+        pub(crate) serves: Result<(), &'static str>,
+        pub(crate) labelled: &'static [u64],
+    }
 
-#[cfg(test)]
-impl Connector for Fake {
-    fn name(&self) -> &'static str {
-        self.name
+    impl Fake {
+        pub(crate) const SERVING: Fake = Fake {
+            name: "Forge",
+            serves: Ok(()),
+            labelled: &[9, 4],
+        };
     }
-    fn account_blocking(&self) -> Result<String, String> {
-        unreachable!()
-    }
-    fn serves_blocking(&self, _: &Path) -> Result<(), String> {
-        self.serves.map_err(str::to_string)
-    }
-    fn open_issues_blocking(&self, _: &Path, limit: usize) -> Result<Vec<IssueRow>, String> {
-        Ok((1..=limit as u64)
-            .map(|n| IssueRow {
-                issue: Issue::new(n, "t".into(), String::new()),
-                author: "a".into(),
-                labels: Vec::new(),
-            })
-            .collect())
-    }
-    fn my_labelled_issues_blocking(&self, _: &Path, label: &str) -> Result<Vec<Issue>, String> {
-        assert!(
-            !label.trim().is_empty(),
-            "an empty label reached the connector"
-        );
-        Ok(vec![
-            Issue::new(9, "b".into(), String::new()),
-            Issue::new(4, "a".into(), String::new()),
-        ])
-    }
-    fn remove_label_blocking(&self, _: &Path, _: u64, _: &str) -> Result<(), String> {
-        unreachable!()
-    }
-    fn comment_blocking(&self, _: &Path, _: u64, _: &str) -> Result<(), String> {
-        unreachable!()
-    }
-    fn default_branch_blocking(&self, _: &Path) -> Result<String, String> {
-        unreachable!()
-    }
-    fn pull_request_for_blocking(&self, _: &Path, _: &str) -> Result<Option<String>, String> {
-        unreachable!()
-    }
-    fn open_pull_request_with(&self) -> &'static str {
-        "`forge pr`"
+
+    impl Connector for Fake {
+        fn name(&self) -> &'static str {
+            self.name
+        }
+        fn account_blocking(&self) -> Result<String, String> {
+            unreachable!()
+        }
+        fn serves_blocking(&self, _: &Path) -> Result<(), String> {
+            self.serves.map_err(str::to_string)
+        }
+        fn open_issues_blocking(&self, _: &Path, limit: usize) -> Result<Vec<IssueRow>, String> {
+            Ok((1..=limit as u64)
+                .map(|n| IssueRow {
+                    issue: Issue::new(n, "t".into(), String::new()),
+                    author: "a".into(),
+                    labels: Vec::new(),
+                })
+                .collect())
+        }
+        fn my_labelled_issues_blocking(&self, _: &Path, label: &str) -> Result<Vec<Issue>, String> {
+            assert!(
+                !label.trim().is_empty(),
+                "an empty label reached the connector"
+            );
+            Ok(self
+                .labelled
+                .iter()
+                .map(|&n| Issue::new(n, format!("#{n}"), String::new()))
+                .collect())
+        }
+        fn remove_label_blocking(&self, _: &Path, _: u64, _: &str) -> Result<(), String> {
+            unreachable!()
+        }
+        fn comment_blocking(&self, _: &Path, _: u64, _: &str) -> Result<(), String> {
+            unreachable!()
+        }
+        fn default_branch_blocking(&self, _: &Path) -> Result<String, String> {
+            unreachable!()
+        }
+        fn pull_request_for_blocking(&self, _: &Path, _: &str) -> Result<Option<String>, String> {
+            unreachable!()
+        }
+        fn open_pull_request_with(&self) -> &'static str {
+            "`forge pr`"
+        }
     }
 }
 
 #[cfg(test)]
 mod tests {
+    use super::fake::Fake;
     use super::*;
 
     static REFUSES: Fake = Fake {
         name: "Elsewhere",
         serves: Err("its remote is on elsewhere.org"),
+        labelled: &[],
     };
     static ALSO_REFUSES: Fake = Fake {
         name: "Tracker",
         serves: Err("no board is set"),
+        labelled: &[],
     };
     static SERVES: Fake = Fake::SERVING;
 

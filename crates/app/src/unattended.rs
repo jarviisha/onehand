@@ -63,15 +63,19 @@ pub struct Unattended {
     _tick: Task<()>,
 }
 
-/// Each connector's name and what it said about its account: who it acts as,
-/// or why it cannot act. In the order of [`crate::plugins::connectors`].
-pub type Accounts = Vec<(&'static str, Result<String, String>)>;
+/// Each connector beside what it said about its account: who it acts as, or
+/// why it cannot act.
+pub type Accounts = Vec<(&'static dyn Connector, Result<String, String>)>;
 
-/// The connector that will work a project, or why none can.
+/// What a look at one project found: the connector that will work it, its
+/// account included, or why none can.
 type Served = Result<&'static dyn Connector, String>;
 
 /// The connector serving the project at `root`, or every reason none does.
-pub fn connector_for(root: &Path) -> Served {
+///
+/// Its account is not asked here: a person picking an issue by hand hears
+/// about an unusable account from the connector's own refusal, one call later.
+pub fn connector_for(root: &Path) -> Result<&'static dyn Connector, String> {
     let all = crate::plugins::connectors();
     connector::serving(all, root).map(|at| all[at])
 }
@@ -211,16 +215,15 @@ fn check(roots: Vec<PathBuf>, prune: bool, cx: &mut App) {
 /// one that does has an account it cannot use.
 fn look_blocking(roots: Vec<PathBuf>) -> (Accounts, Vec<(PathBuf, Served)>) {
     let all = crate::plugins::connectors();
-    let accounts: Accounts = all
-        .iter()
-        .map(|c| (c.name(), c.account_blocking()))
-        .collect();
+    let accounts: Accounts = all.iter().map(|&c| (c, c.account_blocking())).collect();
     let checked = roots
         .into_iter()
         .map(|root| {
-            let served = connector::serving(all, &root).and_then(|at| match &accounts[at].1 {
-                Ok(_) => Ok(all[at]),
-                Err(why) => Err(why.clone()),
+            // `accounts` was built from `all` just above, so a place in one is
+            // the same connector's place in the other.
+            let served = connector::serving(all, &root).and_then(|at| match &accounts[at] {
+                (c, Ok(_)) => Ok(*c),
+                (_, Err(why)) => Err(why.clone()),
             });
             (root, served)
         })
@@ -402,8 +405,9 @@ struct Unstarted {
 /// which case there is nobody to tell but stderr, since an issue the app could
 /// not edit is one it cannot comment on either. After the claim every failure is
 /// the issue's to hear about.
-/// What each project looked at said is written into `checked` — the reason where
-/// it could not be looked at — so the rail can show it.
+///
+/// A project whose search failed has the reason added to `checked`, so its
+/// row says why rather than showing it as workable.
 fn begin_blocking(
     roots: &[(PathBuf, &'static dyn Connector)],
     label: &str,

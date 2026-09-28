@@ -38,7 +38,7 @@ impl std::fmt::Display for Failure {
 /// Run `cmd` to completion, or stop it once it has run for `limit`.
 ///
 /// **A command nobody is watching must not be able to hang its caller.** A
-/// `gh` call waiting on a network that went away, or a `git` waiting on a
+/// call to a forge waiting on a network that went away, or a `git` waiting on a
 /// credential prompt nobody will answer, would otherwise hold its caller for
 /// good. Standard input is closed for the same reason: a program that asks its
 /// terminal a question gets an end of file rather than a wait.

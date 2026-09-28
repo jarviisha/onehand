@@ -253,8 +253,8 @@ pub fn branch_off_blocking(
 
 /// Bring `origin/<branch>` up to date in the repository at `root`.
 ///
-/// The remote is `origin` by assumption, which is what `gh` itself assumes of a
-/// clone it did not make. It never waits on a person: a fetch that needs a
+/// The remote is `origin` by assumption, which is what a forge's own tools
+/// assume of a clone they did not make. It never waits on a person: a fetch that needs a
 /// password, a passphrase or a host key nobody is there to accept fails rather
 /// than asks.
 pub fn fetch_blocking(root: &Path, branch: &str) -> Result<(), String> {
