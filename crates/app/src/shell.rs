@@ -2213,6 +2213,14 @@ impl Shell {
         cx: &mut Context<Self>,
     ) {
         self.window.workspace.toggle_unattended(root_idx);
+        if let Some(root) = self.window.workspace.roots.get(root_idx) {
+            // Switched on, it is looked at straight away, so a project that can
+            // never be worked says so now and not at the next tick.
+            match root.unattended {
+                true => crate::unattended::check_now(root.path.clone(), cx),
+                false => crate::unattended::forget(&root.path, cx),
+            }
+        }
         self.save_workspace(window, cx);
         // The project page's menu says whether this is on, in the entry that was
         // just used.
@@ -3763,6 +3771,11 @@ fn open_window(workspace: Workspace, cx: &mut App) {
                     shell,
                 });
             });
+            // The projects it has switched on for unattended runs are looked at
+            // now, so a row that cannot work says so from the first frame and
+            // not from the first tick, half an hour in. After the push, because
+            // the look finds projects through this registry.
+            crate::unattended::recheck(cx);
         });
     })
     .detach();

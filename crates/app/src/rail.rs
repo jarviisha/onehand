@@ -1116,36 +1116,66 @@ fn project_hint(
 /// called, in both menus that carry it.
 pub const UNATTENDED_ENTRY: &str = "Work labelled issues";
 
-/// What a project row says about unattended runs: the word in its pill, and the
-/// line its hover carries. `None` while the project is not opted in.
+/// What a project row says about unattended runs.
+#[derive(Debug, PartialEq)]
+struct AutoStatus {
+    /// The word in its pill.
+    badge: SharedString,
+    /// The line its hover carries.
+    line: SharedString,
+    /// The switch is on and nothing can come of it — the pill takes the
+    /// warning ink, and the line says why.
+    stuck: bool,
+}
+
+/// What a project row says about unattended runs, or `None` while the project
+/// is not switched on.
 ///
-/// A run can only be working on a project that is opted in, but it is read
+/// A run can only be working on a project that is switched on, but it is read
 /// independently so a project switched off mid-run still says the run is
 /// there — switching off stops the next run, not the one already going.
+///
+/// **A switch that is on while nothing can happen is the one state that looks
+/// exactly like working**, so every way it can be stuck is said on the row: no
+/// label to look for, or the last look at the project failing — a remote that
+/// is not on GitHub, a `gh` that is missing or signed out.
 fn auto_status(
     unattended: bool,
     working: Option<u64>,
     label: Option<String>,
-) -> Option<(SharedString, SharedString)> {
+    problem: Option<String>,
+) -> Option<AutoStatus> {
+    let status = |badge: String, line: String, stuck: bool| AutoStatus {
+        badge: badge.into(),
+        line: line.into(),
+        stuck,
+    };
     match (unattended, working) {
-        (_, Some(n)) => Some((
-            SharedString::from(format!("auto · #{n}")),
-            SharedString::from(format!("Unattended run working on issue #{n}")),
-        )),
-        (true, None) => Some((
-            SharedString::from("auto"),
-            SharedString::from(match label {
-                Some(label) => format!(
-                    "Unattended runs on: issues you opened labelled `{label}` are picked up"
-                ),
-                // Said rather than implied: a switch that is on while nothing
-                // can happen is the one state that looks exactly like working.
-                None => "Unattended runs on, but no label is set in the config, so nothing \
-                         is picked up"
-                    .to_string(),
-            }),
+        (_, Some(n)) => Some(status(
+            format!("auto · #{n}"),
+            format!("Unattended run working on issue #{n}"),
+            false,
         )),
         (false, None) => None,
+        (true, None) => Some(match (label, problem) {
+            (None, _) => status(
+                "auto".into(),
+                "Unattended runs on, but no label is set in the config, so nothing is \
+                 picked up"
+                    .into(),
+                true,
+            ),
+            (Some(_), Some(why)) => status(
+                "auto".into(),
+                format!("Unattended runs on, but this project cannot be worked: {why}"),
+                true,
+            ),
+            (Some(label), None) => status(
+                "auto".into(),
+                format!("Unattended runs on: issues you opened labelled `{label}` are picked up"),
+                false,
+            ),
+        }),
     }
 }
 
@@ -1337,7 +1367,12 @@ fn folder_row(
     let working = crate::unattended::live_run(cx)
         .filter(|(repo, _)| *repo == root.path)
         .map(|(_, number)| number);
-    let auto_line = auto_status(unattended, working, crate::unattended::label(cx));
+    let auto = auto_status(
+        unattended,
+        working,
+        crate::unattended::label(cx),
+        crate::unattended::problem(&root.path, cx),
+    );
     // Only the selected project shows what is in it until somebody says
     // otherwise, or a workspace of ten roots is a rail nobody can see the
     // bottom of. The answer is the window's rather than the row's: the row is
@@ -1436,7 +1471,7 @@ fn folder_row(
             &root.label,
             branch.as_ref(),
             changed,
-            auto_line.as_ref().map(|(_, line)| line),
+            auto.as_ref().map(|auto| &auto.line),
             &path,
         ))
         // The selected project is marked whether or not it has sessions. While
@@ -1487,7 +1522,8 @@ fn folder_row(
             })
         })
         .suffix(move |_, cx: &mut App| {
-            let auto_badge = auto_line.as_ref().map(|(badge, _)| badge.clone());
+            let auto_badge = auto.as_ref().map(|auto| (auto.badge.clone(), auto.stuck));
+            let warning = crate::theme::status_ink(cx).warning;
             let (suffix_target, fold_target) = (suffix_target.clone(), fold_target.clone());
             let fold_path = fold_path.clone();
             let radius = cx.theme().radius;
@@ -1550,14 +1586,16 @@ fn folder_row(
                 // shape to learn. `flex_none` for the count's reason — a
                 // permission to push that is quietly cut off the row is the
                 // worst thing this row could hide.
-                .when_some(auto_badge, |row, badge| {
+                // Stuck takes the warning ink and keeps the word: the colour
+                // says "look here", and the hover says what is wrong.
+                .when_some(auto_badge, |row, (badge, stuck)| {
                     row.child(
                         div()
                             .flex_none()
                             .px_1()
                             .rounded(radius)
                             .bg(badge_bg)
-                            .text_color(badge_fg)
+                            .text_color(if stuck { warning } else { badge_fg })
                             .child(badge),
                     )
                 })
@@ -2554,23 +2592,32 @@ mod tests {
     /// hover is for.
     #[test]
     fn a_project_says_whether_its_issues_are_worked_and_which_one_is() {
-        assert_eq!(auto_status(false, None, Some("auto".into())), None);
-        let (badge, line) = auto_status(true, None, Some("auto".into())).unwrap();
-        assert_eq!(badge.as_ref(), "auto");
-        assert!(line.contains("`auto`"));
-        let (badge, line) = auto_status(true, Some(46), Some("auto".into())).unwrap();
-        assert_eq!(badge.as_ref(), "auto · #46");
-        assert!(line.contains("#46"));
+        let label = || Some("auto".to_string());
+        assert_eq!(auto_status(false, None, label(), None), None);
+        let on = auto_status(true, None, label(), None).unwrap();
+        assert_eq!(on.badge.as_ref(), "auto");
+        assert!(on.line.contains("`auto`") && !on.stuck);
+        let working = auto_status(true, Some(46), label(), None).unwrap();
+        assert_eq!(working.badge.as_ref(), "auto · #46");
+        assert!(working.line.contains("#46"));
         // Switched off mid-run: the run already going is still said.
-        assert!(auto_status(false, Some(46), Some("auto".into())).is_some());
-        // On with no label to look for is on with nothing possible, and says so.
-        let (_, line) = auto_status(true, None, None).unwrap();
-        assert!(line.contains("no label"));
+        assert!(auto_status(false, Some(46), label(), None).is_some());
+        // Every way to be on with nothing possible is stuck, and says why.
+        let unlabelled = auto_status(true, None, None, None).unwrap();
+        assert!(unlabelled.stuck && unlabelled.line.contains("no label"));
+        let elsewhere = auto_status(
+            true,
+            None,
+            label(),
+            Some("its remote is on gitlab.com".into()),
+        )
+        .unwrap();
+        assert!(elsewhere.stuck && elsewhere.line.contains("gitlab.com"));
         // The hover carries the line, ahead of the path.
         let path = SharedString::from("/p");
-        let hint = project_hint("p", None, 0, Some(&line), &path);
+        let hint = project_hint("p", None, 0, Some(&on.line), &path);
         assert_eq!(hint.last(), Some(&path));
-        assert!(hint.contains(&line));
+        assert!(hint.contains(&on.line));
     }
 
     #[test]

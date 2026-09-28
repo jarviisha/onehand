@@ -118,6 +118,18 @@ carrying the old global `enabled` key keeps loading; the key is ignored. An
 Settings list both say so, since a switch that is on while nothing can happen is
 the one state that looks exactly like working.
 
+**GitHub only, and said when it cannot be reached.** A project is worked only
+if its `origin` is on github.com. That is read locally, before anything asks
+GitHub, so a project somewhere else costs nothing per tick. `gh` is asked who it
+is signed in as. Anything that stops a switched-on project from being worked —
+another forge, no `origin`, `gh` missing, signed out or unanswered — is kept per
+project and shown on its row, in the warning ink with the reason on hover. It is
+never left on stderr, where a switch that is on while nothing can happen would
+look exactly like one that is working. Settings ▸ Workspace heads its switches
+with the signed-in line and a *Check again*. A project is looked at when it is
+switched on and when its window opens, not only on the next tick. Another forge
+is a second set of `gh`-shaped calls and is not built.
+
 **The rail says what is switched on and what is running.** A switched-on project
 row carries a pill reading `auto`, and `auto · #N` while a run is working issue N
 of that project. The run's own session is on a worktree's row of its own, so

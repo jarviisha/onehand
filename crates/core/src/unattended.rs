@@ -337,6 +337,124 @@ pub fn comment_blocking(root: &Path, number: u64, body: &str) -> Result<(), Stri
     .map(drop)
 }
 
+/// Where this app can reach GitHub from, as far as a run needs to know.
+///
+/// **GitHub alone.** Everything a run does outside the checkout goes through
+/// `gh`, so another forge is a second set of these calls rather than a setting;
+/// until one exists, a project anywhere else is told so instead of failing
+/// quietly on every tick.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum GitHub {
+    /// `gh` is signed in, as this login.
+    SignedIn(String),
+    /// `gh` is not installed.
+    Missing,
+    /// `gh` is installed and signed in to nothing.
+    SignedOut,
+    /// `gh` could not get an answer from GitHub.
+    Unreachable(String),
+}
+
+impl GitHub {
+    /// Why no run can happen, in words that say what to do about it; `None`
+    /// when one can.
+    pub fn problem(&self) -> Option<String> {
+        match self {
+            Self::SignedIn(_) => None,
+            Self::Missing => Some(
+                "the GitHub CLI (`gh`) is not installed, and unattended runs reach GitHub \
+                 through it"
+                    .to_string(),
+            ),
+            Self::SignedOut => {
+                Some("`gh` is not signed in to GitHub — run `gh auth login`".to_string())
+            }
+            Self::Unreachable(why) => Some(format!("could not reach GitHub: {why}")),
+        }
+    }
+}
+
+/// Ask `gh` who it is signed in as. Blocking, and bounded like every call here.
+pub fn github_blocking() -> GitHub {
+    // Found first, and directly: a program that is not there fails to *start*,
+    // which is the one failure the bounded runner reports as text.
+    if matches!(
+        Command::new("gh").arg("--version").output(),
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound
+    ) {
+        return GitHub::Missing;
+    }
+    let out = match crate::process::output_within(
+        Command::new("gh")
+            .args(["api", "user", "--jq", ".login"])
+            .env("GH_PROMPT_DISABLED", "1"),
+        GH_LIMIT,
+    ) {
+        Ok(out) => out,
+        Err(why) => return GitHub::Unreachable(why),
+    };
+    let login = String::from_utf8_lossy(&out.stdout).trim().to_string();
+    match out.status.code() {
+        Some(0) if !login.is_empty() => GitHub::SignedIn(login),
+        // `gh` exits 4 when a command needs a login it does not have.
+        Some(4) => GitHub::SignedOut,
+        _ => GitHub::Unreachable(
+            String::from_utf8_lossy(&out.stderr)
+                .lines()
+                .next()
+                .unwrap_or("gh gave no reason")
+                .trim()
+                .to_string(),
+        ),
+    }
+}
+
+/// The host a git remote URL points at: `https://host/…`, `ssh://user@host:port/…`
+/// and the scp-like `user@host:path`. `None` for a local path.
+fn remote_host(url: &str) -> Option<&str> {
+    let rest = match url.split_once("://") {
+        Some((_, rest)) => rest,
+        // scp-like: a colon before any slash, and the part before it is a host.
+        None => match url.split_once(':') {
+            Some((host, _)) if !host.contains('/') => host,
+            _ => return None,
+        },
+    };
+    let host = rest.split('/').next()?;
+    let host = host.rsplit('@').next()?;
+    let host = host.split(':').next()?;
+    (!host.is_empty()).then_some(host)
+}
+
+/// Whether `url` is a remote a run can work: one on github.com.
+fn github_remote(url: &str) -> Result<(), String> {
+    match remote_host(url) {
+        Some("github.com") => Ok(()),
+        Some(host) => Err(format!(
+            "its remote is on {host}, and unattended runs work with GitHub only"
+        )),
+        None => Err(
+            "its remote is not on GitHub, and unattended runs work with GitHub only".to_string(),
+        ),
+    }
+}
+
+/// Whether the project at `root` is one a run can work: a repository whose
+/// `origin` is on GitHub. Read locally, before anything asks GitHub, so a
+/// project that can never be worked costs nothing per tick but this.
+pub fn github_project_blocking(root: &Path) -> Result<(), String> {
+    let out = Command::new("git")
+        .arg("-C")
+        .arg(root)
+        .args(["remote", "get-url", "origin"])
+        .output()
+        .map_err(|err| format!("git could not be run: {err}"))?;
+    if !out.status.success() {
+        return Err("it has no `origin` remote to open a pull request against".to_string());
+    }
+    github_remote(String::from_utf8_lossy(&out.stdout).trim())
+}
+
 /// The repository's default branch, as GitHub has it.
 pub fn default_branch_blocking(root: &Path) -> Result<String, String> {
     let name = gh(
@@ -530,6 +648,49 @@ mod tests {
             assert!(!said.contains("no pull request"), "{said}");
             assert!(said.contains("could not tell"), "{said}");
         }
+    }
+
+    #[test]
+    fn a_remote_names_its_host_in_every_form_git_accepts() {
+        for url in [
+            "https://github.com/jarviisha/onehand.git",
+            "https://user:token@github.com/jarviisha/onehand",
+            "git@github.com:jarviisha/onehand.git",
+            "ssh://git@github.com/jarviisha/onehand.git",
+            "ssh://git@github.com:22/jarviisha/onehand.git",
+        ] {
+            assert_eq!(remote_host(url), Some("github.com"), "{url}");
+        }
+        assert_eq!(remote_host("git@gitlab.com:a/b.git"), Some("gitlab.com"));
+        assert_eq!(remote_host("/srv/git/local.git"), None);
+    }
+
+    #[test]
+    fn only_a_github_remote_can_be_worked() {
+        assert_eq!(github_remote("https://github.com/a/b"), Ok(()));
+        let why = github_remote("git@gitlab.com:a/b.git").unwrap_err();
+        assert!(
+            why.contains("gitlab.com") && why.contains("GitHub only"),
+            "{why}"
+        );
+        assert!(github_remote("/srv/git/local.git").is_err());
+    }
+
+    #[test]
+    fn a_github_account_that_cannot_be_used_says_what_to_do() {
+        assert_eq!(GitHub::SignedIn("me".into()).problem(), None);
+        assert!(GitHub::Missing.problem().unwrap().contains("not installed"));
+        assert!(
+            GitHub::SignedOut
+                .problem()
+                .unwrap()
+                .contains("gh auth login"),
+            "the fix is named"
+        );
+        assert!(GitHub::Unreachable("timeout".into())
+            .problem()
+            .unwrap()
+            .contains("timeout"));
     }
 
     #[test]

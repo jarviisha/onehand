@@ -204,8 +204,21 @@ One window hosts exactly one workspace. The frame is a navigation **rail** plus 
   fact about the project and an icon would be one more shape to learn. It never
   gives way to width, because a permission to push is the worst thing the row
   could quietly hide. The hover says it in full: which label is looked for, or
-  which issue is being worked, or that no label is set and so nothing can
-  happen.
+  which issue is being worked.
+- **A switch that is on while nothing can happen says so on the row.** That is
+  the one state that looks exactly like working. So when there is no label to
+  look for, or the last look at the project failed, the pill keeps its word and
+  takes the **warning ink**, and the hover gives the reason: a remote that is not
+  on GitHub, a `gh` that is missing or signed out, GitHub not answering. The
+  colour says "look here" and the words say what is wrong, so neither carries the
+  message alone. A project is looked at the moment it is switched on and when
+  its window opens, and not only on the next tick.
+- **The connection runs are made through is stated where the switches are.** At
+  the head of Settings ▸ Workspace's list, one line reads *GitHub: signed in as
+  …, through `gh`* in the success ink, or says in the warning ink what is wrong
+  and what to run about it. Beside it sits a ghost *Check again*. There is no
+  line per forge: GitHub is the only one runs can reach, and a status for one
+  they cannot use would read as a promise.
 - **Everything else is a dock panel**, and the arrangement persists as **five
   values, not the library's `DockAreaState`**: Workbench width, terminal height,
   whether each is open, and the rail's width. `DockAreaState` is serde and would

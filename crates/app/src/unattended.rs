@@ -14,8 +14,9 @@ use crate::state::Shared;
 use gpui::{App, BorrowAppContext as _, Entity, Subscription, Task, WeakEntity};
 use onehand_core::chat::UserAsk;
 use onehand_core::config::{AgentSpec, UnattendedConfig};
-use onehand_core::unattended::{self as core, Ending, Issue};
+use onehand_core::unattended::{self as core, Ending, GitHub, Issue};
 use onehand_core::worktree;
+use std::collections::HashMap;
 use std::path::PathBuf;
 use std::time::Duration;
 
@@ -38,6 +39,17 @@ pub struct Unattended {
     /// run would fail the same way on a fresh issue. Said once and stopped.
     halted: bool,
     run: Option<Run>,
+    /// What `gh` last said about being signed in, for the line in Settings.
+    /// `None` until the first answer lands.
+    github: Option<GitHub>,
+    /// Why the last look at a project could not go ahead, by project.
+    ///
+    /// **Shown on the project's row**, because the alternative is stderr: a
+    /// project that is not on GitHub, or a `gh` that is signed out, fails the
+    /// same way on every tick, and a switch that is on while nothing can happen
+    /// looks exactly like one that is working. An entry is cleared by the next
+    /// look that gets through.
+    problems: HashMap<PathBuf, String>,
     _tick: Task<()>,
 }
 
@@ -102,9 +114,113 @@ pub fn boot(cfg: &UnattendedConfig, cx: &mut App) {
             claiming: false,
             halted: false,
             run: None,
+            github: None,
+            problems: HashMap::new(),
             _tick: tick,
         });
     });
+}
+
+/// What `gh` last said about being signed in, if it has answered yet.
+pub fn github(cx: &App) -> Option<GitHub> {
+    Shared::global(cx).unattended.as_ref()?.github.clone()
+}
+
+/// Why the last look at `root` could not go ahead, if it could not.
+pub fn problem(root: &std::path::Path, cx: &App) -> Option<String> {
+    Shared::global(cx)
+        .unattended
+        .as_ref()?
+        .problems
+        .get(root)
+        .cloned()
+}
+
+/// Ask `gh` again, and look again at every project that is switched on —
+/// what the Settings page's *Check again* does, and what boot does once.
+pub fn recheck(cx: &mut App) {
+    let roots = opted_in_roots(cx);
+    cx.spawn(async move |cx| {
+        let (github, checked) = cx
+            .background_executor()
+            .spawn(async move {
+                let github = core::github_blocking();
+                let checked: Vec<_> = roots
+                    .into_iter()
+                    .map(|root| {
+                        let why = core::github_project_blocking(&root)
+                            .err()
+                            .or_else(|| github.problem());
+                        (root, why)
+                    })
+                    .collect();
+                (github, checked)
+            })
+            .await;
+        cx.update(|cx| {
+            with(cx, |u| u.github = Some(github));
+            record(checked, cx);
+        });
+    })
+    .detach();
+}
+
+/// Look at one project that was just switched on, so a switch that cannot work
+/// says so now rather than at the next tick, half an hour away.
+pub fn check_now(root: PathBuf, cx: &mut App) {
+    cx.spawn(async move |cx| {
+        let (github, why) = cx
+            .background_executor()
+            .spawn(async move {
+                let github = core::github_blocking();
+                let why = core::github_project_blocking(&root)
+                    .err()
+                    .or_else(|| github.problem());
+                (github, (root, why))
+            })
+            .await;
+        cx.update(|cx| {
+            with(cx, |u| u.github = Some(github));
+            record(vec![why], cx);
+        });
+    })
+    .detach();
+}
+
+/// Forget what was last found about `root` — it was switched off.
+pub fn forget(root: &std::path::Path, cx: &mut App) {
+    with(cx, |u| u.problems.remove(root));
+}
+
+/// File what each look found, and redraw the rows that show it.
+fn record(checked: Vec<(PathBuf, Option<String>)>, cx: &mut App) {
+    with(cx, |u| {
+        for (root, why) in checked {
+            match why {
+                Some(why) => u.problems.insert(root, why),
+                None => u.problems.remove(&root),
+            };
+        }
+    });
+    cx.refresh_windows();
+}
+
+/// Every switched-on project across every window, in rail order, once each.
+fn opted_in_roots(cx: &App) -> Vec<PathBuf> {
+    let mut roots: Vec<PathBuf> = Vec::new();
+    let shells: Vec<_> = Shared::global(cx)
+        .windows
+        .iter()
+        .map(|w| w.shell.clone())
+        .collect();
+    for shell in shells.iter().filter_map(WeakEntity::upgrade) {
+        for root in shell.read(cx).unattended_roots() {
+            if !roots.contains(&root) {
+                roots.push(root);
+            }
+        }
+    }
+    roots
 }
 
 /// The run in progress, as the project it came from and the issue it is on.
@@ -149,38 +265,31 @@ fn tick(cx: &mut App) {
     .flatten() else {
         return;
     };
-    let mut roots: Vec<PathBuf> = Vec::new();
-    let shells: Vec<_> = Shared::global(cx)
-        .windows
-        .iter()
-        .map(|w| w.shell.clone())
-        .collect();
-    for shell in shells.iter().filter_map(WeakEntity::upgrade) {
-        for root in shell.read(cx).unattended_roots() {
-            if !roots.contains(&root) {
-                roots.push(root);
-            }
-        }
-    }
+    let roots = opted_in_roots(cx);
     cx.spawn(async move |cx| {
         // A panic in there would otherwise leave `claiming` set for the life of
         // the process, and no issue would be looked for again. Said and treated
         // as nothing found.
-        let begun = cx
+        let (checked, begun) = cx
             .background_executor()
             .spawn(async move {
                 std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                    begin_blocking(&roots, &label)
+                    let mut checked = Vec::new();
+                    let begun = begin_blocking(&roots, &label, &mut checked);
+                    (checked, begun)
                 }))
                 .unwrap_or_else(|_| {
                     // Only the search and the claim are left for this to catch,
                     // and neither has taken a label unless it finished.
                     eprintln!("onehand: looking for an unattended run panicked");
-                    None
+                    (Vec::new(), None)
                 })
             })
             .await;
-        cx.update(|cx| landed(begun, cx));
+        cx.update(|cx| {
+            record(checked, cx);
+            landed(begun, cx);
+        });
     })
     .detach();
 }
@@ -209,17 +318,29 @@ struct Unstarted {
 /// which case there is nobody to tell but stderr, since an issue the app could
 /// not edit is one it cannot comment on either. After the claim every failure is
 /// the issue's to hear about.
-fn begin_blocking(roots: &[PathBuf], label: &str) -> Option<Result<Claimed, Unstarted>> {
-    let (repo, issue) =
-        roots
-            .iter()
-            .find_map(|root| match core::candidate_blocking(root, label) {
-                Ok(found) => found.map(|issue| (root.clone(), issue)),
-                Err(why) => {
-                    eprintln!("onehand: looking for issues in {}: {why}", root.display());
-                    None
-                }
-            })?;
+/// What each project looked at said is written into `checked` — a reason where
+/// it could not be looked at, `None` where it could — so the rail can show it.
+fn begin_blocking(
+    roots: &[PathBuf],
+    label: &str,
+    checked: &mut Vec<(PathBuf, Option<String>)>,
+) -> Option<Result<Claimed, Unstarted>> {
+    let (repo, issue) = roots.iter().find_map(|root| {
+        // Read locally first: a project that is not on GitHub is told so
+        // without a call to GitHub it could never answer.
+        let found = core::github_project_blocking(root)
+            .and_then(|()| core::candidate_blocking(root, label));
+        match found {
+            Ok(found) => {
+                checked.push((root.clone(), None));
+                found.map(|issue| (root.clone(), issue))
+            }
+            Err(why) => {
+                checked.push((root.clone(), Some(why)));
+                None
+            }
+        }
+    })?;
     if let Err(why) = core::claim_blocking(&repo, issue.number, label) {
         eprintln!("onehand: could not claim issue #{}: {why}", issue.number);
         return None;

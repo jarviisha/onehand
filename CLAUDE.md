@@ -577,7 +577,14 @@ of switches in Settings ▸ Workspace, all through `Shell::toggle_unattended`. `
 the timeout, the mode and the agent. A tick on `Shared` (one per process, like the bridge) looks for
 the oldest open issue **you** opened that carries the label, in the opted-in projects, in rail order;
 a project row says `auto`, or `auto · #N` while a run is on issue N (`crate::unattended::live_run`,
-with `cx.refresh_windows()` at start and settle because nothing the rail watches changes). It claims the issue by removing the label,
+with `cx.refresh_windows()` at start and settle because nothing the rail watches changes).
+**GitHub only, and a project that cannot be worked says so.** `github_project_blocking` reads
+`origin` locally before any call to GitHub, and `github_blocking` asks `gh api user` who is signed in.
+What either finds is kept per project (`Unattended::problems`) and shown as the pill in the warning
+ink with the reason on hover — never only on stderr, since a switch that is on while nothing can
+happen looks exactly like one that is working. A project is looked at when it is switched on
+(`check_now`), when its window registers and on *Check again* (`recheck`), and on every tick. The
+signed-in line heads the switches in Settings ▸ Workspace. It claims the issue by removing the label,
 branches a worktree off `origin/<default>` and mints a session there. **Neither step moves anything on
 screen**: `ChatPane::open_unshown` connects without showing, and the worktree's root is
 `ProjectRoot::transient`, which `to_config` never writes. One prompt, one turn. The pull request `gh`

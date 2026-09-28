@@ -664,11 +664,49 @@ fn unattended_section(handle: &Entity<Shell>, cx: &App) -> AnyElement {
     let label = crate::unattended::label(cx);
     let choices = handle.read(cx).unattended_choices();
     let muted = cx.theme().muted_foreground;
+    let ink = crate::theme::status_ink(cx);
+    // The one connection every run depends on, said where the switches are:
+    // signed in, and as whom, or what to do about it. Everything a run does
+    // outside its checkout goes through `gh`, so this is the whole of "is it
+    // connected". GitHub alone, for now, and the line says so.
+    let (connection, connection_ink) = match crate::unattended::github(cx) {
+        None => ("GitHub: checking…".to_string(), muted),
+        Some(onehand_core::unattended::GitHub::SignedIn(login)) => (
+            format!("GitHub: signed in as {login}, through `gh`"),
+            ink.success,
+        ),
+        Some(github) => (
+            format!("GitHub: {}", github.problem().unwrap_or_default()),
+            ink.warning,
+        ),
+    };
     div()
         .v_flex()
         .gap_2()
         .w_full()
         .child(div().text_xs().child("Unattended runs"))
+        .child(
+            div()
+                .h_flex()
+                .gap_2()
+                .w_full()
+                .items_center()
+                .child(
+                    div()
+                        .flex_1()
+                        .min_w_0()
+                        .text_color(connection_ink)
+                        .child(connection),
+                )
+                .child(
+                    crate::controls::action("unattended-recheck")
+                        .ghost()
+                        .label("Check again")
+                        .on_click(|_: &ClickEvent, _: &mut Window, cx: &mut App| {
+                            crate::unattended::recheck(cx);
+                        }),
+                ),
+        )
         .child(
             div().text_color(muted).child(match label {
                 Some(label) => format!(
