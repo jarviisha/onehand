@@ -589,7 +589,12 @@ and by Settings, and `gh` is still asked. A project is looked at when it is swit
 (`check_now`), when its window registers and on *Check again* (`recheck`), and on **every tick, a
 run included** — all three through one `look_blocking`. The signed-in line heads the switches in
 Settings ▸ Workspace. A run's own worktree never offers the switch (`ProjectFacts::unattended` is
-`None` there). It claims the issue by removing the label,
+`None` there). **A run can also be picked by hand**: *Work an issue…* in either project menu opens
+`dialogs::pick_issue` over `unattended::open_issues_blocking` (every open issue, author on the row,
+bounded at `ISSUES_SHOWN`), and `unattended::start_picked` runs it now. That run is shown as it starts
+(`Shell::show_unattended`) and kept on screen when it ends. *Look now* in Settings runs the search at
+once. Every run writes its own log into its transcript as notices (`unattended::note`) — the start,
+the prompt going out, a cancel, and the words the issue was told at the end. A run the search finds claims its issue by removing the label,
 branches a worktree off `origin/<default>` and mints a session there. **Neither step moves anything on
 screen**: `ChatPane::open_unshown` connects without showing, and the worktree's root is
 `ProjectRoot::transient`, which `to_config` never writes. One prompt, one turn. The pull request `gh`

@@ -144,6 +144,41 @@ ink, while the projects and `gh` are still looked at. It used to leave the state
 unset, so a bad interval read on screen as a missing label and the GitHub line
 waited for an answer that was never going to come.
 
+**A run can be picked by hand, and started now.** A project's ••• menu (on the
+rail and on the project page) offers *Work an issue…* on any repository that is
+not a run's own worktree. It lists every open issue — anybody's, not only yours,
+since a person reading the list is the check the automatic search stands in for
+— with who opened each one on its row, because the body is handed to the agent
+word for word. The list holds the newest 100 and says so when it was cut.
+Picking one runs the same path as a found issue, with four differences:
+- the claim takes the trigger label off only if the issue carries it, and its
+  comment says to pick the issue again to retry, since re-adding a label means
+  nothing for an issue the search would never take;
+- the session is put on screen as it starts, in the window it was picked from,
+  so the person who picked it is reading it and a card it parks is theirs to
+  answer (the take-over rule);
+- when it ends, the session stays where it is and its project is kept for good,
+  as a taken-over one is, since somebody who watched it end may carry on in it;
+- a mode the agent does not offer, once learned, refuses the pick *before* the
+  claim, rather than claiming an issue for a run that would fail at its prompt.
+
+It is one run at a time for picked and found alike, and a pick while one is going
+is refused with the issue it is waiting on. Beside *Check again* in Settings,
+*Look now* runs the search at once instead of at the next tick, and always says
+what came of it: nothing switched on, a run already going, what blocks every
+run, or that no issue of yours carries the label.
+
+**The transcript is the run's log**, in short lines, one fact each. A remark in
+the transcript is one line down the middle of the column, cut where the column
+ends, so a sentence carrying the issue, the folder and the branch lost all but
+its start. A run opens on which issue and how it was chosen, then the branch and
+what it was cut from, then the worktree's folder. It says when the mode is set
+and the issue sent, and when a turn is cancelled and why. It ends on one line:
+the pull request if one was opened, or why there is none. The issue comment
+carries the full account. A found run's session is taken down when it ends, so
+its last line is only read by somebody who opened it in time; the issue comment
+is the record that stays.
+
 **The rail says what is switched on and what is running.** A switched-on project
 row carries a pill reading `auto`, and `auto · #N` while a run is working issue N
 of that project. The run's own session is on a worktree's row of its own, so

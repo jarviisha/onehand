@@ -216,10 +216,27 @@ One window hosts exactly one workspace. The frame is a navigation **rail** plus 
   project is looked at the moment it is switched on, when its window opens, and
   on every tick, a run in progress included. The switch is **not offered on a
   run's own worktree**: nobody chose that project, and no run ever searches it.
+- **An issue can be picked by hand.** *Work an issue…* sits under *Work labelled
+  issues* in both project menus, on repositories that are not a run's own
+  worktree. It opens a dialog listing the project's open issues, one row each:
+  the number muted, then the title (truncated), up to three labels as pills in
+  the change count's style, then *by* its author muted at the end. The author is
+  on every row because the issue's text goes to the agent as written. Rows take
+  the pointer and the same half-accent hover the Settings nav uses. The list
+  scrolls inside a bounded height and says in a muted line when it was cut. While
+  the list is being read, the dialog says so where the list will be. Picking
+  closes the dialog and puts the run's session on screen, where its transcript
+  logs the run as short notices, one fact per line, since a notice is a single
+  centred line cut at the column's edge. The session stays when the run ends,
+  and its project is kept.
 - **The connection runs are made through is stated where the switches are.** At
   the head of Settings ▸ Workspace's list, one line reads *GitHub: signed in as
   …, through `gh`* in the success ink, or says in the warning ink what is wrong
-  and what to run about it. Beside it sits a ghost *Check again*. When the config
+  and what to run about it. Beside it sit two ghost buttons, *Check again* and
+  *Look now*. The second runs the search at once and always answers with a
+  notification — including when nothing is switched on, a run is already going,
+  something blocks every run, or no labelled issue was found — because a button
+  that sometimes does nothing visible reads as broken. When the config
   stops every run, a warning line under the explanation says so before any
   switch is read. Each switch takes the pointer across its own width only, not
   across the empty column beside its name. There is no

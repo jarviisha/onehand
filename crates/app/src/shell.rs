@@ -488,6 +488,10 @@ pub struct Shell {
     /// open. `Some` is what puts it on screen, the same as the rename above.
     worktree_draft: Option<WorktreeDraft>,
     branch_draft: Option<BranchDraft>,
+    /// The open-issue picker, while it is on screen. Opened from a project's
+    /// menu, which is gone by the time the list arrives, so this being `Some`
+    /// is what puts the dialog up — like the rename and the worktree forms.
+    issue_picker: Option<IssuePicker>,
     /// The field the new branch name is typed into.
     branch_input: Entity<InputState>,
     /// The new branch's name field.
@@ -718,6 +722,7 @@ impl Shell {
                         match action {
                             P::TogglePin => shell.toggle_pin(root_idx, window, cx),
                             P::ToggleUnattended => shell.toggle_unattended(root_idx, window, cx),
+                            P::PickIssue => shell.begin_pick(root_idx, cx),
                             P::Worktree => shell.begin_worktree(root_idx, window, cx),
                             P::RenameBranch => shell.begin_branch_rename(window, cx),
                             P::CopyPath => shell.copy_root_path(root_idx, window, cx),
@@ -936,6 +941,7 @@ impl Shell {
             }),
             worktree_draft: None,
             branch_draft: None,
+            issue_picker: None,
             branch_input,
             worktree_branch,
             dock,
@@ -3277,6 +3283,100 @@ impl Shell {
         self.save_workspace(window, cx);
     }
 
+    /// Open the list of `root_idx`'s open issues, to pick one to work now.
+    ///
+    /// The list is read off the UI loop and the dialog is up while it is:
+    /// saying "reading" in the place the list will be is better than a menu
+    /// entry that does nothing visible for the seconds `gh` takes.
+    pub fn begin_pick(&mut self, root_idx: usize, cx: &mut Context<Self>) {
+        let Some(root) = self.window.workspace.roots.get(root_idx) else {
+            return;
+        };
+        let (path, label) = (root.path.clone(), SharedString::from(root.label.clone()));
+        self.issue_picker = Some(IssuePicker {
+            root: path.clone(),
+            project: label,
+            found: None,
+        });
+        cx.notify();
+        cx.spawn(async move |shell, cx| {
+            let found = {
+                let path = path.clone();
+                cx.background_executor()
+                    .spawn(async move {
+                        onehand_core::unattended::github_project_blocking(&path)
+                            .and_then(|()| onehand_core::unattended::open_issues_blocking(&path))
+                    })
+                    .await
+            };
+            shell
+                .update(cx, |shell: &mut Self, cx| {
+                    // Only the picker this read was for: one closed and opened
+                    // on another project in the meantime is not its to fill.
+                    if let Some(picker) = shell.issue_picker.as_mut().filter(|p| p.root == path) {
+                        picker.found = Some(std::rc::Rc::new(found));
+                        cx.notify();
+                    }
+                })
+                .ok();
+        })
+        .detach();
+    }
+
+    /// The picker on screen, if one is.
+    pub fn issue_picker(&self) -> Option<&IssuePicker> {
+        self.issue_picker.as_ref()
+    }
+
+    /// Work the `index`th issue in the picker's list, now, and close it.
+    pub fn pick_issue(&mut self, index: usize, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(picker) = self.issue_picker.take() else {
+            return;
+        };
+        cx.notify();
+        let Some(found) = picker.found else {
+            return;
+        };
+        let Ok((rows, _)) = &*found else {
+            return;
+        };
+        let Some(row) = rows.get(index).cloned() else {
+            return;
+        };
+        let handle = window.window_handle();
+        if let Err(why) = crate::unattended::start_picked(picker.root, row, handle, cx) {
+            window.push_notification(Notification::warning(why), cx);
+        }
+    }
+
+    /// Close the picker without working anything.
+    pub fn cancel_pick(&mut self, cx: &mut Context<Self>) {
+        if self.issue_picker.take().is_some() {
+            cx.notify();
+        }
+    }
+
+    /// Put a run's session on screen: its project selected, its conversation
+    /// showing. For a run somebody picked by hand, who asked for it and is
+    /// waiting to watch it.
+    pub fn show_unattended(&mut self, uid: u64, window: &mut Window, cx: &mut Context<Self>) {
+        let found = self
+            .window
+            .workspace
+            .roots
+            .iter()
+            .enumerate()
+            .find_map(|(ri, root)| {
+                root.sessions
+                    .iter()
+                    .position(|session| session.uid == uid)
+                    .map(|si| (ri, si))
+            });
+        if let Some((root_idx, session_idx)) = found {
+            self.select_root_session(root_idx, session_idx, window, cx);
+        }
+    }
+
     /// Whether the user is reading `uid`'s conversation right now.
     pub fn reading(&self, uid: u64, cx: &App) -> bool {
         self.chat.read(cx).reading(uid, cx)
@@ -3654,6 +3754,12 @@ impl Render for Shell {
                     .is_some()
                     .then(|| crate::dialogs::rename_branch(self, cx)),
             )
+            // And the issue picker, opened from a project's menu the same way.
+            .children(
+                self.issue_picker
+                    .is_some()
+                    .then(|| crate::dialogs::pick_issue(self, cx)),
+            )
             .children(sheet_layer)
             .children(dialog_layer)
             .children(notification_layer)
@@ -3801,6 +3907,22 @@ fn open_window(workspace: Workspace, cx: &mut App) {
         });
     })
     .detach();
+}
+
+/// What reading a project's open issues came to: the issues and whether the
+/// list was cut at its bound, or why they could not be read.
+pub type PickerAnswer = Result<(Vec<onehand_core::unattended::IssueRow>, bool), String>;
+
+/// The open issues of one project, being read or read.
+pub struct IssuePicker {
+    root: PathBuf,
+    /// The project's name, for the dialog's heading.
+    pub project: SharedString,
+    /// `None` while `gh` is being asked; then the issues and whether the list
+    /// was cut at its bound, or why they could not be read. Shared rather than
+    /// owned, because the dialog is rebuilt every frame and a hundred issues
+    /// with their bodies is not a thing to copy sixty times a second.
+    pub found: Option<std::rc::Rc<PickerAnswer>>,
 }
 
 /// Install global state and open the first window.

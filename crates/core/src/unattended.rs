@@ -24,6 +24,120 @@ pub struct Issue {
     body: String,
 }
 
+impl Issue {
+    /// What the issue is called.
+    pub fn title_text(&self) -> &str {
+        &self.title
+    }
+}
+
+/// An open issue as the picker lists it: the issue, who opened it, and what it
+/// is labelled.
+///
+/// **Who opened it is on every row**, because the body goes into the prompt
+/// word for word and the agent may run `git` and `gh` with the user's
+/// credentials. The automatic search only ever takes the user's own issues for
+/// that reason; a person picking by hand may take anybody's, and the author is
+/// what lets them see whose text they are handing over.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct IssueRow {
+    pub issue: Issue,
+    pub author: String,
+    pub labels: Vec<String>,
+}
+
+impl IssueRow {
+    /// Whether it carries `label`.
+    pub fn carries(&self, label: &str) -> bool {
+        self.labels.iter().any(|l| l == label)
+    }
+}
+
+/// How many open issues the picker lists. A repository with more than this
+/// open is one to narrow down on GitHub, and the list says it was cut.
+pub const ISSUES_SHOWN: usize = 100;
+
+/// `gh issue list --json number,title,body,author,labels` as rows.
+fn issue_rows(json: &str) -> Result<Vec<IssueRow>, String> {
+    #[derive(Deserialize)]
+    struct Author {
+        login: String,
+    }
+    #[derive(Deserialize)]
+    struct Label {
+        name: String,
+    }
+    #[derive(Deserialize)]
+    struct Row {
+        #[serde(flatten)]
+        issue: Issue,
+        author: Author,
+        #[serde(default)]
+        labels: Vec<Label>,
+    }
+    let rows: Vec<Row> = serde_json::from_str(json)
+        .map_err(|err| format!("gh printed something unreadable: {err}"))?;
+    Ok(rows
+        .into_iter()
+        .map(|row| IssueRow {
+            issue: row.issue,
+            author: row.author.login,
+            labels: row.labels.into_iter().map(|label| label.name).collect(),
+        })
+        .collect())
+}
+
+/// `rows` cut to [`ISSUES_SHOWN`], and whether anything was cut.
+fn bounded(mut rows: Vec<IssueRow>) -> (Vec<IssueRow>, bool) {
+    let cut = rows.len() > ISSUES_SHOWN;
+    rows.truncate(ISSUES_SHOWN);
+    (rows, cut)
+}
+
+/// Every open issue in `root`'s repository, newest first as GitHub lists them,
+/// up to [`ISSUES_SHOWN`] — and whether there were more. One past the bound is
+/// asked for, which is what tells a full page from a cut one.
+pub fn open_issues_blocking(root: &Path) -> Result<(Vec<IssueRow>, bool), String> {
+    let limit = (ISSUES_SHOWN + 1).to_string();
+    let json = gh(
+        root,
+        &[
+            "issue",
+            "list",
+            "--state",
+            "open",
+            "--limit",
+            &limit,
+            "--json",
+            "number,title,body,author,labels",
+        ],
+    )?;
+    Ok(bounded(issue_rows(&json)?))
+}
+
+/// Take an issue picked by hand: take the trigger label off if it carries it,
+/// so the automatic search does not reach for it as well, then say a run
+/// started. The comment is the same one an automatic claim leaves, because it
+/// has to read correctly in the same way if nothing follows it.
+pub fn claim_picked_blocking(root: &Path, row: &IssueRow, label: &str) -> Result<(), String> {
+    if !label.is_empty() && row.carries(label) {
+        let n = row.issue.number.to_string();
+        gh(root, &["issue", "edit", &n, "--remove-label", label])?;
+    }
+    comment_blocking(root, row.issue.number, &picked_claim_comment())
+}
+
+/// What an issue is told when a person picks it to be worked.
+///
+/// Not the automatic claim's sentence: that one says to re-add the trigger
+/// label to retry, and a picked issue may never have carried it — or may be
+/// somebody else's, which the automatic search never takes at all.
+fn picked_claim_comment() -> String {
+    "onehand started a run on this issue, picked by hand. If no outcome follows, the \
+     run was interrupted — pick it again to retry."
+        .to_string()
+}
+
 /// `"30m"`, `"2h"`, `"90s"` as a duration.
 ///
 /// One number and one unit, nothing else. A zero is refused rather than read
@@ -193,6 +307,28 @@ pub fn report(ending: &Ending, pr: &Result<Option<String>, String>, branch: &str
     match stopped(ending) {
         Some(why) => format!("{head}\n\n{why}"),
         None => head,
+    }
+}
+
+/// How a run ended, in one line — for the run's own transcript, where a line is
+/// all a remark gets. The pull request leads when there is one, because it is
+/// the verdict; the full account is the comment on the issue.
+pub fn outcome_line(ending: &Ending, pr: &Result<Option<String>, String>) -> String {
+    match pr {
+        Ok(Some(url)) => format!("Opened {url}"),
+        Err(_) => "Run over; could not tell whether a pull request was opened".to_string(),
+        Ok(None) => {
+            let why = match ending {
+                Ending::TurnEnded { .. } => "the turn ended",
+                Ending::Asked(_) => "it stopped on a decision",
+                Ending::LinkLost => "the agent stopped answering",
+                Ending::Closed => "its session was closed",
+                Ending::TimedOut(_) => "it timed out",
+                Ending::TakenOver => "it was taken over by hand",
+                Ending::Failed(_) => "it could not start",
+            };
+            format!("Run over with no pull request: {why}; see the issue")
+        }
     }
 }
 
@@ -768,6 +904,76 @@ mod tests {
             .problem()
             .unwrap()
             .contains("timeout"));
+    }
+
+    #[test]
+    fn the_open_issues_are_read_with_who_wrote_them_and_what_they_carry() {
+        let json = r#"[
+            {"number":7,"title":"Crash","body":"x","author":{"login":"stranger"},
+             "labels":[{"name":"bug"},{"name":"auto"}]},
+            {"number":3,"title":"Typo","body":"","author":{"login":"me"},"labels":[]}
+        ]"#;
+        let rows = issue_rows(json).unwrap();
+        assert_eq!(rows.len(), 2);
+        assert_eq!(rows[0].issue.number, 7);
+        assert_eq!(rows[0].issue.title_text(), "Crash");
+        assert_eq!(rows[0].author, "stranger");
+        assert_eq!(rows[0].labels, ["bug", "auto"]);
+        assert!(rows[0].carries("auto") && !rows[1].carries("auto"));
+        assert!(issue_rows("nope").is_err());
+    }
+
+    #[test]
+    fn a_listing_past_its_bound_is_cut_and_says_so() {
+        let row = |n: u64| {
+            format!(
+                r#"{{"number":{n},"title":"t","body":"","author":{{"login":"a"}},"labels":[]}}"#
+            )
+        };
+        let json = format!(
+            "[{}]",
+            (1..=ISSUES_SHOWN as u64 + 1)
+                .map(row)
+                .collect::<Vec<_>>()
+                .join(",")
+        );
+        let (rows, cut) = bounded(issue_rows(&json).unwrap());
+        assert_eq!(rows.len(), ISSUES_SHOWN);
+        assert!(cut);
+        let (rows, cut) = bounded(issue_rows("[]").unwrap());
+        assert!(rows.is_empty() && !cut);
+    }
+
+    #[test]
+    fn a_picked_claim_says_how_to_retry_without_a_label() {
+        let said = picked_claim_comment();
+        assert!(said.contains("started") && said.contains("picked by hand"));
+        assert!(
+            !said.contains("re-add"),
+            "a picked issue may never have had the label"
+        );
+    }
+
+    #[test]
+    fn the_outcome_fits_on_one_line_and_leads_with_the_pr() {
+        let pr = Ok(Some("https://x/pull/2".to_string()));
+        let line = outcome_line(&Ending::TimedOut(Duration::from_secs(60)), &pr);
+        assert!(line.starts_with("Opened https://x/pull/2"), "{line}");
+        let none = outcome_line(
+            &Ending::TurnEnded {
+                tail: Some("long\nanswer".into()),
+            },
+            &Ok(None),
+        );
+        assert!(
+            !none.contains('\n') && none.contains("no pull request"),
+            "{none}"
+        );
+        let unknown = outcome_line(&Ending::LinkLost, &Err("offline".into()));
+        assert!(unknown.contains("could not tell"), "{unknown}");
+        for line in [line, none, unknown] {
+            assert!(line.chars().count() <= 80, "{line}");
+        }
     }
 
     #[test]
