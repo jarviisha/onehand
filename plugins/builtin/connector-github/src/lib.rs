@@ -33,8 +33,25 @@ impl Connector for GitHub {
         }
     }
 
+    /// A repository whose `origin` is on GitHub. Read locally, before anything
+    /// asks GitHub, so a project that can never be worked costs nothing per
+    /// tick but this.
     fn serves_blocking(&self, root: &Path) -> Result<(), String> {
-        github_project_blocking(root)
+        let out = onehand_core::process::output_within(
+            Command::new("git")
+                .arg("-C")
+                .arg(root)
+                .args(["remote", "get-url", "origin"]),
+            LOCAL_LIMIT,
+        )
+        .map_err(|err| format!("git {err}"))?;
+        if !out.status.success() {
+            return Err("it has no `origin` remote to open a pull request against".to_string());
+        }
+        github_remote(
+            String::from_utf8_lossy(&out.stdout).trim(),
+            ssh_resolve_blocking,
+        )
     }
 
     fn open_issues_blocking(&self, root: &Path, limit: usize) -> Result<Vec<IssueRow>, String> {
@@ -73,7 +90,7 @@ impl Connector for GitHub {
                 "number,title,body",
             ],
         )?;
-        serde_json::from_str(&json).map_err(|err| format!("gh printed something unreadable: {err}"))
+        issues(&json)
     }
 
     fn remove_label_blocking(&self, root: &Path, number: u64, label: &str) -> Result<(), String> {
@@ -90,7 +107,22 @@ impl Connector for GitHub {
     }
 
     fn default_branch_blocking(&self, root: &Path) -> Result<String, String> {
-        default_branch_blocking(root)
+        let name = gh(
+            root,
+            &[
+                "repo",
+                "view",
+                "--json",
+                "defaultBranchRef",
+                "-q",
+                ".defaultBranchRef.name",
+            ],
+        )?;
+        if name.is_empty() {
+            Err("GitHub named no default branch for this repository.".to_string())
+        } else {
+            Ok(name)
+        }
     }
 
     fn pull_request_for_blocking(
@@ -98,12 +130,43 @@ impl Connector for GitHub {
         root: &Path,
         branch: &str,
     ) -> Result<Option<String>, String> {
-        pr_for_blocking(root, branch)
+        // `--state all`, because a PR merged or closed before the run is
+        // settled is still the answer to "did it open one".
+        let url = gh(
+            root,
+            &[
+                "pr", "list", "--head", branch, "--state", "all", "--json", "url", "-q", ".[0].url",
+            ],
+        )?;
+        Ok((!url.is_empty()).then_some(url))
     }
 
     fn open_pull_request_with(&self) -> &'static str {
         "`gh pr create`"
     }
+}
+
+/// One issue as `gh --json number,title,body` prints it. The wire shape is
+/// this plugin's to know; what leaves it is core's [`Issue`].
+#[derive(Deserialize)]
+struct GhIssue {
+    number: u64,
+    title: String,
+    #[serde(default)]
+    body: String,
+}
+
+impl From<GhIssue> for Issue {
+    fn from(gh: GhIssue) -> Self {
+        Issue::new(gh.number, gh.title, gh.body)
+    }
+}
+
+/// `gh issue list --json number,title,body` as issues.
+fn issues(json: &str) -> Result<Vec<Issue>, String> {
+    let found: Vec<GhIssue> = serde_json::from_str(json)
+        .map_err(|err| format!("gh printed something unreadable: {err}"))?;
+    Ok(found.into_iter().map(Issue::from).collect())
 }
 
 /// `gh issue list --json number,title,body,author,labels` as rows.
@@ -119,7 +182,7 @@ fn issue_rows(json: &str) -> Result<Vec<IssueRow>, String> {
     #[derive(Deserialize)]
     struct Row {
         #[serde(flatten)]
-        issue: Issue,
+        issue: GhIssue,
         author: Author,
         #[serde(default)]
         labels: Vec<Label>,
@@ -129,7 +192,7 @@ fn issue_rows(json: &str) -> Result<Vec<IssueRow>, String> {
     Ok(rows
         .into_iter()
         .map(|row| IssueRow {
-            issue: row.issue,
+            issue: row.issue.into(),
             author: row.author.login,
             labels: row.labels.into_iter().map(|label| label.name).collect(),
         })
@@ -256,15 +319,9 @@ fn remote_host(url: &str) -> Option<&str> {
 /// such project as not being on GitHub. An https remote has no alias and is
 /// read as written.
 fn github_remote(url: &str, resolve: impl Fn(&str) -> Option<String>) -> Result<(), String> {
-    let refuse = |host: &str| {
-        Err(format!(
-            "its remote is on {host}, and unattended runs work with GitHub only"
-        ))
-    };
+    let refuse = |host: &str| Err(format!("its remote is on {host}, not GitHub"));
     let Some(host) = remote_host(url) else {
-        return Err(
-            "its remote is not on GitHub, and unattended runs work with GitHub only".to_string(),
-        );
+        return Err("its remote is not on GitHub".to_string());
     };
     if host == "github.com" {
         return Ok(());
@@ -306,64 +363,19 @@ fn ssh_resolve_blocking(alias: &str) -> Option<String> {
     ssh_hostname(&String::from_utf8_lossy(&out.stdout)).map(str::to_string)
 }
 
-/// Whether the project at `root` is one a run can work: a repository whose
-/// `origin` is on GitHub. Read locally, before anything asks GitHub, so a
-/// project that can never be worked costs nothing per tick but this.
-fn github_project_blocking(root: &Path) -> Result<(), String> {
-    let out = onehand_core::process::output_within(
-        Command::new("git")
-            .arg("-C")
-            .arg(root)
-            .args(["remote", "get-url", "origin"]),
-        LOCAL_LIMIT,
-    )
-    .map_err(|err| format!("git {err}"))?;
-    if !out.status.success() {
-        return Err("it has no `origin` remote to open a pull request against".to_string());
-    }
-    github_remote(
-        String::from_utf8_lossy(&out.stdout).trim(),
-        ssh_resolve_blocking,
-    )
-}
-
-/// The repository's default branch, as GitHub has it.
-fn default_branch_blocking(root: &Path) -> Result<String, String> {
-    let name = gh(
-        root,
-        &[
-            "repo",
-            "view",
-            "--json",
-            "defaultBranchRef",
-            "-q",
-            ".defaultBranchRef.name",
-        ],
-    )?;
-    if name.is_empty() {
-        Err("GitHub named no default branch for this repository.".to_string())
-    } else {
-        Ok(name)
-    }
-}
-
-/// The pull request opened from `branch`, if there is one.
-///
-/// `--state all`, because a PR merged or closed before the run is settled is
-/// still the answer to "did it open one".
-fn pr_for_blocking(root: &Path, branch: &str) -> Result<Option<String>, String> {
-    let url = gh(
-        root,
-        &[
-            "pr", "list", "--head", branch, "--state", "all", "--json", "url", "-q", ".[0].url",
-        ],
-    )?;
-    Ok((!url.is_empty()).then_some(url))
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn labelled_issues_are_read_and_nothing_unreadable_passes() {
+        let json = r#"[{"number":9,"title":"b","body":""},{"number":4,"title":"a"}]"#;
+        let found = issues(json).unwrap();
+        assert_eq!(found.iter().map(|i| i.number).collect::<Vec<_>>(), [9, 4]);
+        assert_eq!(found[1].title_text(), "a");
+        assert_eq!(issues("[]"), Ok(Vec::new()));
+        assert!(issues("not json").is_err());
+    }
 
     #[test]
     fn a_remote_names_its_host_in_every_form_git_accepts() {
@@ -386,7 +398,7 @@ mod tests {
         assert_eq!(github_remote("https://github.com/a/b", none), Ok(()));
         let why = github_remote("git@gitlab.com:a/b.git", none).unwrap_err();
         assert!(
-            why.contains("gitlab.com") && why.contains("GitHub only"),
+            why.contains("gitlab.com") && why.contains("not GitHub"),
             "{why}"
         );
         assert!(github_remote("/srv/git/local.git", none).is_err());

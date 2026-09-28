@@ -3304,7 +3304,7 @@ impl Shell {
                 let path = path.clone();
                 cx.background_executor()
                     .spawn(async move {
-                        onehand_core::connector::serving(crate::plugins::connectors(), &path)
+                        crate::unattended::connector_for(&path)
                             .and_then(|c| onehand_core::unattended::open_issues_blocking(c, &path))
                     })
                     .await

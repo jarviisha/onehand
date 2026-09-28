@@ -120,7 +120,7 @@ Tests are inline `#[cfg(test)]` modules — there is no `tests/` directory.
 | Path | Crate | What |
 |---|---|---|
 | `crates/app` | `onehand` | the GPUI front end + the binary |
-| `crates/core` | `onehand-core` | GUI-free logic: config, the workspace tree, ACP, the chat model, the remote bridge, editor rules, completion, git status, worktree rules, the directory flatten |
+| `crates/core` | `onehand-core` | GUI-free logic: config, the workspace tree, ACP, the chat model, the remote bridge, the connector contract, editor rules, completion, git status, worktree rules, the directory flatten |
 | `crates/plugin-api` | `onehand-plugin-api` | GUI-free plugin IDs, descriptors, capabilities and registration contract |
 | `crates/plugin-host` | `onehand-plugin-host` | the Workbench mode contract, the remote-channel factory type, and the three things a plugin cannot reach into the binary for: the button wrapper, status ink and the surface a dock card draws on |
 | `crates/terminal-ui` | `onehand-terminal-ui` | shared PTY/grid ownership used by the terminal dock and Neovim |
@@ -141,7 +141,7 @@ profile.
   that awaited tokio I/O directly would panic inside the UI process.
 - **Nothing in core is `pub` unless something outside the crate names it.** This is the same rule
   `crates/app` keeps by making its modules private, arrived at from the other side: core cannot hide
-  its modules, because the app imports all fourteen. So the visibility is per item, and widening one
+  its modules, because the app and the built-in plugins import them. So the visibility is per item, and widening one
   is a decision rather than the default. It is load-bearing for the same reason: `dead_code` stops at
   a `pub` item in a library, so while every function here was `pub`, one that had lost its last
   caller looked exactly like a working feature to the compiler — seventeen accumulated that way, plus

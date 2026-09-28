@@ -19,6 +19,7 @@ use onehand_core::connector::{self, Connector};
 use onehand_core::unattended::{self as core, Ending, Issue, IssueRow};
 use onehand_core::worktree;
 use std::collections::HashMap;
+use std::path::Path;
 use std::path::PathBuf;
 use std::time::Duration;
 
@@ -63,12 +64,17 @@ pub struct Unattended {
 }
 
 /// Each connector's name and what it said about its account: who it acts as,
-/// or why it cannot act.
+/// or why it cannot act. In the order of [`crate::plugins::connectors`].
 pub type Accounts = Vec<(&'static str, Result<String, String>)>;
 
-/// What looking at one project found: the connector that will work it, or why
-/// none can.
-type Looked = Result<&'static dyn Connector, String>;
+/// The connector that will work a project, or why none can.
+type Served = Result<&'static dyn Connector, String>;
+
+/// The connector serving the project at `root`, or every reason none does.
+pub fn connector_for(root: &Path) -> Served {
+    let all = crate::plugins::connectors();
+    connector::serving(all, root).map(|at| all[at])
+}
 
 /// One issue being worked.
 struct Run {
@@ -203,7 +209,7 @@ fn check(roots: Vec<PathBuf>, prune: bool, cx: &mut App) {
 /// connector that serves it — or why none can: no connector serves its remote
 /// (read locally, so a project nobody serves costs no call to anything), or the
 /// one that does has an account it cannot use.
-fn look_blocking(roots: Vec<PathBuf>) -> (Accounts, Vec<(PathBuf, Looked)>) {
+fn look_blocking(roots: Vec<PathBuf>) -> (Accounts, Vec<(PathBuf, Served)>) {
     let all = crate::plugins::connectors();
     let accounts: Accounts = all
         .iter()
@@ -212,13 +218,11 @@ fn look_blocking(roots: Vec<PathBuf>) -> (Accounts, Vec<(PathBuf, Looked)>) {
     let checked = roots
         .into_iter()
         .map(|root| {
-            let looked = connector::serving(all, &root).and_then(|c| {
-                match accounts.iter().find(|(name, _)| *name == c.name()) {
-                    Some((_, Err(why))) => Err(why.clone()),
-                    _ => Ok(c),
-                }
+            let served = connector::serving(all, &root).and_then(|at| match &accounts[at].1 {
+                Ok(_) => Ok(all[at]),
+                Err(why) => Err(why.clone()),
             });
-            (root, looked)
+            (root, served)
         })
         .collect();
     (accounts, checked)
@@ -233,14 +237,14 @@ fn look_blocking(roots: Vec<PathBuf>) -> (Accounts, Vec<(PathBuf, Looked)>) {
 /// takes up to a minute, and a project switched on in that minute has already
 /// been looked at by itself; clearing everything the slower look did not cover
 /// threw that answer away.
-fn record(checked: Vec<(PathBuf, Looked)>, prune: bool, cx: &mut App) {
+fn record(checked: Vec<(PathBuf, Served)>, prune: bool, cx: &mut App) {
     let switched_on = prune.then(|| opted_in_roots(cx));
     with(cx, |u| {
         if let Some(switched_on) = switched_on {
             u.problems.retain(|root, _| switched_on.contains(root));
         }
-        for (root, looked) in checked {
-            match looked {
+        for (root, served) in checked {
+            match served {
                 Err(why) => u.problems.insert(root, why),
                 Ok(_) => u.problems.remove(&root),
             };
@@ -338,7 +342,7 @@ fn tick(asked_from: Option<gpui::AnyWindowHandle>, cx: &mut App) {
                     // Only the projects that passed the look are searched.
                     let workable: Vec<(PathBuf, &'static dyn Connector)> = checked
                         .iter()
-                        .filter_map(|(root, looked)| Some((root.clone(), *looked.as_ref().ok()?)))
+                        .filter_map(|(root, served)| Some((root.clone(), *served.as_ref().ok()?)))
                         .collect();
                     let begun =
                         search.and_then(|label| begin_blocking(&workable, &label, &mut checked));
@@ -398,12 +402,12 @@ struct Unstarted {
 /// which case there is nobody to tell but stderr, since an issue the app could
 /// not edit is one it cannot comment on either. After the claim every failure is
 /// the issue's to hear about.
-/// What each project looked at said is written into `checked` — a reason where
-/// it could not be looked at, `None` where it could — so the rail can show it.
+/// What each project looked at said is written into `checked` — the reason where
+/// it could not be looked at — so the rail can show it.
 fn begin_blocking(
     roots: &[(PathBuf, &'static dyn Connector)],
     label: &str,
-    checked: &mut Vec<(PathBuf, Looked)>,
+    checked: &mut Vec<(PathBuf, Served)>,
 ) -> Option<Result<Claimed, Unstarted>> {
     let (repo, connector, issue) = roots.iter().find_map(|&(ref root, connector)| {
         match core::candidate_blocking(connector, root, label) {
@@ -499,7 +503,7 @@ pub fn start_picked(
             .background_executor()
             .spawn(async move {
                 std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                    let connector = connector::serving(crate::plugins::connectors(), &repo)
+                    let connector = connector_for(&repo)
                         .and_then(|c| {
                             core::claim_picked_blocking(c, &repo, &row, &label).map(|()| c)
                         })

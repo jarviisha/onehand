@@ -98,8 +98,9 @@ crates linked into the binary. A Workbench mode implements one trait: it declare
 itself, hands back a view, and answers the requests it recognises. The panel
 keeps the list, the active ID and the strip, and holds no mode's state.
 `crates/app/src/plugins.rs` is three ordered lists — the modes, the connectors
-a project is offered to, and how a named remote channel is opened — and that order is the user-visible one. Any future
-external plugin system uses a process protocol.
+a project is offered to, and how a named remote channel is opened — and that
+order is the user-visible one. Any future external plugin system uses a process
+protocol.
 
 **Consequences.** The Rust API stays `0.x` without a third-party compatibility
 promise, and this boundary must not change observable Workbench order,

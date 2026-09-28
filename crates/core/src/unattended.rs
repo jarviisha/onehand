@@ -6,20 +6,26 @@
 //! timer, the session, the watching.
 
 use crate::connector::Connector;
-use serde::Deserialize;
 use std::path::Path;
 use std::time::Duration;
 
 /// An issue a run can take.
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Issue {
     pub number: u64,
     title: String,
-    #[serde(default)]
     body: String,
 }
 
 impl Issue {
+    pub fn new(number: u64, title: String, body: String) -> Self {
+        Self {
+            number,
+            title,
+            body,
+        }
+    }
+
     /// What the issue is called.
     pub fn title_text(&self) -> &str {
         &self.title
@@ -30,8 +36,8 @@ impl Issue {
 /// is labelled.
 ///
 /// **Who opened it is on every row**, because the body goes into the prompt
-/// word for word and the agent may run `git` and `gh` with the user's
-/// credentials. The automatic search only ever takes the user's own issues for
+/// word for word and the agent runs with the user's credentials — it pushes
+/// and opens pull requests as them. The automatic search only ever takes the user's own issues for
 /// that reason; a person picking by hand may take anybody's, and the author is
 /// what lets them see whose text they are handing over.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -356,7 +362,7 @@ fn quoted(text: &str) -> String {
 /// leaving it blank has to be "nothing runs", not "everything runs".
 ///
 /// **Only the user's own issues.** The body goes into the prompt word for word
-/// and the agent may run `git` and `gh` with the user's credentials; a label is
+/// and the agent runs with the user's credentials; a label is
 /// something anybody with triage rights can apply, to an issue anybody at all
 /// may have written.
 pub fn candidate_blocking(
@@ -390,6 +396,7 @@ pub fn claim_blocking(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::connector::Fake;
 
     fn issue(number: u64, title: &str) -> Issue {
         Issue {
@@ -450,7 +457,7 @@ mod tests {
             body: body.to_string(),
             ..issue(42, "Crash on open")
         };
-        let prompt = prompt_for(&issue, "onehand/issue-42", &Forge);
+        let prompt = prompt_for(&issue, "onehand/issue-42", &Fake::SERVING);
         assert!(prompt.contains("#42"));
         assert!(prompt.contains("`onehand/issue-42`"));
         assert!(prompt.contains(body));
@@ -577,69 +584,25 @@ mod tests {
         assert!(said.contains("> Should I use A\n> or B?"));
     }
 
-    /// A connector that answers the one question these tests ask of it, and
-    /// fails the test if it is asked anything else.
-    struct Forge;
-
-    impl Connector for Forge {
-        fn name(&self) -> &'static str {
-            "Forge"
-        }
-        fn account_blocking(&self) -> Result<String, String> {
-            unreachable!()
-        }
-        fn serves_blocking(&self, _: &Path) -> Result<(), String> {
-            unreachable!()
-        }
-        fn open_issues_blocking(&self, _: &Path, limit: usize) -> Result<Vec<IssueRow>, String> {
-            Ok((1..=limit as u64)
-                .map(|n| IssueRow {
-                    issue: issue(n, "t"),
-                    author: "a".into(),
-                    labels: Vec::new(),
-                })
-                .collect())
-        }
-        fn my_labelled_issues_blocking(&self, _: &Path, label: &str) -> Result<Vec<Issue>, String> {
-            assert!(
-                !label.trim().is_empty(),
-                "an empty label reached the connector"
-            );
-            Ok(vec![issue(9, "b"), issue(4, "a")])
-        }
-        fn remove_label_blocking(&self, _: &Path, _: u64, _: &str) -> Result<(), String> {
-            unreachable!()
-        }
-        fn comment_blocking(&self, _: &Path, _: u64, _: &str) -> Result<(), String> {
-            unreachable!()
-        }
-        fn default_branch_blocking(&self, _: &Path) -> Result<String, String> {
-            unreachable!()
-        }
-        fn pull_request_for_blocking(&self, _: &Path, _: &str) -> Result<Option<String>, String> {
-            unreachable!()
-        }
-        fn open_pull_request_with(&self) -> &'static str {
-            "`forge pr`"
-        }
-    }
-
     #[test]
     fn an_empty_label_picks_nothing_without_asking() {
         let nowhere = std::env::temp_dir();
-        assert_eq!(candidate_blocking(&Forge, &nowhere, ""), Ok(None));
-        assert_eq!(candidate_blocking(&Forge, &nowhere, "   "), Ok(None));
+        assert_eq!(candidate_blocking(&Fake::SERVING, &nowhere, ""), Ok(None));
+        assert_eq!(
+            candidate_blocking(&Fake::SERVING, &nowhere, "   "),
+            Ok(None)
+        );
     }
 
     #[test]
     fn the_oldest_issue_is_taken_first() {
-        let found = candidate_blocking(&Forge, &std::env::temp_dir(), "auto").unwrap();
+        let found = candidate_blocking(&Fake::SERVING, &std::env::temp_dir(), "auto").unwrap();
         assert_eq!(found.map(|i| i.number), Some(4));
     }
 
     #[test]
     fn a_listing_past_its_bound_is_cut_and_says_so() {
-        let (rows, cut) = open_issues_blocking(&Forge, &std::env::temp_dir()).unwrap();
+        let (rows, cut) = open_issues_blocking(&Fake::SERVING, &std::env::temp_dir()).unwrap();
         assert_eq!(rows.len(), ISSUES_SHOWN);
         assert!(cut);
         let (rows, cut) = bounded(Vec::new());
