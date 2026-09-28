@@ -6,6 +6,35 @@ use std::process::{Command, Output, Stdio};
 use std::sync::mpsc;
 use std::time::{Duration, Instant};
 
+/// Why a bounded command gave no output.
+///
+/// Kept apart rather than flattened to text, because the two mean different
+/// things to a caller: a program that is not installed is a fact about the
+/// machine, and one that ran too long is a fact about right now.
+#[derive(Debug)]
+pub(crate) enum Failure {
+    /// There is no such program to run.
+    Missing,
+    /// It could not be started, for another reason.
+    Unstarted(std::io::Error),
+    /// It ran past its limit and was stopped.
+    TimedOut(Duration),
+}
+
+impl std::fmt::Display for Failure {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Missing => f.write_str("is not installed"),
+            Self::Unstarted(err) => write!(f, "could not be started: {err}"),
+            Self::TimedOut(limit) => write!(
+                f,
+                "did not finish within {}s and was stopped",
+                limit.as_secs()
+            ),
+        }
+    }
+}
+
 /// Run `cmd` to completion, or stop it once it has run for `limit`.
 ///
 /// **A command nobody is watching must not be able to hang its caller.** A
@@ -23,7 +52,7 @@ use std::time::{Duration, Instant};
 ///
 /// On Unix the command runs in a process group of its own, and stopping it
 /// stops the whole group, so what it started goes with it.
-pub(crate) fn output_within(cmd: &mut Command, limit: Duration) -> Result<Output, String> {
+pub(crate) fn output_within(cmd: &mut Command, limit: Duration) -> Result<Output, Failure> {
     #[cfg(unix)]
     std::os::unix::process::CommandExt::process_group(cmd, 0);
     let mut child = cmd
@@ -31,19 +60,20 @@ pub(crate) fn output_within(cmd: &mut Command, limit: Duration) -> Result<Output
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
-        .map_err(|err| err.to_string())?;
-    let out = drain(child.stdout.take().ok_or("no stdout")?);
-    let err = drain(child.stderr.take().ok_or("no stderr")?);
+        .map_err(|err| match err.kind() {
+            std::io::ErrorKind::NotFound => Failure::Missing,
+            _ => Failure::Unstarted(err),
+        })?;
+    // Both are piped just above, so both are there to take.
+    let out = drain(child.stdout.take().expect("stdout was piped"));
+    let err = drain(child.stderr.take().expect("stderr was piped"));
     let deadline = Instant::now() + limit;
     let status = loop {
-        match child.try_wait().map_err(|err| err.to_string())? {
+        match child.try_wait().map_err(Failure::Unstarted)? {
             Some(status) => break status,
             None if Instant::now() >= deadline => {
                 stop(&mut child);
-                return Err(format!(
-                    "did not finish within {}s and was stopped",
-                    limit.as_secs()
-                ));
+                return Err(Failure::TimedOut(limit));
             }
             None => std::thread::sleep(Duration::from_millis(50)),
         }
@@ -96,7 +126,7 @@ mod tests {
     fn a_command_that_outlives_its_limit_is_stopped_and_said() {
         let started = Instant::now();
         let out = output_within(Command::new("sleep").arg("5"), Duration::from_millis(200));
-        assert!(out.unwrap_err().contains("did not finish"));
+        assert!(out.unwrap_err().to_string().contains("did not finish"));
         assert!(started.elapsed() < Duration::from_secs(3));
     }
 
@@ -114,6 +144,17 @@ mod tests {
         assert!(out.status.success());
         assert!(String::from_utf8_lossy(&out.stdout).contains("hi"));
         assert!(started.elapsed() < Duration::from_secs(3));
+    }
+
+    #[test]
+    fn a_program_that_is_not_there_is_told_apart_from_one_that_ran_long() {
+        let missing = output_within(
+            &mut Command::new("onehand-no-such-program"),
+            Duration::from_secs(1),
+        );
+        assert!(matches!(missing, Err(Failure::Missing)));
+        let long = output_within(Command::new("sleep").arg("5"), Duration::from_millis(100));
+        assert!(matches!(long, Err(Failure::TimedOut(_))));
     }
 
     #[test]

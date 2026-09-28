@@ -219,20 +219,40 @@ struct EmptyProject {
     /// still running, which is a different thing from a project that has none:
     /// one is a wait and the other is an answer.
     history: Option<Vec<ConvMeta>>,
-    /// Whether it is pinned to the top of the rail, and whether it is a git
-    /// repository.
-    ///
-    /// Two facts the page's own menu needs and cannot work out: one lives in the
-    /// workspace tree and the other in a `git status` sweep, and both are the
-    /// shell's. Pushed rather than asked for, like everything else the pane
-    /// knows about the window, and pushed again whenever either changes — a menu
-    /// still offering *Pin to top* on a project pinned a second ago is worse
-    /// than one that does not offer it at all.
-    pinned: bool,
-    is_repo: bool,
-    /// Whether its labelled issues may be worked unattended — the third fact
-    /// the menu reads, pushed for the same reason as the two above.
-    unattended: bool,
+    /// What the page's own menu needs to know about the project and cannot
+    /// work out: they live in the workspace tree and in a `git status` sweep,
+    /// and both are the shell's. Pushed rather than asked for, like everything
+    /// else the pane knows about the window, and pushed again whenever one
+    /// changes — a menu still offering *Pin to top* on a project pinned a
+    /// second ago is worse than one that does not offer it at all.
+    facts: ProjectFacts,
+}
+
+/// What a project's menu says about it, wherever that menu is drawn.
+#[derive(Clone, Copy, Default, PartialEq, Eq)]
+pub struct ProjectFacts {
+    /// Held at the top of the rail.
+    pub pinned: bool,
+    /// A git repository, so there is a branch to rename and a worktree to split.
+    pub is_repo: bool,
+    /// Whether its labelled issues may be worked unattended — `None` where the
+    /// switch is not offered at all, which is a run's own worktree: not a
+    /// project anybody chose, and one no run ever searches.
+    pub unattended: Option<bool>,
+}
+
+impl ProjectFacts {
+    /// The facts about `root`, given whether the last `git status` sweep found
+    /// a repository there. One place, because the rail and the project page
+    /// both build these and a copy in each is two answers to "is the switch
+    /// offered here".
+    pub fn of(root: &onehand_core::workspace::ProjectRoot, is_repo: bool) -> Self {
+        Self {
+            pinned: root.pinned,
+            is_repo,
+            unattended: (!root.transient).then_some(root.unattended),
+        }
+    }
 }
 
 /// The conversations already had in the project on screen, for the header's
@@ -931,12 +951,11 @@ impl ChatPane {
             label,
             path,
             history: None,
-            // Both arrive from the shell a moment later, on the same switch
+            // They arrive from the shell a moment later, on the same switch
             // that brought this page up. Defaulting to "not pinned, not a
-            // repository" is what a menu drawn in that moment can honestly say.
-            pinned: false,
-            is_repo: false,
-            unattended: false,
+            // repository, no switch offered" is what a menu drawn in that
+            // moment can honestly say.
+            facts: ProjectFacts::default(),
         });
         self.scan_project_history(cx);
         // Going to no session at all is still leaving the one that was showing,
@@ -1200,22 +1219,14 @@ impl ChatPane {
     ///
     /// Guarded for the same reason the flag below is: this is pushed from the
     /// same places a git sweep lands, and a sweep lands on every finished turn.
-    pub fn set_project_facts(
-        &mut self,
-        pinned: bool,
-        is_repo: bool,
-        unattended: bool,
-        cx: &mut Context<Self>,
-    ) {
+    pub fn set_project_facts(&mut self, facts: ProjectFacts, cx: &mut Context<Self>) {
         let Some(project) = self.empty.as_mut() else {
             return;
         };
-        if (project.pinned, project.is_repo, project.unattended) == (pinned, is_repo, unattended) {
+        if project.facts == facts {
             return;
         }
-        project.pinned = pinned;
-        project.is_repo = is_repo;
-        project.unattended = unattended;
+        project.facts = facts;
         cx.notify();
     }
 
@@ -3089,7 +3100,7 @@ impl ChatPane {
             // every case this branch is reached in.
             None => self.active.unwrap_or_default(),
         };
-        let project = project.map(|project| (project.pinned, project.is_repo, project.unattended));
+        let project = project.map(|project| project.facts);
         let this = cx.entity();
 
         // The same small ghost button as the rest of the header's controls,
@@ -3110,10 +3121,10 @@ impl ChatPane {
         // conversation's are different menus, and one name for both would key
         // them together across the one switch the page itself makes.
         let menu = match project {
-            Some((pinned, is_repo, unattended)) => crate::controls::menu_below(
+            Some(facts) => crate::controls::menu_below(
                 ("project-menu-popup", key),
                 trigger,
-                project_menu(pinned, is_repo, unattended, this),
+                project_menu(facts, this),
             ),
             None => crate::controls::menu_below(
                 ("conversation-menu-popup", key),
@@ -4728,9 +4739,11 @@ fn restart_needs_arming(busy: bool, armed: Option<u64>, uid: u64) -> bool {
 /// and the pane holds conversations. The builder rather than the element, so the
 /// row it hangs off stays the header's to draw.
 fn project_menu(
-    pinned: bool,
-    is_repo: bool,
-    unattended: bool,
+    ProjectFacts {
+        pinned,
+        is_repo,
+        unattended,
+    }: ProjectFacts,
     pane: Entity<ChatPane>,
 ) -> impl Fn(
     gpui_component::menu::PopupMenu,
@@ -4755,12 +4768,12 @@ fn project_menu(
                 .icon(Icon::new(IconName::Star))
                 .on_click(act(ProjectAction::TogglePin, pane.clone())),
         )
-        .item(
-            crate::controls::menu_item(crate::rail::UNATTENDED_ENTRY)
-                .icon(Icon::new(IconName::Bot))
-                .checked(unattended)
-                .on_click(act(ProjectAction::ToggleUnattended, pane.clone())),
-        )
+        .when_some(unattended, |menu, on| {
+            menu.item(crate::rail::unattended_item(
+                on,
+                act(ProjectAction::ToggleUnattended, pane.clone()),
+            ))
+        })
         // Only where there is a repository to split. On a plain folder this
         // could do nothing but report that git said no, and an entry whose whole
         // job is to fail is one the eye has to learn to skip.

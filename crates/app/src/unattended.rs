@@ -35,9 +35,11 @@ pub struct Unattended {
     /// A claim is on its way to GitHub and the worktree is being made. A tick
     /// landing now must not start a second.
     claiming: bool,
-    /// The configuration cannot work (the agent offers no such mode), and every
-    /// run would fail the same way on a fresh issue. Said once and stopped.
-    halted: bool,
+    /// Why no run can start at all, whatever project is switched on: a config
+    /// that cannot work (no label, an interval that does not parse, a mode the
+    /// agent does not offer). Every run would fail the same way on a fresh
+    /// issue, so the search stops, and every switched-on row says why.
+    blocked: Option<String>,
     run: Option<Run>,
     /// What `gh` last said about being signed in, for the line in Settings.
     /// `None` until the first answer lands.
@@ -73,32 +75,39 @@ struct Run {
     _clock: Task<()>,
 }
 
-/// Start the tick.
+/// Start the tick, or say why it cannot run.
 ///
-/// It always runs, because whether anything happens is decided per project and
-/// no project is opted in until somebody opts it in — a tick over no opted-in
-/// project looks at nothing and asks GitHub nothing. What fails here fails by
-/// not starting, out loud on stderr, like the remote bridge: a feature that
-/// looks on but never runs is indistinguishable from one that is broken.
+/// **The state is filed either way.** A config that cannot work is not the same
+/// as a feature that is off: the switches are still on screen and still
+/// switchable, so the reason has to be somewhere the rows and Settings can read
+/// it — left only on stderr, a bad interval read on screen as a missing label,
+/// and the GitHub line waited for an answer that was never going to come. The
+/// search is what stops; looking at projects and at `gh` still works.
 pub fn boot(cfg: &UnattendedConfig, cx: &mut App) {
-    if cfg.label.trim().is_empty() {
-        eprintln!(
-            "onehand: unattended runs are enabled but no label is set, so they would \
-             pick nothing. Set unattended.label."
-        );
-        return;
-    }
-    let (Some(every), Some(timeout)) = (
-        core::parse_every(&cfg.every),
-        core::parse_every(&cfg.timeout),
-    ) else {
-        eprintln!(
-            "onehand: unattended.every and unattended.timeout take a number and a unit \
-             (\"30m\", \"2h\", \"90s\"); got {:?} and {:?}.",
+    let label = cfg.label.trim().to_string();
+    let every = core::parse_every(&cfg.every);
+    let timeout = core::parse_every(&cfg.timeout);
+    let blocked = if label.is_empty() {
+        Some("no label is set in the config (unattended.label), so nothing is picked up".into())
+    } else if every.is_none() || timeout.is_none() {
+        Some(format!(
+            "unattended.every and unattended.timeout take a number and a unit (\"30m\", \
+             \"2h\", \"90s\"); the config has {:?} and {:?}",
             cfg.every, cfg.timeout
-        );
-        return;
+        ))
+    } else {
+        None
     };
+    if let Some(why) = &blocked {
+        eprintln!("onehand: unattended runs cannot start: {why}");
+    }
+    // The tick runs whatever the config says, because it is also what keeps the
+    // rows' answers current; it only searches when nothing blocks a run.
+    // The defaults are core's, parsed, so there is one answer to "how often".
+    let fallback = UnattendedConfig::default();
+    let every = every
+        .or_else(|| core::parse_every(&fallback.every))
+        .unwrap_or(Duration::from_secs(1800));
     let tick = cx.spawn(async move |cx| {
         loop {
             cx.background_executor().timer(every).await;
@@ -107,18 +116,25 @@ pub fn boot(cfg: &UnattendedConfig, cx: &mut App) {
     });
     cx.update_global::<Shared, _>(|shared, _| {
         shared.unattended = Some(Unattended {
-            label: cfg.label.trim().to_string(),
-            timeout,
+            label,
+            timeout: timeout
+                .or_else(|| core::parse_every(&fallback.timeout))
+                .unwrap_or(Duration::from_secs(2700)),
             mode: cfg.mode.clone(),
             agent: cfg.agent.clone(),
             claiming: false,
-            halted: false,
+            blocked,
             run: None,
             github: None,
             problems: HashMap::new(),
             _tick: tick,
         });
     });
+}
+
+/// Why no run can start at all, if something stops every one.
+pub fn blocked(cx: &App) -> Option<String> {
+    Shared::global(cx).unattended.as_ref()?.blocked.clone()
 }
 
 /// What `gh` last said about being signed in, if it has answered yet.
@@ -137,64 +153,67 @@ pub fn problem(root: &std::path::Path, cx: &App) -> Option<String> {
 }
 
 /// Ask `gh` again, and look again at every project that is switched on —
-/// what the Settings page's *Check again* does, and what boot does once.
+/// what Settings' *Check again* does, and what a window does when it opens.
 pub fn recheck(cx: &mut App) {
     let roots = opted_in_roots(cx);
-    cx.spawn(async move |cx| {
-        let (github, checked) = cx
-            .background_executor()
-            .spawn(async move {
-                let github = core::github_blocking();
-                let checked: Vec<_> = roots
-                    .into_iter()
-                    .map(|root| {
-                        let why = core::github_project_blocking(&root)
-                            .err()
-                            .or_else(|| github.problem());
-                        (root, why)
-                    })
-                    .collect();
-                (github, checked)
-            })
-            .await;
-        cx.update(|cx| {
-            with(cx, |u| u.github = Some(github));
-            record(checked, cx);
-        });
-    })
-    .detach();
+    check(roots, true, cx);
 }
 
 /// Look at one project that was just switched on, so a switch that cannot work
 /// says so now rather than at the next tick, half an hour away.
 pub fn check_now(root: PathBuf, cx: &mut App) {
+    check(vec![root], false, cx);
+}
+
+/// Ask `gh` who it is signed in as and look at `roots`, off the UI loop, then
+/// file what was found. `prune` when `roots` is every switched-on project, so
+/// what is kept for a project since switched off or closed goes with it.
+fn check(roots: Vec<PathBuf>, prune: bool, cx: &mut App) {
     cx.spawn(async move |cx| {
-        let (github, why) = cx
+        let (github, checked) = cx
             .background_executor()
-            .spawn(async move {
-                let github = core::github_blocking();
-                let why = core::github_project_blocking(&root)
-                    .err()
-                    .or_else(|| github.problem());
-                (github, (root, why))
-            })
+            .spawn(async move { look_blocking(roots) })
             .await;
         cx.update(|cx| {
             with(cx, |u| u.github = Some(github));
-            record(vec![why], cx);
+            record(checked, prune, cx);
         });
     })
     .detach();
 }
 
-/// Forget what was last found about `root` — it was switched off.
-pub fn forget(root: &std::path::Path, cx: &mut App) {
-    with(cx, |u| u.problems.remove(root));
+/// What `gh` says about being signed in, and for each of `roots` why it cannot
+/// be worked, if it cannot: a remote not on GitHub (read locally, so a project
+/// somewhere else costs no call to GitHub), or a `gh` that cannot be used.
+fn look_blocking(roots: Vec<PathBuf>) -> (GitHub, Vec<(PathBuf, Option<String>)>) {
+    let github = core::github_blocking();
+    let checked = roots
+        .into_iter()
+        .map(|root| {
+            let why = core::github_project_blocking(&root)
+                .err()
+                .or_else(|| github.problem());
+            (root, why)
+        })
+        .collect();
+    (github, checked)
 }
 
-/// File what each look found, and redraw the rows that show it.
-fn record(checked: Vec<(PathBuf, Option<String>)>, cx: &mut App) {
+/// File what each look found, and redraw the rows that show it. A later entry
+/// for the same project wins, so a search that failed after its project passed
+/// the look is what the row says.
+///
+/// `prune` drops what is kept for projects no longer switched on — read now,
+/// when the answer lands, and not from the list the look started with. A look
+/// takes up to a minute, and a project switched on in that minute has already
+/// been looked at by itself; clearing everything the slower look did not cover
+/// threw that answer away.
+fn record(checked: Vec<(PathBuf, Option<String>)>, prune: bool, cx: &mut App) {
+    let switched_on = prune.then(|| opted_in_roots(cx));
     with(cx, |u| {
+        if let Some(switched_on) = switched_on {
+            u.problems.retain(|root, _| switched_on.contains(root));
+        }
         for (root, why) in checked {
             match why {
                 Some(why) => u.problems.insert(root, why),
@@ -235,8 +254,12 @@ pub fn live_run(cx: &App) -> Option<(PathBuf, u64)> {
 
 /// The label that asks for a run, for the places that tell the user which
 /// label to put on an issue.
-pub fn label(cx: &App) -> Option<String> {
-    Some(Shared::global(cx).unattended.as_ref()?.label.clone())
+pub fn label(cx: &App) -> String {
+    Shared::global(cx)
+        .unattended
+        .as_ref()
+        .map(|u| u.label.clone())
+        .unwrap_or_default()
 }
 
 /// Whether `uid` is the session of the run in progress.
@@ -253,42 +276,65 @@ fn with<R>(cx: &mut App, act: impl FnOnce(&mut Unattended) -> R) -> Option<R> {
     cx.update_global::<Shared, _>(|shared, _| shared.unattended.as_mut().map(act))
 }
 
-/// Look for an issue, if nothing is running.
+/// Look at every switched-on project, and search them for an issue if
+/// nothing is running and nothing blocks a run.
+///
+/// **Every tick looks, even while a run is live.** The rows show what the last
+/// look found, and a tick that only looked while it was about to search left
+/// them as old as the run was long — and left `gh` signed in on screen after it
+/// had been signed out.
 fn tick(cx: &mut App) {
-    let Some(label) = with(cx, |u| {
-        let idle = !u.claiming && !u.halted && u.run.is_none();
+    let roots = opted_in_roots(cx);
+    // Nothing switched on is nothing to look at and nothing to search, so a
+    // tick asks GitHub nothing at all — the feature costs nobody who has not
+    // switched a project on.
+    if roots.is_empty() {
+        return;
+    }
+    let search = with(cx, |u| {
+        let idle = !u.claiming && u.blocked.is_none() && u.run.is_none();
         idle.then(|| {
             u.claiming = true;
             u.label.clone()
         })
     })
-    .flatten() else {
-        return;
-    };
-    let roots = opted_in_roots(cx);
+    .flatten();
     cx.spawn(async move |cx| {
+        let searching = search.is_some();
         // A panic in there would otherwise leave `claiming` set for the life of
         // the process, and no issue would be looked for again. Said and treated
         // as nothing found.
-        let (checked, begun) = cx
+        let (github, checked, begun) = cx
             .background_executor()
             .spawn(async move {
                 std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                    let mut checked = Vec::new();
-                    let begun = begin_blocking(&roots, &label, &mut checked);
-                    (checked, begun)
+                    let (github, mut checked) = look_blocking(roots);
+                    // Only the projects that passed the look are searched.
+                    let workable: Vec<PathBuf> = checked
+                        .iter()
+                        .filter(|(_, why)| why.is_none())
+                        .map(|(root, _)| root.clone())
+                        .collect();
+                    let begun =
+                        search.and_then(|label| begin_blocking(&workable, &label, &mut checked));
+                    (Some(github), checked, begun)
                 }))
                 .unwrap_or_else(|_| {
-                    // Only the search and the claim are left for this to catch,
-                    // and neither has taken a label unless it finished.
+                    // The look, the search and the claim are all in here, and
+                    // none of them has taken a label unless it finished.
                     eprintln!("onehand: looking for an unattended run panicked");
-                    (Vec::new(), None)
+                    (None, Vec::new(), None)
                 })
             })
             .await;
         cx.update(|cx| {
-            record(checked, cx);
-            landed(begun, cx);
+            if let Some(github) = github {
+                with(cx, |u| u.github = Some(github));
+                record(checked, true, cx);
+            }
+            if searching {
+                landed(begun, cx);
+            }
         });
     })
     .detach();
@@ -325,22 +371,16 @@ fn begin_blocking(
     label: &str,
     checked: &mut Vec<(PathBuf, Option<String>)>,
 ) -> Option<Result<Claimed, Unstarted>> {
-    let (repo, issue) = roots.iter().find_map(|root| {
-        // Read locally first: a project that is not on GitHub is told so
-        // without a call to GitHub it could never answer.
-        let found = core::github_project_blocking(root)
-            .and_then(|()| core::candidate_blocking(root, label));
-        match found {
-            Ok(found) => {
-                checked.push((root.clone(), None));
-                found.map(|issue| (root.clone(), issue))
-            }
-            Err(why) => {
-                checked.push((root.clone(), Some(why)));
-                None
-            }
-        }
-    })?;
+    let (repo, issue) =
+        roots
+            .iter()
+            .find_map(|root| match core::candidate_blocking(root, label) {
+                Ok(found) => found.map(|issue| (root.clone(), issue)),
+                Err(why) => {
+                    checked.push((root.clone(), Some(why)));
+                    None
+                }
+            })?;
     if let Err(why) = core::claim_blocking(&repo, issue.number, label) {
         eprintln!("onehand: could not claim issue #{}: {why}", issue.number);
         return None;
@@ -580,12 +620,12 @@ fn prompt(uid: u64, session: &Entity<ChatSession>, cx: &mut App) {
     if !offered.contains(&mode) {
         // Every run would fail this way, each on a fresh issue, so the tick
         // stops here rather than working through the backlog to say it.
-        with(cx, |u| u.halted = true);
         let why = format!(
             "the agent offers no mode `{mode}` (it offers: {}). Unattended runs are paused \
              until unattended.mode is fixed and onehand restarted.",
             offered.join(", ")
         );
+        with(cx, |u| u.blocked = Some(why.clone()));
         eprintln!("onehand: {why}");
         settle(uid, Ending::Failed(why), cx);
         return;

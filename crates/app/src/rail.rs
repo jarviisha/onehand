@@ -26,7 +26,7 @@
 //!   has a shape of its own, not a tint of one shared dot, and names itself in
 //!   a tooltip. A calmly-ready session is a clean text row.
 
-use crate::chat::pane::SessionSignal;
+use crate::chat::pane::{ProjectFacts, SessionSignal};
 use crate::shell::Shell;
 use crate::state::WorkspaceWindow;
 use gpui::prelude::FluentBuilder as _;
@@ -1112,9 +1112,21 @@ fn project_hint(
     hint
 }
 
-/// What the entry that turns unattended runs on and off for a project is
-/// called, in both menus that carry it.
-pub const UNATTENDED_ENTRY: &str = "Work labelled issues";
+/// The entry that turns unattended runs on and off for a project, in both menus
+/// that carry it — the rail's and the project page's — built here once so the
+/// two cannot come to say it differently.
+///
+/// A check rather than an on/off pair of labels: the same switch is a switch in
+/// Settings, and the check is what makes it read as one here.
+pub fn unattended_item(
+    on: bool,
+    click: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static,
+) -> PopupMenuItem {
+    crate::controls::menu_item("Work labelled issues")
+        .icon(Icon::new(IconName::Bot))
+        .checked(on)
+        .on_click(click)
+}
 
 /// What a project row says about unattended runs.
 #[derive(Debug, PartialEq)]
@@ -1136,46 +1148,39 @@ struct AutoStatus {
 /// there — switching off stops the next run, not the one already going.
 ///
 /// **A switch that is on while nothing can happen is the one state that looks
-/// exactly like working**, so every way it can be stuck is said on the row: no
-/// label to look for, or the last look at the project failing — a remote that
-/// is not on GitHub, a `gh` that is missing or signed out.
+/// exactly like working**, so every way it can be stuck is said on the row, as
+/// `stuck`: a config that stops every run (no label, an interval that does not
+/// parse, a mode the agent does not offer), or the last look at this project
+/// failing — a remote that is not on GitHub, a `gh` that is missing or signed
+/// out.
 fn auto_status(
     unattended: bool,
     working: Option<u64>,
-    label: Option<String>,
-    problem: Option<String>,
+    label: &str,
+    stuck: Option<String>,
 ) -> Option<AutoStatus> {
     let status = |badge: String, line: String, stuck: bool| AutoStatus {
         badge: badge.into(),
         line: line.into(),
         stuck,
     };
-    match (unattended, working) {
-        (_, Some(n)) => Some(status(
+    match (unattended, working, stuck) {
+        (_, Some(n), _) => Some(status(
             format!("auto · #{n}"),
             format!("Unattended run working on issue #{n}"),
             false,
         )),
-        (false, None) => None,
-        (true, None) => Some(match (label, problem) {
-            (None, _) => status(
-                "auto".into(),
-                "Unattended runs on, but no label is set in the config, so nothing is \
-                 picked up"
-                    .into(),
-                true,
-            ),
-            (Some(_), Some(why)) => status(
-                "auto".into(),
-                format!("Unattended runs on, but this project cannot be worked: {why}"),
-                true,
-            ),
-            (Some(label), None) => status(
-                "auto".into(),
-                format!("Unattended runs on: issues you opened labelled `{label}` are picked up"),
-                false,
-            ),
-        }),
+        (false, None, _) => None,
+        (true, None, Some(why)) => Some(status(
+            "auto".into(),
+            format!("Unattended runs on, but nothing can be picked up here: {why}"),
+            true,
+        )),
+        (true, None, None) => Some(status(
+            "auto".into(),
+            format!("Unattended runs on: issues you opened labelled `{label}` are picked up"),
+            false,
+        )),
     }
 }
 
@@ -1205,9 +1210,11 @@ fn auto_status(
 /// disagree about that argument, and `Context` derefs to `App`.
 fn project_menu(
     root_idx: usize,
-    pinned: bool,
-    is_repo: bool,
-    unattended: bool,
+    ProjectFacts {
+        pinned,
+        is_repo,
+        unattended,
+    }: ProjectFacts,
     shell: WeakEntity<Shell>,
 ) -> impl Fn(PopupMenu, &mut Window, &mut App) -> PopupMenu + use<> {
     move |menu, _, cx: &mut App| {
@@ -1235,19 +1242,14 @@ fn project_menu(
                     .ok();
                 }),
         )
-        // A check rather than an on/off pair of labels: the same switch is a
-        // switch in Settings, and the check is what makes it read as one here.
-        .item(
-            crate::controls::menu_item(UNATTENDED_ENTRY)
-                .icon(Icon::new(IconName::Bot))
-                .checked(unattended)
-                .on_click(move |_, window, cx: &mut App| {
-                    auto.update(cx, |shell: &mut Shell, cx| {
-                        shell.toggle_unattended(root_idx, window, cx);
-                    })
-                    .ok();
-                }),
-        )
+        .when_some(unattended, |menu, on| {
+            menu.item(unattended_item(on, move |_, window, cx: &mut App| {
+                auto.update(cx, |shell: &mut Shell, cx| {
+                    shell.toggle_unattended(root_idx, window, cx);
+                })
+                .ok();
+            }))
+        })
         .item(
             crate::controls::menu_item("New session")
                 .icon(Icon::new(IconName::Plus))
@@ -1370,8 +1372,9 @@ fn folder_row(
     let auto = auto_status(
         unattended,
         working,
-        crate::unattended::label(cx),
-        crate::unattended::problem(&root.path, cx),
+        &crate::unattended::label(cx),
+        // What stops every run outranks what stops this project's.
+        crate::unattended::blocked(cx).or_else(|| crate::unattended::problem(&root.path, cx)),
     );
     // Only the selected project shows what is in it until somebody says
     // otherwise, or a workspace of ten roots is a rail nobody can see the
@@ -1389,6 +1392,7 @@ fn folder_row(
     // A status at all is the answer to "is this a git repository": the sweep
     // only records a root `git status` succeeded in.
     let is_repo = git.is_some();
+    let facts = ProjectFacts::of(root, is_repo);
     let branch = git.map(|status| SharedString::from(status.branch.clone()));
     let changed = git.map(|status| status.changed).unwrap_or(0);
     let path = SharedString::from(root.path.display().to_string());
@@ -1495,13 +1499,7 @@ fn folder_row(
         // in mirror image. Going to a project is asking what is in it, so
         // `Shell::select_root` reveals; only the caret puts it away again.
         // (The click handler rides in `RailRow::new` above.)
-        .menu(project_menu(
-            root_idx,
-            pinned,
-            is_repo,
-            unattended,
-            menu_target,
-        ))
+        .menu(project_menu(root_idx, facts, menu_target))
         // Dragged and dropped by display position: `Workspace::move_root`
         // writes the permutation back into `roots`, so the order the row was
         // dropped into is the order the workspace file keeps. Crossing the pin
@@ -1604,7 +1602,7 @@ fn folder_row(
                     row.child(menu_button(
                         rail_control(("project-menu", root_idx), IconName::Ellipsis),
                         "What can be done with this project",
-                        project_menu(root_idx, pinned, is_repo, unattended, suffix_target),
+                        project_menu(root_idx, facts, suffix_target),
                     ))
                 })
                 // Last, so it is in the same place on every row whatever
@@ -2586,29 +2584,24 @@ mod tests {
         );
     }
 
-    /// A project that is neither a repository nor changed is the row the old
-    /// tooltip could not reach at all: it hung off the git suffix, and that
-    /// row draws none. It still has a name and a path, and those are what the
-    /// hover is for.
+    /// A switched-on project's row says so, says which issue a run is on, and
+    /// says in words why when nothing can come of the switch.
     #[test]
     fn a_project_says_whether_its_issues_are_worked_and_which_one_is() {
-        let label = || Some("auto".to_string());
-        assert_eq!(auto_status(false, None, label(), None), None);
-        let on = auto_status(true, None, label(), None).unwrap();
+        assert_eq!(auto_status(false, None, "auto", None), None);
+        let on = auto_status(true, None, "auto", None).unwrap();
         assert_eq!(on.badge.as_ref(), "auto");
         assert!(on.line.contains("`auto`") && !on.stuck);
-        let working = auto_status(true, Some(46), label(), None).unwrap();
+        let working = auto_status(true, Some(46), "auto", None).unwrap();
         assert_eq!(working.badge.as_ref(), "auto · #46");
         assert!(working.line.contains("#46"));
         // Switched off mid-run: the run already going is still said.
-        assert!(auto_status(false, Some(46), label(), None).is_some());
-        // Every way to be on with nothing possible is stuck, and says why.
-        let unlabelled = auto_status(true, None, None, None).unwrap();
-        assert!(unlabelled.stuck && unlabelled.line.contains("no label"));
+        assert!(auto_status(false, Some(46), "auto", None).is_some());
+        // On with nothing possible is stuck, and says why in its own words.
         let elsewhere = auto_status(
             true,
             None,
-            label(),
+            "auto",
             Some("its remote is on gitlab.com".into()),
         )
         .unwrap();
@@ -2620,6 +2613,10 @@ mod tests {
         assert!(hint.contains(&on.line));
     }
 
+    /// A project that is neither a repository nor changed is the row the old
+    /// tooltip could not reach at all: it hung off the git suffix, and that
+    /// row draws none. It still has a name and a path, and those are what the
+    /// hover is for.
     #[test]
     fn a_plain_folder_still_answers_on_hover() {
         let path = SharedString::from("/work/notes");

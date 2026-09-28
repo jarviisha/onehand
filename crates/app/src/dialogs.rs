@@ -707,31 +707,34 @@ fn unattended_section(handle: &Entity<Shell>, cx: &App) -> AnyElement {
                         }),
                 ),
         )
-        .child(
-            div().text_color(muted).child(match label {
-                Some(label) => format!(
-                    "An issue you opened, labelled `{label}`, in a project switched on here is \
-                 picked up by an agent, worked in a worktree of its own, and answered \
-                 with a pull request."
-                ),
-                // Nothing can run, and the switches below would look as though
-                // they did something.
-                None => "No label is set for unattended runs in the config, so nothing is \
-                     picked up whatever is switched on here."
-                    .to_string(),
-            }),
-        )
+        .child(div().text_color(muted).child(format!(
+            "An issue you opened, labelled `{label}`, in a project switched on here is \
+                 picked up by an agent, worked in a worktree of its own, and answered with \
+                 a pull request."
+        )))
+        // Whatever stops every run, said above the switches in the warning
+        // ink: with it unsaid they would look as though they did something.
+        .when_some(crate::unattended::blocked(cx), |page, why| {
+            page.child(
+                div()
+                    .text_color(ink.warning)
+                    .child(format!("Nothing will be picked up: {why}")),
+            )
+        })
         .children(choices.into_iter().map(|(idx, name, on)| {
             let shell = handle.clone();
             // The switch sets no cursor of its own, and an arrow over a control
-            // that acts reads as one that does not.
-            div().cursor_pointer().child(
-                Switch::new(("unattended", idx))
-                    .checked(on)
-                    .label(name)
-                    .on_click(move |_: &bool, window: &mut Window, cx: &mut App| {
-                        shell.update(cx, |shell, cx| shell.toggle_unattended(idx, window, cx));
-                    }),
+            // that acts reads as one that does not. Held to its own width, so
+            // the empty space to the right of the name is not a target.
+            div().h_flex().child(
+                div().flex_none().cursor_pointer().child(
+                    Switch::new(("unattended", idx))
+                        .checked(on)
+                        .label(name)
+                        .on_click(move |_: &bool, window: &mut Window, cx: &mut App| {
+                            shell.update(cx, |shell, cx| shell.toggle_unattended(idx, window, cx));
+                        }),
+                ),
             )
         }))
         .into_any_element()

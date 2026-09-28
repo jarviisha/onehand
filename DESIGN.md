@@ -206,17 +206,23 @@ One window hosts exactly one workspace. The frame is a navigation **rail** plus 
   could quietly hide. The hover says it in full: which label is looked for, or
   which issue is being worked.
 - **A switch that is on while nothing can happen says so on the row.** That is
-  the one state that looks exactly like working. So when there is no label to
-  look for, or the last look at the project failed, the pill keeps its word and
-  takes the **warning ink**, and the hover gives the reason: a remote that is not
-  on GitHub, a `gh` that is missing or signed out, GitHub not answering. The
-  colour says "look here" and the words say what is wrong, so neither carries the
-  message alone. A project is looked at the moment it is switched on and when
-  its window opens, and not only on the next tick.
+  the one state that looks exactly like working. So when something stops every
+  run, or the last look at the project failed, the pill keeps its word and takes
+  the **warning ink**, and the hover gives the reason. What stops every run is a
+  config that cannot work: no label, an interval that does not parse, a mode the
+  agent does not offer. What fails a look is a remote that is not on GitHub, or a
+  `gh` that is missing, signed out or not answering. The colour says "look here"
+  and the words say what is wrong, so neither carries the message alone. A
+  project is looked at the moment it is switched on, when its window opens, and
+  on every tick, a run in progress included. The switch is **not offered on a
+  run's own worktree**: nobody chose that project, and no run ever searches it.
 - **The connection runs are made through is stated where the switches are.** At
   the head of Settings ▸ Workspace's list, one line reads *GitHub: signed in as
   …, through `gh`* in the success ink, or says in the warning ink what is wrong
-  and what to run about it. Beside it sits a ghost *Check again*. There is no
+  and what to run about it. Beside it sits a ghost *Check again*. When the config
+  stops every run, a warning line under the explanation says so before any
+  switch is read. Each switch takes the pointer across its own width only, not
+  across the empty column beside its name. There is no
   line per forge: GitHub is the only one runs can reach, and a status for one
   they cannot use would read as a promise.
 - **Everything else is a dock panel**, and the arrangement persists as **five

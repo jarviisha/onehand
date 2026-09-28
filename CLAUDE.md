@@ -582,9 +582,14 @@ with `cx.refresh_windows()` at start and settle because nothing the rail watches
 `origin` locally before any call to GitHub, and `github_blocking` asks `gh api user` who is signed in.
 What either finds is kept per project (`Unattended::problems`) and shown as the pill in the warning
 ink with the reason on hover — never only on stderr, since a switch that is on while nothing can
-happen looks exactly like one that is working. A project is looked at when it is switched on
-(`check_now`), when its window registers and on *Check again* (`recheck`), and on every tick. The
-signed-in line heads the switches in Settings ▸ Workspace. It claims the issue by removing the label,
+happen looks exactly like one that is working. **A config that stops every run** (empty label,
+unparsable interval, a mode the agent lacks) is `Unattended::blocked`, and it is kept rather than
+leaving the state unset: the switches stay on screen, so the reason has to be readable by the rows
+and by Settings, and `gh` is still asked. A project is looked at when it is switched on
+(`check_now`), when its window registers and on *Check again* (`recheck`), and on **every tick, a
+run included** — all three through one `look_blocking`. The signed-in line heads the switches in
+Settings ▸ Workspace. A run's own worktree never offers the switch (`ProjectFacts::unattended` is
+`None` there). It claims the issue by removing the label,
 branches a worktree off `origin/<default>` and mints a session there. **Neither step moves anything on
 screen**: `ChatPane::open_unshown` connects without showing, and the worktree's root is
 `ProjectRoot::transient`, which `to_config` never writes. One prompt, one turn. The pull request `gh`

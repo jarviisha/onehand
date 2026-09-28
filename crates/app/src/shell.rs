@@ -1012,12 +1012,12 @@ impl Shell {
             return;
         };
         let status = self.window.git.get(&root.path);
-        let (pinned, is_repo, unattended) = (root.pinned, status.is_some(), root.unattended);
+        let facts = crate::chat::pane::ProjectFacts::of(root, status.is_some());
         // The same line the rail prints beside the project's name, from core's
         // own rule rather than composed again here.
         let line = status.map(|status| gpui::SharedString::from(status.label()));
         self.chat.update(cx, |pane, cx| {
-            pane.set_project_facts(pinned, is_repo, unattended, cx);
+            pane.set_project_facts(facts, cx);
             pane.set_git(line, cx);
         });
     }
@@ -2212,14 +2212,30 @@ impl Shell {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        // A run's own worktree is not a project anybody chose, and the run
+        // never searches it, so a switch on it would say `auto` over nothing.
+        if self
+            .window
+            .workspace
+            .roots
+            .get(root_idx)
+            .is_none_or(|root| root.transient)
+        {
+            return;
+        }
         self.window.workspace.toggle_unattended(root_idx);
-        if let Some(root) = self.window.workspace.roots.get(root_idx) {
-            // Switched on, it is looked at straight away, so a project that can
-            // never be worked says so now and not at the next tick.
-            match root.unattended {
-                true => crate::unattended::check_now(root.path.clone(), cx),
-                false => crate::unattended::forget(&root.path, cx),
-            }
+        // Switched on, it is looked at straight away, so a project that can
+        // never be worked says so now and not at the next tick. Switched off,
+        // nothing is cleared: a row that is off shows nothing, and the next
+        // look over every switched-on project drops what is left.
+        if let Some(root) = self
+            .window
+            .workspace
+            .roots
+            .get(root_idx)
+            .filter(|root| root.unattended)
+        {
+            crate::unattended::check_now(root.path.clone(), cx);
         }
         self.save_workspace(window, cx);
         // The project page's menu says whether this is on, in the entry that was

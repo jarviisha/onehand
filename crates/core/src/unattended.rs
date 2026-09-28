@@ -255,6 +255,10 @@ fn quoted(text: &str) -> String {
 /// answered in this long is stuck, not slow.
 const GH_LIMIT: Duration = Duration::from_secs(60);
 
+/// How long a question answered from this machine alone may take — the
+/// project's remote, what an ssh alias stands for. Seconds is already slow.
+const LOCAL_LIMIT: Duration = Duration::from_secs(10);
+
 /// Run `gh` in `root` and hand back what it printed.
 fn gh(root: &Path, args: &[&str]) -> Result<String, String> {
     let out = crate::process::output_within(
@@ -374,16 +378,11 @@ impl GitHub {
     }
 }
 
-/// Ask `gh` who it is signed in as. Blocking, and bounded like every call here.
+/// Ask `gh` who it is signed in as. Blocking, and bounded: one API request
+/// that has not answered in a minute is stuck, not slow.
 pub fn github_blocking() -> GitHub {
-    // Found first, and directly: a program that is not there fails to *start*,
-    // which is the one failure the bounded runner reports as text.
-    if matches!(
-        Command::new("gh").arg("--version").output(),
-        Err(err) if err.kind() == std::io::ErrorKind::NotFound
-    ) {
-        return GitHub::Missing;
-    }
+    // A `gh` that is not installed fails to start at all, which the bounded
+    // runner reports as its own kind of failure rather than as a slow answer.
     let out = match crate::process::output_within(
         Command::new("gh")
             .args(["api", "user", "--jq", ".login"])
@@ -391,7 +390,8 @@ pub fn github_blocking() -> GitHub {
         GH_LIMIT,
     ) {
         Ok(out) => out,
-        Err(why) => return GitHub::Unreachable(why),
+        Err(crate::process::Failure::Missing) => return GitHub::Missing,
+        Err(why) => return GitHub::Unreachable(format!("gh {why}")),
     };
     let login = String::from_utf8_lossy(&out.stdout).trim().to_string();
     match out.status.code() {
@@ -478,11 +478,8 @@ fn ssh_hostname(said: &str) -> Option<&str> {
 /// Ask ssh which host `alias` stands for. `ssh -G` only prints the settled
 /// configuration; it connects to nothing.
 fn ssh_resolve_blocking(alias: &str) -> Option<String> {
-    let out = crate::process::output_within(
-        Command::new("ssh").arg("-G").arg(alias),
-        Duration::from_secs(10),
-    )
-    .ok()?;
+    let out = crate::process::output_within(Command::new("ssh").arg("-G").arg(alias), LOCAL_LIMIT)
+        .ok()?;
     out.status.success().then_some(())?;
     ssh_hostname(&String::from_utf8_lossy(&out.stdout)).map(str::to_string)
 }
@@ -491,12 +488,14 @@ fn ssh_resolve_blocking(alias: &str) -> Option<String> {
 /// `origin` is on GitHub. Read locally, before anything asks GitHub, so a
 /// project that can never be worked costs nothing per tick but this.
 pub fn github_project_blocking(root: &Path) -> Result<(), String> {
-    let out = Command::new("git")
-        .arg("-C")
-        .arg(root)
-        .args(["remote", "get-url", "origin"])
-        .output()
-        .map_err(|err| format!("git could not be run: {err}"))?;
+    let out = crate::process::output_within(
+        Command::new("git")
+            .arg("-C")
+            .arg(root)
+            .args(["remote", "get-url", "origin"]),
+        LOCAL_LIMIT,
+    )
+    .map_err(|err| format!("git {err}"))?;
     if !out.status.success() {
         return Err("it has no `origin` remote to open a pull request against".to_string());
     }

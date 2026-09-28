@@ -131,8 +131,18 @@ project and shown on its row, in the warning ink with the reason on hover. It is
 never left on stderr, where a switch that is on while nothing can happen would
 look exactly like one that is working. Settings ▸ Workspace heads its switches
 with the signed-in line and a *Check again*. A project is looked at when it is
-switched on and when its window opens, not only on the next tick. Another forge
-is a second set of `gh`-shaped calls and is not built.
+switched on, when its window opens, and on every tick — a run in progress
+included, since a tick that only looked when it was about to search left the rows
+as stale as the run was long. A tick with nothing switched on asks GitHub
+nothing, so the feature costs nobody who has not turned it on. Another forge is a
+second set of `gh`-shaped calls and is not built.
+
+**A config that cannot work is said, not only printed.** An empty label, an
+interval that does not parse, or a mode the agent does not offer stops every run.
+The reason is kept, and every switched-on row and Settings show it in the warning
+ink, while the projects and `gh` are still looked at. It used to leave the state
+unset, so a bad interval read on screen as a missing label and the GitHub line
+waited for an answer that was never going to come.
 
 **The rail says what is switched on and what is running.** A switched-on project
 row carries a pill reading `auto`, and `auto · #N` while a run is working issue N
