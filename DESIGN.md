@@ -192,6 +192,20 @@ One window hosts exactly one workspace. The frame is a navigation **rail** plus 
   session order is not, because sessions are not persisted at all. The flat *All
   sessions* list is not draggable: it is in the order the sessions were started,
   which is a fact rather than an arrangement.
+- **A project says whether its issues are worked unattended.** The switch is per
+  project and off until turned on, because being open in the rail says what
+  somebody is working on, not what an agent may push to. It is offered in two
+  places that must agree: a checked *Work labelled issues* entry in the
+  project's ••• menu (the rail's and the project page's), and a list of
+  switches under Settings ▸ Workspace, where every project's answer can be read
+  at once. While on, the row carries a pill in the change count's style reading
+  **`auto`**, and **`auto · #N`** while a run is working issue N of that
+  project. It is a word and not a glyph, because the pill already reads as a
+  fact about the project and an icon would be one more shape to learn. It never
+  gives way to width, because a permission to push is the worst thing the row
+  could quietly hide. The hover says it in full: which label is looked for, or
+  which issue is being worked, or that no label is set and so nothing can
+  happen.
 - **Everything else is a dock panel**, and the arrangement persists as **five
   values, not the library's `DockAreaState`**: Workbench width, terminal height,
   whether each is open, and the rail's width. `DockAreaState` is serde and would
@@ -421,6 +435,7 @@ the theme, will not follow the focus rules, and will have to be maintained here:
 | The rail | `Sidebar` for the panel; its list rows are the app's own, because the row's name needs to be an element (the pixel fade, the full name on hover) and the library row holds it as a bare string |
 | Buttons, ghost/primary variants | `Button` + `ButtonVariants` |
 | Modals | `Dialog` |
+| On/off settings | `Switch`, inside a box that shows the pointer, since the switch sets no cursor of its own |
 | Single-line and multi-line input | `InputState` + `TextInput` / `Textarea` |
 | The file editor | `EditorState` + `Editor` (tree-sitter, no LSP — D3) |
 | Markdown | `TextView` + `TextViewState` |

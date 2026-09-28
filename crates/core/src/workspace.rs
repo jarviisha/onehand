@@ -36,6 +36,14 @@ pub struct ProjectRoot {
     /// Cleared when a person takes the run over, since from then on it is their
     /// project and losing it at the next launch would lose their work's place.
     pub transient: bool,
+    /// Whether issues in this project's repository may be picked up and worked
+    /// with nobody watching.
+    ///
+    /// Per project and off until the user turns it on. Being open in the rail
+    /// says what somebody is working on, not what an agent may push to and open
+    /// pull requests against, and the second is a permission worth giving one
+    /// project at a time.
+    pub unattended: bool,
 }
 
 impl ProjectRoot {
@@ -48,6 +56,7 @@ impl ProjectRoot {
             active_session: 0,
             pinned: false,
             transient: false,
+            unattended: false,
         }
     }
 
@@ -179,8 +188,10 @@ impl Workspace {
         // removed elsewhere in the file cannot silently move a pin onto a
         // different project.
         let pinned: Vec<PathBuf> = cfg.pinned.into_iter().map(normalize_root).collect();
+        let unattended: Vec<PathBuf> = cfg.unattended.into_iter().map(normalize_root).collect();
         for root in &mut roots {
             root.pinned = pinned.contains(&root.path);
+            root.unattended = unattended.contains(&root.path);
         }
         let active_root = active_path
             .and_then(|p| roots.iter().position(|r| r.path == p))
@@ -221,6 +232,11 @@ impl Workspace {
                 .filter(|root| root.pinned)
                 .map(|root| root.path.clone())
                 .collect(),
+            unattended: kept
+                .iter()
+                .filter(|root| root.unattended)
+                .map(|root| root.path.clone())
+                .collect(),
         }
     }
 
@@ -233,6 +249,13 @@ impl Workspace {
     pub fn toggle_pin(&mut self, idx: usize) {
         if let Some(root) = self.roots.get_mut(idx) {
             root.pinned = !root.pinned;
+        }
+    }
+
+    /// Turn unattended runs on or off for a root.
+    pub fn toggle_unattended(&mut self, idx: usize) {
+        if let Some(root) = self.roots.get_mut(idx) {
+            root.unattended = !root.unattended;
         }
     }
 
@@ -442,6 +465,32 @@ mod tests {
     fn label_uses_last_component() {
         assert_eq!(label_for(Path::new("/home/me/proj")), "proj");
         assert_eq!(label_for(Path::new("/")), "/");
+    }
+
+    #[test]
+    fn unattended_runs_are_opted_into_per_project_and_kept_by_path() {
+        let mut ws = Workspace::seeded("/a");
+        ws.add_root("/b");
+        assert!(
+            ws.roots.iter().all(|r| !r.unattended),
+            "nothing is opted in by default"
+        );
+        ws.toggle_unattended(1);
+        assert!(ws.roots[1].unattended);
+        let cfg = ws.to_config();
+        assert_eq!(cfg.unattended, [PathBuf::from("/b")]);
+        // By path, like a pin: a root added ahead of it cannot move the opt-in.
+        let mut back = Workspace::from_config(
+            WorkspaceConfig {
+                roots: vec!["/new".into(), "/a".into(), "/b".into()],
+                ..cfg
+            },
+            PathBuf::from("/store"),
+        );
+        assert!(!back.roots[0].unattended && !back.roots[1].unattended);
+        assert!(back.roots[2].unattended);
+        back.toggle_unattended(2);
+        assert!(back.to_config().unattended.is_empty());
     }
 
     #[test]
@@ -659,6 +708,7 @@ mod tests {
             active_root: 2, // the duplicate /a
             layout: PanelLayout::default(),
             pinned: Vec::new(),
+            unattended: Vec::new(),
         };
         let ws = Workspace::from_config(cfg, PathBuf::from("/store"));
         assert_eq!(ws.roots.len(), 2);
@@ -709,6 +759,7 @@ mod tests {
                 rail_w: 9_999.0,
             },
             pinned: Vec::new(),
+            unattended: Vec::new(),
         };
         let ws = Workspace::from_config(cfg, PathBuf::from("/store"));
         assert!(ws.layout.workbench_w >= 120.0);
@@ -744,6 +795,7 @@ mod tests {
             active_root: 9,
             layout: PanelLayout::default(),
             pinned: Vec::new(),
+            unattended: Vec::new(),
         };
         let ws = Workspace::from_config(cfg, PathBuf::from("/store"));
         assert_eq!(ws.active_root, 0);

@@ -18,6 +18,7 @@ use gpui::{
 use gpui_component::button::{ButtonGroup, ButtonVariants};
 use gpui_component::dialog::{Dialog, DialogClose, DialogTitle};
 use gpui_component::input::{Input, InputState};
+use gpui_component::switch::Switch;
 use gpui_component::{
     ActiveTheme, Disableable, Icon, IconName, Selectable, Sizable as _, StyledExt,
 };
@@ -649,6 +650,52 @@ fn workspace_page(handle: &Entity<Shell>, cx: &App) -> AnyElement {
                         }),
                 ),
         )
+        .child(unattended_section(handle, cx))
+        .into_any_element()
+}
+
+/// The per-project switch for unattended runs, as a list.
+///
+/// The same switch the project's own menu carries, gathered in one place so
+/// every project's answer can be read at once — the menu shows one project's,
+/// and only after it is opened. The label a run looks for is named, since it is
+/// the one thing a user has to put on an issue and it lives in the config file.
+fn unattended_section(handle: &Entity<Shell>, cx: &App) -> AnyElement {
+    let label = crate::unattended::label(cx);
+    let choices = handle.read(cx).unattended_choices();
+    let muted = cx.theme().muted_foreground;
+    div()
+        .v_flex()
+        .gap_2()
+        .w_full()
+        .child(div().text_xs().child("Unattended runs"))
+        .child(
+            div().text_color(muted).child(match label {
+                Some(label) => format!(
+                    "An issue you opened, labelled `{label}`, in a project switched on here is \
+                 picked up by an agent, worked in a worktree of its own, and answered \
+                 with a pull request."
+                ),
+                // Nothing can run, and the switches below would look as though
+                // they did something.
+                None => "No label is set for unattended runs in the config, so nothing is \
+                     picked up whatever is switched on here."
+                    .to_string(),
+            }),
+        )
+        .children(choices.into_iter().map(|(idx, name, on)| {
+            let shell = handle.clone();
+            // The switch sets no cursor of its own, and an arrow over a control
+            // that acts reads as one that does not.
+            div().cursor_pointer().child(
+                Switch::new(("unattended", idx))
+                    .checked(on)
+                    .label(name)
+                    .on_click(move |_: &bool, window: &mut Window, cx: &mut App| {
+                        shell.update(cx, |shell, cx| shell.toggle_unattended(idx, window, cx));
+                    }),
+            )
+        }))
         .into_any_element()
 }
 

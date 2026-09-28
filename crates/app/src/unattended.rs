@@ -61,15 +61,14 @@ struct Run {
     _clock: Task<()>,
 }
 
-/// Start the tick if `cfg` asks for one.
+/// Start the tick.
 ///
-/// Like the remote bridge, everything here fails by not starting, out loud on
-/// stderr: a half-configured feature is the ordinary case, and one that looks
-/// on but never runs is indistinguishable from one that is broken.
+/// It always runs, because whether anything happens is decided per project and
+/// no project is opted in until somebody opts it in — a tick over no opted-in
+/// project looks at nothing and asks GitHub nothing. What fails here fails by
+/// not starting, out loud on stderr, like the remote bridge: a feature that
+/// looks on but never runs is indistinguishable from one that is broken.
 pub fn boot(cfg: &UnattendedConfig, cx: &mut App) {
-    if !cfg.enabled {
-        return;
-    }
     if cfg.label.trim().is_empty() {
         eprintln!(
             "onehand: unattended runs are enabled but no label is set, so they would \
@@ -106,6 +105,22 @@ pub fn boot(cfg: &UnattendedConfig, cx: &mut App) {
             _tick: tick,
         });
     });
+}
+
+/// The run in progress, as the project it came from and the issue it is on.
+///
+/// For the rail, which says on a project's row that a run is working one of its
+/// issues: the run's own session is on a worktree's row of its own, and nothing
+/// on the project the issue belongs to would otherwise say so.
+pub fn live_run(cx: &App) -> Option<(PathBuf, u64)> {
+    let run = Shared::global(cx).unattended.as_ref()?.run.as_ref()?;
+    Some((run.claimed.repo.clone(), run.claimed.issue.number))
+}
+
+/// The label that asks for a run, for the places that tell the user which
+/// label to put on an issue.
+pub fn label(cx: &App) -> Option<String> {
+    Some(Shared::global(cx).unattended.as_ref()?.label.clone())
 }
 
 /// Whether `uid` is the session of the run in progress.
@@ -322,6 +337,9 @@ fn start(claimed: Claimed, cx: &mut App) -> Result<(), Unstarted> {
             _clock: clock,
         })
     });
+    // The rail marks the project a run is working on; nothing it watches
+    // changed, so it has to be told.
+    cx.refresh_windows();
     Ok(())
 }
 
@@ -552,6 +570,7 @@ fn settle(uid: u64, ending: Ending, cx: &mut App) {
         let Some(run) = with(cx, |u| u.run.take_if(|run| run.uid == uid)).flatten() else {
             return;
         };
+        cx.refresh_windows();
         let Run {
             claimed,
             window,

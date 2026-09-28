@@ -1092,6 +1092,7 @@ fn project_hint(
     label: &str,
     branch: Option<&SharedString>,
     changed: usize,
+    auto: Option<&SharedString>,
     path: &SharedString,
 ) -> Vec<SharedString> {
     let mut hint = vec![SharedString::from(label.to_string())];
@@ -1104,8 +1105,48 @@ fn project_hint(
             if changed == 1 { "file" } else { "files" }
         )));
     }
+    if let Some(auto) = auto {
+        hint.push(auto.clone());
+    }
     hint.push(path.clone());
     hint
+}
+
+/// What the entry that turns unattended runs on and off for a project is
+/// called, in both menus that carry it.
+pub const UNATTENDED_ENTRY: &str = "Work labelled issues";
+
+/// What a project row says about unattended runs: the word in its pill, and the
+/// line its hover carries. `None` while the project is not opted in.
+///
+/// A run can only be working on a project that is opted in, but it is read
+/// independently so a project switched off mid-run still says the run is
+/// there — switching off stops the next run, not the one already going.
+fn auto_status(
+    unattended: bool,
+    working: Option<u64>,
+    label: Option<String>,
+) -> Option<(SharedString, SharedString)> {
+    match (unattended, working) {
+        (_, Some(n)) => Some((
+            SharedString::from(format!("auto · #{n}")),
+            SharedString::from(format!("Unattended run working on issue #{n}")),
+        )),
+        (true, None) => Some((
+            SharedString::from("auto"),
+            SharedString::from(match label {
+                Some(label) => format!(
+                    "Unattended runs on: issues you opened labelled `{label}` are picked up"
+                ),
+                // Said rather than implied: a switch that is on while nothing
+                // can happen is the one state that looks exactly like working.
+                None => "Unattended runs on, but no label is set in the config, so nothing \
+                         is picked up"
+                    .to_string(),
+            }),
+        )),
+        (false, None) => None,
+    }
 }
 
 /// Everything a project row offers, behind one button.
@@ -1136,11 +1177,13 @@ fn project_menu(
     root_idx: usize,
     pinned: bool,
     is_repo: bool,
+    unattended: bool,
     shell: WeakEntity<Shell>,
 ) -> impl Fn(PopupMenu, &mut Window, &mut App) -> PopupMenu + use<> {
     move |menu, _, cx: &mut App| {
         let danger = crate::theme::status_ink(cx).danger;
-        let (pin, start, split, terminal, copy, refresh, remove) = (
+        let (pin, auto, start, split, terminal, copy, refresh, remove) = (
+            shell.clone(),
             shell.clone(),
             shell.clone(),
             shell.clone(),
@@ -1158,6 +1201,19 @@ fn project_menu(
                 .on_click(move |_, window, cx: &mut App| {
                     pin.update(cx, |shell: &mut Shell, cx| {
                         shell.toggle_pin(root_idx, window, cx);
+                    })
+                    .ok();
+                }),
+        )
+        // A check rather than an on/off pair of labels: the same switch is a
+        // switch in Settings, and the check is what makes it read as one here.
+        .item(
+            crate::controls::menu_item(UNATTENDED_ENTRY)
+                .icon(Icon::new(IconName::Bot))
+                .checked(unattended)
+                .on_click(move |_, window, cx: &mut App| {
+                    auto.update(cx, |shell: &mut Shell, cx| {
+                        shell.toggle_unattended(root_idx, window, cx);
                     })
                     .ok();
                 }),
@@ -1274,6 +1330,14 @@ fn folder_row(
     let is_active = window_state.workspace.active_root == root_idx;
     let active_session = root.active_session;
     let pinned = root.pinned;
+    let unattended = root.unattended;
+    // The issue a run is working on in this project right now, if one is. The
+    // run's own session sits under a worktree's row of its own, so without this
+    // the project the issue belongs to would say nothing about it.
+    let working = crate::unattended::live_run(cx)
+        .filter(|(repo, _)| *repo == root.path)
+        .map(|(_, number)| number);
+    let auto_line = auto_status(unattended, working, crate::unattended::label(cx));
     // Only the selected project shows what is in it until somebody says
     // otherwise, or a workspace of ten roots is a rail nobody can see the
     // bottom of. The answer is the window's rather than the row's: the row is
@@ -1368,7 +1432,13 @@ fn folder_row(
         // The full name, the branch, the count in words and the root's path,
         // on the row itself: every part the row draws is cut to keep the
         // name first, so the hover is where the whole of each lives.
-        .hint(project_hint(&root.label, branch.as_ref(), changed, &path))
+        .hint(project_hint(
+            &root.label,
+            branch.as_ref(),
+            changed,
+            auto_line.as_ref().map(|(_, line)| line),
+            &path,
+        ))
         // The selected project is marked whether or not it has sessions. While
         // this was `is_active && sessions.is_empty()`, a project holding the
         // conversation on screen was the one project in the rail with no mark
@@ -1390,7 +1460,13 @@ fn folder_row(
         // in mirror image. Going to a project is asking what is in it, so
         // `Shell::select_root` reveals; only the caret puts it away again.
         // (The click handler rides in `RailRow::new` above.)
-        .menu(project_menu(root_idx, pinned, is_repo, menu_target))
+        .menu(project_menu(
+            root_idx,
+            pinned,
+            is_repo,
+            unattended,
+            menu_target,
+        ))
         // Dragged and dropped by display position: `Workspace::move_root`
         // writes the permutation back into `roots`, so the order the row was
         // dropped into is the order the workspace file keeps. Crossing the pin
@@ -1411,6 +1487,7 @@ fn folder_row(
             })
         })
         .suffix(move |_, cx: &mut App| {
+            let auto_badge = auto_line.as_ref().map(|(badge, _)| badge.clone());
             let (suffix_target, fold_target) = (suffix_target.clone(), fold_target.clone());
             let fold_path = fold_path.clone();
             let radius = cx.theme().radius;
@@ -1466,12 +1543,30 @@ fn folder_row(
                             .child(format!("{changed}")),
                     )
                 })
+                // Whether this project's labelled issues are worked unattended,
+                // and the issue a run is on right now. A **word** in the same
+                // pill as the count rather than an icon: the pill already reads
+                // as "a fact about this project", and a glyph would be one more
+                // shape to learn. `flex_none` for the count's reason — a
+                // permission to push that is quietly cut off the row is the
+                // worst thing this row could hide.
+                .when_some(auto_badge, |row, badge| {
+                    row.child(
+                        div()
+                            .flex_none()
+                            .px_1()
+                            .rounded(radius)
+                            .bg(badge_bg)
+                            .text_color(badge_fg)
+                            .child(badge),
+                    )
+                })
                 .when_some(rollup, |row, signal| row.child(signal_mark(signal, cx)))
                 .when(is_active, |row| {
                     row.child(menu_button(
                         rail_control(("project-menu", root_idx), IconName::Ellipsis),
                         "What can be done with this project",
-                        project_menu(root_idx, pinned, is_repo, suffix_target),
+                        project_menu(root_idx, pinned, is_repo, unattended, suffix_target),
                     ))
                 })
                 // Last, so it is in the same place on every row whatever
@@ -2287,7 +2382,7 @@ fn tab_bar(active: RailTab, cx: &mut Context<Shell>) -> impl IntoElement + use<>
 #[cfg(test)]
 mod tests {
     use super::{
-        LABEL_SHAPE_CAP, RailTab, new_session_hint, project_hint, project_key,
+        LABEL_SHAPE_CAP, RailTab, auto_status, new_session_hint, project_hint, project_key,
         runs_more_than_one_agent, session_label, signal_hint,
     };
     use crate::chat::pane::SessionSignal;
@@ -2434,7 +2529,7 @@ mod tests {
     fn a_projects_hover_carries_every_part_the_row_cut() {
         let path = SharedString::from("/work/onehand");
         let branch = SharedString::from("feat/rail");
-        let hint = project_hint("onehand", Some(&branch), 3, &path);
+        let hint = project_hint("onehand", Some(&branch), 3, None, &path);
         assert_eq!(
             hint,
             vec![
@@ -2448,7 +2543,7 @@ mod tests {
         // One file is one file. A count is read as prose here, so the plural
         // has to follow it.
         assert!(
-            project_hint("onehand", Some(&branch), 1, &path)
+            project_hint("onehand", Some(&branch), 1, None, &path)
                 .contains(&SharedString::from("1 changed file"))
         );
     }
@@ -2458,9 +2553,30 @@ mod tests {
     /// row draws none. It still has a name and a path, and those are what the
     /// hover is for.
     #[test]
+    fn a_project_says_whether_its_issues_are_worked_and_which_one_is() {
+        assert_eq!(auto_status(false, None, Some("auto".into())), None);
+        let (badge, line) = auto_status(true, None, Some("auto".into())).unwrap();
+        assert_eq!(badge.as_ref(), "auto");
+        assert!(line.contains("`auto`"));
+        let (badge, line) = auto_status(true, Some(46), Some("auto".into())).unwrap();
+        assert_eq!(badge.as_ref(), "auto · #46");
+        assert!(line.contains("#46"));
+        // Switched off mid-run: the run already going is still said.
+        assert!(auto_status(false, Some(46), Some("auto".into())).is_some());
+        // On with no label to look for is on with nothing possible, and says so.
+        let (_, line) = auto_status(true, None, None).unwrap();
+        assert!(line.contains("no label"));
+        // The hover carries the line, ahead of the path.
+        let path = SharedString::from("/p");
+        let hint = project_hint("p", None, 0, Some(&line), &path);
+        assert_eq!(hint.last(), Some(&path));
+        assert!(hint.contains(&line));
+    }
+
+    #[test]
     fn a_plain_folder_still_answers_on_hover() {
         let path = SharedString::from("/work/notes");
-        let hint = project_hint("notes", None, 0, &path);
+        let hint = project_hint("notes", None, 0, None, &path);
         assert_eq!(hint, vec![SharedString::from("notes"), path]);
     }
 

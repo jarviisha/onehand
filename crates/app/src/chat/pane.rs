@@ -230,6 +230,9 @@ struct EmptyProject {
     /// than one that does not offer it at all.
     pinned: bool,
     is_repo: bool,
+    /// Whether its labelled issues may be worked unattended — the third fact
+    /// the menu reads, pushed for the same reason as the two above.
+    unattended: bool,
 }
 
 /// The conversations already had in the project on screen, for the header's
@@ -933,6 +936,7 @@ impl ChatPane {
             // repository" is what a menu drawn in that moment can honestly say.
             pinned: false,
             is_repo: false,
+            unattended: false,
         });
         self.scan_project_history(cx);
         // Going to no session at all is still leaving the one that was showing,
@@ -1196,15 +1200,22 @@ impl ChatPane {
     ///
     /// Guarded for the same reason the flag below is: this is pushed from the
     /// same places a git sweep lands, and a sweep lands on every finished turn.
-    pub fn set_project_facts(&mut self, pinned: bool, is_repo: bool, cx: &mut Context<Self>) {
+    pub fn set_project_facts(
+        &mut self,
+        pinned: bool,
+        is_repo: bool,
+        unattended: bool,
+        cx: &mut Context<Self>,
+    ) {
         let Some(project) = self.empty.as_mut() else {
             return;
         };
-        if project.pinned == pinned && project.is_repo == is_repo {
+        if (project.pinned, project.is_repo, project.unattended) == (pinned, is_repo, unattended) {
             return;
         }
         project.pinned = pinned;
         project.is_repo = is_repo;
+        project.unattended = unattended;
         cx.notify();
     }
 
@@ -3078,7 +3089,7 @@ impl ChatPane {
             // every case this branch is reached in.
             None => self.active.unwrap_or_default(),
         };
-        let project = project.map(|project| (project.pinned, project.is_repo));
+        let project = project.map(|project| (project.pinned, project.is_repo, project.unattended));
         let this = cx.entity();
 
         // The same small ghost button as the rest of the header's controls,
@@ -3099,10 +3110,10 @@ impl ChatPane {
         // conversation's are different menus, and one name for both would key
         // them together across the one switch the page itself makes.
         let menu = match project {
-            Some((pinned, is_repo)) => crate::controls::menu_below(
+            Some((pinned, is_repo, unattended)) => crate::controls::menu_below(
                 ("project-menu-popup", key),
                 trigger,
-                project_menu(pinned, is_repo, this),
+                project_menu(pinned, is_repo, unattended, this),
             ),
             None => crate::controls::menu_below(
                 ("conversation-menu-popup", key),
@@ -3596,6 +3607,8 @@ pub enum Restart {
 pub enum ProjectAction {
     /// Pin to the top of the rail, or take the pin off.
     TogglePin,
+    /// Let its labelled issues be worked unattended, or stop that.
+    ToggleUnattended,
     /// Split it into a second checkout. Offered on repositories only.
     Worktree,
     /// Rename the branch checked out in it. Offered on repositories only, for
@@ -4717,6 +4730,7 @@ fn restart_needs_arming(busy: bool, armed: Option<u64>, uid: u64) -> bool {
 fn project_menu(
     pinned: bool,
     is_repo: bool,
+    unattended: bool,
     pane: Entity<ChatPane>,
 ) -> impl Fn(
     gpui_component::menu::PopupMenu,
@@ -4740,6 +4754,12 @@ fn project_menu(
             crate::controls::menu_item(if pinned { "Unpin" } else { "Pin to top" })
                 .icon(Icon::new(IconName::Star))
                 .on_click(act(ProjectAction::TogglePin, pane.clone())),
+        )
+        .item(
+            crate::controls::menu_item(crate::rail::UNATTENDED_ENTRY)
+                .icon(Icon::new(IconName::Bot))
+                .checked(unattended)
+                .on_click(act(ProjectAction::ToggleUnattended, pane.clone())),
         )
         // Only where there is a repository to split. On a plain folder this
         // could do nothing but report that git said no, and an entry whose whole

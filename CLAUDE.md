@@ -570,9 +570,14 @@ plus `sendMessage` and `answerCallbackQuery`. Everything that is not the wire is
 ### Unattended runs
 
 [docs/unattended.md](docs/unattended.md) is the whole account; this is the part a change elsewhere can
-break. `[unattended]` is off by default and its `label` is empty by default, which picks nothing. A tick
-on `Shared` (one per process, like the bridge) looks for the oldest open issue **you** opened that
-carries the label, in any open project, in rail order. It claims the issue by removing the label,
+break. **The switch is per project** (`ProjectRoot::unattended`, kept in the workspace file by path
+like a pin) and off until turned on: from the project's ••• menu, the project page's menu, or the list
+of switches in Settings ▸ Workspace, all through `Shell::toggle_unattended`. `[unattended]` in
+`onehand.toml` has no switch of its own any more — only the label (default `auto`), the interval,
+the timeout, the mode and the agent. A tick on `Shared` (one per process, like the bridge) looks for
+the oldest open issue **you** opened that carries the label, in the opted-in projects, in rail order;
+a project row says `auto`, or `auto · #N` while a run is on issue N (`crate::unattended::live_run`,
+with `cx.refresh_windows()` at start and settle because nothing the rail watches changes). It claims the issue by removing the label,
 branches a worktree off `origin/<default>` and mints a session there. **Neither step moves anything on
 screen**: `ChatPane::open_unshown` connects without showing, and the worktree's root is
 `ProjectRoot::transient`, which `to_config` never writes. One prompt, one turn. The pull request `gh`
@@ -652,7 +657,8 @@ layer.
   danger tint, *Delete conversation* — the only entry there that ends something for good.
   **The header is drawn on the project page too**, and the page no longer prints the project's name
   itself: the row names the project there and its menu is the project's (`chat::pane::project_menu`)
-  — *Pin to top*/*Unpin*, *New worktree…* on repositories, *Copy project path*, *Refresh Git status*,
+  — *Pin to top*/*Unpin*, *Work labelled issues* (checked while on), *New worktree…* on repositories,
+  *Copy project path*, *Refresh Git status*,
   then *Remove from workspace* in the danger tint. **Not a copy of the rail's**: *New session* is the
   primary button in the middle of that page and *Open terminal* is a button at the end of the same
   row, and offering either again would be the page saying one thing twice within an inch of itself.
@@ -1149,7 +1155,7 @@ centre is the chat, right dock the Workbench, bottom dock the terminal.
   from anything `Selectable`, `Stateful<Div>` is not, and both of those are other crates' — so the
   newtype that answers `Selectable` for a row is what stops the target being the icon at its end.
 - **Both row kinds carry one ••• menu on the active row**, never a ✕. A project's holds *Pin to top*
-  / *Unpin*, *New session*, *New worktree…* (git repositories only), *Open terminal*,
+  / *Unpin*, *Work labelled issues* (checked while on), *New session*, *New worktree…* (git repositories only), *Open terminal*,
   *Copy project path*, *Refresh Git status*, then,
   separated and in the danger tint, *Remove from workspace* (still guarded by a second click while
   the root has live sessions or unsaved buffers). A session's holds *Rename…*, *Restart the agent*,

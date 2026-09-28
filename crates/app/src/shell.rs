@@ -711,6 +711,7 @@ impl Shell {
                         let root_idx = shell.window.workspace.active_root;
                         match action {
                             P::TogglePin => shell.toggle_pin(root_idx, window, cx),
+                            P::ToggleUnattended => shell.toggle_unattended(root_idx, window, cx),
                             P::Worktree => shell.begin_worktree(root_idx, window, cx),
                             P::RenameBranch => shell.begin_branch_rename(window, cx),
                             P::CopyPath => shell.copy_root_path(root_idx, window, cx),
@@ -1011,12 +1012,12 @@ impl Shell {
             return;
         };
         let status = self.window.git.get(&root.path);
-        let (pinned, is_repo) = (root.pinned, status.is_some());
+        let (pinned, is_repo, unattended) = (root.pinned, status.is_some(), root.unattended);
         // The same line the rail prints beside the project's name, from core's
         // own rule rather than composed again here.
         let line = status.map(|status| gpui::SharedString::from(status.label()));
         self.chat.update(cx, |pane, cx| {
-            pane.set_project_facts(pinned, is_repo, cx);
+            pane.set_project_facts(pinned, is_repo, unattended, cx);
             pane.set_git(line, cx);
         });
     }
@@ -2203,6 +2204,36 @@ impl Shell {
         cx.notify();
     }
 
+    /// Turn unattended runs on or off for a project, from either of the places
+    /// that offer it — the project's menu and Settings.
+    pub fn toggle_unattended(
+        &mut self,
+        root_idx: usize,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.window.workspace.toggle_unattended(root_idx);
+        self.save_workspace(window, cx);
+        // The project page's menu says whether this is on, in the entry that was
+        // just used.
+        self.sync_project_facts(cx);
+        cx.notify();
+    }
+
+    /// Every project the Settings list offers the switch for: name, whether it
+    /// is on, and its index. A run's own worktree is left out — it is not a
+    /// project anybody chose, and it goes when the run does.
+    pub fn unattended_choices(&self) -> Vec<(usize, SharedString, bool)> {
+        self.window
+            .workspace
+            .roots
+            .iter()
+            .enumerate()
+            .filter(|(_, root)| !root.transient)
+            .map(|(i, root)| (i, SharedString::from(root.label.clone()), root.unattended))
+            .collect()
+    }
+
     /// Drop a project at another place in the rail.
     ///
     /// Both numbers are *display* positions, which is what the rail drags; the
@@ -3129,14 +3160,14 @@ impl Shell {
 
     /// The project roots an unattended run may look for issues in, in the order
     /// the rail draws them — so pinning a project is also how it is worked
-    /// first. A run's own worktree is not one of them.
+    /// first. Only the ones the user opted in, and never a run's own worktree.
     pub fn unattended_roots(&self) -> Vec<PathBuf> {
         let roots = &self.window.workspace.roots;
         self.window
             .workspace
             .display_order()
             .into_iter()
-            .filter(|&i| !roots[i].transient)
+            .filter(|&i| roots[i].unattended && !roots[i].transient)
             .map(|i| roots[i].path.clone())
             .collect()
     }

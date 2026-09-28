@@ -300,18 +300,14 @@ pub struct TelegramConfig {
 /// `[unattended]` — picking up small issues and working them with nobody
 /// watching.
 ///
-/// **Fail-closed twice.** `enabled` is off by default, because a feature that
-/// starts an agent writing to a repository on the strength of a file nobody
-/// edited is not a default anybody chose; and the trigger label is empty by
-/// default, and an empty label picks nothing at all — forgetting to fill it in
-/// has to mean "nothing runs", not "everything runs".
-///
-/// There is no repository key: the repositories are the project roots open in
-/// the app's windows, and `gh` reads the repository from the directory.
+/// **There is no switch here.** Whether runs happen is decided per project, in
+/// the app, and no project is opted in until the user says so — so this table
+/// only shapes runs once one has been allowed. A file still carrying the old
+/// global `enabled` key keeps loading, since serde ignores a key it does not
+/// know. An empty label still picks nothing at all.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct UnattendedConfig {
-    pub enabled: bool,
     /// The label whose presence on an issue asks for a run.
     pub label: String,
     /// How often to look for one, as `"30m"`, `"2h"` or `"90s"`.
@@ -327,8 +323,7 @@ pub struct UnattendedConfig {
 impl Default for UnattendedConfig {
     fn default() -> Self {
         Self {
-            enabled: false,
-            label: String::new(),
+            label: "auto".to_string(),
             every: "30m".to_string(),
             timeout: "45m".to_string(),
             mode: "acceptEdits".to_string(),
@@ -497,6 +492,9 @@ pub struct WorkspaceConfig {
     /// different project. A path that is no longer a root simply matches
     /// nothing.
     pub pinned: Vec<PathBuf>,
+    /// Roots whose labelled issues may be worked unattended, by path for the
+    /// reason pins are.
+    pub unattended: Vec<PathBuf>,
 }
 
 /// The window's panel arrangement, as far as anything outside the front end
@@ -904,17 +902,17 @@ mod tests {
         assert_eq!(cfg.agents[0].command, "claude");
     }
 
-    /// Unattended runs are off unless asked for, and an empty label is the
-    /// default — so turning the feature on without naming a label runs nothing.
+    /// Whether a run happens is decided per project, so the config carries no
+    /// switch; one left in an older file is an unknown key and ignored.
     #[test]
-    fn unattended_runs_are_off_and_pick_nothing_until_asked_for() {
+    fn unattended_runs_have_no_switch_of_their_own_and_read_an_old_one_as_nothing() {
         let cfg = AppConfig::parse("").unwrap();
-        assert!(!cfg.unattended.enabled);
-        assert!(cfg.unattended.label.is_empty());
-        let cfg = AppConfig::parse("[unattended]\nlabel = \"auto\"\n").unwrap();
-        assert!(!cfg.unattended.enabled, "a missing `enabled` reads false");
         assert_eq!(cfg.unattended.label, "auto");
         assert_eq!(cfg.unattended.every, "30m");
+        // The switch moved onto each project; a file still carrying the old
+        // global one keeps loading.
+        let cfg = AppConfig::parse("[unattended]\nenabled = true\nlabel = \"x\"\n").unwrap();
+        assert_eq!(cfg.unattended.label, "x");
     }
 
     /// The bridge is off unless the file asks for it, and its list starts
@@ -982,6 +980,7 @@ mod tests {
             active_root: 1,
             layout: PanelLayout::default(),
             pinned: Vec::new(),
+            unattended: Vec::new(),
         };
         let text = toml::to_string_pretty(&cfg).unwrap();
         let back: WorkspaceConfig = toml::from_str(&text).unwrap();
@@ -997,6 +996,7 @@ mod tests {
             active_root: 0,
             layout: PanelLayout::default(),
             pinned: Vec::new(),
+            unattended: Vec::new(),
         };
         cfg.save_to(&dir).unwrap();
         assert_eq!(WorkspaceConfig::load_from(&dir), WorkspaceLoad::Found(cfg));
