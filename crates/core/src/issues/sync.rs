@@ -40,14 +40,34 @@ pub struct Report {
     pub failures: Vec<String>,
 }
 
+/// A field of an issue two sides can disagree about. Labels are not one: they
+/// merge as a set and never conflict.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Field {
+    Title,
+    Description,
+    State,
+}
+
+impl Field {
+    /// Set this field of `into` to what `from` says.
+    pub(crate) fn take(self, into: &mut Snapshot, from: &Snapshot) {
+        match self {
+            Self::Title => into.title = from.title.clone(),
+            Self::Description => into.body = from.body.clone(),
+            Self::State => into.open = from.open,
+        }
+    }
+}
+
 /// The result of merging one issue's two sides against their common ancestor.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Merge {
     /// Every field both sides agree on or only one side changed, and this
     /// side's value for the fields in conflict.
-    pub merged: Snapshot,
+    pub(crate) merged: Snapshot,
     /// The fields both sides changed differently.
-    pub conflicts: Vec<&'static str>,
+    pub conflicts: Vec<Field>,
 }
 
 /// Merge `ours` and `theirs` against `base`, field by field.
@@ -57,21 +77,21 @@ pub fn merge(base: &Snapshot, ours: &Snapshot, theirs: &Snapshot) -> Merge {
         &base.title,
         &ours.title,
         &theirs.title,
-        "title",
+        Field::Title,
         &mut conflicts,
     );
     let body = field(
         &base.body,
         &ours.body,
         &theirs.body,
-        "description",
+        Field::Description,
         &mut conflicts,
     );
     let open = field(
         &base.open,
         &ours.open,
         &theirs.open,
-        "state",
+        Field::State,
         &mut conflicts,
     );
     Merge {
@@ -89,8 +109,8 @@ fn field<T: PartialEq + Clone>(
     base: &T,
     ours: &T,
     theirs: &T,
-    name: &'static str,
-    conflicts: &mut Vec<&'static str>,
+    name: Field,
+    conflicts: &mut Vec<Field>,
 ) -> T {
     if ours == base || ours == theirs {
         theirs.clone()
@@ -132,16 +152,19 @@ pub fn sync_blocking(
     now: u64,
 ) -> Result<(Issues, Report), String> {
     super::update_blocking(file, |issues| {
-        let mut remote = connector.issues_for_sync_blocking(root, SYNC_CAP + 1)?;
+        let since = (issues.last_synced > 0).then_some(issues.last_synced);
+        let mut remote = connector.issues_for_sync_blocking(root, since, SYNC_CAP + 1)?;
         let cut = remote.len() > SYNC_CAP;
         remote.truncate(SYNC_CAP);
         let mut report = reconcile(issues, root, connector, &remote, now);
         report.cut = cut;
+        issues.last_synced = now;
         Ok(report)
     })
 }
 
-/// The sync itself, over what the forge listed as open.
+/// The sync itself, over what the forge listed: every open issue, and every
+/// issue changed since the last sync whatever its state.
 fn reconcile(
     issues: &mut Issues,
     root: &Path,
@@ -152,15 +175,16 @@ fn reconcile(
     let name = connector.name();
     let mut report = Report::default();
     for issue in issues.issues.iter_mut() {
-        let Some(link) = issue.link.as_ref().filter(|l| l.connector == name) else {
+        let Some(link) = issue.link_on(name) else {
             continue;
         };
         let listed = remote.iter().find(|r| r.key == link.key);
         let theirs = match listed {
             Some(r) => r.snapshot.clone(),
-            // Not in the open list and closed on both sides at the last look:
-            // nothing on either side is worth a call to find out about.
-            None if !issue.open && !link.base.open => continue,
+            // Not listed and closed on both sides at the last look: the forge
+            // lists everything changed since then, so its side is still what
+            // was agreed, and only a change made here has anywhere to go.
+            None if !issue.open && !link.base.open => link.base.clone(),
             // Not in the open list but open here or at the last look: it was
             // closed there, or it is gone, and only asking says which.
             None => match connector.issue_blocking(root, &link.key) {
@@ -196,10 +220,15 @@ fn reconcile(
     let linked: HashSet<String> = issues
         .issues
         .iter()
-        .filter_map(|i| i.link.as_ref().filter(|l| l.connector == name))
+        .filter_map(|i| i.link_on(name))
         .map(|l| l.key.clone())
         .collect();
-    for r in remote.iter().filter(|r| !linked.contains(&r.key)) {
+    // Only open issues are brought in: a closed one was listed because it
+    // changed, and it is followed only if it was already linked.
+    for r in remote
+        .iter()
+        .filter(|r| r.snapshot.open && !linked.contains(&r.key))
+    {
         import(issues, name, r, now);
         report.imported += 1;
     }
@@ -225,10 +254,11 @@ fn step(
     };
     let (key, base) = (link.key.clone(), link.base.clone());
     let merge = merge(&base, &issue.snapshot(), &theirs);
+    let ours = issue.snapshot();
     if !merge.conflicts.is_empty() {
         // What merged cleanly still lands here; the fields in conflict keep
         // this side's value, and the forge's side is kept to decide against.
-        if merge.merged != issue.snapshot() {
+        if !merge.merged.same_as(&ours) {
             issue.apply(&merge.merged);
             issue.updated = now;
         }
@@ -237,12 +267,12 @@ fn step(
         }
         return;
     }
-    if merge.merged != issue.snapshot() {
+    if !merge.merged.same_as(&ours) {
         issue.apply(&merge.merged);
         issue.updated = now;
         report.pulled += 1;
     }
-    if merge.merged != theirs {
+    if !merge.merged.same_as(&theirs) {
         if let Err(why) = connector.update_issue_blocking(root, &key, &theirs, &merge.merged) {
             // The ancestor is left where it was, so the next sync sees this
             // side's change as still to be sent and tries again.
@@ -263,9 +293,7 @@ fn step(
 /// Take a forge's issue in as a new local one, linked to it.
 fn import(issues: &mut Issues, connector: &str, remote: &RemoteIssue, now: u64) {
     let said = remote.snapshot.clone().normalized();
-    let highest = issues.issues.iter().map(|i| i.number).max().unwrap_or(0);
-    let number = issues.next.max(highest + 1).max(1);
-    issues.next = number + 1;
+    let number = issues.take_number();
     issues.issues.push(LocalIssue {
         number,
         title: said.title.clone(),
@@ -282,6 +310,7 @@ fn import(issues: &mut Issues, connector: &str, remote: &RemoteIssue, now: u64) 
             base: said,
             conflict: None,
         }),
+        imported_from: Some(connector.to_string()),
     });
 }
 
@@ -344,7 +373,7 @@ mod tests {
     fn a_field_both_sides_changed_differently_is_a_conflict_and_keeps_ours() {
         let base = snap("a", true, &[]);
         let m = merge(&base, &snap("mine", true, &[]), &snap("theirs", true, &[]));
-        assert_eq!(m.conflicts, ["title"]);
+        assert_eq!(m.conflicts, [Field::Title]);
         assert_eq!(m.merged.title, "mine");
         let same = merge(&base, &snap("x", true, &[]), &snap("x", true, &[]));
         assert!(
@@ -554,5 +583,102 @@ mod tests {
         .normalized();
         assert_eq!(theirs.body, "one\ntwo");
         assert_eq!(theirs.title, "a");
+    }
+
+    #[test]
+    fn taking_theirs_takes_only_what_was_in_conflict() {
+        let file = scratch("take-part");
+        let root = Path::new("/");
+        let forge = Forge::with(vec![(7, snap("a", true, &[]))]);
+        sync_blocking(&file, root, &forge, 1).unwrap();
+        // Here: a new title and a description. There: another title.
+        crate::issues::update_blocking(&file, |issues| {
+            issues.edit(
+                1,
+                Draft {
+                    title: "mine".into(),
+                    body: "written here".into(),
+                    ..Draft::default()
+                },
+                2,
+            )
+        })
+        .unwrap();
+        forge.set("7", snap("theirs", true, &[]));
+        sync_blocking(&file, root, &forge, 3).unwrap();
+
+        crate::issues::update_blocking(&file, |issues| issues.resolve(1, false, 4)).unwrap();
+        let kept = load(&file);
+        let issue = kept.get(1).unwrap();
+        assert_eq!(issue.title, "theirs");
+        assert_eq!(
+            issue.body, "written here",
+            "a field nobody disagreed about stays"
+        );
+        let report = sync_blocking(&file, root, &forge, 5).unwrap().1;
+        assert_eq!(report.pushed, 1);
+        assert_eq!(forge.said("7").body, "written here");
+        let _ = std::fs::remove_dir_all(file.parent().unwrap());
+    }
+
+    #[test]
+    fn labels_in_another_order_are_not_a_change() {
+        let file = scratch("order");
+        let root = Path::new("/");
+        let forge = Forge::with(vec![(7, snap("a", true, &["bug", "ui"]))]);
+        sync_blocking(&file, root, &forge, 1).unwrap();
+        forge.set("7", snap("a", true, &["ui", "bug"]));
+        assert_eq!(
+            sync_blocking(&file, root, &forge, 2).unwrap().1,
+            Report::default()
+        );
+        let _ = std::fs::remove_dir_all(file.parent().unwrap());
+    }
+
+    #[test]
+    fn an_issue_closed_on_both_sides_is_still_followed() {
+        let file = scratch("closed");
+        let root = Path::new("/");
+        let forge = Forge::with(vec![(7, snap("a", true, &[]))]);
+        sync_blocking(&file, root, &forge, 1).unwrap();
+        forge.set("7", snap("a", false, &[]));
+        sync_blocking(&file, root, &forge, 2).unwrap();
+        assert!(!load(&file).get(1).unwrap().open);
+
+        // Renamed there while closed: it still comes across.
+        forge.set("7", snap("renamed there", false, &[]));
+        sync_blocking(&file, root, &forge, 3).unwrap();
+        assert_eq!(load(&file).get(1).unwrap().title, "renamed there");
+        // Renamed here while closed: it still goes across.
+        edit(&file, 1, "renamed here");
+        sync_blocking(&file, root, &forge, 4).unwrap();
+        assert_eq!(forge.said("7").title, "renamed here");
+        // A closed issue never linked is not brought in.
+        forge.issues.lock().unwrap().push(RemoteIssue {
+            key: "9".into(),
+            reference: "#9".into(),
+            snapshot: snap("closed long ago", false, &[]),
+        });
+        assert_eq!(sync_blocking(&file, root, &forge, 5).unwrap().1.imported, 0);
+        let _ = std::fs::remove_dir_all(file.parent().unwrap());
+    }
+
+    #[test]
+    fn every_write_moves_the_revision_on() {
+        let file = scratch("revision");
+        let forge = Forge::with(vec![]);
+        let (first, _) = crate::issues::update_blocking(&file, |i| {
+            i.create(
+                Draft {
+                    title: "a".into(),
+                    ..Draft::default()
+                },
+                1,
+            )
+        })
+        .unwrap();
+        let (second, _) = sync_blocking(&file, Path::new("/"), &forge, 2).unwrap();
+        assert!(second.revision() > first.revision());
+        let _ = std::fs::remove_dir_all(file.parent().unwrap());
     }
 }

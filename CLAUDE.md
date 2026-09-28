@@ -600,7 +600,10 @@ as a comment on the forge's issue. The run's pull request references the forge's
 onehand's. **An imported issue is taken only if the forge says the user wrote it** — the same rule
 the forge's own search keeps, because an issue's body goes into the prompt word for word and anybody
 with triage rights can label an issue anybody wrote; the forge is asked since only it knows the
-author.
+author. **An issue brought in from a forge is never run as the user's own by any other route**
+(`LocalIssue::imported_from`, kept after the link goes): `Tracker::Local` takes only issues
+`written_here`, so turning sync off, a forge unreachable for one tick, or a link lost cannot turn
+somebody else's text into a prompt.
 What either finds is kept per project (`Unattended::problems`) and shown as the pill in the warning
 ink with the reason on hover — never only on stderr, since a switch that is on while nothing can
 happen looks exactly like one that is working. **A config that stops every run** (empty label,
@@ -908,8 +911,12 @@ see the rail, below.
   workspace key). A linked issue carries a `Link` whose `base` is the snapshot both sides last agreed
   on, and a sync is a **three-way merge per field** against it: title, description and state take the
   side that changed, a field both sides changed differently is a **conflict** that moves nothing until
-  a person picks *Keep mine* or *Take GitHub's* (both just reset `base` to the forge's side and let
-  the next sync do the rest), and labels merge as a set and never conflict. **In and out are not
+  a person picks *Keep mine* or *Take GitHub's* (both reset `base` to the forge's side and let the
+  next sync do the rest; taking the forge's takes only the fields in dispute, so a change here that
+  nobody disagreed with is still sent), and labels merge as a set, compared without order, and never
+  conflict. **A linked issue is followed after it closes**: the forge lists every issue changed since
+  the last sync (`Issues::last_synced`, asked from a day earlier since its search is by day), so a
+  closed issue edited on either side still crosses. **In and out are not
   symmetric, by decision**: every open issue on the forge is imported (capped at `SYNC_CAP`, the cut
   said), while an issue written here goes nowhere until *Publish to GitHub* — a draft that published
   itself on a timer is one nobody could write. A push that fails leaves `base` alone so the change is
@@ -917,7 +924,9 @@ see the rail, below.
   Forge line endings are normalized first, or every sync would see an edit nobody made. It runs when
   the file is read (at most once a minute), after every change made here, every five minutes on the
   project on screen, and on *Sync now*; the whole sync holds the issue file's lock across the forge's
-  calls, so an edit made meanwhile waits for it.
+  calls, so an edit made meanwhile waits for it; an edit saved while a sync runs sets a flag that runs
+  one more when it lands. Every write moves `Issues::revision` on, and the mode keeps whichever copy
+  is newer, since two landings can reach the screen out of order.
 
 State is per project root, held by the mode that works on it, so switching roots swaps the whole
 thing.

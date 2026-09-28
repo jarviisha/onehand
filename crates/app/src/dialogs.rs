@@ -965,9 +965,19 @@ fn issue_list(
                                 .text_xs()
                                 .text_color(muted)
                                 .child(match tracker {
-                                    onehand_core::unattended::Tracker::Local(_)
-                                    | onehand_core::unattended::Tracker::Synced { .. } => {
+                                    onehand_core::unattended::Tracker::Local(_) => {
                                         "in onehand".to_string()
+                                    }
+                                    // Kept in step: named by the forge's
+                                    // number where it has one, which is the
+                                    // one its pull request will reference.
+                                    onehand_core::unattended::Tracker::Synced { forge, .. } => {
+                                        match row.issue.forge_ref() {
+                                            Some(reference) => {
+                                                format!("{} {reference}", forge.name())
+                                            }
+                                            None => "in onehand".to_string(),
+                                        }
                                     }
                                     onehand_core::unattended::Tracker::Forge(_) => {
                                         format!("by {}", row.author)

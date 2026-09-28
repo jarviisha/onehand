@@ -63,10 +63,13 @@ pub trait Connector: Send + Sync + 'static {
         branch: &str,
     ) -> Result<Option<String>, String>;
 
-    /// Open issues, by anybody, at most `limit` of them — what a sync imports.
+    /// Open issues, by anybody — what a sync brings in — and, when `since` is
+    /// given, at least every issue changed at or after it whatever its state,
+    /// so a closed issue edited there is still seen. At most `limit` of each.
     fn issues_for_sync_blocking(
         &self,
         root: &Path,
+        since: Option<u64>,
         limit: usize,
     ) -> Result<Vec<RemoteIssue>, String>;
 
@@ -181,7 +184,12 @@ pub(crate) mod fake {
         fn open_pull_request_with(&self) -> &'static str {
             "`forge pr`"
         }
-        fn issues_for_sync_blocking(&self, _: &Path, _: usize) -> Result<Vec<RemoteIssue>, String> {
+        fn issues_for_sync_blocking(
+            &self,
+            _: &Path,
+            _: Option<u64>,
+            _: usize,
+        ) -> Result<Vec<RemoteIssue>, String> {
             unreachable!()
         }
         fn issue_blocking(&self, _: &Path, _: &str) -> Result<Option<RemoteIssue>, String> {
@@ -303,15 +311,19 @@ pub(crate) mod memory {
         fn open_pull_request_with(&self) -> &'static str {
             "`forge pr`"
         }
+        /// Everything it holds once `since` is given — more than a real forge
+        /// would list, which is allowed: what it has to list is at least what
+        /// changed.
         fn issues_for_sync_blocking(
             &self,
             _: &Path,
+            since: Option<u64>,
             limit: usize,
         ) -> Result<Vec<RemoteIssue>, String> {
             let issues = self.issues.lock().unwrap();
             Ok(issues
                 .iter()
-                .filter(|r| r.snapshot.open)
+                .filter(|r| r.snapshot.open || since.is_some())
                 .take(limit)
                 .cloned()
                 .collect())

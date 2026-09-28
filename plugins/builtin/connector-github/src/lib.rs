@@ -146,26 +146,31 @@ impl Connector for GitHub {
         "`gh pr create`"
     }
 
+    /// The open issues, then the closed ones changed since `since` — asked
+    /// from a day before it, because the search takes a day and not a moment,
+    /// and two clocks never quite agree. Listing more than changed costs a
+    /// comparison; listing less loses an edit.
     fn issues_for_sync_blocking(
         &self,
         root: &Path,
+        since: Option<u64>,
         limit: usize,
     ) -> Result<Vec<RemoteIssue>, String> {
         let limit = limit.to_string();
-        let json = gh(
-            root,
-            &[
-                "issue",
-                "list",
-                "--state",
-                "open",
-                "--limit",
-                &limit,
-                "--json",
-                SYNC_FIELDS,
-            ],
-        )?;
-        remote_issues(&json)
+        let list = |state: &str, search: Option<String>| {
+            let search = search.map(|day| format!("updated:>={day}"));
+            let mut args = vec!["issue", "list", "--state", state, "--limit", &limit];
+            if let Some(search) = &search {
+                args.extend(["--search", search.as_str()]);
+            }
+            args.extend(["--json", SYNC_FIELDS]);
+            gh(root, &args).and_then(|json| remote_issues(&json))
+        };
+        let mut found = list("open", None)?;
+        if let Some(since) = since {
+            found.extend(list("closed", Some(day_of(since.saturating_sub(86_400))))?);
+        }
+        Ok(found)
     }
 
     fn issue_blocking(&self, root: &Path, key: &str) -> Result<Option<RemoteIssue>, String> {
@@ -202,11 +207,18 @@ impl Connector for GitHub {
             open: true,
             labels: Vec::new(),
         };
-        self.update_issue_blocking(root, &key, &bare, said)?;
+        // The issue exists from here on, so it is handed back whatever happens
+        // next: failing now would leave it on GitHub with nothing linked to
+        // it, and the next press of Publish would make a second. What it says
+        // is what it was brought up to, and a sync sends the rest.
+        let snapshot = match self.update_issue_blocking(root, &key, &bare, said) {
+            Ok(()) => said.clone(),
+            Err(_) => bare,
+        };
         Ok(RemoteIssue {
             key,
             reference: format!("#{number}"),
-            snapshot: said.clone(),
+            snapshot,
         })
     }
 
@@ -288,6 +300,22 @@ fn remote_issues(json: &str) -> Result<Vec<RemoteIssue>, String> {
             .normalized(),
         })
         .collect())
+}
+
+/// The day `secs` since the epoch falls on, as `YYYY-MM-DD` in UTC — the form a
+/// `gh` search's `updated:` takes. The civil-from-days count, written out
+/// rather than taken from a date library for the one place it is needed.
+fn day_of(secs: u64) -> String {
+    let z = (secs / 86_400) as i64 + 719_468;
+    let era = z.div_euclid(146_097);
+    let doe = z - era * 146_097;
+    let yoe = (doe - doe / 1_460 + doe / 36_524 - doe / 146_096) / 365;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let d = doy - (153 * mp + 2) / 5 + 1;
+    let m = if mp < 10 { mp + 3 } else { mp - 9 };
+    let y = yoe + era * 400 + i64::from(m <= 2);
+    format!("{y:04}-{m:02}-{d:02}")
 }
 
 /// The number of the issue `gh issue create` just made: its URL is the last
@@ -540,6 +568,13 @@ fn ssh_resolve_blocking(alias: &str) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_moment_is_named_by_its_day_the_way_a_search_takes_it() {
+        assert_eq!(day_of(0), "1970-01-01");
+        assert_eq!(day_of(951_782_400), "2000-02-29");
+        assert_eq!(day_of(1_700_000_000), "2023-11-14");
+    }
 
     fn said(title: &str, body: &str, open: bool, labels: &[&str]) -> Snapshot {
         Snapshot {

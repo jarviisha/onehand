@@ -544,8 +544,12 @@ pub fn pickable_blocking(root: &Path, issues: Option<PathBuf>) -> Result<Pickabl
                 cut |= more;
                 rows.extend(found.into_iter().map(|row| (tracker.clone(), row)));
             }
-            Err(why) if matches!(tracker, Tracker::Forge(_)) => unread = Some(why),
-            Err(why) => return Err(why),
+            // The forge's half being down is said beside the rest; the
+            // project's own issues failing to read is the whole answer.
+            Err(why) => match tracker {
+                Tracker::Forge(_) => unread = Some(why),
+                Tracker::Local(_) | Tracker::Synced { .. } => return Err(why),
+            },
         }
     }
     // A project no connector serves says why only when there is nothing else
@@ -568,7 +572,7 @@ fn trackers_blocking(
 ) -> Vec<Tracker> {
     if let (Some(file), Some(forge)) = (&issues, forge)
         && onehand_core::issues::load_blocking(file)
-            .is_ok_and(|kept| kept.synced_with() == Some(forge.name()))
+            .is_ok_and(|kept| kept.in_step_with(forge.name()))
     {
         return vec![Tracker::Synced {
             file: file.clone(),

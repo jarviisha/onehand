@@ -91,6 +91,10 @@ struct RootIssues {
     forge: Option<&'static dyn Connector>,
     /// A sync is on its way; a second is not started beside it.
     syncing: bool,
+    /// Something asked for a sync while one was running — an edit saved
+    /// meanwhile — so another runs as soon as it lands, rather than leaving
+    /// the edit for the timer.
+    again: bool,
     /// When the last sync finished, and what it came to in one line.
     synced: Option<(Instant, String)>,
 }
@@ -201,7 +205,7 @@ impl IssuesView {
                 state.forge = forge;
                 match read {
                     Ok(read) => {
-                        state.issues = Some(read);
+                        keep_newer(&mut state.issues, read);
                         view.status = None;
                     }
                     Err(why) => view.status = Some(why),
@@ -226,12 +230,16 @@ impl IssuesView {
         let (Some(forge), Some(kept)) = (state.forge, state.issues.as_ref()) else {
             return;
         };
-        let wanted = kept.synced_with() == Some(forge.name());
+        let wanted = kept.in_step_with(forge.name());
         let due = now
             || state
                 .synced
                 .as_ref()
                 .is_none_or(|(at, _)| at.elapsed() >= SYNC_GAP);
+        if state.syncing && wanted && now {
+            state.again = true;
+            return;
+        }
         if !wanted || !due || state.syncing {
             return;
         }
@@ -250,9 +258,10 @@ impl IssuesView {
                     return;
                 };
                 state.syncing = false;
+                let again = std::mem::take(&mut state.again);
                 match done {
                     Ok((kept, report)) => {
-                        state.issues = Some(kept);
+                        keep_newer(&mut state.issues, kept);
                         state.synced = Some((Instant::now(), said(&report, forge.name())));
                         view.status = failures(&report);
                     }
@@ -265,6 +274,9 @@ impl IssuesView {
                     }
                 }
                 cx.notify();
+                if again {
+                    view.sync(true, cx);
+                }
             });
         })
         .detach();
@@ -348,7 +360,7 @@ impl IssuesView {
                 };
                 match done {
                     Ok((kept, number)) => {
-                        state.issues = Some(kept);
+                        keep_newer(&mut state.issues, kept);
                         if number.is_some() {
                             state.selected = number;
                         }
@@ -610,7 +622,7 @@ impl IssuesView {
     fn sync_bar(&self, issues: &Issues, cx: &mut Context<Self>) -> Option<AnyElement> {
         let state = self.roots.get(self.root.as_ref()?)?;
         let forge = state.forge?;
-        let on = issues.synced_with() == Some(forge.name());
+        let on = issues.in_step_with(forge.name());
         let line = match (&state.synced, on, state.syncing) {
             (_, true, true) => format!("Syncing with {}…", forge.name()),
             (Some((_, said)), true, false) => said.clone(),
@@ -637,13 +649,17 @@ impl IssuesView {
                     .child(line),
             );
         Some(if on {
-            bar.child(
-                action("issues-sync-now")
-                    .xsmall()
-                    .ghost()
-                    .label("Sync now")
-                    .on_click(cx.listener(|view, _: &ClickEvent, _, cx| view.sync(true, cx))),
-            )
+            // Not offered while one is running: pressed then, it would do
+            // nothing, and a control that answers with nothing reads as broken.
+            bar.when(!state.syncing, |bar| {
+                bar.child(
+                    action("issues-sync-now")
+                        .xsmall()
+                        .ghost()
+                        .label("Sync now")
+                        .on_click(cx.listener(|view, _: &ClickEvent, _, cx| view.sync(true, cx))),
+                )
+            })
             .child(
                 action("issues-sync-off")
                     .xsmall()
@@ -741,7 +757,7 @@ impl IssuesView {
         // a forge, on an issue not already there.
         let publish_to = state
             .forge
-            .filter(|forge| issues.synced_with() == Some(forge.name()))
+            .filter(|forge| issues.in_step_with(forge.name()))
             .filter(|_| issue.link.is_none())
             .map(|forge| forge.name());
         let body = self.parsed_body(root, &issue, cx);
@@ -928,13 +944,19 @@ fn conflict_view(issue: &LocalIssue, cx: &mut Context<IssuesView>) -> Option<Any
         .conflicts
         .into_iter()
         .map(|field| match field {
-            "title" => format!("Title — here: {}; on {forge}: {}", ours.title, theirs.title),
-            "state" => format!(
+            sync::Field::Title => {
+                format!("Title — here: {}; on {forge}: {}", ours.title, theirs.title)
+            }
+            sync::Field::State => format!(
                 "State — here: {}; on {forge}: {}",
                 open(ours.open),
                 open(theirs.open)
             ),
-            _ => format!("The {field} was changed on both sides."),
+            sync::Field::Description => format!(
+                "Description — here: {}\non {forge}: {}",
+                excerpt(&ours.body),
+                excerpt(&theirs.body)
+            ),
         })
         .collect();
     let ink = status_ink(cx).warning;
@@ -1084,4 +1106,29 @@ fn failures(report: &sync::Report) -> Option<String> {
         0 => format!("Not kept in step: {first}"),
         more => format!("Not kept in step: {first} (and {more} more)"),
     })
+}
+
+/// Put `incoming` on screen unless what is there was written later. Two reads
+/// or writes finish in whatever order the executor finishes them, which is not
+/// always the order they reached the disk in, and the older landing second
+/// would put an edit back the way it was.
+fn keep_newer(shown: &mut Option<Issues>, incoming: Issues) {
+    if shown
+        .as_ref()
+        .is_none_or(|shown| incoming.revision() >= shown.revision())
+    {
+        *shown = Some(incoming);
+    }
+}
+
+/// The start of a description, for the line that sets two of them side by
+/// side: enough to tell them apart, bounded so a long one does not push the
+/// choice off the panel.
+fn excerpt(text: &str) -> String {
+    const SHOWN: usize = 160;
+    match text.char_indices().nth(SHOWN) {
+        Some((at, _)) => format!("{}…", &text[..at]),
+        None if text.is_empty() => "(empty)".to_string(),
+        None => text.to_string(),
+    }
 }
