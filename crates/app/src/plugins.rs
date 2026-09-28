@@ -26,7 +26,7 @@ pub fn workbench_modes(ask: Ask, font_size: Pixels, cx: &mut App) -> Vec<Box<dyn
         Box::new(onehand_workbench_editor::Mode::new(ask.clone(), cx)),
         Box::new(onehand_workbench_markdown::Mode::new(ask.clone(), cx)),
         Box::new(onehand_workbench_neovim::Mode::new(ask, font_size, cx)),
-        Box::new(onehand_workbench_issues::Mode::new(cx)),
+        Box::new(onehand_workbench_issues::Mode::new(connectors(), cx)),
     ]
 }
 

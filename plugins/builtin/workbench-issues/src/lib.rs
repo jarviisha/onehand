@@ -7,6 +7,7 @@
 #![warn(unreachable_pub)]
 
 use gpui::{AnyView, App, Entity};
+use onehand_core::connector::Connector;
 use onehand_plugin_api::{PluginId, WorkbenchModeSpec};
 use onehand_plugin_host::{Request, WorkbenchMode};
 use std::path::Path;
@@ -25,9 +26,9 @@ pub struct Mode {
 }
 
 impl Mode {
-    pub fn new(cx: &mut App) -> Self {
+    pub fn new(connectors: &'static [&'static dyn Connector], cx: &mut App) -> Self {
         Self {
-            view: IssuesView::new(cx),
+            view: IssuesView::new(connectors, cx),
         }
     }
 }
