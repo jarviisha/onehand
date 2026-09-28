@@ -455,13 +455,7 @@ fn begin_blocking(
     checked: &mut Vec<(PathBuf, Served)>,
 ) -> Option<Result<Claimed, Unstarted>> {
     let (repo, tracker, forge, issue) = roots.iter().find_map(|(project, forge)| {
-        let trackers = project
-            .issues
-            .clone()
-            .map(Tracker::Local)
-            .into_iter()
-            .chain(forge.map(Tracker::Forge));
-        for tracker in trackers {
+        for tracker in trackers_blocking(project.issues.clone(), *forge) {
             match core::candidate_blocking(&tracker, &project.root, label) {
                 Ok(Some(issue)) => return Some((project.root.clone(), tracker, *forge, issue)),
                 Ok(None) => {}
@@ -542,28 +536,50 @@ pub type Pickable = (Vec<(Tracker, IssueRow)>, bool, Option<String>);
 /// show; beside issues of the project's own it is said under the list, so one
 /// half being down does not hide the other.
 pub fn pickable_blocking(root: &Path, issues: Option<PathBuf>) -> Result<Pickable, String> {
-    let mut rows = Vec::new();
-    let mut cut = false;
-    if let Some(file) = issues {
-        let tracker = Tracker::Local(file);
-        let (found, more) = core::open_issues_blocking(&tracker, root)?;
-        cut |= more;
-        rows.extend(found.into_iter().map(|row| (tracker.clone(), row)));
-    }
-    let forge = connector_for(root).and_then(|c| {
-        let tracker = Tracker::Forge(c);
-        core::open_issues_blocking(&tracker, root).map(|found| (tracker, found))
-    });
-    let unread = match forge {
-        Ok((tracker, (found, more))) => {
-            cut |= more;
-            rows.extend(found.into_iter().map(|row| (tracker.clone(), row)));
-            None
+    let (mut rows, mut cut, mut unread) = (Vec::new(), false, None);
+    let forge = connector_for(root);
+    for tracker in trackers_blocking(issues, forge.as_ref().ok().copied()) {
+        match core::open_issues_blocking(&tracker, root) {
+            Ok((found, more)) => {
+                cut |= more;
+                rows.extend(found.into_iter().map(|row| (tracker.clone(), row)));
+            }
+            Err(why) if matches!(tracker, Tracker::Forge(_)) => unread = Some(why),
+            Err(why) => return Err(why),
         }
-        Err(why) if rows.is_empty() => return Err(why),
-        Err(why) => Some(why),
-    };
-    Ok((rows, cut, unread))
+    }
+    // A project no connector serves says why only when there is nothing else
+    // to list: beside its own issues, the forge it does not have is no news.
+    match (rows.is_empty(), unread, forge) {
+        (true, Some(why), _) | (true, None, Err(why)) => Err(why),
+        (_, unread, _) => Ok((rows, cut, unread)),
+    }
+}
+
+/// Where a project's issues are looked for, in the order they are searched.
+///
+/// A project kept in step with its forge is looked for **here only**, since
+/// the forge's issues are already here and searching both would find each one
+/// twice. Otherwise its own issues first, then the forge's. Blocking: it reads
+/// the issue file to learn whether the project is synced.
+fn trackers_blocking(
+    issues: Option<PathBuf>,
+    forge: Option<&'static dyn Connector>,
+) -> Vec<Tracker> {
+    if let (Some(file), Some(forge)) = (&issues, forge)
+        && onehand_core::issues::load_blocking(file)
+            .is_ok_and(|kept| kept.synced_with() == Some(forge.name()))
+    {
+        return vec![Tracker::Synced {
+            file: file.clone(),
+            forge,
+        }];
+    }
+    issues
+        .map(Tracker::Local)
+        .into_iter()
+        .chain(forge.map(Tracker::Forge))
+        .collect()
 }
 
 /// Work `row`, picked by hand from a project's open issues, now.
@@ -608,7 +624,7 @@ pub fn start_picked(
                     // An issue on the forge goes back to that forge; one kept
                     // here goes to whichever forge serves the project, if any.
                     let forge = match &tracker {
-                        Tracker::Forge(c) => Some(*c),
+                        Tracker::Forge(forge) | Tracker::Synced { forge, .. } => Some(*forge),
                         Tracker::Local(_) => connector_for(&repo).ok(),
                     };
                     core::claim_picked_blocking(&tracker, &repo, &row, &label)

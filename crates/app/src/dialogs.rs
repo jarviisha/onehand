@@ -965,7 +965,8 @@ fn issue_list(
                                 .text_xs()
                                 .text_color(muted)
                                 .child(match tracker {
-                                    onehand_core::unattended::Tracker::Local(_) => {
+                                    onehand_core::unattended::Tracker::Local(_)
+                                    | onehand_core::unattended::Tracker::Synced { .. } => {
                                         "in onehand".to_string()
                                     }
                                     onehand_core::unattended::Tracker::Forge(_) => {

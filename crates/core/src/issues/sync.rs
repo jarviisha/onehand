@@ -318,9 +318,8 @@ pub fn publish_blocking(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::connector::memory::Forge;
     use crate::issues::Draft;
-    use crate::unattended::{Issue, IssueRow};
-    use std::sync::Mutex;
 
     fn snap(title: &str, open: bool, labels: &[&str]) -> Snapshot {
         Snapshot {
@@ -362,121 +361,6 @@ mod tests {
         let m = merge(&base, &ours, &theirs);
         assert_eq!(m.merged.labels, ["bug", "mine", "theirs"]);
         assert!(m.conflicts.is_empty());
-    }
-
-    /// A forge kept in memory, counting what was asked of it.
-    #[derive(Default)]
-    struct Forge {
-        issues: Mutex<Vec<RemoteIssue>>,
-        updates: Mutex<usize>,
-        refuse_updates: bool,
-    }
-
-    impl Forge {
-        fn with(issues: Vec<(u64, Snapshot)>) -> Self {
-            Self {
-                issues: Mutex::new(
-                    issues
-                        .into_iter()
-                        .map(|(n, snapshot)| RemoteIssue {
-                            key: n.to_string(),
-                            reference: format!("#{n}"),
-                            snapshot,
-                        })
-                        .collect(),
-                ),
-                ..Self::default()
-            }
-        }
-        fn said(&self, key: &str) -> Snapshot {
-            let issues = self.issues.lock().unwrap();
-            issues
-                .iter()
-                .find(|r| r.key == key)
-                .unwrap()
-                .snapshot
-                .clone()
-        }
-        fn set(&self, key: &str, said: Snapshot) {
-            let mut issues = self.issues.lock().unwrap();
-            issues.iter_mut().find(|r| r.key == key).unwrap().snapshot = said;
-        }
-    }
-
-    impl Connector for Forge {
-        fn name(&self) -> &'static str {
-            "Forge"
-        }
-        fn account_blocking(&self) -> Result<String, String> {
-            unreachable!()
-        }
-        fn serves_blocking(&self, _: &Path) -> Result<(), String> {
-            unreachable!()
-        }
-        fn open_issues_blocking(&self, _: &Path, _: usize) -> Result<Vec<IssueRow>, String> {
-            unreachable!()
-        }
-        fn my_labelled_issues_blocking(&self, _: &Path, _: &str) -> Result<Vec<Issue>, String> {
-            unreachable!()
-        }
-        fn remove_label_blocking(&self, _: &Path, _: u64, _: &str) -> Result<(), String> {
-            unreachable!()
-        }
-        fn comment_blocking(&self, _: &Path, _: u64, _: &str) -> Result<(), String> {
-            unreachable!()
-        }
-        fn default_branch_blocking(&self, _: &Path) -> Result<String, String> {
-            unreachable!()
-        }
-        fn pull_request_for_blocking(&self, _: &Path, _: &str) -> Result<Option<String>, String> {
-            unreachable!()
-        }
-        fn open_pull_request_with(&self) -> &'static str {
-            unreachable!()
-        }
-        fn issues_for_sync_blocking(
-            &self,
-            _: &Path,
-            limit: usize,
-        ) -> Result<Vec<RemoteIssue>, String> {
-            let issues = self.issues.lock().unwrap();
-            Ok(issues
-                .iter()
-                .filter(|r| r.snapshot.open)
-                .take(limit)
-                .cloned()
-                .collect())
-        }
-        fn issue_blocking(&self, _: &Path, key: &str) -> Result<Option<RemoteIssue>, String> {
-            let issues = self.issues.lock().unwrap();
-            Ok(issues.iter().find(|r| r.key == key).cloned())
-        }
-        fn create_issue_blocking(&self, _: &Path, said: &Snapshot) -> Result<RemoteIssue, String> {
-            let mut issues = self.issues.lock().unwrap();
-            let n = 100 + issues.len() as u64;
-            let made = RemoteIssue {
-                key: n.to_string(),
-                reference: format!("#{n}"),
-                snapshot: said.clone(),
-            };
-            issues.push(made.clone());
-            Ok(made)
-        }
-        fn update_issue_blocking(
-            &self,
-            _: &Path,
-            key: &str,
-            _: &Snapshot,
-            to: &Snapshot,
-        ) -> Result<(), String> {
-            if self.refuse_updates {
-                return Err("offline".to_string());
-            }
-            *self.updates.lock().unwrap() += 1;
-            let mut issues = self.issues.lock().unwrap();
-            issues.iter_mut().find(|r| r.key == key).unwrap().snapshot = to.clone();
-            Ok(())
-        }
     }
 
     fn scratch(name: &str) -> std::path::PathBuf {

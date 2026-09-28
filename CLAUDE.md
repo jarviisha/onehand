@@ -593,7 +593,14 @@ the forge's). A project **no connector serves** is still worked on its own issue
 branch checked out, told to commit and not push, judged by its commits past the start
 (`unattended::Verdict`, `worktree::commits_since_blocking`). The outcome is a comment on the forge or
 a note on the local issue. What refuses a project is nothing to work (no forge, no storage) or not
-being a repository.
+being a repository. **A project whose issues are kept in step with its forge is searched through the
+sync and only there** (`Tracker::Synced`), so no issue is found twice: each search syncs first, a
+claim takes the label off locally and the sync takes it off the forge, and every note is also left
+as a comment on the forge's issue. The run's pull request references the forge's number, never
+onehand's. **An imported issue is taken only if the forge says the user wrote it** — the same rule
+the forge's own search keeps, because an issue's body goes into the prompt word for word and anybody
+with triage rights can label an issue anybody wrote; the forge is asked since only it knows the
+author.
 What either finds is kept per project (`Unattended::problems`) and shown as the pill in the warning
 ink with the reason on hover — never only on stderr, since a switch that is on while nothing can
 happen looks exactly like one that is working. **A config that stops every run** (empty label,

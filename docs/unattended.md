@@ -141,6 +141,15 @@ verdict is the commits past that start. What refuses a project is having nothing
 to work — no forge and a workspace that keeps no issues — or not being a git
 repository.
 
+**A synced project is searched through the sync, and only there.** When a
+project's issues are kept in step with its forge (the Issues tab's sync bar), a
+run looks at the project's own issues alone — the forge's are already among
+them — syncing first so a label added on the forge is seen. The claim takes the
+label off here and the sync takes it off the forge; every note is also a comment
+on the forge's issue; the pull request references the forge's number. An issue
+brought in from the forge is taken only if the forge says the user wrote it,
+the rule the forge's own search keeps.
+
 **Said when the forge cannot be reached.** A project is served by GitHub when
 its `origin` is on github.com. That is read locally, before anything asks
 GitHub, so a project somewhere else costs nothing per tick. An ssh remote is
