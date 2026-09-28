@@ -4691,6 +4691,7 @@ dependencies = [
  "gpui-terminal",
  "gpui_platform",
  "notify-rust",
+ "onehand-connector-github",
  "onehand-core",
  "onehand-plugin-api",
  "onehand-plugin-host",
@@ -4702,6 +4703,15 @@ dependencies = [
  "rfd",
  "tokio",
  "toml 0.8.23",
+]
+
+[[package]]
+name = "onehand-connector-github"
+version = "0.1.0"
+dependencies = [
+ "onehand-core",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]

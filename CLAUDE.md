@@ -124,7 +124,7 @@ Tests are inline `#[cfg(test)]` modules — there is no `tests/` directory.
 | `crates/plugin-api` | `onehand-plugin-api` | GUI-free plugin IDs, descriptors, capabilities and registration contract |
 | `crates/plugin-host` | `onehand-plugin-host` | the Workbench mode contract, the remote-channel factory type, and the three things a plugin cannot reach into the binary for: the button wrapper, status ink and the surface a dock card draws on |
 | `crates/terminal-ui` | `onehand-terminal-ui` | shared PTY/grid ownership used by the terminal dock and Neovim |
-| `plugins/builtin/*` | built-in plugins | Editor, Files, Markdown, Neovim and Telegram contributions compiled into the binary |
+| `plugins/builtin/*` | built-in plugins | Editor, Files, Markdown, Neovim, Telegram and GitHub contributions compiled into the binary |
 | `vendor/gpui-terminal` | `gpui-terminal` | a vendored terminal grid + the interaction layer upstream never had |
 
 The workspace root is a **virtual manifest** — it owns nothing but the member list and the release
@@ -261,10 +261,11 @@ module owns, and events cross to GPUI on a plain `futures` channel belonging to 
 
 ### Built-in plugins
 
-`crates/app/src/plugins.rs` is the composition root, and it is two ordered lists:
+`crates/app/src/plugins.rs` is the composition root, and it is three ordered lists:
 the Workbench modes (Editor, Markdown, Neovim, which is the order on the strip —
-Files is a mode too, composed inside the Editor rather than listed beside it)
-and how a named remote channel is opened. Nothing registers, nothing is
+Files is a mode too, composed inside the Editor rather than listed beside it),
+the connectors (`plugins::connectors`, GitHub alone today) and how a named
+remote channel is opened. Nothing registers, nothing is
 sealed, and there is no capability declaration or API version — each was checking
 something the compiler checks harder. `impl WorkbenchMode` *is* the capability
 declaration and a mode that does not compile does not ship; this is one binary
@@ -578,16 +579,21 @@ the timeout, the mode and the agent. A tick on `Shared` (one per process, like t
 the oldest open issue **you** opened that carries the label, in the opted-in projects, in rail order;
 a project row says `auto`, or `auto · #N` while a run is on issue N (`crate::unattended::live_run`,
 with `cx.refresh_windows()` at start and settle because nothing the rail watches changes).
-**GitHub only, and a project that cannot be worked says so.** `github_project_blocking` reads
-`origin` locally before any call to GitHub, and `github_blocking` asks `gh api user` who is signed in.
+**Everything outside the checkout goes through a connector, and a project that cannot be worked
+says so.** `onehand_core::connector::Connector` is the trait — account, whether it serves a project,
+issues, labels, comments, default branch, pull request — and `plugins/builtin/connector-github` is the
+one implementation, where `gh` is the whole API layer. `connector::serving` hands a project to the
+first connector whose `serves_blocking` accepts it (GitHub reads `origin` locally before any call),
+and each connector's `account_blocking` says who it acts as. A run carries its connector from the
+claim to the last comment.
 What either finds is kept per project (`Unattended::problems`) and shown as the pill in the warning
 ink with the reason on hover — never only on stderr, since a switch that is on while nothing can
 happen looks exactly like one that is working. **A config that stops every run** (empty label,
 unparsable interval, a mode the agent lacks) is `Unattended::blocked`, and it is kept rather than
 leaving the state unset: the switches stay on screen, so the reason has to be readable by the rows
-and by Settings, and `gh` is still asked. A project is looked at when it is switched on
+and by Settings, and every connector is still asked. A project is looked at when it is switched on
 (`check_now`), when its window registers and on *Check again* (`recheck`), and on **every tick, a
-run included** — all three through one `look_blocking`. The signed-in line heads the switches in
+run included** — all three through one `look_blocking`. One signed-in line per connector heads the switches in
 Settings ▸ Workspace. A run's own worktree never offers the switch (`ProjectFacts::unattended` is
 `None` there). **A run can also be picked by hand**: *Work an issue…* in either project menu opens
 `dialogs::pick_issue` over `unattended::open_issues_blocking` (every open issue, author on the row,
@@ -597,13 +603,12 @@ once. Every run writes its own log into its transcript as notices (`unattended::
 the prompt going out, a cancel, and the words the issue was told at the end. A run the search finds claims its issue by removing the label,
 branches a worktree off `origin/<default>` and mints a session there. **Neither step moves anything on
 screen**: `ChatPane::open_unshown` connects without showing, and the worktree's root is
-`ProjectRoot::transient`, which `to_config` never writes. One prompt, one turn. The pull request `gh`
+`ProjectRoot::transient`, which `to_config` never writes. One prompt, one turn. The pull request the connector
 finds is the verdict, on every ending. A parked ask is cancelled, never answered — unless the user is
 reading that conversation, in which case the run is **taken over**. The same happens the moment
 anybody else puts a prompt in. Taking over clears `transient` and saves. Teardown is
 `Shell::forget_root`, never `remove_root`, because that one re-shows the active session and takes the
-caret with it. The rules that decide are core's (`onehand_core::unattended`); `gh` is the whole API
-layer.
+caret with it. The rules that decide are core's (`onehand_core::unattended`); the calls are the connector's.
 
 ### The chat pane
 

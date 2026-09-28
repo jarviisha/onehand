@@ -12,7 +12,7 @@ use std::time::{Duration, Instant};
 /// things to a caller: a program that is not installed is a fact about the
 /// machine, and one that ran too long is a fact about right now.
 #[derive(Debug)]
-pub(crate) enum Failure {
+pub enum Failure {
     /// There is no such program to run.
     Missing,
     /// It could not be started, for another reason.
@@ -52,7 +52,7 @@ impl std::fmt::Display for Failure {
 ///
 /// On Unix the command runs in a process group of its own, and stopping it
 /// stops the whole group, so what it started goes with it.
-pub(crate) fn output_within(cmd: &mut Command, limit: Duration) -> Result<Output, Failure> {
+pub fn output_within(cmd: &mut Command, limit: Duration) -> Result<Output, Failure> {
     #[cfg(unix)]
     std::os::unix::process::CommandExt::process_group(cmd, 0);
     let mut child = cmd

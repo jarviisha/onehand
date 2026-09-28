@@ -665,20 +665,20 @@ fn unattended_section(handle: &Entity<Shell>, cx: &App) -> AnyElement {
     let choices = handle.read(cx).unattended_choices();
     let muted = cx.theme().muted_foreground;
     let ink = crate::theme::status_ink(cx);
-    // The one connection every run depends on, said where the switches are:
-    // signed in, and as whom, or what to do about it. Everything a run does
-    // outside its checkout goes through `gh`, so this is the whole of "is it
-    // connected". GitHub alone, for now, and the line says so.
-    let (connection, connection_ink) = match crate::unattended::github(cx) {
-        None => ("GitHub: checking…".to_string(), muted),
-        Some(onehand_core::unattended::GitHub::SignedIn(login)) => (
-            format!("GitHub: signed in as {login}, through `gh`"),
-            ink.success,
-        ),
-        Some(github) => (
-            format!("GitHub: {}", github.problem().unwrap_or_default()),
-            ink.warning,
-        ),
+    // The connections every run depends on, said where the switches are: each
+    // connector signed in, and as whom, or what to do about it.
+    let connections: Vec<(String, gpui::Hsla)> = match crate::unattended::accounts(cx) {
+        None => crate::plugins::connectors()
+            .iter()
+            .map(|c| (format!("{}: checking…", c.name()), muted))
+            .collect(),
+        Some(accounts) => accounts
+            .into_iter()
+            .map(|(name, account)| match account {
+                Ok(who) => (format!("{name}: {who}"), ink.success),
+                Err(why) => (format!("{name}: {why}"), ink.warning),
+            })
+            .collect(),
     };
     div()
         .v_flex()
@@ -692,11 +692,11 @@ fn unattended_section(handle: &Entity<Shell>, cx: &App) -> AnyElement {
                 .w_full()
                 .items_center()
                 .child(
-                    div()
-                        .flex_1()
-                        .min_w_0()
-                        .text_color(connection_ink)
-                        .child(connection),
+                    div().v_flex().flex_1().min_w_0().children(
+                        connections
+                            .into_iter()
+                            .map(|(line, ink)| div().text_color(ink).child(line)),
+                    ),
                 )
                 .child(
                     crate::controls::action("unattended-recheck")
