@@ -202,7 +202,7 @@ fn agent_row(shell: &Entity<Shell>, idx: usize, spec: &AgentSpec, cx: &App) -> i
 /// that clear a half-finished rename or worktree still run. The fixed box around
 /// it is what contains that element's `size_full`, which would otherwise take
 /// the whole row away from the name beside it.
-fn title_row(name: &'static str) -> impl IntoElement {
+fn title_row(name: impl Into<SharedString>) -> impl IntoElement {
     div()
         .h_flex()
         .items_center()
@@ -219,7 +219,7 @@ fn title_row(name: &'static str) -> impl IntoElement {
                 // asking for the room back here is enough.
                 .line_height(relative(1.3))
                 .truncate()
-                .child(name),
+                .child(name.into()),
         )
         .child(
             div().flex_none().size_6().child(
@@ -705,6 +705,17 @@ fn unattended_section(handle: &Entity<Shell>, cx: &App) -> AnyElement {
                         .on_click(|_: &ClickEvent, _: &mut Window, cx: &mut App| {
                             crate::unattended::recheck(cx);
                         }),
+                )
+                // The search on demand, rather than at the next tick half an
+                // hour away. It looks where the tick would, and does nothing
+                // the tick would not.
+                .child(
+                    crate::controls::action("unattended-look-now")
+                        .ghost()
+                        .label("Look now")
+                        .on_click(|_: &ClickEvent, window: &mut Window, cx: &mut App| {
+                            crate::unattended::look_now(window.window_handle(), cx);
+                        }),
                 ),
         )
         .child(div().text_color(muted).child(format!(
@@ -806,6 +817,160 @@ pub fn rename_session(shell: &Shell, cx: &mut Context<Shell>) -> Dialog {
         .on_close(cx.listener(|shell: &mut Shell, _, _, cx| {
             shell.cancel_rename(cx);
         }))
+}
+
+/// A project's open issues, to pick one to work now.
+///
+/// **No trigger**, for the rename's reason: it is opened from a menu entry that
+/// is gone by the time the list arrives, so the shell decides whether it exists.
+///
+/// **Who opened each issue is on its row.** The issue's body goes into the
+/// agent's prompt word for word, and the agent works with the user's
+/// credentials; the automatic search takes only the user's own issues for that
+/// reason, and a person picking by hand from everybody's is shown whose text
+/// they are about to hand over.
+pub fn pick_issue(shell: &Shell, cx: &mut Context<Shell>) -> Dialog {
+    let Some(picker) = shell.issue_picker() else {
+        return Dialog::new(cx);
+    };
+    let heading = format!("Open issues in {}", picker.project);
+    let found = picker.found.clone();
+    let handle = cx.entity();
+    Dialog::new(cx)
+        .close_button(false)
+        .content(move |content, _, cx: &mut App| {
+            content
+                .child(title_row(heading.clone()))
+                .child(
+                    div()
+                        .text_xs()
+                        .text_color(cx.theme().muted_foreground)
+                        .child(
+                            "Picking one claims it on GitHub, starts an agent on it in a \
+                             worktree of its own and shows you the session.",
+                        ),
+                )
+                .child(issue_list(found.as_deref(), &handle, cx))
+        })
+        .footer(
+            div().h_flex().justify_end().w_full().child(
+                crate::controls::action("cancel-pick")
+                    .ghost()
+                    .label("Cancel")
+                    .on_click(cx.listener(|shell: &mut Shell, _: &ClickEvent, _, cx| {
+                        shell.cancel_pick(cx);
+                    })),
+            ),
+        )
+        // Esc and the close button both put the list away, and both have to
+        // clear what is putting it on screen, or it renders straight back.
+        .on_close(cx.listener(|shell: &mut Shell, _, _, cx| {
+            shell.cancel_pick(cx);
+        }))
+}
+
+/// The picker's body: a wait, a failure, an empty answer, or the rows.
+fn issue_list(
+    found: Option<&crate::shell::PickerAnswer>,
+    handle: &Entity<Shell>,
+    cx: &App,
+) -> AnyElement {
+    let (muted, radius, accent) = (
+        cx.theme().muted_foreground,
+        cx.theme().radius,
+        cx.theme().accent,
+    );
+    let (pill_bg, pill_fg) = (cx.theme().secondary, cx.theme().secondary_foreground);
+    let (rows, cut) = match found {
+        None => {
+            return div()
+                .text_color(muted)
+                .child("Reading the open issues…")
+                .into_any_element();
+        }
+        Some(Err(why)) => {
+            return div()
+                .text_color(crate::theme::status_ink(cx).warning)
+                .child(format!("They could not be read: {why}"))
+                .into_any_element();
+        }
+        Some(Ok((rows, _))) if rows.is_empty() => {
+            return div()
+                .text_color(muted)
+                .child("There are no open issues.")
+                .into_any_element();
+        }
+        Some(Ok((rows, cut))) => (rows, *cut),
+    };
+    div()
+        .v_flex()
+        .gap_1()
+        .w_full()
+        .child(
+            div()
+                .id("issue-list")
+                .v_flex()
+                .w_full()
+                .max_h(gpui::rems(24.))
+                .overflow_y_scroll()
+                .children(rows.iter().enumerate().map(|(i, row)| {
+                    let handle = handle.clone();
+                    div()
+                        .id(("issue", i))
+                        .h_flex()
+                        .items_center()
+                        .gap_2()
+                        .w_full()
+                        .px_2()
+                        .py_1()
+                        .rounded(radius)
+                        .cursor_pointer()
+                        .hover(move |row| row.bg(accent.opacity(0.5)))
+                        .on_click(move |_: &ClickEvent, window: &mut Window, cx: &mut App| {
+                            handle.update(cx, |shell, cx| shell.pick_issue(i, window, cx));
+                        })
+                        .child(
+                            div()
+                                .flex_none()
+                                .text_color(muted)
+                                .child(format!("#{}", row.issue.number)),
+                        )
+                        .child(
+                            div()
+                                .flex_1()
+                                .min_w_0()
+                                .truncate()
+                                .child(row.issue.title_text().to_string()),
+                        )
+                        // A few labels, not all: the row is for telling issues
+                        // apart, and the title is what does most of that.
+                        .children(row.labels.iter().take(3).map(|label| {
+                            div()
+                                .flex_none()
+                                .px_1()
+                                .rounded(radius)
+                                .text_xs()
+                                .bg(pill_bg)
+                                .text_color(pill_fg)
+                                .child(label.clone())
+                        }))
+                        .child(
+                            div()
+                                .flex_none()
+                                .text_xs()
+                                .text_color(muted)
+                                .child(format!("by {}", row.author)),
+                        )
+                })),
+        )
+        // Said, not hidden: a list cut silently reads as the whole of it.
+        .when(cut, |list| {
+            list.child(div().text_xs().text_color(muted).child(format!(
+                "Showing the newest {}; narrow them down on GitHub to reach the rest.",
+                onehand_core::unattended::ISSUES_SHOWN
+            )))
+        })
+        .into_any_element()
 }
 
 /// Split a project onto a branch of its own, as a git worktree.

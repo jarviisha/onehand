@@ -12,9 +12,10 @@
 use crate::chat::session::{ChatEvent, ChatSession};
 use crate::state::Shared;
 use gpui::{App, BorrowAppContext as _, Entity, Subscription, Task, WeakEntity};
+use onehand_core::chat::ChatItem;
 use onehand_core::chat::UserAsk;
 use onehand_core::config::{AgentSpec, UnattendedConfig};
-use onehand_core::unattended::{self as core, Ending, GitHub, Issue};
+use onehand_core::unattended::{self as core, Ending, GitHub, Issue, IssueRow};
 use onehand_core::worktree;
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -40,6 +41,11 @@ pub struct Unattended {
     /// agent does not offer). Every run would fail the same way on a fresh
     /// issue, so the search stops, and every switched-on row says why.
     blocked: Option<String>,
+    /// The agent does not offer the configured mode. Kept apart from
+    /// `blocked` because it stops a run picked by hand as well, where the
+    /// label and the interval do not matter — and it is only learned once an
+    /// adapter has answered, which is after a claim.
+    mode_refused: Option<String>,
     run: Option<Run>,
     /// What `gh` last said about being signed in, for the line in Settings.
     /// `None` until the first answer lands.
@@ -111,7 +117,7 @@ pub fn boot(cfg: &UnattendedConfig, cx: &mut App) {
     let tick = cx.spawn(async move |cx| {
         loop {
             cx.background_executor().timer(every).await;
-            cx.update(tick);
+            cx.update(|cx| tick(None, cx));
         }
     });
     cx.update_global::<Shared, _>(|shared, _| {
@@ -124,6 +130,7 @@ pub fn boot(cfg: &UnattendedConfig, cx: &mut App) {
             agent: cfg.agent.clone(),
             claiming: false,
             blocked,
+            mode_refused: None,
             run: None,
             github: None,
             problems: HashMap::new(),
@@ -134,7 +141,8 @@ pub fn boot(cfg: &UnattendedConfig, cx: &mut App) {
 
 /// Why no run can start at all, if something stops every one.
 pub fn blocked(cx: &App) -> Option<String> {
-    Shared::global(cx).unattended.as_ref()?.blocked.clone()
+    let u = Shared::global(cx).unattended.as_ref()?;
+    u.blocked.clone().or_else(|| u.mode_refused.clone())
 }
 
 /// What `gh` last said about being signed in, if it has answered yet.
@@ -283,7 +291,7 @@ fn with<R>(cx: &mut App, act: impl FnOnce(&mut Unattended) -> R) -> Option<R> {
 /// look found, and a tick that only looked while it was about to search left
 /// them as old as the run was long — and left `gh` signed in on screen after it
 /// had been signed out.
-fn tick(cx: &mut App) {
+fn tick(asked_from: Option<gpui::AnyWindowHandle>, cx: &mut App) {
     let roots = opted_in_roots(cx);
     // Nothing switched on is nothing to look at and nothing to search, so a
     // tick asks GitHub nothing at all — the feature costs nobody who has not
@@ -292,7 +300,8 @@ fn tick(cx: &mut App) {
         return;
     }
     let search = with(cx, |u| {
-        let idle = !u.claiming && u.blocked.is_none() && u.run.is_none();
+        let idle =
+            !u.claiming && u.blocked.is_none() && u.mode_refused.is_none() && u.run.is_none();
         idle.then(|| {
             u.claiming = true;
             u.label.clone()
@@ -333,7 +342,7 @@ fn tick(cx: &mut App) {
                 record(checked, true, cx);
             }
             if searching {
-                landed(begun, cx);
+                landed(begun, asked_from, cx);
             }
         });
     })
@@ -346,8 +355,14 @@ struct Claimed {
     repo: PathBuf,
     issue: Issue,
     branch: String,
+    /// The default branch the worktree was cut from.
+    base: String,
     /// The worktree the run made, and the project root it is added as.
     dir: PathBuf,
+    /// The window a person picked it in, rather than the search finding it.
+    /// Such a run is put on screen there as it starts and stays when it ends —
+    /// somebody asked for it and is watching — so a card it parks is theirs.
+    picked_in: Option<gpui::AnyWindowHandle>,
 }
 
 /// An issue that was claimed and then could not be started, and where to say
@@ -385,9 +400,19 @@ fn begin_blocking(
         eprintln!("onehand: could not claim issue #{}: {why}", issue.number);
         return None;
     }
-    // Caught here as well as around the whole search: past this point the label
-    // is already gone, so a panic has to become a comment on the issue, or the
-    // issue is left claimed with nothing saying what happened.
+    Some(prepare_blocking(repo, issue, None))
+}
+
+/// Cut a worktree for a claimed issue off the remote's default branch.
+///
+/// Caught as well as everything around it: by now the issue has been claimed,
+/// so a panic has to become a comment on the issue, or it is left claimed with
+/// nothing saying what happened.
+fn prepare_blocking(
+    repo: PathBuf,
+    issue: Issue,
+    picked_in: Option<gpui::AnyWindowHandle>,
+) -> Result<Claimed, Unstarted> {
     let made = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         let base = core::default_branch_blocking(&repo)?;
         worktree::fetch_blocking(&repo, &base)?;
@@ -395,29 +420,159 @@ fn begin_blocking(
         let branch = core::free_branch_blocking(&top, &core::branch_for(&issue));
         let dir = worktree::worktree_dir(&top, &branch);
         let dir = worktree::branch_off_blocking(&top, &branch, &dir, &format!("origin/{base}"))?;
-        Ok::<_, String>((branch, dir))
+        Ok::<_, String>((base, branch, dir))
     }))
     .unwrap_or_else(|_| Err("onehand panicked while preparing the worktree".to_string()));
-    Some(match made {
-        Ok((branch, dir)) => Ok(Claimed {
+    match made {
+        Ok((base, branch, dir)) => Ok(Claimed {
             repo,
             issue,
             branch,
+            base,
             dir,
+            picked_in,
         }),
         Err(why) => Err(Unstarted {
             repo,
             number: issue.number,
             why,
         }),
+    }
+}
+
+/// Work `row`, picked by hand from a project's open issues, now.
+///
+/// **Refused while a run is going**: one run at a time is the rule for picked
+/// and found alike, and the refusal names the issue already being worked so
+/// the person knows what they are waiting on. Anything that stops it before
+/// the claim — a project not on GitHub, a claim GitHub refuses — is said in
+/// the window it was picked from; after the claim, on the issue as well.
+pub fn start_picked(
+    repo: PathBuf,
+    row: IssueRow,
+    window: gpui::AnyWindowHandle,
+    cx: &mut App,
+) -> Result<(), String> {
+    let label = with(cx, |u| {
+        if let Some(run) = &u.run {
+            return Err(format!(
+                "An unattended run is already working on issue #{} — one at a time.",
+                run.claimed.issue.number
+            ));
+        }
+        if u.claiming {
+            return Err("An unattended run is starting — one at a time.".to_string());
+        }
+        // Refused before the claim: the run would fail at its prompt, and the
+        // issue would be claimed and commented on for nothing.
+        if let Some(why) = &u.mode_refused {
+            return Err(format!("Nothing can be started: {why}"));
+        }
+        u.claiming = true;
+        Ok(u.label.clone())
     })
+    .ok_or("Unattended runs are not set up.")??;
+    cx.spawn(async move |cx| {
+        let number = row.issue.number;
+        let begun = cx
+            .background_executor()
+            .spawn(async move {
+                std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                    core::github_project_blocking(&repo)
+                        .and_then(|()| core::claim_picked_blocking(&repo, &row, &label))
+                        .map_err(|why| format!("Could not start on issue #{number}: {why}"))?;
+                    Ok(prepare_blocking(repo, row.issue, Some(window)))
+                }))
+                .unwrap_or_else(|_| Err("onehand panicked while claiming the issue".to_string()))
+            })
+            .await;
+        cx.update(|cx| {
+            let unstarted = match begun {
+                // Nothing was claimed, so the issue has nothing to be told; the
+                // window it was picked from is where the person is.
+                Err(why) => {
+                    with(cx, |u| u.claiming = false);
+                    warn(window, why, cx);
+                    return;
+                }
+                Ok(begun) => begun,
+            };
+            if let Err(Unstarted { why, .. }) = &unstarted {
+                warn(
+                    window,
+                    format!("Could not start on issue #{number}: {why}"),
+                    cx,
+                );
+            }
+            landed(Some(unstarted), None, cx);
+        });
+    })
+    .detach();
+    Ok(())
+}
+
+/// Say `why` in `window`, as the transient notice it is.
+fn warn(window: gpui::AnyWindowHandle, why: String, cx: &mut App) {
+    use gpui_component::WindowExt as _;
+    let _ = window.update(cx, |_, window, cx| {
+        window.push_notification(gpui_component::notification::Notification::warning(why), cx);
+    });
+}
+
+/// Look for a labelled issue now, rather than at the next tick, and say what
+/// came of it in `window` — the person pressed a button and is waiting to hear.
+/// Every way it can do nothing is said rather than left to look like nothing
+/// happened.
+pub fn look_now(window: gpui::AnyWindowHandle, cx: &mut App) {
+    let why_not = if opted_in_roots(cx).is_empty() {
+        Some("No project is switched on for unattended runs.".to_string())
+    } else {
+        with(cx, |u| {
+            if let Some(run) = &u.run {
+                Some(format!(
+                    "A run is already working on issue #{} — one at a time.",
+                    run.claimed.issue.number
+                ))
+            } else if u.claiming {
+                Some("A run is already starting.".to_string())
+            } else {
+                u.blocked
+                    .clone()
+                    .or_else(|| u.mode_refused.clone())
+                    .map(|why| format!("Nothing can be picked up: {why}"))
+            }
+        })
+        .flatten()
+    };
+    match why_not {
+        Some(why) => warn(window, why, cx),
+        None => tick(Some(window), cx),
+    }
 }
 
 /// The claim came back: start the session, or say why not.
-fn landed(begun: Option<Result<Claimed, Unstarted>>, cx: &mut App) {
+fn landed(
+    begun: Option<Result<Claimed, Unstarted>>,
+    asked_from: Option<gpui::AnyWindowHandle>,
+    cx: &mut App,
+) {
     with(cx, |u| u.claiming = false);
     let unstarted = match begun {
-        None => return,
+        None => {
+            // A search somebody asked for that found nothing says so; one the
+            // tick ran says nothing, as a quiet half hour always has.
+            if let Some(window) = asked_from {
+                let label = label(cx);
+                warn(
+                    window,
+                    format!(
+                        "No open issue of yours labelled `{label}` in the projects switched on."
+                    ),
+                    cx,
+                );
+            }
+            return;
+        }
         Some(Err(unstarted)) => unstarted,
         Some(Ok(claimed)) => match start(claimed, cx) {
             Ok(()) => return,
@@ -440,15 +595,23 @@ fn start(claimed: Claimed, cx: &mut App) -> Result<(), Unstarted> {
     let Some(spec) = spec_for(agent.as_deref(), cx) else {
         return Err(unstarted(claimed, "no agent is configured"));
     };
-    let Some((window, shell)) = Shared::global(cx)
+    // The window it was picked in when that one holds the project, so the
+    // session comes up in front of the person who asked for it.
+    let holding: Vec<_> = Shared::global(cx)
         .windows
         .iter()
-        .find(|w| {
+        .filter(|w| {
             w.shell
                 .upgrade()
                 .is_some_and(|s| s.read(cx).holds_root(&claimed.repo))
         })
         .map(|w| (w.handle, w.shell.clone()))
+        .collect();
+    let Some((window, shell)) = holding
+        .iter()
+        .find(|(handle, _)| Some(*handle) == claimed.picked_in)
+        .or(holding.first())
+        .cloned()
     else {
         return Err(unstarted(
             claimed,
@@ -484,6 +647,11 @@ fn start(claimed: Claimed, cx: &mut App) -> Result<(), Unstarted> {
         cx.background_executor().timer(timeout).await;
         cx.update(|cx| cancel_toward(uid, Ending::TimedOut(timeout), cx));
     });
+    let (by_hand, opening, shown_in) = (
+        claimed.picked_in.is_some(),
+        start_notes(&claimed),
+        shell.clone(),
+    );
     with(cx, |u| {
         u.run = Some(Run {
             claimed,
@@ -501,6 +669,16 @@ fn start(claimed: Claimed, cx: &mut App) -> Result<(), Unstarted> {
     // The rail marks the project a run is working on; nothing it watches
     // changed, so it has to be told.
     cx.refresh_windows();
+    for line in opening {
+        note(&session, line, cx);
+    }
+    // Picked by hand is asked for by somebody at the window, so it is put in
+    // front of them; one found by the search never moves what is on screen.
+    if by_hand && let Some(shell) = shown_in.upgrade() {
+        let _ = window.update(cx, |_, window, cx| {
+            shell.update(cx, |shell, cx| shell.show_unattended(uid, window, cx))
+        });
+    }
     Ok(())
 }
 
@@ -625,7 +803,7 @@ fn prompt(uid: u64, session: &Entity<ChatSession>, cx: &mut App) {
              until unattended.mode is fixed and onehand restarted.",
             offered.join(", ")
         );
-        with(cx, |u| u.blocked = Some(why.clone()));
+        with(cx, |u| u.mode_refused = Some(why.clone()));
         eprintln!("onehand: {why}");
         settle(uid, Ending::Failed(why), cx);
         return;
@@ -634,13 +812,56 @@ fn prompt(uid: u64, session: &Entity<ChatSession>, cx: &mut App) {
         session.chat.set_mode(&mode);
         session.submit(&text, &[], cx)
     });
-    if !sent {
+    if sent {
+        note(
+            session,
+            format!("Mode {mode} set; issue sent as the prompt"),
+            cx,
+        );
+    } else {
         settle(
             uid,
             Ending::Failed("the agent did not accept the prompt".to_string()),
             cx,
         );
     }
+}
+
+/// What the run's transcript opens with: which issue, how it was chosen, and
+/// where the work is happening. The transcript is the record of the run, and
+/// without these lines it would start at a prompt nobody on screen typed.
+///
+/// **Short lines, one fact each.** A remark in the transcript is one line down
+/// the middle of the column and is cut where the column ends, so a sentence
+/// carrying the issue, the folder and the branch lost all but the first.
+fn start_notes(claimed: &Claimed) -> Vec<String> {
+    let folder = claimed
+        .dir
+        .file_name()
+        .map(|name| name.to_string_lossy().into_owned())
+        .unwrap_or_else(|| claimed.dir.display().to_string());
+    vec![
+        format!(
+            "Unattended run on issue #{}, {}",
+            claimed.issue.number,
+            if claimed.picked_in.is_some() {
+                "picked by hand"
+            } else {
+                "found by its label"
+            }
+        ),
+        format!("Branch {} from origin/{}", claimed.branch, claimed.base),
+        format!("Working in {folder}"),
+    ]
+}
+
+/// Add a line about the run to its session's transcript.
+fn note(session: &Entity<ChatSession>, text: String, cx: &mut App) {
+    session.update(cx, |session, cx| {
+        session.chat.items.push(ChatItem::notice(text));
+        cx.emit(ChatEvent::Appended);
+        cx.notify();
+    });
 }
 
 /// Whether somebody other than the run has put a prompt into the session,
@@ -696,6 +917,12 @@ fn cancel_toward(uid: u64, ending: Ending, cx: &mut App) {
         session.chat.cancel_turn();
         cx.notify();
     });
+    let why = match &ending {
+        Ending::TimedOut(_) => "the run timed out",
+        Ending::Asked(_) => "a question nobody is here to answer",
+        _ => "the run is ending",
+    };
+    note(&session, format!("Cancelling the turn: {why}"), cx);
     let wind_down = cx.spawn(async move |cx| {
         cx.background_executor().timer(WIND_DOWN).await;
         cx.update(|cx| settle_pending(uid, cx));
@@ -736,27 +963,47 @@ fn settle(uid: u64, ending: Ending, cx: &mut App) {
             claimed,
             window,
             shell,
+            session,
             ..
         } = run;
+        // A run picked by hand stays where the person watching it can read how
+        // it ended, and is kept for good like a taken-over one — somebody who
+        // watched it end may well carry on in it, and a project that vanished
+        // at the next launch would take their place in it too. Only a found
+        // run is taken down.
+        let keep = matches!(ending, Ending::TakenOver) || claimed.picked_in.is_some();
         if let Some(shell) = shell.upgrade() {
             let _ = window.update(cx, |_, window, cx| {
-                shell.update(cx, |shell, cx| match ending {
-                    Ending::TakenOver => shell.adopt_unattended(&claimed.dir, window, cx),
-                    _ => shell.end_unattended(&claimed.dir, window, cx),
+                shell.update(cx, |shell, cx| match keep {
+                    true => shell.adopt_unattended(&claimed.dir, window, cx),
+                    false => shell.end_unattended(&claimed.dir, window, cx),
                 })
             });
         }
-        cx.background_executor()
-            .spawn(async move {
-                let pr = if ending.may_have_pr() {
-                    core::pr_for_blocking(&claimed.repo, &claimed.branch)
-                } else {
-                    Ok(None)
-                };
-                let said = core::report(&ending, &pr, &claimed.branch);
-                tell_issue(&claimed.repo, claimed.issue.number, &said);
-            })
-            .detach();
+        cx.spawn(async move |cx| {
+            let line = cx
+                .background_executor()
+                .spawn(async move {
+                    let pr = if ending.may_have_pr() {
+                        core::pr_for_blocking(&claimed.repo, &claimed.branch)
+                    } else {
+                        Ok(None)
+                    };
+                    let said = core::report(&ending, &pr, &claimed.branch);
+                    tell_issue(&claimed.repo, claimed.issue.number, &said);
+                    core::outcome_line(&ending, &pr)
+                })
+                .await;
+            // How it ended, in the one line a remark gets, as the transcript's
+            // last — where the session is still there to carry it. The whole
+            // account is the comment on the issue.
+            cx.update(|cx| {
+                if let Some(session) = session.upgrade() {
+                    note(&session, line, cx);
+                }
+            });
+        })
+        .detach();
     });
 }
 

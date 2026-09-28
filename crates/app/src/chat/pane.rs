@@ -3620,6 +3620,8 @@ pub enum ProjectAction {
     TogglePin,
     /// Let its labelled issues be worked unattended, or stop that.
     ToggleUnattended,
+    /// Open its open issues, to pick one to work now.
+    PickIssue,
     /// Split it into a second checkout. Offered on repositories only.
     Worktree,
     /// Rename the branch checked out in it. Offered on repositories only, for
@@ -4773,6 +4775,12 @@ fn project_menu(
                 on,
                 act(ProjectAction::ToggleUnattended, pane.clone()),
             ))
+        })
+        .when(is_repo && unattended.is_some(), |menu| {
+            menu.item(crate::rail::pick_item(act(
+                ProjectAction::PickIssue,
+                pane.clone(),
+            )))
         })
         // Only where there is a repository to split. On a plain folder this
         // could do nothing but report that git said no, and an entry whose whole

@@ -1112,6 +1112,18 @@ fn project_hint(
     hint
 }
 
+/// The entry that opens a project's open issues, to pick one and start on it
+/// now — in both menus that carry it, built here once for the reason
+/// [`unattended_item`] is.
+///
+/// Offered where the switch is — on a repository that is not a run's own
+/// worktree — because it starts the same kind of run by a different road.
+pub fn pick_item(click: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static) -> PopupMenuItem {
+    crate::controls::menu_item("Work an issue…")
+        .icon(Icon::new(IconName::Inbox))
+        .on_click(click)
+}
+
 /// The entry that turns unattended runs on and off for a project, in both menus
 /// that carry it — the rail's and the project page's — built here once so the
 /// two cannot come to say it differently.
@@ -1219,7 +1231,8 @@ fn project_menu(
 ) -> impl Fn(PopupMenu, &mut Window, &mut App) -> PopupMenu + use<> {
     move |menu, _, cx: &mut App| {
         let danger = crate::theme::status_ink(cx).danger;
-        let (pin, auto, start, split, terminal, copy, refresh, remove) = (
+        let (pin, auto, pick, start, split, terminal, copy, refresh, remove) = (
+            shell.clone(),
             shell.clone(),
             shell.clone(),
             shell.clone(),
@@ -1248,6 +1261,12 @@ fn project_menu(
                     shell.toggle_unattended(root_idx, window, cx);
                 })
                 .ok();
+            }))
+        })
+        .when(is_repo && unattended.is_some(), |menu| {
+            menu.item(pick_item(move |_, _, cx: &mut App| {
+                pick.update(cx, |shell: &mut Shell, cx| shell.begin_pick(root_idx, cx))
+                    .ok();
             }))
         })
         .item(
