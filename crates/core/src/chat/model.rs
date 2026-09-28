@@ -1692,6 +1692,25 @@ impl Chat {
         self.current_mode = Some(mode_id.to_string());
     }
 
+    /// Step to the mode after the one in force, wrapping at the end.
+    ///
+    /// A mode the list no longer holds — or none at all — steps to the first,
+    /// so the key always lands somewhere the picker can show. `None` when the
+    /// agent advertises fewer than two modes, since there is nowhere to go.
+    pub fn cycle_mode(&mut self) -> Option<&str> {
+        if self.modes.len() < 2 {
+            return None;
+        }
+        let at = self
+            .current_mode
+            .as_ref()
+            .and_then(|id| self.modes.iter().position(|mode| &mode.id == id))
+            .map_or(0, |at| (at + 1) % self.modes.len());
+        let id = self.modes[at].id.clone();
+        self.set_mode(&id);
+        self.current_mode.as_deref()
+    }
+
     /// Pick a config option (model / effort / sub-agent), same contract as
     /// [`Self::set_mode`].
     pub fn set_config_option(&mut self, config_id: &str, value: &str) {
@@ -4055,6 +4074,27 @@ mod tests {
         // empty one.
         chat.modes.clear();
         assert_eq!(chat.selectors().len(), 1);
+    }
+
+    /// The mode key walks the list and wraps; a mode the list no longer holds
+    /// lands on the first, and a single mode is nowhere to go.
+    #[test]
+    fn cycle_mode_wraps_and_recovers() {
+        let mode = |id: &str| Mode {
+            id: id.into(),
+            name: id.into(),
+        };
+        let mut chat = Chat::default();
+        chat.modes = vec![mode("default"), mode("plan"), mode("auto")];
+        chat.current_mode = Some("plan".into());
+        assert_eq!(chat.cycle_mode(), Some("auto"));
+        assert_eq!(chat.cycle_mode(), Some("default"));
+
+        chat.current_mode = Some("gone".into());
+        assert_eq!(chat.cycle_mode(), Some("default"));
+
+        chat.modes.truncate(1);
+        assert_eq!(chat.cycle_mode(), None);
     }
 
     /// The two halves go down different paths -- mode is a first-class field of

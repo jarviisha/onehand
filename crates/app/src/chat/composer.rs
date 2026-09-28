@@ -1246,6 +1246,16 @@ impl Composer {
                     composer.paste(window, cx);
                 },
             ))
+            .on_action({
+                let session = session.clone();
+                move |_: &crate::shell::CycleMode, _, cx| {
+                    session.update(cx, |session, cx| {
+                        if session.chat.cycle_mode().is_some() {
+                            cx.notify();
+                        }
+                    });
+                }
+            })
             // A file dragged onto the message being written is being offered to
             // the agent, and the card is what the user aims at. The whole card
             // takes it rather than the tray, which is not there yet the first

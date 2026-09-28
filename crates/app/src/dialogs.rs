@@ -1002,6 +1002,11 @@ pub const SHORTCUTS: &[Shortcut] = &[
         keys: &["ctrl-v"],
     },
     Shortcut {
+        label: "Shift+Tab",
+        what: "Switch to the next session mode (in the composer)",
+        keys: &["shift-tab"],
+    },
+    Shortcut {
         label: "Ctrl+1…9",
         what: "Switch session by position",
         keys: &[

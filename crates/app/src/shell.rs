@@ -49,7 +49,8 @@ gpui::actions!(
         CompletionNext,
         CompletionPrev,
         CompletionAccept,
-        PasteHere
+        PasteHere,
+        CycleMode
     ]
 );
 
@@ -234,6 +235,11 @@ pub fn init_keymap(cx: &mut App) {
         // going on. Text is handed straight back to the input, so this only
         // adds a case rather than replacing one.
         gpui::KeyBinding::new("ctrl-v", PasteHere, Some("ChatComposerCard > Input")),
+        // Stepping the session mode, on the key the agent's own CLI uses for
+        // it. Taken from the input by the same rule as paste above, which costs
+        // Shift+Tab walking the focus ring backwards out of the prompt -- a
+        // move nobody makes mid-message, where changing mode before sending is.
+        gpui::KeyBinding::new("shift-tab", CycleMode, Some("ChatComposerCard > Input")),
     ]);
 }
 

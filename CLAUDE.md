@@ -1399,7 +1399,8 @@ App commands occupy an exact `Ctrl+Shift` namespace so plain Ctrl keys stay usab
 `N` Workbench Neovim · `A` composer · `R` guarded restart ·
 `W` guarded close · `K` maximize. Plus `` Ctrl+` `` terminal, `Ctrl+S` save, `Ctrl+1…9` session by position, `Ctrl+Tab` session by recency,
 `Ctrl+=`/`Ctrl+-`/`Ctrl+0` zoom, and inside the composer `Up`/`Down` (its completion list) and
-`Ctrl+V` (an image or a file on the clipboard becomes an attachment; text is handed back to the input).
+`Ctrl+V` (an image or a file on the clipboard becomes an attachment; text is handed back to the input)
+and `Shift+Tab` (the next session mode, wrapping — `Chat::cycle_mode`).
 
 **GPUI resolves these itself.** Key bindings are matched against the focus context stack *before* the
 key is delivered to whatever is focused, so an app binding reaches the app even while a PTY holds
