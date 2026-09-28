@@ -33,6 +33,7 @@ pub mod connector;
 pub mod diff;
 pub mod editor;
 pub mod gitstat;
+pub mod issues;
 pub mod process;
 pub mod remote;
 pub mod tree;

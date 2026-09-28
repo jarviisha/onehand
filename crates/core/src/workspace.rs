@@ -109,15 +109,23 @@ pub fn canon_dir(path: PathBuf) -> PathBuf {
 /// next — a hash that moved under a toolchain upgrade would point every
 /// existing project at a fresh empty workspace.
 pub fn storage_for(root: &Path) -> PathBuf {
+    crate::config::config_dir()
+        .join("workspaces")
+        .join(stem_for(root))
+}
+
+/// `root` as a name something about it can be kept under: its folder's name,
+/// then a digest of its whole path. One rule for every such name, so a
+/// workspace's folder and a project's issues can never disagree about which
+/// project a path is.
+pub(crate) fn stem_for(root: &Path) -> String {
     let name = root
         .file_name()
         .map(|s| slug(&s.to_string_lossy()))
         .filter(|s| !s.is_empty())
         .unwrap_or_else(|| "workspace".to_string());
     let digest = fnv1a(root.as_os_str().as_encoded_bytes());
-    crate::config::config_dir()
-        .join("workspaces")
-        .join(format!("{name}-{digest:08x}"))
+    format!("{name}-{digest:08x}")
 }
 
 /// A folder name as a name a folder may have: what is not plainly a letter,

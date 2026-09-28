@@ -128,6 +128,12 @@ pub enum Request<'a> {
     Reap,
     /// The workspace's `git status`, for whoever draws change badges.
     SetGit(&'a HashMap<PathBuf, GitStatus>),
+    /// Where this window's workspace keeps what it persists, or `None` for a
+    /// workspace bound to no storage — which keeps nothing.
+    ///
+    /// Told once when the panel is built and again whenever the binding
+    /// changes, and only a mode that keeps files of its own answers it.
+    SetStorage(Option<&'a Path>),
     /// The reading size for a mode that is measured rather than laid out.
     ///
     /// A font size and not the panel's zoom factor, because the only mode that

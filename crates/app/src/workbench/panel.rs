@@ -261,6 +261,12 @@ impl Workbench {
         cx.notify();
     }
 
+    /// Tell every mode where this window's workspace keeps its files.
+    pub fn set_storage(&mut self, storage: Option<&Path>, cx: &mut Context<Self>) {
+        self.broadcast(&Request::SetStorage(storage), cx);
+        cx.notify();
+    }
+
     pub fn set_git(&mut self, git: HashMap<PathBuf, GitStatus>, cx: &mut Context<Self>) {
         self.broadcast(&Request::SetGit(&git), cx);
         cx.notify();

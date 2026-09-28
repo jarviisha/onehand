@@ -470,6 +470,9 @@ impl Shell {
         let dock = cx.new(|cx| DockArea::new("onehand", Some(1), window, cx));
         let chat = ChatPane::new(window, cx);
         let workbench = Workbench::new(cx);
+        workbench.update(cx, |panel, cx| {
+            panel.set_storage(workspace.storage_dir.as_deref(), cx)
+        });
         let terminal = TerminalPanel::new(cx);
 
         // Restored from the workspace, which supplies the built-in arrangement
@@ -2787,6 +2790,8 @@ impl Shell {
     /// Drop the storage binding. An unbound workspace persists nothing.
     pub fn unbind_storage(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let was = self.window.workspace.storage_dir.take();
+        self.workbench
+            .update(cx, |panel, cx| panel.set_storage(None, cx));
         self.set_window_identity(None, window, cx);
         // Forget the recent too, or the next launch reopens the workspace that
         // was just unbound -- `recent_workspaces[0]` takes precedence over
@@ -2812,6 +2817,8 @@ impl Shell {
     /// registry exists to prevent.
     fn bind_storage(&mut self, dir: PathBuf, window: &mut Window, cx: &mut Context<Self>) {
         self.window.workspace.storage_dir = Some(dir.clone());
+        self.workbench
+            .update(cx, |panel, cx| panel.set_storage(Some(&dir), cx));
         self.save_workspace(window, cx);
         self.set_window_identity(Some(dir.clone()), window, cx);
         cx.update_global::<Shared, _>(|shared, _| {

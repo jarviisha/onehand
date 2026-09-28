@@ -32,6 +32,7 @@ onehand-remote-telegram = { path = "../../plugins/builtin/remote-telegram" }
 # No `workbench-files`: the file tree is the left half of the Editor mode and
 # reaches the binary through that crate, which composes it.
 onehand-workbench-editor = { path = "../../plugins/builtin/workbench-editor" }
+onehand-workbench-issues = { path = "../../plugins/builtin/workbench-issues" }
 onehand-workbench-markdown = { path = "../../plugins/builtin/workbench-markdown" }
 onehand-workbench-neovim = { path = "../../plugins/builtin/workbench-neovim" }
 
