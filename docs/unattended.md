@@ -16,14 +16,18 @@ open, the section says so.
 
 ```
 tick (every N minutes, one process, one run at a time)
-  └─ gh issue list --label <trigger> --author @me   → the first issue, or nothing
-     └─ claim it: remove the trigger label + comment "onehand started a run"
-        └─ git fetch; git worktree add -b <branch> ../<repo>-auto-issue-123 origin/<default>
+  └─ the project's own issues, then its forge's (gh issue list --label <trigger> --author @me)
+     → the first labelled issue, or nothing
+     └─ claim it: remove the trigger label + a comment (a note, for one kept in onehand)
+        └─ with a forge:    git fetch; git worktree add -b <branch> ../<dir> origin/<default>
+           without a forge: git worktree add -b <branch> ../<dir> <the branch checked out>
            └─ add it as a project root, mint a session on it *without showing it*, set the mode
-              └─ one prompt: the issue, the rules, open the PR yourself
+              └─ one prompt: the issue, the rules, open the PR yourself — or, with no
+                 forge, commit and do not push
                  └─ watch: turn ended · parked an ask · adapter lost · timed out · taken over
-                    └─ verdict: gh pr list --head <branch>  → PR or no PR, on every ending
-                       └─ close the session, drop the root, comment the outcome
+                    └─ verdict: gh pr list --head <branch> → PR or none; with no forge,
+                       git rev-list --count <start>..HEAD → commits or none
+                       └─ close the session, drop the root, tell the issue the outcome
                           (except when taken over: the session and root stay)
 ```
 
@@ -120,16 +124,33 @@ carrying the old global `enabled` key keeps loading; the key is ignored. An
 Settings list both say so, since a switch that is on while nothing can happen is
 the one state that looks exactly like working.
 
-**GitHub only, and said when it cannot be reached.** A project is worked only
-if its `origin` is on github.com. That is read locally, before anything asks
+**Two places an issue can live, and a project with no forge is still worked.**
+An issue is either on the project's forge — GitHub today, through its connector
+— or kept in onehand, in the project's Issues tab (`onehand_core::issues`), and
+a run carries which as a `Tracker`: that is where it is claimed and where the
+outcome is told, as a comment on the forge or a note on the issue. The project's
+own issues are searched before its forge's, since they are the ones written for
+onehand to work. **Where the work goes is a separate question** — a run also
+carries the forge its pull request goes to, if any. An issue kept in onehand in
+a project on GitHub still ends in a pull request, which does **not** reference
+`#N`: that number is onehand's, and on the forge it names some other issue. A
+project **no connector serves** — no `origin`, or a remote elsewhere — is worked
+on its own issues only: the worktree is cut from the branch checked out (a
+detached HEAD is refused), the agent is told to commit and not to push, and the
+verdict is the commits past that start. What refuses a project is having nothing
+to work — no forge and a workspace that keeps no issues — or not being a git
+repository.
+
+**Said when the forge cannot be reached.** A project is served by GitHub when
+its `origin` is on github.com. That is read locally, before anything asks
 GitHub, so a project somewhere else costs nothing per tick. An ssh remote is
 judged by the host ssh would reach (`ssh -G`, which connects to nothing), not by
 the word in the URL. The host there can be an alias from `~/.ssh/config`, such
 as `git@github-work:me/repo`, which is how one machine keeps two GitHub accounts
 apart, and reading the alias refused every such project. `gh` is asked who it
 is signed in as. Anything that stops a switched-on project from being worked —
-another forge, no `origin`, `gh` missing, signed out or unanswered — is kept per
-project and shown on its row, in the warning ink with the reason on hover. It is
+`gh` missing, signed out or unanswered on a project GitHub serves, or nothing to
+work at all — is kept per project and shown on its row, in the warning ink with the reason on hover. It is
 never left on stderr, where a switch that is on while nothing can happen would
 look exactly like one that is working. Settings ▸ Workspace heads its switches
 with the signed-in line and a *Check again*. A project is looked at when it is

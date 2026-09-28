@@ -6,7 +6,8 @@
 //! timer, the session, the watching.
 
 use crate::connector::Connector;
-use std::path::Path;
+use crate::issues;
+use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 /// An issue a run can take.
@@ -57,6 +58,89 @@ impl IssueRow {
     }
 }
 
+/// Where an issue lives, and so where a run on it is claimed, commented on and
+/// found.
+///
+/// Kept apart from the forge a project's pull requests go to, because the two
+/// come apart: an issue kept in onehand can be worked in a project on GitHub,
+/// where the work still ends in a pull request, or in a project on no forge at
+/// all, where it ends on a branch.
+#[derive(Clone)]
+pub enum Tracker {
+    /// On a forge, reached through its connector.
+    Forge(&'static dyn Connector),
+    /// Kept by onehand, in this project's issue file.
+    Local(PathBuf),
+}
+
+impl Tracker {
+    /// How the prompt names issue `number`.
+    fn names(&self, number: u64) -> String {
+        match self {
+            Self::Forge(c) => format!("{} issue #{number}", c.name()),
+            Self::Local(_) => {
+                format!("issue #{number}, which is kept in onehand rather than on a forge")
+            }
+        }
+    }
+
+    /// Open issues carrying `label` that the user wrote. Every issue kept in
+    /// onehand was written by the user, so for those the label is the whole
+    /// test.
+    fn labelled_blocking(&self, root: &Path, label: &str) -> Result<Vec<Issue>, String> {
+        match self {
+            Self::Forge(c) => c.my_labelled_issues_blocking(root, label),
+            Self::Local(file) => Ok(issues::load_blocking(file)?
+                .listed()
+                .into_iter()
+                .filter(|i| i.open && i.labels.iter().any(|l| l == label))
+                .map(|i| Issue::new(i.number, i.title.clone(), i.body.clone()))
+                .collect()),
+        }
+    }
+
+    /// Open issues, newest first, at most `limit` of them. One kept in onehand
+    /// has no author on its row: they are all the user's own.
+    fn open_blocking(&self, root: &Path, limit: usize) -> Result<Vec<IssueRow>, String> {
+        match self {
+            Self::Forge(c) => c.open_issues_blocking(root, limit),
+            Self::Local(file) => Ok(issues::load_blocking(file)?
+                .listed()
+                .into_iter()
+                .filter(|i| i.open)
+                .take(limit)
+                .map(|i| IssueRow {
+                    issue: Issue::new(i.number, i.title.clone(), i.body.clone()),
+                    author: String::new(),
+                    labels: i.labels.clone(),
+                })
+                .collect()),
+        }
+    }
+
+    fn remove_label_blocking(&self, root: &Path, number: u64, label: &str) -> Result<(), String> {
+        match self {
+            Self::Forge(c) => c.remove_label_blocking(root, number, label),
+            Self::Local(file) => issues::update_blocking(file, |kept| {
+                kept.remove_label(number, label, issues::now())
+            })
+            .map(drop),
+        }
+    }
+
+    /// Leave `body` on issue `number`: a comment on a forge, a note on an issue
+    /// kept in onehand.
+    pub fn comment_blocking(&self, root: &Path, number: u64, body: &str) -> Result<(), String> {
+        match self {
+            Self::Forge(c) => c.comment_blocking(root, number, body),
+            Self::Local(file) => {
+                issues::update_blocking(file, |kept| kept.note(number, body, issues::now()))
+                    .map(drop)
+            }
+        }
+    }
+}
+
 /// How many open issues the picker lists. A repository with more than this
 /// open is one to narrow down where it lives, and the list says it was cut.
 pub const ISSUES_SHOWN: usize = 100;
@@ -72,12 +156,10 @@ fn bounded(mut rows: Vec<IssueRow>) -> (Vec<IssueRow>, bool) {
 /// [`ISSUES_SHOWN`] — and whether there were more. One past the bound is asked
 /// for, which is what tells a full page from a cut one.
 pub fn open_issues_blocking(
-    connector: &dyn Connector,
+    tracker: &Tracker,
     root: &Path,
 ) -> Result<(Vec<IssueRow>, bool), String> {
-    Ok(bounded(
-        connector.open_issues_blocking(root, ISSUES_SHOWN + 1)?,
-    ))
+    Ok(bounded(tracker.open_blocking(root, ISSUES_SHOWN + 1)?))
 }
 
 /// Take an issue picked by hand: take the trigger label off if it carries it,
@@ -85,15 +167,15 @@ pub fn open_issues_blocking(
 /// started. The comment is the same one an automatic claim leaves, because it
 /// has to read correctly in the same way if nothing follows it.
 pub fn claim_picked_blocking(
-    connector: &dyn Connector,
+    tracker: &Tracker,
     root: &Path,
     row: &IssueRow,
     label: &str,
 ) -> Result<(), String> {
     if !label.is_empty() && row.carries(label) {
-        connector.remove_label_blocking(root, row.issue.number, label)?;
+        tracker.remove_label_blocking(root, row.issue.number, label)?;
     }
-    connector.comment_blocking(root, row.issue.number, &picked_claim_comment())
+    tracker.comment_blocking(root, row.issue.number, &picked_claim_comment())
 }
 
 /// What an issue is told when a person picks it to be worked.
@@ -192,10 +274,38 @@ pub fn target_dir() -> Option<std::path::PathBuf> {
 /// test commands, the pull-request shape. Those are in the repository's own
 /// instructions, which the agent reads anyway, and a second copy here is a copy
 /// that goes stale without anybody noticing.
-pub fn prompt_for(issue: &Issue, branch: &str, connector: &dyn Connector) -> String {
+///
+/// Three shapes, by where the issue lives and whether the project has a forge.
+/// An issue on the forge is referenced from its pull request. An issue kept in
+/// onehand is **not** — `#N` in a pull request names the forge's issue N, which
+/// is some other issue. And a project on no forge is told to leave its work on
+/// the branch, since there is nowhere to push it and the branch is the result.
+pub fn prompt_for(
+    issue: &Issue,
+    branch: &str,
+    tracker: &Tracker,
+    forge: Option<&dyn Connector>,
+) -> String {
+    let finish = match (forge, tracker) {
+        (Some(forge), Tracker::Forge(_)) => format!(
+            "Commit, push the branch, and open the pull request yourself with {}, \
+             referencing #{}.",
+            forge.open_pull_request_with(),
+            issue.number
+        ),
+        (Some(forge), Tracker::Local(_)) => format!(
+            "Commit, push the branch, and open the pull request yourself with {}. Do \
+             not reference #{} in it: that number is onehand's, not the forge's.",
+            forge.open_pull_request_with(),
+            issue.number
+        ),
+        (None, _) => "Commit your work on this branch. Do not push it: this project \
+                      has no forge, and the branch is the result."
+            .to_string(),
+    };
     format!(
-        "Work {forge} issue #{number} in this repository, unattended — nobody is \
-         watching this session.\n\n\
+        "Work {named} in this repository, unattended — nobody is watching this \
+         session.\n\n\
          Title: {title}\n\n\
          {body}\n\n\
          ---\n\n\
@@ -203,13 +313,10 @@ pub fn prompt_for(issue: &Issue, branch: &str, connector: &dyn Connector) -> Str
          1. Read the repository's own agent instructions, and whatever they point \
          at, and follow its conventions.\n\
          2. Run the repository's checks before committing.\n\
-         3. Commit, push the branch, and open the pull request yourself with \
-         {open_pr}, referencing #{number}.\n\
+         3. {finish}\n\
          4. If the issue turns out to need a decision from a person, say so in \
          one short paragraph and stop. Do not guess.\n",
-        forge = connector.name(),
-        open_pr = connector.open_pull_request_with(),
-        number = issue.number,
+        named = tracker.names(issue.number),
         title = issue.title,
         body = issue.body.trim(),
     )
@@ -250,29 +357,57 @@ pub enum Ending {
 }
 
 impl Ending {
-    /// Whether a pull request is worth looking for. A run that never started
-    /// cannot have opened one.
-    pub fn may_have_pr(&self) -> bool {
+    /// Whether the run's work is worth looking for. A run that never started
+    /// cannot have done any.
+    pub fn may_have_work(&self) -> bool {
         !matches!(self, Self::Failed(_))
     }
 }
 
-/// The comment an ending leaves on the issue, given what looking for a pull
-/// request on `branch` found: one, none, or a failure to look at all.
+/// What a run left behind: on a project with a forge, a pull request or none;
+/// on a project without one, commits on its branch or none.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Verdict {
+    PullRequest(String),
+    NoPullRequest,
+    Commits(u64),
+    NoCommits,
+}
+
+impl Verdict {
+    /// The missing verdict, as the noun phrase the sentences about it use.
+    fn missing(&self) -> Option<&'static str> {
+        match self {
+            Self::NoPullRequest => Some("no pull request"),
+            Self::NoCommits => Some("no commit"),
+            Self::PullRequest(_) | Self::Commits(_) => None,
+        }
+    }
+}
+
+/// The comment an ending leaves on the issue, given what looking for the run's
+/// work on `branch` found: a pull request or commits, none, or a failure to
+/// look at all.
 ///
-/// **The pull request is the verdict, whatever the ending.** An agent can open
-/// it and then time out, park or lose its adapter while tidying up, and a
+/// **The work is the verdict, whatever the ending.** An agent can open a pull
+/// request and then time out, park or lose its adapter while tidying up, and a
 /// comment saying "no pull request" beside a pull request is the worst answer
-/// available — so a PR found makes the comment about the PR, with why the run
+/// available — so work found makes the comment about the work, with why the run
 /// stopped as a note under it. For the same reason a lookup that *failed* is
 /// said as a failure and never as "none": "no pull request" is a claim, and
 /// one nobody checked is the worst answer by another route.
-pub fn report(ending: &Ending, pr: &Result<Option<String>, String>, branch: &str) -> String {
-    let head = match pr {
-        Ok(None) => return no_pr(ending, branch),
-        Ok(Some(url)) => format!("onehand opened {url}."),
+pub fn report(ending: &Ending, found: &Result<Verdict, String>, branch: &str) -> String {
+    let head = match found {
+        Ok(Verdict::PullRequest(url)) => format!("onehand opened {url}."),
+        Ok(Verdict::Commits(n)) => format!(
+            "onehand left {n} commit{} on `{branch}`.",
+            if *n == 1 { "" } else { "s" }
+        ),
+        Ok(verdict) => {
+            return nothing_found(ending, branch, verdict.missing().unwrap_or("nothing"))
+        }
         Err(err) => {
-            format!("onehand could not tell whether a pull request was opened on `{branch}`: {err}")
+            format!("onehand could not tell what the run left on `{branch}`: {err}")
         }
     };
     match stopped(ending) {
@@ -282,13 +417,19 @@ pub fn report(ending: &Ending, pr: &Result<Option<String>, String>, branch: &str
 }
 
 /// How a run ended, in one line — for the run's own transcript, where a line is
-/// all a remark gets. The pull request leads when there is one, because it is
-/// the verdict; the full account is the comment on the issue.
-pub fn outcome_line(ending: &Ending, pr: &Result<Option<String>, String>) -> String {
-    match pr {
-        Ok(Some(url)) => format!("Opened {url}"),
-        Err(_) => "Run over; could not tell whether a pull request was opened".to_string(),
-        Ok(None) => {
+/// all a remark gets. The work leads when there is some, because it is the
+/// verdict; the full account is the comment on the issue.
+pub fn outcome_line(ending: &Ending, found: &Result<Verdict, String>) -> String {
+    match found {
+        Ok(Verdict::PullRequest(url)) => format!("Opened {url}"),
+        Ok(Verdict::Commits(n)) => {
+            format!(
+                "Left {n} commit{} on its branch",
+                if *n == 1 { "" } else { "s" }
+            )
+        }
+        Err(_) => "Run over; could not tell what it left".to_string(),
+        Ok(verdict) => {
             let why = match ending {
                 Ending::TurnEnded { .. } => "the turn ended",
                 Ending::Asked(_) => "it stopped on a decision",
@@ -298,7 +439,10 @@ pub fn outcome_line(ending: &Ending, pr: &Result<Option<String>, String>) -> Str
                 Ending::TakenOver => "it was taken over by hand",
                 Ending::Failed(_) => "it could not start",
             };
-            format!("Run over with no pull request: {why}; see the issue")
+            format!(
+                "Run over with {}: {why}; see the issue",
+                verdict.missing().unwrap_or("nothing")
+            )
         }
     }
 }
@@ -321,32 +465,43 @@ fn stopped(ending: &Ending) -> Option<String> {
     }
 }
 
-/// The comment when it is known that no pull request was opened.
-fn no_pr(ending: &Ending, branch: &str) -> String {
+/// The comment when it is known the run left nothing — `missing` is what it
+/// did not leave, "no pull request" or "no commit".
+fn nothing_found(ending: &Ending, branch: &str, missing: &str) -> String {
     match ending {
         Ending::TurnEnded { tail: Some(tail) } => format!(
-            "The turn ended with no pull request on `{branch}`. It ended on:\n\n{}",
+            "The turn ended with {missing} on `{branch}`. It ended on:\n\n{}",
             quoted(tail)
         ),
         Ending::TurnEnded { tail: None } => {
-            format!("The turn ended with no pull request on `{branch}`.")
+            format!("The turn ended with {missing} on `{branch}`.")
         }
         Ending::Asked(q) => format!("onehand stopped: it needs a decision.\n\n{}", quoted(q)),
         Ending::LinkLost => {
-            format!("The agent stopped answering; there is no pull request on `{branch}`.")
+            format!("The agent stopped answering; there is {missing} on `{branch}`.")
         }
         Ending::Closed => format!(
-            "The run's session was closed before it finished; there is no pull request on \
+            "The run's session was closed before it finished; there is {missing} on \
              `{branch}`."
         ),
         Ending::TimedOut(d) => format!(
-            "No pull request after {}; the run was cancelled. Its work is on `{branch}`.",
+            "{} after {}; the run was cancelled. Its work is on `{branch}`.",
+            capitalised(missing),
             spoken(*d)
         ),
         Ending::TakenOver => {
             format!("Taken over by hand; the run stopped watching `{branch}`.")
         }
         Ending::Failed(why) => format!("onehand could not start the run: {why}"),
+    }
+}
+
+/// `text` with its first letter made a capital.
+fn capitalised(text: &str) -> String {
+    let mut chars = text.chars();
+    match chars.next() {
+        Some(first) => first.to_uppercase().chain(chars).collect(),
+        None => String::new(),
     }
 }
 
@@ -358,8 +513,8 @@ fn quoted(text: &str) -> String {
         .join("\n")
 }
 
-/// The oldest open issue in `root`'s repository that carries `label` and was
-/// opened by the account the connector acts as.
+/// The oldest open issue in `tracker` that carries `label` and was opened by the
+/// user.
 ///
 /// **An empty label picks nothing**, without asking the connector: the failure of
 /// leaving it blank has to be "nothing runs", not "everything runs".
@@ -369,15 +524,15 @@ fn quoted(text: &str) -> String {
 /// something anybody with triage rights can apply, to an issue anybody at all
 /// may have written.
 pub fn candidate_blocking(
-    connector: &dyn Connector,
+    tracker: &Tracker,
     root: &Path,
     label: &str,
 ) -> Result<Option<Issue>, String> {
     if label.trim().is_empty() {
         return Ok(None);
     }
-    Ok(connector
-        .my_labelled_issues_blocking(root, label)?
+    Ok(tracker
+        .labelled_blocking(root, label)?
         .into_iter()
         .min_by_key(|issue| issue.number))
 }
@@ -387,19 +542,45 @@ pub fn candidate_blocking(
 /// The label goes first because it is the whole of a run's state — once it is
 /// off, nothing picks the issue again, whatever happens after.
 pub fn claim_blocking(
-    connector: &dyn Connector,
+    tracker: &Tracker,
     root: &Path,
     number: u64,
     label: &str,
 ) -> Result<(), String> {
-    connector.remove_label_blocking(root, number, label)?;
-    connector.comment_blocking(root, number, &claim_comment(label))
+    tracker.remove_label_blocking(root, number, label)?;
+    tracker.comment_blocking(root, number, &claim_comment(label))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::connector::fake::Fake;
+
+    /// The test forge, as the tracker an issue on it lives in.
+    fn forge() -> Tracker {
+        Tracker::Forge(&Fake::SERVING)
+    }
+
+    /// A tracker over a scratch issue file of its own, holding `issues`.
+    fn local(name: &str, issues: &[(&str, &[&str])]) -> (Tracker, PathBuf) {
+        let dir = std::env::temp_dir().join(format!("onehand-local-{name}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let file = dir.join("issues.json");
+        for (title, labels) in issues {
+            crate::issues::update_blocking(&file, |kept| {
+                kept.create(
+                    crate::issues::Draft {
+                        title: title.to_string(),
+                        labels: labels.iter().map(|l| l.to_string()).collect(),
+                        ..Default::default()
+                    },
+                    1,
+                )
+            })
+            .unwrap();
+        }
+        (Tracker::Local(file), dir)
+    }
 
     fn issue(number: u64, title: &str) -> Issue {
         Issue {
@@ -460,7 +641,7 @@ mod tests {
             body: body.to_string(),
             ..issue(42, "Crash on open")
         };
-        let prompt = prompt_for(&issue, "onehand/issue-42", &Fake::SERVING);
+        let prompt = prompt_for(&issue, "onehand/issue-42", &forge(), Some(&Fake::SERVING));
         assert!(prompt.contains("#42"));
         assert!(prompt.contains("`onehand/issue-42`"));
         assert!(prompt.contains(body));
@@ -501,12 +682,12 @@ mod tests {
                 | Ending::TakenOver
                 | Ending::Failed(_) => {}
             }
-            let without = report(ending, &Ok(None), "onehand/issue-1");
+            let without = report(ending, &Ok(Verdict::NoPullRequest), "onehand/issue-1");
             assert!(!without.is_empty());
             assert!(!without.contains("opened"), "{without}");
             let with = report(
                 ending,
-                &Ok(Some("https://x/pull/2".into())),
+                &Ok(Verdict::PullRequest("https://x/pull/2".into())),
                 "onehand/issue-1",
             );
             assert!(
@@ -522,7 +703,7 @@ mod tests {
     fn a_pr_found_after_a_timeout_is_still_the_verdict() {
         let said = report(
             &Ending::TimedOut(Duration::from_secs(2700)),
-            &Ok(Some("https://x/pull/2".into())),
+            &Ok(Verdict::PullRequest("https://x/pull/2".into())),
             "b",
         );
         assert!(said.starts_with("onehand opened https://x/pull/2."));
@@ -555,14 +736,14 @@ mod tests {
 
     #[test]
     fn the_outcome_fits_on_one_line_and_leads_with_the_pr() {
-        let pr = Ok(Some("https://x/pull/2".to_string()));
+        let pr = Ok(Verdict::PullRequest("https://x/pull/2".to_string()));
         let line = outcome_line(&Ending::TimedOut(Duration::from_secs(60)), &pr);
         assert!(line.starts_with("Opened https://x/pull/2"), "{line}");
         let none = outcome_line(
             &Ending::TurnEnded {
                 tail: Some("long\nanswer".into()),
             },
-            &Ok(None),
+            &Ok(Verdict::NoPullRequest),
         );
         assert!(
             !none.contains('\n') && none.contains("no pull request"),
@@ -581,7 +762,7 @@ mod tests {
             &Ending::TurnEnded {
                 tail: Some("Should I use A\nor B?".into()),
             },
-            &Ok(None),
+            &Ok(Verdict::NoPullRequest),
             "b",
         );
         assert!(said.contains("> Should I use A\n> or B?"));
@@ -590,33 +771,105 @@ mod tests {
     #[test]
     fn an_empty_label_picks_nothing_without_asking() {
         let nowhere = std::env::temp_dir();
-        assert_eq!(candidate_blocking(&Fake::SERVING, &nowhere, ""), Ok(None));
-        assert_eq!(
-            candidate_blocking(&Fake::SERVING, &nowhere, "   "),
-            Ok(None)
-        );
+        assert_eq!(candidate_blocking(&forge(), &nowhere, ""), Ok(None));
+        assert_eq!(candidate_blocking(&forge(), &nowhere, "   "), Ok(None));
     }
 
     #[test]
     fn the_oldest_issue_is_taken_first() {
-        let found = candidate_blocking(&Fake::SERVING, &std::env::temp_dir(), "auto").unwrap();
+        let found = candidate_blocking(&forge(), &std::env::temp_dir(), "auto").unwrap();
         assert_eq!(found.map(|i| i.number), Some(4));
-        let none_labelled = Fake {
+        static NONE_LABELLED: Fake = Fake {
             labelled: &[],
             ..Fake::SERVING
         };
         assert_eq!(
-            candidate_blocking(&none_labelled, &std::env::temp_dir(), "auto"),
+            candidate_blocking(
+                &Tracker::Forge(&NONE_LABELLED),
+                &std::env::temp_dir(),
+                "auto"
+            ),
             Ok(None)
         );
     }
 
     #[test]
     fn a_listing_past_its_bound_is_cut_and_says_so() {
-        let (rows, cut) = open_issues_blocking(&Fake::SERVING, &std::env::temp_dir()).unwrap();
+        let (rows, cut) = open_issues_blocking(&forge(), &std::env::temp_dir()).unwrap();
         assert_eq!(rows.len(), ISSUES_SHOWN);
         assert!(cut);
         let (rows, cut) = bounded(Vec::new());
         assert!(rows.is_empty() && !cut);
+    }
+
+    #[test]
+    fn a_local_issue_is_found_by_its_label_and_claimed_in_its_own_file() {
+        let (tracker, dir) = local(
+            "claim",
+            &[
+                ("first", &["auto"]),
+                ("second", &["auto", "ui"]),
+                ("third", &[]),
+            ],
+        );
+        let root = std::env::temp_dir();
+        let found = candidate_blocking(&tracker, &root, "auto")
+            .unwrap()
+            .unwrap();
+        assert_eq!(found.number, 1, "the oldest labelled issue goes first");
+        claim_blocking(&tracker, &root, 1, "auto").unwrap();
+        let Tracker::Local(file) = &tracker else {
+            unreachable!()
+        };
+        let kept = crate::issues::load_blocking(file).unwrap();
+        let claimed = kept.get(1).unwrap();
+        assert!(claimed.labels.is_empty(), "the label is the claim");
+        assert!(claimed.notes[0].text.contains("started"));
+        assert_eq!(
+            candidate_blocking(&tracker, &root, "auto")
+                .unwrap()
+                .map(|i| i.number),
+            Some(2)
+        );
+        let (rows, cut) = open_issues_blocking(&tracker, &root).unwrap();
+        assert_eq!(rows.len(), 3);
+        assert!(!cut && rows.iter().all(|row| row.author.is_empty()));
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn a_local_issue_is_never_referenced_from_a_pull_request() {
+        let (tracker, dir) = local("prompt", &[]);
+        let issue = issue(3, "Fix it");
+        let on_forge = prompt_for(&issue, "b", &tracker, Some(&Fake::SERVING));
+        assert!(on_forge.contains("`forge pr`"), "{on_forge}");
+        assert!(on_forge.contains("Do not reference #3"), "{on_forge}");
+        assert!(!on_forge.contains("referencing #3"), "{on_forge}");
+        let no_forge = prompt_for(&issue, "b", &tracker, None);
+        assert!(no_forge.contains("Do not push"), "{no_forge}");
+        assert!(!no_forge.contains("pull request"), "{no_forge}");
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn commits_left_on_a_branch_are_the_verdict_without_a_forge() {
+        let said = report(
+            &Ending::TurnEnded { tail: None },
+            &Ok(Verdict::Commits(2)),
+            "b",
+        );
+        assert_eq!(said, "onehand left 2 commits on `b`.");
+        let one = outcome_line(
+            &Ending::TimedOut(Duration::from_secs(60)),
+            &Ok(Verdict::Commits(1)),
+        );
+        assert_eq!(one, "Left 1 commit on its branch");
+        let none = report(
+            &Ending::TimedOut(Duration::from_secs(60)),
+            &Ok(Verdict::NoCommits),
+            "b",
+        );
+        assert!(none.starts_with("No commit after 1m"), "{none}");
+        assert!(!none.contains("pull request"), "{none}");
     }
 }

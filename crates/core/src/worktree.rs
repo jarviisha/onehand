@@ -273,6 +273,44 @@ pub fn fetch_blocking(root: &Path, branch: &str) -> Result<(), String> {
     }
 }
 
+/// How long a question git answers from the repository alone may take.
+const LOCAL_LIMIT: Duration = Duration::from_secs(30);
+
+/// The branch checked out at `root`: what a run on a project with no forge
+/// starts from, since there is no remote default branch to ask for. A detached
+/// HEAD is refused rather than started from, because the run's commits would
+/// then be measured against a commit nobody named.
+pub fn current_branch_blocking(root: &Path) -> Result<String, String> {
+    let out = output_within(
+        git(root).args(["symbolic-ref", "--short", "-q", "HEAD"]),
+        LOCAL_LIMIT,
+    )
+    .map_err(|err| format!("git {err}"))?;
+    let name = String::from_utf8_lossy(&out.stdout).trim().to_string();
+    if out.status.success() && !name.is_empty() {
+        Ok(name)
+    } else {
+        Err("it is on a detached HEAD, so there is no branch to start from".to_string())
+    }
+}
+
+/// How many commits the checkout at `dir` has that `base` does not — what a run
+/// with no pull request to open left behind.
+pub fn commits_since_blocking(dir: &Path, base: &str) -> Result<u64, String> {
+    let out = output_within(
+        git(dir).args(["rev-list", "--count", &format!("{base}..HEAD")]),
+        LOCAL_LIMIT,
+    )
+    .map_err(|err| format!("git {err}"))?;
+    if !out.status.success() {
+        return Err(git_message(&out.stderr));
+    }
+    String::from_utf8_lossy(&out.stdout)
+        .trim()
+        .parse()
+        .map_err(|err| format!("git printed an unreadable count: {err}"))
+}
+
 /// `git -C <root>`, with every way git has of asking a person for something
 /// switched off.
 fn git(root: &Path) -> std::process::Command {
@@ -544,6 +582,21 @@ mod tests {
         // And a name that exists is refused rather than reused.
         let twice = branch_off_blocking(&repo, "run", &repo.parent().unwrap().join("x"), "main");
         assert!(twice.is_err());
+
+        // A run on a project with no forge starts from the branch checked out
+        // and is judged by what it committed past that start.
+        assert_eq!(current_branch_blocking(&repo), Ok("feature".to_string()));
+        assert_eq!(commits_since_blocking(&run, "main"), Ok(0));
+        std::fs::write(run.join("c.txt"), "z").unwrap();
+        git(&run, &["add", "c.txt"]);
+        git(&run, &["commit", "-qm", "three"]);
+        assert_eq!(commits_since_blocking(&run, "main"), Ok(1));
+        assert!(commits_since_blocking(&run, "no-such-branch").is_err());
+        git(&repo, &["checkout", "-q", "--detach"]);
+        assert!(
+            current_branch_blocking(&repo).is_err(),
+            "a detached HEAD has no branch"
+        );
 
         for dir in [&repo, &made, &spare, &run] {
             let _ = std::fs::remove_dir_all(dir);

@@ -16,7 +16,7 @@ use onehand_core::chat::ChatItem;
 use onehand_core::chat::UserAsk;
 use onehand_core::config::{AgentSpec, UnattendedConfig};
 use onehand_core::connector::{self, Connector};
-use onehand_core::unattended::{self as core, Ending, Issue, IssueRow};
+use onehand_core::unattended::{self as core, Ending, Issue, IssueRow, Tracker, Verdict};
 use onehand_core::worktree;
 use std::collections::HashMap;
 use std::path::Path;
@@ -67,9 +67,18 @@ pub struct Unattended {
 /// why it cannot act.
 pub type Accounts = Vec<(&'static dyn Connector, Result<String, String>)>;
 
-/// What a look at one project found: the connector that will work it, its
-/// account included, or why none can.
-type Served = Result<&'static dyn Connector, String>;
+/// A project switched on for runs: its root, and the file its own issues are
+/// kept in, if its workspace keeps any.
+#[derive(Clone)]
+pub struct Project {
+    pub root: PathBuf,
+    pub issues: Option<PathBuf>,
+}
+
+/// What a look at one project found: the forge its work goes to, or `None` for
+/// a project on no forge, whose work stays on a branch — or why it cannot be
+/// worked at all.
+type Served = Result<Option<&'static dyn Connector>, String>;
 
 /// The connector serving the project at `root`, or every reason none does.
 ///
@@ -188,14 +197,14 @@ pub fn recheck(cx: &mut App) {
 
 /// Look at one project that was just switched on, so a switch that cannot work
 /// says so now rather than at the next tick, half an hour away.
-pub fn check_now(root: PathBuf, cx: &mut App) {
-    check(vec![root], false, cx);
+pub fn check_now(project: Project, cx: &mut App) {
+    check(vec![project], false, cx);
 }
 
 /// Ask each connector who it acts as and look at `roots`, off the UI loop, then
 /// file what was found. `prune` when `roots` is every switched-on project, so
 /// what is kept for a project since switched off or closed goes with it.
-fn check(roots: Vec<PathBuf>, prune: bool, cx: &mut App) {
+fn check(roots: Vec<Project>, prune: bool, cx: &mut App) {
     cx.spawn(async move |cx| {
         let (accounts, checked) = cx
             .background_executor()
@@ -209,23 +218,40 @@ fn check(roots: Vec<PathBuf>, prune: bool, cx: &mut App) {
     .detach();
 }
 
-/// What every connector says about its account, and for each of `roots` the
-/// connector that serves it — or why none can: no connector serves its remote
-/// (read locally, so a project nobody serves costs no call to anything), or the
-/// one that does has an account it cannot use.
-fn look_blocking(roots: Vec<PathBuf>) -> (Accounts, Vec<(PathBuf, Served)>) {
+/// What every connector says about its account, and for each of `roots` what
+/// it can be worked with.
+///
+/// A project is worked **with its forge** when a connector serves it and that
+/// connector's account can be used — and refused when the account cannot,
+/// since the agent would be told to push somewhere it cannot. A project **no
+/// connector serves** is still worked, on its own issues, with its work left on
+/// a branch; what refuses it is having nothing to work — no forge and a
+/// workspace that keeps no issues — or not being a repository at all. Whether a
+/// connector serves is read locally, so a project nobody serves costs no call
+/// to anything.
+fn look_blocking(roots: Vec<Project>) -> (Accounts, Vec<(PathBuf, Served)>) {
     let all = crate::plugins::connectors();
     let accounts: Accounts = all.iter().map(|&c| (c, c.account_blocking())).collect();
     let checked = roots
         .into_iter()
-        .map(|root| {
-            // `accounts` was built from `all` just above, so a place in one is
-            // the same connector's place in the other.
-            let served = connector::serving(all, &root).and_then(|at| match &accounts[at] {
-                (c, Ok(_)) => Ok(*c),
-                (_, Err(why)) => Err(why.clone()),
-            });
-            (root, served)
+        .map(|project| {
+            let served = if onehand_core::worktree::repo_top_blocking(&project.root).is_none() {
+                Err("it is not a git repository".to_string())
+            } else {
+                // `accounts` was built from `all` just above, so a place in one
+                // is the same connector's place in the other.
+                match connector::serving(all, &project.root) {
+                    Ok(at) => match &accounts[at] {
+                        (c, Ok(_)) => Ok(Some(*c)),
+                        (_, Err(why)) => Err(why.clone()),
+                    },
+                    Err(_) if project.issues.is_some() => Ok(None),
+                    Err(why) => Err(format!(
+                        "{why}; and its workspace keeps no issues of its own to work instead"
+                    )),
+                }
+            };
+            (project.root, served)
         })
         .collect();
     (accounts, checked)
@@ -244,7 +270,8 @@ fn record(checked: Vec<(PathBuf, Served)>, prune: bool, cx: &mut App) {
     let switched_on = prune.then(|| opted_in_roots(cx));
     with(cx, |u| {
         if let Some(switched_on) = switched_on {
-            u.problems.retain(|root, _| switched_on.contains(root));
+            u.problems
+                .retain(|root, _| switched_on.iter().any(|p| &p.root == root));
         }
         for (root, served) in checked {
             match served {
@@ -257,17 +284,17 @@ fn record(checked: Vec<(PathBuf, Served)>, prune: bool, cx: &mut App) {
 }
 
 /// Every switched-on project across every window, in rail order, once each.
-fn opted_in_roots(cx: &App) -> Vec<PathBuf> {
-    let mut roots: Vec<PathBuf> = Vec::new();
+fn opted_in_roots(cx: &App) -> Vec<Project> {
+    let mut roots: Vec<Project> = Vec::new();
     let shells: Vec<_> = Shared::global(cx)
         .windows
         .iter()
         .map(|w| w.shell.clone())
         .collect();
     for shell in shells.iter().filter_map(WeakEntity::upgrade) {
-        for root in shell.read(cx).unattended_roots() {
-            if !roots.contains(&root) {
-                roots.push(root);
+        for project in shell.read(cx).unattended_roots() {
+            if !roots.iter().any(|p| p.root == project.root) {
+                roots.push(project);
             }
         }
     }
@@ -341,11 +368,17 @@ fn tick(asked_from: Option<gpui::AnyWindowHandle>, cx: &mut App) {
             .background_executor()
             .spawn(async move {
                 std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                    let (accounts, mut checked) = look_blocking(roots);
-                    // Only the projects that passed the look are searched.
-                    let workable: Vec<(PathBuf, &'static dyn Connector)> = checked
-                        .iter()
-                        .filter_map(|(root, served)| Some((root.clone(), *served.as_ref().ok()?)))
+                    let (accounts, mut checked) = look_blocking(roots.clone());
+                    // Only the projects that passed the look are searched, each
+                    // with the forge the look found for it, if any.
+                    let workable: Vec<(Project, Option<&'static dyn Connector>)> = roots
+                        .into_iter()
+                        .filter_map(|project| {
+                            let (_, served) =
+                                checked.iter().find(|(root, _)| *root == project.root)?;
+                            let forge = *served.as_ref().ok()?;
+                            Some((project, forge))
+                        })
                         .collect();
                     let begun =
                         search.and_then(|label| begin_blocking(&workable, &label, &mut checked));
@@ -374,13 +407,19 @@ fn tick(asked_from: Option<gpui::AnyWindowHandle>, cx: &mut App) {
 
 /// A claimed issue and the worktree made for it.
 struct Claimed {
-    /// The project the issue was found in, where the connector is run.
+    /// The project the issue was found in.
     repo: PathBuf,
-    /// The system the issue lives on.
-    connector: &'static dyn Connector,
+    /// Where the issue lives: where it was claimed and where it is told how
+    /// the run ended.
+    tracker: Tracker,
+    /// The forge the project's work goes to, or `None` for a project on no
+    /// forge, whose work stays on the branch.
+    forge: Option<&'static dyn Connector>,
     issue: Issue,
     branch: String,
-    /// The default branch the worktree was cut from.
+    /// What the worktree was cut from: the remote's default branch with a
+    /// forge, the branch checked out without one. Also what a run with no
+    /// forge is measured against.
     base: String,
     /// The worktree the run made, and the project root it is added as.
     dir: PathBuf,
@@ -394,7 +433,7 @@ struct Claimed {
 /// so.
 struct Unstarted {
     repo: PathBuf,
-    connector: &'static dyn Connector,
+    tracker: Tracker,
     number: u64,
     why: String,
 }
@@ -408,52 +447,74 @@ struct Unstarted {
 ///
 /// A project whose search failed has the reason added to `checked`, so its
 /// row says why rather than showing it as workable.
+/// Within a project the issues it keeps itself are searched before its forge's:
+/// they are the ones written for onehand to work.
 fn begin_blocking(
-    roots: &[(PathBuf, &'static dyn Connector)],
+    roots: &[(Project, Option<&'static dyn Connector>)],
     label: &str,
     checked: &mut Vec<(PathBuf, Served)>,
 ) -> Option<Result<Claimed, Unstarted>> {
-    let (repo, connector, issue) = roots.iter().find_map(|&(ref root, connector)| {
-        match core::candidate_blocking(connector, root, label) {
-            Ok(found) => found.map(|issue| (root.clone(), connector, issue)),
-            Err(why) => {
-                checked.push((root.clone(), Err(why)));
-                None
+    let (repo, tracker, forge, issue) = roots.iter().find_map(|(project, forge)| {
+        let trackers = project
+            .issues
+            .clone()
+            .map(Tracker::Local)
+            .into_iter()
+            .chain(forge.map(Tracker::Forge));
+        for tracker in trackers {
+            match core::candidate_blocking(&tracker, &project.root, label) {
+                Ok(Some(issue)) => return Some((project.root.clone(), tracker, *forge, issue)),
+                Ok(None) => {}
+                Err(why) => {
+                    checked.push((project.root.clone(), Err(why)));
+                    return None;
+                }
             }
         }
+        None
     })?;
-    if let Err(why) = core::claim_blocking(connector, &repo, issue.number, label) {
+    if let Err(why) = core::claim_blocking(&tracker, &repo, issue.number, label) {
         eprintln!("onehand: could not claim issue #{}: {why}", issue.number);
         return None;
     }
-    Some(prepare_blocking(repo, connector, issue, None))
+    Some(prepare_blocking(repo, tracker, forge, issue, None))
 }
 
-/// Cut a worktree for a claimed issue off the remote's default branch.
+/// Cut a worktree for a claimed issue: off the remote's default branch, fetched
+/// first, on a project with a forge; off the branch checked out on one without,
+/// since there is no remote to ask.
 ///
 /// Caught as well as everything around it: by now the issue has been claimed,
 /// so a panic has to become a comment on the issue, or it is left claimed with
 /// nothing saying what happened.
 fn prepare_blocking(
     repo: PathBuf,
-    connector: &'static dyn Connector,
+    tracker: Tracker,
+    forge: Option<&'static dyn Connector>,
     issue: Issue,
     picked_in: Option<gpui::AnyWindowHandle>,
 ) -> Result<Claimed, Unstarted> {
     let made = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        let base = connector.default_branch_blocking(&repo)?;
-        worktree::fetch_blocking(&repo, &base)?;
+        let base = match forge {
+            Some(forge) => {
+                let default = forge.default_branch_blocking(&repo)?;
+                worktree::fetch_blocking(&repo, &default)?;
+                format!("origin/{default}")
+            }
+            None => worktree::current_branch_blocking(&repo)?,
+        };
         let top = worktree::repo_top_blocking(&repo).unwrap_or_else(|| repo.clone());
         let branch = core::free_branch_blocking(&top, &core::branch_for(&issue));
         let dir = worktree::worktree_dir(&top, &branch);
-        let dir = worktree::branch_off_blocking(&top, &branch, &dir, &format!("origin/{base}"))?;
+        let dir = worktree::branch_off_blocking(&top, &branch, &dir, &base)?;
         Ok::<_, String>((base, branch, dir))
     }))
     .unwrap_or_else(|_| Err("onehand panicked while preparing the worktree".to_string()));
     match made {
         Ok((base, branch, dir)) => Ok(Claimed {
             repo,
-            connector,
+            tracker,
+            forge,
             issue,
             branch,
             base,
@@ -462,11 +523,47 @@ fn prepare_blocking(
         }),
         Err(why) => Err(Unstarted {
             repo,
-            connector,
+            tracker,
             number: issue.number,
             why,
         }),
     }
+}
+
+/// What a person can pick from in a project: its open issues from where each
+/// lives, the ones it keeps itself first, and whether the list was cut — plus
+/// why the forge's could not be read, when its own could.
+pub type Pickable = (Vec<(Tracker, IssueRow)>, bool, Option<String>);
+
+/// Read what a person can pick from in `root`, whose own issues are in
+/// `issues` if its workspace keeps any. Blocking.
+///
+/// A forge that cannot be read is an error only when there is nothing else to
+/// show; beside issues of the project's own it is said under the list, so one
+/// half being down does not hide the other.
+pub fn pickable_blocking(root: &Path, issues: Option<PathBuf>) -> Result<Pickable, String> {
+    let mut rows = Vec::new();
+    let mut cut = false;
+    if let Some(file) = issues {
+        let tracker = Tracker::Local(file);
+        let (found, more) = core::open_issues_blocking(&tracker, root)?;
+        cut |= more;
+        rows.extend(found.into_iter().map(|row| (tracker.clone(), row)));
+    }
+    let forge = connector_for(root).and_then(|c| {
+        let tracker = Tracker::Forge(c);
+        core::open_issues_blocking(&tracker, root).map(|found| (tracker, found))
+    });
+    let unread = match forge {
+        Ok((tracker, (found, more))) => {
+            cut |= more;
+            rows.extend(found.into_iter().map(|row| (tracker.clone(), row)));
+            None
+        }
+        Err(why) if rows.is_empty() => return Err(why),
+        Err(why) => Some(why),
+    };
+    Ok((rows, cut, unread))
 }
 
 /// Work `row`, picked by hand from a project's open issues, now.
@@ -474,10 +571,11 @@ fn prepare_blocking(
 /// **Refused while a run is going**: one run at a time is the rule for picked
 /// and found alike, and the refusal names the issue already being worked so
 /// the person knows what they are waiting on. Anything that stops it before
-/// the claim — a project no connector serves, a claim the connector refuses — is said in
-/// the window it was picked from; after the claim, on the issue as well.
+/// the claim — a claim refused where the issue lives — is said in the window it
+/// was picked from; after the claim, on the issue as well.
 pub fn start_picked(
     repo: PathBuf,
+    tracker: Tracker,
     row: IssueRow,
     window: gpui::AnyWindowHandle,
     cx: &mut App,
@@ -507,12 +605,21 @@ pub fn start_picked(
             .background_executor()
             .spawn(async move {
                 std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                    let connector = connector_for(&repo)
-                        .and_then(|c| {
-                            core::claim_picked_blocking(c, &repo, &row, &label).map(|()| c)
-                        })
+                    // An issue on the forge goes back to that forge; one kept
+                    // here goes to whichever forge serves the project, if any.
+                    let forge = match &tracker {
+                        Tracker::Forge(c) => Some(*c),
+                        Tracker::Local(_) => connector_for(&repo).ok(),
+                    };
+                    core::claim_picked_blocking(&tracker, &repo, &row, &label)
                         .map_err(|why| format!("Could not start on issue #{number}: {why}"))?;
-                    Ok(prepare_blocking(repo, connector, row.issue, Some(window)))
+                    Ok(prepare_blocking(
+                        repo,
+                        tracker,
+                        forge,
+                        row.issue,
+                        Some(window),
+                    ))
                 }))
                 .unwrap_or_else(|_| Err("onehand panicked while claiming the issue".to_string()))
             })
@@ -610,16 +717,16 @@ fn landed(
             Err(unstarted) => unstarted,
         },
     };
-    let said = core::report(&Ending::Failed(unstarted.why), &Ok(None), "");
+    // A run that never started left nothing, whichever kind of nothing.
+    let said = core::report(
+        &Ending::Failed(unstarted.why),
+        &Ok(Verdict::NoPullRequest),
+        "",
+    );
     cx.background_executor()
-        .spawn(async move {
-            tell_issue(
-                unstarted.connector,
-                &unstarted.repo,
-                unstarted.number,
-                &said,
-            )
-        })
+        .spawn(
+            async move { tell_issue(&unstarted.tracker, &unstarted.repo, unstarted.number, &said) },
+        )
         .detach();
 }
 
@@ -724,7 +831,7 @@ fn start(claimed: Claimed, cx: &mut App) -> Result<(), Unstarted> {
 fn unstarted(claimed: Claimed, why: &str) -> Unstarted {
     Unstarted {
         repo: claimed.repo,
-        connector: claimed.connector,
+        tracker: claimed.tracker,
         number: claimed.issue.number,
         why: why.to_string(),
     }
@@ -824,7 +931,8 @@ fn prompt(uid: u64, session: &Entity<ChatSession>, cx: &mut App) {
             core::prompt_for(
                 &run.claimed.issue,
                 &run.claimed.branch,
-                run.claimed.connector,
+                &run.claimed.tracker,
+                run.claimed.forge,
             ),
         ))
     })
@@ -893,7 +1001,7 @@ fn start_notes(claimed: &Claimed) -> Vec<String> {
                 "found by its label"
             }
         ),
-        format!("Branch {} from origin/{}", claimed.branch, claimed.base),
+        format!("Branch {} from {}", claimed.branch, claimed.base),
         format!("Working in {folder}"),
     ]
 }
@@ -1027,21 +1135,10 @@ fn settle(uid: u64, ending: Ending, cx: &mut App) {
             let line = cx
                 .background_executor()
                 .spawn(async move {
-                    let pr = if ending.may_have_pr() {
-                        claimed
-                            .connector
-                            .pull_request_for_blocking(&claimed.repo, &claimed.branch)
-                    } else {
-                        Ok(None)
-                    };
-                    let said = core::report(&ending, &pr, &claimed.branch);
-                    tell_issue(
-                        claimed.connector,
-                        &claimed.repo,
-                        claimed.issue.number,
-                        &said,
-                    );
-                    core::outcome_line(&ending, &pr)
+                    let found = verdict_blocking(&claimed, &ending);
+                    let said = core::report(&ending, &found, &claimed.branch);
+                    tell_issue(&claimed.tracker, &claimed.repo, claimed.issue.number, &said);
+                    core::outcome_line(&ending, &found)
                 })
                 .await;
             // How it ended, in the one line a remark gets, as the transcript's
@@ -1057,10 +1154,30 @@ fn settle(uid: u64, ending: Ending, cx: &mut App) {
     });
 }
 
+/// What the run left: the pull request on its branch where the project has a
+/// forge, its commits past where it started where it has none. Blocking.
+fn verdict_blocking(claimed: &Claimed, ending: &Ending) -> Result<Verdict, String> {
+    if !ending.may_have_work() {
+        return Ok(match claimed.forge {
+            Some(_) => Verdict::NoPullRequest,
+            None => Verdict::NoCommits,
+        });
+    }
+    match claimed.forge {
+        Some(forge) => forge
+            .pull_request_for_blocking(&claimed.repo, &claimed.branch)
+            .map(|pr| pr.map_or(Verdict::NoPullRequest, Verdict::PullRequest)),
+        None => worktree::commits_since_blocking(&claimed.dir, &claimed.base).map(|n| match n {
+            0 => Verdict::NoCommits,
+            n => Verdict::Commits(n),
+        }),
+    }
+}
+
 /// Leave `body` on issue `number`, saying on stderr if that failed — there is
 /// nowhere else left to say it.
-fn tell_issue(connector: &dyn Connector, repo: &std::path::Path, number: u64, body: &str) {
-    if let Err(why) = connector.comment_blocking(repo, number, body) {
+fn tell_issue(tracker: &Tracker, repo: &std::path::Path, number: u64, body: &str) {
+    if let Err(why) = tracker.comment_blocking(repo, number, body) {
         eprintln!("onehand: could not comment on issue #{number}: {why}");
     }
 }

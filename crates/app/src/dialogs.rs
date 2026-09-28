@@ -721,9 +721,10 @@ fn unattended_section(handle: &Entity<Shell>, cx: &App) -> AnyElement {
                 ),
         )
         .child(div().text_color(muted).child(format!(
-            "An issue you opened, labelled `{label}`, in a project switched on here is \
-                 picked up by an agent, worked in a worktree of its own, and answered with \
-                 a pull request."
+            "An issue you opened, labelled `{label}` — on the project's forge or in its \
+                 Issues tab — in a project switched on here is picked up by an agent, worked \
+                 in a worktree of its own, and answered with a pull request, or with commits \
+                 on its branch where the project has no forge."
         )))
         // Whatever stops every run, said above the switches in the warning
         // ink: with it unsaid they would look as though they did something.
@@ -848,8 +849,8 @@ pub fn pick_issue(shell: &Shell, cx: &mut Context<Shell>) -> Dialog {
                         .text_xs()
                         .text_color(cx.theme().muted_foreground)
                         .child(
-                            "Picking one claims it on GitHub, starts an agent on it in a \
-                             worktree of its own and shows you the session.",
+                            "Picking one claims it where it lives, starts an agent on it in \
+                             a worktree of its own and shows you the session.",
                         ),
                 )
                 .child(issue_list(found.as_deref(), &handle, cx))
@@ -883,7 +884,7 @@ fn issue_list(
         cx.theme().accent,
     );
     let (pill_bg, pill_fg) = (cx.theme().secondary, cx.theme().secondary_foreground);
-    let (rows, cut) = match found {
+    let (rows, cut, unread) = match found {
         None => {
             return div()
                 .text_color(muted)
@@ -896,13 +897,13 @@ fn issue_list(
                 .child(format!("They could not be read: {why}"))
                 .into_any_element();
         }
-        Some(Ok((rows, _))) if rows.is_empty() => {
+        Some(Ok((rows, _, _))) if rows.is_empty() => {
             return div()
                 .text_color(muted)
                 .child("There are no open issues.")
                 .into_any_element();
         }
-        Some(Ok((rows, cut))) => (rows, *cut),
+        Some(Ok((rows, cut, unread))) => (rows, *cut, unread.clone()),
     };
     div()
         .v_flex()
@@ -915,7 +916,7 @@ fn issue_list(
                 .w_full()
                 .max_h(gpui::rems(24.))
                 .overflow_y_scroll()
-                .children(rows.iter().enumerate().map(|(i, row)| {
+                .children(rows.iter().enumerate().map(|(i, (tracker, row))| {
                     let handle = handle.clone();
                     div()
                         .id(("issue", i))
@@ -956,19 +957,38 @@ fn issue_list(
                                 .text_color(pill_fg)
                                 .child(label.clone())
                         }))
+                        // Who wrote it on a forge; an issue kept in onehand is the
+                        // user's own, and what is worth saying is where it lives.
                         .child(
                             div()
                                 .flex_none()
                                 .text_xs()
                                 .text_color(muted)
-                                .child(format!("by {}", row.author)),
+                                .child(match tracker {
+                                    onehand_core::unattended::Tracker::Local(_) => {
+                                        "in onehand".to_string()
+                                    }
+                                    onehand_core::unattended::Tracker::Forge(_) => {
+                                        format!("by {}", row.author)
+                                    }
+                                }),
                         )
                 })),
         )
+        // The forge's half could not be read while the project's own could:
+        // said, since its issues are missing from a list that looks whole.
+        .when_some(unread, |list, why| {
+            list.child(
+                div()
+                    .text_xs()
+                    .text_color(crate::theme::status_ink(cx).warning)
+                    .child(format!("The forge's issues could not be read: {why}")),
+            )
+        })
         // Said, not hidden: a list cut silently reads as the whole of it.
         .when(cut, |list| {
             list.child(div().text_xs().text_color(muted).child(format!(
-                "Showing the newest {}; narrow them down on GitHub to reach the rest.",
+                "Showing the newest {}; close some to reach the rest.",
                 onehand_core::unattended::ISSUES_SHOWN
             )))
         })

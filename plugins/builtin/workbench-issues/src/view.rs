@@ -33,6 +33,11 @@ const LIST_MAX: f32 = 420.;
 /// a list nobody scrolls to the end of is not worth building to the end.
 const LIST_CAP: usize = 500;
 
+/// How many of an issue's notes are drawn under it: the latest ones, since a
+/// note is what a run said about how it ended and the last run is the one that
+/// is read.
+const NOTES_SHOWN: usize = 5;
+
 pub(crate) struct IssuesView {
     root: Option<PathBuf>,
     /// The workspace's storage directory. `None` is a workspace bound to
@@ -585,6 +590,35 @@ fn issue_view(
             )
         });
 
+    // What runs have said about it, newest last, under the body — the record of
+    // what was tried, which the body itself never changes to say.
+    let notes = (!issue.notes.is_empty()).then(|| {
+        div()
+            .flex_none()
+            .max_h(gpui::rems(12.))
+            .v_flex()
+            .gap_1()
+            .px_2()
+            .py_1()
+            .border_t_1()
+            .border_color(cx.theme().border)
+            .when(issue.notes.len() > NOTES_SHOWN, |notes| {
+                notes.child(div().text_xs().text_color(muted).child(format!(
+                    "… {} earlier notes not shown",
+                    issue.notes.len() - NOTES_SHOWN
+                )))
+            })
+            .children(
+                issue
+                    .notes
+                    .iter()
+                    .rev()
+                    .take(NOTES_SHOWN)
+                    .rev()
+                    .map(|note| div().text_xs().text_color(muted).child(note.text.clone())),
+            )
+    });
+
     div()
         .flex_1()
         .min_w_0()
@@ -612,6 +646,7 @@ fn issue_view(
                 .child("No description")
                 .into_any_element(),
         })
+        .children(notes)
         .into_any_element()
 }
 
