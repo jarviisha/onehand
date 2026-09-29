@@ -335,6 +335,8 @@ pub struct Shell {
     settings_page: SettingsPage,
     settings_open: bool,
     settings_return_focus: Option<gpui::FocusHandle>,
+    /// Held by Settings' body and focused when it opens.
+    settings_focus: gpui::FocusHandle,
     keymap_editor: Entity<crate::keymap::Editor>,
     held_commands: std::collections::HashSet<&'static str>,
     /// The workspace-rename field.
@@ -779,6 +781,7 @@ impl Shell {
             settings_page: SettingsPage::default(),
             settings_open: false,
             settings_return_focus: None,
+            settings_focus: cx.focus_handle(),
             keymap_editor: cx.new(|cx| crate::keymap::Editor::new(window, cx)),
             held_commands: Default::default(),
             workspace_name,
@@ -2630,6 +2633,7 @@ impl Shell {
         self.settings_return_focus = window.focused(cx);
         self.held_commands.clear();
         self.settings_open = true;
+        self.settings_focus.focus(window, cx);
         cx.notify();
     }
 
@@ -2642,6 +2646,10 @@ impl Shell {
                 .update(cx, |pane, cx| pane.reclaim_focus(window, cx));
         }
         cx.notify();
+    }
+
+    pub fn settings_focus(&self) -> gpui::FocusHandle {
+        self.settings_focus.clone()
     }
 
     pub fn keymap_editor(&self) -> Entity<crate::keymap::Editor> {

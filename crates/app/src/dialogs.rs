@@ -469,6 +469,7 @@ pub fn settings(window: &Window, cx: &mut Context<Shell>) -> Dialog {
             // at all -- a page captured here would be the one that was showing
             // when the dialog opened, for as long as it stayed open.
             let current = handle.read(cx).settings_page();
+            let focus = handle.read(cx).settings_focus();
             let body = body_height(window);
             let nav = SettingsPage::ALL
                 .into_iter()
@@ -483,6 +484,13 @@ pub fn settings(window: &Window, cx: &mut Context<Shell>) -> Dialog {
 
             content.child(title_row("Settings")).child(
                 div()
+                    // The caret has to be somewhere inside the dialog for Esc and
+                    // the close button to reach it: both send a cancel that
+                    // travels up from whatever holds focus, and the library only
+                    // focuses a dialog it opened itself. The handle is the
+                    // shell's because this dialog is rebuilt every frame, and a
+                    // handle made here would be a new one each time.
+                    .track_focus(&focus)
                     .h_flex()
                     .items_start()
                     .gap_4()
