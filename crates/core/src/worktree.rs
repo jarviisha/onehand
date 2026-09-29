@@ -213,7 +213,7 @@ const ADD_LIMIT: Duration = Duration::from_secs(300);
 
 /// How long a fetch may take. A large repository over a slow link is a
 /// legitimate few minutes; an hour is a network that has gone away.
-const FETCH_LIMIT: Duration = Duration::from_secs(300);
+pub const FETCH_LIMIT: Duration = Duration::from_secs(300);
 
 /// `git -C <root> worktree add <args>`, answering with the directory made.
 fn worktree_add(root: &Path, dir: &Path, args: &[&std::ffi::OsStr]) -> Result<PathBuf, String> {

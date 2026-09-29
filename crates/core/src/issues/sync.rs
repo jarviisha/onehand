@@ -17,7 +17,7 @@
 //! schedule would be one nobody could write drafts in.
 
 use super::{Issues, Link, LocalIssue, Note, Snapshot};
-use crate::connector::{Connector, RemoteIssue};
+use crate::connector::{Connector, RemoteIssue, SyncListing};
 use std::collections::HashSet;
 use std::path::Path;
 
@@ -154,8 +154,10 @@ pub fn sync_blocking(
 ) -> Result<(Issues, Report), String> {
     super::update_blocking(file, |issues| {
         let since = (issues.last_synced > 0).then_some(issues.last_synced);
-        let (mut open, mut changed) =
-            connector.issues_for_sync_blocking(root, since, SYNC_CAP + 1)?;
+        let SyncListing {
+            mut open,
+            mut changed,
+        } = connector.issues_for_sync_blocking(root, since, SYNC_CAP + 1)?;
         let cut = open.len() > SYNC_CAP;
         open.truncate(SYNC_CAP);
         // Everything that changed is known only from a sync point, and only if
@@ -168,12 +170,14 @@ pub fn sync_blocking(
             .chain(open)
             .filter(|r| seen.insert(r.key.clone()))
             .collect();
-        let mut report = reconcile(issues, root, connector, &remote, complete, now);
+        let (mut report, unasked) = reconcile(issues, root, connector, &remote, complete, now);
         report.cut = cut;
         // Every linked issue was listed or asked about, so the point can move
-        // on — unless something could not be asked, which the next sync must
-        // ask about again rather than read as unchanged.
-        if report.failures.is_empty() {
+        // on — unless one could not be asked, which the next sync must ask
+        // about again rather than read as unchanged. A push that failed does
+        // not hold it: that issue's `base` is held instead, and it is retried
+        // from there.
+        if !unasked {
             issues.last_synced = now;
         }
         Ok(report)
@@ -189,9 +193,10 @@ fn reconcile(
     remote: &[RemoteIssue],
     complete: bool,
     now: u64,
-) -> Report {
+) -> (Report, bool) {
     let name = connector.name();
     let mut report = Report::default();
+    let mut unasked = false;
     for issue in issues.issues.iter_mut() {
         let Some(link) = issue.link_on(name) else {
             continue;
@@ -221,6 +226,7 @@ fn reconcile(
                 }
                 Err(why) => {
                     report.failures.push(format!("#{}: {why}", issue.number));
+                    unasked = true;
                     continue;
                 }
             },
@@ -255,7 +261,7 @@ fn reconcile(
         .iter()
         .filter(|i| i.link.as_ref().is_some_and(|l| l.conflict.is_some()))
         .count();
-    report
+    (report, unasked)
 }
 
 /// Bring one linked issue into step with what the forge says of it.
@@ -700,8 +706,8 @@ mod tests {
         let _ = std::fs::remove_dir_all(file.parent().unwrap());
     }
 
-    /// Link issue 7, close it on both sides, and settle — the shape both
-    /// findings start from.
+    /// Issue 7, linked and then closed on both sides, with the sync that saw
+    /// it close settled.
     fn closed_and_settled(file: &Path, forge: &Forge) {
         let root = Path::new("/");
         sync_blocking(file, root, forge, 1).unwrap();
@@ -768,5 +774,44 @@ mod tests {
         let a = snap("t", true, &["a", "a"]);
         let b = snap("t", true, &["a", "b"]);
         assert!(!a.same_as(&b) && !b.same_as(&a));
+    }
+
+    #[test]
+    fn a_push_that_keeps_failing_does_not_hold_the_sync_point_back() {
+        let file = scratch("stuck");
+        let root = Path::new("/");
+        let mut forge = Forge::with(vec![(7, snap("a", true, &[]))]);
+        sync_blocking(&file, root, &forge, 1).unwrap();
+        edit(&file, 1, "mine");
+        forge.refuse_updates = true;
+        let report = sync_blocking(&file, root, &forge, 2).unwrap().1;
+        assert_eq!(report.failures.len(), 1);
+        assert_eq!(
+            load(&file).last_synced,
+            2,
+            "a failed push is retried from `base`, not from the point"
+        );
+        let _ = std::fs::remove_dir_all(file.parent().unwrap());
+    }
+
+    #[test]
+    fn a_complete_change_list_spares_asking_about_a_closed_issue_that_did_not_change() {
+        let file = scratch("complete");
+        let root = Path::new("/");
+        let forge = Forge::with(vec![(7, snap("a", true, &[]))]);
+        closed_and_settled(&file, &forge);
+        forge.unchanged.lock().unwrap().push("7".into());
+        edit(&file, 1, "renamed here");
+        let asked = *forge.lookups.lock().unwrap();
+
+        let report = sync_blocking(&file, root, &forge, 3).unwrap().1;
+        assert_eq!(report.pushed, 1);
+        assert_eq!(forge.said("7").title, "renamed here");
+        assert_eq!(
+            *forge.lookups.lock().unwrap(),
+            asked,
+            "nothing was asked one by one"
+        );
+        let _ = std::fs::remove_dir_all(file.parent().unwrap());
     }
 }

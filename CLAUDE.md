@@ -586,8 +586,9 @@ one implementation, where `gh` is the whole API layer. `connector::serving` hand
 first connector whose `serves_blocking` accepts it (GitHub reads `origin` locally before any call),
 and each connector's `account_blocking` says who it acts as. A run's fetch is the connector's too
 (`Connector::fetch_blocking`, plain `git fetch` by default): GitHub retries a failed one over HTTPS
-with `gh`'s own sign-in, since an `ssh` remote often cannot authenticate from an app opened off the
-desktop while `gh` is already signed in. Only the fetch — the agent's own push still uses `origin`.
+with `gh`'s own sign-in when `origin` is an ssh remote (the HTTPS URL is built from `origin` itself,
+alias resolved, never from `gh`'s default repository), since an ssh remote often cannot authenticate
+from an app opened off the desktop while `gh` is already signed in. Only the fetch — the agent's own push still uses `origin`.
 **An issue lives on the forge or in onehand** (`unattended::Tracker::Forge` / `Local`, the latter the
 project's Issues tab), and a run carries both where its issue lives and the forge its work goes to,
 because the two come apart. The project's own issues are searched first. A local issue on a project
@@ -627,7 +628,8 @@ screen**: `ChatPane::open_unshown` connects without showing, and the worktree's 
 `ProjectRoot::transient`, which `to_config` never writes. One prompt, one turn. The pull request the forge
 finds — or, with no forge, the commits on the branch — is the verdict, on every ending. A parked ask is cancelled, never answered — unless the user is
 reading that conversation, or picked the run by hand, in which case the run is **taken over** and
-the card stays up, announced like any other. The same happens the moment
+the card stays up, announced like any other. A picked run handed over while nobody was reading it tells the
+issue the question it stopped on (`Ending::TakenOver { asked }`). The same happens the moment
 anybody else puts a prompt in. Taking over clears `transient` and saves. Teardown is
 `Shell::forget_root`, never `remove_root`, because that one re-shows the active session and takes the
 caret with it. The rules that decide are core's (`onehand_core::unattended`); the calls are the connector's.

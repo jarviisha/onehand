@@ -10,7 +10,7 @@
 // a working feature.
 #![warn(unreachable_pub)]
 
-use onehand_core::connector::{Connector, RemoteIssue};
+use onehand_core::connector::{Connector, RemoteIssue, SyncListing};
 use onehand_core::issues::Snapshot;
 use onehand_core::unattended::{Issue, IssueRow};
 use serde::Deserialize;
@@ -38,21 +38,7 @@ impl Connector for GitHub {
     /// asks GitHub, so a project that can never be worked costs nothing per
     /// tick but this.
     fn serves_blocking(&self, root: &Path) -> Result<(), String> {
-        let out = onehand_core::process::output_within(
-            Command::new("git")
-                .arg("-C")
-                .arg(root)
-                .args(["remote", "get-url", "origin"]),
-            LOCAL_LIMIT,
-        )
-        .map_err(|err| format!("git {err}"))?;
-        if !out.status.success() {
-            return Err("it has no `origin` remote to open a pull request against".to_string());
-        }
-        github_remote(
-            String::from_utf8_lossy(&out.stdout).trim(),
-            ssh_resolve_blocking,
-        )
+        github_remote(&origin_url(root)?, ssh_resolve_blocking)
     }
 
     fn open_issues_blocking(&self, root: &Path, limit: usize) -> Result<Vec<IssueRow>, String> {
@@ -146,45 +132,51 @@ impl Connector for GitHub {
         "`gh pr create`"
     }
 
-    /// The open issues, then every issue changed since `since` — asked
-    /// from a day before it, because the search takes a day and not a moment,
-    /// and two clocks never quite agree. Listing more than changed costs a
-    /// comparison; listing less loses an edit.
-    /// `git fetch` as ever, and, when that fails, the same branch again over
-    /// HTTPS with `gh`'s own sign-in. An `ssh` remote fails for an app opened
-    /// from the desktop far more often than for a terminal — no agent reachable,
-    /// a key behind a passphrase nobody is there to type — while the person
-    /// running it has already signed `gh` in, which is all HTTPS needs.
+    /// `git fetch` as ever, and, when that fails on an ssh `origin`, the same
+    /// repository again over HTTPS with `gh`'s own sign-in. An ssh remote fails
+    /// for an app opened from the desktop far more often than for a terminal —
+    /// no agent reachable, a key behind a passphrase nobody is there to type —
+    /// while the person running it has already signed `gh` in, which is all
+    /// HTTPS needs. An https `origin` is not tried twice: there is nothing
+    /// different to try.
     fn fetch_blocking(&self, root: &Path, branch: &str) -> Result<(), String> {
         let Err(over_origin) = onehand_core::worktree::fetch_blocking(root, branch) else {
             return Ok(());
         };
-        let over_https =
-            gh(root, &["repo", "view", "--json", "url", "-q", ".url"]).and_then(|url| {
-                let out = onehand_core::process::output_within(
-                    Command::new("git")
-                        .arg("-C")
-                        .arg(root)
-                        .args(https_fetch_args(&url, branch))
-                        .env("GIT_TERMINAL_PROMPT", "0"),
-                    FETCH_LIMIT,
-                )
-                .map_err(|err| format!("git fetch {err}"))?;
-                if out.status.success() {
-                    Ok(())
-                } else {
-                    Err(String::from_utf8_lossy(&out.stderr).trim().to_string())
-                }
-            });
-        over_https.map_err(|why| format!("{over_origin} — and over HTTPS with gh's sign-in: {why}"))
+        let Some(url) = origin_url(root)
+            .ok()
+            .and_then(|origin| https_url(&origin, ssh_resolve_blocking))
+        else {
+            return Err(over_origin);
+        };
+        let out = onehand_core::process::output_within(
+            Command::new("git")
+                .arg("-C")
+                .arg(root)
+                .args(https_fetch_args(&url, branch))
+                .env("GIT_TERMINAL_PROMPT", "0"),
+            onehand_core::worktree::FETCH_LIMIT,
+        );
+        let why = match out {
+            Ok(out) if out.status.success() => return Ok(()),
+            Ok(out) => String::from_utf8_lossy(&out.stderr).trim().to_string(),
+            Err(err) => format!("git fetch {err}"),
+        };
+        Err(format!(
+            "{over_origin} — and over HTTPS with gh's sign-in: {why}"
+        ))
     }
 
+    /// The open issues, then every issue changed since `since` — asked
+    /// from a day before it, because the search takes a day and not a moment,
+    /// and two clocks never quite agree. Listing more than changed costs a
+    /// comparison; listing less loses an edit.
     fn issues_for_sync_blocking(
         &self,
         root: &Path,
         since: Option<u64>,
         limit: usize,
-    ) -> Result<(Vec<RemoteIssue>, Vec<RemoteIssue>), String> {
+    ) -> Result<SyncListing, String> {
         let limit = limit.to_string();
         let list = |state: &str, search: Option<String>| {
             let search = search.map(|day| format!("updated:>={day}"));
@@ -201,7 +193,10 @@ impl Connector for GitHub {
             Some(since) => list("all", Some(day_of(since.saturating_sub(86_400))))?,
             None => Vec::new(),
         };
-        Ok((list("open", None)?, changed))
+        Ok(SyncListing {
+            open: list("open", None)?,
+            changed,
+        })
     }
 
     fn issue_blocking(&self, root: &Path, key: &str) -> Result<Option<RemoteIssue>, String> {
@@ -436,11 +431,6 @@ fn issue_rows(json: &str) -> Result<Vec<IssueRow>, String> {
 /// answered in this long is stuck, not slow.
 const GH_LIMIT: Duration = Duration::from_secs(60);
 
-/// How long a question answered from this machine alone may take — the
-/// project's remote, what an ssh alias stands for. Seconds is already slow.
-/// How long a fetch may take, the same bound the plain one is held to.
-const FETCH_LIMIT: Duration = Duration::from_secs(300);
-
 /// The `git` arguments that fetch `branch` from `url` into `origin/<branch>`,
 /// signed in by `gh` alone: the empty helper first clears any the user set,
 /// so nothing else is asked and nothing waits on a prompt.
@@ -457,6 +447,8 @@ fn https_fetch_args(url: &str, branch: &str) -> Vec<String> {
     ]
 }
 
+/// How long a question answered from this machine alone may take — the
+/// project's remote, what an ssh alias stands for. Seconds is already slow.
 const LOCAL_LIMIT: Duration = Duration::from_secs(10);
 
 /// Run `gh` in `root` and hand back what it printed.
@@ -545,6 +537,41 @@ fn account_blocking() -> Account {
     }
 }
 
+/// The URL of `root`'s `origin`, read locally.
+fn origin_url(root: &Path) -> Result<String, String> {
+    let out = onehand_core::process::output_within(
+        Command::new("git")
+            .arg("-C")
+            .arg(root)
+            .args(["remote", "get-url", "origin"]),
+        LOCAL_LIMIT,
+    )
+    .map_err(|err| format!("git {err}"))?;
+    if !out.status.success() {
+        return Err("it has no `origin` remote to open a pull request against".to_string());
+    }
+    Ok(String::from_utf8_lossy(&out.stdout).trim().to_string())
+}
+
+/// The HTTPS URL of the repository an ssh remote `url` names, on the host ssh
+/// would actually reach — an alias such as `github-work` is `resolve`d first.
+/// `None` for a remote that is not over ssh, where there is nothing different
+/// to try.
+fn https_url(url: &str, resolve: impl Fn(&str) -> Option<String>) -> Option<String> {
+    if !over_ssh(url) {
+        return None;
+    }
+    let host = remote_host(url)?;
+    let path = match url.split_once("://") {
+        // `ssh://user@host[:port]/path`: everything after the host.
+        Some((_, rest)) => rest.split_once('/')?.1,
+        // `user@host:path`.
+        None => url.split_once(':')?.1,
+    };
+    let host = resolve(host).unwrap_or_else(|| host.to_string());
+    Some(format!("https://{host}/{}", path.trim_start_matches('/')))
+}
+
 /// The host a git remote URL points at: `https://host/…`, `ssh://user@host:port/…`
 /// and the scp-like `user@host:path`. `None` for a local path.
 fn remote_host(url: &str) -> Option<&str> {
@@ -618,6 +645,21 @@ fn ssh_resolve_blocking(alias: &str) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn an_ssh_origin_is_fetched_over_https_from_the_host_ssh_would_reach() {
+        let alias = |host: &str| (host == "github-work").then(|| "github.com".to_string());
+        assert_eq!(
+            https_url("git@github-work:me/repo.git", alias).as_deref(),
+            Some("https://github.com/me/repo.git")
+        );
+        assert_eq!(
+            https_url("ssh://git@github.com:22/me/repo.git", |_| None).as_deref(),
+            Some("https://github.com/me/repo.git")
+        );
+        // Already https: there is nothing different to try.
+        assert_eq!(https_url("https://github.com/me/repo", |_| None), None);
+    }
 
     #[test]
     fn a_fetch_over_https_uses_only_ghs_sign_in_and_lands_where_origin_would() {

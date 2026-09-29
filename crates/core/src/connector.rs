@@ -28,6 +28,19 @@ pub struct RemoteIssue {
     pub snapshot: Snapshot,
 }
 
+/// What a forge lists for a sync. Two lists because they answer different
+/// questions: a cut in `open` only means fewer imports, while a cut in
+/// `changed` means a change may be missing, and the sync has to ask about
+/// each issue instead.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct SyncListing {
+    /// The open issues, by anybody — what a sync brings in.
+    pub open: Vec<RemoteIssue>,
+    /// At least every issue changed since the sync point, whatever its
+    /// state; empty when there is no point.
+    pub changed: Vec<RemoteIssue>,
+}
+
 pub trait Connector: Send + Sync + 'static {
     /// The system's name, as a person knows it: "GitHub".
     fn name(&self) -> &'static str;
@@ -70,18 +83,14 @@ pub trait Connector: Send + Sync + 'static {
         branch: &str,
     ) -> Result<Option<String>, String>;
 
-    /// Two lists, at most `limit` in each: the open issues, by anybody — what
-    /// a sync brings in — and, when `since` is given, at least every issue
-    /// changed at or after it whatever its state (empty when it is not). Kept
-    /// apart because they answer different questions: a cut in the first only
-    /// means fewer imports, while a cut in the second means a change may be
-    /// missing, and the sync has to ask about each issue instead.
+    /// What a sync needs to see, at most `limit` in each list; `changed` is
+    /// asked for from `since`.
     fn issues_for_sync_blocking(
         &self,
         root: &Path,
         since: Option<u64>,
         limit: usize,
-    ) -> Result<(Vec<RemoteIssue>, Vec<RemoteIssue>), String>;
+    ) -> Result<SyncListing, String>;
 
     /// One issue by its key, open or closed, or `None` if the forge no longer
     /// has it.
@@ -199,7 +208,7 @@ pub(crate) mod fake {
             _: &Path,
             _: Option<u64>,
             _: usize,
-        ) -> Result<(Vec<RemoteIssue>, Vec<RemoteIssue>), String> {
+        ) -> Result<SyncListing, String> {
             unreachable!()
         }
         fn issue_blocking(&self, _: &Path, _: &str) -> Result<Option<RemoteIssue>, String> {
@@ -237,6 +246,11 @@ pub(crate) mod memory {
         pub(crate) mine: Vec<String>,
         /// Every comment left, as (key, body).
         pub(crate) comments: Mutex<Vec<(String, String)>>,
+        /// Keys left out of the changed list, as a real forge leaves out an
+        /// issue nothing touched since the sync point.
+        pub(crate) unchanged: Mutex<Vec<String>>,
+        /// How many times one issue was asked about by itself.
+        pub(crate) lookups: Mutex<usize>,
     }
 
     impl Forge {
@@ -329,16 +343,20 @@ pub(crate) mod memory {
             _: &Path,
             since: Option<u64>,
             limit: usize,
-        ) -> Result<(Vec<RemoteIssue>, Vec<RemoteIssue>), String> {
+        ) -> Result<SyncListing, String> {
             let issues = self.issues.lock().unwrap();
             let open = issues.iter().filter(|r| r.snapshot.open);
-            let changed = issues.iter().filter(|_| since.is_some());
-            Ok((
-                open.take(limit).cloned().collect(),
-                changed.take(limit).cloned().collect(),
-            ))
+            let unchanged = self.unchanged.lock().unwrap();
+            let changed = issues
+                .iter()
+                .filter(|r| since.is_some() && !unchanged.contains(&r.key));
+            Ok(SyncListing {
+                open: open.take(limit).cloned().collect(),
+                changed: changed.take(limit).cloned().collect(),
+            })
         }
         fn issue_blocking(&self, _: &Path, key: &str) -> Result<Option<RemoteIssue>, String> {
+            *self.lookups.lock().unwrap() += 1;
             let issues = self.issues.lock().unwrap();
             Ok(issues.iter().find(|r| r.key == key).cloned())
         }

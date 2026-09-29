@@ -328,7 +328,7 @@ pub fn cancels_asks(uid: u64, cx: &App) -> bool {
         .unattended
         .as_ref()
         .and_then(|u| u.run.as_ref())
-        .is_some_and(|run| run.uid == uid && run.claimed.picked_in.is_none())
+        .is_some_and(|run| run.uid == uid && !run.claimed.picked_by_hand())
 }
 
 /// Act on the unattended state, if there is one.
@@ -428,6 +428,13 @@ struct Claimed {
     /// Such a run is put on screen there as it starts and stays when it ends —
     /// somebody asked for it and is watching — so a card it parks is theirs.
     picked_in: Option<gpui::AnyWindowHandle>,
+}
+
+impl Claimed {
+    /// Whether a person picked this run rather than the search finding it.
+    fn picked_by_hand(&self) -> bool {
+        self.picked_in.is_some()
+    }
 }
 
 /// An issue that was claimed and then could not be started, and where to say
@@ -814,7 +821,7 @@ fn start(claimed: Claimed, cx: &mut App) -> Result<(), Unstarted> {
         cx.update(|cx| cancel_toward(uid, Ending::TimedOut(timeout), cx));
     });
     let (by_hand, opening, shown_in) = (
-        claimed.picked_in.is_some(),
+        claimed.picked_by_hand(),
         start_notes(&claimed),
         shell.clone(),
     );
@@ -895,7 +902,7 @@ fn on_event(uid: u64, session: &Entity<ChatSession>, event: &ChatEvent, cx: &mut
                 run.prompted,
                 run.ending.is_some(),
                 run.shell.clone(),
-                run.claimed.picked_in.is_some(),
+                run.claimed.picked_by_hand(),
             )
         })
     })
@@ -906,7 +913,7 @@ fn on_event(uid: u64, session: &Entity<ChatSession>, event: &ChatEvent, cx: &mut
         ChatEvent::Appended if !prompted => prompt(uid, session, cx),
         ChatEvent::Appended => {
             if prompted_by_someone_else(session, true, cx) {
-                settle(uid, Ending::TakenOver, cx);
+                settle(uid, Ending::TakenOver { asked: None }, cx);
             }
         }
         ChatEvent::TurnEnded if cancelling => settle_pending(uid, cx),
@@ -923,10 +930,20 @@ fn on_event(uid: u64, session: &Entity<ChatSession>, event: &ChatEvent, cx: &mut
             // (announced like any other) costs a wait where cancelling cost
             // the run. The run never answers a card; handing it over is not
             // answering it.
-            if picked || shell.upgrade().is_some_and(|s| s.read(cx).reading(uid, cx)) {
-                settle(uid, Ending::TakenOver, cx);
+            let question = question(*ask, session, cx);
+            if shell.upgrade().is_some_and(|s| s.read(cx).reading(uid, cx)) {
+                settle(uid, Ending::TakenOver { asked: None }, cx);
+            } else if picked {
+                // Not being read, so the issue is told what is waiting — the
+                // person may answer it from somewhere else entirely.
+                settle(
+                    uid,
+                    Ending::TakenOver {
+                        asked: Some(question),
+                    },
+                    cx,
+                );
             } else {
-                let question = question(*ask, session, cx);
                 cancel_toward(uid, Ending::Asked(question), cx);
             }
         }
@@ -949,7 +966,7 @@ fn prompt(uid: u64, session: &Entity<ChatSession>, cx: &mut App) {
     // and this one going out makes the session theirs, and the run's own
     // prompt would either be refused as busy or land on top of their work.
     if session.read(cx).chat.busy || prompted_by_someone_else(session, false, cx) {
-        settle(uid, Ending::TakenOver, cx);
+        settle(uid, Ending::TakenOver { asked: None }, cx);
         return;
     }
     let Some((mode, text)) = with(cx, |u| {
@@ -1024,7 +1041,7 @@ fn start_notes(claimed: &Claimed) -> Vec<String> {
         format!(
             "Unattended run on issue #{}, {}",
             claimed.issue.number,
-            if claimed.picked_in.is_some() {
+            if claimed.picked_by_hand() {
                 "picked by hand"
             } else {
                 "found by its label"
@@ -1151,7 +1168,7 @@ fn settle(uid: u64, ending: Ending, cx: &mut App) {
         // watched it end may well carry on in it, and a project that vanished
         // at the next launch would take their place in it too. Only a found
         // run is taken down.
-        let keep = matches!(ending, Ending::TakenOver) || claimed.picked_in.is_some();
+        let keep = matches!(ending, Ending::TakenOver { .. }) || claimed.picked_by_hand();
         if let Some(shell) = shell.upgrade() {
             let _ = window.update(cx, |_, window, cx| {
                 shell.update(cx, |shell, cx| match keep {

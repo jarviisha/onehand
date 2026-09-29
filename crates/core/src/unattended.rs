@@ -461,8 +461,9 @@ pub enum Ending {
     Closed,
     /// The run outlasted its timeout.
     TimedOut(Duration),
-    /// A person acted inside the run's session.
-    TakenOver,
+    /// A person acted inside the run's session — or was handed it, on the
+    /// question it had parked, which `asked` carries so the issue can say it.
+    TakenOver { asked: Option<String> },
     /// The run never got as far as a prompt.
     Failed(String),
 }
@@ -547,7 +548,7 @@ pub fn outcome_line(ending: &Ending, found: &Result<Verdict, String>) -> String 
                 Ending::LinkLost => "the agent stopped answering",
                 Ending::Closed => "its session was closed",
                 Ending::TimedOut(_) => "it timed out",
-                Ending::TakenOver => "it was taken over by hand",
+                Ending::TakenOver { .. } => "it was taken over by hand",
                 Ending::Failed(_) => "it could not start",
             };
             format!(
@@ -571,7 +572,11 @@ fn stopped(ending: &Ending) -> Option<String> {
         Ending::LinkLost => Some("The agent stopped answering.".to_string()),
         Ending::Closed => Some("Its session was closed before the run finished.".to_string()),
         Ending::TimedOut(d) => Some(format!("The run hit its {} timeout.", spoken(*d))),
-        Ending::TakenOver => Some("It was taken over by hand.".to_string()),
+        Ending::TakenOver { asked: None } => Some("It was taken over by hand.".to_string()),
+        Ending::TakenOver { asked: Some(q) } => Some(format!(
+            "It was handed over by hand on a decision:\n\n{}",
+            quoted(q)
+        )),
         Ending::Failed(why) => Some(why.clone()),
     }
 }
@@ -600,9 +605,13 @@ fn nothing_found(ending: &Ending, branch: &str, missing: &str) -> String {
             capitalised(missing),
             spoken(*d)
         ),
-        Ending::TakenOver => {
+        Ending::TakenOver { asked: None } => {
             format!("Taken over by hand; the run stopped watching `{branch}`.")
         }
+        Ending::TakenOver { asked: Some(q) } => format!(
+            "Handed over on a decision; the run stopped watching `{branch}`.\n\n{}",
+            quoted(q)
+        ),
         Ending::Failed(why) => format!("onehand could not start the run: {why}"),
     }
 }
@@ -774,7 +783,10 @@ mod tests {
             Ending::LinkLost,
             Ending::Closed,
             Ending::TimedOut(Duration::from_secs(2700)),
-            Ending::TakenOver,
+            Ending::TakenOver { asked: None },
+            Ending::TakenOver {
+                asked: Some("Run awk?".into()),
+            },
             Ending::Failed("git refused".into()),
         ];
         for ending in &endings {
@@ -786,7 +798,7 @@ mod tests {
                 | Ending::LinkLost
                 | Ending::Closed
                 | Ending::TimedOut(_)
-                | Ending::TakenOver
+                | Ending::TakenOver { .. }
                 | Ending::Failed(_) => {}
             }
             let without = report(ending, &Ok(Verdict::NoPullRequest), "onehand/issue-1");
@@ -823,7 +835,7 @@ mod tests {
             Ending::TurnEnded { tail: None },
             Ending::LinkLost,
             Ending::TimedOut(Duration::from_secs(60)),
-            Ending::TakenOver,
+            Ending::TakenOver { asked: None },
         ] {
             let said = report(&ending, &Err("rate limited".into()), "b");
             assert!(!said.contains("no pull request"), "{said}");
@@ -1097,5 +1109,20 @@ mod tests {
         let (rows, _) = open_issues_blocking(&synced, &root).unwrap();
         assert_eq!(rows[0].issue.forge_ref(), Some("#7"));
         let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn a_run_handed_over_on_a_question_says_the_question() {
+        let asked = Ending::TakenOver {
+            asked: Some("Run awk?".into()),
+        };
+        let said = report(&asked, &Ok(Verdict::NoPullRequest), "b");
+        assert!(said.contains("> Run awk?"), "{said}");
+        let quiet = report(
+            &Ending::TakenOver { asked: None },
+            &Ok(Verdict::NoPullRequest),
+            "b",
+        );
+        assert!(!quiet.contains('>'), "{quiet}");
     }
 }
