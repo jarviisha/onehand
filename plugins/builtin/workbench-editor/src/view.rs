@@ -312,7 +312,7 @@ impl EditorView {
             let label = file.label.clone();
             self.pending_close = Some(PendingClose::Tab(idx));
             self.status = Some(format!(
-                "{label} has unsaved edits — Ctrl+S to save, or click ✕ again to discard them."
+                "{label} has unsaved edits — save them, or click ✕ again to discard them."
             ));
             cx.notify();
             return;

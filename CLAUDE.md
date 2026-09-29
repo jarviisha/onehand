@@ -1180,11 +1180,13 @@ centre is the chat, right dock the Workbench, bottom dock the terminal.
   transcript is written at the end of every turn — `Shell::close_session`, also `Ctrl+Shift+W`). The
   session menu is **also** the row's right-click menu, on every row and not just the active one;
   Restart and Export select the session first, so they always act on what is on screen.
-- **Three `Dialog`s have no trigger: renaming a conversation, splitting a project into a
-  worktree, and renaming a branch.** Every other dialog is opened by a control that carries
-  `Dialog::trigger`; these are opened from a menu entry that is gone by the time they appear, so
-  `Shell::renaming` / `Shell::worktree_draft` / `Shell::branch_draft` being `Some` is what puts
-  each on screen and Esc/Cancel/close must all clear it. A conversation rename archives
+- **Four `Dialog`s have no trigger: renaming a conversation, splitting a project into a
+  worktree, renaming a branch, and Settings.** Every other dialog is opened by a control that carries
+  `Dialog::trigger`; the first three are opened from a menu entry that is gone by the time they
+  appear, so `Shell::renaming` / `Shell::worktree_draft` / `Shell::branch_draft` being `Some` is what
+  puts each on screen and Esc/Cancel/close must all clear it. Settings is opened by a key as well as
+  a rail row, so `Shell::settings_open` is its flag, and closing it hands the caret back to where it
+  was (`settings_return_focus`). A conversation rename archives
   immediately rather than at the end of the next turn. **The branch rename is `git branch -m` and
   never `-M`** (`worktree::rename_branch_blocking`): the forced form overwrites a branch already
   carrying the new name and throws away what was on it, while all the user asked for is that this
@@ -1232,8 +1234,8 @@ centre is the chat, right dock the Workbench, bottom dock the terminal.
 - **A project row rolls up its sessions' signals** (`SessionSignal::most_urgent`, same rank as a
   single session's `pick`), so a collapsed project is not silent about an agent waiting or dead
   inside it.
-- **Closing the Workbench goes through one path.** `show_workbench`'s third state calls
-  `Shell::hide_workbench` rather than toggling the dock itself. It had its own copy, and the copy was
+- **Closing the Workbench goes through one path.** `Shell::toggle_workbench` and the panel's own
+  hide button both call `Shell::hide_workbench` rather than toggling the dock themselves. It had its own copy, and the copy was
   missing the half that breaks worst: the app-direction zoom belongs to the `DockArea` and knows
   nothing about which docks are open, so `Ctrl+Shift+K` then `Ctrl+Shift+E` closed the dock and left
   the panel filling the window with the rail gone and the caret in a composer no frame was drawing.
@@ -1394,7 +1396,7 @@ centre is the chat, right dock the Workbench, bottom dock the terminal.
   labels. A page per scope says it without a sentence, and the appearance page says its own out loud
   because the theme is a global: two windows cannot be drawn in two modes.
   Three things that shape carries. **The page is `Shell::settings_page`, not dialog state**: a
-  triggered dialog is rebuilt from its content closure on every frame it is open, so a page captured
+  dialog is rebuilt from its content closure on every frame it is open, so a page captured
   when it opened would be the page it showed until it closed — reading the shell inside the closure
   is what makes the nav work at all. **The page scrolls and the dialog does not**, at one height for every
   page, so the nav stays reachable from the bottom of the keymap and the box does not jump size
@@ -1972,7 +1974,7 @@ Listed because a missing feature nobody wrote down reads as a bug in the ones th
   works without the panel adding it, and a panel that adds `track_focus` on top of that becomes
   doubly click-focusable. A `DockItem::Panel` renders bare, so nothing tracks it and
   `contains_focused` answers "no" however deep inside the pane the caret is — which silently points
-  the whole three-state panel keymap at the wrong panel. Every panel here renders bare, so
+  every focused-panel key (maximize, zoom) at the wrong panel. Every panel here renders bare, so
   `ChatPane::render`, `TerminalPanel::render` and `Workbench::render` all track their own handles —
   and one added later that forgets is a panel its own shortcut cannot find. Focus-on-click stays
   correct either way: gpui's handler runs in the bubble phase and an inner focusable takes the click

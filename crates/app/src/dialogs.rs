@@ -410,7 +410,7 @@ fn nav_row(page: SettingsPage, current: SettingsPage, handle: &Entity<Shell>, cx
 }
 
 /// The heading a page opens with -- the same word its nav row carries.
-fn page_title(name: &'static str) -> impl IntoElement {
+pub(crate) fn page_title(name: &'static str) -> impl IntoElement {
     div().text_lg().font_semibold().child(name)
 }
 

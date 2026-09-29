@@ -8,7 +8,7 @@ use std::collections::BTreeMap;
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
     Action, App, AppContext, BorrowAppContext, Context, Entity, Focusable as _, InteractiveElement,
-    IntoElement, KeyBinding, Keystroke, ParentElement, Render, Styled, Window, div, px,
+    IntoElement, KeyBinding, Keystroke, ParentElement, Render, Styled, Window, div,
 };
 use gpui_component::button::ButtonVariants as _;
 use gpui_component::input::{Input, InputState};
@@ -32,11 +32,16 @@ pub struct Command {
     action: fn() -> Box<dyn Action>,
 }
 
+/// The two commands that act once per physical press; the shell's latch names
+/// them by these, so a renamed id cannot leave the latch holding a stale one.
+pub const RESTART: &str = "restart";
+pub const CLOSE_SESSION: &str = "close_session";
+
 macro_rules! command {
-    ($id:literal, $label:literal, [$($key:literal),*], $action:expr) => {
+    ($id:expr, $label:literal, [$($key:literal),*], $action:expr) => {
         command!($id, $label, [$($key),*], $action, "Shell && !Dialog", "Application, including terminal")
     };
-    ($id:literal, $label:literal, [$($key:literal),*], $action:expr, $context:literal, $scope:literal) => {
+    ($id:expr, $label:literal, [$($key:literal),*], $action:expr, $context:literal, $scope:literal) => {
         Command { id: $id, label: $label, defaults: &[$($key),*],
             context: $context, scope: $scope, action: || Box::new($action) }
     };
@@ -74,6 +79,9 @@ pub const COMMANDS: &[Command] = &[
         ["ctrl-shift-n"],
         OpenNeovim
     ),
+    // Unshifted on purpose: gpui names a key by the keysym the layout produces
+    // with the modifiers applied, so shift over the backtick arrives as
+    // `ctrl-~` and a `ctrl-shift-`` binding never matches anything.
     command!(
         "terminal",
         "Show / hide terminal",
@@ -87,13 +95,13 @@ pub const COMMANDS: &[Command] = &[
         FocusComposer
     ),
     command!(
-        "restart",
+        RESTART,
         "Restart agent (confirm again mid-turn)",
         ["ctrl-shift-r"],
         RestartSession
     ),
     command!(
-        "close_session",
+        CLOSE_SESSION,
         "Close session (confirm again mid-turn)",
         ["ctrl-shift-w"],
         CloseSession
@@ -191,6 +199,10 @@ pub const COMMANDS: &[Command] = &[
         ["ctrl-9"],
         SelectSession { index: 8 }
     ),
+    // `A > B` scores at `B`'s depth, so these tie with the input's own arrow
+    // and Tab bindings and win by being registered later. The composer adds
+    // `ChatComposer` only while a list is open, so otherwise the keys still
+    // move the caret.
     command!(
         "completion_previous",
         "Previous suggestion",
@@ -542,7 +554,7 @@ impl Render for Editor {
                 .on_action(cx.listener(|editor, _: &CancelShortcut, window, cx| {
                     editor.cancel(window, cx);
                 }))
-                .child(div().text_lg().child("Edit shortcut"))
+                .child(crate::dialogs::page_title("Edit shortcut"))
                 .child(div().child(command.label))
                 .child(div().text_sm().text_color(cx.theme().muted_foreground).child(command.scope))
                 .child(Input::new(&self.input).w_full())
@@ -615,7 +627,7 @@ impl Render for Editor {
             })
             .collect::<Vec<_>>();
         div().track_focus(&self.focus).v_flex().gap_3().w_full()
-            .child(div().text_lg().child("Shortcuts"))
+            .child(crate::dialogs::page_title("Shortcuts"))
             .child(div().text_sm().text_color(cx.theme().muted_foreground)
                 .child("Customize shortcuts for every window. Edit a command to change or unassign its keys."))
             .children(cx.global::<LoadWarning>().0.as_ref().map(|error| div().text_sm()
@@ -623,7 +635,8 @@ impl Render for Editor {
             .children(self.error.as_ref().map(|error| div().text_sm().text_color(crate::theme::status_ink(cx).danger).child(error.clone())))
             .children(rows)
             .child(div().text_sm().child("Terminal: Ctrl+Shift+C / V copies / pastes; Tab / Shift+Tab go to the PTY. These terminal controls are fixed."))
-            .child(div().pt(px(8.)).text_xs().child(format!("onehand {}", env!("CARGO_PKG_VERSION"))))
+            .child(div().pt_2().text_xs().text_color(cx.theme().muted_foreground)
+                .child(format!("onehand {}", env!("CARGO_PKG_VERSION"))))
             .into_any_element()
     }
 }
@@ -786,9 +799,11 @@ mod tests {
         let library = vec![
             KeyBinding::new("tab", gpui_component::input::SelectAll, None),
             KeyBinding::new("tab", gpui::NoAction, Some("Terminal")),
+            KeyBinding::new("shift-tab", gpui::NoAction, Some("Terminal")),
         ];
         let map = Keymap::new(replace(library, &Overrides::new()));
         assert_eq!(action_at(&map, "tab", &["Shell", "Terminal"]), None);
+        assert_eq!(action_at(&map, "shift-tab", &["Shell", "Terminal"]), None);
         assert_eq!(
             action_at(&map, "tab", &["Shell", "Input"]),
             Some(gpui_component::input::SelectAll.name().into())
@@ -805,8 +820,8 @@ mod tests {
 
     #[test]
     fn release_follows_the_remapped_key_even_without_modifiers() {
-        let overrides = Overrides::from([("restart".into(), vec!["alt-x".into()])]);
-        assert!(released("restart", "x", &overrides));
-        assert!(!released("restart", "r", &overrides));
+        let overrides = Overrides::from([(RESTART.into(), vec!["alt-x".into()])]);
+        assert!(released(RESTART, "x", &overrides));
+        assert!(!released(RESTART, "r", &overrides));
     }
 }

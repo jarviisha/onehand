@@ -3555,14 +3555,14 @@ impl Render for Shell {
             )
             .on_action(
                 cx.listener(|shell: &mut Self, _: &RestartSession, window, cx| {
-                    if shell.held_commands.insert("restart") {
+                    if shell.held_commands.insert(crate::keymap::RESTART) {
                         shell.restart_session(window, cx);
                     }
                 }),
             )
             .on_action(
                 cx.listener(|shell: &mut Self, _: &CloseSession, window, cx| {
-                    if shell.held_commands.insert("close_session") {
+                    if shell.held_commands.insert(crate::keymap::CLOSE_SESSION) {
                         shell.close_active_session(window, cx);
                     }
                 }),
