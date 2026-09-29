@@ -9,7 +9,7 @@
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
     App, AppContext, Entity, InteractiveElement, IntoElement, ParentElement, ScrollHandle,
-    SharedString, StatefulInteractiveElement, Styled, Window, div, px,
+    SharedString, StatefulInteractiveElement, Styled, Window, div, px, rems,
 };
 use gpui_component::button::ButtonVariants as _;
 use gpui_component::input::{Editor, EditorState};
@@ -111,6 +111,90 @@ pub(crate) fn tab_strip(
     let on_select = std::rc::Rc::new(on_select);
     let on_close = std::rc::Rc::new(on_close);
 
+    let (offset, max) = (scroll.offset().x, scroll.max_offset().x);
+    let (before, after) = (offset < px(0.), offset > -max);
+
+    let tab_list = div()
+        .id("editor-tabs")
+        .track_scroll(scroll)
+        .h_flex()
+        .items_center()
+        .gap_1()
+        .w_full()
+        .overflow_x_scroll()
+        .children(buffers.tabs.files.iter().enumerate().map(|(i, file)| {
+            let (select, close) = (on_select.clone(), on_close.clone());
+            // One group per tab: a name shared by the strip would light
+            // every tab's cross the moment the pointer entered any of
+            // them.
+            let hovered = SharedString::from(format!("editor-tab-{i}"));
+            // The label is the file name alone, so three `mod.rs` tabs
+            // read the same; the path relative to the project is what
+            // tells them apart, and the hover is where it goes. The
+            // dirty dot is named there too, since a colour is a code
+            // somebody has to have learnt first.
+            let rel = file.path.strip_prefix(root).unwrap_or(&file.path);
+            let hint = SharedString::from(match file.dirty {
+                true => format!("{} — unsaved changes", rel.display()),
+                false => rel.display().to_string(),
+            });
+            div()
+                .id(("editor-tab", i))
+                .group(hovered.clone())
+                .h_flex()
+                .items_center()
+                .gap_1()
+                .flex_none()
+                .max_w(px(220.))
+                .px_2()
+                .py_0p5()
+                .rounded(cx.theme().radius)
+                .text_xs()
+                .cursor_pointer()
+                .when(i == active, |tab| {
+                    tab.bg(cx.theme().accent)
+                        .text_color(cx.theme().accent_foreground)
+                })
+                // The well, the same hover the terminal's tabs and the
+                // mode strip take, so one strip does not answer the
+                // pointer differently from the two beside it.
+                .when(i != active, |tab| tab.hover(|tab| tab.bg(cx.theme().muted)))
+                .tooltip(move |window, cx| Tooltip::new(hint.clone()).build(window, cx))
+                .child(div().min_w_0().truncate().child(file.label.clone()))
+                // The dirty dot, not a modified-name convention: the
+                // label is already truncated, and a marker inside it
+                // would be the first thing to disappear. Status ink, the
+                // same value the file tree uses for "changed".
+                .when(file.dirty, |tab| {
+                    tab.child(
+                        div()
+                            .size(px(6.))
+                            .flex_none()
+                            .rounded_full()
+                            .bg(status_ink(cx).warning),
+                    )
+                })
+                .on_click(move |_, window, cx: &mut App| select(&i, window, cx))
+                // **Shown on hover alone**, `invisible` rather than
+                // absent so a tab does not change width under the
+                // pointer. `stop_propagation` is what keeps the press
+                // that closes a tab from also selecting whatever slid
+                // into its place — which switched the file on screen
+                // when a background tab was closed.
+                .child(
+                    onehand_plugin_host::action(("editor-tab-close", i))
+                        .ghost()
+                        .xsmall()
+                        .icon(Icon::new(IconName::Close))
+                        .invisible()
+                        .group_hover(hovered, |style| style.visible())
+                        .on_click(move |_, window, cx: &mut App| {
+                            cx.stop_propagation();
+                            close(&i, window, cx);
+                        }),
+                )
+        }));
+
     div()
         .h_flex()
         .items_center()
@@ -121,87 +205,20 @@ pub(crate) fn tab_strip(
         .border_b_1()
         .border_color(cx.theme().border)
         .child(
+            // **Each end fades while there is more past it**, into the surface
+            // the strip sits on. A hard clip cuts a tab mid-letter, which reads
+            // as a label that was drawn wrong rather than as a row that goes on;
+            // a fade says the row goes on. Shown only on a side with something
+            // scrolled out, so a strip that fits looks exactly as it did. Read
+            // off the handle, which holds the last frame's layout — a wheel
+            // notifies the view, so the next frame has the new offset.
             div()
-                .id("editor-tabs")
-                .track_scroll(scroll)
-                .h_flex()
-                .items_center()
-                .gap_1()
+                .relative()
                 .flex_1()
                 .min_w_0()
-                .overflow_x_scroll()
-                .children(buffers.tabs.files.iter().enumerate().map(|(i, file)| {
-                    let (select, close) = (on_select.clone(), on_close.clone());
-                    // One group per tab: a name shared by the strip would light
-                    // every tab's cross the moment the pointer entered any of
-                    // them.
-                    let hovered = SharedString::from(format!("editor-tab-{i}"));
-                    // The label is the file name alone, so three `mod.rs` tabs
-                    // read the same; the path relative to the project is what
-                    // tells them apart, and the hover is where it goes. The
-                    // dirty dot is named there too, since a colour is a code
-                    // somebody has to have learnt first.
-                    let rel = file.path.strip_prefix(root).unwrap_or(&file.path);
-                    let hint = SharedString::from(match file.dirty {
-                        true => format!("{} — unsaved changes", rel.display()),
-                        false => rel.display().to_string(),
-                    });
-                    div()
-                        .id(("editor-tab", i))
-                        .group(hovered.clone())
-                        .h_flex()
-                        .items_center()
-                        .gap_1()
-                        .flex_none()
-                        .max_w(px(220.))
-                        .px_2()
-                        .py_0p5()
-                        .rounded(cx.theme().radius)
-                        .text_xs()
-                        .cursor_pointer()
-                        .when(i == active, |tab| {
-                            tab.bg(cx.theme().accent)
-                                .text_color(cx.theme().accent_foreground)
-                        })
-                        // The well, the same hover the terminal's tabs and the
-                        // mode strip take, so one strip does not answer the
-                        // pointer differently from the two beside it.
-                        .when(i != active, |tab| tab.hover(|tab| tab.bg(cx.theme().muted)))
-                        .tooltip(move |window, cx| Tooltip::new(hint.clone()).build(window, cx))
-                        .child(div().min_w_0().truncate().child(file.label.clone()))
-                        // The dirty dot, not a modified-name convention: the
-                        // label is already truncated, and a marker inside it
-                        // would be the first thing to disappear. Status ink, the
-                        // same value the file tree uses for "changed".
-                        .when(file.dirty, |tab| {
-                            tab.child(
-                                div()
-                                    .size(px(6.))
-                                    .flex_none()
-                                    .rounded_full()
-                                    .bg(status_ink(cx).warning),
-                            )
-                        })
-                        .on_click(move |_, window, cx: &mut App| select(&i, window, cx))
-                        // **Shown on hover alone**, `invisible` rather than
-                        // absent so a tab does not change width under the
-                        // pointer. `stop_propagation` is what keeps the press
-                        // that closes a tab from also selecting whatever slid
-                        // into its place — which switched the file on screen
-                        // when a background tab was closed.
-                        .child(
-                            onehand_plugin_host::action(("editor-tab-close", i))
-                                .ghost()
-                                .xsmall()
-                                .icon(Icon::new(IconName::Close))
-                                .invisible()
-                                .group_hover(hovered, |style| style.visible())
-                                .on_click(move |_, window, cx: &mut App| {
-                                    cx.stop_propagation();
-                                    close(&i, window, cx);
-                                }),
-                        )
-                })),
+                .child(tab_list)
+                .when(before, |list| list.child(fade(Side::Start, cx)))
+                .when(after, |list| list.child(fade(Side::End, cx))),
         )
         // Muted like the other strips' controls: a ghost button in full ink is
         // the brightest thing on the row, out-shouting the file names beside it.
@@ -218,6 +235,39 @@ pub(crate) fn tab_strip(
                 .on_click(on_close_all),
         )
         .into_any_element()
+}
+
+/// Which end of the tab list a fade sits on.
+#[derive(Debug, Clone, Copy)]
+enum Side {
+    Start,
+    End,
+}
+
+/// A band at one end of the tab list, from the dock's surface to nothing.
+///
+/// Carries no handler, so it takes no hitbox: a tab under it still answers the
+/// pointer, its hover and its tooltip included.
+fn fade(side: Side, cx: &App) -> gpui::Div {
+    let surface = onehand_plugin_host::dock_surface(cx);
+    let (from, to) = match side {
+        Side::Start => (surface, surface.alpha(0.)),
+        Side::End => (surface.alpha(0.), surface),
+    };
+    let band = div()
+        .absolute()
+        .top_0()
+        .bottom_0()
+        .w(rems(1.5))
+        .bg(gpui::linear_gradient(
+            90.,
+            gpui::linear_color_stop(from, 0.),
+            gpui::linear_color_stop(to, 1.),
+        ));
+    match side {
+        Side::Start => band.left_0(),
+        Side::End => band.right_0(),
+    }
 }
 
 /// The editor body for the active tab.
