@@ -181,10 +181,18 @@ pub(crate) fn tab_strip(
                 // that closes a tab from also selecting whatever slid
                 // into its place — which switched the file on screen
                 // when a background tab was closed.
+                //
+                // **The cross is what sets the tab's height**, not the label:
+                // `xsmall` gives an icon button a 1.25rem box, taller than a
+                // line of `text_xs`. `size_4` takes the box down to that line
+                // -- the library applies a caller's style after its size
+                // preset -- while the glyph keeps its `xsmall` size and the
+                // label its font.
                 .child(
                     onehand_plugin_host::action(("editor-tab-close", i))
                         .ghost()
                         .xsmall()
+                        .size_4()
                         .icon(Icon::new(IconName::Close))
                         .invisible()
                         .group_hover(hovered, |style| style.visible())
