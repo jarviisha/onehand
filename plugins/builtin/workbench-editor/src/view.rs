@@ -445,7 +445,21 @@ fn next_buffer_uid() -> u64 {
 }
 
 impl Render for EditorView {
-    fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        // The strip's fades are decided from the last frame's layout. A wheel
+        // re-renders this view, so that lag is one frame and invisible — but a
+        // change of *width* (the tree hidden, the dock dragged) re-lays the
+        // strip without asking this view again, and a fade left over from the
+        // narrower strip then stays on a tab that is no longer cut. So the
+        // answer is checked once more after the frame, and a view drawn on a
+        // stale one is asked for again; it settles as soon as they agree.
+        let drawn = crate::buffers::fades(&self.tabs_scroll);
+        let (handle, view) = (self.tabs_scroll.clone(), cx.entity().downgrade());
+        window.on_next_frame(move |_, cx| {
+            if crate::buffers::fades(&handle) != drawn {
+                let _ = view.update(cx, |_, cx| cx.notify());
+            }
+        });
         // A file opened while the strip is full lands its tab past the end, so
         // the file on screen would be the one whose tab nobody can see. The
         // handle waits for the frame that lays the tab out, so a tab being drawn

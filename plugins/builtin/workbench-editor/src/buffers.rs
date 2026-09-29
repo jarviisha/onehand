@@ -126,8 +126,7 @@ pub(crate) fn tab_strip(
         close_all: on_close_all,
     } = on;
 
-    let (offset, max) = (scroll.offset().x, scroll.max_offset().x);
-    let (before, after) = (offset < px(0.), offset > -max);
+    let (before, after) = fades(scroll);
 
     let tab_list = div()
         .id("editor-tabs")
@@ -285,6 +284,16 @@ pub(crate) fn tab_strip(
             )
         })
         .into_any_element()
+}
+
+/// Whether each end of the tab list has tabs scrolled past it.
+///
+/// Read off the handle, which holds the *last* frame's layout, so the answer
+/// can be one frame stale — see `EditorView::render`, which checks it again
+/// after the frame is drawn.
+pub(crate) fn fades(scroll: &ScrollHandle) -> (bool, bool) {
+    let (offset, max) = (scroll.offset().x, scroll.max_offset().x);
+    (offset < px(0.), offset > -max)
 }
 
 /// Which end of the tab list a fade sits on.

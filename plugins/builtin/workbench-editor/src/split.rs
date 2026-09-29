@@ -72,9 +72,12 @@ impl Render for CodeView {
         // nothing. The divider's state is untouched, so the tree comes back at
         // the width it was dragged to.
         if !self.editor.read(cx).tree_shown() {
+            // `flex` and not `h_flex`: that one also centres its children
+            // across the row, which drew the buffers at their content's height
+            // in the middle of the panel instead of stretched down it.
             return div()
                 .size_full()
-                .h_flex()
+                .flex()
                 .child(self.editor.clone())
                 .into_any_element();
         }
