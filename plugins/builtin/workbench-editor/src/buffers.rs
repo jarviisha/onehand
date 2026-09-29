@@ -219,8 +219,13 @@ pub(crate) fn tab_strip(
 }
 
 /// The editor body for the active tab.
+///
+/// `appearance(false)`: by default the component draws itself as a form field —
+/// its own fill, border and radius — which inside the Workbench card is a
+/// second, smaller rounded box nested in the first. The card is the frame; the
+/// code sits on its surface the way the file tree beside it does.
 pub(crate) fn body(state: &Entity<EditorState>) -> impl IntoElement + use<> {
-    Editor::new(state).h_full()
+    Editor::new(state).appearance(false).h_full()
 }
 
 /// Build a buffer for a newly opened file.
