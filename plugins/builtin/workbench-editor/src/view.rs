@@ -5,7 +5,7 @@ use crate::buffers::{RootBuffers, body, new_buffer, save_status, tab_strip};
 
 use gpui::{
     App, AppContext as _, Context, Entity, Focusable as _, IntoElement, ParentElement, Render,
-    SharedString, Styled, Window, div,
+    ScrollHandle, SharedString, Styled, Window, div,
 };
 use gpui_component::button::ButtonVariants as _;
 use gpui_component::dialog::{DialogClose, DialogFooter};
@@ -37,6 +37,12 @@ pub(crate) struct EditorView {
     /// dropped either — it is remembered here and re-run once the first lands,
     /// which is what makes it pick up the keystrokes that prompted it.
     saving: HashMap<u64, bool>,
+    /// The tab strip's scroll, so the active tab can be brought into view.
+    tabs_scroll: ScrollHandle,
+    /// The tab last brought into view. The strip is scrolled only when the
+    /// active tab *changes*: asked on every frame, it would pull the strip back
+    /// under a wheel somebody was using to look at the other tabs.
+    revealed: Option<u64>,
 }
 
 impl EditorView {
@@ -46,6 +52,8 @@ impl EditorView {
             buffers: HashMap::new(),
             status: None,
             saving: HashMap::new(),
+            tabs_scroll: ScrollHandle::new(),
+            revealed: None,
         })
     }
 
@@ -419,6 +427,28 @@ fn next_buffer_uid() -> u64 {
 
 impl Render for EditorView {
     fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        // A file opened while the strip is full lands its tab past the end, so
+        // the file on screen would be the one whose tab nobody can see. The
+        // handle waits for the frame that lays the tab out, so a tab being drawn
+        // for the first time is found too.
+        let active = self
+            .root
+            .as_ref()
+            .and_then(|r| self.buffers.get(r))
+            .map(|buffers| {
+                (
+                    buffers.tabs.active,
+                    buffers.tabs.active_file().map(|f| f.uid),
+                )
+            });
+        if let Some((idx, uid)) = active
+            && uid.is_some()
+            && uid != self.revealed
+        {
+            self.tabs_scroll.scroll_to_item(idx);
+            self.revealed = uid;
+        }
+
         let open = self.root.as_ref().and_then(|root| {
             self.buffers
                 .get(root)
@@ -438,6 +468,7 @@ impl Render for EditorView {
                     .child(tab_strip(
                         root,
                         buffers,
+                        &self.tabs_scroll,
                         cx.listener(|view: &mut Self, idx: &usize, _, cx| {
                             view.select_tab(*idx, cx)
                         }),

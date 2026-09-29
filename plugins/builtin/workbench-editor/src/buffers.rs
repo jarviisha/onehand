@@ -8,8 +8,8 @@
 
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
-    App, AppContext, Entity, InteractiveElement, IntoElement, ParentElement, SharedString,
-    StatefulInteractiveElement, Styled, Window, div, px,
+    App, AppContext, Entity, InteractiveElement, IntoElement, ParentElement, ScrollHandle,
+    SharedString, StatefulInteractiveElement, Styled, Window, div, px,
 };
 use gpui_component::button::ButtonVariants as _;
 use gpui_component::input::{Editor, EditorState};
@@ -101,6 +101,7 @@ pub(crate) fn language_for(path: &Path) -> &'static str {
 pub(crate) fn tab_strip(
     root: &Path,
     buffers: &RootBuffers,
+    scroll: &ScrollHandle,
     on_select: impl Fn(&usize, &mut Window, &mut App) + 'static,
     on_close: impl Fn(&usize, &mut Window, &mut App) + 'static,
     on_close_all: impl Fn(&gpui::ClickEvent, &mut Window, &mut App) + 'static,
@@ -122,6 +123,7 @@ pub(crate) fn tab_strip(
         .child(
             div()
                 .id("editor-tabs")
+                .track_scroll(scroll)
                 .h_flex()
                 .items_center()
                 .gap_1()
