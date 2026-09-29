@@ -16,7 +16,6 @@ use gpui_component::input::{Editor, EditorState};
 use gpui_component::tooltip::Tooltip;
 use gpui_component::{ActiveTheme, Icon, IconName, Sizable as _, StyledExt};
 use onehand_core::editor::{RootEditors, SaveOutcome};
-use onehand_plugin_host::status_ink;
 use std::collections::HashMap;
 use std::path::Path;
 
@@ -58,6 +57,11 @@ impl RootBuffers {
     pub(crate) fn forget(&mut self, uid: u64) {
         self.buffers.remove(&uid);
         self.watches.remove(&uid);
+    }
+
+    /// How many open tabs have edits a close would throw away.
+    pub(crate) fn dirty_count(&self) -> usize {
+        self.tabs.files.iter().filter(|f| f.dirty).count()
     }
 }
 
@@ -126,7 +130,11 @@ pub(crate) fn tab_strip(
         close_all: on_close_all,
     } = on;
 
-    let (before, after) = fades(scroll);
+    let fades = Fades::of(scroll);
+    let (toggle_icon, toggle_hint) = match tree_shown {
+        true => (IconName::PanelLeftClose, "Hide the file tree"),
+        false => (IconName::PanelLeftOpen, "Show the file tree"),
+    };
 
     let tab_list = div()
         .id("editor-tabs")
@@ -159,7 +167,7 @@ pub(crate) fn tab_strip(
                 .items_center()
                 .gap_1()
                 .flex_none()
-                .max_w(px(220.))
+                .max_w(rems(13.75))
                 .px_2()
                 // A height of its own rather than padding around the line.
                 // `text_xs` sets the font size alone, and gpui's default line
@@ -184,15 +192,15 @@ pub(crate) fn tab_strip(
                 .child(div().min_w_0().truncate().child(file.label.clone()))
                 // The dirty dot, not a modified-name convention: the
                 // label is already truncated, and a marker inside it
-                // would be the first thing to disappear. Status ink, the
-                // same value the file tree uses for "changed".
+                // would be the first thing to disappear. A status *fill*: the
+                // theme's `warning`, where `status_ink` is for text.
                 .when(file.dirty, |tab| {
                     tab.child(
                         div()
                             .size(px(6.))
                             .flex_none()
                             .rounded_full()
-                            .bg(status_ink(cx).warning),
+                            .bg(cx.theme().warning),
                     )
                 })
                 .on_click(move |_, window, cx: &mut App| select(&i, window, cx))
@@ -241,14 +249,8 @@ pub(crate) fn tab_strip(
                 .xsmall()
                 .flex_none()
                 .text_color(cx.theme().muted_foreground)
-                .icon(Icon::new(match tree_shown {
-                    true => IconName::PanelLeftClose,
-                    false => IconName::PanelLeftOpen,
-                }))
-                .tooltip(match tree_shown {
-                    true => "Hide the file tree",
-                    false => "Show the file tree",
-                })
+                .icon(Icon::new(toggle_icon))
+                .tooltip(toggle_hint)
                 .on_click(on_toggle_tree),
         )
         .child(
@@ -264,8 +266,8 @@ pub(crate) fn tab_strip(
                 .flex_1()
                 .min_w_0()
                 .child(tab_list)
-                .when(before, |list| list.child(fade(Side::Start, cx)))
-                .when(after, |list| list.child(fade(Side::End, cx))),
+                .when(fades.start, |list| list.child(fade(Side::Start, cx)))
+                .when(fades.end, |list| list.child(fade(Side::End, cx))),
         )
         // Muted like the other strips' controls: a ghost button in full ink is
         // the brightest thing on the row, out-shouting the file names beside it.
@@ -287,13 +289,40 @@ pub(crate) fn tab_strip(
 }
 
 /// Whether each end of the tab list has tabs scrolled past it.
-///
-/// Read off the handle, which holds the *last* frame's layout, so the answer
-/// can be one frame stale — see `EditorView::render`, which checks it again
-/// after the frame is drawn.
-pub(crate) fn fades(scroll: &ScrollHandle) -> (bool, bool) {
-    let (offset, max) = (scroll.offset().x, scroll.max_offset().x);
-    (offset < px(0.), offset > -max)
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct Fades {
+    pub(crate) start: bool,
+    pub(crate) end: bool,
+}
+
+impl Fades {
+    #[cfg(test)]
+    pub(crate) const NONE: Self = Self {
+        start: false,
+        end: false,
+    };
+
+    /// From a scroll offset (zero or negative, as gpui keeps it) and the
+    /// furthest it can go.
+    ///
+    /// **Compared against half a pixel, never against zero.** `Pixels` orders
+    /// by `f32::total_cmp`, which puts `-0.0` below `0.0` — so a strip that fits
+    /// (`max` zero, `-max` negative zero) read as having more past its end, and
+    /// drew that fade on every strip that did not need one. The half pixel also
+    /// absorbs the sub-pixel remainder a scroll can stop on.
+    pub(crate) fn at(offset: gpui::Pixels, max: gpui::Pixels) -> Self {
+        Self {
+            start: offset < px(-0.5),
+            end: offset + max > px(0.5),
+        }
+    }
+
+    /// Read off the handle, which holds the *last* frame's layout, so the
+    /// answer can be one frame stale — see `EditorView::render`, which checks
+    /// it again after the frame is drawn.
+    pub(crate) fn of(scroll: &ScrollHandle) -> Self {
+        Self::at(scroll.offset().x, scroll.max_offset().x)
+    }
 }
 
 /// Which end of the tab list a fade sits on.
@@ -309,12 +338,11 @@ enum Side {
 /// pointer, its hover and its tooltip included.
 fn fade(side: Side, cx: &App) -> gpui::Div {
     let surface = onehand_plugin_host::dock_surface(cx);
-    let (from, to) = match side {
-        Side::Start => (surface, surface.alpha(0.)),
-        Side::End => (surface.alpha(0.), surface),
+    let (band, from, to) = match side {
+        Side::Start => (div().left_0(), surface, surface.alpha(0.)),
+        Side::End => (div().right_0(), surface.alpha(0.), surface),
     };
-    let band = div()
-        .absolute()
+    band.absolute()
         .top_0()
         .bottom_0()
         .w(rems(1.5))
@@ -322,11 +350,7 @@ fn fade(side: Side, cx: &App) -> gpui::Div {
             90.,
             gpui::linear_color_stop(from, 0.),
             gpui::linear_color_stop(to, 1.),
-        ));
-    match side {
-        Side::Start => band.left_0(),
-        Side::End => band.right_0(),
-    }
+        ))
 }
 
 /// The editor body for the active tab.
@@ -377,5 +401,47 @@ pub(crate) fn save_status(outcome: &SaveOutcome, label: &str) -> Option<String> 
             "{label} changed on disk — nothing was written. Save again to overwrite."
         )),
         SaveOutcome::Failed(e) => Some(format!("{label} not saved — {e}")),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{Fades, RootBuffers};
+    use gpui::px;
+    use std::path::PathBuf;
+
+    #[test]
+    fn dirty_tabs_are_counted() {
+        let mut buffers = RootBuffers::default();
+        assert_eq!(buffers.dirty_count(), 0);
+        buffers.tabs.open(PathBuf::from("a.rs"), None, 1);
+        buffers.tabs.open(PathBuf::from("b.rs"), None, 2);
+        buffers.tabs.open(PathBuf::from("c.rs"), None, 3);
+        buffers.tabs.files[0].dirty = true;
+        buffers.tabs.files[2].dirty = true;
+        assert_eq!(buffers.dirty_count(), 2);
+    }
+
+    #[test]
+    fn a_strip_that_fits_fades_at_neither_end() {
+        assert_eq!(Fades::at(px(0.), px(0.)), Fades::NONE);
+    }
+
+    #[test]
+    fn a_negative_zero_offset_is_not_scrolled() {
+        assert_eq!(Fades::at(px(-0.), px(0.)), Fades::NONE);
+    }
+
+    #[test]
+    fn an_overflowing_strip_fades_toward_what_is_scrolled_past() {
+        // At the start: more to the right only.
+        let start = Fades::at(px(0.), px(120.));
+        assert_eq!((start.start, start.end), (false, true));
+        // Partway: both.
+        let middle = Fades::at(px(-40.), px(120.));
+        assert_eq!((middle.start, middle.end), (true, true));
+        // At the end: more to the left only.
+        let end = Fades::at(px(-120.), px(120.));
+        assert_eq!((end.start, end.end), (true, false));
     }
 }

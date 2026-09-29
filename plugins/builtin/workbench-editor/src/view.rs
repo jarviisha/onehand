@@ -1,7 +1,7 @@
 //! The Editor mode's own state: the open buffers per project root, and the
 //! rules that keep a save from clobbering somebody else's write.
 
-use crate::buffers::{RootBuffers, StripHandlers, body, new_buffer, save_status, tab_strip};
+use crate::buffers::{Fades, RootBuffers, StripHandlers, body, new_buffer, save_status, tab_strip};
 
 use gpui::{
     App, AppContext as _, Context, Entity, Focusable as _, IntoElement, ParentElement, Render,
@@ -95,7 +95,7 @@ impl EditorView {
     pub(crate) fn unsaved(&self, root: &Path) -> usize {
         self.buffers
             .get(root)
-            .map(|buffers| buffers.tabs.files.iter().filter(|f| f.dirty).count())
+            .map(RootBuffers::dirty_count)
             .unwrap_or(0)
     }
 
@@ -294,6 +294,15 @@ impl EditorView {
         .detach();
     }
 
+    /// The buffers of the project on screen, if it has any.
+    fn current(&self) -> Option<&RootBuffers> {
+        self.buffers.get(self.root.as_ref()?)
+    }
+
+    fn current_mut(&mut self) -> Option<&mut RootBuffers> {
+        self.buffers.get_mut(self.root.as_ref()?)
+    }
+
     pub(crate) fn tree_shown(&self) -> bool {
         self.tree_shown
     }
@@ -304,7 +313,7 @@ impl EditorView {
     }
 
     fn select_tab(&mut self, idx: usize, cx: &mut Context<Self>) {
-        if let Some(buffers) = self.root.as_ref().and_then(|r| self.buffers.get_mut(r))
+        if let Some(buffers) = self.current_mut()
             && idx < buffers.tabs.files.len()
         {
             buffers.tabs.active = idx;
@@ -314,47 +323,48 @@ impl EditorView {
 
     /// Close tab `idx`, asking first when that would throw away edits.
     fn close_tab(&mut self, idx: usize, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(root) = self.root.clone() else {
+            return;
+        };
         let Some(file) = self
-            .root
-            .as_ref()
-            .and_then(|r| self.buffers.get(r))
+            .current()
             .and_then(|buffers| buffers.tabs.files.get(idx))
         else {
             return;
         };
-        let uid = file.uid;
+        let close = Close::Tab(root, file.uid);
         if file.dirty {
             let label = file.label.clone();
             self.confirm_discard(
                 "Discard unsaved edits?".into(),
                 format!("“{label}” has edits that were never saved. Closing it throws them away."),
-                Close::Tab(uid),
+                close,
                 window,
                 cx,
             );
             return;
         }
-        self.discard(Close::Tab(uid), cx);
+        self.discard(close, cx);
     }
 
     /// Close every tab, asking first when any of them has unsaved edits.
     fn close_all_tabs(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let Some(buffers) = self.root.as_ref().and_then(|r| self.buffers.get(r)) else {
+        let Some(root) = self.root.clone() else {
             return;
         };
-        let n = buffers.tabs.files.iter().filter(|f| f.dirty).count();
+        let n = self.current().map_or(0, RootBuffers::dirty_count);
         if n > 0 {
             let s = if n == 1 { "file has" } else { "files have" };
             self.confirm_discard(
                 "Close all files?".into(),
                 format!("{n} {s} edits that were never saved. Closing them throws those away."),
-                Close::All,
+                Close::All(root),
                 window,
                 cx,
             );
             return;
         }
-        self.discard(Close::All, cx);
+        self.discard(Close::All(root), cx);
     }
 
     /// Ask before a close throws edits away, in a dialog rather than by arming
@@ -362,8 +372,10 @@ impl EditorView {
     ///
     /// An armed control looks like one that did nothing, and the sentence
     /// explaining it was drawn at the foot of the panel, nowhere near the cross
-    /// that was pressed. The tab is named by `uid` and not by position, because
-    /// the strip can change while the question is on screen.
+    /// that was pressed. What to close is named by project, and a tab by `uid`
+    /// rather than by position, because the question can be on screen while
+    /// the strip changes or the window moves to another project — a remote
+    /// `/open` does that — and *Discard* must still mean what it said.
     fn confirm_discard(
         &mut self,
         title: SharedString,
@@ -376,7 +388,7 @@ impl EditorView {
         window.open_alert_dialog(cx, move |alert, _, _| {
             // Cloned per build: the builder runs again on every frame the
             // dialog is on screen, so nothing captured can be consumed by one.
-            let view = view.clone();
+            let (view, close) = (view.clone(), close.clone());
             alert
                 .title(title.clone())
                 .description(description.clone())
@@ -398,6 +410,7 @@ impl EditorView {
                                 .label("Discard")
                                 .on_click(move |_, window: &mut Window, cx: &mut App| {
                                     window.close_dialog(cx);
+                                    let close = close.clone();
                                     view.update(cx, |view: &mut Self, cx| view.discard(close, cx));
                                 }),
                         ),
@@ -407,18 +420,21 @@ impl EditorView {
 
     /// Close without asking; the question, if there was one, is answered.
     fn discard(&mut self, close: Close, cx: &mut Context<Self>) {
-        let Some(buffers) = self.root.as_ref().and_then(|r| self.buffers.get_mut(r)) else {
+        let root = match &close {
+            Close::Tab(root, _) | Close::All(root) => root,
+        };
+        let Some(buffers) = self.buffers.get_mut(root) else {
             return;
         };
         match close {
-            Close::Tab(uid) => {
+            Close::Tab(_, uid) => {
                 let Some(idx) = buffers.tabs.files.iter().position(|f| f.uid == uid) else {
                     return;
                 };
                 buffers.tabs.close(idx);
                 buffers.forget(uid);
             }
-            Close::All => {
+            Close::All(_) => {
                 for file in std::mem::take(&mut buffers.tabs.files) {
                     buffers.forget(file.uid);
                 }
@@ -430,11 +446,11 @@ impl EditorView {
     }
 }
 
-/// What a close is about to drop.
-#[derive(Debug, Clone, Copy)]
+/// What a close is about to drop, and in which project.
+#[derive(Debug, Clone)]
 enum Close {
-    Tab(u64),
-    All,
+    Tab(PathBuf, u64),
+    All(PathBuf),
 }
 
 /// Process-wide buffer id salt, for the same reason core hands one out per tab.
@@ -453,10 +469,10 @@ impl Render for EditorView {
         // narrower strip then stays on a tab that is no longer cut. So the
         // answer is checked once more after the frame, and a view drawn on a
         // stale one is asked for again; it settles as soon as they agree.
-        let drawn = crate::buffers::fades(&self.tabs_scroll);
+        let drawn = Fades::of(&self.tabs_scroll);
         let (handle, view) = (self.tabs_scroll.clone(), cx.entity().downgrade());
         window.on_next_frame(move |_, cx| {
-            if crate::buffers::fades(&handle) != drawn {
+            if Fades::of(&handle) != drawn {
                 let _ = view.update(cx, |_, cx| cx.notify());
             }
         });
@@ -464,16 +480,12 @@ impl Render for EditorView {
         // the file on screen would be the one whose tab nobody can see. The
         // handle waits for the frame that lays the tab out, so a tab being drawn
         // for the first time is found too.
-        let active = self
-            .root
-            .as_ref()
-            .and_then(|r| self.buffers.get(r))
-            .map(|buffers| {
-                (
-                    buffers.tabs.active,
-                    buffers.tabs.active_file().map(|f| f.uid),
-                )
-            });
+        let active = self.current().map(|buffers| {
+            (
+                buffers.tabs.active,
+                buffers.tabs.active_file().map(|f| f.uid),
+            )
+        });
         if let Some((idx, uid)) = active
             && uid.is_some()
             && uid != self.revealed
