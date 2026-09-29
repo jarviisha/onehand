@@ -268,8 +268,12 @@ a deliberate one, not a list of whatever was once approved by hand.
    already there**: if the ask parks while the user is reading that very
    conversation — `Attention::Reading`, the rule that already decides whether a
    parked ask goes to the desktop — the run is taken over (rule 7) instead of
-   cancelled, and the ask stays up for them. "Never answered" means never
-   answered *by the run*; a person looking at the card is the person it asks.
+   cancelled, and the ask stays up for them. **A run picked by hand is taken
+   over the same way whether or not anybody is looking**: the person who picked
+   it asked for it moments ago and is near, so the card stays up and is announced
+   like any other, where cancelling would throw the run away over a click they
+   were about to make. "Never answered" means never answered *by the run*; a
+   person looking at the card, or who asked for the run, is the person it asks.
 2. **Never the user's checkout.** Every run is a fresh `git worktree` beside the
    repository, on a branch of its own. An agent writing to the tree somebody is
    working in, while they are working in it, is not a risk worth the ten lines
@@ -455,7 +459,8 @@ Answering a card is only a take-over through the reading exception: a card
 nobody is looking at is cancelled on the spot, so there is never an answer to
 see.
 
-**A card a run is about to cancel is not announced.** The pane would otherwise
+**A card a run is about to cancel is not announced** (a run the search found;
+a picked run's card is left up, so it is). The pane would otherwise
 send a desktop notification for a parked ask nobody is looking at, which is
 every ask a run sees — pointing somebody at a question that is gone by the time
 they arrive.

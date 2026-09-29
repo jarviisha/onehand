@@ -626,7 +626,8 @@ branches a worktree off `origin/<default>` and mints a session there. **Neither 
 screen**: `ChatPane::open_unshown` connects without showing, and the worktree's root is
 `ProjectRoot::transient`, which `to_config` never writes. One prompt, one turn. The pull request the forge
 finds — or, with no forge, the commits on the branch — is the verdict, on every ending. A parked ask is cancelled, never answered — unless the user is
-reading that conversation, in which case the run is **taken over**. The same happens the moment
+reading that conversation, or picked the run by hand, in which case the run is **taken over** and
+the card stays up, announced like any other. The same happens the moment
 anybody else puts a prompt in. Taking over clears `transient` and saves. Teardown is
 `Shell::forget_root`, never `remove_root`, because that one re-shows the active session and takes the
 caret with it. The rules that decide are core's (`onehand_core::unattended`); the calls are the connector's.

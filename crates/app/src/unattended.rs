@@ -321,13 +321,14 @@ pub fn label(cx: &App) -> String {
         .unwrap_or_default()
 }
 
-/// Whether `uid` is the session of the run in progress.
-pub fn is_run(uid: u64, cx: &App) -> bool {
+/// Whether `uid` is a run that cancels a card rather than leave it up: one the
+/// search found. A run somebody picked by hand hands the card to them instead.
+pub fn cancels_asks(uid: u64, cx: &App) -> bool {
     Shared::global(cx)
         .unattended
         .as_ref()
         .and_then(|u| u.run.as_ref())
-        .is_some_and(|run| run.uid == uid)
+        .is_some_and(|run| run.uid == uid && run.claimed.picked_in.is_none())
 }
 
 /// Act on the unattended state, if there is one.
@@ -888,11 +889,15 @@ fn spec_for(agent: Option<&str>, cx: &App) -> Option<AgentSpec> {
 
 /// One event from the run's session.
 fn on_event(uid: u64, session: &Entity<ChatSession>, event: &ChatEvent, cx: &mut App) {
-    let Some((prompted, cancelling, shell)) = with(cx, |u| {
-        u.run
-            .as_ref()
-            .filter(|run| run.uid == uid)
-            .map(|run| (run.prompted, run.ending.is_some(), run.shell.clone()))
+    let Some((prompted, cancelling, shell, picked)) = with(cx, |u| {
+        u.run.as_ref().filter(|run| run.uid == uid).map(|run| {
+            (
+                run.prompted,
+                run.ending.is_some(),
+                run.shell.clone(),
+                run.claimed.picked_in.is_some(),
+            )
+        })
     })
     .flatten() else {
         return;
@@ -912,9 +917,13 @@ fn on_event(uid: u64, session: &Entity<ChatSession>, event: &ChatEvent, cx: &mut
             settle(uid, Ending::TurnEnded { tail }, cx);
         }
         ChatEvent::AwaitingUser(ask) => {
-            // **Somebody already looking is the person the card asks.** The run
-            // never answers a card; handing it over is not answering it.
-            if shell.upgrade().is_some_and(|s| s.read(cx).reading(uid, cx)) {
+            // **Somebody already looking is the person the card asks** — and
+            // so is whoever picked the run by hand, looking or not: they asked
+            // for it moments ago and are near, and a card left up for them
+            // (announced like any other) costs a wait where cancelling cost
+            // the run. The run never answers a card; handing it over is not
+            // answering it.
+            if picked || shell.upgrade().is_some_and(|s| s.read(cx).reading(uid, cx)) {
                 settle(uid, Ending::TakenOver, cx);
             } else {
                 let question = question(*ask, session, cx);

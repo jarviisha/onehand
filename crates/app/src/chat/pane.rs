@@ -1636,11 +1636,12 @@ impl ChatPane {
         root: &str,
         cx: &mut Context<Self>,
     ) {
-        // An unattended run never leaves a card up for anybody who is not
+        // A run the search found never leaves a card up for anybody who is not
         // already looking at it: it cancels the turn and reports on the issue.
         // Announcing the card would send somebody to answer a question that is
-        // gone by the time they arrive.
-        if crate::unattended::is_run(uid, cx) {
+        // gone by the time they arrive. One picked by hand leaves it up, so it
+        // is announced like any other.
+        if crate::unattended::cancels_asks(uid, cx) {
             return;
         }
         let say = self.telling(uid, Away::Asked(ask), cx);
