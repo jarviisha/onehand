@@ -289,19 +289,13 @@ pub(crate) fn tab_strip(
 }
 
 /// Whether each end of the tab list has tabs scrolled past it.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub(crate) struct Fades {
     pub(crate) start: bool,
     pub(crate) end: bool,
 }
 
 impl Fades {
-    #[cfg(test)]
-    pub(crate) const NONE: Self = Self {
-        start: false,
-        end: false,
-    };
-
     /// From a scroll offset (zero or negative, as gpui keeps it) and the
     /// furthest it can go.
     ///
@@ -424,12 +418,12 @@ mod tests {
 
     #[test]
     fn a_strip_that_fits_fades_at_neither_end() {
-        assert_eq!(Fades::at(px(0.), px(0.)), Fades::NONE);
+        assert_eq!(Fades::at(px(0.), px(0.)), Fades::default());
     }
 
     #[test]
     fn a_negative_zero_offset_is_not_scrolled() {
-        assert_eq!(Fades::at(px(-0.), px(0.)), Fades::NONE);
+        assert_eq!(Fades::at(px(-0.), px(0.)), Fades::default());
     }
 
     #[test]

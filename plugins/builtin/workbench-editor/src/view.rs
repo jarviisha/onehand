@@ -101,7 +101,7 @@ impl EditorView {
 
     /// Where the caret goes, if there is a buffer to put it in.
     pub(crate) fn caret(&self, cx: &App) -> Option<gpui::FocusHandle> {
-        let buffers = self.buffers.get(self.root.as_ref()?)?;
+        let buffers = self.current()?;
         let uid = buffers.tabs.active_file()?.uid;
         Some(buffers.buffer(uid)?.focus_handle(cx))
     }
@@ -421,9 +421,9 @@ impl EditorView {
     /// Close without asking; the question, if there was one, is answered.
     fn discard(&mut self, close: Close, cx: &mut Context<Self>) {
         let root = match &close {
-            Close::Tab(root, _) | Close::All(root) => root,
+            Close::Tab(root, _) | Close::All(root) => root.clone(),
         };
-        let Some(buffers) = self.buffers.get_mut(root) else {
+        let Some(buffers) = self.buffers.get_mut(&root) else {
             return;
         };
         match close {
@@ -441,7 +441,12 @@ impl EditorView {
                 buffers.tabs.close_all();
             }
         }
-        self.status = None;
+        // The status line is the view's, drawn over whichever project is on
+        // screen: a discard answered after moving elsewhere must not wipe a
+        // save conflict that belongs to the project now showing.
+        if self.root.as_ref() == Some(&root) {
+            self.status = None;
+        }
         cx.notify();
     }
 }
