@@ -4698,6 +4698,7 @@ dependencies = [
  "onehand-remote-telegram",
  "onehand-terminal-ui",
  "onehand-workbench-editor",
+ "onehand-workbench-issues",
  "onehand-workbench-markdown",
  "onehand-workbench-neovim",
  "rfd",
@@ -4781,6 +4782,17 @@ dependencies = [
 
 [[package]]
 name = "onehand-workbench-files"
+version = "0.1.0"
+dependencies = [
+ "gpui",
+ "gpui-component",
+ "onehand-core",
+ "onehand-plugin-api",
+ "onehand-plugin-host",
+]
+
+[[package]]
+name = "onehand-workbench-issues"
 version = "0.1.0"
 dependencies = [
  "gpui",

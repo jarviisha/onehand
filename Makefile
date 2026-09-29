@@ -29,7 +29,7 @@ CLIPPY_EXTRA ?=
 OURS := -p onehand -p onehand-core -p onehand-plugin-api -p onehand-plugin-host \
 	-p onehand-terminal-ui -p onehand-connector-github -p onehand-remote-telegram \
 	-p onehand-workbench-editor \
-	-p onehand-workbench-files -p onehand-workbench-markdown -p onehand-workbench-neovim
+	-p onehand-workbench-files -p onehand-workbench-issues -p onehand-workbench-markdown -p onehand-workbench-neovim
 
 .DEFAULT_GOAL := help
 

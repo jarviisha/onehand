@@ -120,11 +120,11 @@ Tests are inline `#[cfg(test)]` modules — there is no `tests/` directory.
 | Path | Crate | What |
 |---|---|---|
 | `crates/app` | `onehand` | the GPUI front end + the binary |
-| `crates/core` | `onehand-core` | GUI-free logic: config, the workspace tree, ACP, the chat model, the remote bridge, the connector contract, editor rules, completion, git status, worktree rules, the directory flatten |
+| `crates/core` | `onehand-core` | GUI-free logic: config, the workspace tree, ACP, the chat model, the remote bridge, the connector contract, a project's own issues, editor rules, completion, git status, worktree rules, the directory flatten |
 | `crates/plugin-api` | `onehand-plugin-api` | GUI-free plugin IDs, descriptors, capabilities and registration contract |
 | `crates/plugin-host` | `onehand-plugin-host` | the Workbench mode contract, the remote-channel factory type, and the three things a plugin cannot reach into the binary for: the button wrapper, status ink and the surface a dock card draws on |
 | `crates/terminal-ui` | `onehand-terminal-ui` | shared PTY/grid ownership used by the terminal dock and Neovim |
-| `plugins/builtin/*` | built-in plugins | Editor, Files, Markdown, Neovim, Telegram and GitHub contributions compiled into the binary |
+| `plugins/builtin/*` | built-in plugins | Editor, Files, Markdown, Neovim, Issues, Telegram and GitHub contributions compiled into the binary |
 | `vendor/gpui-terminal` | `gpui-terminal` | a vendored terminal grid + the interaction layer upstream never had |
 
 The workspace root is a **virtual manifest** — it owns nothing but the member list and the release
@@ -262,7 +262,7 @@ module owns, and events cross to GPUI on a plain `futures` channel belonging to 
 ### Built-in plugins
 
 `crates/app/src/plugins.rs` is the composition root, and it is three ordered lists:
-the Workbench modes (Editor, Markdown, Neovim, which is the order on the strip —
+the Workbench modes (Editor, Markdown, Neovim, Issues, which is the order on the strip —
 Files is a mode too, composed inside the Editor rather than listed beside it),
 the connectors (`plugins::connectors`, GitHub alone today) and how a named
 remote channel is opened. Nothing registers, nothing is
@@ -748,7 +748,7 @@ renderer read `chat.items` / `chat.busy` without knowing where the model lives.
 
 ### Workbench
 
-[crates/app/src/workbench/](crates/app/src/workbench/) — one dock panel, three modes. **The panel
+[crates/app/src/workbench/](crates/app/src/workbench/) — one dock panel, four modes. **The panel
 draws none of them**: each is a crate implementing one trait, holding its own state and handing back
 its own view, and what is left here is the list, the active ID, the strip and the two facts the frame
 reads off the showing mode's declaration (see *Built-in plugins*).
@@ -757,10 +757,10 @@ reads off the showing mode's declaration (see *Built-in plugins*).
 chip rather than a library `Button` — `accent` with the ink that goes on it for the one showing,
 nothing until the pointer arrives for the rest, muted ink otherwise. As buttons the showing mode took
 `primary`, which is the theme's strongest fill and is reserved for the single most important action
-on a screen, spent here on a control that only says which of three views is up; and two rows of the
+on a screen, spent here on a control that only says which view is up; and two rows of the
 same kind an inch apart then disagreed about what a selected tab looks like. No icon, unlike the
 terminal's tabs: those are all the same program and need the glyph to read as tabs at all, while
-these are three different things their names already tell apart. The chips are `flex_none` inside a
+these are different things their names already tell apart. The chips are `flex_none` inside a
 `flex_1 min_w_0` box, so what gives way when a fourth mode arrives is the box and never the maximize
 and hide buttons at the other end.
 
@@ -871,6 +871,21 @@ see the rail, below.
   buffer with no way to tell which holds the unsaved copy. It is spawned through
   `onehand_terminal_ui::spawn_pty`, so it inherits the shared rules about `TERM`, resize, clipboard and
   reaping.
+- **Issues**: the project's own issues, listed on the left (open first, then closed, each newest
+  first), the one being read or written on the right, with *New issue*, *Edit* and *Close*/*Reopen*.
+  The rules are core's (`onehand_core::issues`): numbering (`#1`, `#2`, … per project, never reused),
+  the draft check (a title is required), labels as comma-separated words. **Kept in the workspace's
+  storage directory, one file per project** (`issues/<folder>-<digest>.json`, named by
+  `workspace::stem_for` as the workspace's own folder is), never in the checkout — a file there would
+  leave a clean repository dirty and travel with every clone. So **an unbound workspace keeps no
+  issues**, and the mode says so rather than offering a form whose work would be thrown away; it
+  learns where to write from `Request::SetStorage`, told once when the panel is built and again on
+  bind and unbind. **Every change is one read-change-write** (`issues::update_blocking`) under a
+  process-wide lock and through `config::write_atomic`, made against what is on disk rather than the
+  copy on screen, so a person editing and anything else in the process writing cannot each save a copy
+  missing the other's change; a file this build cannot read is refused and never written over. The
+  file is read again when the mode is next drawn after being shown or after a turn ends. No shortcut
+  yet, and no deletion — closing is the way an issue leaves the work.
 
 State is per project root, held by the mode that works on it, so switching roots swaps the whole
 thing.
