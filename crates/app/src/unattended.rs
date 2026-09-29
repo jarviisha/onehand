@@ -321,13 +321,14 @@ pub fn label(cx: &App) -> String {
         .unwrap_or_default()
 }
 
-/// Whether `uid` is the session of the run in progress.
-pub fn is_run(uid: u64, cx: &App) -> bool {
+/// Whether `uid` is a run that cancels a card rather than leave it up: one the
+/// search found. A run somebody picked by hand hands the card to them instead.
+pub fn cancels_asks(uid: u64, cx: &App) -> bool {
     Shared::global(cx)
         .unattended
         .as_ref()
         .and_then(|u| u.run.as_ref())
-        .is_some_and(|run| run.uid == uid)
+        .is_some_and(|run| run.uid == uid && !run.claimed.picked_by_hand())
 }
 
 /// Act on the unattended state, if there is one.
@@ -429,6 +430,13 @@ struct Claimed {
     picked_in: Option<gpui::AnyWindowHandle>,
 }
 
+impl Claimed {
+    /// Whether a person picked this run rather than the search finding it.
+    fn picked_by_hand(&self) -> bool {
+        self.picked_in.is_some()
+    }
+}
+
 /// An issue that was claimed and then could not be started, and where to say
 /// so.
 struct Unstarted {
@@ -455,13 +463,7 @@ fn begin_blocking(
     checked: &mut Vec<(PathBuf, Served)>,
 ) -> Option<Result<Claimed, Unstarted>> {
     let (repo, tracker, forge, issue) = roots.iter().find_map(|(project, forge)| {
-        let trackers = project
-            .issues
-            .clone()
-            .map(Tracker::Local)
-            .into_iter()
-            .chain(forge.map(Tracker::Forge));
-        for tracker in trackers {
+        for tracker in trackers_blocking(project.issues.clone(), *forge) {
             match core::candidate_blocking(&tracker, &project.root, label) {
                 Ok(Some(issue)) => return Some((project.root.clone(), tracker, *forge, issue)),
                 Ok(None) => {}
@@ -498,7 +500,7 @@ fn prepare_blocking(
         let base = match forge {
             Some(forge) => {
                 let default = forge.default_branch_blocking(&repo)?;
-                worktree::fetch_blocking(&repo, &default)?;
+                forge.fetch_blocking(&repo, &default)?;
                 format!("origin/{default}")
             }
             None => worktree::current_branch_blocking(&repo)?,
@@ -542,28 +544,54 @@ pub type Pickable = (Vec<(Tracker, IssueRow)>, bool, Option<String>);
 /// show; beside issues of the project's own it is said under the list, so one
 /// half being down does not hide the other.
 pub fn pickable_blocking(root: &Path, issues: Option<PathBuf>) -> Result<Pickable, String> {
-    let mut rows = Vec::new();
-    let mut cut = false;
-    if let Some(file) = issues {
-        let tracker = Tracker::Local(file);
-        let (found, more) = core::open_issues_blocking(&tracker, root)?;
-        cut |= more;
-        rows.extend(found.into_iter().map(|row| (tracker.clone(), row)));
-    }
-    let forge = connector_for(root).and_then(|c| {
-        let tracker = Tracker::Forge(c);
-        core::open_issues_blocking(&tracker, root).map(|found| (tracker, found))
-    });
-    let unread = match forge {
-        Ok((tracker, (found, more))) => {
-            cut |= more;
-            rows.extend(found.into_iter().map(|row| (tracker.clone(), row)));
-            None
+    let (mut rows, mut cut, mut unread) = (Vec::new(), false, None);
+    let forge = connector_for(root);
+    for tracker in trackers_blocking(issues, forge.as_ref().ok().copied()) {
+        match core::open_issues_blocking(&tracker, root) {
+            Ok((found, more)) => {
+                cut |= more;
+                rows.extend(found.into_iter().map(|row| (tracker.clone(), row)));
+            }
+            // The forge's half being down is said beside the rest; the
+            // project's own issues failing to read is the whole answer.
+            Err(why) => match tracker {
+                Tracker::Forge(_) => unread = Some(why),
+                Tracker::Local(_) | Tracker::Synced { .. } => return Err(why),
+            },
         }
-        Err(why) if rows.is_empty() => return Err(why),
-        Err(why) => Some(why),
-    };
-    Ok((rows, cut, unread))
+    }
+    // A project no connector serves says why only when there is nothing else
+    // to list: beside its own issues, the forge it does not have is no news.
+    match (rows.is_empty(), unread, forge) {
+        (true, Some(why), _) | (true, None, Err(why)) => Err(why),
+        (_, unread, _) => Ok((rows, cut, unread)),
+    }
+}
+
+/// Where a project's issues are looked for, in the order they are searched.
+///
+/// A project kept in step with its forge is looked for **here only**, since
+/// the forge's issues are already here and searching both would find each one
+/// twice. Otherwise its own issues first, then the forge's. Blocking: it reads
+/// the issue file to learn whether the project is synced.
+fn trackers_blocking(
+    issues: Option<PathBuf>,
+    forge: Option<&'static dyn Connector>,
+) -> Vec<Tracker> {
+    if let (Some(file), Some(forge)) = (&issues, forge)
+        && onehand_core::issues::load_blocking(file)
+            .is_ok_and(|kept| kept.in_step_with(forge.name()))
+    {
+        return vec![Tracker::Synced {
+            file: file.clone(),
+            forge,
+        }];
+    }
+    issues
+        .map(Tracker::Local)
+        .into_iter()
+        .chain(forge.map(Tracker::Forge))
+        .collect()
 }
 
 /// Work `row`, picked by hand from a project's open issues, now.
@@ -608,7 +636,7 @@ pub fn start_picked(
                     // An issue on the forge goes back to that forge; one kept
                     // here goes to whichever forge serves the project, if any.
                     let forge = match &tracker {
-                        Tracker::Forge(c) => Some(*c),
+                        Tracker::Forge(forge) | Tracker::Synced { forge, .. } => Some(*forge),
                         Tracker::Local(_) => connector_for(&repo).ok(),
                     };
                     core::claim_picked_blocking(&tracker, &repo, &row, &label)
@@ -793,7 +821,7 @@ fn start(claimed: Claimed, cx: &mut App) -> Result<(), Unstarted> {
         cx.update(|cx| cancel_toward(uid, Ending::TimedOut(timeout), cx));
     });
     let (by_hand, opening, shown_in) = (
-        claimed.picked_in.is_some(),
+        claimed.picked_by_hand(),
         start_notes(&claimed),
         shell.clone(),
     );
@@ -868,11 +896,15 @@ fn spec_for(agent: Option<&str>, cx: &App) -> Option<AgentSpec> {
 
 /// One event from the run's session.
 fn on_event(uid: u64, session: &Entity<ChatSession>, event: &ChatEvent, cx: &mut App) {
-    let Some((prompted, cancelling, shell)) = with(cx, |u| {
-        u.run
-            .as_ref()
-            .filter(|run| run.uid == uid)
-            .map(|run| (run.prompted, run.ending.is_some(), run.shell.clone()))
+    let Some((prompted, cancelling, shell, picked)) = with(cx, |u| {
+        u.run.as_ref().filter(|run| run.uid == uid).map(|run| {
+            (
+                run.prompted,
+                run.ending.is_some(),
+                run.shell.clone(),
+                run.claimed.picked_by_hand(),
+            )
+        })
     })
     .flatten() else {
         return;
@@ -881,7 +913,7 @@ fn on_event(uid: u64, session: &Entity<ChatSession>, event: &ChatEvent, cx: &mut
         ChatEvent::Appended if !prompted => prompt(uid, session, cx),
         ChatEvent::Appended => {
             if prompted_by_someone_else(session, true, cx) {
-                settle(uid, Ending::TakenOver, cx);
+                settle(uid, Ending::TakenOver { asked: None }, cx);
             }
         }
         ChatEvent::TurnEnded if cancelling => settle_pending(uid, cx),
@@ -892,12 +924,26 @@ fn on_event(uid: u64, session: &Entity<ChatSession>, event: &ChatEvent, cx: &mut
             settle(uid, Ending::TurnEnded { tail }, cx);
         }
         ChatEvent::AwaitingUser(ask) => {
-            // **Somebody already looking is the person the card asks.** The run
-            // never answers a card; handing it over is not answering it.
+            // **Somebody already looking is the person the card asks** — and
+            // so is whoever picked the run by hand, looking or not: they asked
+            // for it moments ago and are near, and a card left up for them
+            // (announced like any other) costs a wait where cancelling cost
+            // the run. The run never answers a card; handing it over is not
+            // answering it.
+            let question = question(*ask, session, cx);
             if shell.upgrade().is_some_and(|s| s.read(cx).reading(uid, cx)) {
-                settle(uid, Ending::TakenOver, cx);
+                settle(uid, Ending::TakenOver { asked: None }, cx);
+            } else if picked {
+                // Not being read, so the issue is told what is waiting — the
+                // person may answer it from somewhere else entirely.
+                settle(
+                    uid,
+                    Ending::TakenOver {
+                        asked: Some(question),
+                    },
+                    cx,
+                );
             } else {
-                let question = question(*ask, session, cx);
                 cancel_toward(uid, Ending::Asked(question), cx);
             }
         }
@@ -920,7 +966,7 @@ fn prompt(uid: u64, session: &Entity<ChatSession>, cx: &mut App) {
     // and this one going out makes the session theirs, and the run's own
     // prompt would either be refused as busy or land on top of their work.
     if session.read(cx).chat.busy || prompted_by_someone_else(session, false, cx) {
-        settle(uid, Ending::TakenOver, cx);
+        settle(uid, Ending::TakenOver { asked: None }, cx);
         return;
     }
     let Some((mode, text)) = with(cx, |u| {
@@ -995,7 +1041,7 @@ fn start_notes(claimed: &Claimed) -> Vec<String> {
         format!(
             "Unattended run on issue #{}, {}",
             claimed.issue.number,
-            if claimed.picked_in.is_some() {
+            if claimed.picked_by_hand() {
                 "picked by hand"
             } else {
                 "found by its label"
@@ -1122,7 +1168,7 @@ fn settle(uid: u64, ending: Ending, cx: &mut App) {
         // watched it end may well carry on in it, and a project that vanished
         // at the next launch would take their place in it too. Only a found
         // run is taken down.
-        let keep = matches!(ending, Ending::TakenOver) || claimed.picked_in.is_some();
+        let keep = matches!(ending, Ending::TakenOver { .. }) || claimed.picked_by_hand();
         if let Some(shell) = shell.upgrade() {
             let _ = window.update(cx, |_, window, cx| {
                 shell.update(cx, |shell, cx| match keep {

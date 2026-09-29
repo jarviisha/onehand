@@ -28,6 +28,19 @@ pub struct RemoteIssue {
     pub snapshot: Snapshot,
 }
 
+/// What a forge lists for a sync. Two lists because they answer different
+/// questions: a cut in `open` only means fewer imports, while a cut in
+/// `changed` means a change may be missing, and the sync has to ask about
+/// each issue instead.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct SyncListing {
+    /// The open issues, by anybody — what a sync brings in.
+    pub open: Vec<RemoteIssue>,
+    /// At least every issue changed since the sync point, whatever its
+    /// state; empty when there is no point.
+    pub changed: Vec<RemoteIssue>,
+}
+
 pub trait Connector: Send + Sync + 'static {
     /// The system's name, as a person knows it: "GitHub".
     fn name(&self) -> &'static str;
@@ -56,6 +69,13 @@ pub trait Connector: Send + Sync + 'static {
     /// The repository's default branch, as the system has it.
     fn default_branch_blocking(&self, root: &Path) -> Result<String, String>;
 
+    /// Bring `origin/<branch>` up to date at `root`. Plain `git fetch` unless a
+    /// connector knows another way in — its own sign-in, for a remote whose
+    /// credentials the app cannot reach.
+    fn fetch_blocking(&self, root: &Path, branch: &str) -> Result<(), String> {
+        crate::worktree::fetch_blocking(root, branch)
+    }
+
     /// The pull request opened from `branch`, open or not, if there is one.
     fn pull_request_for_blocking(
         &self,
@@ -63,12 +83,14 @@ pub trait Connector: Send + Sync + 'static {
         branch: &str,
     ) -> Result<Option<String>, String>;
 
-    /// Open issues, by anybody, at most `limit` of them — what a sync imports.
+    /// What a sync needs to see, at most `limit` in each list; `changed` is
+    /// asked for from `since`.
     fn issues_for_sync_blocking(
         &self,
         root: &Path,
+        since: Option<u64>,
         limit: usize,
-    ) -> Result<Vec<RemoteIssue>, String>;
+    ) -> Result<SyncListing, String>;
 
     /// One issue by its key, open or closed, or `None` if the forge no longer
     /// has it.
@@ -181,7 +203,12 @@ pub(crate) mod fake {
         fn open_pull_request_with(&self) -> &'static str {
             "`forge pr`"
         }
-        fn issues_for_sync_blocking(&self, _: &Path, _: usize) -> Result<Vec<RemoteIssue>, String> {
+        fn issues_for_sync_blocking(
+            &self,
+            _: &Path,
+            _: Option<u64>,
+            _: usize,
+        ) -> Result<SyncListing, String> {
             unreachable!()
         }
         fn issue_blocking(&self, _: &Path, _: &str) -> Result<Option<RemoteIssue>, String> {
@@ -198,6 +225,166 @@ pub(crate) mod fake {
             _: &Snapshot,
         ) -> Result<(), String> {
             unreachable!()
+        }
+    }
+}
+
+/// A forge kept in memory, for tests that have to watch a sync or a run move
+/// things on the far side.
+#[cfg(test)]
+pub(crate) mod memory {
+    use super::*;
+    use std::sync::Mutex;
+
+    /// A forge kept in memory, counting what was asked of it.
+    #[derive(Default)]
+    pub(crate) struct Forge {
+        pub(crate) issues: Mutex<Vec<RemoteIssue>>,
+        pub(crate) updates: Mutex<usize>,
+        pub(crate) refuse_updates: bool,
+        /// The keys of the issues the signed-in account wrote.
+        pub(crate) mine: Vec<String>,
+        /// Every comment left, as (key, body).
+        pub(crate) comments: Mutex<Vec<(String, String)>>,
+        /// Keys left out of the changed list, as a real forge leaves out an
+        /// issue nothing touched since the sync point.
+        pub(crate) unchanged: Mutex<Vec<String>>,
+        /// How many times one issue was asked about by itself.
+        pub(crate) lookups: Mutex<usize>,
+    }
+
+    impl Forge {
+        pub(crate) fn with(issues: Vec<(u64, Snapshot)>) -> Self {
+            Self {
+                issues: Mutex::new(
+                    issues
+                        .into_iter()
+                        .map(|(n, snapshot)| RemoteIssue {
+                            key: n.to_string(),
+                            reference: format!("#{n}"),
+                            snapshot,
+                        })
+                        .collect(),
+                ),
+                ..Self::default()
+            }
+        }
+        pub(crate) fn said(&self, key: &str) -> Snapshot {
+            let issues = self.issues.lock().unwrap();
+            issues
+                .iter()
+                .find(|r| r.key == key)
+                .unwrap()
+                .snapshot
+                .clone()
+        }
+        pub(crate) fn set(&self, key: &str, said: Snapshot) {
+            let mut issues = self.issues.lock().unwrap();
+            issues.iter_mut().find(|r| r.key == key).unwrap().snapshot = said;
+        }
+    }
+
+    impl Connector for Forge {
+        fn name(&self) -> &'static str {
+            "Forge"
+        }
+        fn account_blocking(&self) -> Result<String, String> {
+            unreachable!()
+        }
+        fn serves_blocking(&self, _: &Path) -> Result<(), String> {
+            unreachable!()
+        }
+        fn open_issues_blocking(&self, _: &Path, _: usize) -> Result<Vec<IssueRow>, String> {
+            unreachable!()
+        }
+        fn my_labelled_issues_blocking(&self, _: &Path, label: &str) -> Result<Vec<Issue>, String> {
+            let issues = self.issues.lock().unwrap();
+            Ok(issues
+                .iter()
+                .filter(|r| r.snapshot.open && r.snapshot.labels.iter().any(|l| l == label))
+                .filter(|r| self.mine.contains(&r.key))
+                .map(|r| {
+                    Issue::new(
+                        r.key.parse().unwrap(),
+                        r.snapshot.title.clone(),
+                        String::new(),
+                    )
+                })
+                .collect())
+        }
+        fn remove_label_blocking(&self, _: &Path, number: u64, label: &str) -> Result<(), String> {
+            let mut issues = self.issues.lock().unwrap();
+            if let Some(r) = issues.iter_mut().find(|r| r.key == number.to_string()) {
+                r.snapshot.labels.retain(|l| l != label);
+            }
+            Ok(())
+        }
+        fn comment_blocking(&self, _: &Path, number: u64, body: &str) -> Result<(), String> {
+            self.comments
+                .lock()
+                .unwrap()
+                .push((number.to_string(), body.to_string()));
+            Ok(())
+        }
+        fn default_branch_blocking(&self, _: &Path) -> Result<String, String> {
+            unreachable!()
+        }
+        fn pull_request_for_blocking(&self, _: &Path, _: &str) -> Result<Option<String>, String> {
+            unreachable!()
+        }
+        fn open_pull_request_with(&self) -> &'static str {
+            "`forge pr`"
+        }
+        /// Everything it holds as changed once `since` is given — more than a
+        /// real forge would list, which is allowed: what it has to list is at
+        /// least what changed.
+        fn issues_for_sync_blocking(
+            &self,
+            _: &Path,
+            since: Option<u64>,
+            limit: usize,
+        ) -> Result<SyncListing, String> {
+            let issues = self.issues.lock().unwrap();
+            let open = issues.iter().filter(|r| r.snapshot.open);
+            let unchanged = self.unchanged.lock().unwrap();
+            let changed = issues
+                .iter()
+                .filter(|r| since.is_some() && !unchanged.contains(&r.key));
+            Ok(SyncListing {
+                open: open.take(limit).cloned().collect(),
+                changed: changed.take(limit).cloned().collect(),
+            })
+        }
+        fn issue_blocking(&self, _: &Path, key: &str) -> Result<Option<RemoteIssue>, String> {
+            *self.lookups.lock().unwrap() += 1;
+            let issues = self.issues.lock().unwrap();
+            Ok(issues.iter().find(|r| r.key == key).cloned())
+        }
+        fn create_issue_blocking(&self, _: &Path, said: &Snapshot) -> Result<RemoteIssue, String> {
+            let mut issues = self.issues.lock().unwrap();
+            let n = 100 + issues.len() as u64;
+            let made = RemoteIssue {
+                key: n.to_string(),
+                reference: format!("#{n}"),
+                snapshot: said.clone(),
+            };
+            issues.push(made.clone());
+            Ok(made)
+        }
+        fn update_issue_blocking(
+            &self,
+            _: &Path,
+            key: &str,
+            _: &Snapshot,
+            to: &Snapshot,
+        ) -> Result<(), String> {
+            if self.refuse_updates {
+                return Err("offline".to_string());
+            }
+            *self.updates.lock().unwrap() += 1;
+            let mut issues = self.issues.lock().unwrap();
+            issues.iter_mut().find(|r| r.key == key).unwrap().snapshot = to.clone();
+            Ok(())
         }
     }
 }

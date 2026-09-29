@@ -584,7 +584,11 @@ says so.** `onehand_core::connector::Connector` is the trait — account, whethe
 issues, labels, comments, default branch, pull request — and `plugins/builtin/connector-github` is the
 one implementation, where `gh` is the whole API layer. `connector::serving` hands a project to the
 first connector whose `serves_blocking` accepts it (GitHub reads `origin` locally before any call),
-and each connector's `account_blocking` says who it acts as.
+and each connector's `account_blocking` says who it acts as. A run's fetch is the connector's too
+(`Connector::fetch_blocking`, plain `git fetch` by default): GitHub retries a failed one over HTTPS
+with `gh`'s own sign-in when `origin` is an ssh remote (the HTTPS URL is built from `origin` itself,
+alias resolved, never from `gh`'s default repository), since an ssh remote often cannot authenticate
+from an app opened off the desktop while `gh` is already signed in. Only the fetch — the agent's own push still uses `origin`.
 **An issue lives on the forge or in onehand** (`unattended::Tracker::Forge` / `Local`, the latter the
 project's Issues tab), and a run carries both where its issue lives and the forge its work goes to,
 because the two come apart. The project's own issues are searched first. A local issue on a project
@@ -593,7 +597,17 @@ the forge's). A project **no connector serves** is still worked on its own issue
 branch checked out, told to commit and not push, judged by its commits past the start
 (`unattended::Verdict`, `worktree::commits_since_blocking`). The outcome is a comment on the forge or
 a note on the local issue. What refuses a project is nothing to work (no forge, no storage) or not
-being a repository.
+being a repository. **A project whose issues are kept in step with its forge is searched through the
+sync and only there** (`Tracker::Synced`), so no issue is found twice: each search syncs first, a
+claim takes the label off locally and the sync takes it off the forge, and every note is also left
+as a comment on the forge's issue. The run's pull request references the forge's number, never
+onehand's. **An imported issue is taken only if the forge says the user wrote it** — the same rule
+the forge's own search keeps, because an issue's body goes into the prompt word for word and anybody
+with triage rights can label an issue anybody wrote; the forge is asked since only it knows the
+author. **An issue brought in from a forge is never run as the user's own by any other route**
+(`LocalIssue::imported_from`, kept after the link goes): `Tracker::Local` takes only issues
+`written_here`, so turning sync off, a forge unreachable for one tick, or a link lost cannot turn
+somebody else's text into a prompt.
 What either finds is kept per project (`Unattended::problems`) and shown as the pill in the warning
 ink with the reason on hover — never only on stderr, since a switch that is on while nothing can
 happen looks exactly like one that is working. **A config that stops every run** (empty label,
@@ -613,7 +627,9 @@ branches a worktree off `origin/<default>` and mints a session there. **Neither 
 screen**: `ChatPane::open_unshown` connects without showing, and the worktree's root is
 `ProjectRoot::transient`, which `to_config` never writes. One prompt, one turn. The pull request the forge
 finds — or, with no forge, the commits on the branch — is the verdict, on every ending. A parked ask is cancelled, never answered — unless the user is
-reading that conversation, in which case the run is **taken over**. The same happens the moment
+reading that conversation, or picked the run by hand, in which case the run is **taken over** and
+the card stays up, announced like any other. A picked run handed over while nobody was reading it tells the
+issue the question it stopped on (`Ending::TakenOver { asked }`). The same happens the moment
 anybody else puts a prompt in. Taking over clears `transient` and saves. Teardown is
 `Shell::forget_root`, never `remove_root`, because that one re-shows the active session and takes the
 caret with it. The rules that decide are core's (`onehand_core::unattended`); the calls are the connector's.
@@ -901,8 +917,15 @@ see the rail, below.
   workspace key). A linked issue carries a `Link` whose `base` is the snapshot both sides last agreed
   on, and a sync is a **three-way merge per field** against it: title, description and state take the
   side that changed, a field both sides changed differently is a **conflict** that moves nothing until
-  a person picks *Keep mine* or *Take GitHub's* (both just reset `base` to the forge's side and let
-  the next sync do the rest), and labels merge as a set and never conflict. **In and out are not
+  a person picks *Keep mine* or *Take GitHub's* (both reset `base` to the forge's side and let the
+  next sync do the rest; taking the forge's takes only the fields in dispute, so a change here that
+  nobody disagreed with is still sent), and labels merge as a set, compared without order, and never
+  conflict. **A linked issue is followed after it closes**: the forge lists every issue changed since
+  the last sync (`Issues::last_synced`, asked from a day earlier since its search is by day), so a
+  closed issue edited on either side still crosses. The open list and the changed list are cut at
+  the cap separately; where the changed one is cut or there is no sync point yet (a file from before
+  it existed), every linked closed issue is asked about one by one instead, so a forge edit is never
+  assumed away. The point moves on after any sync in which nothing failed to be asked. **In and out are not
   symmetric, by decision**: every open issue on the forge is imported (capped at `SYNC_CAP`, the cut
   said), while an issue written here goes nowhere until *Publish to GitHub* — a draft that published
   itself on a timer is one nobody could write. A push that fails leaves `base` alone so the change is
@@ -910,7 +933,9 @@ see the rail, below.
   Forge line endings are normalized first, or every sync would see an edit nobody made. It runs when
   the file is read (at most once a minute), after every change made here, every five minutes on the
   project on screen, and on *Sync now*; the whole sync holds the issue file's lock across the forge's
-  calls, so an edit made meanwhile waits for it.
+  calls, so an edit made meanwhile waits for it; an edit saved while a sync runs sets a flag that runs
+  one more when it lands. Every write moves `Issues::revision` on, and the mode keeps whichever copy
+  is newer, since two landings can reach the screen out of order.
 
 State is per project root, held by the mode that works on it, so switching roots swaps the whole
 thing.

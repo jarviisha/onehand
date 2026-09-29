@@ -141,6 +141,15 @@ verdict is the commits past that start. What refuses a project is having nothing
 to work — no forge and a workspace that keeps no issues — or not being a git
 repository.
 
+**A synced project is searched through the sync, and only there.** When a
+project's issues are kept in step with its forge (the Issues tab's sync bar), a
+run looks at the project's own issues alone — the forge's are already among
+them — syncing first so a label added on the forge is seen. The claim takes the
+label off here and the sync takes it off the forge; every note is also a comment
+on the forge's issue; the pull request references the forge's number. An issue
+brought in from the forge is taken only if the forge says the user wrote it,
+the rule the forge's own search keeps.
+
 **Said when the forge cannot be reached.** A project is served by GitHub when
 its `origin` is on github.com. That is read locally, before anything asks
 GitHub, so a project somewhere else costs nothing per tick. An ssh remote is
@@ -259,8 +268,12 @@ a deliberate one, not a list of whatever was once approved by hand.
    already there**: if the ask parks while the user is reading that very
    conversation — `Attention::Reading`, the rule that already decides whether a
    parked ask goes to the desktop — the run is taken over (rule 7) instead of
-   cancelled, and the ask stays up for them. "Never answered" means never
-   answered *by the run*; a person looking at the card is the person it asks.
+   cancelled, and the ask stays up for them. **A run picked by hand is taken
+   over the same way whether or not anybody is looking**: the person who picked
+   it asked for it moments ago and is near, so the card stays up and is announced
+   like any other, where cancelling would throw the run away over a click they
+   were about to make. "Never answered" means never answered *by the run*; a
+   person looking at the card, or who asked for the run, is the person it asks.
 2. **Never the user's checkout.** Every run is a fresh `git worktree` beside the
    repository, on a branch of its own. An agent writing to the tree somebody is
    working in, while they are working in it, is not a risk worth the ten lines
@@ -348,6 +361,16 @@ commit of that branch, which is a PR nobody can review and nobody asked for.
 `base` key in the config is still not added: the default branch is the answer
 the repository already gives.
 
+The fetch is the connector's (`Connector::fetch_blocking`). GitHub's retries a
+failed fetch over HTTPS with `gh`'s own sign-in when `origin` is an ssh remote:
+an app opened from the desktop often has no ssh agent to reach while `gh` is
+already signed in. The HTTPS URL is built from `origin` itself, an ssh alias
+resolved through `ssh -G`, never from `gh`'s default repository, which on a fork
+can be upstream. The retry is gated on the remote and not on the kind of
+failure — telling an auth failure from a dead network means matching git's
+wording — so a network that is down costs both fetches' time. Only the fetch
+falls back; the agent's own push still goes to `origin`.
+
 ## Disk
 
 Each worktree is a cold build, and the worktrees are kept on purpose (see
@@ -402,6 +425,8 @@ LinkLost        → "The agent stopped answering; there is no pull request on <b
 Closed          → "The run's session was closed before it finished; there is no pull request on <branch>."
 TimedOut        → "No pull request after <timeout>; the run was cancelled."
 TakenOver       → "Taken over by hand; the run stopped watching <branch>."
+TakenOver(q)    → "Handed over on a decision; the run stopped watching <branch>. <q>"
+                  (a picked run whose question parked while nobody was reading it)
 Failed(why)     → "onehand could not start the run: <why>"
 ```
 
@@ -446,7 +471,8 @@ Answering a card is only a take-over through the reading exception: a card
 nobody is looking at is cancelled on the spot, so there is never an answer to
 see.
 
-**A card a run is about to cancel is not announced.** The pane would otherwise
+**A card a run is about to cancel is not announced** (a run the search found;
+a picked run's card is left up, so it is). The pane would otherwise
 send a desktop notification for a parked ask nobody is looking at, which is
 every ask a run sees — pointing somebody at a question that is gone by the time
 they arrive.

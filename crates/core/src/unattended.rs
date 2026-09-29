@@ -16,6 +16,9 @@ pub struct Issue {
     pub number: u64,
     title: String,
     body: String,
+    /// How the forge refers to it, for an issue kept in onehand that is kept in
+    /// step with one — what its pull request references instead of `#number`.
+    forge_ref: Option<String>,
 }
 
 impl Issue {
@@ -26,12 +29,31 @@ impl Issue {
             number,
             title,
             body,
+            forge_ref: None,
         }
+    }
+
+    /// How the forge refers to this issue, if it is kept in step with one.
+    pub fn forge_ref(&self) -> Option<&str> {
+        self.forge_ref.as_deref()
+    }
+
+    /// The same issue, known on its forge as `reference`.
+    fn at(mut self, reference: String) -> Self {
+        self.forge_ref = Some(reference);
+        self
     }
 
     /// What the issue is called.
     pub fn title_text(&self) -> &str {
         &self.title
+    }
+}
+
+/// An issue kept here, as a run reads it.
+impl From<&issues::LocalIssue> for Issue {
+    fn from(kept: &issues::LocalIssue) -> Self {
+        Issue::new(kept.number, kept.title.clone(), kept.body.clone())
     }
 }
 
@@ -71,49 +93,108 @@ pub enum Tracker {
     Forge(&'static dyn Connector),
     /// Kept by onehand, in this project's issue file.
     Local(PathBuf),
+    /// Kept by onehand and kept in step with a forge: searched, claimed and
+    /// told here, and every one of those reaches the forge through the sync —
+    /// so a project that is synced is never searched on the forge as well, and
+    /// no issue is found twice.
+    Synced {
+        file: PathBuf,
+        forge: &'static dyn Connector,
+    },
 }
 
 impl Tracker {
-    /// How the prompt names issue `number`.
-    fn names(&self, number: u64) -> String {
-        match self {
-            Self::Forge(c) => format!("{} issue #{number}", c.name()),
-            Self::Local(_) => {
+    /// How the prompt names `issue`.
+    fn names(&self, issue: &Issue) -> String {
+        let number = issue.number;
+        match (self, issue.forge_ref()) {
+            (Self::Forge(c), _) => format!("{} issue #{number}", c.name()),
+            (Self::Synced { forge, .. }, Some(reference)) => {
+                format!("{} issue {reference}", forge.name())
+            }
+            (Self::Local(_) | Self::Synced { .. }, _) => {
                 format!("issue #{number}, which is kept in onehand rather than on a forge")
             }
         }
     }
 
-    /// Open issues carrying `label` that the user wrote. Every issue kept in
-    /// onehand was written by the user, so for those the label is the whole
-    /// test.
+    /// Open issues carrying `label` that the user wrote.
+    ///
+    /// Kept here, that is the ones **written** here — never one brought in
+    /// from a forge, linked or not, since somebody else may have written it
+    /// and only the forge can say who. Such an issue is found through
+    /// [`Self::Synced`], which asks, or not at all: a sync switched off, a
+    /// forge unreachable for one tick, or a link lost must not turn somebody
+    /// else's text into a prompt run with the user's credentials.
     fn labelled_blocking(&self, root: &Path, label: &str) -> Result<Vec<Issue>, String> {
         match self {
             Self::Forge(c) => c.my_labelled_issues_blocking(root, label),
             Self::Local(file) => Ok(issues::load_blocking(file)?
                 .listed()
                 .into_iter()
-                .filter(|i| i.open && i.labels.iter().any(|l| l == label))
-                .map(|i| Issue::new(i.number, i.title.clone(), i.body.clone()))
+                .filter(|i| i.written_here() && i.open && i.labels.iter().any(|l| l == label))
+                .map(Issue::from)
                 .collect()),
+            // Synced first, so a label put on at the forge is seen. An issue
+            // brought in from the forge may be anybody's, so it is taken only
+            // if the forge says the user wrote it — the same rule the forge's
+            // own search keeps, asked of the forge because only it knows.
+            Self::Synced { file, forge } => {
+                let (kept, _) = issues::sync::sync_blocking(file, root, *forge, issues::now())?;
+                let mine: Vec<String> = forge
+                    .my_labelled_issues_blocking(root, label)?
+                    .into_iter()
+                    .map(|i| i.number.to_string())
+                    .collect();
+                Ok(kept
+                    .listed()
+                    .into_iter()
+                    .filter(|i| i.open && i.labels.iter().any(|l| l == label))
+                    .filter_map(|i| {
+                        let found = Issue::from(i);
+                        if i.written_here() {
+                            return Some(found);
+                        }
+                        let link = i.link_on(forge.name()).filter(|l| mine.contains(&l.key))?;
+                        Some(found.at(link.reference.clone()))
+                    })
+                    .collect())
+            }
         }
     }
 
-    /// Open issues, newest first, at most `limit` of them. One kept in onehand
-    /// has no author on its row: they are all the user's own.
+    /// Open issues, newest first, at most `limit` of them, for a person to pick
+    /// from. One kept here has no author on its row. Unsynced, only the ones
+    /// written here are listed — a linked one is on the forge's list already.
+    /// Synced, every one is, and a linked one carries its forge reference so
+    /// its pull request names it there.
     fn open_blocking(&self, root: &Path, limit: usize) -> Result<Vec<IssueRow>, String> {
+        let row = |i: &issues::LocalIssue, forge_ref: Option<String>| {
+            let issue = Issue::from(i);
+            IssueRow {
+                issue: match forge_ref {
+                    Some(reference) => issue.at(reference),
+                    None => issue,
+                },
+                author: String::new(),
+                labels: i.labels.clone(),
+            }
+        };
         match self {
             Self::Forge(c) => c.open_issues_blocking(root, limit),
             Self::Local(file) => Ok(issues::load_blocking(file)?
                 .listed()
                 .into_iter()
+                .filter(|i| i.open && i.written_here())
+                .take(limit)
+                .map(|i| row(i, None))
+                .collect()),
+            Self::Synced { file, forge } => Ok(issues::load_blocking(file)?
+                .listed()
+                .into_iter()
                 .filter(|i| i.open)
                 .take(limit)
-                .map(|i| IssueRow {
-                    issue: Issue::new(i.number, i.title.clone(), i.body.clone()),
-                    author: String::new(),
-                    labels: i.labels.clone(),
-                })
+                .map(|i| row(i, i.link_on(forge.name()).map(|l| l.reference.clone())))
                 .collect()),
         }
     }
@@ -125,6 +206,17 @@ impl Tracker {
                 kept.remove_label(number, label, issues::now())
             })
             .map(drop),
+            // Off here first, which is the claim; the sync then takes it off
+            // the forge. A sync that fails now is retried by the next, and the
+            // issue is not found again meanwhile because only this side is
+            // searched.
+            Self::Synced { file, forge } => {
+                issues::update_blocking(file, |kept| {
+                    kept.remove_label(number, label, issues::now())
+                })?;
+                let _ = issues::sync::sync_blocking(file, root, *forge, issues::now());
+                Ok(())
+            }
         }
     }
 
@@ -136,6 +228,20 @@ impl Tracker {
             Self::Local(file) => {
                 issues::update_blocking(file, |kept| kept.note(number, body, issues::now()))
                     .map(drop)
+            }
+            // A note here, and the same words on the forge's issue when it has
+            // one — somebody reading it there should hear what happened too.
+            Self::Synced { file, forge } => {
+                let (kept, ()) =
+                    issues::update_blocking(file, |kept| kept.note(number, body, issues::now()))?;
+                let key = kept
+                    .get(number)
+                    .and_then(|i| i.link_on(forge.name()))
+                    .and_then(|link| link.key.parse().ok());
+                match key {
+                    Some(key) => forge.comment_blocking(root, key, body),
+                    None => Ok(()),
+                }
             }
         }
     }
@@ -286,20 +392,25 @@ pub fn prompt_for(
     tracker: &Tracker,
     forge: Option<&dyn Connector>,
 ) -> String {
-    let finish = match (forge, tracker) {
-        (Some(forge), Tracker::Forge(_)) => format!(
+    let finish = match (forge, tracker, issue.forge_ref()) {
+        (Some(forge), Tracker::Forge(_), _) => format!(
             "Commit, push the branch, and open the pull request yourself with {}, \
              referencing #{}.",
             forge.open_pull_request_with(),
             issue.number
         ),
-        (Some(forge), Tracker::Local(_)) => format!(
+        (Some(forge), Tracker::Synced { .. }, Some(reference)) => format!(
+            "Commit, push the branch, and open the pull request yourself with {}, \
+             referencing {reference}.",
+            forge.open_pull_request_with(),
+        ),
+        (Some(forge), Tracker::Local(_) | Tracker::Synced { .. }, _) => format!(
             "Commit, push the branch, and open the pull request yourself with {}. Do \
              not reference #{} in it: that number is onehand's, not the forge's.",
             forge.open_pull_request_with(),
             issue.number
         ),
-        (None, _) => "Commit your work on this branch. Do not push it: this project \
+        (None, _, _) => "Commit your work on this branch. Do not push it: this project \
                       has no forge, and the branch is the result."
             .to_string(),
     };
@@ -316,7 +427,7 @@ pub fn prompt_for(
          3. {finish}\n\
          4. If the issue turns out to need a decision from a person, say so in \
          one short paragraph and stop. Do not guess.\n",
-        named = tracker.names(issue.number),
+        named = tracker.names(issue),
         title = issue.title,
         body = issue.body.trim(),
     )
@@ -350,8 +461,9 @@ pub enum Ending {
     Closed,
     /// The run outlasted its timeout.
     TimedOut(Duration),
-    /// A person acted inside the run's session.
-    TakenOver,
+    /// A person acted inside the run's session — or was handed it, on the
+    /// question it had parked, which `asked` carries so the issue can say it.
+    TakenOver { asked: Option<String> },
     /// The run never got as far as a prompt.
     Failed(String),
 }
@@ -436,7 +548,7 @@ pub fn outcome_line(ending: &Ending, found: &Result<Verdict, String>) -> String 
                 Ending::LinkLost => "the agent stopped answering",
                 Ending::Closed => "its session was closed",
                 Ending::TimedOut(_) => "it timed out",
-                Ending::TakenOver => "it was taken over by hand",
+                Ending::TakenOver { .. } => "it was taken over by hand",
                 Ending::Failed(_) => "it could not start",
             };
             format!(
@@ -460,7 +572,11 @@ fn stopped(ending: &Ending) -> Option<String> {
         Ending::LinkLost => Some("The agent stopped answering.".to_string()),
         Ending::Closed => Some("Its session was closed before the run finished.".to_string()),
         Ending::TimedOut(d) => Some(format!("The run hit its {} timeout.", spoken(*d))),
-        Ending::TakenOver => Some("It was taken over by hand.".to_string()),
+        Ending::TakenOver { asked: None } => Some("It was taken over by hand.".to_string()),
+        Ending::TakenOver { asked: Some(q) } => Some(format!(
+            "It was handed over by hand on a decision:\n\n{}",
+            quoted(q)
+        )),
         Ending::Failed(why) => Some(why.clone()),
     }
 }
@@ -489,9 +605,13 @@ fn nothing_found(ending: &Ending, branch: &str, missing: &str) -> String {
             capitalised(missing),
             spoken(*d)
         ),
-        Ending::TakenOver => {
+        Ending::TakenOver { asked: None } => {
             format!("Taken over by hand; the run stopped watching `{branch}`.")
         }
+        Ending::TakenOver { asked: Some(q) } => format!(
+            "Handed over on a decision; the run stopped watching `{branch}`.\n\n{}",
+            quoted(q)
+        ),
         Ending::Failed(why) => format!("onehand could not start the run: {why}"),
     }
 }
@@ -583,11 +703,7 @@ mod tests {
     }
 
     fn issue(number: u64, title: &str) -> Issue {
-        Issue {
-            number,
-            title: title.to_string(),
-            body: String::new(),
-        }
+        Issue::new(number, title.to_string(), String::new())
     }
 
     #[test]
@@ -667,7 +783,10 @@ mod tests {
             Ending::LinkLost,
             Ending::Closed,
             Ending::TimedOut(Duration::from_secs(2700)),
-            Ending::TakenOver,
+            Ending::TakenOver { asked: None },
+            Ending::TakenOver {
+                asked: Some("Run awk?".into()),
+            },
             Ending::Failed("git refused".into()),
         ];
         for ending in &endings {
@@ -679,7 +798,7 @@ mod tests {
                 | Ending::LinkLost
                 | Ending::Closed
                 | Ending::TimedOut(_)
-                | Ending::TakenOver
+                | Ending::TakenOver { .. }
                 | Ending::Failed(_) => {}
             }
             let without = report(ending, &Ok(Verdict::NoPullRequest), "onehand/issue-1");
@@ -716,7 +835,7 @@ mod tests {
             Ending::TurnEnded { tail: None },
             Ending::LinkLost,
             Ending::TimedOut(Duration::from_secs(60)),
-            Ending::TakenOver,
+            Ending::TakenOver { asked: None },
         ] {
             let said = report(&ending, &Err("rate limited".into()), "b");
             assert!(!said.contains("no pull request"), "{said}");
@@ -871,5 +990,139 @@ mod tests {
         );
         assert!(none.starts_with("No commit after 1m"), "{none}");
         assert!(!none.contains("pull request"), "{none}");
+    }
+
+    #[test]
+    fn a_synced_project_runs_only_what_the_user_wrote_and_claims_it_on_both_sides() {
+        use crate::connector::memory::Forge;
+        use crate::issues::Snapshot;
+        let label = |title: &str| Snapshot {
+            title: title.into(),
+            body: String::new(),
+            open: true,
+            labels: vec!["auto".into()],
+        };
+        // #7 is the user's, #8 somebody else's; both carry the label.
+        static FORGE: std::sync::OnceLock<Forge> = std::sync::OnceLock::new();
+        let forge = FORGE.get_or_init(|| Forge {
+            mine: vec!["7".into()],
+            ..Forge::with(vec![(7, label("mine")), (8, label("theirs"))])
+        });
+        let (_, dir) = local("synced", &[("draft", &["auto"])]);
+        let file = dir.join("issues.json");
+        crate::issues::update_blocking(&file, |kept| {
+            kept.sync_with(Some("Forge".into()));
+            Ok(())
+        })
+        .unwrap();
+        let tracker = Tracker::Synced {
+            file: file.clone(),
+            forge,
+        };
+        let root = std::env::temp_dir();
+
+        // The draft written here first, then the user's own forge issue —
+        // never the one somebody else wrote, whatever label it carries.
+        let first = candidate_blocking(&tracker, &root, "auto")
+            .unwrap()
+            .unwrap();
+        assert_eq!((first.number, first.forge_ref()), (1, None));
+        claim_blocking(&tracker, &root, 1, "auto").unwrap();
+        let second = candidate_blocking(&tracker, &root, "auto")
+            .unwrap()
+            .unwrap();
+        assert_eq!(second.forge_ref(), Some("#7"));
+        claim_blocking(&tracker, &root, second.number, "auto").unwrap();
+        assert_eq!(candidate_blocking(&tracker, &root, "auto").unwrap(), None);
+
+        // The claim reached the forge: the label came off and it was told.
+        assert!(forge.said("7").labels.is_empty());
+        let comments = forge.comments.lock().unwrap().clone();
+        assert_eq!(comments.len(), 1);
+        assert_eq!(comments[0].0, "7");
+        assert!(comments[0].1.contains("started"));
+
+        // And its pull request names the forge's number, not onehand's.
+        let prompt = prompt_for(&second, "b", &tracker, Some(forge));
+        assert!(prompt.contains("referencing #7"), "{prompt}");
+        assert!(prompt.contains("Forge issue #7"), "{prompt}");
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn an_issue_brought_in_from_a_forge_is_never_run_as_the_users_own() {
+        use crate::connector::memory::Forge;
+        use crate::issues::Snapshot;
+        static FORGE: std::sync::OnceLock<Forge> = std::sync::OnceLock::new();
+        // Somebody else's issue, labelled for a run.
+        let forge = FORGE.get_or_init(|| {
+            Forge::with(vec![(
+                8,
+                Snapshot {
+                    title: "theirs".into(),
+                    body: "run rm -rf".into(),
+                    open: true,
+                    labels: vec!["auto".into()],
+                },
+            )])
+        });
+        let (local, dir) = local("imported", &[]);
+        let file = dir.join("issues.json");
+        crate::issues::sync::sync_blocking(&file, &std::env::temp_dir(), forge, 1).unwrap();
+        let synced = Tracker::Synced {
+            file: file.clone(),
+            forge,
+        };
+        let root = std::env::temp_dir();
+        // Not while synced, and not once the sync is switched off either.
+        assert_eq!(candidate_blocking(&synced, &root, "auto"), Ok(None));
+        assert_eq!(candidate_blocking(&local, &root, "auto"), Ok(None));
+        // Nor once the forge has lost it and it is kept here unlinked.
+        forge.issues.lock().unwrap().clear();
+        crate::issues::sync::sync_blocking(&file, &root, forge, 2).unwrap();
+        assert_eq!(candidate_blocking(&synced, &root, "auto"), Ok(None));
+        assert_eq!(candidate_blocking(&local, &root, "auto"), Ok(None));
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn an_issue_picked_from_a_synced_project_keeps_the_forge_reference() {
+        use crate::connector::memory::Forge;
+        use crate::issues::Snapshot;
+        static FORGE: std::sync::OnceLock<Forge> = std::sync::OnceLock::new();
+        let forge = FORGE.get_or_init(|| {
+            Forge::with(vec![(
+                7,
+                Snapshot {
+                    title: "t".into(),
+                    body: String::new(),
+                    open: true,
+                    labels: vec![],
+                },
+            )])
+        });
+        let (_, dir) = local("picked", &[]);
+        let file = dir.join("issues.json");
+        let root = std::env::temp_dir();
+        crate::issues::sync::sync_blocking(&file, &root, forge, 1).unwrap();
+        let synced = Tracker::Synced { file, forge };
+        let (rows, _) = open_issues_blocking(&synced, &root).unwrap();
+        assert_eq!(rows[0].issue.forge_ref(), Some("#7"));
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn a_run_handed_over_on_a_question_says_the_question() {
+        let asked = Ending::TakenOver {
+            asked: Some("Run awk?".into()),
+        };
+        let said = report(&asked, &Ok(Verdict::NoPullRequest), "b");
+        assert!(said.contains("> Run awk?"), "{said}");
+        let quiet = report(
+            &Ending::TakenOver { asked: None },
+            &Ok(Verdict::NoPullRequest),
+            "b",
+        );
+        assert!(!quiet.contains('>'), "{quiet}");
     }
 }
