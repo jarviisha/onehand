@@ -385,7 +385,7 @@ fn validate(overrides: &Overrides) -> Result<(), String> {
     Ok(())
 }
 
-/// A released physical key ends the destructive-command latch even when
+/// A released physical key ends the once-per-press latch even when
 /// modifiers were released first (the release can have different modifiers).
 pub fn released(id: &str, key: &str, overrides: &Overrides) -> bool {
     COMMANDS
@@ -708,6 +708,14 @@ mod tests {
         assert_eq!(action_at(&map, "ctrl-s", &["Shell", "Terminal"]), None);
         assert_eq!(
             action_at(&map, "ctrl-shift-w", &["Shell", "Dialog", "Input"]),
+            None
+        );
+        assert_eq!(
+            action_at(&map, "ctrl-shift-o", &["Shell", "Terminal"]),
+            Some(NewSession.name().into())
+        );
+        assert_eq!(
+            action_at(&map, "ctrl-shift-o", &["Shell", "Dialog", "Input"]),
             None
         );
         assert_eq!(

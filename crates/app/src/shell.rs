@@ -2239,7 +2239,13 @@ impl Shell {
             return None;
         };
         let uid = cx.update_global::<Shared, _>(|shared, _| shared.next_uid());
-        self.window.workspace.add_session(spec, uid)?;
+        if self.window.workspace.add_session(spec, uid).is_none() {
+            window.push_notification(
+                Notification::warning("Add a project before starting a session"),
+                cx,
+            );
+            return None;
+        }
         if let Some(archive) = archive {
             self.chat
                 .update(cx, |pane, _| pane.resume_next(uid, archive));
@@ -3585,8 +3591,15 @@ impl Render for Shell {
             .on_action(cx.listener(|shell: &mut Self, _: &NewSession, window, cx| {
                 // Once per press: key repeat on a held chord would otherwise
                 // start an agent per repeat.
-                if shell.held_commands.insert(crate::keymap::NEW_SESSION) {
-                    shell.new_session(window, cx);
+                // The caret goes to the new composer: a key pressed from the
+                // terminal is asking to type to the agent it just started.
+                if shell.held_commands.insert(crate::keymap::NEW_SESSION)
+                    && shell.spawn_session(0, None, window, cx).is_some()
+                {
+                    shell.last_panel = FocusedPanel::Chat;
+                    shell
+                        .chat
+                        .update(cx, |pane, cx| pane.focus_composer(window, cx));
                 }
             }))
             .on_action(
