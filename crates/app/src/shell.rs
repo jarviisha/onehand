@@ -34,6 +34,8 @@ gpui::actions!(
         ToggleRail,
         ToggleMarkdown,
         ToggleWorkbench,
+        ToggleWorkbenchVisibility,
+        OpenSettings,
         SaveFile,
         ToggleTerminal,
         OpenNeovim,
@@ -99,148 +101,9 @@ const APP_ID: &str = "onehand";
 /// exists for the project the user *stops* on.
 const WARM_DELAY: std::time::Duration = std::time::Duration::from_millis(500);
 
-/// App commands occupy an exact `Ctrl+Shift` namespace so plain Ctrl keys stay
-/// usable inside the embedded terminal and Neovim later.
-///
-/// **This is where the GPUI port pays off.** GPUI matches key bindings against
-/// the focus context stack *before* it delivers the key to whatever is focused
-/// (`Window::dispatch_key_event`: bindings first, `finish_dispatch_key_event`
-/// -- which runs `on_key_down` -- only if none matched). So a binding declared
-/// here reaches the app even while a PTY holds focus, and the terminal simply
-/// never sees that keystroke. Nothing in `vendor/gpui-terminal` knows what the
-/// app's keymap is, and nothing there has to: a terminal widget that had to be
-/// told which combinations to drop would need editing every time this list
-/// grows.
-///
-/// Two deliberate exceptions leave the namespace. `Ctrl+S`, bound
-/// `Shell && !Terminal`, because the PTY has a real claim on it -- a `!`
-/// predicate matches only when that context appears nowhere in the stack,
-/// which is exactly "focus is not inside the terminal". And the terminal
-/// toggle, which is on plain ``Ctrl+` `` because the shifted form is a key no
-/// Linux keystroke can ever spell (the reason is at the binding itself).
-///
-/// The same rule cuts the other way, and this is also where a key is taken
-/// *back* from a binding the app never made: a `NoAction` binding at a deeper
-/// context suppresses the shallower one, leaving the key to reach whatever is
-/// focused. Tab inside the terminal is the one case (the reason is at the
-/// binding itself).
+/// Install the registry's defaults and saved overrides after component bindings.
 pub fn init_keymap(cx: &mut App) {
-    cx.bind_keys([
-        gpui::KeyBinding::new("ctrl-shift-b", ToggleRail, None),
-        // The tree and the buffers are one mode, so they are one key. `E` and
-        // not `O`: it spells both halves of what it opens, and it is the one of
-        // the pair that was reached for to *find* a file, which is where this
-        // panel is opened from.
-        gpui::KeyBinding::new("ctrl-shift-e", ToggleWorkbench, None),
-        // The document view, beside the file tree it is the reading half of.
-        gpui::KeyBinding::new("ctrl-shift-m", ToggleMarkdown, None),
-        // The outer terminal, and the one app command outside the `Ctrl+Shift`
-        // namespace by necessity rather than by preference.
-        //
-        // ``Ctrl+Shift+` `` is a keystroke that cannot be typed. gpui names a
-        // key by the keysym the layout produces *with the modifiers already
-        // applied*, so holding shift over the backtick key yields `asciitilde`
-        // -- and it then drops shift from the modifiers, because a symbol has
-        // no upper case for shift to be describing. The keystroke that arrives
-        // is `ctrl-~`; nothing ever produces `ctrl-shift-\``, so the binding
-        // matched nothing and the terminal had no key at all. Binding `ctrl-~`
-        // would spell it, but the tilde is a shifted character on some layouts
-        // and an unshifted one on others, so the key that opened the terminal
-        // would depend on the keyboard.
-        //
-        // The cost is that a PTY never sees plain ``Ctrl+` ``. That is the
-        // right trade: this is the key that *closes* the terminal too, so it
-        // has to reach the app from inside it, and few shells read it.
-        gpui::KeyBinding::new("ctrl-`", ToggleTerminal, None),
-        // Neovim, on the project root, in a tab of that same terminal. It sits
-        // beside the terminal key because it opens the same dock, and it is
-        // inside the namespace because -- unlike the backtick -- `n` is a letter
-        // and the shifted form is a keystroke that can be typed.
-        gpui::KeyBinding::new("ctrl-shift-n", OpenNeovim, None),
-        gpui::KeyBinding::new("ctrl-shift-a", FocusComposer, None),
-        gpui::KeyBinding::new("ctrl-shift-r", RestartSession, None),
-        // Closing a session is the counterpart to restarting one, and sits next
-        // to it in the namespace for that reason.
-        gpui::KeyBinding::new("ctrl-shift-w", CloseSession, None),
-        gpui::KeyBinding::new("ctrl-shift-k", ToggleMaximize, None),
-        // Saving is the one editor gesture nobody will look up, so it stays on
-        // plain Ctrl+S -- everywhere except inside the terminal, where the key
-        // belongs to whatever is running there.
-        gpui::KeyBinding::new("ctrl-s", SaveFile, Some("Shell && !Terminal")),
-        // Tab and Shift+Tab, given back to a focused PTY. The component library
-        // binds both at the window's root view to walk the focus ring, and a
-        // binding there reaches over the terminal exactly the way the app's own
-        // do -- so a shell asking for completion had the caret moved to the next
-        // focusable instead, and `Shift+Tab` walked it backwards. Nothing the
-        // grid does can fix that: bindings are resolved before a key is ever
-        // delivered.
-        //
-        // `NoAction` is the way out. A binding is ranked by how deep in the
-        // focus stack its predicate holds, and the terminal's context is far
-        // below the root's, so this one wins -- and a winning `NoAction`
-        // suppresses the bindings it out-ranks rather than running anything.
-        // With no binding left to match, the key falls through to the grid,
-        // which encodes it (a tab character, and the back-tab sequence for the
-        // shifted form). It is a suppression and not a command: everywhere
-        // outside the terminal, Tab still moves the focus.
-        gpui::KeyBinding::new("tab", gpui::NoAction, Some("Terminal")),
-        gpui::KeyBinding::new("shift-tab", gpui::NoAction, Some("Terminal")),
-        // Zoom is app-global on purpose, terminal included: `Ctrl+=` in a PTY
-        // is not a key anything reads, and a terminal that could not be made
-        // readable would be the one panel that needs it most. The binding
-        // simply wins; the PTY never sees these.
-        gpui::KeyBinding::new("ctrl-=", ZoomIn, None),
-        // The same physical key on layouts that report it shifted.
-        gpui::KeyBinding::new("ctrl-+", ZoomIn, None),
-        gpui::KeyBinding::new("ctrl--", ZoomOut, None),
-        gpui::KeyBinding::new("ctrl-0", ZoomReset, None),
-        // Session switching stays app-global over a PTY too: these are how the
-        // user leaves a terminal that has their full attention.
-        gpui::KeyBinding::new("ctrl-tab", NextSession, None),
-        gpui::KeyBinding::new("ctrl-shift-tab", PrevSession, None),
-        gpui::KeyBinding::new("ctrl-1", SelectSession { index: 0 }, None),
-        gpui::KeyBinding::new("ctrl-2", SelectSession { index: 1 }, None),
-        gpui::KeyBinding::new("ctrl-3", SelectSession { index: 2 }, None),
-        gpui::KeyBinding::new("ctrl-4", SelectSession { index: 3 }, None),
-        gpui::KeyBinding::new("ctrl-5", SelectSession { index: 4 }, None),
-        gpui::KeyBinding::new("ctrl-6", SelectSession { index: 5 }, None),
-        gpui::KeyBinding::new("ctrl-7", SelectSession { index: 6 }, None),
-        gpui::KeyBinding::new("ctrl-8", SelectSession { index: 7 }, None),
-        gpui::KeyBinding::new("ctrl-9", SelectSession { index: 8 }, None),
-        // Walking the composer's completion list. The input binds both keys
-        // itself, at the same depth of the focus stack as this predicate
-        // reaches -- `A > B` is scored at the depth of `B` -- so what decides
-        // between them is registration order, and the app's keymap is built
-        // after the library's. The composer answers to `ChatComposer` **only
-        // while a list is open**, so with nothing to walk the keys go back to
-        // moving the caret, which is the whole reason for the narrow predicate.
-        gpui::KeyBinding::new("up", CompletionPrev, Some("ChatComposer > Input")),
-        gpui::KeyBinding::new("down", CompletionNext, Some("ChatComposer > Input")),
-        // Taking the highlighted row, on the key a shell and an editor have
-        // both trained the hand to reach for. It is the same predicate as the
-        // arrows above and for the same reason -- the composer answers to
-        // `ChatComposer` only while a list is open, so this claims Tab for
-        // exactly as long as there is something for it to take. With no list,
-        // the key goes back to walking the focus ring, which is how the
-        // composer's own buttons are reached without a mouse.
-        //
-        // It also settles the same theft the terminal's suppression does: the
-        // component library's focus-ring binding lives at the window's root,
-        // and this predicate holds far deeper in the focus stack, so it wins
-        // rather than watching the caret jump to the next control mid-word.
-        gpui::KeyBinding::new("tab", CompletionAccept, Some("ChatComposer > Input")),
-        // Paste, taken from the input for the same reason and by the same rule
-        // -- except that the composer holds `ChatComposerCard` at all times,
-        // because an image on the clipboard is an attachment whatever else is
-        // going on. Text is handed straight back to the input, so this only
-        // adds a case rather than replacing one.
-        gpui::KeyBinding::new("ctrl-v", PasteHere, Some("ChatComposerCard > Input")),
-        // Stepping the session mode, on the key the agent's own CLI uses for
-        // it. Taken from the input by the same rule as paste above, which costs
-        // Shift+Tab walking the focus ring backwards out of the prompt -- a
-        // move nobody makes mid-message, where changing mode before sending is.
-        gpui::KeyBinding::new("shift-tab", CycleMode, Some("ChatComposerCard > Input")),
-    ]);
+    crate::keymap::init(cx);
 }
 
 /// Which way a zoom command steps.
@@ -470,6 +333,10 @@ pub struct Shell {
     /// one where the appearance, the thing most likely to be looked for, is a
     /// page away.
     settings_page: SettingsPage,
+    settings_open: bool,
+    settings_return_focus: Option<gpui::FocusHandle>,
+    keymap_editor: Entity<crate::keymap::Editor>,
+    held_commands: std::collections::HashSet<&'static str>,
     /// The workspace-rename field.
     workspace_name: Entity<InputState>,
     /// The session whose name is being edited, if any.
@@ -671,34 +538,8 @@ impl Shell {
                     }
                     E::WorkTreeTouched => shell.refresh_worktree(cx),
                     E::ShowRail => shell.show_rail(cx),
-                    // **Open or closed, and never the keys' third state.** A key
-                    // has one binding to serve every case, so it earns the rule
-                    // that an open-but-unfocused panel is focused rather than
-                    // closed -- there is no other gesture to reach it with. A
-                    // button is not in that position: it can see the dock, and
-                    // the caret when it is pressed is almost always in the
-                    // composer the user was typing in, which made the first
-                    // press on an open panel do nothing a presser could see and
-                    // the second one close it. The panels' own hide buttons
-                    // already work this way, and these are the same control
-                    // drawn on the other side of the seam.
-                    //
-                    // Opening still goes through the three-state call, since
-                    // everything it does on the way -- the mode, the shell, the
-                    // caret -- is wanted here too.
-                    //
-                    // The Workbench opens on whichever mode it is already
-                    // carrying, so the button means "show me the Workbench"
-                    // rather than "show me the files": the two keys are how a
-                    // mode is chosen.
-                    E::ToggleWorkbench => {
-                        if shell.dock.read(cx).is_dock_open(DockPlacement::Right, cx) {
-                            shell.hide_workbench(window, cx);
-                        } else {
-                            let mode = shell.workbench.read(cx).mode();
-                            shell.show_workbench(mode, window, cx);
-                        }
-                    }
+                    // The visibility button and its shortcut preserve the selected mode.
+                    E::ToggleWorkbench => shell.toggle_workbench(window, cx),
                     // The dock having a shell in it is the same condition
                     // `show_terminal` guards its own close with, and for the
                     // same reason: an open dock holding nothing is what closing
@@ -841,6 +682,8 @@ impl Shell {
         // should not still be up when they get there.
         cx.observe_window_activation(window, |shell: &mut Self, window, cx| {
             if !window.is_window_active() {
+                shell.held_commands.clear();
+                shell.end_cycle(cx);
                 return;
             }
             shell.chat.update(cx, |pane, cx| pane.mark_active_seen(cx));
@@ -934,6 +777,10 @@ impl Shell {
             rail_split: cx.new(|_| ResizableState::default()),
             agent_draft: AgentDraft::new(window, cx),
             settings_page: SettingsPage::default(),
+            settings_open: false,
+            settings_return_focus: None,
+            keymap_editor: cx.new(|cx| crate::keymap::Editor::new(window, cx)),
+            held_commands: Default::default(),
             workspace_name,
             renaming: None,
             rename_input: cx.new(|cx| {
@@ -2097,7 +1944,7 @@ impl Shell {
 
     /// Walk the active root's sessions in recency order, VSCode-style.
     ///
-    /// The order is snapshotted when the cycle starts and held until `Ctrl` is
+    /// The order is snapshotted when the cycle starts and held until the shortcut's modifiers are
     /// released ([`Self::end_cycle`]). Recomputing it per press would make the
     /// second press walk back to where the first one came from, and the cycle
     /// would ping-pong between two sessions instead of reaching the third.
@@ -2107,7 +1954,11 @@ impl Shell {
             if order.len() < 2 {
                 return;
             }
-            self.tab_cycle = Some(TabCycle { order, pos: 0 });
+            self.tab_cycle = Some(TabCycle {
+                order,
+                pos: 0,
+                modifiers: window.modifiers(),
+            });
         }
         let Some(cycle) = self.tab_cycle.as_mut() else {
             return;
@@ -2130,11 +1981,18 @@ impl Shell {
             self.show_active_session(window, cx);
             cx.notify();
         }
+        if self
+            .tab_cycle
+            .as_ref()
+            .is_some_and(|cycle| !cycle.held(window.modifiers()))
+        {
+            self.end_cycle(cx);
+        }
     }
 
     /// Commit a cycle: where it stopped becomes the most recent session.
     ///
-    /// Fired on `Ctrl` release. Until then nothing about the recency list has
+    /// Fired when the shortcut modifiers are released. Until then nothing about the recency list has
     /// changed, so a cycle the user abandons by pressing on leaves no trace.
     fn end_cycle(&mut self, cx: &mut Context<Self>) {
         if self.tab_cycle.take().is_none() {
@@ -2384,12 +2242,7 @@ impl Shell {
         Some(uid)
     }
 
-    /// Show a Workbench mode, opening the dock if it is closed.
-    ///
-    /// Three-state: closed opens on that mode and takes focus; open elsewhere (another mode, or focus somewhere
-    /// else) switches and takes focus; open, on this mode and already focused
-    /// closes. Closing a panel the user is not looking at is the one outcome
-    /// nobody presses a key for.
+    /// Open and focus a mode. Repeating its shortcut never hides the panel.
     pub fn show_workbench(
         &mut self,
         mode: onehand_plugin_api::PluginId,
@@ -2398,20 +2251,6 @@ impl Shell {
     ) {
         self.last_panel = FocusedPanel::Workbench;
         let open = self.dock.read(cx).is_dock_open(DockPlacement::Right, cx);
-        let showing = self.workbench.read(cx).mode() == mode;
-        let focused = self.workbench.focus_handle(cx).contains_focused(window, cx);
-        if open && showing && focused {
-            // Through the one closing path rather than toggling the dock here.
-            // It had its own copy, and the copy was missing the half that
-            // matters least often and breaks worst: a Workbench blown up to the
-            // whole frame stays blown up when its dock is closed, because the
-            // zoom is the `DockArea`'s and knows nothing about which docks are
-            // open -- so `Ctrl+Shift+K` then `Ctrl+Shift+E` left the panel
-            // filling the window with the rail gone and the caret in a composer
-            // no frame was drawing.
-            self.hide_workbench(window, cx);
-            return;
-        }
         self.workbench
             .update(cx, |panel, cx| panel.set_mode(mode, cx));
         if !open {
@@ -2424,14 +2263,19 @@ impl Shell {
         cx.notify();
     }
 
-    /// Take the Workbench dock off screen: the one closing path, used by the
-    /// strip's button and by the third state of [`Self::show_workbench`].
-    ///
-    /// Not a toggle, which is why `show_workbench` cannot simply call itself:
-    /// the strip's button is drawn only where the panel already shows, while
-    /// that one is three-state and would *focus* the Workbench rather than
-    /// close it whenever the caret was elsewhere.
+    /// Toggle visibility independently of focus, preserving the selected mode.
+    fn toggle_workbench(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.dock.read(cx).is_dock_open(DockPlacement::Right, cx) {
+            self.hide_workbench(window, cx);
+        } else {
+            let mode = self.workbench.read(cx).mode();
+            self.show_workbench(mode, window, cx);
+        }
+    }
+
+    /// Close the dock and recover focus if its focused content disappears.
     fn hide_workbench(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let had_focus = self.workbench.focus_handle(cx).contains_focused(window, cx);
         // A maximized panel cannot be left blown up over a dock that is no
         // longer open, and the way back out of that is the button that just
         // went away with it.
@@ -2449,24 +2293,26 @@ impl Shell {
         // draws none of its content -- so leaving focus there leaves the window
         // pointing at an element no frame contains, which is a window no
         // shortcut reaches.
-        self.chat
-            .update(cx, |pane, cx| pane.reclaim_focus(window, cx));
+        if had_focus {
+            self.last_panel = FocusedPanel::Chat;
+            self.chat
+                .update(cx, |pane, cx| pane.reclaim_focus(window, cx));
+        }
         cx.notify();
     }
 
-    /// The bottom terminal, on the same three states. A shell is spawned on
+    /// Toggle the bottom terminal regardless of focus. A shell is spawned on
     /// first open and never at boot (see [`crate::terminal`]).
     pub fn show_terminal(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.last_panel = FocusedPanel::Terminal;
         let open = self.dock.read(cx).is_dock_open(DockPlacement::Bottom, cx);
-        let focused = self.terminal.focus_handle(cx).contains_focused(window, cx);
         // **An open dock with nothing in it is not a dock to close.** Closing
         // the last tab's ✕ leaves exactly that, and the panel it leaves offers
         // *New terminal* -- so a press here means "open one", which is what
         // falling through does. Closed instead, the one gesture that reaches an
         // empty terminal took it off screen, and the way back up asked for a
         // shell the user had just been offered.
-        if open && focused && self.terminal.read(cx).has_shell() {
+        if open && self.terminal.read(cx).has_shell() {
             self.set_terminal_visible(false, window, cx);
             return;
         }
@@ -2739,7 +2585,7 @@ impl Shell {
                 window.push_notification(Notification::info("Restarting the agent"), cx);
             }
             crate::chat::pane::Restart::Armed => window.push_notification(
-                Notification::warning("A turn is running — press Ctrl+Shift+R again to restart"),
+                Notification::warning("A turn is running — invoke Restart again to confirm"),
                 cx,
             ),
             crate::chat::pane::Restart::Nothing => {}
@@ -2778,6 +2624,28 @@ impl Shell {
 
     pub fn agent_draft(&self) -> &AgentDraft {
         &self.agent_draft
+    }
+
+    pub fn open_settings(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.settings_return_focus = window.focused(cx);
+        self.held_commands.clear();
+        self.settings_open = true;
+        cx.notify();
+    }
+
+    pub fn close_settings(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.settings_open = false;
+        if let Some(focus) = self.settings_return_focus.take() {
+            focus.focus(window, cx);
+        } else {
+            self.chat
+                .update(cx, |pane, cx| pane.reclaim_focus(window, cx));
+        }
+        cx.notify();
+    }
+
+    pub fn keymap_editor(&self) -> Entity<crate::keymap::Editor> {
+        self.keymap_editor.clone()
     }
 
     pub fn settings_page(&self) -> SettingsPage {
@@ -3594,7 +3462,7 @@ impl Render for Shell {
         // is not rendered at all rather than rendered at zero width, so
         // nothing of it can catch a click along the edge.
         let rail = (self.app_maximized.is_none() && !self.rail_hidden)
-            .then(|| crate::rail::rail(self, &self.window, window, cx));
+            .then(|| crate::rail::rail(self, &self.window, cx));
         let dock = div().size_full().child(self.dock.clone());
         // With no rail there is no split to drag, so there is no split: an
         // `h_resizable` holding one panel would draw a handle against the
@@ -3633,6 +3501,24 @@ impl Render for Shell {
             .size_full()
             .v_flex()
             .key_context("Shell")
+            .capture_key_up(
+                cx.listener(|shell: &mut Self, event: &gpui::KeyUpEvent, _, cx| {
+                    let overrides = &Shared::global(cx).keymap;
+                    shell
+                        .held_commands
+                        .retain(|id| !crate::keymap::released(id, &event.keystroke.key, overrides));
+                }),
+            )
+            .on_action(
+                cx.listener(|shell: &mut Self, _: &OpenSettings, window, cx| {
+                    shell.open_settings(window, cx);
+                }),
+            )
+            .on_action(cx.listener(
+                |shell: &mut Self, _: &ToggleWorkbenchVisibility, window, cx| {
+                    shell.toggle_workbench(window, cx);
+                },
+            ))
             .on_action(cx.listener(|shell: &mut Self, _: &ToggleRail, _, cx| {
                 shell.toggle_rail(cx);
             }))
@@ -3669,12 +3555,16 @@ impl Render for Shell {
             )
             .on_action(
                 cx.listener(|shell: &mut Self, _: &RestartSession, window, cx| {
-                    shell.restart_session(window, cx);
+                    if shell.held_commands.insert(crate::keymap::RESTART) {
+                        shell.restart_session(window, cx);
+                    }
                 }),
             )
             .on_action(
                 cx.listener(|shell: &mut Self, _: &CloseSession, window, cx| {
-                    shell.close_active_session(window, cx);
+                    if shell.held_commands.insert(crate::keymap::CLOSE_SESSION) {
+                        shell.close_active_session(window, cx);
+                    }
                 }),
             )
             .on_action(cx.listener(|shell: &mut Self, _: &ZoomIn, window, cx| {
@@ -3706,11 +3596,14 @@ impl Render for Shell {
                     shell.toggle_maximize(window, cx);
                 }),
             )
-            // Releasing Ctrl is what commits a `Ctrl+Tab` cycle, so the walk
-            // has to see modifier changes and not just keys.
+            // Commit on release of the actual shortcut modifiers, including remaps.
             .on_modifiers_changed(cx.listener(
                 |shell: &mut Self, event: &gpui::ModifiersChangedEvent, _, cx| {
-                    if !event.modifiers.control {
+                    if shell
+                        .tab_cycle
+                        .as_ref()
+                        .is_some_and(|cycle| !cycle.held(event.modifiers))
+                    {
                         shell.end_cycle(cx);
                     }
                 },
@@ -3759,6 +3652,10 @@ impl Render for Shell {
                 self.issue_picker
                     .is_some()
                     .then(|| crate::dialogs::pick_issue(self, cx)),
+            )
+            .children(
+                self.settings_open
+                    .then(|| crate::dialogs::settings(window, cx)),
             )
             .children(sheet_layer)
             .children(dialog_layer)
@@ -3879,6 +3776,9 @@ fn open_window(workspace: Workspace, cx: &mut App) {
                     // Workbench, the terminal and the empty chat are about,
                     // which was nothing at all until the first rail click.
                     shell.show_active_session(window, cx);
+                    // The empty project also needs a live focus path, or no
+                    // app shortcut (including Settings) can reach the shell.
+                    shell.chat.focus_handle(cx).focus(window, cx);
                     shell
                 });
                 built = Some(shell.downgrade());
@@ -4097,7 +3997,43 @@ struct TabCycle {
     order: Vec<u64>,
     /// Where in `order` the walk currently is.
     pos: usize,
+    modifiers: gpui::Modifiers,
+}
+
+impl TabCycle {
+    fn held(&self, current: gpui::Modifiers) -> bool {
+        let start = self.modifiers;
+        let any = start.control || start.alt || start.platform || start.function;
+        any && (!start.control || current.control)
+            && (!start.alt || current.alt)
+            && (!start.platform || current.platform)
+            && (!start.function || current.function)
+    }
 }
 
 /// The shell entity type, for callers that need to name it.
 pub type ShellEntity = Entity<Shell>;
+
+#[cfg(test)]
+mod keymap_tests {
+    use super::*;
+
+    #[test]
+    fn session_cycle_ends_when_the_remapped_modifier_is_released() {
+        let modifiers = gpui::Keystroke::parse("alt-tab").unwrap().modifiers;
+        let cycle = TabCycle {
+            order: vec![1, 2, 3],
+            pos: 0,
+            modifiers,
+        };
+        assert!(cycle.held(modifiers));
+        assert!(cycle.held(gpui::Keystroke::parse("alt-shift-tab").unwrap().modifiers));
+        assert!(!cycle.held(gpui::Modifiers::default()));
+        assert!(!cycle.held(gpui::Keystroke::parse("ctrl-tab").unwrap().modifiers));
+        let direct = TabCycle {
+            modifiers: gpui::Modifiers::default(),
+            ..cycle
+        };
+        assert!(!direct.held(gpui::Modifiers::default()));
+    }
+}

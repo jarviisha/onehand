@@ -394,8 +394,8 @@ impl Render for Workbench {
                         false => IconName::Maximize,
                     }))
                     .tooltip(match full {
-                        true => "Back to the dock — Ctrl+Shift+K",
-                        false => "Fill the window — Ctrl+Shift+K",
+                        true => "Back to the dock",
+                        false => "Fill the window",
                     })
                     .on_click(cx.listener(|_: &mut Self, _, _, cx| {
                         cx.emit(WorkbenchEvent::ToggleMaximize);

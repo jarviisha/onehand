@@ -884,8 +884,8 @@ an element tree:
   `:w`.
 - **Switching to the mode does not spawn.** `Ctrl+Shift+N` spawns and then switches, and the empty
   state carries a *Start Neovim* button; a mode strip where one of three buttons launches a process
-  is one nobody can click to look around. The key is three-state like the other two Workbench keys —
-  closing the dock puts the editor aside rather than ending it, since the panel entity outlives the
+  is one nobody can click to look around. The key opens and focuses Neovim; `Ctrl+Shift+J` hides its dock. Hiding
+  puts the editor aside rather than ending it, since the panel entity outlives the
   dock and the PTY, the scrollback and the unsaved buffer are all still there on the next press.
   `nvim` is looked up on `PATH` in the app rather than handed to the PTY to fail on, because a failed
   spawn comes back as "No such file or directory" naming nothing; it is `nvim` and not `$EDITOR`,
@@ -1180,11 +1180,13 @@ centre is the chat, right dock the Workbench, bottom dock the terminal.
   transcript is written at the end of every turn — `Shell::close_session`, also `Ctrl+Shift+W`). The
   session menu is **also** the row's right-click menu, on every row and not just the active one;
   Restart and Export select the session first, so they always act on what is on screen.
-- **Three `Dialog`s have no trigger: renaming a conversation, splitting a project into a
-  worktree, and renaming a branch.** Every other dialog is opened by a control that carries
-  `Dialog::trigger`; these are opened from a menu entry that is gone by the time they appear, so
-  `Shell::renaming` / `Shell::worktree_draft` / `Shell::branch_draft` being `Some` is what puts
-  each on screen and Esc/Cancel/close must all clear it. A conversation rename archives
+- **Four `Dialog`s have no trigger: renaming a conversation, splitting a project into a
+  worktree, renaming a branch, and Settings.** Every other dialog is opened by a control that carries
+  `Dialog::trigger`; the first three are opened from a menu entry that is gone by the time they
+  appear, so `Shell::renaming` / `Shell::worktree_draft` / `Shell::branch_draft` being `Some` is what
+  puts each on screen and Esc/Cancel/close must all clear it. Settings is opened by a key as well as
+  a rail row, so `Shell::settings_open` is its flag, and closing it hands the caret back to where it
+  was (`settings_return_focus`). A conversation rename archives
   immediately rather than at the end of the next turn. **The branch rename is `git branch -m` and
   never `-M`** (`worktree::rename_branch_blocking`): the forced form overwrites a branch already
   carrying the new name and throws away what was on it, while all the user asked for is that this
@@ -1232,8 +1234,8 @@ centre is the chat, right dock the Workbench, bottom dock the terminal.
 - **A project row rolls up its sessions' signals** (`SessionSignal::most_urgent`, same rank as a
   single session's `pick`), so a collapsed project is not silent about an agent waiting or dead
   inside it.
-- **Closing the Workbench goes through one path.** `show_workbench`'s third state calls
-  `Shell::hide_workbench` rather than toggling the dock itself. It had its own copy, and the copy was
+- **Closing the Workbench goes through one path.** `Shell::toggle_workbench` and the panel's own
+  hide button both call `Shell::hide_workbench` rather than toggling the dock themselves. It had its own copy, and the copy was
   missing the half that breaks worst: the app-direction zoom belongs to the `DockArea` and knows
   nothing about which docks are open, so `Ctrl+Shift+K` then `Ctrl+Shift+E` closed the dock and left
   the panel filling the window with the rail gone and the caret in a composer no frame was drawing.
@@ -1288,8 +1290,7 @@ centre is the chat, right dock the Workbench, bottom dock the terminal.
   having no project root, where there is no shell to start and nowhere to start it.
   The panel asks rather than acts (`TerminalPanelEvent::Hide`,
   one variant) because the `DockArea` is the shell's, and it asks to *hide* rather than to toggle —
-  the button is drawn only where the panel already shows, while `Shell::show_terminal` is three-state
-  and would focus the terminal instead of closing it whenever the caret was elsewhere.
+  the button is drawn only where the panel already shows, while `Shell::show_terminal` can open a hidden dock or spawn a shell in an empty one.
   **A tab is named `<shell> <n>`, and numbered only where there is more than one**, composed in the
   panel rather than in `PtyTab::label`: the PTY knows only its program, which is the same word for
   every tab a root has open, so three shells came out three tabs reading `zsh` — while `zsh 1` beside
@@ -1395,7 +1396,7 @@ centre is the chat, right dock the Workbench, bottom dock the terminal.
   labels. A page per scope says it without a sentence, and the appearance page says its own out loud
   because the theme is a global: two windows cannot be drawn in two modes.
   Three things that shape carries. **The page is `Shell::settings_page`, not dialog state**: a
-  triggered dialog is rebuilt from its content closure on every frame it is open, so a page captured
+  dialog is rebuilt from its content closure on every frame it is open, so a page captured
   when it opened would be the page it showed until it closed — reading the shell inside the closure
   is what makes the nav work at all. **The page scrolls and the dialog does not**, at one height for every
   page, so the nav stays reachable from the bottom of the keymap and the box does not jump size
@@ -1417,18 +1418,18 @@ centre is the chat, right dock the Workbench, bottom dock the terminal.
 
 ### Keyboard, zoom, maximize
 
-App commands occupy an exact `Ctrl+Shift` namespace so plain Ctrl keys stay usable inside a PTY:
+Most app commands default to `Ctrl+Shift`; ordinary terminal control keys remain available:
 `B` rail · `E` Workbench Editor, tree included · `M` Workbench Markdown ·
 `N` Workbench Neovim · `A` composer · `R` guarded restart ·
-`W` guarded close · `K` maximize. Plus `` Ctrl+` `` terminal, `Ctrl+S` save, `Ctrl+1…9` session by position, `Ctrl+Tab` session by recency,
+`W` guarded close · `K` maximize · `J` Workbench visibility. Plus `Ctrl+,` Settings, `` Ctrl+` `` terminal, `Ctrl+S` save, `Ctrl+1…9` session by position, `Ctrl+Tab` session by recency,
 `Ctrl+=`/`Ctrl+-`/`Ctrl+0` zoom, and inside the composer `Up`/`Down` (its completion list) and
 `Ctrl+V` (an image or a file on the clipboard becomes an attachment; text is handed back to the input)
 and `Shift+Tab` (the next session mode, wrapping — `Chat::cycle_mode`).
 
 **GPUI resolves these itself.** Key bindings are matched against the focus context stack *before* the
 key is delivered to whatever is focused, so an app binding reaches the app even while a PTY holds
-focus, and the terminal never sees that keystroke. Three kinds of deliberate exception to the
-namespace: `Ctrl+S`, bound `Shell && !Terminal` because the PTY has a real claim on it; the
+focus, and the terminal never sees that keystroke. Window commands require `Shell && !Dialog`,
+so editing Settings cannot trigger a command in the panel underneath. Important scoped bindings: `Ctrl+S`, bound `Shell && !Terminal` because the PTY has a real claim on it; the
 composer's `Up`/`Down` and `Ctrl+V`, bound `ChatComposer > Input` and `ChatComposerCard > Input`
 because they have to be taken from the input that already binds them; and the terminal toggle, which
 is plain `` Ctrl+` `` because the shifted form **cannot be typed** — gpui names a key by the keysym
@@ -1440,17 +1441,11 @@ registered later, and `A > B` scores at `B`'s depth — so that predicate ties w
 and the tie goes to the app, which binds after the library. The composer claims `ChatComposer` only
 while a list is open, so the keys otherwise still move the caret.
 
-Panel shortcuts are three-state: closed opens and focuses, open-but-unfocused focuses,
-open-and-focused closes. **A button is not**, and the two in the conversation's header were the
-last ones that were. A key has one binding to serve every case, which is what earns the third
-state — there is no other gesture to reach an open-but-unfocused panel with. A button can see the
-dock it names, and the caret when one is pressed is almost always back in the composer the user was
-typing in, so the third state made the first press do nothing a presser could see and the second
-one close it. `ChatPaneEvent::ToggleWorkbench`/`ToggleTerminal` branch on the dock and hand the
-closing half to `hide_workbench`/`set_terminal_visible` — the same two calls each panel's own hide
-button already makes, so the control on either side of the seam does the same thing. Opening still
-goes through the three-state call, since everything that one does on the way — the mode, the shell,
-the caret — is wanted here too.
+Workbench visibility and mode selection are separate commands. `Ctrl+Shift+J`
+toggles the whole dock regardless of focus and reopens its previous mode;
+`Ctrl+Shift+E / M / N` open and focus a mode without hiding it on a repeated
+press. The terminal key toggles visibility directly. Visibility buttons share
+the same close paths, which unwind maximize and recover focus before hiding.
 
 **Zoom is per panel** ([zoom.rs](crates/app/src/zoom.rs)) and overrides the *rem base* for that
 panel's subtree, so everything sized in rems scales together — which is why sizes must be rems and
@@ -1463,8 +1458,14 @@ than using the key's focused-panel rule — a control sitting in the terminal th
 conversation because that is where the user was typing would be lying about its own location. The
 library's dock-only zoom went with the tab bars that were the only place it could be drawn.
 
-Settings' Shortcuts page is the whole keymap, and a test (`dialogs::tests::keymap_and_help_agree`)
-fails if a binding is added without a row — a shortcut nobody can find is a shortcut nobody has.
+Settings' Shortcuts page edits the same command registry that installs the app
+bindings (`crates/app/src/keymap.rs`). Overrides are persisted under `[keymap]`
+in the resolved config, then replace only app-owned bindings in every window.
+An empty key list unassigns a command; Reset removes its override. Validation
+rejects collisions, unknown keys and component-control conflicts. Contexts and
+terminal Tab suppression are fixed. Dispatch tests cover remap, unbind, reset,
+modal isolation and terminal passthrough. `Ctrl+,` opens Settings even with the
+rail hidden; the command palette remains unimplemented.
 
 ### Persistence
 
@@ -1973,7 +1974,7 @@ Listed because a missing feature nobody wrote down reads as a bug in the ones th
   works without the panel adding it, and a panel that adds `track_focus` on top of that becomes
   doubly click-focusable. A `DockItem::Panel` renders bare, so nothing tracks it and
   `contains_focused` answers "no" however deep inside the pane the caret is — which silently points
-  the whole three-state panel keymap at the wrong panel. Every panel here renders bare, so
+  every focused-panel key (maximize, zoom) at the wrong panel. Every panel here renders bare, so
   `ChatPane::render`, `TerminalPanel::render` and `Workbench::render` all track their own handles —
   and one added later that forgets is a panel its own shortcut cannot find. Focus-on-click stays
   correct either way: gpui's handler runs in the bubble phase and an inner focusable takes the click

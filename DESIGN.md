@@ -114,11 +114,8 @@ One window hosts exactly one workspace. The frame is a navigation **rail** plus 
   that says it. Every way back to something the window has put away is therefore
   offered from here. The rail's button appears only while the rail is gone,
   because a button that unhides what is already on screen does nothing; the two
-  docks' buttons stay, and each is a plain open-or-close — not the three-state
-  rule its key follows. A key has one binding to serve every case and so earns
-  that third state; a button can see the dock, and the caret when one is pressed
-  is almost always back in the composer, which made the first press on an open
-  panel do nothing visible and the second one close it. No panel in the window
+  docks' buttons stay, and each opens or closes immediately, matching the
+  visibility shortcuts. No panel in the window
   keeps a tab group; the Workbench's mode strip and the
   terminal's shell strip are each that panel's own chrome.
 - **Standing state sits under the composer, outside its card.** A bare strip
@@ -249,12 +246,13 @@ One window hosts exactly one workspace. The frame is a navigation **rail** plus 
   a process-global registry — which would leave the shell holding handles to
   orphans and could not tell two windows' panels apart. The arrangement here is
   fixed by design, so what a user actually changes is those five numbers.
-- **Docks open on demand.** Both the Workbench and the terminal start closed. A
-  panel *shortcut* is three-state: closed opens and focuses, open-but-unfocused
-  focuses, open-and-focused closes — because a key has one binding and no other
-  gesture to reach an open panel with. A *button* is not in that position and
-  does not take the third state: every one of them can see the dock it names,
-  so it opens or it closes.
+- **Docks open on demand.** Both the Workbench and the terminal start closed.
+  Workbench mode shortcuts (`Ctrl+Shift+E / M / N` by default) open and focus
+  Editor / Markdown / Neovim without hiding them on a repeated press.
+  `Ctrl+Shift+J` toggles the whole Workbench immediately regardless of focus,
+  reopening its previous mode. The terminal shortcut and the docks' visibility
+  buttons also open or close directly. Hiding preserves buffers and processes.
+  Shortcuts are editable in Settings; the displayed keys follow the live map.
 - **The terminal's open/closed state belongs to the project, not the window.**
   Its tabs, its shells and its working directory are all per root and none of
   them follow the selection, so a dock left open across a project switch showed

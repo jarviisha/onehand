@@ -349,6 +349,9 @@ pub struct AppConfig {
     pub font: FontConfig,
     pub remote: RemoteConfig,
     pub unattended: UnattendedConfig,
+    /// App command IDs mapped to replacement shortcuts. An empty list unbinds
+    /// a command; an omitted ID uses its built-in defaults.
+    pub keymap: std::collections::BTreeMap<String, Vec<String>>,
 }
 
 impl Default for AppConfig {
@@ -359,6 +362,7 @@ impl Default for AppConfig {
             font: FontConfig::default(),
             remote: RemoteConfig::default(),
             unattended: UnattendedConfig::default(),
+            keymap: Default::default(),
         }
     }
 }
@@ -447,7 +451,8 @@ impl AppConfig {
             Ok(text) => {
                 Self::parse(&text).map_err(|e| format!("{} won't parse: {e}", path.display()))?
             }
-            Err(_) => Self::default(),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Self::default(),
+            Err(e) => return Err(format!("{} could not be read: {e}", path.display())),
         };
         edit(&mut cfg);
         cfg.save_to(path).map_err(|e| e.to_string())
@@ -1220,6 +1225,39 @@ mod tests {
 #[cfg(test)]
 mod persist_tests {
     use super::*;
+
+    #[test]
+    fn keymap_round_trips_and_other_settings_survive_edits() {
+        let dir = std::env::temp_dir().join(format!("onehand-keymap-{}", std::process::id()));
+        let path = dir.join("config.toml");
+        let mut original = AppConfig::default();
+        original.font.monospace = Some("Test Mono".into());
+        original
+            .keymap
+            .insert("toggle_workbench".into(), vec!["alt-j".into()]);
+        original.keymap.insert("restart".into(), Vec::new());
+        original.save_to(&path).unwrap();
+        AppConfig::update_in_place(&path, |cfg| cfg.appearance = Appearance::Dark).unwrap();
+        let saved = AppConfig::parse(&std::fs::read_to_string(&path).unwrap()).unwrap();
+        assert_eq!(saved.keymap, original.keymap);
+        assert_eq!(saved.font, original.font);
+        assert_eq!(saved.agents, original.agents);
+        assert_eq!(saved.appearance, Appearance::Dark);
+        assert!(AppConfig::parse("").unwrap().keymap.is_empty());
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn unreadable_existing_config_is_reported_before_editing() {
+        let dir =
+            std::env::temp_dir().join(format!("onehand-unreadable-config-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let error = AppConfig::update_in_place(&dir, |_| panic!("must not edit unreadable data"))
+            .unwrap_err();
+        assert!(error.contains("could not be read"));
+        assert!(dir.is_dir());
+        std::fs::remove_dir(dir).unwrap();
+    }
 
     /// The whole point of `update_in_place`: an unparseable file must survive.
     #[test]

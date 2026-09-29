@@ -80,6 +80,35 @@ prints the reply, with no window involved:
 cargo run -p onehand-core --example acp_smoke
 ```
 
+## Keyboard shortcuts
+
+Open **Settings → Shortcuts** (or press `Ctrl+,`) to edit app shortcuts. Changes
+apply immediately to every window and persist in the resolved app config.
+Choose **Edit**, enter a combination such as `ctrl-shift-j`, then **Save**.
+Separate alternative shortcuts with spaces; leave the field empty to unassign.
+**Reset** restores that command's defaults. Invalid or conflicting shortcuts are
+rejected before saving; terminal copy/paste and Tab routing remain fixed.
+
+- `Ctrl+Shift+J` hides Workbench immediately, regardless of focus, or reopens its
+  previous mode. It preserves buffers and running processes.
+- `Ctrl+Shift+E / M / N` open and focus Editor / Markdown / Neovim. Repeating a
+  mode shortcut keeps that mode visible.
+- ``Ctrl+` `` shows or hides the terminal.
+- `Ctrl+Shift+R` restarts the agent; `Ctrl+Shift+W` closes the session. During a
+  running turn, confirmation requires releasing and pressing the shortcut again.
+
+Overrides use stable command IDs in the existing TOML config. Omitted commands
+keep their defaults; an empty array unassigns a command:
+
+```toml
+[keymap]
+toggle_workbench = ["alt-j"]
+restart = []
+```
+
+Contexts remain attached to commands: saving stays outside the terminal, and
+completion stays in the composer. Command palette is not implemented.
+
 ## Known gaps
 
 Listed because a missing feature nobody wrote down reads as a bug in the ones

@@ -728,8 +728,8 @@ impl TerminalPanel {
                                 false => IconName::Maximize,
                             }))
                             .tooltip(match full {
-                                true => "Back to the dock — Ctrl+Shift+K",
-                                false => "Fill the window — Ctrl+Shift+K",
+                                true => "Back to the dock",
+                                false => "Fill the window",
                             })
                             .on_click(cx.listener(|_: &mut Self, _, _, cx| {
                                 cx.emit(TerminalPanelEvent::ToggleMaximize);
@@ -752,7 +752,7 @@ impl TerminalPanel {
                             .flex_none()
                             .text_color(cx.theme().muted_foreground)
                             .icon(Icon::new(IconName::Minus))
-                            .tooltip("Hide the terminal — Ctrl+`")
+                            .tooltip("Hide the terminal")
                             .on_click(cx.listener(|_: &mut Self, _, _, cx| {
                                 cx.emit(TerminalPanelEvent::Hide);
                             })),

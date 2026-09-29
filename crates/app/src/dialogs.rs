@@ -1,11 +1,8 @@
 //! The modal windows: settings, the conversation rename, the worktree split.
 //!
-//! Each is a gpui-component `Dialog`, which owns the overlay, the focus trap
-//! and the Esc handling — none of that is worth hand-rolling, and a
-//! hand-rolled backdrop is where an "at most one open" invariant has to be
-//! enforced by hand. Its `trigger` mode ties the
-//! dialog to the control that opens it -- so the invariant is structural here
-//! rather than something to remember to maintain.
+//! The component library owns overlays, focus traps and Escape handling.
+//! Settings is mounted by the shell so its rail button and keyboard shortcut
+//! share one dialog. The shell restores the previous focus when it closes.
 
 use crate::controls::Refuses as _;
 use crate::shell::Shell;
@@ -413,7 +410,7 @@ fn nav_row(page: SettingsPage, current: SettingsPage, handle: &Entity<Shell>, cx
 }
 
 /// The heading a page opens with -- the same word its nav row carries.
-fn page_title(name: &'static str) -> impl IntoElement {
+pub(crate) fn page_title(name: &'static str) -> impl IntoElement {
     div().text_lg().font_semibold().child(name)
 }
 
@@ -459,15 +456,12 @@ pub fn settings(window: &Window, cx: &mut Context<Shell>) -> Dialog {
         // viewport by subtracting half this width from half the window's -- so
         // a width wider than the window puts the left edge at a negative x, and
         // the nav column goes off the side of the screen with nothing to scroll
-        // it back. Read at build time, which is the frame the trigger is
-        // pressed in; the props the dialog keeps are cloned when it opens.
+        // it back. Read each time the shell builds the open dialog.
         .w(width_within(window))
-        .trigger(crate::rail::rail_row(
-            "open-settings",
-            IconName::Settings,
-            "Settings",
-            cx,
-        ))
+        .on_close({
+            let handle = handle.clone();
+            move |_, window, cx| handle.update(cx, |shell, cx| shell.close_settings(window, cx))
+        })
         .close_button(false)
         .content(move |content, window: &mut Window, cx: &mut App| {
             // Read per build rather than captured once: the content of an open
@@ -484,7 +478,7 @@ pub fn settings(window: &Window, cx: &mut Context<Shell>) -> Dialog {
                 SettingsPage::Appearance => appearance_page(&handle, cx),
                 SettingsPage::Workspace => workspace_page(&handle, cx),
                 SettingsPage::Agents => agents_page(&handle, cx),
-                SettingsPage::Shortcuts => shortcuts_page(cx),
+                SettingsPage::Shortcuts => handle.read(cx).keymap_editor().into_any_element(),
             };
 
             content.child(title_row("Settings")).child(
@@ -1162,183 +1156,9 @@ pub fn rename_branch(shell: &Shell, cx: &mut Context<Shell>) -> Dialog {
         }))
 }
 
-/// One row of the Help window's shortcut table.
-pub struct Shortcut {
-    /// How the row is written for a human.
-    pub label: &'static str,
-    pub what: &'static str,
-    /// The bindings behind it, spelled exactly as [`crate::shell::init_keymap`]
-    /// spells them. This is what `keymap_and_help_agree` checks, so a binding
-    /// added without a row here fails the build rather than going unfindable.
-    /// Empty for a key the app does not bind at all.
-    ///
-    /// Read only by that test, which is the point of it: `label` is an
-    /// editorial summary (one row covers `Ctrl+1…9`), so it cannot be derived
-    /// from this, and this cannot be derived from it. Two spellings of one fact
-    /// is a drift risk, so the test also checks they agree.
-    #[allow(dead_code, reason = "the keymap contract, checked by tests")]
-    pub keys: &'static [&'static str],
-}
-
-/// The keyboard-shortcut list.
-///
-/// Only bindings that exist in this build are listed -- an aspirational table
-/// is worse than a short one.
-///
-/// One binding is absent on purpose: `Ctrl+Shift+P`, because the command
-/// palette is a feature — a command registry plus a filtered popup — and not a
-/// keymap entry.
-pub const SHORTCUTS: &[Shortcut] = &[
-    Shortcut {
-        label: "Ctrl+Shift+B",
-        what: "Show or hide the navigation rail",
-        keys: &["ctrl-shift-b"],
-    },
-    Shortcut {
-        label: "Ctrl+Shift+E",
-        what: "Workbench — Editor, with the project's file tree",
-        keys: &["ctrl-shift-e"],
-    },
-    Shortcut {
-        label: "Ctrl+Shift+M",
-        what: "Workbench — Markdown",
-        keys: &["ctrl-shift-m"],
-    },
-    Shortcut {
-        label: "Ctrl+Shift+N",
-        what: "Workbench — Neovim",
-        keys: &["ctrl-shift-n"],
-    },
-    Shortcut {
-        label: "Ctrl+`",
-        what: "Toggle the terminal",
-        keys: &["ctrl-`"],
-    },
-    Shortcut {
-        label: "Ctrl+Shift+A",
-        what: "Focus the composer",
-        keys: &["ctrl-shift-a"],
-    },
-    Shortcut {
-        label: "Ctrl+Shift+R",
-        what: "Restart the agent (twice, mid-turn)",
-        keys: &["ctrl-shift-r"],
-    },
-    Shortcut {
-        label: "Ctrl+Shift+W",
-        what: "Close the session on screen (twice, mid-turn)",
-        keys: &["ctrl-shift-w"],
-    },
-    Shortcut {
-        label: "Ctrl+Shift+K",
-        what: "Maximize the focused panel / restore",
-        keys: &["ctrl-shift-k"],
-    },
-    Shortcut {
-        label: "Ctrl+S",
-        what: "Save the open file (not in the terminal)",
-        keys: &["ctrl-s"],
-    },
-    Shortcut {
-        label: "Up / Down",
-        what: "Walk the composer's completion list",
-        keys: &["up", "down"],
-    },
-    Shortcut {
-        label: "Tab",
-        what: "Take the highlighted row (Enter does too)",
-        keys: &["tab"],
-    },
-    Shortcut {
-        label: "Ctrl+V",
-        what: "Paste — an image or a file becomes an attachment",
-        keys: &["ctrl-v"],
-    },
-    Shortcut {
-        label: "Shift+Tab",
-        what: "Switch to the next session mode (in the composer)",
-        keys: &["shift-tab"],
-    },
-    Shortcut {
-        label: "Ctrl+1…9",
-        what: "Switch session by position",
-        keys: &[
-            "ctrl-1", "ctrl-2", "ctrl-3", "ctrl-4", "ctrl-5", "ctrl-6", "ctrl-7", "ctrl-8",
-            "ctrl-9",
-        ],
-    },
-    Shortcut {
-        label: "Ctrl+Tab / Ctrl+Shift+Tab",
-        what: "Cycle sessions, most recent first",
-        keys: &["ctrl-tab", "ctrl-shift-tab"],
-    },
-    Shortcut {
-        label: "Ctrl+= / Ctrl+-",
-        what: "Zoom the focused panel in / out",
-        keys: &["ctrl-=", "ctrl-+", "ctrl--"],
-    },
-    Shortcut {
-        label: "Ctrl+0",
-        what: "Reset the focused panel's zoom",
-        keys: &["ctrl-0"],
-    },
-    Shortcut {
-        // Handled inside the vendored terminal's key path, not by the app
-        // keymap: the app must not bind these, or the PTY would never see a
-        // paste (see `vendor/gpui-terminal/src/view.rs`).
-        label: "Ctrl+Shift+C / V",
-        what: "Copy / paste in the terminal",
-        keys: &[],
-    },
-];
-
-/// The keymap, and the build that draws it.
-///
-/// The version rides at the foot of this page rather than on an *About* page of
-/// its own: one line is not a page, and a nav entry leading to one line is a
-/// click that answers less than the row promised.
-fn shortcuts_page(cx: &App) -> AnyElement {
-    div()
-        .v_flex()
-        .gap_3()
-        .w_full()
-        .child(page_title("Shortcuts"))
-        .child(
-            div().v_flex().gap_2().w_full().children(
-                SHORTCUTS
-                    .iter()
-                    .map(|shortcut| {
-                        div()
-                            .h_flex()
-                            .w_full()
-                            .justify_between()
-                            .gap_4()
-                            .child(div().child(shortcut.what))
-                            .child(
-                                div()
-                                    .flex_none()
-                                    .text_color(cx.theme().muted_foreground)
-                                    .child(shortcut.label),
-                            )
-                    })
-                    .collect::<Vec<_>>(),
-            ),
-        )
-        // The build, where somebody who never opens a terminal can read it.
-        // `onehand --version` answers the same question for everybody else.
-        .child(
-            div()
-                .pt_2()
-                .text_xs()
-                .text_color(cx.theme().muted_foreground)
-                .child(format!("onehand {}", env!("CARGO_PKG_VERSION"))),
-        )
-        .into_any_element()
-}
-
 #[cfg(test)]
 mod tests {
-    use super::{DraftShift, SHORTCUTS, draft_shift};
+    use super::{DraftShift, draft_shift};
 
     /// Deleting an agent moves a form open on another one with it.
     ///
@@ -1382,78 +1202,6 @@ mod tests {
                 n + 1,
                 line.trim()
             );
-        }
-    }
-
-    /// The Help window is the whole keymap. A shortcut nobody can find is a
-    /// shortcut nobody has, so the table is not documentation of the bindings
-    /// -- it is the only way most of them are ever discovered.
-    ///
-    /// Reads the shell's source rather than the live keymap because binding
-    /// requires an `App`, and this catches the failure that actually happens --
-    /// someone adds a `KeyBinding` and forgets the table.
-    #[test]
-    fn keymap_and_help_agree() {
-        let source = include_str!("shell.rs");
-        let bound: Vec<&str> = source
-            .split("KeyBinding::new(\"")
-            .skip(1)
-            // A binding whose action is `NoAction` is the opposite of a
-            // shortcut: it exists to take a key away from a binding made
-            // somewhere else, so what the user gets is the key doing whatever
-            // it would have done with no keymap at all. A row for it would
-            // teach a command that does not exist.
-            .filter(|rest| {
-                !rest
-                    .split(')')
-                    .next()
-                    .is_some_and(|call| call.contains("NoAction"))
-            })
-            .filter_map(|rest| rest.split('"').next())
-            .collect();
-
-        for shortcut in SHORTCUTS {
-            for key in shortcut.keys {
-                assert!(
-                    bound.contains(key),
-                    "help lists {key:?} but init_keymap does not bind it"
-                );
-            }
-        }
-
-        for key in &bound {
-            assert!(
-                SHORTCUTS.iter().any(|s| s.keys.contains(key)),
-                "init_keymap binds {key:?} but the Help window never mentions it"
-            );
-        }
-    }
-
-    /// A row's human label and its machine keys must describe the same key.
-    ///
-    /// `keymap_and_help_agree` compares `keys` against the keymap and never
-    /// looks at `label` — so a row reading "Ctrl+Shift+B" while binding
-    /// `ctrl-shift-e` passes it, and the Help window then teaches the wrong
-    /// key. Two spellings of one fact need something holding them together.
-    ///
-    /// Checked against the **first** key only: `label` is an editorial summary
-    /// ("Ctrl+1…9" stands for nine bindings, "Ctrl+= / Ctrl+-" hides the
-    /// shifted alias), so every part being present is not a property that
-    /// holds. What must hold is that the row starts by naming what it binds.
-    #[test]
-    fn a_rows_label_names_the_key_it_binds() {
-        for shortcut in SHORTCUTS {
-            let Some(first) = shortcut.keys.first() else {
-                continue; // A row for a key the app deliberately does not bind.
-            };
-            let label = shortcut.label.to_lowercase();
-            for part in first.split('-') {
-                assert!(
-                    label.contains(part),
-                    "{:?} binds {first:?} but its label never says {part:?}",
-                    shortcut.label
-                );
-            }
         }
     }
 }
