@@ -44,6 +44,7 @@ pub struct Shared {
     pub agents: Vec<AgentSpec>,
     /// Where `persist_agents` writes back to — the file the config came from.
     pub config_path: PathBuf,
+    pub keymap: std::collections::BTreeMap<String, Vec<String>>,
     /// Light, dark, or following the desktop. Global rather than per window,
     /// because the theme it selects is itself one global: two windows cannot
     /// be drawn in two modes, so one of them holding a different answer would
@@ -113,6 +114,7 @@ impl Shared {
             appearance: cfg.appearance,
             agents: cfg.agents,
             config_path,
+            keymap: cfg.keymap,
             mono_family: None,
             next_uid: 1,
             windows: Vec::new(),

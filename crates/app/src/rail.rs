@@ -690,7 +690,7 @@ fn menu_button(
 /// Pure and separate because it is the rule rather than the rendering.
 fn signal_hint(signal: SessionSignal) -> &'static str {
     match signal {
-        SessionSignal::Lost => "The agent went away — Ctrl+Shift+R restarts it",
+        SessionSignal::Lost => "The agent went away — restart it from the session menu",
         SessionSignal::AwaitingUser => "Waiting for you",
         SessionSignal::Busy => "Working",
         SessionSignal::UnseenTurn => "Finished while you were away",
@@ -1767,9 +1767,6 @@ fn session_rows(
 pub fn rail(
     window_state_shell: &Shell,
     window_state: &WorkspaceWindow,
-    // Only so the Settings dialog can size itself against the frame it opens
-    // in; nothing here holds the borrow past this call.
-    window: &Window,
     cx: &mut Context<Shell>,
     // `use<>`: the returned sidebar is fully owned (every string is cloned and
     // every handler is an Rc), so it must not capture the borrows of `self` and
@@ -1921,12 +1918,10 @@ pub fn rail(
         // pages of Settings now, and a rail footer listing every page of one
         // dialog is a table of contents for a dialog nobody has opened yet.
         .footer(
-            div()
-                .v_flex()
-                .gap_0p5()
-                .w_full()
-                .min_w_0()
-                .child(crate::dialogs::settings(window, cx)),
+            div().v_flex().gap_0p5().w_full().min_w_0().child(
+                rail_row("open-settings", IconName::Settings, "Settings", cx)
+                    .on_click(cx.listener(|shell, _, window, cx| shell.open_settings(window, cx))),
+            ),
         )
 }
 
