@@ -150,6 +150,35 @@ impl Connector for GitHub {
     /// from a day before it, because the search takes a day and not a moment,
     /// and two clocks never quite agree. Listing more than changed costs a
     /// comparison; listing less loses an edit.
+    /// `git fetch` as ever, and, when that fails, the same branch again over
+    /// HTTPS with `gh`'s own sign-in. An `ssh` remote fails for an app opened
+    /// from the desktop far more often than for a terminal — no agent reachable,
+    /// a key behind a passphrase nobody is there to type — while the person
+    /// running it has already signed `gh` in, which is all HTTPS needs.
+    fn fetch_blocking(&self, root: &Path, branch: &str) -> Result<(), String> {
+        let Err(over_origin) = onehand_core::worktree::fetch_blocking(root, branch) else {
+            return Ok(());
+        };
+        let over_https =
+            gh(root, &["repo", "view", "--json", "url", "-q", ".url"]).and_then(|url| {
+                let out = onehand_core::process::output_within(
+                    Command::new("git")
+                        .arg("-C")
+                        .arg(root)
+                        .args(https_fetch_args(&url, branch))
+                        .env("GIT_TERMINAL_PROMPT", "0"),
+                    FETCH_LIMIT,
+                )
+                .map_err(|err| format!("git fetch {err}"))?;
+                if out.status.success() {
+                    Ok(())
+                } else {
+                    Err(String::from_utf8_lossy(&out.stderr).trim().to_string())
+                }
+            });
+        over_https.map_err(|why| format!("{over_origin} — and over HTTPS with gh's sign-in: {why}"))
+    }
+
     fn issues_for_sync_blocking(
         &self,
         root: &Path,
@@ -409,6 +438,25 @@ const GH_LIMIT: Duration = Duration::from_secs(60);
 
 /// How long a question answered from this machine alone may take — the
 /// project's remote, what an ssh alias stands for. Seconds is already slow.
+/// How long a fetch may take, the same bound the plain one is held to.
+const FETCH_LIMIT: Duration = Duration::from_secs(300);
+
+/// The `git` arguments that fetch `branch` from `url` into `origin/<branch>`,
+/// signed in by `gh` alone: the empty helper first clears any the user set,
+/// so nothing else is asked and nothing waits on a prompt.
+fn https_fetch_args(url: &str, branch: &str) -> Vec<String> {
+    vec![
+        "-c".into(),
+        "credential.helper=".into(),
+        "-c".into(),
+        "credential.helper=!gh auth git-credential".into(),
+        "fetch".into(),
+        "--quiet".into(),
+        url.into(),
+        format!("+refs/heads/{branch}:refs/remotes/origin/{branch}"),
+    ]
+}
+
 const LOCAL_LIMIT: Duration = Duration::from_secs(10);
 
 /// Run `gh` in `root` and hand back what it printed.
@@ -570,6 +618,24 @@ fn ssh_resolve_blocking(alias: &str) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_fetch_over_https_uses_only_ghs_sign_in_and_lands_where_origin_would() {
+        let args = https_fetch_args("https://github.com/a/b", "main");
+        assert_eq!(
+            args,
+            [
+                "-c",
+                "credential.helper=",
+                "-c",
+                "credential.helper=!gh auth git-credential",
+                "fetch",
+                "--quiet",
+                "https://github.com/a/b",
+                "+refs/heads/main:refs/remotes/origin/main",
+            ]
+        );
+    }
 
     #[test]
     fn a_moment_is_named_by_its_day_the_way_a_search_takes_it() {

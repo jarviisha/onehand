@@ -584,7 +584,10 @@ says so.** `onehand_core::connector::Connector` is the trait — account, whethe
 issues, labels, comments, default branch, pull request — and `plugins/builtin/connector-github` is the
 one implementation, where `gh` is the whole API layer. `connector::serving` hands a project to the
 first connector whose `serves_blocking` accepts it (GitHub reads `origin` locally before any call),
-and each connector's `account_blocking` says who it acts as.
+and each connector's `account_blocking` says who it acts as. A run's fetch is the connector's too
+(`Connector::fetch_blocking`, plain `git fetch` by default): GitHub retries a failed one over HTTPS
+with `gh`'s own sign-in, since an `ssh` remote often cannot authenticate from an app opened off the
+desktop while `gh` is already signed in. Only the fetch — the agent's own push still uses `origin`.
 **An issue lives on the forge or in onehand** (`unattended::Tracker::Forge` / `Local`, the latter the
 project's Issues tab), and a run carries both where its issue lives and the forge its work goes to,
 because the two come apart. The project's own issues are searched first. A local issue on a project

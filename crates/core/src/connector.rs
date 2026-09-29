@@ -56,6 +56,13 @@ pub trait Connector: Send + Sync + 'static {
     /// The repository's default branch, as the system has it.
     fn default_branch_blocking(&self, root: &Path) -> Result<String, String>;
 
+    /// Bring `origin/<branch>` up to date at `root`. Plain `git fetch` unless a
+    /// connector knows another way in — its own sign-in, for a remote whose
+    /// credentials the app cannot reach.
+    fn fetch_blocking(&self, root: &Path, branch: &str) -> Result<(), String> {
+        crate::worktree::fetch_blocking(root, branch)
+    }
+
     /// The pull request opened from `branch`, open or not, if there is one.
     fn pull_request_for_blocking(
         &self,

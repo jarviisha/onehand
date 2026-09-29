@@ -492,7 +492,7 @@ fn prepare_blocking(
         let base = match forge {
             Some(forge) => {
                 let default = forge.default_branch_blocking(&repo)?;
-                worktree::fetch_blocking(&repo, &default)?;
+                forge.fetch_blocking(&repo, &default)?;
                 format!("origin/{default}")
             }
             None => worktree::current_branch_blocking(&repo)?,
