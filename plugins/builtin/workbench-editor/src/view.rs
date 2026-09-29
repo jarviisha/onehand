@@ -1,18 +1,21 @@
 //! The Editor mode's own state: the open buffers per project root, and the
 //! rules that keep a save from clobbering somebody else's write.
 
-use crate::buffers::{RootBuffers, body, new_buffer, save_status, tab_strip};
+use crate::buffers::{Fades, RootBuffers, StripHandlers, body, new_buffer, save_status, tab_strip};
 
 use gpui::{
     App, AppContext as _, Context, Entity, Focusable as _, IntoElement, ParentElement, Render,
-    Styled, Window, div,
+    ScrollHandle, SharedString, Styled, Window, div,
 };
-use gpui_component::StyledExt;
+use gpui_component::button::ButtonVariants as _;
+use gpui_component::dialog::{DialogClose, DialogFooter};
 use gpui_component::input::InputEvent;
+use gpui_component::{StyledExt, WindowExt as _};
 use onehand_core::editor::SaveOutcome;
 use onehand_plugin_host::{hint, status_line};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
+use std::rc::Rc;
 
 pub(crate) struct EditorView {
     root: Option<PathBuf>,
@@ -35,20 +38,20 @@ pub(crate) struct EditorView {
     /// dropped either — it is remembered here and re-run once the first lands,
     /// which is what makes it pick up the keystrokes that prompted it.
     saving: HashMap<u64, bool>,
-    /// A close that would discard unsaved edits, armed for its second click.
+    /// The tab strip's scroll, so the active tab can be brought into view.
+    tabs_scroll: ScrollHandle,
+    /// The tab last brought into view. The strip is scrolled only when the
+    /// active tab *changes*: asked on every frame, it would pull the strip back
+    /// under a wheel somebody was using to look at the other tabs.
+    revealed: Option<u64>,
+    /// Whether the file tree beside the buffers is showing.
     ///
-    /// Same shape as the shell's guarded root removal, and for the same reason:
-    /// the destructive half of a one-touch control needs a touch of its own.
-    /// Any other action disarms it, so the confirmation always belongs to the
-    /// control just clicked.
-    pending_close: Option<PendingClose>,
-}
-
-/// A close waiting on its confirming click.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum PendingClose {
-    Tab(usize),
-    All,
+    /// Held here rather than on the split that draws the tree, because the
+    /// control that flips it sits on this view's tab strip and has to show
+    /// which way round it is; the split observes this view and reads it. One
+    /// flag for every project, not per root, and not persisted — the same
+    /// answer as the divider's position, for the same reason.
+    tree_shown: bool,
 }
 
 impl EditorView {
@@ -58,7 +61,9 @@ impl EditorView {
             buffers: HashMap::new(),
             status: None,
             saving: HashMap::new(),
-            pending_close: None,
+            tabs_scroll: ScrollHandle::new(),
+            revealed: None,
+            tree_shown: true,
         })
     }
 
@@ -90,13 +95,13 @@ impl EditorView {
     pub(crate) fn unsaved(&self, root: &Path) -> usize {
         self.buffers
             .get(root)
-            .map(|buffers| buffers.tabs.files.iter().filter(|f| f.dirty).count())
+            .map(RootBuffers::dirty_count)
             .unwrap_or(0)
     }
 
     /// Where the caret goes, if there is a buffer to put it in.
     pub(crate) fn caret(&self, cx: &App) -> Option<gpui::FocusHandle> {
-        let buffers = self.buffers.get(self.root.as_ref()?)?;
+        let buffers = self.current()?;
         let uid = buffers.tabs.active_file()?.uid;
         Some(buffers.buffer(uid)?.focus_handle(cx))
     }
@@ -221,7 +226,6 @@ impl EditorView {
     /// Write one tab, keyed by `uid` rather than by tab position so a re-run
     /// after an in-flight save still targets the buffer that asked for it.
     fn save_tab(&mut self, root: PathBuf, uid: u64, cx: &mut Context<Self>) {
-        self.pending_close = None;
         // Already writing this tab: remember that another save was asked for
         // and let the one in flight land first (see `saving`).
         if let Some(again) = self.saving.get_mut(&uid) {
@@ -290,9 +294,26 @@ impl EditorView {
         .detach();
     }
 
+    /// The buffers of the project on screen, if it has any.
+    fn current(&self) -> Option<&RootBuffers> {
+        self.buffers.get(self.root.as_ref()?)
+    }
+
+    fn current_mut(&mut self) -> Option<&mut RootBuffers> {
+        self.buffers.get_mut(self.root.as_ref()?)
+    }
+
+    pub(crate) fn tree_shown(&self) -> bool {
+        self.tree_shown
+    }
+
+    fn toggle_tree(&mut self, cx: &mut Context<Self>) {
+        self.tree_shown = !self.tree_shown;
+        cx.notify();
+    }
+
     fn select_tab(&mut self, idx: usize, cx: &mut Context<Self>) {
-        self.pending_close = None;
-        if let Some(buffers) = self.root.as_ref().and_then(|r| self.buffers.get_mut(r))
+        if let Some(buffers) = self.current_mut()
             && idx < buffers.tabs.files.len()
         {
             buffers.tabs.active = idx;
@@ -300,56 +321,141 @@ impl EditorView {
         cx.notify();
     }
 
-    /// Close tab `idx`, asking twice when that would throw away edits.
-    fn close_tab(&mut self, idx: usize, cx: &mut Context<Self>) {
-        let Some(buffers) = self.root.as_ref().and_then(|r| self.buffers.get_mut(r)) else {
+    /// Close tab `idx`, asking first when that would throw away edits.
+    fn close_tab(&mut self, idx: usize, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(root) = self.root.clone() else {
             return;
         };
-        let Some(file) = buffers.tabs.files.get(idx) else {
+        let Some(file) = self
+            .current()
+            .and_then(|buffers| buffers.tabs.files.get(idx))
+        else {
             return;
         };
-        if file.dirty && self.pending_close != Some(PendingClose::Tab(idx)) {
+        let close = Close::Tab(root, file.uid);
+        if file.dirty {
             let label = file.label.clone();
-            self.pending_close = Some(PendingClose::Tab(idx));
-            self.status = Some(format!(
-                "{label} has unsaved edits — save them, or click ✕ again to discard them."
-            ));
-            cx.notify();
+            self.confirm_discard(
+                "Discard unsaved edits?".into(),
+                format!("“{label}” has edits that were never saved. Closing it throws them away."),
+                close,
+                window,
+                cx,
+            );
             return;
         }
-
-        let uid = file.uid;
-        buffers.tabs.close(idx);
-        buffers.forget(uid);
-        self.pending_close = None;
-        self.status = None;
-        cx.notify();
+        self.discard(close, cx);
     }
 
-    /// Close every tab, asking twice when any of them has unsaved edits.
-    fn close_all_tabs(&mut self, cx: &mut Context<Self>) {
-        let Some(buffers) = self.root.as_ref().and_then(|r| self.buffers.get_mut(r)) else {
+    /// Close every tab, asking first when any of them has unsaved edits.
+    fn close_all_tabs(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(root) = self.root.clone() else {
             return;
         };
-        if buffers.any_dirty() && self.pending_close != Some(PendingClose::All) {
-            let n = buffers.tabs.files.iter().filter(|f| f.dirty).count();
+        let n = self.current().map_or(0, RootBuffers::dirty_count);
+        if n > 0 {
             let s = if n == 1 { "file has" } else { "files have" };
-            self.pending_close = Some(PendingClose::All);
-            self.status = Some(format!(
-                "{n} {s} unsaved edits — click ✕ again to discard them."
-            ));
-            cx.notify();
+            self.confirm_discard(
+                "Close all files?".into(),
+                format!("{n} {s} edits that were never saved. Closing them throws those away."),
+                Close::All(root),
+                window,
+                cx,
+            );
             return;
         }
+        self.discard(Close::All(root), cx);
+    }
 
-        for file in std::mem::take(&mut buffers.tabs.files) {
-            buffers.forget(file.uid);
+    /// Ask before a close throws edits away, in a dialog rather than by arming
+    /// the ✕ for a second press.
+    ///
+    /// An armed control looks like one that did nothing, and the sentence
+    /// explaining it was drawn at the foot of the panel, nowhere near the cross
+    /// that was pressed. What to close is named by project, and a tab by `uid`
+    /// rather than by position, because the question can be on screen while
+    /// the strip changes or the window moves to another project — a remote
+    /// `/open` does that — and *Discard* must still mean what it said.
+    fn confirm_discard(
+        &mut self,
+        title: SharedString,
+        description: String,
+        close: Close,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let view = cx.entity();
+        window.open_alert_dialog(cx, move |alert, _, _| {
+            // Cloned per build: the builder runs again on every frame the
+            // dialog is on screen, so nothing captured can be consumed by one.
+            let (view, close) = (view.clone(), close.clone());
+            alert
+                .title(title.clone())
+                .description(description.clone())
+                // Our own pair rather than the library's OK/Cancel, which draw
+                // the arrow cursor over controls that act. Keep is first and
+                // plain, Discard last and in the danger tint.
+                .footer(
+                    DialogFooter::new()
+                        .child(
+                            DialogClose::new().child(
+                                onehand_plugin_host::action("keep-edits")
+                                    .ghost()
+                                    .label("Keep"),
+                            ),
+                        )
+                        .child(
+                            onehand_plugin_host::action("discard-edits")
+                                .danger()
+                                .label("Discard")
+                                .on_click(move |_, window: &mut Window, cx: &mut App| {
+                                    window.close_dialog(cx);
+                                    let close = close.clone();
+                                    view.update(cx, |view: &mut Self, cx| view.discard(close, cx));
+                                }),
+                        ),
+                )
+        });
+    }
+
+    /// Close without asking; the question, if there was one, is answered.
+    fn discard(&mut self, close: Close, cx: &mut Context<Self>) {
+        let root = match &close {
+            Close::Tab(root, _) | Close::All(root) => root.clone(),
+        };
+        let Some(buffers) = self.buffers.get_mut(&root) else {
+            return;
+        };
+        match close {
+            Close::Tab(_, uid) => {
+                let Some(idx) = buffers.tabs.files.iter().position(|f| f.uid == uid) else {
+                    return;
+                };
+                buffers.tabs.close(idx);
+                buffers.forget(uid);
+            }
+            Close::All(_) => {
+                for file in std::mem::take(&mut buffers.tabs.files) {
+                    buffers.forget(file.uid);
+                }
+                buffers.tabs.close_all();
+            }
         }
-        buffers.tabs.close_all();
-        self.pending_close = None;
-        self.status = None;
+        // The status line is the view's, drawn over whichever project is on
+        // screen: a discard answered after moving elsewhere must not wipe a
+        // save conflict that belongs to the project now showing.
+        if self.root.as_ref() == Some(&root) {
+            self.status = None;
+        }
         cx.notify();
     }
+}
+
+/// What a close is about to drop, and in which project.
+#[derive(Debug, Clone)]
+enum Close {
+    Tab(PathBuf, u64),
+    All(PathBuf),
 }
 
 /// Process-wide buffer id salt, for the same reason core hands one out per tab.
@@ -360,46 +466,95 @@ fn next_buffer_uid() -> u64 {
 }
 
 impl Render for EditorView {
-    fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let open = self
-            .root
-            .as_ref()
-            .and_then(|r| self.buffers.get(r))
-            .filter(|buffers| !buffers.tabs.files.is_empty());
-
-        let body = match open {
-            None => hint("Open a file from the tree, or from a tool card", cx),
-            Some(buffers) => {
-                let active = buffers.tabs.active_file().map(|f| f.uid);
-                let buffer = active.and_then(|uid| buffers.buffer(uid)).cloned();
-                div()
-                    .flex_1()
-                    .min_h_0()
-                    .v_flex()
-                    .child(tab_strip(
-                        buffers,
-                        cx.listener(|view: &mut Self, idx: &usize, _, cx| {
-                            view.select_tab(*idx, cx)
-                        }),
-                        cx.listener(|view: &mut Self, idx: &usize, _, cx| view.close_tab(*idx, cx)),
-                        cx.listener(|view: &mut Self, _, _, cx| view.close_all_tabs(cx)),
-                        cx,
-                    ))
-                    .children(buffer.map(|state| {
-                        div()
-                            .flex_1()
-                            .min_h_0()
-                            .child(body(&state))
-                            .into_any_element()
-                    }))
-                    .into_any_element()
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        // The strip's fades are decided from the last frame's layout. A wheel
+        // re-renders this view, so that lag is one frame and invisible — but a
+        // change of *width* (the tree hidden, the dock dragged) re-lays the
+        // strip without asking this view again, and a fade left over from the
+        // narrower strip then stays on a tab that is no longer cut. So the
+        // answer is checked once more after the frame, and a view drawn on a
+        // stale one is asked for again; it settles as soon as they agree.
+        let drawn = Fades::of(&self.tabs_scroll);
+        let (handle, view) = (self.tabs_scroll.clone(), cx.entity().downgrade());
+        window.on_next_frame(move |_, cx| {
+            if Fades::of(&handle) != drawn {
+                let _ = view.update(cx, |_, cx| cx.notify());
             }
+        });
+        // A file opened while the strip is full lands its tab past the end, so
+        // the file on screen would be the one whose tab nobody can see. The
+        // handle waits for the frame that lays the tab out, so a tab being drawn
+        // for the first time is found too.
+        let active = self.current().map(|buffers| {
+            (
+                buffers.tabs.active,
+                buffers.tabs.active_file().map(|f| f.uid),
+            )
+        });
+        if let Some((idx, uid)) = active
+            && uid.is_some()
+            && uid != self.revealed
+        {
+            self.tabs_scroll.scroll_to_item(idx);
+            self.revealed = uid;
+        }
+
+        let Some(root) = self.root.as_ref() else {
+            return div()
+                .flex_1()
+                .min_w_0()
+                .min_h_0()
+                .v_flex()
+                .child(hint("No project root", cx));
+        };
+        // The strip is drawn with no tabs as well: the tree's toggle lives on
+        // it, and a strip that went with the last tab would leave a hidden tree
+        // with no way back.
+        let empty = RootBuffers::default();
+        let buffers = self.buffers.get(root).unwrap_or(&empty);
+        let active = buffers.tabs.active_file().map(|f| f.uid);
+        let buffer = active.and_then(|uid| buffers.buffer(uid)).cloned();
+        let strip = tab_strip(
+            root,
+            buffers,
+            &self.tabs_scroll,
+            self.tree_shown,
+            StripHandlers {
+                toggle_tree: Box::new(
+                    cx.listener(|view: &mut Self, _, _, cx| view.toggle_tree(cx)),
+                ),
+                select: Rc::new(
+                    cx.listener(|view: &mut Self, idx: &usize, _, cx| view.select_tab(*idx, cx)),
+                ),
+                close: Rc::new(cx.listener(|view: &mut Self, idx: &usize, window, cx| {
+                    view.close_tab(*idx, window, cx)
+                })),
+                close_all: Box::new(
+                    cx.listener(|view: &mut Self, _, window, cx| view.close_all_tabs(window, cx)),
+                ),
+            },
+            cx,
+        );
+        let body = match buffer {
+            None => hint("Open a file from the tree, or from a tool card", cx),
+            Some(state) => div()
+                .flex_1()
+                .min_h_0()
+                .child(body(&state))
+                .into_any_element(),
         };
 
+        // `min_w_0`: the resizable panel holding this is a flex *row*, and a flex
+        // item's floor is otherwise its content's width — here the sum of every
+        // tab, since tabs never narrow. The view grew with the strip instead of
+        // the strip's box overflowing, so it never scrolled and the card clipped
+        // whatever passed its edge.
         div()
             .flex_1()
+            .min_w_0()
             .min_h_0()
             .v_flex()
+            .child(strip)
             .child(body)
             .children(self.status.clone().map(|status| status_line(status, cx)))
     }

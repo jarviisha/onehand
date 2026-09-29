@@ -233,7 +233,11 @@ fn rows(
                 .rounded(cx.theme().radius)
                 .text_sm()
                 .cursor_pointer()
-                .hover(|r| r.bg(cx.theme().accent.opacity(0.5)))
+                // `list_hover`, the theme's hover for a row that is there to be
+                // picked. `accent` is what marks a *selected* thing, so a hover
+                // drawn in it made the row under the pointer read as the one
+                // chosen.
+                .hover(|r| r.bg(cx.theme().list_hover))
                 // Indent by depth, not by nested containers: a 600-row tree
                 // (the core cap) would otherwise be 600 nested elements.
                 .pl(px(4. + row.depth as f32 * 12.))
