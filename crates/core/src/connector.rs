@@ -14,8 +14,19 @@
 //! issues and pull requests. A system with only one of them (a tracker with no
 //! code) is when the two halves split into capabilities of their own.
 
+use crate::issues::Snapshot;
 use crate::unattended::{Issue, IssueRow};
 use std::path::Path;
+
+/// An issue as a forge holds it, for keeping a local one in step with it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RemoteIssue {
+    /// What the connector identifies it by.
+    pub key: String,
+    /// How a person refers to it there: `#123`.
+    pub reference: String,
+    pub snapshot: Snapshot,
+}
 
 pub trait Connector: Send + Sync + 'static {
     /// The system's name, as a person knows it: "GitHub".
@@ -51,6 +62,30 @@ pub trait Connector: Send + Sync + 'static {
         root: &Path,
         branch: &str,
     ) -> Result<Option<String>, String>;
+
+    /// Open issues, by anybody, at most `limit` of them — what a sync imports.
+    fn issues_for_sync_blocking(
+        &self,
+        root: &Path,
+        limit: usize,
+    ) -> Result<Vec<RemoteIssue>, String>;
+
+    /// One issue by its key, open or closed, or `None` if the forge no longer
+    /// has it.
+    fn issue_blocking(&self, root: &Path, key: &str) -> Result<Option<RemoteIssue>, String>;
+
+    /// Open an issue saying what `said` says, labels included.
+    fn create_issue_blocking(&self, root: &Path, said: &Snapshot) -> Result<RemoteIssue, String>;
+
+    /// Change issue `key` from saying `from` to saying `to`, touching only what
+    /// differs.
+    fn update_issue_blocking(
+        &self,
+        root: &Path,
+        key: &str,
+        from: &Snapshot,
+        to: &Snapshot,
+    ) -> Result<(), String>;
 
     /// How an agent opens a pull request here, as the words it is told to use:
     /// "`gh pr create`".
@@ -145,6 +180,24 @@ pub(crate) mod fake {
         }
         fn open_pull_request_with(&self) -> &'static str {
             "`forge pr`"
+        }
+        fn issues_for_sync_blocking(&self, _: &Path, _: usize) -> Result<Vec<RemoteIssue>, String> {
+            unreachable!()
+        }
+        fn issue_blocking(&self, _: &Path, _: &str) -> Result<Option<RemoteIssue>, String> {
+            unreachable!()
+        }
+        fn create_issue_blocking(&self, _: &Path, _: &Snapshot) -> Result<RemoteIssue, String> {
+            unreachable!()
+        }
+        fn update_issue_blocking(
+            &self,
+            _: &Path,
+            _: &str,
+            _: &Snapshot,
+            _: &Snapshot,
+        ) -> Result<(), String> {
+            unreachable!()
         }
     }
 }

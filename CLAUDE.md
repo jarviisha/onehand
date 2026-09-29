@@ -896,6 +896,21 @@ see the rail, below.
   said about an issue is kept on it as **notes** and drawn under its body, the latest few, with the
   cut said. Unattended runs work these issues too — see *Unattended runs*. No shortcut yet, and no
   deletion — closing is the way an issue leaves the work.
+  **Kept in step with the project's forge, both ways, when switched on** (`onehand_core::issues::sync`;
+  the switch is the list's sync bar and is stored in the issue file as `synced_with`, so it needs no
+  workspace key). A linked issue carries a `Link` whose `base` is the snapshot both sides last agreed
+  on, and a sync is a **three-way merge per field** against it: title, description and state take the
+  side that changed, a field both sides changed differently is a **conflict** that moves nothing until
+  a person picks *Keep mine* or *Take GitHub's* (both just reset `base` to the forge's side and let
+  the next sync do the rest), and labels merge as a set and never conflict. **In and out are not
+  symmetric, by decision**: every open issue on the forge is imported (capped at `SYNC_CAP`, the cut
+  said), while an issue written here goes nowhere until *Publish to GitHub* — a draft that published
+  itself on a timer is one nobody could write. A push that fails leaves `base` alone so the change is
+  retried rather than read later as the forge's; an issue gone from the forge is unlinked with a note.
+  Forge line endings are normalized first, or every sync would see an edit nobody made. It runs when
+  the file is read (at most once a minute), after every change made here, every five minutes on the
+  project on screen, and on *Sync now*; the whole sync holds the issue file's lock across the forge's
+  calls, so an edit made meanwhile waits for it.
 
 State is per project root, held by the mode that works on it, so switching roots swaps the whole
 thing.

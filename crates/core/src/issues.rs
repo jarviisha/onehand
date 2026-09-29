@@ -19,6 +19,8 @@ use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
+pub mod sync;
+
 /// Every issue a project has, and the number the next one takes.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Issues {
@@ -29,6 +31,11 @@ pub struct Issues {
     next: u64,
     #[serde(default)]
     issues: Vec<LocalIssue>,
+    /// The connector this project's issues are kept in step with, by name, or
+    /// `None` while they are not. Switching it off keeps every link, so
+    /// switching it back on picks up where it stopped.
+    #[serde(default)]
+    synced_with: Option<String>,
 }
 
 /// One issue.
@@ -52,6 +59,51 @@ pub struct LocalIssue {
     /// starting on it, how that run ended.
     #[serde(default)]
     pub notes: Vec<Note>,
+    /// The issue on a forge this one is kept in step with, if any.
+    #[serde(default)]
+    pub link: Option<Link>,
+}
+
+/// What an issue says that both sides of a sync keep: everything but its
+/// number, its notes and its stamps.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Snapshot {
+    pub title: String,
+    #[serde(default)]
+    pub body: String,
+    pub open: bool,
+    #[serde(default)]
+    pub labels: Vec<String>,
+}
+
+impl Snapshot {
+    /// The snapshot with the differences that are not differences taken out —
+    /// surrounding space, and Windows line endings, which a forge hands back
+    /// for text typed there. Left in, every sync would see an edit nobody made.
+    pub fn normalized(mut self) -> Self {
+        self.title = self.title.trim().to_string();
+        self.body = self.body.replace("\r\n", "\n").trim().to_string();
+        self
+    }
+}
+
+/// The issue on a forge a local one is kept in step with.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Link {
+    /// The connector's name, as it says it.
+    pub connector: String,
+    /// What the connector identifies the issue by.
+    pub key: String,
+    /// How a person refers to it there: `#123`.
+    pub reference: String,
+    /// What both sides said at the last sync that settled — the common
+    /// ancestor every later change on either side is measured against.
+    pub base: Snapshot,
+    /// What the forge says, when it and this side both changed the same thing
+    /// differently since `base`. Nothing is pushed or pulled for the issue
+    /// until a person decides.
+    #[serde(default)]
+    pub conflict: Option<Snapshot>,
 }
 
 /// One thing said about an issue, and when.
@@ -59,6 +111,25 @@ pub struct LocalIssue {
 pub struct Note {
     pub at: u64,
     pub text: String,
+}
+
+impl LocalIssue {
+    /// What this issue says, as a sync compares it.
+    pub fn snapshot(&self) -> Snapshot {
+        Snapshot {
+            title: self.title.clone(),
+            body: self.body.clone(),
+            open: self.open,
+            labels: self.labels.clone(),
+        }
+    }
+
+    fn apply(&mut self, said: &Snapshot) {
+        self.title = said.title.clone();
+        self.body = said.body.clone();
+        self.open = said.open;
+        self.labels = said.labels.clone();
+    }
 }
 
 fn open_by_default() -> bool {
@@ -118,6 +189,7 @@ impl Issues {
             created: now,
             updated: now,
             notes: Vec::new(),
+            link: None,
         });
         Ok(number)
     }
@@ -166,6 +238,39 @@ impl Issues {
         if issue.labels.len() != before {
             issue.updated = now;
         }
+        Ok(())
+    }
+
+    /// The connector these issues are kept in step with, if any.
+    pub fn synced_with(&self) -> Option<&str> {
+        self.synced_with.as_deref()
+    }
+
+    /// Keep these issues in step with `connector`, or stop.
+    pub fn sync_with(&mut self, connector: Option<String>) {
+        self.synced_with = connector;
+    }
+
+    /// Settle issue `number`'s conflict: keep what it says here, or take what
+    /// the forge says.
+    ///
+    /// Either way the forge's side becomes the common ancestor, which is all it
+    /// takes — with the ancestor equal to the forge, the next sync sees only
+    /// this side as changed and pushes it, and taking the forge's makes both
+    /// sides equal so there is nothing left to move.
+    pub fn resolve(&mut self, number: u64, keep_mine: bool, now: u64) -> Result<(), String> {
+        let issue = self.find_mut(number)?;
+        let Some(link) = issue.link.as_mut() else {
+            return Err(format!("#{number} is not kept in step with anything."));
+        };
+        let Some(theirs) = link.conflict.take() else {
+            return Ok(());
+        };
+        link.base = theirs.clone();
+        if !keep_mine {
+            issue.apply(&theirs);
+        }
+        issue.updated = now;
         Ok(())
     }
 

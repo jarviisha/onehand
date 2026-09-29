@@ -10,7 +10,8 @@
 // a working feature.
 #![warn(unreachable_pub)]
 
-use onehand_core::connector::Connector;
+use onehand_core::connector::{Connector, RemoteIssue};
+use onehand_core::issues::Snapshot;
 use onehand_core::unattended::{Issue, IssueRow};
 use serde::Deserialize;
 use std::path::Path;
@@ -144,6 +145,96 @@ impl Connector for GitHub {
     fn open_pull_request_with(&self) -> &'static str {
         "`gh pr create`"
     }
+
+    fn issues_for_sync_blocking(
+        &self,
+        root: &Path,
+        limit: usize,
+    ) -> Result<Vec<RemoteIssue>, String> {
+        let limit = limit.to_string();
+        let json = gh(
+            root,
+            &[
+                "issue",
+                "list",
+                "--state",
+                "open",
+                "--limit",
+                &limit,
+                "--json",
+                SYNC_FIELDS,
+            ],
+        )?;
+        remote_issues(&json)
+    }
+
+    fn issue_blocking(&self, root: &Path, key: &str) -> Result<Option<RemoteIssue>, String> {
+        match gh(root, &["issue", "view", key, "--json", SYNC_FIELDS]) {
+            Ok(json) => remote_issues(&format!("[{json}]")).map(|mut found| found.pop()),
+            // `gh` says an issue that is not there in words rather than with a
+            // code of its own, and gone is an answer, not a failure.
+            Err(why) if why.contains("Could not resolve to an issue") => Ok(None),
+            Err(why) => Err(why),
+        }
+    }
+
+    fn create_issue_blocking(&self, root: &Path, said: &Snapshot) -> Result<RemoteIssue, String> {
+        let printed = gh(
+            root,
+            &[
+                "issue",
+                "create",
+                "--title",
+                &said.title,
+                "--body",
+                &said.body,
+            ],
+        )?;
+        let number = created_number(&printed)
+            .ok_or_else(|| format!("gh created an issue and did not say which: {printed}"))?;
+        let key = number.to_string();
+        // Created bare and then brought up to what was asked for, so a label
+        // that does not exist on the repository yet is made rather than
+        // failing the whole issue.
+        let bare = Snapshot {
+            title: said.title.clone(),
+            body: said.body.clone(),
+            open: true,
+            labels: Vec::new(),
+        };
+        self.update_issue_blocking(root, &key, &bare, said)?;
+        Ok(RemoteIssue {
+            key,
+            reference: format!("#{number}"),
+            snapshot: said.clone(),
+        })
+    }
+
+    fn update_issue_blocking(
+        &self,
+        root: &Path,
+        key: &str,
+        from: &Snapshot,
+        to: &Snapshot,
+    ) -> Result<(), String> {
+        if let Some(args) = edit_args(key, from, to) {
+            for label in to.labels.iter().filter(|l| !from.labels.contains(l)) {
+                // A label has to exist on the repository before an issue can
+                // carry it. Made here, and "already exists" is the common,
+                // harmless answer.
+                let _ = gh(root, &["label", "create", label]);
+            }
+            let args: Vec<&str> = args.iter().map(String::as_str).collect();
+            gh(root, &args)?;
+        }
+        if from.open != to.open {
+            gh(
+                root,
+                &["issue", if to.open { "reopen" } else { "close" }, key],
+            )?;
+        }
+        Ok(())
+    }
 }
 
 /// One issue as `gh --json number,title,body` prints it. The wire shape is
@@ -160,6 +251,89 @@ impl From<GhIssue> for Issue {
     fn from(gh: GhIssue) -> Self {
         Issue::new(gh.number, gh.title, gh.body)
     }
+}
+
+/// What a sync reads of an issue.
+const SYNC_FIELDS: &str = "number,title,body,state,labels";
+
+/// `gh issue list --json` with [`SYNC_FIELDS`] as issues a sync can compare.
+fn remote_issues(json: &str) -> Result<Vec<RemoteIssue>, String> {
+    #[derive(Deserialize)]
+    struct Label {
+        name: String,
+    }
+    #[derive(Deserialize)]
+    struct Row {
+        number: u64,
+        title: String,
+        #[serde(default)]
+        body: String,
+        state: String,
+        #[serde(default)]
+        labels: Vec<Label>,
+    }
+    let rows: Vec<Row> = serde_json::from_str(json)
+        .map_err(|err| format!("gh printed something unreadable: {err}"))?;
+    Ok(rows
+        .into_iter()
+        .map(|row| RemoteIssue {
+            key: row.number.to_string(),
+            reference: format!("#{}", row.number),
+            snapshot: Snapshot {
+                title: row.title,
+                body: row.body,
+                open: row.state.eq_ignore_ascii_case("open"),
+                labels: row.labels.into_iter().map(|l| l.name).collect(),
+            }
+            .normalized(),
+        })
+        .collect())
+}
+
+/// The number of the issue `gh issue create` just made: its URL is the last
+/// thing it prints, and the number is the URL's last part.
+fn created_number(printed: &str) -> Option<u64> {
+    printed
+        .lines()
+        .rev()
+        .find(|line| line.contains("/issues/"))?
+        .trim()
+        .rsplit('/')
+        .next()?
+        .parse()
+        .ok()
+}
+
+/// The `gh issue edit` that takes issue `key` from `from` to `to`, sending only
+/// the fields that differ, or `None` when nothing it carries does. Open and
+/// closed are not its to change — that is `gh issue close` and `reopen`.
+fn edit_args(key: &str, from: &Snapshot, to: &Snapshot) -> Option<Vec<String>> {
+    let mut args: Vec<String> = ["issue", "edit", key].map(String::from).to_vec();
+    if from.title != to.title {
+        args.extend(["--title".into(), to.title.clone()]);
+    }
+    if from.body != to.body {
+        args.extend(["--body".into(), to.body.clone()]);
+    }
+    let added: Vec<&str> = to
+        .labels
+        .iter()
+        .filter(|l| !from.labels.contains(l))
+        .map(String::as_str)
+        .collect();
+    let removed: Vec<&str> = from
+        .labels
+        .iter()
+        .filter(|l| !to.labels.contains(l))
+        .map(String::as_str)
+        .collect();
+    if !added.is_empty() {
+        args.extend(["--add-label".into(), added.join(",")]);
+    }
+    if !removed.is_empty() {
+        args.extend(["--remove-label".into(), removed.join(",")]);
+    }
+    (args.len() > 3).then_some(args)
 }
 
 /// `gh issue list --json number,title,body` as issues.
@@ -366,6 +540,62 @@ fn ssh_resolve_blocking(alias: &str) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn said(title: &str, body: &str, open: bool, labels: &[&str]) -> Snapshot {
+        Snapshot {
+            title: title.into(),
+            body: body.into(),
+            open,
+            labels: labels.iter().map(|l| l.to_string()).collect(),
+        }
+    }
+
+    #[test]
+    fn issues_for_sync_are_read_with_their_state_and_labels() {
+        let json = r#"[{"number":7,"title":"Crash","body":"a\r\nb","state":"OPEN","labels":[{"name":"bug"}]},
+                       {"number":8,"title":"Old","state":"CLOSED","labels":[]}]"#;
+        let found = remote_issues(json).unwrap();
+        assert_eq!(found[0].key, "7");
+        assert_eq!(found[0].reference, "#7");
+        assert_eq!(found[0].snapshot, said("Crash", "a\nb", true, &["bug"]));
+        assert!(!found[1].snapshot.open);
+        assert!(remote_issues("nope").is_err());
+    }
+
+    #[test]
+    fn a_created_issue_is_known_by_the_number_its_url_ends_in() {
+        assert_eq!(
+            created_number("Creating issue\nhttps://github.com/a/b/issues/123\n"),
+            Some(123)
+        );
+        assert_eq!(created_number("nothing useful"), None);
+    }
+
+    #[test]
+    fn an_edit_sends_only_what_changed() {
+        let from = said("a", "x", true, &["bug", "old"]);
+        assert_eq!(edit_args("7", &from, &from), None);
+        let to = said("b", "x", true, &["bug", "new"]);
+        assert_eq!(
+            edit_args("7", &from, &to).unwrap(),
+            [
+                "issue",
+                "edit",
+                "7",
+                "--title",
+                "b",
+                "--add-label",
+                "new",
+                "--remove-label",
+                "old"
+            ]
+        );
+        let only_body = said("a", "y", true, &["bug", "old"]);
+        assert_eq!(
+            edit_args("7", &from, &only_body).unwrap(),
+            ["issue", "edit", "7", "--body", "y"]
+        );
+    }
 
     #[test]
     fn labelled_issues_are_read_and_nothing_unreadable_passes() {
