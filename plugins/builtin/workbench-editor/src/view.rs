@@ -5,10 +5,12 @@ use crate::buffers::{RootBuffers, body, new_buffer, save_status, tab_strip};
 
 use gpui::{
     App, AppContext as _, Context, Entity, Focusable as _, IntoElement, ParentElement, Render,
-    Styled, Window, div,
+    SharedString, Styled, Window, div,
 };
-use gpui_component::StyledExt;
+use gpui_component::button::ButtonVariants as _;
+use gpui_component::dialog::{DialogClose, DialogFooter};
 use gpui_component::input::InputEvent;
+use gpui_component::{StyledExt, WindowExt as _};
 use onehand_core::editor::SaveOutcome;
 use onehand_plugin_host::{hint, status_line};
 use std::collections::HashMap;
@@ -35,20 +37,6 @@ pub(crate) struct EditorView {
     /// dropped either — it is remembered here and re-run once the first lands,
     /// which is what makes it pick up the keystrokes that prompted it.
     saving: HashMap<u64, bool>,
-    /// A close that would discard unsaved edits, armed for its second click.
-    ///
-    /// Same shape as the shell's guarded root removal, and for the same reason:
-    /// the destructive half of a one-touch control needs a touch of its own.
-    /// Any other action disarms it, so the confirmation always belongs to the
-    /// control just clicked.
-    pending_close: Option<PendingClose>,
-}
-
-/// A close waiting on its confirming click.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum PendingClose {
-    Tab(usize),
-    All,
 }
 
 impl EditorView {
@@ -58,7 +46,6 @@ impl EditorView {
             buffers: HashMap::new(),
             status: None,
             saving: HashMap::new(),
-            pending_close: None,
         })
     }
 
@@ -221,7 +208,6 @@ impl EditorView {
     /// Write one tab, keyed by `uid` rather than by tab position so a re-run
     /// after an in-flight save still targets the buffer that asked for it.
     fn save_tab(&mut self, root: PathBuf, uid: u64, cx: &mut Context<Self>) {
-        self.pending_close = None;
         // Already writing this tab: remember that another save was asked for
         // and let the one in flight land first (see `saving`).
         if let Some(again) = self.saving.get_mut(&uid) {
@@ -291,7 +277,6 @@ impl EditorView {
     }
 
     fn select_tab(&mut self, idx: usize, cx: &mut Context<Self>) {
-        self.pending_close = None;
         if let Some(buffers) = self.root.as_ref().and_then(|r| self.buffers.get_mut(r))
             && idx < buffers.tabs.files.len()
         {
@@ -300,56 +285,129 @@ impl EditorView {
         cx.notify();
     }
 
-    /// Close tab `idx`, asking twice when that would throw away edits.
-    fn close_tab(&mut self, idx: usize, cx: &mut Context<Self>) {
-        let Some(buffers) = self.root.as_ref().and_then(|r| self.buffers.get_mut(r)) else {
+    /// Close tab `idx`, asking first when that would throw away edits.
+    fn close_tab(&mut self, idx: usize, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(file) = self
+            .root
+            .as_ref()
+            .and_then(|r| self.buffers.get(r))
+            .and_then(|buffers| buffers.tabs.files.get(idx))
+        else {
             return;
         };
-        let Some(file) = buffers.tabs.files.get(idx) else {
-            return;
-        };
-        if file.dirty && self.pending_close != Some(PendingClose::Tab(idx)) {
-            let label = file.label.clone();
-            self.pending_close = Some(PendingClose::Tab(idx));
-            self.status = Some(format!(
-                "{label} has unsaved edits — save them, or click ✕ again to discard them."
-            ));
-            cx.notify();
-            return;
-        }
-
         let uid = file.uid;
-        buffers.tabs.close(idx);
-        buffers.forget(uid);
-        self.pending_close = None;
-        self.status = None;
-        cx.notify();
+        if file.dirty {
+            let label = file.label.clone();
+            self.confirm_discard(
+                "Discard unsaved edits?".into(),
+                format!("“{label}” has edits that were never saved. Closing it throws them away."),
+                Close::Tab(uid),
+                window,
+                cx,
+            );
+            return;
+        }
+        self.discard(Close::Tab(uid), cx);
     }
 
-    /// Close every tab, asking twice when any of them has unsaved edits.
-    fn close_all_tabs(&mut self, cx: &mut Context<Self>) {
+    /// Close every tab, asking first when any of them has unsaved edits.
+    fn close_all_tabs(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(buffers) = self.root.as_ref().and_then(|r| self.buffers.get(r)) else {
+            return;
+        };
+        let n = buffers.tabs.files.iter().filter(|f| f.dirty).count();
+        if n > 0 {
+            let s = if n == 1 { "file has" } else { "files have" };
+            self.confirm_discard(
+                "Close all files?".into(),
+                format!("{n} {s} edits that were never saved. Closing them throws those away."),
+                Close::All,
+                window,
+                cx,
+            );
+            return;
+        }
+        self.discard(Close::All, cx);
+    }
+
+    /// Ask before a close throws edits away, in a dialog rather than by arming
+    /// the ✕ for a second press.
+    ///
+    /// An armed control looks like one that did nothing, and the sentence
+    /// explaining it was drawn at the foot of the panel, nowhere near the cross
+    /// that was pressed. The tab is named by `uid` and not by position, because
+    /// the strip can change while the question is on screen.
+    fn confirm_discard(
+        &mut self,
+        title: SharedString,
+        description: String,
+        close: Close,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let view = cx.entity();
+        window.open_alert_dialog(cx, move |alert, _, _| {
+            // Cloned per build: the builder runs again on every frame the
+            // dialog is on screen, so nothing captured can be consumed by one.
+            let view = view.clone();
+            alert
+                .title(title.clone())
+                .description(description.clone())
+                // Our own pair rather than the library's OK/Cancel, which draw
+                // the arrow cursor over controls that act. Keep is first and
+                // plain, Discard last and in the danger tint.
+                .footer(
+                    DialogFooter::new()
+                        .child(
+                            DialogClose::new().child(
+                                onehand_plugin_host::action("keep-edits")
+                                    .ghost()
+                                    .label("Keep"),
+                            ),
+                        )
+                        .child(
+                            onehand_plugin_host::action("discard-edits")
+                                .danger()
+                                .label("Discard")
+                                .on_click(move |_, window: &mut Window, cx: &mut App| {
+                                    window.close_dialog(cx);
+                                    view.update(cx, |view: &mut Self, cx| view.discard(close, cx));
+                                }),
+                        ),
+                )
+        });
+    }
+
+    /// Close without asking; the question, if there was one, is answered.
+    fn discard(&mut self, close: Close, cx: &mut Context<Self>) {
         let Some(buffers) = self.root.as_ref().and_then(|r| self.buffers.get_mut(r)) else {
             return;
         };
-        if buffers.any_dirty() && self.pending_close != Some(PendingClose::All) {
-            let n = buffers.tabs.files.iter().filter(|f| f.dirty).count();
-            let s = if n == 1 { "file has" } else { "files have" };
-            self.pending_close = Some(PendingClose::All);
-            self.status = Some(format!(
-                "{n} {s} unsaved edits — click ✕ again to discard them."
-            ));
-            cx.notify();
-            return;
+        match close {
+            Close::Tab(uid) => {
+                let Some(idx) = buffers.tabs.files.iter().position(|f| f.uid == uid) else {
+                    return;
+                };
+                buffers.tabs.close(idx);
+                buffers.forget(uid);
+            }
+            Close::All => {
+                for file in std::mem::take(&mut buffers.tabs.files) {
+                    buffers.forget(file.uid);
+                }
+                buffers.tabs.close_all();
+            }
         }
-
-        for file in std::mem::take(&mut buffers.tabs.files) {
-            buffers.forget(file.uid);
-        }
-        buffers.tabs.close_all();
-        self.pending_close = None;
         self.status = None;
         cx.notify();
     }
+}
+
+/// What a close is about to drop.
+#[derive(Debug, Clone, Copy)]
+enum Close {
+    Tab(u64),
+    All,
 }
 
 /// Process-wide buffer id salt, for the same reason core hands one out per tab.
@@ -361,15 +419,16 @@ fn next_buffer_uid() -> u64 {
 
 impl Render for EditorView {
     fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let open = self
-            .root
-            .as_ref()
-            .and_then(|r| self.buffers.get(r))
-            .filter(|buffers| !buffers.tabs.files.is_empty());
+        let open = self.root.as_ref().and_then(|root| {
+            self.buffers
+                .get(root)
+                .filter(|buffers| !buffers.tabs.files.is_empty())
+                .map(|buffers| (root, buffers))
+        });
 
         let body = match open {
             None => hint("Open a file from the tree, or from a tool card", cx),
-            Some(buffers) => {
+            Some((root, buffers)) => {
                 let active = buffers.tabs.active_file().map(|f| f.uid);
                 let buffer = active.and_then(|uid| buffers.buffer(uid)).cloned();
                 div()
@@ -377,12 +436,17 @@ impl Render for EditorView {
                     .min_h_0()
                     .v_flex()
                     .child(tab_strip(
+                        root,
                         buffers,
                         cx.listener(|view: &mut Self, idx: &usize, _, cx| {
                             view.select_tab(*idx, cx)
                         }),
-                        cx.listener(|view: &mut Self, idx: &usize, _, cx| view.close_tab(*idx, cx)),
-                        cx.listener(|view: &mut Self, _, _, cx| view.close_all_tabs(cx)),
+                        cx.listener(|view: &mut Self, idx: &usize, window, cx| {
+                            view.close_tab(*idx, window, cx)
+                        }),
+                        cx.listener(|view: &mut Self, _, window, cx| {
+                            view.close_all_tabs(window, cx)
+                        }),
                         cx,
                     ))
                     .children(buffer.map(|state| {

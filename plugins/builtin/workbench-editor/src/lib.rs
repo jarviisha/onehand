@@ -89,17 +89,3 @@ impl WorkbenchMode for Mode {
         self.view.read(cx).unsaved(root)
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use crate::buffers::RootBuffers;
-    use std::path::PathBuf;
-
-    #[test]
-    fn dirty_editor_state_is_reported() {
-        let mut buffers = RootBuffers::default();
-        buffers.tabs.open(PathBuf::from("file.rs"), None, 7);
-        buffers.tabs.files[0].dirty = true;
-        assert!(buffers.any_dirty());
-    }
-}

@@ -8,13 +8,15 @@
 
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
-    App, AppContext, Entity, InteractiveElement, IntoElement, ParentElement,
+    App, AppContext, Entity, InteractiveElement, IntoElement, ParentElement, SharedString,
     StatefulInteractiveElement, Styled, Window, div, px,
 };
 use gpui_component::button::ButtonVariants as _;
 use gpui_component::input::{Editor, EditorState};
+use gpui_component::tooltip::Tooltip;
 use gpui_component::{ActiveTheme, Icon, IconName, Sizable as _, StyledExt};
 use onehand_core::editor::{RootEditors, SaveOutcome};
+use onehand_plugin_host::status_ink;
 use std::collections::HashMap;
 use std::path::Path;
 
@@ -57,11 +59,6 @@ impl RootBuffers {
         self.buffers.remove(&uid);
         self.watches.remove(&uid);
     }
-
-    /// Whether any open tab has edits that a close would throw away.
-    pub(crate) fn any_dirty(&self) -> bool {
-        self.tabs.files.iter().any(|f| f.dirty)
-    }
 }
 
 /// The tree-sitter language token for a path.
@@ -93,77 +90,129 @@ pub(crate) fn language_for(path: &Path) -> &'static str {
     }
 }
 
-/// The file-tab strip. A trailing close button shuts the whole set in one
-/// touch, rather than making the user close tabs one at a time to get the room
-/// back.
+/// The file-tab strip: the tabs in a box of their own that scrolls, and a
+/// trailing close-all that stays put.
+///
+/// **The tabs' box is the only part of the row that gives way.** The close-all
+/// used to sit inside the scrolling box, so enough open files pushed it past the
+/// panel's edge — the one control wanted precisely when there are too many tabs
+/// was the one the tabs took away. `flex_1` + `min_w_0` on the box and
+/// `flex_none` on the control is what keeps it on screen at any count.
 pub(crate) fn tab_strip(
-    root: &RootBuffers,
+    root: &Path,
+    buffers: &RootBuffers,
     on_select: impl Fn(&usize, &mut Window, &mut App) + 'static,
     on_close: impl Fn(&usize, &mut Window, &mut App) + 'static,
     on_close_all: impl Fn(&gpui::ClickEvent, &mut Window, &mut App) + 'static,
     cx: &App,
 ) -> gpui::AnyElement {
-    let active = root.tabs.active;
+    let active = buffers.tabs.active;
     let on_select = std::rc::Rc::new(on_select);
     let on_close = std::rc::Rc::new(on_close);
 
     div()
-        .id("editor-tabs")
         .h_flex()
         .items_center()
         .gap_1()
         .w_full()
         .px_2()
         .py_1()
-        .overflow_x_scroll()
         .border_b_1()
         .border_color(cx.theme().border)
-        .children(root.tabs.files.iter().enumerate().map(|(i, file)| {
-            let (select, close) = (on_select.clone(), on_close.clone());
+        .child(
             div()
-                .id(("editor-tab", i))
+                .id("editor-tabs")
                 .h_flex()
                 .items_center()
                 .gap_1()
-                .flex_none()
-                .px_2()
-                .py_0p5()
-                .rounded(cx.theme().radius)
-                .text_xs()
-                .cursor_pointer()
-                .when(i == active, |tab| {
-                    tab.bg(cx.theme().accent)
-                        .text_color(cx.theme().accent_foreground)
-                })
-                .child(div().max_w(px(160.)).truncate().child(file.label.clone()))
-                // The dirty dot, not a modified-name convention: the label is
-                // already truncated, and a marker inside it would be the first
-                // thing to disappear.
-                .when(file.dirty, |tab| {
-                    tab.child(
-                        div()
-                            .size(px(6.))
-                            .flex_none()
-                            .rounded_full()
-                            .bg(cx.theme().warning),
-                    )
-                })
-                .on_click(move |_, window, cx: &mut App| select(&i, window, cx))
-                .child(
+                .flex_1()
+                .min_w_0()
+                .overflow_x_scroll()
+                .children(buffers.tabs.files.iter().enumerate().map(|(i, file)| {
+                    let (select, close) = (on_select.clone(), on_close.clone());
+                    // One group per tab: a name shared by the strip would light
+                    // every tab's cross the moment the pointer entered any of
+                    // them.
+                    let hovered = SharedString::from(format!("editor-tab-{i}"));
+                    // The label is the file name alone, so three `mod.rs` tabs
+                    // read the same; the path relative to the project is what
+                    // tells them apart, and the hover is where it goes. The
+                    // dirty dot is named there too, since a colour is a code
+                    // somebody has to have learnt first.
+                    let rel = file.path.strip_prefix(root).unwrap_or(&file.path);
+                    let hint = SharedString::from(match file.dirty {
+                        true => format!("{} — unsaved changes", rel.display()),
+                        false => rel.display().to_string(),
+                    });
                     div()
-                        .id(("editor-tab-close", i))
+                        .id(("editor-tab", i))
+                        .group(hovered.clone())
+                        .h_flex()
+                        .items_center()
+                        .gap_1()
                         .flex_none()
-                        .text_color(cx.theme().muted_foreground)
-                        .child(Icon::new(IconName::Close).size_3())
-                        .on_click(move |_, window, cx: &mut App| close(&i, window, cx)),
-                )
-        }))
-        .child(div().flex_1())
+                        .max_w(px(220.))
+                        .px_2()
+                        .py_0p5()
+                        .rounded(cx.theme().radius)
+                        .text_xs()
+                        .cursor_pointer()
+                        .when(i == active, |tab| {
+                            tab.bg(cx.theme().accent)
+                                .text_color(cx.theme().accent_foreground)
+                        })
+                        // The well, the same hover the terminal's tabs and the
+                        // mode strip take, so one strip does not answer the
+                        // pointer differently from the two beside it.
+                        .when(i != active, |tab| tab.hover(|tab| tab.bg(cx.theme().muted)))
+                        .tooltip(move |window, cx| Tooltip::new(hint.clone()).build(window, cx))
+                        .child(div().min_w_0().truncate().child(file.label.clone()))
+                        // The dirty dot, not a modified-name convention: the
+                        // label is already truncated, and a marker inside it
+                        // would be the first thing to disappear. Status ink, the
+                        // same value the file tree uses for "changed".
+                        .when(file.dirty, |tab| {
+                            tab.child(
+                                div()
+                                    .size(px(6.))
+                                    .flex_none()
+                                    .rounded_full()
+                                    .bg(status_ink(cx).warning),
+                            )
+                        })
+                        .on_click(move |_, window, cx: &mut App| select(&i, window, cx))
+                        // **Shown on hover alone**, `invisible` rather than
+                        // absent so a tab does not change width under the
+                        // pointer. `stop_propagation` is what keeps the press
+                        // that closes a tab from also selecting whatever slid
+                        // into its place — which switched the file on screen
+                        // when a background tab was closed.
+                        .child(
+                            onehand_plugin_host::action(("editor-tab-close", i))
+                                .ghost()
+                                .xsmall()
+                                .icon(Icon::new(IconName::Close))
+                                .invisible()
+                                .group_hover(hovered, |style| style.visible())
+                                .on_click(move |_, window, cx: &mut App| {
+                                    cx.stop_propagation();
+                                    close(&i, window, cx);
+                                }),
+                        )
+                })),
+        )
+        // Muted like the other strips' controls: a ghost button in full ink is
+        // the brightest thing on the row, out-shouting the file names beside it.
+        // Its tooltip is what tells it from a tab's own cross, which is the
+        // same glyph.
         .child(
             onehand_plugin_host::action("close-all-files")
                 .ghost()
                 .xsmall()
+                .flex_none()
+                .text_color(cx.theme().muted_foreground)
                 .icon(Icon::new(IconName::Close))
+                .tooltip("Close all files")
                 .on_click(on_close_all),
         )
         .into_any_element()
