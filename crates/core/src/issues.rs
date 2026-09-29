@@ -48,6 +48,17 @@ pub struct LocalIssue {
     pub created: u64,
     #[serde(default)]
     pub updated: u64,
+    /// What has been said about it since it was opened, oldest first: a run
+    /// starting on it, how that run ended.
+    #[serde(default)]
+    pub notes: Vec<Note>,
+}
+
+/// One thing said about an issue, and when.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Note {
+    pub at: u64,
+    pub text: String,
 }
 
 fn open_by_default() -> bool {
@@ -106,6 +117,7 @@ impl Issues {
             labels: draft.labels,
             created: now,
             updated: now,
+            notes: Vec::new(),
         });
         Ok(number)
     }
@@ -126,6 +138,32 @@ impl Issues {
         let issue = self.find_mut(number)?;
         if issue.open != open {
             issue.open = open;
+            issue.updated = now;
+        }
+        Ok(())
+    }
+
+    /// Add `text` to what has been said about issue `number`.
+    pub fn note(&mut self, number: u64, text: &str, now: u64) -> Result<(), String> {
+        let text = text.trim();
+        if text.is_empty() {
+            return Err("A note needs something to say.".to_string());
+        }
+        let issue = self.find_mut(number)?;
+        issue.notes.push(Note {
+            at: now,
+            text: text.to_string(),
+        });
+        issue.updated = now;
+        Ok(())
+    }
+
+    /// Take `label` off issue `number`, if it carries it.
+    pub fn remove_label(&mut self, number: u64, label: &str, now: u64) -> Result<(), String> {
+        let issue = self.find_mut(number)?;
+        let before = issue.labels.len();
+        issue.labels.retain(|l| l != label);
+        if issue.labels.len() != before {
             issue.updated = now;
         }
         Ok(())
@@ -287,6 +325,47 @@ mod tests {
         issues.set_open(1, false, 2).unwrap();
         let order: Vec<u64> = issues.listed().iter().map(|i| i.number).collect();
         assert_eq!(order, [3, 2, 4, 1]);
+    }
+
+    #[test]
+    fn a_note_is_added_in_order_and_stamps_the_issue() {
+        let mut issues = Issues::default();
+        let n = issues.create(draft("a"), 1).unwrap();
+        issues.note(n, "  started  ", 4).unwrap();
+        issues.note(n, "finished", 7).unwrap();
+        let issue = issues.get(n).unwrap();
+        let said: Vec<&str> = issue.notes.iter().map(|note| note.text.as_str()).collect();
+        assert_eq!(said, ["started", "finished"]);
+        assert_eq!((issue.notes[1].at, issue.updated), (7, 7));
+        assert!(
+            issues.note(n, "   ", 9).is_err(),
+            "an empty note says nothing"
+        );
+        assert!(issues.note(99, "x", 9).is_err());
+    }
+
+    #[test]
+    fn a_label_comes_off_once_and_only_where_it_was() {
+        let mut issues = Issues::default();
+        let n = issues
+            .create(
+                Draft {
+                    title: "a".into(),
+                    labels: vec!["auto".into(), "ui".into()],
+                    ..Draft::default()
+                },
+                1,
+            )
+            .unwrap();
+        issues.remove_label(n, "auto", 3).unwrap();
+        assert_eq!(issues.get(n).unwrap().labels, ["ui"]);
+        assert_eq!(issues.get(n).unwrap().updated, 3);
+        issues.remove_label(n, "auto", 8).unwrap();
+        assert_eq!(
+            issues.get(n).unwrap().updated,
+            3,
+            "nothing came off, nothing changed"
+        );
     }
 
     #[test]

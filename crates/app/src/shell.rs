@@ -2111,7 +2111,7 @@ impl Shell {
             .get(root_idx)
             .filter(|root| root.unattended)
         {
-            crate::unattended::check_now(root.path.clone(), cx);
+            crate::unattended::check_now(self.project_for_runs(&root.path), cx);
         }
         self.save_workspace(window, cx);
         // The project page's menu says whether this is on, in the entry that was
@@ -3080,15 +3080,30 @@ impl Shell {
     /// The project roots an unattended run may look for issues in, in the order
     /// the rail draws them — so pinning a project is also how it is worked
     /// first. Only the ones the user opted in, and never a run's own worktree.
-    pub fn unattended_roots(&self) -> Vec<PathBuf> {
+    pub fn unattended_roots(&self) -> Vec<crate::unattended::Project> {
         let roots = &self.window.workspace.roots;
         self.window
             .workspace
             .display_order()
             .into_iter()
             .filter(|&i| roots[i].unattended && !roots[i].transient)
-            .map(|i| roots[i].path.clone())
+            .map(|i| self.project_for_runs(&roots[i].path))
             .collect()
+    }
+
+    /// `root` as unattended runs see it: the project, and the file its own
+    /// issues are kept in, if this workspace keeps any.
+    pub fn project_for_runs(&self, root: &Path) -> crate::unattended::Project {
+        crate::unattended::Project {
+            root: root.to_path_buf(),
+            issues: self.issues_file(root),
+        }
+    }
+
+    /// Where `root`'s own issues are kept, if this workspace keeps anything.
+    pub fn issues_file(&self, root: &Path) -> Option<PathBuf> {
+        let storage = self.window.workspace.storage_dir.as_deref()?;
+        Some(onehand_core::issues::file_for(storage, root))
     }
 
     /// Whether `root` is one of this window's projects.
@@ -3176,6 +3191,7 @@ impl Shell {
             return;
         };
         let (path, label) = (root.path.clone(), SharedString::from(root.label.clone()));
+        let issues = self.issues_file(&path);
         self.issue_picker = Some(IssuePicker {
             root: path.clone(),
             project: label,
@@ -3186,10 +3202,7 @@ impl Shell {
             let found = {
                 let path = path.clone();
                 cx.background_executor()
-                    .spawn(async move {
-                        crate::unattended::connector_for(&path)
-                            .and_then(|c| onehand_core::unattended::open_issues_blocking(c, &path))
-                    })
+                    .spawn(async move { crate::unattended::pickable_blocking(&path, issues) })
                     .await
             };
             shell
@@ -3220,14 +3233,14 @@ impl Shell {
         let Some(found) = picker.found else {
             return;
         };
-        let Ok((rows, _)) = &*found else {
+        let Ok((rows, _, _)) = &*found else {
             return;
         };
-        let Some(row) = rows.get(index).cloned() else {
+        let Some((tracker, row)) = rows.get(index).cloned() else {
             return;
         };
         let handle = window.window_handle();
-        if let Err(why) = crate::unattended::start_picked(picker.root, row, handle, cx) {
+        if let Err(why) = crate::unattended::start_picked(picker.root, tracker, row, handle, cx) {
             window.push_notification(Notification::warning(why), cx);
         }
     }
@@ -3826,7 +3839,7 @@ fn open_window(workspace: Workspace, cx: &mut App) {
 
 /// What reading a project's open issues came to: the issues and whether the
 /// list was cut at its bound, or why they could not be read.
-pub type PickerAnswer = Result<(Vec<onehand_core::unattended::IssueRow>, bool), String>;
+pub type PickerAnswer = Result<crate::unattended::Pickable, String>;
 
 /// The open issues of one project, being read or read.
 pub struct IssuePicker {

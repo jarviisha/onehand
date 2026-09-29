@@ -584,8 +584,16 @@ says so.** `onehand_core::connector::Connector` is the trait — account, whethe
 issues, labels, comments, default branch, pull request — and `plugins/builtin/connector-github` is the
 one implementation, where `gh` is the whole API layer. `connector::serving` hands a project to the
 first connector whose `serves_blocking` accepts it (GitHub reads `origin` locally before any call),
-and each connector's `account_blocking` says who it acts as. A run carries its connector from the
-claim to the last comment.
+and each connector's `account_blocking` says who it acts as.
+**An issue lives on the forge or in onehand** (`unattended::Tracker::Forge` / `Local`, the latter the
+project's Issues tab), and a run carries both where its issue lives and the forge its work goes to,
+because the two come apart. The project's own issues are searched first. A local issue on a project
+with a forge still ends in a pull request, one that must not reference `#N` (onehand's numbers are not
+the forge's). A project **no connector serves** is still worked on its own issues: branched off the
+branch checked out, told to commit and not push, judged by its commits past the start
+(`unattended::Verdict`, `worktree::commits_since_blocking`). The outcome is a comment on the forge or
+a note on the local issue. What refuses a project is nothing to work (no forge, no storage) or not
+being a repository.
 What either finds is kept per project (`Unattended::problems`) and shown as the pill in the warning
 ink with the reason on hover — never only on stderr, since a switch that is on while nothing can
 happen looks exactly like one that is working. **A config that stops every run** (empty label,
@@ -603,8 +611,8 @@ once. Every run writes its own log into its transcript as notices (`unattended::
 the prompt going out, a cancel, and the words the issue was told at the end. A run the search finds claims its issue by removing the label,
 branches a worktree off `origin/<default>` and mints a session there. **Neither step moves anything on
 screen**: `ChatPane::open_unshown` connects without showing, and the worktree's root is
-`ProjectRoot::transient`, which `to_config` never writes. One prompt, one turn. The pull request the connector
-finds is the verdict, on every ending. A parked ask is cancelled, never answered — unless the user is
+`ProjectRoot::transient`, which `to_config` never writes. One prompt, one turn. The pull request the forge
+finds — or, with no forge, the commits on the branch — is the verdict, on every ending. A parked ask is cancelled, never answered — unless the user is
 reading that conversation, in which case the run is **taken over**. The same happens the moment
 anybody else puts a prompt in. Taking over clears `transient` and saves. Teardown is
 `Shell::forget_root`, never `remove_root`, because that one re-shows the active session and takes the
@@ -884,8 +892,10 @@ see the rail, below.
   process-wide lock and through `config::write_atomic`, made against what is on disk rather than the
   copy on screen, so a person editing and anything else in the process writing cannot each save a copy
   missing the other's change; a file this build cannot read is refused and never written over. The
-  file is read again when the mode is next drawn after being shown or after a turn ends. No shortcut
-  yet, and no deletion — closing is the way an issue leaves the work.
+  file is read again when the mode is next drawn after being shown or after a turn ends. What runs
+  said about an issue is kept on it as **notes** and drawn under its body, the latest few, with the
+  cut said. Unattended runs work these issues too — see *Unattended runs*. No shortcut yet, and no
+  deletion — closing is the way an issue leaves the work.
 
 State is per project root, held by the mode that works on it, so switching roots swaps the whole
 thing.
