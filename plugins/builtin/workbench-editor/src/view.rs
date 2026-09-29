@@ -460,8 +460,14 @@ impl Render for EditorView {
             }
         };
 
+        // `min_w_0`: the resizable panel holding this is a flex *row*, and a flex
+        // item's floor is otherwise its content's width — here the sum of every
+        // tab, since tabs never narrow. The view grew with the strip instead of
+        // the strip's box overflowing, so it never scrolled and the card clipped
+        // whatever passed its edge.
         div()
             .flex_1()
+            .min_w_0()
             .min_h_0()
             .v_flex()
             .child(body)
