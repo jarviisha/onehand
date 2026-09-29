@@ -147,7 +147,14 @@ pub(crate) fn tab_strip(
                 .flex_none()
                 .max_w(px(220.))
                 .px_2()
-                .py_0p5()
+                // A height of its own rather than padding around the line.
+                // `text_xs` sets the font size alone, and gpui's default line
+                // is 1.618 times that — about 1.2rem for 0.75rem glyphs — so
+                // padded, the chip stood nearly twice as tall as its letters.
+                // The line comes down with the box, or the label's own line
+                // would hold the tab open; the font size does not move.
+                .h(rems(1.125))
+                .line_height(rems(1.125))
                 .rounded(cx.theme().radius)
                 .text_xs()
                 .cursor_pointer()
@@ -182,12 +189,11 @@ pub(crate) fn tab_strip(
                 // into its place — which switched the file on screen
                 // when a background tab was closed.
                 //
-                // **The cross is what sets the tab's height**, not the label:
-                // `xsmall` gives an icon button a 1.25rem box, taller than a
-                // line of `text_xs`. `size_4` takes the box down to that line
-                // -- the library applies a caller's style after its size
-                // preset -- while the glyph keeps its `xsmall` size and the
-                // label its font.
+                // `size_4`: `xsmall` gives an icon button a 1.25rem box, taller
+                // than the tab's own height, and a child that tall would hold
+                // the tab open whatever the tab asks for. The library applies a
+                // caller's style after its size preset, so this takes the box
+                // down while the glyph keeps its `xsmall` size.
                 .child(
                     onehand_plugin_host::action(("editor-tab-close", i))
                         .ghost()
