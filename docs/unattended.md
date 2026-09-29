@@ -361,6 +361,16 @@ commit of that branch, which is a PR nobody can review and nobody asked for.
 `base` key in the config is still not added: the default branch is the answer
 the repository already gives.
 
+The fetch is the connector's (`Connector::fetch_blocking`). GitHub's retries a
+failed fetch over HTTPS with `gh`'s own sign-in when `origin` is an ssh remote:
+an app opened from the desktop often has no ssh agent to reach while `gh` is
+already signed in. The HTTPS URL is built from `origin` itself, an ssh alias
+resolved through `ssh -G`, never from `gh`'s default repository, which on a fork
+can be upstream. The retry is gated on the remote and not on the kind of
+failure — telling an auth failure from a dead network means matching git's
+wording — so a network that is down costs both fetches' time. Only the fetch
+falls back; the agent's own push still goes to `origin`.
+
 ## Disk
 
 Each worktree is a cold build, and the worktrees are kept on purpose (see
@@ -415,6 +425,8 @@ LinkLost        → "The agent stopped answering; there is no pull request on <b
 Closed          → "The run's session was closed before it finished; there is no pull request on <branch>."
 TimedOut        → "No pull request after <timeout>; the run was cancelled."
 TakenOver       → "Taken over by hand; the run stopped watching <branch>."
+TakenOver(q)    → "Handed over on a decision; the run stopped watching <branch>. <q>"
+                  (a picked run whose question parked while nobody was reading it)
 Failed(why)     → "onehand could not start the run: <why>"
 ```
 
