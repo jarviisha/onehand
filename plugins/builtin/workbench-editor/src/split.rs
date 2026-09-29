@@ -17,7 +17,7 @@ use crate::view::EditorView;
 
 use gpui::{
     AnyView, App, AppContext as _, Context, Entity, IntoElement, ParentElement, Render, Styled,
-    Window, div, px,
+    Subscription, Window, div, px,
 };
 use gpui_component::{ActiveTheme, ResizableState, StyledExt, h_resizable, resizable_panel};
 
@@ -48,12 +48,16 @@ pub(crate) struct CodeView {
     files: AnyView,
     editor: Entity<EditorView>,
     divider: Entity<ResizableState>,
+    /// Redraws the pair when the buffers' view flips the tree, since what that
+    /// view renders is its own and this one reads the flag.
+    _tree: Subscription,
 }
 
 impl CodeView {
     pub(crate) fn new(files: AnyView, editor: Entity<EditorView>, cx: &mut App) -> Entity<Self> {
         cx.new(|cx| Self {
             files,
+            _tree: cx.observe(&editor, |_, _, cx| cx.notify()),
             editor,
             divider: cx.new(|_| ResizableState::default()),
         })
@@ -62,6 +66,18 @@ impl CodeView {
 
 impl Render for CodeView {
     fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        // Hidden, the buffers are drawn alone rather than beside a panel marked
+        // invisible: the group still draws the divider's grip on the second
+        // panel, which would leave a drag handle along the left edge moving
+        // nothing. The divider's state is untouched, so the tree comes back at
+        // the width it was dragged to.
+        if !self.editor.read(cx).tree_shown() {
+            return div()
+                .size_full()
+                .h_flex()
+                .child(self.editor.clone())
+                .into_any_element();
+        }
         h_resizable("workbench-code")
             .with_state(&self.divider)
             .child(
@@ -92,5 +108,6 @@ impl Render for CodeView {
                     .size_range(px(TREE_MIN)..px(f32::MAX))
                     .child(self.editor.clone()),
             )
+            .into_any_element()
     }
 }

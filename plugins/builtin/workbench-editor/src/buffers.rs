@@ -90,6 +90,18 @@ pub(crate) fn language_for(path: &Path) -> &'static str {
     }
 }
 
+/// What a press on the strip does, each handed a tab's index where it has one.
+pub(crate) struct StripHandlers {
+    pub(crate) toggle_tree: OnPress,
+    pub(crate) select: OnTab,
+    pub(crate) close: OnTab,
+    pub(crate) close_all: OnPress,
+}
+
+pub(crate) type OnPress = Box<dyn Fn(&gpui::ClickEvent, &mut Window, &mut App)>;
+/// Shared, because every tab's closure holds one.
+pub(crate) type OnTab = std::rc::Rc<dyn Fn(&usize, &mut Window, &mut App)>;
+
 /// The file-tab strip: the tabs in a box of their own that scrolls, and a
 /// trailing close-all that stays put.
 ///
@@ -102,14 +114,17 @@ pub(crate) fn tab_strip(
     root: &Path,
     buffers: &RootBuffers,
     scroll: &ScrollHandle,
-    on_select: impl Fn(&usize, &mut Window, &mut App) + 'static,
-    on_close: impl Fn(&usize, &mut Window, &mut App) + 'static,
-    on_close_all: impl Fn(&gpui::ClickEvent, &mut Window, &mut App) + 'static,
+    tree_shown: bool,
+    on: StripHandlers,
     cx: &App,
 ) -> gpui::AnyElement {
     let active = buffers.tabs.active;
-    let on_select = std::rc::Rc::new(on_select);
-    let on_close = std::rc::Rc::new(on_close);
+    let StripHandlers {
+        toggle_tree: on_toggle_tree,
+        select: on_select,
+        close: on_close,
+        close_all: on_close_all,
+    } = on;
 
     let (offset, max) = (scroll.offset().x, scroll.max_offset().x);
     let (before, after) = (offset < px(0.), offset > -max);
@@ -218,6 +233,25 @@ pub(crate) fn tab_strip(
         .py_1()
         .border_b_1()
         .border_color(cx.theme().border)
+        // The tree's toggle, at the end nearest the tree. The icon is the
+        // panel's *state*, open or shut, and the tooltip says what a press
+        // does -- so the two never disagree about which way round it is.
+        .child(
+            onehand_plugin_host::action("toggle-file-tree")
+                .ghost()
+                .xsmall()
+                .flex_none()
+                .text_color(cx.theme().muted_foreground)
+                .icon(Icon::new(match tree_shown {
+                    true => IconName::PanelLeftClose,
+                    false => IconName::PanelLeftOpen,
+                }))
+                .tooltip(match tree_shown {
+                    true => "Hide the file tree",
+                    false => "Show the file tree",
+                })
+                .on_click(on_toggle_tree),
+        )
         .child(
             // **Each end fades while there is more past it**, into the surface
             // the strip sits on. A hard clip cuts a tab mid-letter, which reads
@@ -238,16 +272,18 @@ pub(crate) fn tab_strip(
         // the brightest thing on the row, out-shouting the file names beside it.
         // Its tooltip is what tells it from a tab's own cross, which is the
         // same glyph.
-        .child(
-            onehand_plugin_host::action("close-all-files")
-                .ghost()
-                .xsmall()
-                .flex_none()
-                .text_color(cx.theme().muted_foreground)
-                .icon(Icon::new(IconName::Close))
-                .tooltip("Close all files")
-                .on_click(on_close_all),
-        )
+        .when(!buffers.tabs.files.is_empty(), |strip| {
+            strip.child(
+                onehand_plugin_host::action("close-all-files")
+                    .ghost()
+                    .xsmall()
+                    .flex_none()
+                    .text_color(cx.theme().muted_foreground)
+                    .icon(Icon::new(IconName::Close))
+                    .tooltip("Close all files")
+                    .on_click(on_close_all),
+            )
+        })
         .into_any_element()
 }
 

@@ -1,7 +1,7 @@
 //! The Editor mode's own state: the open buffers per project root, and the
 //! rules that keep a save from clobbering somebody else's write.
 
-use crate::buffers::{RootBuffers, body, new_buffer, save_status, tab_strip};
+use crate::buffers::{RootBuffers, StripHandlers, body, new_buffer, save_status, tab_strip};
 
 use gpui::{
     App, AppContext as _, Context, Entity, Focusable as _, IntoElement, ParentElement, Render,
@@ -15,6 +15,7 @@ use onehand_core::editor::SaveOutcome;
 use onehand_plugin_host::{hint, status_line};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
+use std::rc::Rc;
 
 pub(crate) struct EditorView {
     root: Option<PathBuf>,
@@ -43,6 +44,14 @@ pub(crate) struct EditorView {
     /// active tab *changes*: asked on every frame, it would pull the strip back
     /// under a wheel somebody was using to look at the other tabs.
     revealed: Option<u64>,
+    /// Whether the file tree beside the buffers is showing.
+    ///
+    /// Held here rather than on the split that draws the tree, because the
+    /// control that flips it sits on this view's tab strip and has to show
+    /// which way round it is; the split observes this view and reads it. One
+    /// flag for every project, not per root, and not persisted — the same
+    /// answer as the divider's position, for the same reason.
+    tree_shown: bool,
 }
 
 impl EditorView {
@@ -54,6 +63,7 @@ impl EditorView {
             saving: HashMap::new(),
             tabs_scroll: ScrollHandle::new(),
             revealed: None,
+            tree_shown: true,
         })
     }
 
@@ -284,6 +294,15 @@ impl EditorView {
         .detach();
     }
 
+    pub(crate) fn tree_shown(&self) -> bool {
+        self.tree_shown
+    }
+
+    fn toggle_tree(&mut self, cx: &mut Context<Self>) {
+        self.tree_shown = !self.tree_shown;
+        cx.notify();
+    }
+
     fn select_tab(&mut self, idx: usize, cx: &mut Context<Self>) {
         if let Some(buffers) = self.root.as_ref().and_then(|r| self.buffers.get_mut(r))
             && idx < buffers.tabs.files.len()
@@ -449,46 +468,49 @@ impl Render for EditorView {
             self.revealed = uid;
         }
 
-        let open = self.root.as_ref().and_then(|root| {
-            self.buffers
-                .get(root)
-                .filter(|buffers| !buffers.tabs.files.is_empty())
-                .map(|buffers| (root, buffers))
-        });
-
-        let body = match open {
+        let Some(root) = self.root.as_ref() else {
+            return div()
+                .flex_1()
+                .min_w_0()
+                .min_h_0()
+                .v_flex()
+                .child(hint("No project root", cx));
+        };
+        // The strip is drawn with no tabs as well: the tree's toggle lives on
+        // it, and a strip that went with the last tab would leave a hidden tree
+        // with no way back.
+        let empty = RootBuffers::default();
+        let buffers = self.buffers.get(root).unwrap_or(&empty);
+        let active = buffers.tabs.active_file().map(|f| f.uid);
+        let buffer = active.and_then(|uid| buffers.buffer(uid)).cloned();
+        let strip = tab_strip(
+            root,
+            buffers,
+            &self.tabs_scroll,
+            self.tree_shown,
+            StripHandlers {
+                toggle_tree: Box::new(
+                    cx.listener(|view: &mut Self, _, _, cx| view.toggle_tree(cx)),
+                ),
+                select: Rc::new(
+                    cx.listener(|view: &mut Self, idx: &usize, _, cx| view.select_tab(*idx, cx)),
+                ),
+                close: Rc::new(cx.listener(|view: &mut Self, idx: &usize, window, cx| {
+                    view.close_tab(*idx, window, cx)
+                })),
+                close_all: Box::new(
+                    cx.listener(|view: &mut Self, _, window, cx| view.close_all_tabs(window, cx)),
+                ),
+            },
+            cx,
+        );
+        let body = match buffer {
             None => hint("Open a file from the tree, or from a tool card", cx),
-            Some((root, buffers)) => {
-                let active = buffers.tabs.active_file().map(|f| f.uid);
-                let buffer = active.and_then(|uid| buffers.buffer(uid)).cloned();
-                div()
-                    .flex_1()
-                    .min_h_0()
-                    .v_flex()
-                    .child(tab_strip(
-                        root,
-                        buffers,
-                        &self.tabs_scroll,
-                        cx.listener(|view: &mut Self, idx: &usize, _, cx| {
-                            view.select_tab(*idx, cx)
-                        }),
-                        cx.listener(|view: &mut Self, idx: &usize, window, cx| {
-                            view.close_tab(*idx, window, cx)
-                        }),
-                        cx.listener(|view: &mut Self, _, window, cx| {
-                            view.close_all_tabs(window, cx)
-                        }),
-                        cx,
-                    ))
-                    .children(buffer.map(|state| {
-                        div()
-                            .flex_1()
-                            .min_h_0()
-                            .child(body(&state))
-                            .into_any_element()
-                    }))
-                    .into_any_element()
-            }
+            Some(state) => div()
+                .flex_1()
+                .min_h_0()
+                .child(body(&state))
+                .into_any_element(),
         };
 
         // `min_w_0`: the resizable panel holding this is a flex *row*, and a flex
@@ -501,6 +523,7 @@ impl Render for EditorView {
             .min_w_0()
             .min_h_0()
             .v_flex()
+            .child(strip)
             .child(body)
             .children(self.status.clone().map(|status| status_line(status, cx)))
     }
