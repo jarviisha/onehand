@@ -32,10 +32,11 @@ pub struct Command {
     action: fn() -> Box<dyn Action>,
 }
 
-/// The two commands that act once per physical press; the shell's latch names
+/// The commands that act once per physical press; the shell's latch names
 /// them by these, so a renamed id cannot leave the latch holding a stale one.
 pub const RESTART: &str = "restart";
 pub const CLOSE_SESSION: &str = "close_session";
+pub const NEW_SESSION: &str = "new_session";
 
 macro_rules! command {
     ($id:expr, $label:literal, [$($key:literal),*], $action:expr) => {
@@ -93,6 +94,12 @@ pub const COMMANDS: &[Command] = &[
         "Focus composer",
         ["ctrl-shift-a"],
         FocusComposer
+    ),
+    command!(
+        NEW_SESSION,
+        "New session (default agent, current project)",
+        ["ctrl-shift-o"],
+        NewSession
     ),
     command!(
         RESTART,

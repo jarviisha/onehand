@@ -40,6 +40,7 @@ gpui::actions!(
         ToggleTerminal,
         OpenNeovim,
         FocusComposer,
+        NewSession,
         RestartSession,
         ZoomIn,
         ZoomOut,
@@ -3581,6 +3582,13 @@ impl Render for Shell {
                         .update(cx, |pane, cx| pane.focus_composer(window, cx));
                 }),
             )
+            .on_action(cx.listener(|shell: &mut Self, _: &NewSession, window, cx| {
+                // Once per press: key repeat on a held chord would otherwise
+                // start an agent per repeat.
+                if shell.held_commands.insert(crate::keymap::NEW_SESSION) {
+                    shell.new_session(window, cx);
+                }
+            }))
             .on_action(
                 cx.listener(|shell: &mut Self, _: &RestartSession, window, cx| {
                     if shell.held_commands.insert(crate::keymap::RESTART) {
