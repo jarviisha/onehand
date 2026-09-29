@@ -146,7 +146,7 @@ impl Connector for GitHub {
         "`gh pr create`"
     }
 
-    /// The open issues, then the closed ones changed since `since` — asked
+    /// The open issues, then every issue changed since `since` — asked
     /// from a day before it, because the search takes a day and not a moment,
     /// and two clocks never quite agree. Listing more than changed costs a
     /// comparison; listing less loses an edit.
@@ -155,7 +155,7 @@ impl Connector for GitHub {
         root: &Path,
         since: Option<u64>,
         limit: usize,
-    ) -> Result<Vec<RemoteIssue>, String> {
+    ) -> Result<(Vec<RemoteIssue>, Vec<RemoteIssue>), String> {
         let limit = limit.to_string();
         let list = |state: &str, search: Option<String>| {
             let search = search.map(|day| format!("updated:>={day}"));
@@ -166,11 +166,13 @@ impl Connector for GitHub {
             args.extend(["--json", SYNC_FIELDS]);
             gh(root, &args).and_then(|json| remote_issues(&json))
         };
-        let mut found = list("open", None)?;
-        if let Some(since) = since {
-            found.extend(list("closed", Some(day_of(since.saturating_sub(86_400))))?);
-        }
-        Ok(found)
+        // `all` and not `closed`: an issue reopened there is a change too, and
+        // it may be past the end of a cut open list.
+        let changed = match since {
+            Some(since) => list("all", Some(day_of(since.saturating_sub(86_400))))?,
+            None => Vec::new(),
+        };
+        Ok((list("open", None)?, changed))
     }
 
     fn issue_blocking(&self, root: &Path, key: &str) -> Result<Option<RemoteIssue>, String> {

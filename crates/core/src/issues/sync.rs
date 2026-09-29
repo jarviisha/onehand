@@ -33,8 +33,8 @@ pub struct Report {
     pub pushed: usize,
     /// Issues left waiting for a person, this sync's and earlier ones'.
     pub conflicts: usize,
-    /// Whether the forge listed more than [`SYNC_CAP`] — open issues, and the
-    /// closed ones changed since the last sync.
+    /// Whether the forge had more open issues than [`SYNC_CAP`], so some were
+    /// not brought in.
     pub cut: bool,
     /// What could not be done, one line per issue. A failure on one issue
     /// never stops the rest.
@@ -154,14 +154,26 @@ pub fn sync_blocking(
 ) -> Result<(Issues, Report), String> {
     super::update_blocking(file, |issues| {
         let since = (issues.last_synced > 0).then_some(issues.last_synced);
-        let mut remote = connector.issues_for_sync_blocking(root, since, SYNC_CAP + 1)?;
-        let cut = remote.len() > SYNC_CAP;
-        remote.truncate(SYNC_CAP);
-        let mut report = reconcile(issues, root, connector, &remote, now);
+        let (mut open, mut changed) =
+            connector.issues_for_sync_blocking(root, since, SYNC_CAP + 1)?;
+        let cut = open.len() > SYNC_CAP;
+        open.truncate(SYNC_CAP);
+        // Everything that changed is known only from a sync point, and only if
+        // that list was not cut; otherwise each closed issue is asked about.
+        let complete = since.is_some() && changed.len() <= SYNC_CAP;
+        changed.truncate(SYNC_CAP);
+        let mut seen = HashSet::new();
+        let remote: Vec<RemoteIssue> = changed
+            .into_iter()
+            .chain(open)
+            .filter(|r| seen.insert(r.key.clone()))
+            .collect();
+        let mut report = reconcile(issues, root, connector, &remote, complete, now);
         report.cut = cut;
-        // A cut listing is not everything that changed, so the next sync asks
-        // from the same point again rather than stepping past what it missed.
-        if !cut {
+        // Every linked issue was listed or asked about, so the point can move
+        // on — unless something could not be asked, which the next sync must
+        // ask about again rather than read as unchanged.
+        if report.failures.is_empty() {
             issues.last_synced = now;
         }
         Ok(report)
@@ -175,6 +187,7 @@ fn reconcile(
     root: &Path,
     connector: &dyn Connector,
     remote: &[RemoteIssue],
+    complete: bool,
     now: u64,
 ) -> Report {
     let name = connector.name();
@@ -186,12 +199,12 @@ fn reconcile(
         let listed = remote.iter().find(|r| r.key == link.key);
         let theirs = match listed {
             Some(r) => r.snapshot.clone(),
-            // Not listed and closed on both sides at the last look: the forge
-            // lists everything changed since then, so its side is still what
-            // was agreed, and only a change made here has anywhere to go.
-            None if !issue.open && !link.base.open => link.base.clone(),
-            // Not in the open list but open here or at the last look: it was
-            // closed there, or it is gone, and only asking says which.
+            // Not listed, closed on both sides at the last look, and the forge
+            // listed everything changed since then: its side is still what was
+            // agreed, and only a change made here has anywhere to go.
+            None if complete && !issue.open && !link.base.open => link.base.clone(),
+            // Otherwise it changed there, closed, or went, or the listing
+            // cannot say — and only asking does.
             None => match connector.issue_blocking(root, &link.key) {
                 Ok(Some(r)) => r.snapshot,
                 Ok(None) => {
@@ -687,20 +700,65 @@ mod tests {
         let _ = std::fs::remove_dir_all(file.parent().unwrap());
     }
 
-    #[test]
-    fn a_cut_listing_does_not_move_the_point_the_next_sync_asks_from() {
-        let file = scratch("cut");
+    /// Link issue 7, close it on both sides, and settle — the shape both
+    /// findings start from.
+    fn closed_and_settled(file: &Path, forge: &Forge) {
         let root = Path::new("/");
-        let many = (1..=SYNC_CAP as u64 + 1)
-            .map(|n| (n, snap("x", true, &[])))
-            .collect();
-        let forge = Forge::with(many);
-        let report = sync_blocking(&file, root, &forge, 50).unwrap().1;
-        assert!(report.cut);
+        sync_blocking(file, root, forge, 1).unwrap();
+        forge.set("7", snap("a", false, &[]));
+        sync_blocking(file, root, forge, 2).unwrap();
+        assert!(!load(file).get(1).unwrap().open);
+    }
+
+    #[test]
+    fn a_file_with_no_sync_point_asks_about_a_closed_issue_before_sending_to_it() {
+        let file = scratch("no-point");
+        let root = Path::new("/");
+        let forge = Forge::with(vec![(7, snap("a", true, &[]))]);
+        closed_and_settled(&file, &forge);
+        // As a file written before the sync point existed would read.
+        crate::issues::update_blocking(&file, |issues| {
+            issues.last_synced = 0;
+            Ok(())
+        })
+        .unwrap();
+        forge.set("7", snap("there", false, &[]));
+        edit(&file, 1, "here");
+
+        let report = sync_blocking(&file, root, &forge, 3).unwrap().1;
+        assert_eq!((report.conflicts, report.pushed), (1, 0));
+        assert_eq!(
+            forge.said("7").title,
+            "there",
+            "the forge's edit is not written over"
+        );
+        let _ = std::fs::remove_dir_all(file.parent().unwrap());
+    }
+
+    #[test]
+    fn a_full_open_list_neither_hides_a_closed_edit_nor_stays_cut() {
+        let file = scratch("full");
+        let root = Path::new("/");
+        let forge = Forge::with(vec![(7, snap("a", true, &[]))]);
+        closed_and_settled(&file, &forge);
+        forge
+            .issues
+            .lock()
+            .unwrap()
+            .extend((1000..1000 + SYNC_CAP as u64 + 1).map(|n| RemoteIssue {
+                key: n.to_string(),
+                reference: format!("#{n}"),
+                snapshot: snap("x", true, &[]),
+            }));
+        forge.set("7", snap("renamed there", false, &[]));
+
+        let report = sync_blocking(&file, root, &forge, 3).unwrap().1;
+        assert!(report.cut, "more open issues than the cap is said");
+        assert_eq!(load(&file).get(1).unwrap().title, "renamed there");
         assert_eq!(
             load(&file).last_synced,
-            0,
-            "what was missed is asked for again"
+            3,
+            "the point moves on, so the next sync is not cut too"
         );
         let _ = std::fs::remove_dir_all(file.parent().unwrap());
     }
