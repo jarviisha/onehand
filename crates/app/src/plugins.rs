@@ -1,6 +1,6 @@
 //! Composition root for every plugin compiled into the Onehand binary.
 //!
-//! Two explicit, ordered lists and nothing else. The order is the user-visible
+//! Three explicit, ordered lists and nothing else. The order is the user-visible
 //! Workbench order, declared here rather than inherited from filesystem or
 //! linker order — which is the one thing a registry was buying, and the only
 //! one worth keeping. Everything a registry checked is checked by the compiler
@@ -9,6 +9,7 @@
 //! window in which something could register late.
 
 use gpui::{App, Pixels};
+use onehand_core::connector::Connector;
 use onehand_plugin_api::PluginId;
 use onehand_plugin_host::{Ask, RemoteChannelFactory, WorkbenchMode};
 
@@ -26,6 +27,13 @@ pub fn workbench_modes(ask: Ask, font_size: Pixels, cx: &mut App) -> Vec<Box<dyn
         Box::new(onehand_workbench_markdown::Mode::new(ask.clone(), cx)),
         Box::new(onehand_workbench_neovim::Mode::new(ask, font_size, cx)),
     ]
+}
+
+/// The outside systems a project can be connected to, in the order a project
+/// is offered to them: the first that serves it is the one it gets.
+pub fn connectors() -> &'static [&'static dyn Connector] {
+    static CONNECTORS: [&dyn Connector; 1] = [&onehand_connector_github::GitHub];
+    &CONNECTORS
 }
 
 /// How a remote channel named in the config is opened.

@@ -50,7 +50,7 @@ precedent this follows in shape as well as in code.
 | An isolated checkout | `worktree::add_blocking` (plus a start point, see *Base branch*), `worktree_dir_in`, `validate_branch`, `slug` |
 | Find a window that holds a root | the walk over `Shared::windows` every remote path does; the window handle is kept for the teardown, the one step that needs a `Window` |
 | End the agent and write the transcript | `ChatPane::close` (the transcript is already written at every turn end) |
-| Talk to GitHub | the `gh` CLI, shelled out blocking like `gitstat` and `worktree` already do |
+| Talk to GitHub | the `gh` CLI, shelled out blocking like `gitstat` and `worktree` already do, behind `onehand_core::connector::Connector` in `plugins/builtin/connector-github` |
 | Config that is off until asked for | `[remote.telegram]`, copied wholesale as a shape |
 
 Two consequences worth stating. **No new dependency**: `gh` carries the auth, the
@@ -62,7 +62,9 @@ background executor, one interval in the config, no cron expressions.
 
 | File | What |
 |---|---|
-| `crates/core/src/unattended.rs` | `Issue`, the `gh` calls, `branch_for`, `prompt_for`, `claim_comment`, `Ending` and `report`, `parse_every`, `target_dir` |
+| `crates/core/src/unattended.rs` | `Issue`, the claim and search over a connector, `branch_for`, `prompt_for`, `claim_comment`, `Ending` and `report`, `parse_every`, `target_dir` |
+| `crates/core/src/connector.rs` | `Connector`, what a run asks of the system a project lives on, and `serving`, which picks the first one that takes a project |
+| `plugins/builtin/connector-github/src/lib.rs` | the `gh` calls, the `origin` and ssh-alias check, and the account check |
 | `crates/core/src/process.rs` | `output_within`: a command with a limit on its exit *and* its output, stopped with its whole process group |
 | `crates/app/src/unattended.rs` | the tick, the live `Run`, the subscription, the timeout, the wind-down, the teardown |
 | `crates/core/src/config.rs` | `UnattendedConfig` |
@@ -135,7 +137,8 @@ switched on, when its window opens, and on every tick — a run in progress
 included, since a tick that only looked when it was about to search left the rows
 as stale as the run was long. A tick with nothing switched on asks GitHub
 nothing, so the feature costs nobody who has not turned it on. Another forge is a
-second set of `gh`-shaped calls and is not built.
+second implementation of `Connector`, listed in `plugins::connectors`, and is not
+built yet.
 
 **A config that cannot work is said, not only printed.** An empty label, an
 interval that does not parse, or a mode the agent does not offer stops every run.

@@ -10,6 +10,7 @@ members = [
     "crates/plugin-api",
     "crates/plugin-host",
     "crates/terminal-ui",
+    "plugins/builtin/connector-github",
     "plugins/builtin/remote-telegram",
     "plugins/builtin/workbench-editor",
     "plugins/builtin/workbench-files",

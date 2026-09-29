@@ -27,6 +27,7 @@ onehand-core = { path = "../core" }
 onehand-plugin-api = { path = "../plugin-api" }
 onehand-plugin-host = { path = "../plugin-host" }
 onehand-terminal-ui = { path = "../terminal-ui" }
+onehand-connector-github = { path = "../../plugins/builtin/connector-github" }
 onehand-remote-telegram = { path = "../../plugins/builtin/remote-telegram" }
 # No `workbench-files`: the file tree is the left half of the Editor mode and
 # reaches the binary through that crate, which composes it.

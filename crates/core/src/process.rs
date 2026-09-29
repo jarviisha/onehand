@@ -12,7 +12,7 @@ use std::time::{Duration, Instant};
 /// things to a caller: a program that is not installed is a fact about the
 /// machine, and one that ran too long is a fact about right now.
 #[derive(Debug)]
-pub(crate) enum Failure {
+pub enum Failure {
     /// There is no such program to run.
     Missing,
     /// It could not be started, for another reason.
@@ -38,7 +38,7 @@ impl std::fmt::Display for Failure {
 /// Run `cmd` to completion, or stop it once it has run for `limit`.
 ///
 /// **A command nobody is watching must not be able to hang its caller.** A
-/// `gh` call waiting on a network that went away, or a `git` waiting on a
+/// call to a forge waiting on a network that went away, or a `git` waiting on a
 /// credential prompt nobody will answer, would otherwise hold its caller for
 /// good. Standard input is closed for the same reason: a program that asks its
 /// terminal a question gets an end of file rather than a wait.
@@ -52,7 +52,7 @@ impl std::fmt::Display for Failure {
 ///
 /// On Unix the command runs in a process group of its own, and stopping it
 /// stops the whole group, so what it started goes with it.
-pub(crate) fn output_within(cmd: &mut Command, limit: Duration) -> Result<Output, Failure> {
+pub fn output_within(cmd: &mut Command, limit: Duration) -> Result<Output, Failure> {
     #[cfg(unix)]
     std::os::unix::process::CommandExt::process_group(cmd, 0);
     let mut child = cmd

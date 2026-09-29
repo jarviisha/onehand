@@ -3180,8 +3180,8 @@ impl Shell {
                 let path = path.clone();
                 cx.background_executor()
                     .spawn(async move {
-                        onehand_core::unattended::github_project_blocking(&path)
-                            .and_then(|()| onehand_core::unattended::open_issues_blocking(&path))
+                        crate::unattended::connector_for(&path)
+                            .and_then(|c| onehand_core::unattended::open_issues_blocking(c, &path))
                     })
                     .await
             };

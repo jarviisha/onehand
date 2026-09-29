@@ -15,9 +15,11 @@ use gpui::{App, BorrowAppContext as _, Entity, Subscription, Task, WeakEntity};
 use onehand_core::chat::ChatItem;
 use onehand_core::chat::UserAsk;
 use onehand_core::config::{AgentSpec, UnattendedConfig};
-use onehand_core::unattended::{self as core, Ending, GitHub, Issue, IssueRow};
+use onehand_core::connector::{self, Connector};
+use onehand_core::unattended::{self as core, Ending, Issue, IssueRow};
 use onehand_core::worktree;
 use std::collections::HashMap;
+use std::path::Path;
 use std::path::PathBuf;
 use std::time::Duration;
 
@@ -33,7 +35,7 @@ pub struct Unattended {
     timeout: Duration,
     mode: String,
     agent: Option<String>,
-    /// A claim is on its way to GitHub and the worktree is being made. A tick
+    /// A claim is on its way to the connector and the worktree is being made. A tick
     /// landing now must not start a second.
     claiming: bool,
     /// Why no run can start at all, whatever project is switched on: a config
@@ -47,18 +49,35 @@ pub struct Unattended {
     /// adapter has answered, which is after a claim.
     mode_refused: Option<String>,
     run: Option<Run>,
-    /// What `gh` last said about being signed in, for the line in Settings.
-    /// `None` until the first answer lands.
-    github: Option<GitHub>,
+    /// What each connector last said about its account, for the lines in
+    /// Settings. `None` until the first answer lands.
+    accounts: Option<Accounts>,
     /// Why the last look at a project could not go ahead, by project.
     ///
     /// **Shown on the project's row**, because the alternative is stderr: a
-    /// project that is not on GitHub, or a `gh` that is signed out, fails the
+    /// project no connector serves, or one whose account is unusable, fails the
     /// same way on every tick, and a switch that is on while nothing can happen
     /// looks exactly like one that is working. An entry is cleared by the next
     /// look that gets through.
     problems: HashMap<PathBuf, String>,
     _tick: Task<()>,
+}
+
+/// Each connector beside what it said about its account: who it acts as, or
+/// why it cannot act.
+pub type Accounts = Vec<(&'static dyn Connector, Result<String, String>)>;
+
+/// What a look at one project found: the connector that will work it, its
+/// account included, or why none can.
+type Served = Result<&'static dyn Connector, String>;
+
+/// The connector serving the project at `root`, or every reason none does.
+///
+/// Its account is not asked here: a person picking an issue by hand hears
+/// about an unusable account from the connector's own refusal, one call later.
+pub fn connector_for(root: &Path) -> Result<&'static dyn Connector, String> {
+    let all = crate::plugins::connectors();
+    connector::serving(all, root).map(|at| all[at])
 }
 
 /// One issue being worked.
@@ -87,8 +106,8 @@ struct Run {
 /// as a feature that is off: the switches are still on screen and still
 /// switchable, so the reason has to be somewhere the rows and Settings can read
 /// it — left only on stderr, a bad interval read on screen as a missing label,
-/// and the GitHub line waited for an answer that was never going to come. The
-/// search is what stops; looking at projects and at `gh` still works.
+/// and the account line waited for an answer that was never going to come. The
+/// search is what stops; looking at projects and at accounts still works.
 pub fn boot(cfg: &UnattendedConfig, cx: &mut App) {
     let label = cfg.label.trim().to_string();
     let every = core::parse_every(&cfg.every);
@@ -132,7 +151,7 @@ pub fn boot(cfg: &UnattendedConfig, cx: &mut App) {
             blocked,
             mode_refused: None,
             run: None,
-            github: None,
+            accounts: None,
             problems: HashMap::new(),
             _tick: tick,
         });
@@ -145,9 +164,9 @@ pub fn blocked(cx: &App) -> Option<String> {
     u.blocked.clone().or_else(|| u.mode_refused.clone())
 }
 
-/// What `gh` last said about being signed in, if it has answered yet.
-pub fn github(cx: &App) -> Option<GitHub> {
-    Shared::global(cx).unattended.as_ref()?.github.clone()
+/// What each connector last said about its account, if they have answered yet.
+pub fn accounts(cx: &App) -> Option<Accounts> {
+    Shared::global(cx).unattended.as_ref()?.accounts.clone()
 }
 
 /// Why the last look at `root` could not go ahead, if it could not.
@@ -160,7 +179,7 @@ pub fn problem(root: &std::path::Path, cx: &App) -> Option<String> {
         .cloned()
 }
 
-/// Ask `gh` again, and look again at every project that is switched on —
+/// Ask every connector again, and look again at every project that is switched on —
 /// what Settings' *Check again* does, and what a window does when it opens.
 pub fn recheck(cx: &mut App) {
     let roots = opted_in_roots(cx);
@@ -173,38 +192,43 @@ pub fn check_now(root: PathBuf, cx: &mut App) {
     check(vec![root], false, cx);
 }
 
-/// Ask `gh` who it is signed in as and look at `roots`, off the UI loop, then
+/// Ask each connector who it acts as and look at `roots`, off the UI loop, then
 /// file what was found. `prune` when `roots` is every switched-on project, so
 /// what is kept for a project since switched off or closed goes with it.
 fn check(roots: Vec<PathBuf>, prune: bool, cx: &mut App) {
     cx.spawn(async move |cx| {
-        let (github, checked) = cx
+        let (accounts, checked) = cx
             .background_executor()
             .spawn(async move { look_blocking(roots) })
             .await;
         cx.update(|cx| {
-            with(cx, |u| u.github = Some(github));
+            with(cx, |u| u.accounts = Some(accounts));
             record(checked, prune, cx);
         });
     })
     .detach();
 }
 
-/// What `gh` says about being signed in, and for each of `roots` why it cannot
-/// be worked, if it cannot: a remote not on GitHub (read locally, so a project
-/// somewhere else costs no call to GitHub), or a `gh` that cannot be used.
-fn look_blocking(roots: Vec<PathBuf>) -> (GitHub, Vec<(PathBuf, Option<String>)>) {
-    let github = core::github_blocking();
+/// What every connector says about its account, and for each of `roots` the
+/// connector that serves it — or why none can: no connector serves its remote
+/// (read locally, so a project nobody serves costs no call to anything), or the
+/// one that does has an account it cannot use.
+fn look_blocking(roots: Vec<PathBuf>) -> (Accounts, Vec<(PathBuf, Served)>) {
+    let all = crate::plugins::connectors();
+    let accounts: Accounts = all.iter().map(|&c| (c, c.account_blocking())).collect();
     let checked = roots
         .into_iter()
         .map(|root| {
-            let why = core::github_project_blocking(&root)
-                .err()
-                .or_else(|| github.problem());
-            (root, why)
+            // `accounts` was built from `all` just above, so a place in one is
+            // the same connector's place in the other.
+            let served = connector::serving(all, &root).and_then(|at| match &accounts[at] {
+                (c, Ok(_)) => Ok(*c),
+                (_, Err(why)) => Err(why.clone()),
+            });
+            (root, served)
         })
         .collect();
-    (github, checked)
+    (accounts, checked)
 }
 
 /// File what each look found, and redraw the rows that show it. A later entry
@@ -216,16 +240,16 @@ fn look_blocking(roots: Vec<PathBuf>) -> (GitHub, Vec<(PathBuf, Option<String>)>
 /// takes up to a minute, and a project switched on in that minute has already
 /// been looked at by itself; clearing everything the slower look did not cover
 /// threw that answer away.
-fn record(checked: Vec<(PathBuf, Option<String>)>, prune: bool, cx: &mut App) {
+fn record(checked: Vec<(PathBuf, Served)>, prune: bool, cx: &mut App) {
     let switched_on = prune.then(|| opted_in_roots(cx));
     with(cx, |u| {
         if let Some(switched_on) = switched_on {
             u.problems.retain(|root, _| switched_on.contains(root));
         }
-        for (root, why) in checked {
-            match why {
-                Some(why) => u.problems.insert(root, why),
-                None => u.problems.remove(&root),
+        for (root, served) in checked {
+            match served {
+                Err(why) => u.problems.insert(root, why),
+                Ok(_) => u.problems.remove(&root),
             };
         }
     });
@@ -289,12 +313,12 @@ fn with<R>(cx: &mut App, act: impl FnOnce(&mut Unattended) -> R) -> Option<R> {
 ///
 /// **Every tick looks, even while a run is live.** The rows show what the last
 /// look found, and a tick that only looked while it was about to search left
-/// them as old as the run was long — and left `gh` signed in on screen after it
+/// them as old as the run was long — and left an account signed in on screen after it
 /// had been signed out.
 fn tick(asked_from: Option<gpui::AnyWindowHandle>, cx: &mut App) {
     let roots = opted_in_roots(cx);
     // Nothing switched on is nothing to look at and nothing to search, so a
-    // tick asks GitHub nothing at all — the feature costs nobody who has not
+    // tick asks no connector anything at all — the feature costs nobody who has not
     // switched a project on.
     if roots.is_empty() {
         return;
@@ -313,20 +337,19 @@ fn tick(asked_from: Option<gpui::AnyWindowHandle>, cx: &mut App) {
         // A panic in there would otherwise leave `claiming` set for the life of
         // the process, and no issue would be looked for again. Said and treated
         // as nothing found.
-        let (github, checked, begun) = cx
+        let (accounts, checked, begun) = cx
             .background_executor()
             .spawn(async move {
                 std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                    let (github, mut checked) = look_blocking(roots);
+                    let (accounts, mut checked) = look_blocking(roots);
                     // Only the projects that passed the look are searched.
-                    let workable: Vec<PathBuf> = checked
+                    let workable: Vec<(PathBuf, &'static dyn Connector)> = checked
                         .iter()
-                        .filter(|(_, why)| why.is_none())
-                        .map(|(root, _)| root.clone())
+                        .filter_map(|(root, served)| Some((root.clone(), *served.as_ref().ok()?)))
                         .collect();
                     let begun =
                         search.and_then(|label| begin_blocking(&workable, &label, &mut checked));
-                    (Some(github), checked, begun)
+                    (Some(accounts), checked, begun)
                 }))
                 .unwrap_or_else(|_| {
                     // The look, the search and the claim are all in here, and
@@ -337,8 +360,8 @@ fn tick(asked_from: Option<gpui::AnyWindowHandle>, cx: &mut App) {
             })
             .await;
         cx.update(|cx| {
-            if let Some(github) = github {
-                with(cx, |u| u.github = Some(github));
+            if let Some(accounts) = accounts {
+                with(cx, |u| u.accounts = Some(accounts));
                 record(checked, true, cx);
             }
             if searching {
@@ -351,8 +374,10 @@ fn tick(asked_from: Option<gpui::AnyWindowHandle>, cx: &mut App) {
 
 /// A claimed issue and the worktree made for it.
 struct Claimed {
-    /// The project the issue was found in, where `gh` is run.
+    /// The project the issue was found in, where the connector is run.
     repo: PathBuf,
+    /// The system the issue lives on.
+    connector: &'static dyn Connector,
     issue: Issue,
     branch: String,
     /// The default branch the worktree was cut from.
@@ -369,6 +394,7 @@ struct Claimed {
 /// so.
 struct Unstarted {
     repo: PathBuf,
+    connector: &'static dyn Connector,
     number: u64,
     why: String,
 }
@@ -379,28 +405,28 @@ struct Unstarted {
 /// which case there is nobody to tell but stderr, since an issue the app could
 /// not edit is one it cannot comment on either. After the claim every failure is
 /// the issue's to hear about.
-/// What each project looked at said is written into `checked` — a reason where
-/// it could not be looked at, `None` where it could — so the rail can show it.
+///
+/// A project whose search failed has the reason added to `checked`, so its
+/// row says why rather than showing it as workable.
 fn begin_blocking(
-    roots: &[PathBuf],
+    roots: &[(PathBuf, &'static dyn Connector)],
     label: &str,
-    checked: &mut Vec<(PathBuf, Option<String>)>,
+    checked: &mut Vec<(PathBuf, Served)>,
 ) -> Option<Result<Claimed, Unstarted>> {
-    let (repo, issue) =
-        roots
-            .iter()
-            .find_map(|root| match core::candidate_blocking(root, label) {
-                Ok(found) => found.map(|issue| (root.clone(), issue)),
-                Err(why) => {
-                    checked.push((root.clone(), Some(why)));
-                    None
-                }
-            })?;
-    if let Err(why) = core::claim_blocking(&repo, issue.number, label) {
+    let (repo, connector, issue) = roots.iter().find_map(|&(ref root, connector)| {
+        match core::candidate_blocking(connector, root, label) {
+            Ok(found) => found.map(|issue| (root.clone(), connector, issue)),
+            Err(why) => {
+                checked.push((root.clone(), Err(why)));
+                None
+            }
+        }
+    })?;
+    if let Err(why) = core::claim_blocking(connector, &repo, issue.number, label) {
         eprintln!("onehand: could not claim issue #{}: {why}", issue.number);
         return None;
     }
-    Some(prepare_blocking(repo, issue, None))
+    Some(prepare_blocking(repo, connector, issue, None))
 }
 
 /// Cut a worktree for a claimed issue off the remote's default branch.
@@ -410,11 +436,12 @@ fn begin_blocking(
 /// nothing saying what happened.
 fn prepare_blocking(
     repo: PathBuf,
+    connector: &'static dyn Connector,
     issue: Issue,
     picked_in: Option<gpui::AnyWindowHandle>,
 ) -> Result<Claimed, Unstarted> {
     let made = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        let base = core::default_branch_blocking(&repo)?;
+        let base = connector.default_branch_blocking(&repo)?;
         worktree::fetch_blocking(&repo, &base)?;
         let top = worktree::repo_top_blocking(&repo).unwrap_or_else(|| repo.clone());
         let branch = core::free_branch_blocking(&top, &core::branch_for(&issue));
@@ -426,6 +453,7 @@ fn prepare_blocking(
     match made {
         Ok((base, branch, dir)) => Ok(Claimed {
             repo,
+            connector,
             issue,
             branch,
             base,
@@ -434,6 +462,7 @@ fn prepare_blocking(
         }),
         Err(why) => Err(Unstarted {
             repo,
+            connector,
             number: issue.number,
             why,
         }),
@@ -445,7 +474,7 @@ fn prepare_blocking(
 /// **Refused while a run is going**: one run at a time is the rule for picked
 /// and found alike, and the refusal names the issue already being worked so
 /// the person knows what they are waiting on. Anything that stops it before
-/// the claim — a project not on GitHub, a claim GitHub refuses — is said in
+/// the claim — a project no connector serves, a claim the connector refuses — is said in
 /// the window it was picked from; after the claim, on the issue as well.
 pub fn start_picked(
     repo: PathBuf,
@@ -478,10 +507,12 @@ pub fn start_picked(
             .background_executor()
             .spawn(async move {
                 std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                    core::github_project_blocking(&repo)
-                        .and_then(|()| core::claim_picked_blocking(&repo, &row, &label))
+                    let connector = connector_for(&repo)
+                        .and_then(|c| {
+                            core::claim_picked_blocking(c, &repo, &row, &label).map(|()| c)
+                        })
                         .map_err(|why| format!("Could not start on issue #{number}: {why}"))?;
-                    Ok(prepare_blocking(repo, row.issue, Some(window)))
+                    Ok(prepare_blocking(repo, connector, row.issue, Some(window)))
                 }))
                 .unwrap_or_else(|_| Err("onehand panicked while claiming the issue".to_string()))
             })
@@ -581,7 +612,14 @@ fn landed(
     };
     let said = core::report(&Ending::Failed(unstarted.why), &Ok(None), "");
     cx.background_executor()
-        .spawn(async move { tell_issue(&unstarted.repo, unstarted.number, &said) })
+        .spawn(async move {
+            tell_issue(
+                unstarted.connector,
+                &unstarted.repo,
+                unstarted.number,
+                &said,
+            )
+        })
         .detach();
 }
 
@@ -686,6 +724,7 @@ fn start(claimed: Claimed, cx: &mut App) -> Result<(), Unstarted> {
 fn unstarted(claimed: Claimed, why: &str) -> Unstarted {
     Unstarted {
         repo: claimed.repo,
+        connector: claimed.connector,
         number: claimed.issue.number,
         why: why.to_string(),
     }
@@ -782,7 +821,11 @@ fn prompt(uid: u64, session: &Entity<ChatSession>, cx: &mut App) {
         run.prompted = true;
         Some((
             u.mode.clone(),
-            core::prompt_for(&run.claimed.issue, &run.claimed.branch),
+            core::prompt_for(
+                &run.claimed.issue,
+                &run.claimed.branch,
+                run.claimed.connector,
+            ),
         ))
     })
     .flatten() else {
@@ -985,12 +1028,19 @@ fn settle(uid: u64, ending: Ending, cx: &mut App) {
                 .background_executor()
                 .spawn(async move {
                     let pr = if ending.may_have_pr() {
-                        core::pr_for_blocking(&claimed.repo, &claimed.branch)
+                        claimed
+                            .connector
+                            .pull_request_for_blocking(&claimed.repo, &claimed.branch)
                     } else {
                         Ok(None)
                     };
                     let said = core::report(&ending, &pr, &claimed.branch);
-                    tell_issue(&claimed.repo, claimed.issue.number, &said);
+                    tell_issue(
+                        claimed.connector,
+                        &claimed.repo,
+                        claimed.issue.number,
+                        &said,
+                    );
                     core::outcome_line(&ending, &pr)
                 })
                 .await;
@@ -1009,8 +1059,8 @@ fn settle(uid: u64, ending: Ending, cx: &mut App) {
 
 /// Leave `body` on issue `number`, saying on stderr if that failed — there is
 /// nowhere else left to say it.
-fn tell_issue(repo: &std::path::Path, number: u64, body: &str) {
-    if let Err(why) = core::comment_blocking(repo, number, body) {
+fn tell_issue(connector: &dyn Connector, repo: &std::path::Path, number: u64, body: &str) {
+    if let Err(why) = connector.comment_blocking(repo, number, body) {
         eprintln!("onehand: could not comment on issue #{number}: {why}");
     }
 }
