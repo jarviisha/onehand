@@ -933,11 +933,21 @@ see the rail, below.
 
 - **Plugins**: two tabs under one switch — **Installed**, the Claude Code plugins that reach a
   session started in the project on screen, one row per plugin (capped at 200, the cut said); and
-  **Marketplace**, the known marketplaces' plugins, most installed first, searched, capped at 60
-  rows with the cut said, and installed at the scope picked beside the search. Two lists and not one
-  page, because stacked, a few hundred catalog rows pushed the installed ones out of reach and the
-  search scrolled away with them; the search and the scope picker are pinned above the catalog's
-  list, and each tab keeps a scroll of its own. The panel is padded and its rows spaced
+  **Marketplace**, the known marketplaces' plugins, most installed first, searched, narrowed by a
+  chip per marketplace (offered only where there is more than one), and capped at 60 rows with the
+  cut said. Two lists and not one page, because stacked, a few hundred catalog rows pushed the
+  installed ones out of reach and the search scrolled away with them; each list's search and chips
+  are pinned above it, and each tab keeps a scroll of its own. **A catalog row's control follows
+  what is already true here**: *Installed* where the plugin is installed and on, *Enable* where it
+  is installed and off (on this machine, as the switch does), and a split *Install ▾* otherwise —
+  the press installs at the scope used last, the caret installs at another and makes it the next
+  default. `--available` leaves out a plugin once it is installed and on, so those rows are put back
+  from the marketplace's own `marketplace.json` (`cli::complete_offers`), without the install count
+  that catalog does not carry. A row's line is *Official* and the count and nothing else, since the
+  marketplace is the chip above; its description is clamped to two lines and clipped, because an
+  unbreakable word — a URL — otherwise ran past the panel's edge. No component chips and no sort
+  other than popularity here: the catalog names neither a plugin's parts before it is installed nor
+  any date. The panel is padded and its rows spaced
   rather than ruled; *Remove* appears only on the row under the pointer, the line saying a change
   reaches a session at its next start sits once at the foot of *Installed*, and a catalog row is its
   name and *Install*, then the description, then marketplace and a compact install count. The switch is `onehand_plugin_host::switch`, the one

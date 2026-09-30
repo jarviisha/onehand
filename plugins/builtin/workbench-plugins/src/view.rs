@@ -8,7 +8,7 @@ use gpui::{
     InteractiveElement as _, IntoElement, KeyDownEvent, MouseButton, ParentElement, Render,
     SharedString, StatefulInteractiveElement as _, Styled, Task, Window, div, px,
 };
-use gpui_component::button::{ButtonGroup, ButtonVariants as _};
+use gpui_component::button::ButtonVariants as _;
 use gpui_component::dialog::{DialogClose, DialogFooter};
 use gpui_component::input::{Input, InputEvent, InputState};
 use gpui_component::menu::{PopupMenu, PopupMenuItem};
@@ -131,8 +131,11 @@ pub(crate) struct PluginsView {
     /// — most often for a command it wants run, which is left to a person on
     /// purpose — says what to do next, and a toast that fades takes that with it.
     status: Option<String>,
-    /// Where an install from the marketplace list lands.
+    /// Where *Install* lands: the scope last picked from its caret, so the
+    /// choice made once carries on to the next install.
     install_scope: Scope,
+    /// The marketplace the catalog is narrowed to, or all of them.
+    market: Option<String>,
     /// The marketplace search. Made on the first draw, since an input needs a
     /// window to be made in.
     query: Option<Entity<InputState>>,
@@ -165,6 +168,7 @@ impl PluginsView {
             _change: None,
             status: None,
             install_scope: Scope::User,
+            market: None,
             query: None,
             installed_query: None,
             filter: Filter::All,
@@ -452,6 +456,11 @@ impl PluginsView {
                     let matching: Vec<&Available> = catalog
                         .available
                         .iter()
+                        .filter(|plugin| {
+                            self.market
+                                .as_ref()
+                                .is_none_or(|market| &plugin.marketplace == market)
+                        })
                         .filter(|plugin| plugin.matches(&needle))
                         .collect();
                     let cut = matching.len().saturating_sub(MARKET_CAP);
@@ -470,16 +479,7 @@ impl PluginsView {
                             cx,
                         ));
                     }
-                    // The search and where an install lands stay put above the
-                    // list rather than scrolling away with it: both are asked of
-                    // every row below them.
-                    let controls = div()
-                        .h_flex()
-                        .gap_2()
-                        .child(div().flex_1().min_w_0().child(Input::new(&query).small()))
-                        .child(self.scope_picker(cx))
-                        .into_any_element();
-                    (controls, rows)
+                    (self.market_controls(&query, catalog, cx), rows)
                 }
             };
 
@@ -534,27 +534,53 @@ impl PluginsView {
             .into_any_element()
     }
 
-    /// Where an install lands, as one segmented control above the list rather
-    /// than a menu on every row: the choice is usually made once for a run of
-    /// installs, and sixty menus are sixty places to make it.
-    fn scope_picker(&self, cx: &mut Context<Self>) -> impl IntoElement + use<> {
-        let current = self.install_scope;
-        // The search's own size, so the two sit level on one row.
-        ButtonGroup::new("plugins-scope")
-            .outline()
-            .small()
-            .children(Scope::ALL.into_iter().enumerate().map(|(i, scope)| {
-                action(("plugins-scope", i))
-                    .label(scope.label())
-                    .tooltip(format!("Install for: {}", scope.meaning()))
-                    .selected(scope == current)
-            }))
-            .on_click(cx.listener(|view, clicked: &Vec<usize>, _, cx| {
-                if let Some(scope) = clicked.first().and_then(|i| Scope::ALL.get(*i)) {
-                    view.install_scope = *scope;
+    /// The catalog's search, and a chip per marketplace to narrow it by —
+    /// said once above the list rather than on every row under it. Offered
+    /// only where there is more than one marketplace to choose between.
+    fn market_controls(
+        &self,
+        query: &Entity<InputState>,
+        catalog: &Catalog,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        let mut markets: Vec<String> = catalog
+            .available
+            .iter()
+            .map(|plugin| plugin.marketplace.clone())
+            .collect();
+        markets.sort();
+        markets.dedup();
+        let current = self.market.clone();
+        let chips = (markets.len() > 1).then(|| {
+            let all = action("plugins-market-all")
+                .xsmall()
+                .ghost()
+                .label("All")
+                .selected(current.is_none())
+                .on_click(cx.listener(|view, _: &ClickEvent, _, cx| {
+                    view.market = None;
                     cx.notify();
-                }
-            }))
+                }));
+            let each = markets.into_iter().enumerate().map(|(i, market)| {
+                let on = current.as_deref() == Some(market.as_str());
+                action(("plugins-market", i))
+                    .xsmall()
+                    .ghost()
+                    .label(market.clone())
+                    .selected(on)
+                    .on_click(cx.listener(move |view, _: &ClickEvent, _, cx| {
+                        view.market = Some(market.clone());
+                        cx.notify();
+                    }))
+            });
+            div().h_flex().flex_wrap().gap_1().child(all).children(each)
+        });
+        div()
+            .v_flex()
+            .gap_2()
+            .child(Input::new(query).small())
+            .children(chips)
+            .into_any_element()
     }
 
     /// What the agent on screen has not loaded, and the way to load it —
@@ -986,6 +1012,15 @@ impl PluginsView {
         })
     }
 
+    /// One plugin the marketplaces offer.
+    ///
+    /// **Its control follows what is already true of it here**: *Installed*
+    /// where it is installed and on, *Enable* where it is installed and off —
+    /// which turns it on on this machine, as the installed row's switch does —
+    /// and *Install ▾* otherwise. The last is split: the press installs at the
+    /// scope used last, the caret picks another and installs there, so the
+    /// choice is made at the moment of installing rather than by a control
+    /// above the list that has to be remembered.
     fn available_row(
         &self,
         i: usize,
@@ -993,36 +1028,69 @@ impl PluginsView {
         catalog: &Catalog,
         cx: &mut Context<Self>,
     ) -> AnyElement {
-        let scope = self.install_scope;
         let muted = cx.theme().muted_foreground;
-        let meta = match plugin.install_count {
-            Some(count) => format!("{} · {} installs", plugin.marketplace, compact(count)),
-            None => plugin.marketplace.clone(),
-        };
-        let install = Change {
-            id: plugin.id.clone(),
-            scope,
-            verb: Verb::Install,
-        };
-        let control =
-            if catalog.has(&plugin.id, scope) {
-                note("Installed", cx)
-            } else {
-                action(("plugin-install", i))
+        let busy = self.busy.is_some();
+        let installed = catalog.installed.iter().find(|p| p.id == plugin.id);
+        let control = match installed {
+            Some(have) if have.in_force(Scope::Local) => note("Installed", cx),
+            Some(have) => {
+                let enable = have.flip(Scope::Local);
+                action(("plugin-enable", i))
                     .xsmall()
                     .outline()
-                    .label("Install")
-                    .loading(self.running(&install))
-                    .disabled(self.busy.is_some())
-                    .tooltip(format!("Install for: {}", scope.meaning()))
+                    .label("Enable")
+                    .tooltip("Installed but off here — turn it on on this machine only")
+                    .loading(self.running(&enable))
+                    .disabled(busy)
                     .on_click(cx.listener(move |view, _: &ClickEvent, _, cx| {
-                        view.change(install.clone(), cx)
+                        view.change(enable.clone(), cx)
                     }))
                     .into_any_element()
-            };
+            }
+            None => self.install_split(i, plugin, cx),
+        };
+
+        // Official and the count, and nothing else: which marketplace it is
+        // from is the chip above the list.
+        let meta: Vec<AnyElement> = [
+            plugin.official().then(|| {
+                div()
+                    .h_flex()
+                    .items_center()
+                    .gap_0p5()
+                    .child(Icon::new(IconName::CircleCheck).xsmall())
+                    .child("Official")
+                    .into_any_element()
+            }),
+            plugin.install_count.map(|count| {
+                div()
+                    .child(format!("{} installs", compact(count)))
+                    .into_any_element()
+            }),
+        ]
+        .into_iter()
+        .flatten()
+        .collect();
+        let meta = (!meta.is_empty()).then(|| {
+            let mut line = div()
+                .h_flex()
+                .items_center()
+                .gap_1p5()
+                .text_xs()
+                .text_color(muted);
+            for (n, part) in meta.into_iter().enumerate() {
+                if n > 0 {
+                    line = line.child("·");
+                }
+                line = line.child(part);
+            }
+            line
+        });
+
         div()
             .v_flex()
             .w_full()
+            .min_w_0()
             .px_2()
             .py_2()
             .gap_1()
@@ -1041,16 +1109,95 @@ impl PluginsView {
                     )
                     .child(control),
             )
+            // Two lines, then an ellipsis. Clipped as well as clamped: a
+            // description can hold a word with nowhere to break — a URL — and
+            // unclipped that ran past the panel's edge.
             .when(!plugin.description.is_empty(), |row| {
                 row.child(
                     div()
+                        .w_full()
+                        .min_w_0()
+                        .overflow_hidden()
                         .text_xs()
                         .text_color(muted)
                         .line_clamp(2)
+                        .text_ellipsis()
                         .child(plugin.description.clone()),
                 )
             })
-            .child(div().text_xs().text_color(muted).opacity(0.8).child(meta))
+            .children(meta)
+            .into_any_element()
+    }
+
+    /// *Install ▾*: the press installs at the scope used last, the caret
+    /// installs at another and makes it the one used next.
+    fn install_split(&self, i: usize, plugin: &Available, cx: &mut Context<Self>) -> AnyElement {
+        let scope = self.install_scope;
+        let busy = self.busy.is_some();
+        let install = Change {
+            id: plugin.id.clone(),
+            scope,
+            verb: Verb::Install,
+        };
+        let running = Scope::ALL.into_iter().any(|at| {
+            self.running(&Change {
+                id: plugin.id.clone(),
+                scope: at,
+                verb: Verb::Install,
+            })
+        });
+        let main = action(("plugin-install", i))
+            .xsmall()
+            .outline()
+            .label("Install")
+            .tooltip(format!("Install for: {}", scope.meaning()))
+            .loading(running)
+            .disabled(busy)
+            .on_click(
+                cx.listener(move |view, _: &ClickEvent, _, cx| view.change(install.clone(), cx)),
+            );
+        let caret = action(SharedString::from(format!(
+            "plugin-install-scope-{}",
+            plugin.id
+        )))
+        .xsmall()
+        .outline()
+        .icon(Icon::new(IconName::ChevronDown))
+        .disabled(busy)
+        .tooltip("Install for…");
+        let (id, view) = (plugin.id.clone(), cx.entity());
+        let menu = menu_below(
+            SharedString::from(format!("plugin-install-menu-{}", plugin.id)),
+            caret,
+            move |menu, _, _| {
+                Scope::ALL
+                    .into_iter()
+                    .fold(menu.label("Install for"), |menu, at| {
+                        let (id, view) = (id.clone(), view.clone());
+                        menu.item(menu_item(at.reach()).checked(at == scope).on_click(
+                            move |_, _, cx: &mut App| {
+                                view.update(cx, |view, cx| {
+                                    view.install_scope = at;
+                                    view.change(
+                                        Change {
+                                            id: id.clone(),
+                                            scope: at,
+                                            verb: Verb::Install,
+                                        },
+                                        cx,
+                                    )
+                                })
+                            },
+                        ))
+                    })
+            },
+        );
+        div()
+            .h_flex()
+            .flex_none()
+            .gap_px()
+            .child(main)
+            .child(menu)
             .into_any_element()
     }
 }

@@ -255,7 +255,69 @@ pub(crate) struct Available {
     haystack: String,
 }
 
+/// Ready a list of offers for drawing: each one's search text made once, and
+/// the most installed first.
+fn settle(available: &mut [Available]) {
+    for plugin in available.iter_mut() {
+        plugin.haystack = format!(
+            "{}\n{}\n{}",
+            plugin.name, plugin.marketplace, plugin.description
+        )
+        .to_lowercase();
+    }
+    available.sort_by(|a, b| {
+        b.install_count
+            .unwrap_or(0)
+            .cmp(&a.install_count.unwrap_or(0))
+            .then_with(|| a.id.cmp(&b.id))
+    });
+}
+
+/// Put back the offers the listing leaves out.
+///
+/// `--available` omits a plugin once it is installed and on, so the
+/// marketplace list had no row for exactly the plugins somebody would look
+/// for to see that they already have them — and a plugin installed but off
+/// was offered as though it were not installed at all. Each installed plugin
+/// missing from the offers is added from its marketplace's own catalog; the
+/// listing's install count is the one thing that catalog does not carry, so
+/// those rows go without one rather than with a guess.
+pub(crate) fn complete_offers(
+    catalog: &mut Catalog,
+    markets: &HashMap<String, Vec<serde_json::Value>>,
+) {
+    for plugin in &catalog.installed {
+        if catalog.available.iter().any(|offer| offer.id == plugin.id) {
+            continue;
+        }
+        let Some(entry) = markets
+            .get(plugin.marketplace())
+            .and_then(|market| market.iter().find(|entry| entry["name"] == plugin.name()))
+        else {
+            continue;
+        };
+        catalog.available.push(Available {
+            id: plugin.id.clone(),
+            name: plugin.name().to_string(),
+            description: entry["description"]
+                .as_str()
+                .unwrap_or_default()
+                .to_string(),
+            marketplace: plugin.marketplace().to_string(),
+            install_count: None,
+            haystack: String::new(),
+        });
+    }
+    settle(&mut catalog.available);
+}
+
 impl Available {
+    /// Whether it is from Anthropic's marketplace — the whole of what the
+    /// *Official* mark claims.
+    pub(crate) fn official(&self) -> bool {
+        self.marketplace == OFFICIAL
+    }
+
     /// Whether it matches `needle`, already lowercased.
     pub(crate) fn matches(&self, needle: &str) -> bool {
         self.haystack.contains(needle)
@@ -269,15 +331,6 @@ pub(crate) struct Catalog {
     /// Most installed first, which is the order somebody browsing a few
     /// hundred entries wants the first screen in.
     pub(crate) available: Vec<Available>,
-}
-
-impl Catalog {
-    /// Whether `id` is installed at `scope`.
-    pub(crate) fn has(&self, id: &str, scope: Scope) -> bool {
-        self.installed
-            .iter()
-            .any(|plugin| plugin.id == id && plugin.installed.contains(&scope))
-    }
 }
 
 /// The listing's shape with `--available`: installs and offers apart. Without
@@ -368,19 +421,7 @@ pub(crate) fn parse(
     }
 
     let mut available: Vec<Available> = readable(listing.available);
-    for plugin in &mut available {
-        plugin.haystack = format!(
-            "{}\n{}\n{}",
-            plugin.name, plugin.marketplace, plugin.description
-        )
-        .to_lowercase();
-    }
-    available.sort_by(|a, b| {
-        b.install_count
-            .unwrap_or(0)
-            .cmp(&a.install_count.unwrap_or(0))
-            .then_with(|| a.id.cmp(&b.id))
-    });
+    settle(&mut available);
     Ok(Catalog {
         installed,
         available,
@@ -423,6 +464,7 @@ pub(crate) fn list_blocking(root: &Path) -> Result<Catalog, String> {
             _ => None,
         };
     }
+    complete_offers(&mut catalog, &markets);
     Ok(catalog)
 }
 
@@ -847,6 +889,33 @@ mod tests {
         assert_eq!(figma.name(), "figma");
         assert_eq!(figma.marketplace(), "official");
         assert!(!figma.official());
+    }
+
+    #[test]
+    fn an_installed_plugin_the_listing_leaves_out_is_offered_again_from_its_catalog() {
+        let mut catalog = catalog(&settings("", "", ""));
+        let markets = HashMap::from([(
+            "ponytail".to_string(),
+            vec![serde_json::json!({"name": "ponytail", "description": "Lazy mode"})],
+        )]);
+        assert!(
+            !catalog
+                .available
+                .iter()
+                .any(|o| o.id == "ponytail@ponytail")
+        );
+        complete_offers(&mut catalog, &markets);
+        let offer = catalog
+            .available
+            .iter()
+            .find(|o| o.id == "ponytail@ponytail")
+            .unwrap();
+        assert_eq!(offer.description, "Lazy mode");
+        // No count was guessed, so it sorts after every counted offer.
+        assert_eq!(offer.install_count, None);
+        assert!(offer.matches("lazy"));
+        // An installed plugin its catalog does not name is left out, not made up.
+        assert!(!catalog.available.iter().any(|o| o.id == "figma@official"));
     }
 
     #[test]
