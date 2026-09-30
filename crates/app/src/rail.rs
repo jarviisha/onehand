@@ -557,6 +557,21 @@ pub(crate) fn rail_row(
     row_shape(id, icon, label, cx).hover(move |row| row.bg(hover).text_color(accent_fg))
 }
 
+/// A [`rail_row`] drawn as the one on screen, the way a selected list row is:
+/// the selected fill, its ink and a weight up, and no hover of its own, since
+/// the fill does not move under the pointer on a row that is already chosen.
+pub(crate) fn rail_row_marked(
+    id: &'static str,
+    icon: IconName,
+    label: &'static str,
+    cx: &App,
+) -> Stateful<Div> {
+    row_shape(id, icon, label, cx)
+        .font_medium()
+        .bg(cx.theme().sidebar_accent)
+        .text_color(cx.theme().sidebar_accent_foreground)
+}
+
 /// The one filled row in the rail: *New session*.
 ///
 /// This row has now worn all three coats, and each move had a reason. A loud
@@ -1152,6 +1167,19 @@ struct AutoStatus {
     stuck: bool,
 }
 
+/// The run a project's row names: one on that project's issues, as its issue
+/// number and whether it is waiting on a card, the working one ahead of a
+/// waiting one. `runs` is each run's project, issue and whether it waits.
+fn run_on<'a>(
+    runs: impl IntoIterator<Item = (&'a std::path::Path, u64, bool)>,
+    root: &std::path::Path,
+) -> Option<(u64, bool)> {
+    runs.into_iter()
+        .filter(|&(repo, _, _)| repo == root)
+        .map(|(_, number, waiting)| (number, waiting))
+        .min_by_key(|&(_, waiting)| waiting)
+}
+
 /// What a project row says about unattended runs, or `None` while the project
 /// is not switched on.
 ///
@@ -1387,6 +1415,9 @@ fn folder_row(
 ) -> Row {
     let root = &window_state.workspace.roots[root_idx];
     let is_active = window_state.workspace.active_root == root_idx;
+    // The workspace page is about no one project, so while it shows, no project
+    // or session row is drawn as the one on screen.
+    let marked = is_active && !shell.workspace_shown(cx);
     let active_session = root.active_session;
     let pinned = root.pinned;
     let unattended = root.unattended;
@@ -1395,11 +1426,12 @@ fn folder_row(
     // the project the issue belongs to would say nothing about it.
     // A working run is named ahead of a waiting one, since a project can hold
     // both and the older, usually the waiting one, would otherwise hide it.
-    let run = crate::unattended::live_runs(cx)
-        .into_iter()
-        .filter(|(repo, _, _)| *repo == root.path)
-        .min_by_key(|&(_, _, waiting)| waiting)
-        .map(|(_, number, waiting)| (number, waiting));
+    let runs = crate::unattended::live_runs(cx);
+    let run = run_on(
+        runs.iter()
+            .map(|run| (run.repo.as_path(), run.number, run.waiting.is_some())),
+        &root.path,
+    );
     let auto = auto_status(
         unattended,
         run,
@@ -1452,7 +1484,7 @@ fn folder_row(
                     root_idx,
                     i,
                     session,
-                    is_active && active_session == i,
+                    marked && active_session == i,
                     Note::Agent { among_many },
                     cx,
                 )
@@ -1515,7 +1547,7 @@ fn folder_row(
         // at all -- the highlight moved to its session row and the row naming
         // the *project* went plain, so nothing on screen said which project the
         // user was in.
-        .active(is_active)
+        .active(marked)
         // **Selecting a project and folding it away are two different
         // intentions, so they are two different targets.** While the whole
         // row toggled, every click on a project both switched to it and
@@ -1734,7 +1766,8 @@ fn session_rows(
     let active = window_state
         .workspace
         .active_root()
-        .and_then(|root| root.active_session().map(|s| s.uid));
+        .and_then(|root| root.active_session().map(|s| s.uid))
+        .filter(|_| !shell.workspace_shown(cx));
 
     let mut rows: Vec<(u64, Row)> = Vec::new();
     for (root_idx, root) in window_state.workspace.roots.iter().enumerate() {
@@ -1904,6 +1937,33 @@ pub fn rail(
                         .on_click(cx.listener(|shell: &mut Shell, _: &ClickEvent, _, cx| {
                             shell.add_root(cx);
                         })),
+                )
+                // The one way to the workspace page, which answers across every
+                // project what the rows below answer one project at a time.
+                // Quiet like *Add project…*, and marked while the page shows,
+                // as a project row is while it is the one on screen.
+                .child(
+                    {
+                        let (id, icon, label) = (
+                            "rail-workspace",
+                            IconName::LayoutDashboard,
+                            "Workspace overview",
+                        );
+                        match window_state_shell.workspace_shown(cx) {
+                            true => rail_row_marked(id, icon, label, cx),
+                            false => rail_row(id, icon, label, cx)
+                                .text_color(cx.theme().muted_foreground),
+                        }
+                    }
+                    .tooltip(|window, cx| {
+                        Tooltip::new("What is waiting, working and open across every project")
+                            .build(window, cx)
+                    })
+                    .on_click(cx.listener(
+                        |shell: &mut Shell, _: &ClickEvent, window, cx| {
+                            shell.show_workspace(window, cx);
+                        },
+                    )),
                 )
                 .child(new_session_block(window_state_shell, window_state, cx))
                 // The hairline is where the header stops being about the
@@ -2444,7 +2504,7 @@ fn tab_bar(active: RailTab, cx: &mut Context<Shell>) -> impl IntoElement + use<>
 #[cfg(test)]
 mod tests {
     use super::{
-        LABEL_SHAPE_CAP, RailTab, auto_status, new_session_hint, project_hint, project_key,
+        LABEL_SHAPE_CAP, RailTab, auto_status, new_session_hint, project_hint, project_key, run_on,
         runs_more_than_one_agent, session_label, signal_hint,
     };
     use crate::chat::pane::SessionSignal;
@@ -2641,6 +2701,23 @@ mod tests {
         let hint = project_hint("p", None, 0, Some(&on.line), &path);
         assert_eq!(hint.last(), Some(&path));
         assert!(hint.contains(&on.line));
+    }
+
+    /// A project's row names a run on its own issues, and the working one
+    /// ahead of a waiting one: the older run is usually the waiting one, and
+    /// it would otherwise hide the run that is actually going.
+    #[test]
+    fn a_project_row_names_its_own_run_and_prefers_the_working_one() {
+        let (here, there) = (std::path::Path::new("/p"), std::path::Path::new("/q"));
+        assert_eq!(run_on([(there, 9, false)], here), None);
+        assert_eq!(
+            run_on([(here, 3, true), (there, 9, false)], here),
+            Some((3, true))
+        );
+        assert_eq!(
+            run_on([(here, 3, true), (here, 5, false)], here),
+            Some((5, false))
+        );
     }
 
     /// A project that is neither a repository nor changed is the row the old

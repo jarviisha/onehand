@@ -72,7 +72,13 @@ What it does not do: a chat on the remote bridge hears a run's card only if it
 follows that session, and a run's session is new, so nobody follows it by
 default.
 
-## Step 2 — the workspace page
+## Step 2 — the workspace page (built)
+
+Built as described below, with two choices made on the way. The issue list is
+**open issues only**, with a line counting the closed ones, because the page is
+read for work. Pressing an issue selects its project and opens the Workbench's
+Issues mode on it. *Working* does not say how long a run has been going: a run
+carries its remaining budget and not its start, and the rail already names it.
 
 A page in the centre of the window, reached from the rail, reading what already
 exists:

@@ -99,6 +99,20 @@ struct RootIssues {
     synced: Option<(Instant, String)>,
 }
 
+impl RootIssues {
+    fn show(&mut self, number: u64) {
+        self.selected = Some(number);
+        self.form = None;
+    }
+
+    /// Take a read that has landed. Only the issues move: what is selected
+    /// stays, so an issue asked for before the read arrived is still the one
+    /// shown once it has.
+    fn land(&mut self, read: Issues) {
+        keep_newer(&mut self.issues, read);
+    }
+}
+
 /// The form a new issue or an edit is written in.
 struct Form {
     /// The issue being edited, or `None` for a new one.
@@ -205,7 +219,7 @@ impl IssuesView {
                 state.forge = forge;
                 match read {
                     Ok(read) => {
-                        keep_newer(&mut state.issues, read);
+                        state.land(read);
                         view.status = None;
                     }
                     Err(why) => view.status = Some(why),
@@ -397,10 +411,21 @@ impl IssuesView {
 
     fn select(&mut self, number: u64, cx: &mut Context<Self>) {
         if let Some(state) = self.state_mut() {
-            state.selected = Some(number);
-            state.form = None;
+            state.show(number);
             cx.notify();
         }
+    }
+
+    /// Select issue `number` of the active project, asked from outside the
+    /// mode. The project's entry is made here if its first read has not
+    /// started yet, and the read only fills that entry in, so a selection
+    /// made before the issues arrive is the one drawn once they do.
+    pub(crate) fn show_issue(&mut self, number: u64, cx: &mut Context<Self>) {
+        let Some(root) = self.root.clone() else {
+            return;
+        };
+        self.roots.entry(root).or_default().show(number);
+        cx.notify();
     }
 
     /// Open the form, empty for a new issue or holding what issue `editing`
@@ -1145,5 +1170,30 @@ fn excerpt(text: &str) -> String {
         Some((at, _)) => format!("{}…", &text[..at]),
         None if text.is_empty() => "(empty)".to_string(),
         None => text.to_string(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn an_issue_shown_before_the_read_lands_stays_selected() {
+        let mut issues = Issues::default();
+        issues
+            .create(
+                Draft {
+                    title: "one".into(),
+                    ..Draft::default()
+                },
+                1,
+            )
+            .unwrap();
+        // The entry `show_issue` makes, then the read `load` lands into it.
+        let mut state = RootIssues::default();
+        state.show(1);
+        state.land(issues);
+        assert_eq!(state.selected, Some(1));
+        assert!(state.issues.is_some());
     }
 }

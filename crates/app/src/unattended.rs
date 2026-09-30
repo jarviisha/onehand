@@ -369,25 +369,40 @@ fn opted_in_roots(cx: &App) -> Vec<Project> {
     roots
 }
 
-/// Every run that has not ended, as the project it came from, the issue it is
-/// on and whether it is waiting on a card.
+/// A run that has not ended, as the rail and the workspace page read it.
+pub struct LiveRun {
+    /// The project the issue was found in.
+    pub repo: PathBuf,
+    pub number: u64,
+    pub title: String,
+    /// The run's own session.
+    pub uid: u64,
+    /// The window the session is in.
+    pub window: gpui::AnyWindowHandle,
+    /// The question a parked card is asking, while the run waits on it.
+    pub waiting: Option<String>,
+}
+
+/// Every run that has not ended, oldest first.
 ///
-/// For the rail, which says on a project's row that a run is working one of its
-/// issues: the run's own session is on a worktree's row of its own, and nothing
-/// on the project the issue belongs to would otherwise say so.
-pub fn live_runs(cx: &App) -> Vec<(PathBuf, u64, bool)> {
+/// The rail says on a project's row that a run is working one of its issues:
+/// the run's own session is on a worktree's row of its own, and nothing on the
+/// project the issue belongs to would otherwise say so. The workspace page
+/// lists them, the waiting ones apart from the working.
+pub fn live_runs(cx: &App) -> Vec<LiveRun> {
     Shared::global(cx)
         .unattended
         .as_ref()
         .map(|u| {
             u.runs
                 .iter()
-                .map(|run| {
-                    (
-                        run.claimed.repo.clone(),
-                        run.claimed.issue.number,
-                        run.waiting.is_some(),
-                    )
+                .map(|run| LiveRun {
+                    repo: run.claimed.repo.clone(),
+                    number: run.claimed.issue.number,
+                    title: run.claimed.issue.title_text().to_string(),
+                    uid: run.uid,
+                    window: run.window,
+                    waiting: run.waiting.clone(),
                 })
                 .collect()
         })

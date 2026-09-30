@@ -7,4 +7,4 @@
 
 pub mod panel;
 
-pub use panel::{EDITOR_MODE, MARKDOWN_MODE, NEOVIM_MODE, Workbench, WorkbenchEvent};
+pub use panel::{EDITOR_MODE, ISSUES_MODE, MARKDOWN_MODE, NEOVIM_MODE, Workbench, WorkbenchEvent};

@@ -37,6 +37,7 @@ use std::rc::Rc;
 pub const EDITOR_MODE: PluginId = onehand_workbench_editor::SPEC.id;
 pub const MARKDOWN_MODE: PluginId = onehand_workbench_markdown::SPEC.id;
 pub const NEOVIM_MODE: PluginId = onehand_workbench_neovim::SPEC.id;
+pub const ISSUES_MODE: PluginId = onehand_workbench_issues::SPEC.id;
 
 pub struct Workbench {
     focus_handle: FocusHandle,
@@ -278,6 +279,12 @@ impl Workbench {
     /// moments a project is most likely to have moved under it.
     pub fn rescan(&mut self, cx: &mut Context<Self>) {
         self.broadcast(&Request::Rescan, cx);
+    }
+
+    /// Select issue `number` of the project on screen, in whichever mode lists
+    /// issues.
+    pub fn show_issue(&mut self, number: u64, cx: &mut Context<Self>) {
+        self.broadcast(&Request::ShowIssue(number), cx);
     }
 
     /// Open `path` in whichever mode edits files, and switch to it.

@@ -141,6 +141,10 @@ pub enum Request<'a> {
     /// rem base the other modes scale by would stretch the box around it while
     /// the cell stayed put.
     SetFontSize(Pixels),
+    /// Select the active project's issue with this number, for whichever mode
+    /// lists issues. Sent after the project is chosen, so it may arrive before
+    /// that project's issues have been read.
+    ShowIssue(u64),
 }
 
 /// How a mode reaches back into the panel.

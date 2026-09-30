@@ -255,6 +255,81 @@ impl ProjectFacts {
     }
 }
 
+/// How many runs each of the workspace page's two run groups draws. Runs are
+/// few by construction — one works at a time and each waiting one holds an
+/// agent open — so this is a backstop rather than an editorial cut.
+const PAGE_RUNS: usize = 5;
+
+/// How many open issues the workspace page lists. Enough to read down, not so
+/// many that a workspace of busy projects builds a thousand rows nobody reaches.
+const PAGE_ISSUES: usize = 100;
+
+/// The width of the column the pages drawn in place of a conversation keep to:
+/// the project page, the resume picker and the workspace page. One figure, so
+/// moving between them does not move the column.
+const PAGE_COLUMN: f32 = 560.;
+
+/// What the issue filter reads while it is not narrowing the list at all.
+const ALL_PROJECTS: &str = "All projects";
+
+/// One project as the workspace page lists it.
+pub struct PageProject {
+    pub label: SharedString,
+    pub root: PathBuf,
+    /// The file its issues are kept in — `None` for a workspace bound to no
+    /// storage, which keeps none.
+    pub issues: Option<PathBuf>,
+}
+
+/// The page shown in place of a conversation when the user asks what the whole
+/// workspace needs: the runs waiting on them, the runs working, and every
+/// project's open issues.
+struct WorkspacePage {
+    /// Every project in rail order.
+    projects: Vec<PageProject>,
+    /// The project the issue list is narrowed to, or `None` for all of them.
+    filter: Option<PathBuf>,
+    /// Every project's issues as last read. `None` while the first read is
+    /// out, which is a wait rather than an answer.
+    read: Option<Vec<(PathBuf, onehand_core::issues::Issues)>>,
+    /// The files that could not be read, and why.
+    failed: Vec<String>,
+    /// What the list draws: `read` narrowed to the filter.
+    shown: onehand_core::issues::Across,
+    /// The read in flight, held so that a newer one drops it.
+    _load: Option<gpui::Task<()>>,
+}
+
+impl WorkspacePage {
+    /// Narrow what was read to the filter. Run when either changes, not per
+    /// frame, since it copies every open issue it keeps.
+    fn refilter(&mut self) {
+        let Some(read) = &self.read else {
+            return;
+        };
+        let kept = read
+            .iter()
+            .filter(|(root, _)| self.filter.as_ref().is_none_or(|only| only == root))
+            .cloned()
+            .collect();
+        self.shown = onehand_core::issues::open_across(kept, PAGE_ISSUES);
+    }
+
+    /// What `root` is called here, or its folder's name for a project this
+    /// window does not hold — a run's project can be in another window.
+    fn label_of(&self, root: &Path) -> String {
+        self.projects
+            .iter()
+            .find(|project| project.root == root)
+            .map(|project| project.label.to_string())
+            .or_else(|| {
+                root.file_name()
+                    .map(|name| name.to_string_lossy().into_owned())
+            })
+            .unwrap_or_default()
+    }
+}
+
 /// The conversations already had in the project on screen, for the header's
 /// *Open a past conversation* menu.
 ///
@@ -311,6 +386,10 @@ pub struct ChatPane {
     ///
     /// Only ever read while no session is showing.
     empty: Option<EmptyProject>,
+    /// The workspace page, while it is what the pane shows. Set only with no
+    /// session showing, and cleared by anything that shows a session or a
+    /// project.
+    workspace: Option<WorkspacePage>,
     /// The past conversations of the project that *is* showing, for the
     /// header's menu. Separate from `empty` above, which is the same listing for
     /// the opposite state — that one is the body of the page shown when a
@@ -450,6 +529,7 @@ impl ChatPane {
                 window: window.window_handle(),
                 handle: cx.entity().downgrade(),
                 empty: None,
+                workspace: None,
                 archives: None,
                 pending_resume: None,
                 rail_hidden: false,
@@ -510,6 +590,7 @@ impl ChatPane {
             self.leave_shown_session(window, cx);
             self.restore_draft(uid, window, cx);
         }
+        self.workspace = None;
         self.active = Some(uid);
         // The header's menu is about the project, so it follows the project
         // rather than the session: switching between two sessions of one root
@@ -935,10 +1016,13 @@ impl ChatPane {
         cx: &mut Context<Self>,
     ) {
         let standing_in = self.empty.as_ref().map(|project| &project.path);
-        let unchanged = self.active.is_none() && standing_in == root.as_ref().map(|(_, path)| path);
+        let unchanged = self.active.is_none()
+            && self.workspace.is_none()
+            && standing_in == root.as_ref().map(|(_, path)| path);
         if unchanged {
             return;
         }
+        self.workspace = None;
         self.empty = root.map(|(label, path)| EmptyProject {
             label,
             path,
@@ -957,6 +1041,92 @@ impl ChatPane {
         self.leave_shown_session(window, cx);
         self.active = None;
         cx.notify();
+    }
+
+    /// Show the workspace page: what is waiting, what is working, and every
+    /// project's open issues. `projects` is every project in rail order, with
+    /// the file its issues are kept in.
+    ///
+    /// Leaves the shown session the way standing on a project does — the draft
+    /// put down, the session left running — since the page is somewhere else to
+    /// be and not a session closing.
+    pub fn show_workspace(
+        &mut self,
+        projects: Vec<PageProject>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        // A filter survives the page being shown again, while its project does.
+        let filter = self
+            .workspace
+            .take()
+            .and_then(|page| page.filter)
+            .filter(|only| projects.iter().any(|project| &project.root == only));
+        self.workspace = Some(WorkspacePage {
+            projects,
+            filter,
+            read: None,
+            failed: Vec::new(),
+            shown: Default::default(),
+            _load: None,
+        });
+        self.leave_shown_session(window, cx);
+        self.active = None;
+        self.empty = None;
+        self.reload_workspace(cx);
+        cx.notify();
+    }
+
+    /// Read every project's issues again, if the workspace page is showing.
+    /// What is on screen stays until the new read lands, so a reload does not
+    /// blank a list that already had something in it.
+    pub fn reload_workspace(&mut self, cx: &mut Context<Self>) {
+        let Some(page) = self.workspace.as_mut() else {
+            return;
+        };
+        let files: Vec<(PathBuf, PathBuf)> = page
+            .projects
+            .iter()
+            .filter_map(|project| Some((project.root.clone(), project.issues.clone()?)))
+            .collect();
+        page._load = Some(cx.spawn(async move |pane, cx| {
+            let (read, failed) = cx
+                .background_executor()
+                .spawn(async move {
+                    let (mut read, mut failed) = (Vec::new(), Vec::new());
+                    for (root, file) in files {
+                        match onehand_core::issues::load_blocking(&file) {
+                            Ok(issues) => read.push((root, issues)),
+                            Err(why) => failed.push(why),
+                        }
+                    }
+                    (read, failed)
+                })
+                .await;
+            let _ = pane.update(cx, |pane: &mut Self, cx| {
+                let Some(page) = pane.workspace.as_mut() else {
+                    return;
+                };
+                page.read = Some(read);
+                page.failed = failed;
+                page.refilter();
+                cx.notify();
+            });
+        }));
+    }
+
+    /// Whether the workspace page is what the pane shows.
+    pub fn showing_workspace(&self) -> bool {
+        self.workspace.is_some()
+    }
+
+    /// Narrow the workspace page's issue list to one project, or `None` for all.
+    fn filter_workspace(&mut self, only: Option<PathBuf>, cx: &mut Context<Self>) {
+        if let Some(page) = self.workspace.as_mut() {
+            page.filter = only;
+            page.refilter();
+            cx.notify();
+        }
     }
 
     /// Point the header's menu at `root`, reading its conversations if it is not
@@ -1964,7 +2134,7 @@ impl ChatPane {
                     .v_flex()
                     .gap_3()
                     .w_full()
-                    .max_w(px(560.))
+                    .max_w(px(PAGE_COLUMN))
                     // Bounded by the panel, for the same reason the project
                     // page's column is: this list is every conversation the
                     // agent has had in the project, and a column taller than
@@ -2097,7 +2267,7 @@ impl ChatPane {
                             .v_flex()
                             .gap_3()
                             .w_full()
-                            .max_w(px(560.))
+                            .max_w(px(PAGE_COLUMN))
                             // Bounded by the panel it sits in, so the page is
                             // centred while it fits and fills the space when it
                             // does not. Without this the column takes its
@@ -2217,6 +2387,223 @@ impl ChatPane {
                                     .text_color(muted)
                                     .child(format!("{hidden} older not shown"))
                             })),
+                    ),
+            )
+            .into_any_element()
+    }
+
+    /// The workspace page: the runs waiting on the user, the runs working, and
+    /// every project's open issues.
+    ///
+    /// The runs are read here, per frame, rather than held: a run starting,
+    /// parking or ending already refreshes every window, so the page follows
+    /// without a subscription of its own.
+    fn workspace_page(&self, cx: &mut Context<Self>) -> gpui::AnyElement {
+        let Some(page) = self.workspace.as_ref() else {
+            return div().into_any_element();
+        };
+        let muted = cx.theme().muted_foreground;
+        let warning = crate::theme::status_ink(cx).warning;
+        let heading = |text: &'static str| div().text_xs().text_color(muted).child(text);
+        let muted_line = |text: String| div().text_xs().text_color(muted).child(text);
+
+        let (waiting, working): (Vec<_>, Vec<_>) = crate::unattended::live_runs(cx)
+            .into_iter()
+            .partition(|run| run.waiting.is_some());
+        // A run's row is an issue's row: its number, what it is about, and the
+        // project at the end. For a waiting run what it is about is the
+        // question, since answering that is what the row is pressed for.
+        let run_group = |name: &'static str,
+                         runs: Vec<crate::unattended::LiveRun>,
+                         cx: &mut Context<Self>| {
+            let hidden = runs.len().saturating_sub(PAGE_RUNS);
+            (!runs.is_empty()).then(|| {
+                div()
+                    .v_flex()
+                    .gap_1()
+                    .w_full()
+                    .flex_none()
+                    .child(heading(name))
+                    .children(
+                        runs.into_iter()
+                            .take(PAGE_RUNS)
+                            .enumerate()
+                            .map(|(i, run)| {
+                                let (uid, window) = (run.uid, run.window);
+                                crate::dialogs::issue_row(
+                                    (name, i),
+                                    run.number,
+                                    run.waiting.unwrap_or(run.title),
+                                    &[],
+                                    page.label_of(&run.repo),
+                                    cx,
+                                )
+                                .on_click(cx.listener(
+                                    move |_: &mut Self, _, _, cx| {
+                                        cx.emit(ChatPaneEvent::ShowRun { uid, window });
+                                    },
+                                ))
+                            }),
+                    )
+                    .children((hidden > 0).then(|| muted_line(format!("{hidden} more not shown"))))
+            })
+        };
+        let waiting = run_group("Waiting on you", waiting, cx);
+        let working = run_group("Working", working, cx);
+
+        let unbound = !page.projects.is_empty()
+            && page.projects.iter().all(|project| project.issues.is_none());
+        let filter_name = page
+            .filter
+            .as_deref()
+            .map_or_else(|| ALL_PROJECTS.to_string(), |root| page.label_of(root));
+        let choices: Vec<(SharedString, Option<PathBuf>)> =
+            std::iter::once((ALL_PROJECTS.into(), None))
+                .chain(
+                    page.projects
+                        .iter()
+                        .map(|project| (project.label.clone(), Some(project.root.clone()))),
+                )
+                .collect();
+        let current = page.filter.clone();
+        let this = cx.entity();
+        let filter = crate::controls::menu_below(
+            "workspace-filter",
+            crate::controls::action("workspace-filter-trigger")
+                .ghost()
+                .small()
+                .label(filter_name)
+                .icon(Icon::new(IconName::ChevronDown))
+                .text_color(muted),
+            move |mut menu, _, _| {
+                for (label, only) in &choices {
+                    let (only, this) = (only.clone(), this.clone());
+                    menu = menu.item(
+                        crate::controls::menu_item(label.clone())
+                            .checked(only == current)
+                            .on_click(move |_, _, cx: &mut App| {
+                                this.update(cx, |pane: &mut Self, cx| {
+                                    pane.filter_workspace(only.clone(), cx)
+                                });
+                            }),
+                    );
+                }
+                menu
+            },
+        );
+        let note = match &page.read {
+            _ if unbound => {
+                Some("This workspace is bound to no folder, so it keeps no issues.".to_string())
+            }
+            None => Some("Looking for open issues…".to_string()),
+            Some(_) if page.shown.rows.is_empty() => Some("No open issues.".to_string()),
+            Some(_) => None,
+        };
+        let rows: Vec<gpui::AnyElement> = page
+            .shown
+            .rows
+            .iter()
+            .enumerate()
+            .map(|(i, row)| {
+                let (root, number) = (row.root.clone(), row.number);
+                let trailing = match &row.reference {
+                    Some(reference) => format!("{} · {reference}", page.label_of(&row.root)),
+                    None => page.label_of(&row.root),
+                };
+                crate::dialogs::issue_row(
+                    ("workspace-issue", i),
+                    row.number,
+                    row.title.clone(),
+                    &row.labels,
+                    trailing,
+                    cx,
+                )
+                .on_click(cx.listener(move |_: &mut Self, _, _, cx| {
+                    cx.emit(ChatPaneEvent::OpenIssue {
+                        root: root.clone(),
+                        number,
+                    });
+                }))
+                .into_any_element()
+            })
+            .collect();
+        let (closed, left_out) = (page.shown.closed, page.shown.left_out);
+
+        div()
+            .size_full()
+            .v_flex()
+            // The header stays, as on the project page: the terminal, the
+            // Workbench and the way back to a hidden rail are all still wanted
+            // here, and a panel that loses its chrome between one click and
+            // the next reads as one that broke.
+            .child(self.header(cx))
+            .child(
+                div()
+                    .flex_1()
+                    .min_h_0()
+                    .v_flex()
+                    .items_center()
+                    .justify_center()
+                    .p_6()
+                    .child(
+                        div()
+                            .v_flex()
+                            .gap_4()
+                            .w_full()
+                            .max_w(px(PAGE_COLUMN))
+                            // Bounded by the panel, so the column is centred
+                            // while it fits and only the issue list scrolls
+                            // when it does not.
+                            .max_h_full()
+                            .min_h_0()
+                            .children(waiting)
+                            .children(working)
+                            .child(
+                                div()
+                                    .v_flex()
+                                    .gap_1()
+                                    .w_full()
+                                    .min_h_0()
+                                    .child(
+                                        div()
+                                            .h_flex()
+                                            .items_center()
+                                            .flex_none()
+                                            .child(heading("Open issues"))
+                                            .child(div().flex_1())
+                                            .when(!unbound, |row| row.child(filter)),
+                                    )
+                                    .children(page.failed.iter().map(|why| {
+                                        div()
+                                            .flex_none()
+                                            .text_xs()
+                                            .text_color(warning)
+                                            .child(why.clone())
+                                    }))
+                                    .children(note.map(muted_line))
+                                    .children((!rows.is_empty()).then(|| {
+                                        div()
+                                            .id("workspace-issues")
+                                            .v_flex()
+                                            .w_full()
+                                            .min_h_0()
+                                            .overflow_y_scroll()
+                                            .children(rows)
+                                    }))
+                                    // Said, not hidden: a list cut silently
+                                    // reads as the whole of it.
+                                    .children(
+                                        (left_out > 0).then(|| {
+                                            muted_line(format!("{left_out} more not shown"))
+                                        }),
+                                    )
+                                    .children((closed > 0 && !unbound).then(|| {
+                                        muted_line(match closed {
+                                            1 => "1 closed issue is not listed.".to_string(),
+                                            n => format!("{n} closed issues are not listed."),
+                                        })
+                                    })),
+                            ),
                     ),
             )
             .into_any_element()
@@ -2659,10 +3046,11 @@ impl ChatPane {
     fn header(&self, cx: &mut Context<Self>) -> impl IntoElement + use<> {
         let chat = self.active_chat(cx);
         let title = chat.and_then(Chat::conversation_title).unwrap_or_else(|| {
-            self.empty
-                .as_ref()
-                .map(|project| project.label.to_string())
-                .unwrap_or_default()
+            match (&self.workspace, &self.empty) {
+                (Some(_), _) => "Workspace".to_string(),
+                (None, Some(project)) => project.label.to_string(),
+                (None, None) => String::new(),
+            }
         });
         let busy = chat.is_some_and(|chat| chat.busy);
         // A conversation the agent has not named yet has no directory to remove:
@@ -3808,6 +4196,18 @@ pub enum ChatPaneEvent {
     /// work was not thrown away. Reporting a refusal as a failure to save would
     /// send the reader looking for the wrong thing entirely.
     ConversationNotDeleted(String),
+    /// Open issue `number` of the project at `root` — a row of the workspace
+    /// page. Selecting a project and opening the Workbench are both the
+    /// shell's.
+    OpenIssue {
+        root: PathBuf,
+        number: u64,
+    },
+    /// Show the session an unattended run is on, in whichever window holds it.
+    ShowRun {
+        uid: u64,
+        window: gpui::AnyWindowHandle,
+    },
 }
 
 impl EventEmitter<ChatPaneEvent> for ChatPane {}
@@ -3871,6 +4271,9 @@ impl ChatPane {
         // Cleared here and set only on the one path that mounts a composer, so
         // every early return below leaves it false without having to say so.
         self.composer_drawn = false;
+        if self.workspace.is_some() {
+            return self.workspace_page(cx);
+        }
         // A session choosing which conversation to resume has no transcript and
         // no composer yet: nothing is connected until the choice is made.
         if let Some(uid) = self.active.filter(|uid| self.is_choosing(*uid)) {

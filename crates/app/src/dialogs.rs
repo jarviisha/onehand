@@ -190,18 +190,71 @@ pub fn pick_issue(shell: &Shell, cx: &mut Context<Shell>) -> Dialog {
         }))
 }
 
-/// The picker's body: a wait, a failure, an empty answer, or the rows.
-fn issue_list(
-    found: Option<&crate::shell::PickerAnswer>,
-    handle: &Entity<Shell>,
+/// One issue as a pressable row: the number muted, the title, a few labels as
+/// pills, and a muted word at the end saying where it lives or whose it is.
+///
+/// One builder for every list of issues, so an issue reads the same in the
+/// picker and on the workspace page.
+pub(crate) fn issue_row(
+    id: impl Into<gpui::ElementId>,
+    number: u64,
+    title: String,
+    labels: &[String],
+    trailing: String,
     cx: &App,
-) -> AnyElement {
+) -> gpui::Stateful<gpui::Div> {
     let (muted, radius, accent) = (
         cx.theme().muted_foreground,
         cx.theme().radius,
         cx.theme().accent,
     );
     let (pill_bg, pill_fg) = (cx.theme().secondary, cx.theme().secondary_foreground);
+    div()
+        .id(id)
+        .h_flex()
+        .items_center()
+        .gap_2()
+        .w_full()
+        .px_2()
+        .py_1()
+        .rounded(radius)
+        .cursor_pointer()
+        .hover(move |row| row.bg(accent.opacity(0.5)))
+        .child(
+            div()
+                .flex_none()
+                .text_color(muted)
+                .child(format!("#{number}")),
+        )
+        .child(div().flex_1().min_w_0().truncate().child(title))
+        // A few labels, not all: the row is for telling issues apart, and the
+        // title is what does most of that.
+        .children(labels.iter().take(3).map(|label| {
+            div()
+                .flex_none()
+                .px_1()
+                .rounded(radius)
+                .text_xs()
+                .bg(pill_bg)
+                .text_color(pill_fg)
+                .child(label.clone())
+        }))
+        .child(
+            div()
+                .flex_none()
+                .text_xs()
+                .text_color(muted)
+                .child(trailing),
+        )
+}
+
+/// The picker's body: a wait, a failure, an empty answer, or the rows.
+fn issue_list(
+    found: Option<&crate::shell::PickerAnswer>,
+    handle: &Entity<Shell>,
+    cx: &App,
+) -> AnyElement {
+    let muted = cx.theme().muted_foreground;
     let (rows, cut, unread) = match found {
         None => {
             return div()
@@ -236,72 +289,36 @@ fn issue_list(
                 .overflow_y_scroll()
                 .children(rows.iter().enumerate().map(|(i, (tracker, row))| {
                     let handle = handle.clone();
-                    div()
-                        .id(("issue", i))
-                        .h_flex()
-                        .items_center()
-                        .gap_2()
-                        .w_full()
-                        .px_2()
-                        .py_1()
-                        .rounded(radius)
-                        .cursor_pointer()
-                        .hover(move |row| row.bg(accent.opacity(0.5)))
-                        .on_click(move |_: &ClickEvent, window: &mut Window, cx: &mut App| {
+                    // Who wrote it on a forge; an issue kept in onehand is the
+                    // user's own, and what is worth saying is where it lives.
+                    let trailing = match tracker {
+                        onehand_core::unattended::Tracker::Local(_) => "in onehand".to_string(),
+                        // Kept in step: named by the forge's number where it
+                        // has one, which is the one its pull request will
+                        // reference.
+                        onehand_core::unattended::Tracker::Synced { forge, .. } => {
+                            match row.issue.forge_ref() {
+                                Some(reference) => format!("{} {reference}", forge.name()),
+                                None => "in onehand".to_string(),
+                            }
+                        }
+                        onehand_core::unattended::Tracker::Forge(_) => {
+                            format!("by {}", row.author)
+                        }
+                    };
+                    issue_row(
+                        ("issue", i),
+                        row.issue.number,
+                        row.issue.title_text().to_string(),
+                        &row.labels,
+                        trailing,
+                        cx,
+                    )
+                    .on_click(
+                        move |_: &ClickEvent, window: &mut Window, cx: &mut App| {
                             handle.update(cx, |shell, cx| shell.pick_issue(i, window, cx));
-                        })
-                        .child(
-                            div()
-                                .flex_none()
-                                .text_color(muted)
-                                .child(format!("#{}", row.issue.number)),
-                        )
-                        .child(
-                            div()
-                                .flex_1()
-                                .min_w_0()
-                                .truncate()
-                                .child(row.issue.title_text().to_string()),
-                        )
-                        // A few labels, not all: the row is for telling issues
-                        // apart, and the title is what does most of that.
-                        .children(row.labels.iter().take(3).map(|label| {
-                            div()
-                                .flex_none()
-                                .px_1()
-                                .rounded(radius)
-                                .text_xs()
-                                .bg(pill_bg)
-                                .text_color(pill_fg)
-                                .child(label.clone())
-                        }))
-                        // Who wrote it on a forge; an issue kept in onehand is the
-                        // user's own, and what is worth saying is where it lives.
-                        .child(
-                            div()
-                                .flex_none()
-                                .text_xs()
-                                .text_color(muted)
-                                .child(match tracker {
-                                    onehand_core::unattended::Tracker::Local(_) => {
-                                        "in onehand".to_string()
-                                    }
-                                    // Kept in step: named by the forge's
-                                    // number where it has one, which is the
-                                    // one its pull request will reference.
-                                    onehand_core::unattended::Tracker::Synced { forge, .. } => {
-                                        match row.issue.forge_ref() {
-                                            Some(reference) => {
-                                                format!("{} {reference}", forge.name())
-                                            }
-                                            None => "in onehand".to_string(),
-                                        }
-                                    }
-                                    onehand_core::unattended::Tracker::Forge(_) => {
-                                        format!("by {}", row.author)
-                                    }
-                                }),
-                        )
+                        },
+                    )
                 })),
         )
         // The forge's half could not be read while the project's own could:

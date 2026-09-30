@@ -773,6 +773,30 @@ caret with it. The rules that decide are core's (`onehand_core::unattended`); th
   moments the store changes under a running window — a turn ending, which is what writes a
   conversation, and a session closing, which is when somebody is most likely to want it back.
 
+- **The workspace page** (`ChatPane::show_workspace`, reached from the rail's *Workspace
+  overview*) answers across every project what the project page answers for one: the unattended
+  runs **waiting on you** (a parked card) and those **working**, then every project's **open
+  issues**, most recently changed first, with a project filter and a line counting the closed ones
+  left out. It is a third thing the centre can show, beside a session and the project page:
+  `active` is `None` and `workspace` is `Some`, and both `show` and `clear_active` clear it —
+  `clear_active` counts it in its "unchanged" check, or clicking the project the user came from
+  would leave them on the page. **It holds no run store.** Runs are read per frame from
+  `unattended::live_runs` (a `LiveRun` each), which is cheap because a run starting, parking or
+  ending already calls `cx.refresh_windows()`. Issues come from **the projects' own files alone**
+  (`issues::open_across`, core, tested): a forge's issue kept in step is imported into the same
+  file, so reading the forge too would list it twice. They are read off the UI loop when the page
+  is shown and at every `Shell::refresh_worktree` (turn end, window activation) while it shows,
+  and the filter is applied when it changes rather than per frame, so the cap and the closed count
+  follow it (`Across::left_out` is the count the cut line prints). A row is `dialogs::issue_row`,
+  the picker's row, so an issue reads the same in both places. Pressing an issue emits
+  `ChatPaneEvent::OpenIssue` and the shell selects the project, opens the Workbench on Issues and
+  sends `Request::ShowIssue`. The mode makes the project's entry if its read has not started, and
+  the read only fills that entry, so the selection survives the load. Pressing a run emits
+  `ShowRun`. In another window, that window is activated and its shell shows the session
+  (deferred, since one shell must not be reached into from inside another's update). Both
+  lists are capped (`PAGE_RUNS`, `PAGE_ISSUES`) and say so when a cap bites. An unbound
+  workspace says it keeps no issues, as the Issues mode does.
+
 The **model** is core's (`onehand_core::chat`): `Chat` + `apply(AcpEvent)`, the conversation store, the
 Markdown export and the activity-run rules. `ChatSession` derefs to it, which is what lets the whole
 renderer read `chat.items` / `chat.busy` without knowing where the model lives.
@@ -1216,6 +1240,12 @@ centre is the chat, right dock the Workbench, bottom dock the terminal.
   them, quieter than either: it is what a workspace with no project needs first and it is about the
   workspace rather than about the list, and it is done once per project where *New session* is done
   all day. It was the last row *inside* the Projects group, which is a place a tab bar cannot have.
+  *Workspace overview* sits under it, just as quiet, and opens the workspace page (see the chat
+  pane). It takes the selected fill while that page shows (`rail::rail_row_marked`, the same
+  look as a selected list row), and **no project or session row is
+  marked meanwhile** (`Shell::workspace_shown`, read off the pane rather than mirrored on the
+  shell), since the page is about none of them. The active project's ••• menu stays, because the
+  project is still the selected one.
 - **The caret beside *New session* picks the project** (`rail::new_session_menu`), and the row itself
   is unchanged: one click still starts the default agent on the selected project. What the menu adds
   is the two things that click has to choose silently — every project in the workspace under *Start
