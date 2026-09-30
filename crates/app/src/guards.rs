@@ -662,6 +662,17 @@ mod tests {
             "CHANGELOG",
         ];
         const SECTION_MARK: char = '\u{a7}';
+        // Every document under `docs/` as well, read from the directory rather
+        // than listed here, so a new one is covered the day it is written.
+        // Matched by its whole file name: the bare words are ordinary English
+        // a comment may use.
+        let docs: Vec<String> = std::fs::read_dir(workspace_root().join("docs"))
+            .into_iter()
+            .flatten()
+            .flatten()
+            .map(|entry| entry.file_name().to_string_lossy().into_owned())
+            .filter(|name| name.ends_with(".md"))
+            .collect();
 
         for (path, source) in workspace_sources() {
             for (n, line) in source.lines().enumerate() {
@@ -674,6 +685,11 @@ mod tests {
                     .iter()
                     .find(|stem| line.contains(**stem))
                     .map(|stem| (*stem).to_string())
+                    .or_else(|| {
+                        docs.iter()
+                            .find(|name| line.contains(name.as_str()))
+                            .cloned()
+                    })
                     .or_else(|| {
                         line.contains(SECTION_MARK)
                             .then(|| SECTION_MARK.to_string())

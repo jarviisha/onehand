@@ -1,4 +1,4 @@
-# Makefile for onehand — wraps the cargo workflows documented in CLAUDE.md.
+# Makefile for onehand — wraps the project's cargo workflows.
 #
 # Usage:
 #   make run                 # run with the current dir as the project root
@@ -24,7 +24,7 @@ CLIPPY_EXTRA ?=
 # it and `clippy --fix` rewrites it — hundreds of lines of churn on upstream
 # code, none of it a change onehand meant to make. The vendor's whole value is
 # that its diff against `zortax/gpui-terminal@51f0292` is exactly the patches we
-# wrote and nothing else (CLAUDE.md "Gotchas"). Its own lint warnings are
+# wrote and nothing else. Its own lint warnings are
 # upstream's and stay put.
 OURS := -p onehand -p onehand-core -p onehand-plugin-api -p onehand-plugin-host \
 	-p onehand-terminal-ui -p onehand-connector-github -p onehand-remote-telegram \
