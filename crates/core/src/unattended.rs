@@ -8,7 +8,7 @@
 use crate::connector::Connector;
 use crate::issues;
 use std::path::{Path, PathBuf};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 /// An issue a run can take.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -425,8 +425,9 @@ pub fn prompt_for(
          at, and follow its conventions.\n\
          2. Run the repository's checks before committing.\n\
          3. {finish}\n\
-         4. If the issue turns out to need a decision from a person, say so in \
-         one short paragraph and stop. Do not guess.\n",
+         4. If the issue turns out to need a decision from a person, ask it with \
+         your tool for asking the user a question, not in your answer, and carry on \
+         once it is answered. A person will see it and reply. Do not guess.\n",
         named = tracker.names(issue),
         title = issue.title,
         body = issue.body.trim(),
@@ -452,7 +453,9 @@ pub enum Ending {
     /// The turn ended by itself. `tail` is how the agent's answer ended, which
     /// is where a question asked in prose rather than through a card would be.
     TurnEnded { tail: Option<String> },
-    /// The agent parked a permission or a question nobody was there to answer.
+    /// The run ended while a permission or a question the agent parked was
+    /// still waiting for a person — its adapter went, or its session was
+    /// closed, before anybody answered.
     Asked(String),
     /// The adapter stopped answering.
     LinkLost,
@@ -461,9 +464,9 @@ pub enum Ending {
     Closed,
     /// The run outlasted its timeout.
     TimedOut(Duration),
-    /// A person acted inside the run's session — or was handed it, on the
-    /// question it had parked, which `asked` carries so the issue can say it.
-    TakenOver { asked: Option<String> },
+    /// A person put a prompt of their own into the run's session. Answering a
+    /// card the run parked is not this: the run waits for that answer.
+    TakenOver,
     /// The run never got as far as a prompt.
     Failed(String),
 }
@@ -473,6 +476,53 @@ impl Ending {
     /// cannot have done any.
     pub fn may_have_work(&self) -> bool {
         !matches!(self, Self::Failed(_))
+    }
+}
+
+/// How much of its timeout a run has left, counting only the time it spent
+/// working.
+///
+/// **Time spent waiting on a person does not count.** A run that parked a
+/// question is standing still because somebody has not answered yet, and a
+/// timeout that ran through the wait would cancel the run for a slow reply —
+/// which is the one failure the wait exists to avoid. The clock is what the
+/// timeout bounds: an agent that works without finishing.
+#[derive(Debug, Clone, Copy)]
+pub struct Budget {
+    limit: Duration,
+    spent: Duration,
+    /// When the current stretch of work began; `None` while waiting.
+    since: Option<Instant>,
+}
+
+impl Budget {
+    /// A budget of `limit`, running from `now`.
+    pub fn start(limit: Duration, now: Instant) -> Self {
+        Self {
+            limit,
+            spent: Duration::ZERO,
+            since: Some(now),
+        }
+    }
+
+    /// Stop counting: the run is waiting on a person. Pausing twice is once.
+    pub fn pause(&mut self, now: Instant) {
+        if let Some(since) = self.since.take() {
+            self.spent += now.saturating_duration_since(since);
+        }
+    }
+
+    /// Count again from `now`. Resuming a running budget changes nothing.
+    pub fn resume(&mut self, now: Instant) {
+        self.since.get_or_insert(now);
+    }
+
+    /// What is left of the limit at `now`.
+    pub fn left(&self, now: Instant) -> Duration {
+        let running = self
+            .since
+            .map_or(Duration::ZERO, |since| now.saturating_duration_since(since));
+        self.limit.saturating_sub(self.spent + running)
     }
 }
 
@@ -544,11 +594,11 @@ pub fn outcome_line(ending: &Ending, found: &Result<Verdict, String>) -> String 
         Ok(verdict) => {
             let why = match ending {
                 Ending::TurnEnded { .. } => "the turn ended",
-                Ending::Asked(_) => "it stopped on a decision",
+                Ending::Asked(_) => "it ended waiting on a decision",
                 Ending::LinkLost => "the agent stopped answering",
                 Ending::Closed => "its session was closed",
                 Ending::TimedOut(_) => "it timed out",
-                Ending::TakenOver { .. } => "it was taken over by hand",
+                Ending::TakenOver => "it was taken over by hand",
                 Ending::Failed(_) => "it could not start",
             };
             format!(
@@ -568,15 +618,14 @@ fn stopped(ending: &Ending) -> Option<String> {
         Ending::TurnEnded { tail: Some(tail) } => {
             Some(format!("The turn ended on:\n\n{}", quoted(tail)))
         }
-        Ending::Asked(q) => Some(format!("It stopped on a decision:\n\n{}", quoted(q))),
+        Ending::Asked(q) => Some(format!(
+            "It ended waiting on a decision nobody answered:\n\n{}",
+            quoted(q)
+        )),
         Ending::LinkLost => Some("The agent stopped answering.".to_string()),
         Ending::Closed => Some("Its session was closed before the run finished.".to_string()),
         Ending::TimedOut(d) => Some(format!("The run hit its {} timeout.", spoken(*d))),
-        Ending::TakenOver { asked: None } => Some("It was taken over by hand.".to_string()),
-        Ending::TakenOver { asked: Some(q) } => Some(format!(
-            "It was handed over by hand on a decision:\n\n{}",
-            quoted(q)
-        )),
+        Ending::TakenOver => Some("It was taken over by hand.".to_string()),
         Ending::Failed(why) => Some(why.clone()),
     }
 }
@@ -592,7 +641,11 @@ fn nothing_found(ending: &Ending, branch: &str, missing: &str) -> String {
         Ending::TurnEnded { tail: None } => {
             format!("The turn ended with {missing} on `{branch}`.")
         }
-        Ending::Asked(q) => format!("onehand stopped: it needs a decision.\n\n{}", quoted(q)),
+        Ending::Asked(q) => format!(
+            "The run ended waiting on a decision nobody answered; there is {missing} on \
+             `{branch}`.\n\n{}",
+            quoted(q)
+        ),
         Ending::LinkLost => {
             format!("The agent stopped answering; there is {missing} on `{branch}`.")
         }
@@ -605,13 +658,9 @@ fn nothing_found(ending: &Ending, branch: &str, missing: &str) -> String {
             capitalised(missing),
             spoken(*d)
         ),
-        Ending::TakenOver { asked: None } => {
+        Ending::TakenOver => {
             format!("Taken over by hand; the run stopped watching `{branch}`.")
         }
-        Ending::TakenOver { asked: Some(q) } => format!(
-            "Handed over on a decision; the run stopped watching `{branch}`.\n\n{}",
-            quoted(q)
-        ),
         Ending::Failed(why) => format!("onehand could not start the run: {why}"),
     }
 }
@@ -783,10 +832,7 @@ mod tests {
             Ending::LinkLost,
             Ending::Closed,
             Ending::TimedOut(Duration::from_secs(2700)),
-            Ending::TakenOver { asked: None },
-            Ending::TakenOver {
-                asked: Some("Run awk?".into()),
-            },
+            Ending::TakenOver,
             Ending::Failed("git refused".into()),
         ];
         for ending in &endings {
@@ -798,7 +844,7 @@ mod tests {
                 | Ending::LinkLost
                 | Ending::Closed
                 | Ending::TimedOut(_)
-                | Ending::TakenOver { .. }
+                | Ending::TakenOver
                 | Ending::Failed(_) => {}
             }
             let without = report(ending, &Ok(Verdict::NoPullRequest), "onehand/issue-1");
@@ -835,7 +881,7 @@ mod tests {
             Ending::TurnEnded { tail: None },
             Ending::LinkLost,
             Ending::TimedOut(Duration::from_secs(60)),
-            Ending::TakenOver { asked: None },
+            Ending::TakenOver,
         ] {
             let said = report(&ending, &Err("rate limited".into()), "b");
             assert!(!said.contains("no pull request"), "{said}");
@@ -1112,17 +1158,26 @@ mod tests {
     }
 
     #[test]
-    fn a_run_handed_over_on_a_question_says_the_question() {
-        let asked = Ending::TakenOver {
-            asked: Some("Run awk?".into()),
-        };
+    fn waiting_on_a_person_spends_none_of_the_budget() {
+        let t0 = Instant::now();
+        let s = Duration::from_secs;
+        let mut budget = Budget::start(s(100), t0);
+        assert_eq!(budget.left(t0 + s(30)), s(70));
+        budget.pause(t0 + s(30));
+        budget.pause(t0 + s(40));
+        assert_eq!(budget.left(t0 + s(500)), s(70));
+        budget.resume(t0 + s(500));
+        budget.resume(t0 + s(510));
+        assert_eq!(budget.left(t0 + s(520)), s(50));
+        assert_eq!(budget.left(t0 + s(9999)), Duration::ZERO);
+    }
+
+    #[test]
+    fn a_run_that_ended_waiting_says_the_question() {
+        let asked = Ending::Asked("Run awk?".into());
         let said = report(&asked, &Ok(Verdict::NoPullRequest), "b");
         assert!(said.contains("> Run awk?"), "{said}");
-        let quiet = report(
-            &Ending::TakenOver { asked: None },
-            &Ok(Verdict::NoPullRequest),
-            "b",
-        );
+        let quiet = report(&Ending::TakenOver, &Ok(Verdict::NoPullRequest), "b");
         assert!(!quiet.contains('>'), "{quiet}");
     }
 }

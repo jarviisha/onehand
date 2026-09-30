@@ -1385,8 +1385,9 @@ fn folder_row(
     // The issue a run is working on in this project right now, if one is. The
     // run's own session sits under a worktree's row of its own, so without this
     // the project the issue belongs to would say nothing about it.
-    let working = crate::unattended::live_run(cx)
-        .filter(|(repo, _)| *repo == root.path)
+    let working = crate::unattended::live_runs(cx)
+        .into_iter()
+        .find(|(repo, _)| *repo == root.path)
         .map(|(_, number)| number);
     let auto = auto_status(
         unattended,

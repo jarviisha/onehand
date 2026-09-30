@@ -626,11 +626,14 @@ the prompt going out, a cancel, and the words the issue was told at the end. A r
 branches a worktree off `origin/<default>` and mints a session there. **Neither step moves anything on
 screen**: `ChatPane::open_unshown` connects without showing, and the worktree's root is
 `ProjectRoot::transient`, which `to_config` never writes. One prompt, one turn. The pull request the forge
-finds — or, with no forge, the commits on the branch — is the verdict, on every ending. A parked ask is cancelled, never answered — unless the user is
-reading that conversation, or picked the run by hand, in which case the run is **taken over** and
-the card stays up, announced like any other. A picked run handed over while nobody was reading it tells the
-issue the question it stopped on (`Ending::TakenOver { asked }`). The same happens the moment
-anybody else puts a prompt in. Taking over clears `transient` and saves. Teardown is
+finds — or, with no forge, the commits on the branch — is the verdict, on every ending. **A parked
+ask waits for a person and is never answered by the run**: the card stays up, announced like any
+other, and answering it from anywhere lets the turn carry on — answering is not taking over. While it
+waits the run's timeout does not count (`unattended::Budget`) and it **gives up the slot**
+(`Unattended::runs`, at most one working), so the search looks for the next issue at once. An adapter
+lost or a session closed while waiting ends the run as `Ending::Asked`, with the question on the
+issue. A prompt of anybody else's is a **take-over**: the run stops watching, which clears
+`transient` and saves. Teardown is
 `Shell::forget_root`, never `remove_root`, because that one re-shows the active session and takes the
 caret with it. The rules that decide are core's (`onehand_core::unattended`); the calls are the connector's.
 

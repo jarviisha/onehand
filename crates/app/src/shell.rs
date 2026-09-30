@@ -3471,11 +3471,6 @@ impl Shell {
         }
     }
 
-    /// Whether the user is reading `uid`'s conversation right now.
-    pub fn reading(&self, uid: u64, cx: &App) -> bool {
-        self.chat.read(cx).reading(uid, cx)
-    }
-
     /// How `uid`'s last answer ended, for a run's report.
     pub fn answer_tail(&self, uid: u64, cx: &App) -> Option<String> {
         self.chat.read(cx).answer_tail(uid, cx)
