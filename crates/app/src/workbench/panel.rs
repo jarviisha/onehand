@@ -274,15 +274,15 @@ impl Workbench {
         cx.notify();
     }
 
-    /// Re-read whatever the modes listed off the disk.
-    ///
-    /// Called when a turn ends and when the window is activated — the two
-    /// moments a project is most likely to have moved under it.
     /// Tell the modes when the agent on screen started, or that none is.
     pub fn agent_started(&mut self, since: Option<std::time::Instant>, cx: &mut Context<Self>) {
         self.broadcast(&Request::AgentStarted(since), cx);
     }
 
+    /// Re-read whatever the modes listed off the disk.
+    ///
+    /// Called when a turn ends and when the window is activated — the two
+    /// moments a project is most likely to have moved under it.
     pub fn rescan(&mut self, cx: &mut Context<Self>) {
         self.broadcast(&Request::Rescan, cx);
     }

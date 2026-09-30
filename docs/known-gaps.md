@@ -168,4 +168,15 @@ Listed because a missing feature nobody wrote down reads as a bug in the ones th
   life of every tab, in a view that otherwise draws only when bytes arrive.
 - Transcript blocks the design contract asks for that are not drawn are marked *(not rendered)* in
   DESIGN-ANSWER.md, each with the reason.
-
+- **The Plugins mode stops where the command line does.** It manages Claude Code's plugins only —
+  no other agent's, so there is no agent picker and no per-agent enabling. There is no auto-update
+  switch and no roll-back, since the command line offers neither and the mode writes none of
+  Claude Code's files; for the same reason a scope once set on or off cannot be set back to saying
+  nothing short of editing its `settings.json`. A plugin installed by managed settings is not
+  listed, because the listing names a scope this build does not read. *Change scope* is an install
+  and a removal, not one step. The pending banner counts only changes made in this mode, so one
+  made from a terminal is not announced. The scope *Install* remembers lasts for the session. The
+  catalog carries no dates and no component list before install, so there is no sort but
+  popularity and no filter by kind. And the title row of a submenu (*Change scope ▸*, *Turn on for
+  ▸*) draws the arrow cursor: the menu row that answers the pointer can only reach what goes inside
+  a row, and a submenu's row is the library's own.

@@ -14,9 +14,18 @@
 use serde_json::Value;
 use std::path::{Path, PathBuf};
 
-/// How many of one kind of thing are read from one plugin. Far past what any
-/// plugin ships; it bounds the walk, not the list.
+/// How many of one kind of thing are kept from one plugin. Far past what any
+/// plugin ships; it bounds the list, and the inventory says when it bit.
 const KIND_CAP: usize = 500;
+
+/// How many folder entries one plugin's walk may look at, across every kind.
+/// The list cap alone does not bound the walk — a tree of folders holding no
+/// markdown is visited in full while nothing is kept.
+const VISIT_CAP: usize = 5_000;
+
+/// How deep a command or agent folder is walked. Nested names are a folder or
+/// two deep; past that it is not a command layout, it is somebody's tree.
+const DEPTH_CAP: usize = 4;
 
 /// A plugin's contents, as far as its folder says.
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -34,6 +43,10 @@ pub(crate) struct Inventory {
     /// Every command a hook runs, which is what makes hooks the part of a
     /// plugin worth reading before it is trusted.
     pub(crate) hooks: Vec<Hook>,
+    /// Whether a bound stopped the walk, so what is listed is not all there
+    /// is — said on screen wherever the counts are, rather than printing a
+    /// cut count as though it were the whole.
+    pub(crate) cut: bool,
 }
 
 /// One hook: when it runs, and what it runs.
@@ -47,33 +60,67 @@ pub(crate) struct Hook {
 /// Read `root`, a plugin's install folder. A folder that is missing or holds
 /// nothing readable is an empty inventory, which draws as no chips at all —
 /// never as a count that was guessed.
+///
+/// **Only the plugin's own folder is read.** A manifest path that is absolute
+/// or climbs out with `..` is ignored, and a symlink is never walked into —
+/// the manifest is somebody else's file, and followed, `"commands": "/"` walks
+/// the whole disk and a link back to its own folder never ends.
 pub(crate) fn read_blocking(root: &Path) -> Inventory {
-    let manifest: Value = std::fs::read_to_string(root.join(".claude-plugin/plugin.json"))
-        .ok()
-        .and_then(|text| serde_json::from_str(&text).ok())
-        .unwrap_or(Value::Null);
+    let manifest = read_json(&root.join(".claude-plugin/plugin.json"));
+    let mut walk = Walk {
+        visited: 0,
+        cut: false,
+    };
     let paths = |key: &str, default: &str| -> Vec<PathBuf> {
         let mut paths = vec![root.join(default)];
-        paths.extend(listed(&manifest[key]).map(|p| root.join(p)));
+        paths.extend(listed(&manifest[key]).filter_map(|p| inside(root, p)));
         paths.dedup();
         paths
     };
 
+    // A skill is a folder holding `SKILL.md`: the path itself, a folder in
+    // it, or one a category further down — the three places a plugin puts
+    // one, since a manifest may list each skill's own folder and a default
+    // `skills/` may group them.
+    // **A manifest that lists its skills replaces the default folder** rather
+    // than adding to it, unlike commands and agents: Claude Code reads only
+    // the listed ones, and a plugin can keep drafts in `skills/` it does not
+    // ship.
+    let skill_paths = if manifest["skills"].is_null() {
+        vec![root.join("skills")]
+    } else {
+        listed(&manifest["skills"])
+            .filter_map(|p| inside(root, p))
+            .collect()
+    };
     let mut skills = Vec::new();
-    for dir in paths("skills", "skills") {
-        for entry in entries(&dir) {
-            if entry.join("SKILL.md").is_file() {
-                skills.extend(name_of(&entry));
+    for base in skill_paths {
+        if base.join("SKILL.md").is_file() {
+            skills.extend(name_of(&base));
+            continue;
+        }
+        for (child, is_dir) in walk.entries(&base) {
+            if !is_dir {
+                continue;
+            }
+            if child.join("SKILL.md").is_file() {
+                skills.extend(name_of(&child));
+                continue;
+            }
+            for (grandchild, is_dir) in walk.entries(&child) {
+                if is_dir && grandchild.join("SKILL.md").is_file() {
+                    skills.extend(name_of(&grandchild));
+                }
             }
         }
     }
     let mut commands = Vec::new();
     for dir in paths("commands", "commands") {
-        markdown_under(&dir, &dir, &mut commands);
+        walk.markdown_under(&dir, &dir, 0, &mut commands);
     }
     let mut agents = Vec::new();
     for dir in paths("agents", "agents") {
-        markdown_under(&dir, &dir, &mut agents);
+        walk.markdown_under(&dir, &dir, 0, &mut agents);
     }
 
     // MCP servers: `.mcp.json` by default, and the manifest either names a file
@@ -81,28 +128,34 @@ pub(crate) fn read_blocking(root: &Path) -> Inventory {
     let mut mcp = Vec::new();
     mcp.extend(servers(&read_json(&root.join(".mcp.json"))));
     match &manifest["mcpServers"] {
-        Value::String(path) => mcp.extend(servers(&read_json(&root.join(path)))),
+        Value::String(path) => {
+            if let Some(file) = inside(root, path) {
+                mcp.extend(servers(&read_json(&file)));
+            }
+        }
         inline @ Value::Object(_) => mcp.extend(servers(inline)),
         _ => {}
     }
 
     let mut hooks = Vec::new();
-    let default_hooks = root.join("hooks/hooks.json");
-    let mut hook_files = vec![default_hooks.clone()];
+    let mut hook_files = vec![root.join("hooks/hooks.json")];
     match &manifest["hooks"] {
         Value::Object(_) => hooks.extend(hook_commands(&manifest["hooks"])),
-        other => hook_files.extend(listed(other).map(|p| root.join(p))),
+        other => hook_files.extend(listed(other).filter_map(|p| inside(root, p))),
     }
     hook_files.dedup();
     for file in hook_files {
         hooks.extend(hook_commands(&read_json(&file)));
     }
 
+    let mut cut = walk.cut;
     for list in [&mut skills, &mut commands, &mut agents, &mut mcp] {
         list.sort();
         list.dedup();
+        cut |= list.len() > KIND_CAP;
         list.truncate(KIND_CAP);
     }
+    cut |= hooks.len() > KIND_CAP;
     hooks.truncate(KIND_CAP);
 
     // `repository` is a string or an object carrying one under `url`.
@@ -125,7 +178,19 @@ pub(crate) fn read_blocking(root: &Path) -> Inventory {
         agents,
         mcp,
         hooks,
+        cut,
     }
+}
+
+/// `path`, from a manifest, under `root` — or nothing, for one that is
+/// absolute or climbs out.
+fn inside(root: &Path, path: &str) -> Option<PathBuf> {
+    let path = Path::new(path);
+    let escapes = path.is_absolute()
+        || path
+            .components()
+            .any(|part| matches!(part, std::path::Component::ParentDir));
+    (!escapes).then(|| root.join(path))
 }
 
 /// A manifest path field, which may be one string or a list of them.
@@ -145,41 +210,62 @@ fn read_json(path: &Path) -> Value {
         .unwrap_or(Value::Null)
 }
 
-/// The directories and files directly inside `dir`, in no promised order.
-fn entries(dir: &Path) -> Vec<PathBuf> {
-    std::fs::read_dir(dir)
-        .map(|read| {
-            read.flatten()
-                .map(|entry| entry.path())
-                .take(KIND_CAP)
-                .collect()
-        })
-        .unwrap_or_default()
-}
-
 fn name_of(path: &Path) -> Option<String> {
-    path.file_stem()
-        .map(|stem| stem.to_string_lossy().into_owned())
+    path.file_name()
+        .map(|name| name.to_string_lossy().into_owned())
 }
 
-/// Every `.md` file under `dir`, named as Claude Code names a nested one —
-/// its folders joined to its name with `:` — so `git/commit.md` is
-/// `git:commit`.
-fn markdown_under(base: &Path, dir: &Path, out: &mut Vec<String>) {
-    for path in entries(dir) {
-        if out.len() >= KIND_CAP {
+/// One plugin's walk, and what it has spent.
+struct Walk {
+    visited: usize,
+    cut: bool,
+}
+
+impl Walk {
+    /// The entries directly inside `dir`, each with whether it is a folder
+    /// — symlinks left out, since a link is how a walk escapes or loops.
+    fn entries(&mut self, dir: &Path) -> Vec<(PathBuf, bool)> {
+        let Ok(read) = std::fs::read_dir(dir) else {
+            return Vec::new();
+        };
+        let mut found = Vec::new();
+        for entry in read.flatten() {
+            if self.visited >= VISIT_CAP {
+                self.cut = true;
+                break;
+            }
+            self.visited += 1;
+            // `file_type` describes the entry itself and does not follow a link.
+            let Ok(kind) = entry.file_type() else {
+                continue;
+            };
+            if !kind.is_symlink() {
+                found.push((entry.path(), kind.is_dir()));
+            }
+        }
+        found
+    }
+
+    /// Every `.md` file under `dir`, named as Claude Code names a nested one
+    /// — its folders joined to its name with `:` — so `git/commit.md` is
+    /// `git:commit`.
+    fn markdown_under(&mut self, base: &Path, dir: &Path, depth: usize, out: &mut Vec<String>) {
+        if depth > DEPTH_CAP {
+            self.cut = true;
             return;
         }
-        if path.is_dir() {
-            markdown_under(base, &path, out);
-        } else if path.extension().is_some_and(|ext| ext == "md") {
-            let relative = path.strip_prefix(base).unwrap_or(&path).with_extension("");
-            let name = relative
-                .components()
-                .map(|part| part.as_os_str().to_string_lossy().into_owned())
-                .collect::<Vec<_>>()
-                .join(":");
-            out.push(name);
+        for (path, is_dir) in self.entries(dir) {
+            if is_dir {
+                self.markdown_under(base, &path, depth + 1, out);
+            } else if path.extension().is_some_and(|ext| ext == "md") {
+                let relative = path.strip_prefix(base).unwrap_or(&path).with_extension("");
+                let name = relative
+                    .components()
+                    .map(|part| part.as_os_str().to_string_lossy().into_owned())
+                    .collect::<Vec<_>>()
+                    .join(":");
+                out.push(name);
+            }
         }
     }
 }
@@ -315,6 +401,67 @@ mod tests {
         assert_eq!(inventory.hooks[0].event, "SessionStart");
         assert_eq!(inventory.hooks[0].matcher, None);
         assert_eq!(inventory.hooks[0].command, "node start.js");
+    }
+
+    #[test]
+    fn a_skill_is_found_where_the_manifest_points_and_one_category_down() {
+        let plugin = Folder::new("nested");
+        // As mattpocock-skills ships: skills grouped by category, and a
+        // manifest listing each skill's own folder.
+        plugin.write(
+            ".claude-plugin/plugin.json",
+            r#"{"skills": ["./skills/engineering/tdd", "./skills/misc/wizard"]}"#,
+        );
+        plugin.write("skills/engineering/tdd/SKILL.md", "");
+        plugin.write("skills/misc/wizard/SKILL.md", "");
+        plugin.write("skills/productivity/teach/SKILL.md", "");
+        let inventory = read_blocking(&plugin.0);
+        // The manifest's list is the plugin's skills: a skill left in the
+        // default folder but not listed is not one it ships — which is how
+        // mattpocock-skills comes to 25 and not the 36 on disk.
+        assert_eq!(inventory.skills, ["tdd", "wizard"]);
+        assert!(!inventory.cut);
+
+        // With no list, the default folder is read, a category down.
+        let bare = Folder::new("nested-bare");
+        bare.write("skills/engineering/tdd/SKILL.md", "");
+        bare.write("skills/productivity/teach/SKILL.md", "");
+        assert_eq!(read_blocking(&bare.0).skills, ["tdd", "teach"]);
+    }
+
+    #[test]
+    fn a_path_that_leaves_the_plugin_folder_is_not_followed() {
+        let plugin = Folder::new("escape");
+        plugin.write(
+            ".claude-plugin/plugin.json",
+            r#"{"commands": ["/", "../../elsewhere", "./ok"]}"#,
+        );
+        plugin.write("ok/fine.md", "");
+        let inventory = read_blocking(&plugin.0);
+        assert_eq!(inventory.commands, ["fine"]);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_symlink_is_not_walked_into() {
+        let plugin = Folder::new("loop");
+        plugin.write("commands/real.md", "");
+        // A link back to the folder holding it: followed, it never ends.
+        std::os::unix::fs::symlink(plugin.0.join("commands"), plugin.0.join("commands/again"))
+            .unwrap();
+        let inventory = read_blocking(&plugin.0);
+        assert_eq!(inventory.commands, ["real"]);
+    }
+
+    #[test]
+    fn a_folder_past_the_bound_says_it_was_cut() {
+        let plugin = Folder::new("big");
+        for n in 0..(KIND_CAP + 5) {
+            plugin.write(&format!("agents/a{n}.md"), "");
+        }
+        let inventory = read_blocking(&plugin.0);
+        assert_eq!(inventory.agents.len(), KIND_CAP);
+        assert!(inventory.cut);
     }
 
     #[test]

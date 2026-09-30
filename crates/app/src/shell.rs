@@ -553,6 +553,7 @@ impl Shell {
                         });
                     }
                     E::WorkTreeTouched => shell.refresh_worktree(cx),
+                    E::AgentStarted => shell.sync_agent_started(cx),
                     E::ShowRail => shell.show_rail(cx),
                     // The visibility button and its shortcut preserve the selected mode.
                     E::ToggleWorkbench => shell.toggle_workbench(window, cx),
@@ -2635,7 +2636,6 @@ impl Shell {
         match self.chat.update(cx, |pane, cx| pane.restart_active(cx)) {
             crate::chat::pane::Restart::Restarted => {
                 window.push_notification(Notification::info("Restarting the agent"), cx);
-                self.sync_agent_started(cx);
             }
             crate::chat::pane::Restart::Armed => window.push_notification(
                 Notification::warning("A turn is running — invoke Restart again to confirm"),
@@ -3512,6 +3512,9 @@ impl Shell {
             .collect();
         self.chat
             .update(cx, |pane, cx| pane.show_workspace(projects, window, cx));
+        // No session is showing now, so there is no running agent to be
+        // behind on anything.
+        self.sync_agent_started(cx);
         cx.notify();
     }
 

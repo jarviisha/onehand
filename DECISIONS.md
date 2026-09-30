@@ -20,7 +20,10 @@ of those adjacent surfaces.
 **Decision.** Keep gpui-component's typography, radii, semantic colours and
 remaining palette. At boot, `crate::theme::install` overrides only the surface
 and corresponding text layers: `background`, `muted`, `secondary`, `accent`,
-`popover` and `border`. Render code reads visual values from `cx.theme()`; it
+`popover` and `border` — plus the slots the library keeps apart from those and
+would otherwise leave on its shipped palette: the sidebar's own set,
+`secondary_hover` / `secondary_active`, and `switch` (an off switch's track, held
+to 3:1 against the surface). Render code reads visual values from `cx.theme()`; it
 does not carry literal colours or a second palette.
 
 **Consequences.** The surface ramp has one owner and contrast tests. `DESIGN.md`
@@ -93,14 +96,19 @@ icons go through `assets/icons/manifest.toml`, `scripts/sync-icons.sh` and the
 extension marketplace. Loading third-party Rust dynamic libraries would expose
 an unstable ABI and couple extensions to the GUI implementation.
 
-**Decision.** Editor, Files, Markdown, Neovim, Issues, Telegram and GitHub are separate built-in
-crates linked into the binary. A Workbench mode implements one trait: it declares
+**Decision.** Editor, Files, Markdown, Neovim, Issues, Plugins, Telegram and GitHub are separate
+built-in crates linked into the binary. A Workbench mode implements one trait: it declares
 itself, hands back a view, and answers the requests it recognises. The panel
 keeps the list, the active ID and the strip, and holds no mode's state.
 `crates/app/src/plugins.rs` is three ordered lists — the modes, the connectors
 a project is offered to, and how a named remote channel is opened — and that
 order is the user-visible one. Any future external plugin system uses a process
 protocol.
+
+The **Plugins** Workbench mode is not an exception to this: what it lists, installs and switches
+are *Claude Code's* plugins — the agent's extensions, managed through `claude plugin` — and
+nothing it does loads code into onehand. Its *Marketplace* tab is Claude Code's marketplaces,
+not one for onehand.
 
 **Consequences.** The Rust API stays `0.x` without a third-party compatibility
 promise, and this boundary must not change observable Workbench order,

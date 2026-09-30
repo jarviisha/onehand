@@ -66,7 +66,7 @@ ACP_CMD="node crates/core/examples/mock_ask_agent.js" cargo run -p onehand-core 
 | `crates/app` | `onehand` | GPUI front end + binary (`main.rs` is ~15 lines; logic lives in the lib) |
 | `crates/core` | `onehand-core` | GUI-free logic: config, workspace tree, ACP client, chat model, remote bridge, connectors, issues, editor rules, git status, worktrees |
 | `crates/plugin-api` | `onehand-plugin-api` | GUI-free plugin IDs and descriptors |
-| `crates/plugin-host` | `onehand-plugin-host` | `WorkbenchMode` + `Request`, remote-channel factory, and the shared button wrapper, status ink and dock surface |
+| `crates/plugin-host` | `onehand-plugin-host` | `WorkbenchMode` + `Request`, remote-channel factory, and what a plugin draws as the app does: the button wrapper, menu rows and `menu_below`, the segmented `switch`, status ink and dock surface |
 | `crates/terminal-ui` | `onehand-terminal-ui` | PTY/grid ownership shared by the terminal dock and Neovim |
 | `plugins/builtin/*` | built-in plugins | Editor, Files, Markdown, Neovim, Issues, Plugins, Telegram, GitHub; composed in `crates/app/src/plugins.rs` |
 | `vendor/gpui-terminal` | `gpui-terminal` | vendored terminal grid + our `onehand patch` interaction layer |

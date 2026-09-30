@@ -931,91 +931,75 @@ see the rail, below.
   one more when it lands. Every write moves `Issues::revision` on, and the mode keeps whichever copy
   is newer, since two landings can reach the screen out of order.
 
-- **Plugins**: two tabs under one switch — **Installed**, the Claude Code plugins that reach a
-  session started in the project on screen, one row per plugin (capped at 200, the cut said); and
-  **Marketplace**, the known marketplaces' plugins, most installed first, searched, narrowed by a
-  chip per marketplace (offered only where there is more than one), and capped at 60 rows with the
-  cut said. Two lists and not one page, because stacked, a few hundred catalog rows pushed the
-  installed ones out of reach and the search scrolled away with them; each list's search and chips
-  are pinned above it, and each tab keeps a scroll of its own. **A catalog row's control follows
-  what is already true here**: *Installed* where the plugin is installed and on, *Enable* where it
-  is installed and off (on this machine, as the switch does), and a split *Install ▾* otherwise —
-  the press installs at the scope used last, the caret installs at another and makes it the next
-  default. `--available` leaves out a plugin once it is installed and on, so those rows are put back
-  from the marketplace's own `marketplace.json` (`cli::complete_offers`), without the install count
-  that catalog does not carry. A row's line is *Official* and the count and nothing else, since the
-  marketplace is the chip above; its description is clamped to two lines and clipped, because an
-  unbreakable word — a URL — otherwise ran past the panel's edge. No component chips and no sort
-  other than popularity here: the catalog names neither a plugin's parts before it is installed nor
-  any date. The panel is padded and its rows spaced
-  rather than ruled; *Remove* appears only on the row under the pointer, the line saying a change
-  reaches a session at its next start sits once at the foot of *Installed*, and a catalog row is its
-  name and *Install*, then the description, then marketplace and a compact install count. The switch is `onehand_plugin_host::switch`, the one
-  the rail's *Projects* / *All sessions* uses. **Each row
-  is its name, its version, one switch and a ••• menu.** The switch is *on in this project* and
-  writes to Local — this project on this machine, the one file that reaches nobody else — because
-  that is what a switch on a row is taken to mean, and Global and Project each reach somebody else
-  (every other project; every clone of this one). Those are in the menu under *On for*, each named
-  for who it reaches, checked where the plugin is on there and marked *from Global* / *from Project*
-  where it inherits; picking one writes the opposite answer at that scope alone. **A scope is offered
-  only where the plugin is installed at it or wider** — Global for a plugin installed for this
-  project alone would write a setting naming a plugin no other project has. Three scope buttons on
-  every row came first and were replaced: which was on, which set its own answer and which inherited
-  it were a fill, an outline and the lack of one, which nothing on screen explained. **When what a
-  session here gets disagrees with the listing's folded answer, the row says *set elsewhere* in the
-  warning ink**: managed settings, a policy or a settings flag decided it, and the switch describes
-  the three files rather than the outcome. *Remove* is in the menu, per scope the plugin is
-  installed at.
-  **The Installed tab** leads with a search and filter chips (All, Global, Project, Local, and *Has
-  update* only while one has); the segmented control carries each list's count. A row is the
-  plugin's name, its version in the monospace face (a commit cut to seven characters, the rest on
-  hover), an *Update x* chip where the marketplace offers a newer one, the switch and the menu; a
-  muted line with its marketplace and scopes, marked *Official* for Anthropic's marketplace (the
-  whole of what that mark claims — the listing has no finer verified flag); and a chip per kind it
-  carries (skills, commands, agents, MCP, and *hooks* in the warning ink with no count). Plugins off
-  in this project sit last under *Disabled · N*. **What a plugin carries is read from its own
-  folder** (`inventory.rs`), not from `claude plugin details`, which prints the same inventory as
-  prose with no `--json`: the published plugin layout — the manifest plus `skills/`, `commands/`,
-  `agents/`, `hooks/hooks.json`, `.mcp.json`, and whatever paths the manifest adds. **An update is
-  known only where it can be compared**: a release named by the catalog against a release installed,
-  or the commit a source is pinned to against a commit installed; a plugin kept in a folder of the
-  marketplace's own repository names neither and shows no chip. The row is a tab stop and opens a
-  drawer listing every component, a hook with the command it runs; Enter opens it and Space flips
-  the switch. **A banner appears only while this mode has made changes the agent on screen has not
-  loaded** — counted against when that agent started (`Request::AgentStarted`, pushed by the shell
-  from `ChatSession::started`), with *Restart agent* going back up as `Request::RestartAgent`. It
-  counts this mode's changes alone; one made from a terminal is not seen.
-  **The ••• menu is five groups**, divided, and anything that does not apply is left out rather
-  than drawn refusing: *Open repository* and *View changelog* (the manifest's `repository` or
-  `homepage`; a `CHANGELOG.md` at the plugin's top, opened in the editor); *Update to …* where one
-  is known, and *Check for updates* (`claude plugin marketplace update` on its marketplace — the
-  only way one becomes known); *Change scope ▸* for a plugin installed at one scope — an install at
-  the new scope and then a removal from the old, not atomic, install first so a failure between
-  leaves it at both and never at neither — and *Turn on for ▸*; *Open install folder* and *Copy
-  plugin ID*; and last, in the danger ink, *Uninstall…*, which asks in a dialog naming the scope, who
-  that reaches and what the plugin carries that goes with it. Not offered, because nothing behind
-  the command line can do them: an auto-update switch, a roll-back, and per-agent enabling — these
-  are Claude Code's plugins, and no other agent's are reachable from here. **Every change goes through `claude plugin … --scope`
-  and nothing writes Claude Code's files**: their layout belongs to Claude Code, and its install
-  record already carries a version number. **What each scope sets is read from the three
-  `settings.json` files' `enabledPlugins`**, because the listing's `enabled` is the answer with every
-  scope already folded in — the same on every record of one plugin — so it cannot tell a project
-  turning a plugin off from a plugin never turned on. The folded answer is never the fallback — it
-  includes the narrower scopes, so it would read a project's *off* back as *off* everywhere — and a
-  plugin no scope mentions is off, which is what the listing says of one. It is kept only to be
-  compared against, which is how a source the files do not show is noticed. The
-  listing names every project's installs; only the global ones and this project's are kept.
-  **Each record is read on its own**, and one this build cannot read — a scope it does not name,
-  such as `managed` — is skipped rather than failing the listing, so a plugin installed by managed
-  settings is not listed here while every other one still is.
-  **An install never passes `-y`** — a marketplace can declare a command to run, and `-y` accepts it
-  unseen — so one that wants a command refuses on the status line, left to a person in a terminal.
-  **Remove keeps the plugin's data** (`--keep-data`): reinstalling undoes a removal, nothing undoes
-  a deleted data directory. One change at a time, since each rewrites a settings file or the install
-  record, with the pressed control showing it working; the list is read again after each, when the
-  mode is shown and at every `Rescan`. A change reaches a session when its agent next starts, and
-  the mode says so. There is no *Remove override* — the command line can set a scope on or off but
-  not back to saying nothing, so a scope once set stays set until its file is edited.
+- **Plugins**: Claude Code's plugins, as they reach a session started in the project on screen —
+  not onehand's own, which are compiled in (D6). Two tabs under `onehand_plugin_host::switch`, the
+  rail's own control, each labelled with its count and keeping its own scroll and its own pinned
+  search.
+  **Installed** lists one row per plugin (capped at 200, the cut said), filtered by chips — All,
+  Global, Project, Local, and *Has update* only while one has. A row is the plugin's name; its
+  version in the monospace face, a commit cut to seven characters with the whole commit on hover;
+  an *Update x* chip where a newer one is known; one switch; and the ••• menu. Under that, a muted
+  line with its marketplace and scopes, marked *Official* for Anthropic's marketplace (the whole of
+  what the mark claims — nothing carries a finer verified flag) and *set elsewhere* in the warning
+  ink when what a session here gets disagrees with the listing's folded answer, since then managed
+  settings, a policy or a flag decided it and the switch describes the files rather than the
+  outcome. Last, a chip per kind the plugin carries — skills, commands, agents, MCP, and *hooks* in
+  the warning ink with no count — plus *not all read* when the walk hit its bound. Plugins off in
+  this project sit last under *Disabled · N*. The row is a tab stop that opens a drawer listing
+  every component and the command each hook runs; Enter opens it, Space flips the switch, and the
+  controls inside keep their presses so reaching for one never opens the drawer.
+  **The switch is "on in this project" and writes to Local** — this project on this machine, the
+  one file that reaches nobody else. Global and Project each reach somebody else, so they are in the
+  menu. A scope shows what is in force *at* it: what it sets itself, else what a wider one sets,
+  else off; a plugin no settings file mentions is off, which is what the listing says of one.
+  **The ••• menu is five groups**, divided, with anything that does not apply left out rather than
+  drawn refusing: *Open repository* (the manifest's `repository` or `homepage`) and *View
+  changelog* (a `CHANGELOG.md` at the plugin's top, opened in the editor); *Update to …* where one
+  is known, and *Check for updates* (`claude plugin marketplace update` on its marketplace); *Change
+  scope ▸* for a plugin installed at one scope — an install at the new scope, then a removal from the
+  old, install first so a failure between leaves it at both and never at neither — and *Turn on for
+  ▸*, a scope at a time, offered only where the plugin is installed at that scope or wider; *Open
+  install folder* and *Copy plugin ID*; and last, in the danger ink, *Uninstall…*, which asks in a
+  dialog naming the scope, who that reaches and what goes with it — "at least" when the walk was cut.
+  **Marketplace** lists every known marketplace's plugins — what is already installed first, then
+  most installed — narrowed by a chip per marketplace (offered where there is more than one) and
+  capped at 60 rows with the cut said. A row's control follows what is true here: *Installed* where
+  it is installed and on, *Enable* where it is installed and off (on this machine, as the switch
+  does), and a split *Install ▾* otherwise — the press installs at the scope used last this session,
+  the caret installs at another and makes it the next default. Its line is *Official* and a compact
+  install count and nothing else, the marketplace being the chip above; its description is clamped
+  to two lines and clipped, since an unbreakable word — a URL — otherwise ran past the panel's edge.
+  `--available` leaves out a plugin once it is installed and on, so those rows are put back from
+  the marketplace's own `marketplace.json` (`cli::complete_offers`), without the install count that
+  catalog does not carry — which is why they are ordered first rather than by count.
+  **A banner appears only while this mode has made changes the agent on screen has not loaded**:
+  those after that agent started, in this project or at the global scope, with *Restart agent*.
+  The start time is `ChatSession::started`, pushed down as `Request::AgentStarted` whenever the
+  session on screen changes and whenever `ChatPaneEvent::AgentStarted` says one was spawned — which
+  every path that starts an agent passes through, a resume included; *Restart agent* goes back up as
+  `Request::RestartAgent`. Fetching a catalog is not counted, and changes made from a terminal are
+  not seen.
+  **Where each fact comes from.** Every change goes through `claude plugin … --scope` and nothing
+  writes Claude Code's files. Reads: the listing (`claude plugin list --json --available`, each
+  record read on its own so one this build cannot read — a `managed` scope — is skipped rather than
+  failing the list); the three `settings.json` files' `enabledPlugins`, because the listing's
+  `enabled` is the answer with every scope folded in and cannot tell a project turning a plugin off
+  from one never turned on; each marketplace's `marketplace.json`, found through `claude plugin
+  marketplace list --json`; and **one field of Claude Code's internal install record**,
+  `gitCommitSha`, read and never written, because the listing labels a plugin fetched from a
+  repository with its manifest's release whatever commit it came from, so without it such a plugin
+  that moved on cannot be told from one that did not — a record in a shape this build does not know
+  yields no commits and so no update, never a failure. **An update is known** where the catalog
+  names a newer release than the one installed, or pins a commit other than the one installed; a
+  plugin kept in a folder of the marketplace's own repository names neither and shows none.
+  **What a plugin carries is read from its own folder** (`inventory.rs`), since `claude plugin
+  details` prints the same inventory only as prose: the manifest, then `skills/` (a folder holding
+  `SKILL.md`, directly or a category down — and a manifest that lists its skills replaces that
+  folder, as Claude Code reads it), `commands/` and `agents/` (`.md` files, nested names joined with
+  `:`, added to by manifest paths), `hooks/hooks.json` or the manifest's hooks, and `.mcp.json` or
+  the manifest's servers. The walk stays in the plugin's folder — a manifest path that is absolute
+  or climbs out with `..` is ignored and a symlink is never followed — and is bounded by entries
+  visited, depth and items kept, saying so when a bound bit.
 
 State is per project root, held by the mode that works on it, so switching roots swaps the whole
 thing.

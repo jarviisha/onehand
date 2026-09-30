@@ -2,11 +2,12 @@
 //! it, the change in flight — and how it is drawn.
 
 use crate::cli::{self, Available, Catalog, Change, Plugin, Scope, Verb};
+use crate::inventory::Inventory;
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
     AnyElement, App, AppContext as _, ClickEvent, ClipboardItem, Context, Entity, FocusHandle,
     InteractiveElement as _, IntoElement, KeyDownEvent, MouseButton, ParentElement, Render,
-    SharedString, StatefulInteractiveElement as _, Styled, Task, Window, div, px,
+    SharedString, StatefulInteractiveElement as _, Styled, Task, Window, div, rems,
 };
 use gpui_component::button::ButtonVariants as _;
 use gpui_component::dialog::{DialogClose, DialogFooter};
@@ -102,6 +103,31 @@ impl Filter {
     }
 }
 
+/// One change that went through: where it was made, whether it reaches every
+/// project, and when.
+struct Made {
+    root: PathBuf,
+    /// A change at the global scope, which every project's agent loads.
+    everywhere: bool,
+    at: Instant,
+}
+
+/// How many changes are kept to count from. Far past how many anybody makes
+/// between two restarts.
+const MADE_CAP: usize = 256;
+
+/// How many of `made` the agent in `root`, started at `since`, has not
+/// loaded: those after it started, made in this project or globally. None
+/// while no agent is running — the next one to start loads all of them.
+fn pending_count(made: &[Made], root: &Path, since: Option<Instant>) -> usize {
+    let Some(since) = since else {
+        return 0;
+    };
+    made.iter()
+        .filter(|made| made.at > since && (made.everywhere || made.root == root))
+        .count()
+}
+
 pub(crate) struct PluginsView {
     root: Option<PathBuf>,
     /// Which list is showing. Per window rather than per root, and not
@@ -145,7 +171,7 @@ pub(crate) struct PluginsView {
     /// Every change that went through, with the project it was made in and
     /// when. What the agent on screen has not seen is the ones after it
     /// started — which is what the pending banner counts.
-    made: Vec<(PathBuf, Instant)>,
+    made: Vec<Made>,
     /// When the agent on screen started, as the shell last said; `None` while
     /// no session shows, when there is nothing running to be out of date.
     since: Option<Instant>,
@@ -213,13 +239,10 @@ impl PluginsView {
     /// Counts what went through this mode alone — a plugin installed from a
     /// terminal is not seen here, and is not claimed to be.
     fn pending(&self) -> usize {
-        let (Some(root), Some(since)) = (&self.root, self.since) else {
-            return 0;
-        };
-        self.made
-            .iter()
-            .filter(|(at_root, at)| at_root == root && *at > since)
-            .count()
+        match &self.root {
+            Some(root) => pending_count(&self.made, root, self.since),
+            None => 0,
+        }
     }
 
     pub(crate) fn mark_stale(&mut self, cx: &mut Context<Self>) {
@@ -280,7 +303,19 @@ impl PluginsView {
             let _ = view.update(cx, |view: &mut Self, cx| {
                 view.busy = None;
                 match done {
-                    Ok(()) => view.made.push((root.clone(), Instant::now())),
+                    // Fetching a catalog changes nothing an agent loads.
+                    Ok(()) if change.verb == Verb::CheckUpdates => {}
+                    Ok(()) => {
+                        view.made.push(Made {
+                            root: root.clone(),
+                            everywhere: change.scope == Scope::User,
+                            at: Instant::now(),
+                        });
+                        // Only the latest can still be pending for a running
+                        // agent; the rest are history nothing reads.
+                        let over = view.made.len().saturating_sub(MADE_CAP);
+                        view.made.drain(..over);
+                    }
                     Err(why) if view.root.as_deref() == Some(root.as_path()) => {
                         view.status = Some(why)
                     }
@@ -727,7 +762,12 @@ impl PluginsView {
             } else {
                 version.clone()
             };
-            let cut = shown != version;
+            // On hover, the whole commit it came from where the install record
+            // names one, else whatever was cut from the label.
+            let full = plugin
+                .commit
+                .clone()
+                .or_else(|| (shown != version).then(|| version.clone()));
             div()
                 .id(("plugin-version", i))
                 .flex_none()
@@ -735,8 +775,8 @@ impl PluginsView {
                 .font_family(cx.theme().mono_font_family.clone())
                 .text_color(muted)
                 .child(shown)
-                .when(cut, |v| {
-                    v.tooltip(move |window, cx| Tooltip::new(version.clone()).build(window, cx))
+                .when_some(full, |v, full| {
+                    v.tooltip(move |window, cx| Tooltip::new(full.clone()).build(window, cx))
                 })
         });
         let update = plugin.update.clone().map(|to| {
@@ -1195,7 +1235,7 @@ impl PluginsView {
         div()
             .h_flex()
             .flex_none()
-            .gap_px()
+            .gap_0p5()
             .child(main)
             .child(menu)
             .into_any_element()
@@ -1224,21 +1264,23 @@ fn confirm_uninstall(
     cx: &mut App,
 ) {
     let inventory = &plugin.inventory;
-    let parts: Vec<String> = [
-        (inventory.skills.len(), "skill", "skills"),
-        (inventory.commands.len(), "command", "commands"),
-        (inventory.agents.len(), "agent", "agents"),
-        (inventory.mcp.len(), "MCP server", "MCP servers"),
-        (inventory.hooks.len(), "hook", "hooks"),
-    ]
-    .into_iter()
-    .filter(|(n, _, _)| *n > 0)
-    .map(|(n, one, many)| format!("{n} {}", if n == 1 { one } else { many }))
-    .collect();
+    let parts: Vec<String> = tally(inventory, "MCP server", "MCP servers")
+        .into_iter()
+        .chain((!inventory.hooks.is_empty()).then(|| {
+            let n = inventory.hooks.len();
+            format!("{n} {}", if n == 1 { "hook" } else { "hooks" })
+        }))
+        .collect();
+    // A folder past the walk's bound was not read to the end, so the counts
+    // are a floor and are said as one.
+    let at_least = if inventory.cut { "At least " } else { "" };
     let losing = if parts.is_empty() {
         String::new()
     } else {
-        format!(" {} will no longer be available.", parts.join(", "))
+        format!(
+            " {at_least}{} will no longer be available.",
+            parts.join(", ")
+        )
     };
     let description = format!(
         "{} is removed from {} ({}).{losing} Its saved data is kept.",
@@ -1276,31 +1318,38 @@ fn confirm_uninstall(
     });
 }
 
+/// "4 skills", "1 command" … for each counted kind a plugin has any of, in one
+/// order wherever counts are said. Hooks are left to the caller: a chip says
+/// only that there are some, and a sentence counts them.
+fn tally(inventory: &Inventory, mcp_one: &str, mcp_many: &str) -> Vec<String> {
+    [
+        (inventory.skills.len(), "skill", "skills"),
+        (inventory.commands.len(), "command", "commands"),
+        (inventory.agents.len(), "agent", "agents"),
+        (inventory.mcp.len(), mcp_one, mcp_many),
+    ]
+    .into_iter()
+    .filter(|(n, _, _)| *n > 0)
+    .map(|(n, one, many)| format!("{n} {}", if n == 1 { one } else { many }))
+    .collect()
+}
+
 /// What a plugin carries, one chip per kind it has any of — none for a kind
 /// it has none of, and no row at all for a plugin whose folder said nothing.
 /// *hooks* is in the warning ink and carries no count: a hook is code that
 /// runs on its own, and that there is any is the fact worth reading.
 fn component_chips(plugin: &Plugin, cx: &App) -> Option<AnyElement> {
     let inventory = &plugin.inventory;
-    let counted = [
-        (inventory.skills.len(), "skill", "skills"),
-        (inventory.commands.len(), "command", "commands"),
-        (inventory.agents.len(), "agent", "agents"),
-        (inventory.mcp.len(), "MCP", "MCP"),
-    ];
-    let mut chips: Vec<AnyElement> = counted
+    let mut chips: Vec<AnyElement> = tally(inventory, "MCP", "MCP")
         .into_iter()
-        .filter(|(n, _, _)| *n > 0)
-        .map(|(n, one, many)| {
-            chip(
-                format!("{n} {}", if n == 1 { one } else { many }),
-                false,
-                cx,
-            )
-        })
+        .map(|text| chip(text, false, cx))
         .collect();
     if !inventory.hooks.is_empty() {
         chips.push(chip("hooks".to_string(), true, cx));
+    }
+    // The walk stopped at its bound, so the counts above are not the whole.
+    if inventory.cut {
+        chips.push(chip("not all read".to_string(), false, cx));
     }
     (!chips.is_empty()).then(|| {
         div()
@@ -1338,7 +1387,9 @@ fn open_details(plugin: &Plugin, window: &mut Window, cx: &mut App) {
     window.open_sheet(cx, move |sheet, _, cx| {
         sheet
             .title(plugin.name().to_string())
-            .size(px(420.))
+            // In rems, so the drawer follows the zoom the rest of the panel
+            // is read at.
+            .size(rems(26.25))
             .child(details(&plugin, cx))
     });
 }
@@ -1431,6 +1482,12 @@ fn details(plugin: &Plugin, cx: &App) -> AnyElement {
                     None => origin,
                 }),
         )
+        .when(inventory.cut, |body| {
+            body.child(div().text_xs().text_color(muted).child(
+                "Not every file was read — the folder is larger than the walk allows, so \
+                 what is listed here is not all of it.",
+            ))
+        })
         .children(section("Skills", &inventory.skills))
         .children(section("Commands", &inventory.commands))
         .children(section("Agents", &inventory.agents))
@@ -1465,7 +1522,37 @@ fn compact(count: u64) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::compact;
+    use super::{Made, compact, pending_count};
+    use std::path::Path;
+    use std::time::Instant;
+
+    #[test]
+    fn a_global_change_is_pending_everywhere_and_a_project_one_only_there() {
+        let before = Instant::now();
+        let since = before + std::time::Duration::from_millis(1);
+        let after = since + std::time::Duration::from_millis(1);
+        let (a, b) = (Path::new("/a"), Path::new("/b"));
+        let made = [
+            Made {
+                root: a.into(),
+                everywhere: false,
+                at: after,
+            },
+            Made {
+                root: a.into(),
+                everywhere: true,
+                at: after,
+            },
+            Made {
+                root: a.into(),
+                everywhere: false,
+                at: before,
+            },
+        ];
+        assert_eq!(pending_count(&made, a, Some(since)), 2);
+        assert_eq!(pending_count(&made, b, Some(since)), 1);
+        assert_eq!(pending_count(&made, a, None), 0);
+    }
 
     #[test]
     fn a_count_reads_at_a_glance() {

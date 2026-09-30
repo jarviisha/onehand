@@ -141,6 +141,8 @@ pub(crate) struct Plugin {
     /// "up to date" and is not drawn as one.
     pub(crate) update: Option<String>,
     pub(crate) install_path: Option<PathBuf>,
+    /// The commit it was installed from, where Claude Code's record says.
+    pub(crate) commit: Option<String>,
     /// Where it is installed, which is where it can be removed from.
     pub(crate) installed: Vec<Scope>,
     /// What each scope's settings file says, indexed as [`Scope::ALL`];
@@ -290,10 +292,7 @@ pub(crate) fn complete_offers(
         if catalog.available.iter().any(|offer| offer.id == plugin.id) {
             continue;
         }
-        let Some(entry) = markets
-            .get(plugin.marketplace())
-            .and_then(|market| market.iter().find(|entry| entry["name"] == plugin.name()))
-        else {
+        let Some(entry) = entry_for(markets, plugin.marketplace(), plugin.name()) else {
             continue;
         };
         catalog.available.push(Available {
@@ -309,6 +308,12 @@ pub(crate) fn complete_offers(
         });
     }
     settle(&mut catalog.available);
+    // What is already here leads, so the row saying so is on the first
+    // screen rather than past the cut — these carry no count, and by count
+    // alone they would sort last of several hundred.
+    catalog
+        .available
+        .sort_by_key(|offer| !catalog.installed.iter().any(|p| p.id == offer.id));
 }
 
 impl Available {
@@ -410,6 +415,7 @@ pub(crate) fn parse(
                 inventory: Inventory::default(),
                 update: None,
                 install_path: record.install_path,
+                commit: None,
                 installed: vec![record.scope],
                 enabled: record.enabled,
             }),
@@ -452,17 +458,19 @@ pub(crate) fn list_blocking(root: &Path) -> Result<Catalog, String> {
     });
     let mut catalog = parse(&json, root, &set)?;
     let markets = marketplaces_blocking(root);
+    let commits = install_record()
+        .and_then(|file| std::fs::read_to_string(file).ok())
+        .map(|record| installed_commits(&record))
+        .unwrap_or_default();
     for plugin in &mut catalog.installed {
         if let Some(path) = &plugin.install_path {
             plugin.inventory = inventory::read_blocking(path);
+            plugin.commit = commits.get(path).cloned();
         }
-        let entry = markets
-            .get(plugin.marketplace())
-            .and_then(|market| market.iter().find(|entry| entry["name"] == plugin.name()));
-        plugin.update = match (&plugin.version, entry) {
-            (Some(version), Some(entry)) => update_to(version, entry),
-            _ => None,
-        };
+        plugin.update =
+            entry_for(&markets, plugin.marketplace(), plugin.name()).and_then(|entry| {
+                update_to(plugin.version.as_deref(), plugin.commit.as_deref(), entry)
+            });
     }
     complete_offers(&mut catalog, &markets);
     Ok(catalog)
@@ -510,24 +518,100 @@ pub(crate) fn is_hash(version: &str) -> bool {
     version.len() >= 7 && version.chars().all(|c| c.is_ascii_hexdigit())
 }
 
-/// The version a catalog entry offers over `installed`, if the two can be
-/// compared at all.
+/// The version a catalog entry offers over what is installed, if the two can
+/// be compared at all.
 ///
-/// Two ways, and only these: a release number the entry names, against a
-/// release installed; or the commit its source is pinned to, against a commit
-/// installed — shown by its first seven characters, since that is all a
-/// person reads of one. An entry whose source is a folder inside the
+/// Two ways, and only these. A release number the entry names, against the
+/// release installed — and only a *newer* one, since a catalog lagging behind
+/// what is installed is not offering an update. Or the commit its source is
+/// pinned to, against the commit installed — shown by its first seven
+/// characters, since that is all a person reads of one. That second one needs
+/// the installed commit and not the version label: a plugin fetched from a
+/// repository is labelled with its manifest's release (`1.2.3`) whatever
+/// commit it came from. An entry whose source is a folder inside the
 /// marketplace's own repository names neither, and gets no answer rather than
 /// a guess.
-pub(crate) fn update_to(installed: &str, entry: &serde_json::Value) -> Option<String> {
-    if !is_hash(installed) {
-        return entry["version"]
-            .as_str()
-            .filter(|offered| *offered != installed)
-            .map(str::to_string);
+pub(crate) fn update_to(
+    version: Option<&str>,
+    commit: Option<&str>,
+    entry: &serde_json::Value,
+) -> Option<String> {
+    if let (Some(offered), Some(installed)) = (entry["version"].as_str(), version)
+        && !is_hash(installed)
+    {
+        return newer(offered, installed).then(|| offered.to_string());
     }
-    let sha = entry["source"]["sha"].as_str()?;
-    (!sha.starts_with(installed) && is_hash(sha)).then(|| sha[..7].to_string())
+    let sha = entry["source"]["sha"].as_str().filter(|sha| is_hash(sha))?;
+    let installed = commit?;
+    (!sha.eq_ignore_ascii_case(installed)).then(|| sha[..7].to_string())
+}
+
+/// Whether release `offered` comes after `installed`: numbers compared part by
+/// part, a leading `v` and any pre-release or build suffix set aside. Two
+/// labels that are not both numbers fall back to being different at all.
+fn newer(offered: &str, installed: &str) -> bool {
+    let parts = |label: &str| -> Option<Vec<u64>> {
+        label
+            .trim_start_matches('v')
+            .split(['-', '+'])
+            .next()?
+            .split('.')
+            .map(|part| part.parse().ok())
+            .collect()
+    };
+    match (parts(offered), parts(installed)) {
+        (Some(offered), Some(installed)) => offered > installed,
+        _ => offered.trim_start_matches('v') != installed.trim_start_matches('v'),
+    }
+}
+
+/// The commit each install came from, by install folder, out of Claude Code's
+/// install record.
+///
+/// **The one thing read from that record, and read only.** The listing names
+/// a plugin by its release label and never by its commit, so without this a
+/// plugin that moved on in its repository without bumping its release cannot
+/// be told apart from one that did not move. The record is Claude Code's
+/// internal state and carries a version number of its own; a shape this does
+/// not recognise yields no commits, which leaves those plugins with no update
+/// known rather than failing the list.
+pub(crate) fn installed_commits(record: &str) -> HashMap<PathBuf, String> {
+    let Ok(record) = serde_json::from_str::<serde_json::Value>(record) else {
+        return HashMap::new();
+    };
+    let Some(plugins) = record["plugins"].as_object() else {
+        return HashMap::new();
+    };
+    plugins
+        .values()
+        .filter_map(serde_json::Value::as_array)
+        .flatten()
+        .filter_map(|install| {
+            let path = install["installPath"].as_str()?;
+            let sha = install["gitCommitSha"].as_str()?;
+            Some((PathBuf::from(path), sha.to_string()))
+        })
+        .collect()
+}
+
+/// Where Claude Code keeps its install record.
+fn install_record() -> Option<PathBuf> {
+    std::env::var_os("CLAUDE_CONFIG_DIR")
+        .map(PathBuf::from)
+        .or_else(|| dirs::home_dir().map(|home| home.join(".claude")))
+        .map(|dir| dir.join("plugins").join("installed_plugins.json"))
+}
+
+/// A catalog's entry for the plugin called `name`.
+fn entry_for<'a>(
+    markets: &'a HashMap<String, Vec<serde_json::Value>>,
+    marketplace: &str,
+    name: &str,
+) -> Option<&'a serde_json::Value> {
+    markets
+        .get(marketplace)?
+        .iter()
+        .find(|entry| entry["name"] == name)
 }
 
 /// What a change does to the plugin it names.
@@ -864,22 +948,74 @@ mod tests {
     }
 
     #[test]
-    fn a_release_is_compared_with_a_release_and_a_commit_with_a_commit() {
+    fn a_release_is_compared_with_a_release_and_only_a_newer_one_is_offered() {
         let semver = serde_json::json!({"name": "p", "version": "1.3.0"});
-        assert_eq!(update_to("1.2.3", &semver).as_deref(), Some("1.3.0"));
-        assert_eq!(update_to("1.3.0", &semver), None);
+        assert_eq!(
+            update_to(Some("1.2.3"), None, &semver).as_deref(),
+            Some("1.3.0")
+        );
+        assert_eq!(
+            update_to(Some("v1.2.3"), None, &semver).as_deref(),
+            Some("1.3.0")
+        );
+        assert_eq!(update_to(Some("1.3.0"), None, &semver), None);
+        assert_eq!(update_to(Some("v1.3.0"), None, &semver), None);
+        // An older release in the catalog is not an update.
+        assert_eq!(update_to(Some("1.10.0"), None, &semver), None);
+    }
+
+    #[test]
+    fn a_pinned_commit_is_compared_with_the_commit_installed_not_the_version_label() {
+        // As on this machine: the listing says `1.2.3`, the install record
+        // says which commit that was, and the catalog pins a newer one.
         let pinned = serde_json::json!({"name": "p", "source": {
             "source": "url", "sha": "c55ee46073ed923f86ce59a5eb3b6d895095d1b7"}});
+        let installed = "5b15a47f2d7150f545fbcacbfe381787fc0230dc";
         assert_eq!(
-            update_to("5b15a47f2d71", &pinned).as_deref(),
+            update_to(Some("1.2.3"), Some(installed), &pinned).as_deref(),
             Some("c55ee46")
         );
-        assert_eq!(update_to("c55ee46073ed", &pinned), None);
-        // A folder inside the marketplace's own repository names no version
-        // and no commit: no answer, rather than a guess.
+        let current = "c55ee46073ed923f86ce59a5eb3b6d895095d1b7";
+        assert_eq!(update_to(Some("1.2.3"), Some(current), &pinned), None);
+        // No commit known for the install: no answer, rather than a guess.
+        assert_eq!(update_to(Some("1.2.3"), None, &pinned), None);
+        // A folder inside the marketplace's own repository names neither.
         let local = serde_json::json!({"name": "p", "source": "./plugins/p"});
-        assert_eq!(update_to("2a8ad9f74633", &local), None);
-        assert_eq!(update_to("1.0.0", &local), None);
+        assert_eq!(
+            update_to(Some("2a8ad9f74633"), Some(installed), &local),
+            None
+        );
+    }
+
+    #[test]
+    fn the_install_record_is_read_for_its_commits_by_install_folder_and_nothing_else() {
+        let record = r#"{"version": 2, "plugins": {
+          "p@m": [
+            {"scope": "user", "installPath": "/cache/p/1.2.3", "gitCommitSha": "5b15a47"},
+            {"scope": "project", "installPath": "/cache/p/old"}
+          ]}}"#;
+        let commits = installed_commits(record);
+        assert_eq!(
+            commits.get(Path::new("/cache/p/1.2.3")).map(String::as_str),
+            Some("5b15a47")
+        );
+        assert!(!commits.contains_key(Path::new("/cache/p/old")));
+        // A record this build cannot read yields no commits, never an error.
+        assert!(installed_commits("{ nope").is_empty());
+        assert!(installed_commits(r#"{"version": 9, "plugins": []}"#).is_empty());
+    }
+
+    #[test]
+    fn what_is_installed_leads_the_marketplace() {
+        let mut catalog = catalog(&settings("", "", ""));
+        let markets = HashMap::from([(
+            "ponytail".to_string(),
+            vec![serde_json::json!({"name": "ponytail", "description": "Lazy mode"})],
+        )]);
+        complete_offers(&mut catalog, &markets);
+        // Installed, so first — though it has no count and "popular" has 900.
+        assert_eq!(catalog.available[0].id, "ponytail@ponytail");
+        assert_eq!(catalog.available[1].name, "popular");
     }
 
     #[test]
