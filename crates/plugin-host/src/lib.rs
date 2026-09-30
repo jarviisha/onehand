@@ -13,11 +13,14 @@
 mod workbench;
 pub use workbench::{Ask, Request, WorkbenchMode};
 
+use gpui::prelude::FluentBuilder as _;
 use gpui::{
-    AnyElement, App, ElementId, Hsla, IntoElement as _, ParentElement as _, Styled as _, div,
+    AnyElement, App, ElementId, Hsla, InteractiveElement as _, IntoElement as _,
+    ParentElement as _, StatefulInteractiveElement as _, Styled as _, Window, div,
 };
 use gpui_component::button::Button;
 use gpui_component::{ActiveTheme as _, Colorize as _, StyledExt as _};
+use std::rc::Rc;
 
 /// How a remote channel is opened, once its credential has been read.
 pub type RemoteChannelFactory = fn(String) -> Box<dyn onehand_core::remote::types::RemoteChannel>;
@@ -167,5 +170,67 @@ pub fn status_line(message: String, cx: &App) -> AnyElement {
         .text_xs()
         .text_color(status_ink(cx).warning)
         .child(message)
+        .into_any_element()
+}
+
+/// A choice between a few views of one panel: a track with a filled plate in
+/// the half that is showing, every half the same width.
+///
+/// **Drawn here, after both of the library's answers were tried.** The shape
+/// needs a fill, an inset and halves of equal width, and neither component
+/// gives all three. A `ButtonGroup` splits evenly but has no track, so it reads
+/// as two outlined controls that happen to disagree. A segmented `TabBar` is
+/// the track and the plate exactly, but sizes every tab to its own label inside
+/// a `flex_shrink_0` nothing outside the library can stretch — so one label
+/// came out two thirds the width of the other, both against the left edge of a
+/// bar as wide as its panel. So the track is the library's own segmented fill
+/// and the halves are `flex_1`; the fills and the radius are the theme's.
+///
+/// **The selected half is `accent`**, which is the app's own "this one, among
+/// several" — what the terminal's tabs and the Workbench's mode chips use, so
+/// one condition keeps one spelling. It is not the reading surface: on a panel
+/// drawn in the well, a plate in the reading surface is a step *below* what it
+/// sits on, a hole rather than a plate. And there is no shadow under it: a fill
+/// that differs lifts by itself, and a drop shadow over a near-black surface is
+/// invisible anyway.
+///
+/// **Here rather than in the app** for the reason [`action`] is: the rail and a
+/// built-in plugin both draw one, and a plugin cannot reach into the binary
+/// hosting it.
+pub fn switch(
+    id: &'static str,
+    labels: &[&'static str],
+    active: usize,
+    pick: impl Fn(&usize, &mut Window, &mut App) + 'static,
+    cx: &App,
+) -> AnyElement {
+    let theme = cx.theme();
+    let (track, plate, radius) = (theme.tokens.tab_bar_segmented, theme.accent, theme.radius);
+    let (ink, ink_on) = (theme.muted_foreground, theme.accent_foreground);
+    let pick = Rc::new(pick);
+    div()
+        .h_flex()
+        .w_full()
+        .gap_0p5()
+        .p_0p5()
+        .rounded(radius)
+        .bg(track)
+        .children(labels.iter().enumerate().map(|(i, label)| {
+            let on = i == active;
+            let pick = pick.clone();
+            div()
+                .id((id, i))
+                .h_flex()
+                .justify_center()
+                .flex_1()
+                .min_w_0()
+                .rounded(radius)
+                .cursor_pointer()
+                .text_xs()
+                .text_color(if on { ink_on } else { ink })
+                .when(on, |half| half.bg(plate))
+                .on_click(move |_, window, cx| pick(&i, window, cx))
+                .child(*label)
+        }))
         .into_any_element()
 }

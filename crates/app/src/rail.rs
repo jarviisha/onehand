@@ -2435,70 +2435,21 @@ fn new_session_menu(
 ///
 /// The space and the hairline above it are the header's, not this control's:
 /// they separate two halves of the header rather than decorating one element,
-/// and the half below the line is this and the list under it.
-///
-/// **A switch drawn here, after both of the library's answers were tried.** The
-/// two halves are one choice between two states, and what says so is a track
-/// with a raised plate in one end of it — the shape needs a fill, an inset and
-/// two halves of equal width, and neither component gives all three. A
-/// `ButtonGroup` splits evenly (`flex_1` on each over a `w_full` group) but has
-/// no track, so it reads as two outlined controls that happen to disagree. A
-/// segmented `TabBar` is the track and the plate exactly, and sizes every tab to
-/// its own label inside a `flex_shrink_0` nothing outside the library can
-/// stretch — so *Projects* came out two thirds the width of *All sessions*, both
-/// against the left edge of a bar as wide as the rail.
-///
-/// So the track is the library's own segmented fill and the two halves are
-/// `flex_1`. Nothing else here is invented: the fills come from the theme, the
-/// radius is the theme's, and the pointer is the same promise every other
-/// clickable in this file makes.
+/// and the half below the line is this and the list under it. The control is
+/// [`onehand_plugin_host::switch`], shared with the Workbench's Plugins mode.
 fn tab_bar(active: RailTab, cx: &mut Context<Shell>) -> impl IntoElement + use<> {
-    let theme = cx.theme();
-    // **The selected half is `accent`, not the reading surface.**
-    //
-    // It was `background`, on the reasoning that a raised plate is drawn in the
-    // surface the control sits on -- which was true while the rail was drawn in
-    // that surface too. The rail is drawn in the well now, so the plate became
-    // the one thing in the window painted a step *below* what it sits on: a hole
-    // rather than a plate, and at this size the shadow under it is not enough to
-    // say which.
-    //
-    // `accent` is the app's own "this one, among several", and it is what the
-    // terminal's tabs and the Workbench's mode chips already use. Three places
-    // that mean the same thing now spell it the same way, which is the point --
-    // a code learned once.
-    let (track, plate, radius) = (theme.tokens.tab_bar_segmented, theme.accent, theme.radius);
-    let (ink, ink_on) = (theme.muted_foreground, theme.accent_foreground);
-
-    div()
-        .h_flex()
-        .w_full()
-        .gap_0p5()
-        .p_0p5()
-        .rounded(radius)
-        .bg(track)
-        .children(RailTab::ALL.map(|tab| {
-            let on = tab == active;
-            div()
-                .id(tab.label())
-                .h_flex()
-                .justify_center()
-                .flex_1()
-                .min_w_0()
-                .rounded(radius)
-                .cursor_pointer()
-                .text_xs()
-                .text_color(if on { ink_on } else { ink })
-                // No shadow under it. It was there to lift a plate drawn in the
-                // same value as its surroundings; a fill that differs does the
-                // lifting by itself, and a drop shadow over a near-black surface
-                // is invisible anyway.
-                .when(on, |half| half.bg(plate))
-                .on_click(cx.listener(move |shell: &mut Shell, _, _, cx| {
-                    shell.set_rail_tab(tab, cx);
-                }))
-                .child(tab.label())
-        }))
+    onehand_plugin_host::switch(
+        "rail-tab",
+        &RailTab::ALL.map(RailTab::label),
+        RailTab::ALL
+            .iter()
+            .position(|tab| *tab == active)
+            .unwrap_or(0),
+        cx.listener(|shell: &mut Shell, i: &usize, _, cx| {
+            shell.set_rail_tab(RailTab::ALL[*i], cx);
+        }),
+        cx,
+    )
 }
 
 #[cfg(test)]

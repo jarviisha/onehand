@@ -929,9 +929,14 @@ see the rail, below.
   one more when it lands. Every write moves `Issues::revision` on, and the mode keeps whichever copy
   is newer, since two landings can reach the screen out of order.
 
-- **Plugins**: the Claude Code plugins that reach a session started in the project on screen, one
-  row per plugin (capped at 200, the cut said), and under them the known marketplaces' plugins — most installed first, searched,
-  capped at 60 rows with the cut said, and installed at the scope picked above the list. **Each row
+- **Plugins**: two tabs under one switch — **Installed**, the Claude Code plugins that reach a
+  session started in the project on screen, one row per plugin (capped at 200, the cut said); and
+  **Marketplace**, the known marketplaces' plugins, most installed first, searched, capped at 60
+  rows with the cut said, and installed at the scope picked beside the search. Two lists and not one
+  page, because stacked, a few hundred catalog rows pushed the installed ones out of reach and the
+  search scrolled away with them; the search and the scope picker are pinned above the catalog's
+  list, and each tab keeps a scroll of its own. The switch is `onehand_plugin_host::switch`, the one
+  the rail's *Projects* / *All sessions* uses. **Each row
   carries a switch per scope — Global (Claude Code's `user`), Project, Local — showing what is in
   force *at* that scope** (what it sets itself, else what the next wider one sets), outlined where
   the scope sets it and ghosted where it inherits; pressing one writes the opposite answer at that
@@ -1192,7 +1197,7 @@ centre is the chat, right dock the Workbench, bottom dock the terminal.
   path, like pinning, and a `HashMap<PathBuf, bool>` rather than a set: absent means untouched, and
   an untouched project follows the selection. A **folded project builds no session rows at all**,
   which is what keeps a workspace of ten roots cheap.
-- **The list is two tabs, not two stacked groups** (`rail::RailTab`, a segmented `TabBar` in the
+- **The list is two tabs, not two stacked groups** (`rail::RailTab`, drawn by `onehand_plugin_host::switch` in the
   header): *Projects* is the tree, *All sessions* is every session in the workspace, flat — the same
   set twice, so stacked it would be one panel listing every session below the tree already holding
   them, and the tree is what a workspace is read by. **The

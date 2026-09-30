@@ -10,7 +10,7 @@ use gpui::{
 use gpui_component::button::{Button, ButtonGroup, ButtonVariants as _};
 use gpui_component::input::{Input, InputEvent, InputState};
 use gpui_component::{ActiveTheme, Disableable as _, Selectable as _, Sizable as _, StyledExt};
-use onehand_plugin_host::{action, hint, status_ink, status_line};
+use onehand_plugin_host::{action, hint, status_ink, status_line, switch};
 use std::path::{Path, PathBuf};
 
 /// How many installed plugins are drawn. Far past what anybody installs, so it
@@ -24,8 +24,36 @@ const INSTALLED_CAP: usize = 200;
 /// reached, and the list says how many it left out.
 const MARKET_CAP: usize = 60;
 
+/// Which of the mode's two lists is showing.
+///
+/// Two lists and not one page, because they answer different questions — what
+/// this project has, and what could be added — and stacked, the second pushed
+/// the first's last rows out of reach beneath a few hundred it had nothing to
+/// do with, and a search at the top of that half scrolled away with it.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum Tab {
+    Installed,
+    Marketplace,
+}
+
+impl Tab {
+    const ALL: [Tab; 2] = [Tab::Installed, Tab::Marketplace];
+
+    fn label(self) -> &'static str {
+        match self {
+            Tab::Installed => "Installed",
+            Tab::Marketplace => "Marketplace",
+        }
+    }
+}
+
 pub(crate) struct PluginsView {
     root: Option<PathBuf>,
+    /// Which list is showing. Per window rather than per root, and not
+    /// persisted: which list somebody was reading is not a fact about the
+    /// project, and a mode that came back on the catalog would hide what is
+    /// installed behind a click.
+    tab: Tab,
     /// What `claude` last said about the active root, or why it could not.
     /// Cleared on a project switch, since another project's installs and
     /// settings are not this one's.
@@ -59,6 +87,7 @@ impl PluginsView {
     pub(crate) fn new(cx: &mut App) -> Entity<Self> {
         cx.new(|_| Self {
             root: None,
+            tab: Tab::Installed,
             catalog: None,
             stale: false,
             _list: None,
@@ -208,29 +237,7 @@ impl PluginsView {
             Some(Err(why)) => return self.failed(why.clone(), cx),
             Some(Ok(catalog)) => catalog,
         };
-        let needle = query.read(cx).value().trim().to_lowercase();
         let muted = cx.theme().muted_foreground;
-
-        let installed_cut = catalog.installed.len().saturating_sub(INSTALLED_CAP);
-        let installed: Vec<AnyElement> = catalog
-            .installed
-            .iter()
-            .take(INSTALLED_CAP)
-            .enumerate()
-            .map(|(i, plugin)| self.installed_row(i, plugin, cx))
-            .collect();
-        let matching: Vec<&Available> = catalog
-            .available
-            .iter()
-            .filter(|plugin| plugin.matches(&needle))
-            .collect();
-        let market_cut = matching.len().saturating_sub(MARKET_CAP);
-        let offered: Vec<AnyElement> = matching
-            .iter()
-            .take(MARKET_CAP)
-            .enumerate()
-            .map(|(i, plugin)| self.available_row(i, plugin, catalog, cx))
-            .collect();
 
         let top = match &self.busy {
             Some(change) => change.doing(),
@@ -239,13 +246,81 @@ impl PluginsView {
             // that visibly did nothing reads as broken.
             None => "Changes reach a session when its agent next starts".to_string(),
         };
+        let tabs = switch(
+            "plugins-tab",
+            &Tab::ALL.map(Tab::label),
+            Tab::ALL
+                .iter()
+                .position(|tab| *tab == self.tab)
+                .unwrap_or(0),
+            cx.listener(|view: &mut Self, i: &usize, _, cx| {
+                view.tab = Tab::ALL[*i];
+                cx.notify();
+            }),
+            cx,
+        );
+
+        // Only the list on screen is built: the other is a click away and
+        // costs nothing until it is shown.
+        let (controls, rows) = match self.tab {
+            Tab::Installed => {
+                let cut = catalog.installed.len().saturating_sub(INSTALLED_CAP);
+                let mut rows: Vec<AnyElement> = catalog
+                    .installed
+                    .iter()
+                    .take(INSTALLED_CAP)
+                    .enumerate()
+                    .map(|(i, plugin)| self.installed_row(i, plugin, cx))
+                    .collect();
+                if rows.is_empty() {
+                    rows.push(note("Nothing installed reaches this project", cx));
+                }
+                if cut > 0 {
+                    rows.push(note(format!("… {cut} more not shown"), cx));
+                }
+                (None, rows)
+            }
+            Tab::Marketplace => {
+                let needle = query.read(cx).value().trim().to_lowercase();
+                let matching: Vec<&Available> = catalog
+                    .available
+                    .iter()
+                    .filter(|plugin| plugin.matches(&needle))
+                    .collect();
+                let cut = matching.len().saturating_sub(MARKET_CAP);
+                let mut rows: Vec<AnyElement> = matching
+                    .iter()
+                    .take(MARKET_CAP)
+                    .enumerate()
+                    .map(|(i, plugin)| self.available_row(i, plugin, catalog, cx))
+                    .collect();
+                if rows.is_empty() {
+                    rows.push(note("No plugin matches the search", cx));
+                }
+                if cut > 0 {
+                    rows.push(note(
+                        format!("… {cut} more not shown — narrow the search"),
+                        cx,
+                    ));
+                }
+                // The search and where an install lands stay put above the
+                // list rather than scrolling away with it: both are asked of
+                // every row below them.
+                let controls = div()
+                    .h_flex()
+                    .gap_2()
+                    .px_2()
+                    .pb_1()
+                    .child(div().flex_1().min_w_0().child(Input::new(&query).xsmall()))
+                    .child(self.scope_picker(cx));
+                (Some(controls), rows)
+            }
+        };
 
         div()
-            .id("plugins-body")
             .flex_1()
             .min_h_0()
             .v_flex()
-            .overflow_y_scroll()
             .child(
                 div()
                     .px_2()
@@ -257,34 +332,19 @@ impl PluginsView {
                     .border_color(cx.theme().border)
                     .child(top),
             )
-            .child(heading("Installed", cx))
-            .when(installed.is_empty(), |list| {
-                list.child(note("Nothing installed reaches this project", cx))
-            })
-            .children(installed)
-            .when(installed_cut > 0, |list| {
-                list.child(note(format!("… {installed_cut} more not shown"), cx))
-            })
-            .child(heading("Marketplace", cx))
+            .child(div().px_2().py_1p5().child(tabs))
+            .children(controls)
             .child(
                 div()
-                    .h_flex()
-                    .gap_2()
-                    .px_2()
-                    .pb_1()
-                    .child(div().flex_1().min_w_0().child(Input::new(&query).xsmall()))
-                    .child(self.scope_picker(cx)),
+                    // Keyed by the tab, so each list keeps a scroll of its own
+                    // instead of the one showing inheriting the other's.
+                    .id(self.tab.label())
+                    .flex_1()
+                    .min_h_0()
+                    .v_flex()
+                    .overflow_y_scroll()
+                    .children(rows),
             )
-            .when(offered.is_empty(), |list| {
-                list.child(note("No plugin matches the search", cx))
-            })
-            .children(offered)
-            .when(market_cut > 0, |list| {
-                list.child(note(
-                    format!("… {market_cut} more not shown — narrow the search"),
-                    cx,
-                ))
-            })
             .into_any_element()
     }
 
@@ -535,18 +595,6 @@ impl PluginsView {
             })
             .into_any_element()
     }
-}
-
-fn heading(text: &'static str, cx: &App) -> AnyElement {
-    div()
-        .px_2()
-        .pt_3()
-        .pb_1()
-        .text_xs()
-        .font_semibold()
-        .text_color(cx.theme().muted_foreground)
-        .child(text)
-        .into_any_element()
 }
 
 /// One muted line inside the list — an empty section, a cut, a plugin that is
