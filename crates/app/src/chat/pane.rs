@@ -269,7 +269,7 @@ const PAGE_ISSUES: usize = 100;
 /// moving between them does not move the column.
 const PAGE_COLUMN: f32 = 560.;
 
-/// What the issue filter reads when it narrows to nothing.
+/// What the issue filter reads while it is not narrowing the list at all.
 const ALL_PROJECTS: &str = "All projects";
 
 /// One project as the workspace page lists it.

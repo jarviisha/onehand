@@ -1167,19 +1167,6 @@ struct AutoStatus {
     stuck: bool,
 }
 
-/// What a project row says about unattended runs, or `None` while the project
-/// is not switched on.
-///
-/// A run can only be working on a project that is switched on, but it is read
-/// independently so a project switched off mid-run still says the run is
-/// there — switching off stops the next run, not the one already going.
-///
-/// **A switch that is on while nothing can happen is the one state that looks
-/// exactly like working**, so every way it can be stuck is said on the row, as
-/// `stuck`: a config that stops every run (no label, an interval that does not
-/// parse, a mode the agent does not offer), or the last look at this project
-/// failing — a remote that is not on GitHub, a `gh` that is missing or signed
-/// out.
 /// The run a project's row names: one on that project's issues, as its issue
 /// number and whether it is waiting on a card, the working one ahead of a
 /// waiting one. `runs` is each run's project, issue and whether it waits.
@@ -1193,6 +1180,19 @@ fn run_on<'a>(
         .min_by_key(|&(_, waiting)| waiting)
 }
 
+/// What a project row says about unattended runs, or `None` while the project
+/// is not switched on.
+///
+/// A run can only be working on a project that is switched on, but it is read
+/// independently so a project switched off mid-run still says the run is
+/// there — switching off stops the next run, not the one already going.
+///
+/// **A switch that is on while nothing can happen is the one state that looks
+/// exactly like working**, so every way it can be stuck is said on the row, as
+/// `stuck`: a config that stops every run (no label, an interval that does not
+/// parse, a mode the agent does not offer), or the last look at this project
+/// failing — a remote that is not on GitHub, a `gh` that is missing or signed
+/// out.
 fn auto_status(
     unattended: bool,
     run: Option<(u64, bool)>,
@@ -1943,20 +1943,17 @@ pub fn rail(
                 // Quiet like *Add project…*, and marked while the page shows,
                 // as a project row is while it is the one on screen.
                 .child(
-                    match window_state_shell.workspace_shown(cx) {
-                        true => rail_row_marked(
+                    {
+                        let (id, icon, label) = (
                             "rail-workspace",
                             IconName::LayoutDashboard,
                             "Workspace overview",
-                            cx,
-                        ),
-                        false => rail_row(
-                            "rail-workspace",
-                            IconName::LayoutDashboard,
-                            "Workspace overview",
-                            cx,
-                        )
-                        .text_color(cx.theme().muted_foreground),
+                        );
+                        match window_state_shell.workspace_shown(cx) {
+                            true => rail_row_marked(id, icon, label, cx),
+                            false => rail_row(id, icon, label, cx)
+                                .text_color(cx.theme().muted_foreground),
+                        }
                     }
                     .tooltip(|window, cx| {
                         Tooltip::new("What is waiting, working and open across every project")

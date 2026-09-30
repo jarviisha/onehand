@@ -1183,7 +1183,7 @@ mod tests {
         issues
             .create(
                 Draft {
-                    title: "seven".into(),
+                    title: "one".into(),
                     ..Draft::default()
                 },
                 1,
@@ -1191,9 +1191,9 @@ mod tests {
             .unwrap();
         // The entry `show_issue` makes, then the read `load` lands into it.
         let mut state = RootIssues::default();
-        state.show(7);
+        state.show(1);
         state.land(issues);
-        assert_eq!(state.selected, Some(7));
+        assert_eq!(state.selected, Some(1));
         assert!(state.issues.is_some());
     }
 }
