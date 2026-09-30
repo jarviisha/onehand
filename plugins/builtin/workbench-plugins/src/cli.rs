@@ -140,7 +140,7 @@ pub(crate) struct Plugin {
     /// from the one installed; `None` when it cannot, which is not the same as
     /// "up to date" and is not drawn as one.
     pub(crate) update: Option<String>,
-    install_path: Option<PathBuf>,
+    pub(crate) install_path: Option<PathBuf>,
     /// Where it is installed, which is where it can be removed from.
     pub(crate) installed: Vec<Scope>,
     /// What each scope's settings file says, indexed as [`Scope::ALL`];
@@ -496,6 +496,14 @@ pub(crate) enum Verb {
     Uninstall,
     Enable,
     Disable,
+    /// Install at the change's scope, then remove from this one. Two steps
+    /// and not atomic — the command line has no move — so the install goes
+    /// first: a failure between the two leaves the plugin at both scopes,
+    /// never at neither.
+    Move(Scope),
+    /// Fetch the plugin's marketplace catalog again, which is the only way an
+    /// update becomes known.
+    CheckUpdates,
 }
 
 /// A change to what is installed or enabled: one plugin, one scope, one verb.
@@ -517,20 +525,31 @@ impl Change {
     /// **An uninstall keeps the plugin's data** (`--keep-data`). Removing a
     /// plugin can be undone by installing it again and removing its data
     /// cannot, so the half that is final is left to be done by hand.
-    fn args(&self) -> Vec<&str> {
+    fn steps(&self) -> Vec<Vec<String>> {
         let Change { id, scope, verb } = self;
-        let word = match verb {
-            Verb::Install => "install",
-            Verb::Update => "update",
-            Verb::Uninstall => "uninstall",
-            Verb::Enable => "enable",
-            Verb::Disable => "disable",
+        let at = |word: &str, scope: Scope| -> Vec<String> {
+            let mut args = vec!["plugin", word, id, "--scope", scope.arg()];
+            if word == "uninstall" {
+                args.push("--keep-data");
+            }
+            args.into_iter().map(str::to_string).collect()
         };
-        let mut args = vec!["plugin", word, id, "--scope", scope.arg()];
-        if *verb == Verb::Uninstall {
-            args.push("--keep-data");
+        match verb {
+            Verb::Install => vec![at("install", *scope)],
+            Verb::Update => vec![at("update", *scope)],
+            Verb::Uninstall => vec![at("uninstall", *scope)],
+            Verb::Enable => vec![at("enable", *scope)],
+            Verb::Disable => vec![at("disable", *scope)],
+            Verb::Move(from) => vec![at("install", *scope), at("uninstall", *from)],
+            Verb::CheckUpdates => {
+                let market = id.split_once('@').map_or("", |(_, market)| market);
+                vec![
+                    ["plugin", "marketplace", "update", market]
+                        .map(str::to_string)
+                        .to_vec(),
+                ]
+            }
         }
-        args
     }
 
     /// What is happening, while it happens.
@@ -542,6 +561,10 @@ impl Change {
             Verb::Uninstall => "Removing",
             Verb::Enable => "Enabling",
             Verb::Disable => "Disabling",
+            Verb::Move(from) => {
+                return format!("Moving {id} from {} to {}…", from.label(), scope.label());
+            }
+            Verb::CheckUpdates => return format!("Checking {id} for updates…"),
         };
         format!("{word} {id} ({})…", scope.label())
     }
@@ -549,7 +572,11 @@ impl Change {
 
 /// Make `change`, in `root` so a project or local scope lands in that project.
 pub(crate) fn change_blocking(root: &Path, change: &Change) -> Result<(), String> {
-    claude(root, &change.args(), CHANGE_LIMIT).map(drop)
+    for step in change.steps() {
+        let args: Vec<&str> = step.iter().map(String::as_str).collect();
+        claude(root, &args, CHANGE_LIMIT)?;
+    }
+    Ok(())
 }
 
 /// Run `claude` in `root` and hand back what it printed.
@@ -677,7 +704,7 @@ mod tests {
         assert_eq!(verb(Scope::Project), Verb::Enable);
         assert_eq!(verb(Scope::Local), Verb::Enable);
         assert_eq!(
-            ponytail.flip(Scope::Project).args(),
+            ponytail.flip(Scope::Project).steps()[0],
             [
                 "plugin",
                 "enable",
@@ -829,9 +856,9 @@ mod tests {
             scope: Scope::Project,
             verb: Verb::Install,
         };
-        let args = change.args();
-        assert_eq!(args, ["plugin", "install", "x@m", "--scope", "project"]);
-        assert!(!args.contains(&"-y") && !args.contains(&"--yes"));
+        let args = &change.steps()[0];
+        assert_eq!(args, &["plugin", "install", "x@m", "--scope", "project"]);
+        assert!(!args.iter().any(|a| a == "-y" || a == "--yes"));
     }
 
     #[test]
@@ -841,6 +868,42 @@ mod tests {
             scope: Scope::User,
             verb: Verb::Uninstall,
         };
-        assert!(change.args().ends_with(&["--scope", "user", "--keep-data"]));
+        assert_eq!(change.steps()[0][3..], ["--scope", "user", "--keep-data"]);
+    }
+
+    #[test]
+    fn a_move_installs_before_it_removes_and_keeps_the_data() {
+        let change = Change {
+            id: "x@m".into(),
+            scope: Scope::User,
+            verb: Verb::Move(Scope::Local),
+        };
+        assert_eq!(
+            change.steps(),
+            [
+                vec!["plugin", "install", "x@m", "--scope", "user"],
+                vec![
+                    "plugin",
+                    "uninstall",
+                    "x@m",
+                    "--scope",
+                    "local",
+                    "--keep-data"
+                ],
+            ]
+        );
+    }
+
+    #[test]
+    fn checking_for_updates_fetches_the_plugins_own_marketplace() {
+        let change = Change {
+            id: "x@official".into(),
+            scope: Scope::User,
+            verb: Verb::CheckUpdates,
+        };
+        assert_eq!(
+            change.steps(),
+            [vec!["plugin", "marketplace", "update", "official"]]
+        );
     }
 }

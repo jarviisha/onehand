@@ -22,6 +22,11 @@ const KIND_CAP: usize = 500;
 #[derive(Clone, Debug, Default, PartialEq)]
 pub(crate) struct Inventory {
     pub(crate) description: Option<String>,
+    /// Where its source is published — the manifest's `repository`, else its
+    /// `homepage`.
+    pub(crate) repository: Option<String>,
+    /// Its changelog, where it ships one at the top of its folder.
+    pub(crate) changelog: Option<PathBuf>,
     pub(crate) skills: Vec<String>,
     pub(crate) commands: Vec<String>,
     pub(crate) agents: Vec<String>,
@@ -100,8 +105,21 @@ pub(crate) fn read_blocking(root: &Path) -> Inventory {
     }
     hooks.truncate(KIND_CAP);
 
+    // `repository` is a string or an object carrying one under `url`.
+    let repository = manifest["repository"]
+        .as_str()
+        .or_else(|| manifest["repository"]["url"].as_str())
+        .or_else(|| manifest["homepage"].as_str())
+        .map(str::to_string);
+    let changelog = ["CHANGELOG.md", "changelog.md", "CHANGELOG"]
+        .into_iter()
+        .map(|name| root.join(name))
+        .find(|path| path.is_file());
+
     Inventory {
         description: manifest["description"].as_str().map(str::to_string),
+        repository,
+        changelog,
         skills,
         commands,
         agents,
@@ -240,8 +258,9 @@ mod tests {
         let plugin = Folder::new("defaults");
         plugin.write(
             ".claude-plugin/plugin.json",
-            r#"{"description": "Does things"}"#,
+            r#"{"description": "Does things", "repository": {"url": "https://example.com/p"}}"#,
         );
+        plugin.write("CHANGELOG.md", "");
         plugin.write("skills/tdd/SKILL.md", "");
         plugin.write("skills/notes/README.md", ""); // not a skill: no SKILL.md
         plugin.write("commands/review.md", "");
@@ -254,6 +273,11 @@ mod tests {
         );
         let inventory = read_blocking(&plugin.0);
         assert_eq!(inventory.description.as_deref(), Some("Does things"));
+        assert_eq!(
+            inventory.repository.as_deref(),
+            Some("https://example.com/p")
+        );
+        assert_eq!(inventory.changelog, Some(plugin.0.join("CHANGELOG.md")));
         assert_eq!(inventory.skills, ["tdd"]);
         assert_eq!(inventory.commands, ["git:commit", "review"]);
         assert_eq!(inventory.agents, ["planner"]);

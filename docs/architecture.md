@@ -974,7 +974,18 @@ see the rail, below.
   the switch. **A banner appears only while this mode has made changes the agent on screen has not
   loaded** — counted against when that agent started (`Request::AgentStarted`, pushed by the shell
   from `ChatSession::started`), with *Restart agent* going back up as `Request::RestartAgent`. It
-  counts this mode's changes alone; one made from a terminal is not seen. **Every change goes through `claude plugin … --scope`
+  counts this mode's changes alone; one made from a terminal is not seen.
+  **The ••• menu is five groups**, divided, and anything that does not apply is left out rather
+  than drawn refusing: *Open repository* and *View changelog* (the manifest's `repository` or
+  `homepage`; a `CHANGELOG.md` at the plugin's top, opened in the editor); *Update to …* where one
+  is known, and *Check for updates* (`claude plugin marketplace update` on its marketplace — the
+  only way one becomes known); *Change scope ▸* for a plugin installed at one scope — an install at
+  the new scope and then a removal from the old, not atomic, install first so a failure between
+  leaves it at both and never at neither — and *Turn on for ▸*; *Open install folder* and *Copy
+  plugin ID*; and last, in the danger ink, *Uninstall…*, which asks in a dialog naming the scope, who
+  that reaches and what the plugin carries that goes with it. Not offered, because nothing behind
+  the command line can do them: an auto-update switch, a roll-back, and per-agent enabling — these
+  are Claude Code's plugins, and no other agent's are reachable from here. **Every change goes through `claude plugin … --scope`
   and nothing writes Claude Code's files**: their layout belongs to Claude Code, and its install
   record already carries a version number. **What each scope sets is read from the three
   `settings.json` files' `enabledPlugins`**, because the listing's `enabled` is the answer with every

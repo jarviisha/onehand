@@ -4,12 +4,14 @@
 use crate::cli::{self, Available, Catalog, Change, Plugin, Scope, Verb};
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
-    AnyElement, App, AppContext as _, ClickEvent, Context, Entity, FocusHandle,
+    AnyElement, App, AppContext as _, ClickEvent, ClipboardItem, Context, Entity, FocusHandle,
     InteractiveElement as _, IntoElement, KeyDownEvent, MouseButton, ParentElement, Render,
     SharedString, StatefulInteractiveElement as _, Styled, Task, Window, div, px,
 };
 use gpui_component::button::{ButtonGroup, ButtonVariants as _};
+use gpui_component::dialog::{DialogClose, DialogFooter};
 use gpui_component::input::{Input, InputEvent, InputState};
+use gpui_component::menu::{PopupMenu, PopupMenuItem};
 use gpui_component::switch::Switch;
 use gpui_component::tooltip::Tooltip;
 use gpui_component::{
@@ -17,7 +19,7 @@ use gpui_component::{
     WindowExt as _,
 };
 use onehand_plugin_host::{
-    Ask, Request, action, hint, menu_below, menu_item, status_ink, status_line, switch,
+    Ask, Request, action, hint, menu_below, menu_item, menu_row, status_ink, status_line, switch,
 };
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -666,7 +668,6 @@ impl PluginsView {
         let on_here = plugin.in_force(Scope::Local);
         let busy = self.busy.is_some();
         let here = plugin.flip(Scope::Local);
-        let view = cx.entity();
 
         let switch = Switch::new(("plugin-on", i))
             .checked(on_here)
@@ -681,9 +682,6 @@ impl PluginsView {
                 cx.listener(move |view, _: &bool, _, cx| view.change(here.clone(), cx))
             });
 
-        // Named by what it acts on, so a menu held open across a re-list is
-        // one for this plugin and never for whichever row took its place.
-        let menu_id = SharedString::from(format!("plugin-menu-{}", plugin.id));
         let trigger = action(SharedString::from(format!(
             "plugin-menu-button-{}",
             plugin.id
@@ -693,46 +691,7 @@ impl PluginsView {
         .icon(Icon::new(IconName::Ellipsis))
         .disabled(busy)
         .tooltip("Where it is on, and removing it");
-        let menu = {
-            let plugin = plugin.clone();
-            let view = view.clone();
-            menu_below(menu_id, trigger, move |menu, _, _| {
-                let mut menu = menu.label("On for");
-                for scope in Scope::ALL.into_iter().filter(|s| plugin.reaches(*s)) {
-                    let flip = plugin.flip(scope);
-                    let from = match plugin.source(scope) {
-                        Some(source) if source != scope => format!(" · from {}", source.label()),
-                        _ => String::new(),
-                    };
-                    let view = view.clone();
-                    menu = menu.item(
-                        menu_item(format!("{}{from}", scope.reach()))
-                            .checked(plugin.in_force(scope))
-                            .on_click(move |_, _, cx: &mut App| {
-                                view.update(cx, |view, cx| view.change(flip.clone(), cx));
-                            }),
-                    );
-                }
-                menu = menu.separator();
-                for scope in &plugin.installed {
-                    let remove = Change {
-                        id: plugin.id.clone(),
-                        scope: *scope,
-                        verb: Verb::Uninstall,
-                    };
-                    let label = if plugin.installed.len() > 1 {
-                        format!("Remove from {}", scope.label())
-                    } else {
-                        "Remove".to_string()
-                    };
-                    let view = view.clone();
-                    menu = menu.item(menu_item(label).on_click(move |_, _, cx: &mut App| {
-                        view.update(cx, |view, cx| view.change(remove.clone(), cx));
-                    }));
-                }
-                menu
-            })
-        };
+        let menu = self.row_menu(plugin, trigger, cx);
 
         // The version: monospace, a commit cut to seven characters with what
         // is known of it on hover.
@@ -869,6 +828,164 @@ impl PluginsView {
             .into_any_element()
     }
 
+    /// The ••• menu on an installed row, in five groups — where it lives,
+    /// its version, where it applies, its files, and removing it — each
+    /// separated from the next, with anything that does not apply to this
+    /// plugin left out rather than drawn refusing.
+    fn row_menu(
+        &self,
+        plugin: &Plugin,
+        trigger: gpui_component::button::Button,
+        cx: &mut Context<Self>,
+    ) -> gpui_component::popover::Popover {
+        // Named by what it acts on, so a menu held open across a re-list is
+        // one for this plugin and never for whichever row took its place.
+        let menu_id = SharedString::from(format!("plugin-menu-{}", plugin.id));
+        let plugin = plugin.clone();
+        let view = cx.entity();
+        let ask = self.ask.clone();
+        menu_below(menu_id, trigger, move |menu, window, cx| {
+            let danger = status_ink(cx).danger;
+            let mut groups: Vec<Vec<PopupMenuItem>> = Vec::new();
+
+            // Where it lives.
+            let mut about = Vec::new();
+            if let Some(url) = plugin.inventory.repository.clone() {
+                about.push(
+                    menu_item("Open repository")
+                        .on_click(move |_, _, cx: &mut App| cx.open_url(&url)),
+                );
+            }
+            if let Some(path) = plugin.inventory.changelog.clone() {
+                let ask = ask.clone();
+                about.push(menu_item("View changelog").on_click(
+                    move |_, window: &mut Window, cx: &mut App| {
+                        ask(&Request::OpenFile(&path), window, cx)
+                    },
+                ));
+            }
+            groups.push(about);
+
+            // Its version. *Update to* only where a newer one is known;
+            // *Check for updates* always, since fetching the catalog is how
+            // one becomes known.
+            let scope = plugin.installed[0];
+            let mut version = Vec::new();
+            if let Some(to) = &plugin.update {
+                let to = if cli::is_hash(to) || to.starts_with('v') {
+                    to.clone()
+                } else {
+                    format!("v{to}")
+                };
+                let update = Change {
+                    id: plugin.id.clone(),
+                    scope,
+                    verb: Verb::Update,
+                };
+                version.push(menu_item(format!("Update to {to}")).on_click(act(&view, update)));
+            }
+            let check = Change {
+                id: plugin.id.clone(),
+                scope,
+                verb: Verb::CheckUpdates,
+            };
+            version.push(menu_item("Check for updates").on_click(act(&view, check)));
+            groups.push(version);
+
+            // Its files.
+            let mut files = Vec::new();
+            if let Some(path) = plugin.install_path.clone() {
+                files.push(
+                    menu_item("Open install folder")
+                        .on_click(move |_, _, cx: &mut App| cx.open_with_system(&path)),
+                );
+            }
+            let id = plugin.id.clone();
+            files.push(
+                menu_item("Copy plugin ID").on_click(move |_, _, cx: &mut App| {
+                    cx.write_to_clipboard(ClipboardItem::new_string(id.clone()));
+                }),
+            );
+
+            // Removing it: last, in the danger ink, and asked about first.
+            let removes: Vec<PopupMenuItem> = plugin
+                .installed
+                .iter()
+                .map(|scope| {
+                    let label = if plugin.installed.len() > 1 {
+                        format!("Uninstall from {}…", scope.label())
+                    } else {
+                        "Uninstall…".to_string()
+                    };
+                    let (view, plugin, scope) = (view.clone(), plugin.clone(), *scope);
+                    menu_row(move |_, _| div().text_color(danger).child(label.clone())).on_click(
+                        move |_, window: &mut Window, cx: &mut App| {
+                            confirm_uninstall(&view, &plugin, scope, window, cx)
+                        },
+                    )
+                })
+                .collect();
+
+            let mut menu = menu;
+            let mut first = true;
+            let mut divide = |menu: PopupMenu| {
+                let menu = if first { menu } else { menu.separator() };
+                first = false;
+                menu
+            };
+            for group in groups.into_iter().filter(|group| !group.is_empty()) {
+                menu = group.into_iter().fold(divide(menu), PopupMenu::item);
+            }
+
+            // Where it applies, as two submenus. *Change scope* only for a
+            // plugin installed at one scope: installed at two, which of them
+            // moves is a question the menu cannot ask.
+            menu = divide(menu);
+            if plugin.installed.len() == 1 {
+                let (plugin, view, from) = (plugin.clone(), view.clone(), plugin.installed[0]);
+                menu = menu.submenu("Change scope", window, cx, move |menu, _, _| {
+                    Scope::ALL.into_iter().fold(menu, |menu, to| {
+                        let item = menu_item(to.reach()).checked(to == from);
+                        menu.item(if to == from {
+                            item
+                        } else {
+                            item.on_click(act(
+                                &view,
+                                Change {
+                                    id: plugin.id.clone(),
+                                    scope: to,
+                                    verb: Verb::Move(from),
+                                },
+                            ))
+                        })
+                    })
+                });
+            }
+            let (on_for, view_on) = (plugin.clone(), view.clone());
+            menu = menu.submenu("Turn on for", window, cx, move |menu, _, _| {
+                Scope::ALL
+                    .into_iter()
+                    .filter(|scope| on_for.reaches(*scope))
+                    .fold(menu, |menu, scope| {
+                        let from = match on_for.source(scope) {
+                            Some(source) if source != scope => {
+                                format!(" · from {}", source.label())
+                            }
+                            _ => String::new(),
+                        };
+                        menu.item(
+                            menu_item(format!("{}{from}", scope.reach()))
+                                .checked(on_for.in_force(scope))
+                                .on_click(act(&view_on, on_for.flip(scope))),
+                        )
+                    })
+            });
+
+            menu = files.into_iter().fold(divide(menu), PopupMenu::item);
+            removes.into_iter().fold(divide(menu), PopupMenu::item)
+        })
+    }
+
     fn available_row(
         &self,
         i: usize,
@@ -936,6 +1053,80 @@ impl PluginsView {
             .child(div().text_xs().text_color(muted).opacity(0.8).child(meta))
             .into_any_element()
     }
+}
+
+/// A menu row's press that makes `change`.
+fn act(
+    view: &Entity<PluginsView>,
+    change: Change,
+) -> impl Fn(&ClickEvent, &mut Window, &mut App) + 'static {
+    let view = view.clone();
+    move |_, _, cx| view.update(cx, |view, cx| view.change(change.clone(), cx))
+}
+
+/// Ask before uninstalling, naming who loses it and what goes with it.
+///
+/// A dialog rather than an armed second press, for the reason the app's other
+/// removal asks this way: an armed control looks like one that did nothing.
+/// The plugin's saved data is kept (`--keep-data`), and it says so.
+fn confirm_uninstall(
+    view: &Entity<PluginsView>,
+    plugin: &Plugin,
+    scope: Scope,
+    window: &mut Window,
+    cx: &mut App,
+) {
+    let inventory = &plugin.inventory;
+    let parts: Vec<String> = [
+        (inventory.skills.len(), "skill", "skills"),
+        (inventory.commands.len(), "command", "commands"),
+        (inventory.agents.len(), "agent", "agents"),
+        (inventory.mcp.len(), "MCP server", "MCP servers"),
+        (inventory.hooks.len(), "hook", "hooks"),
+    ]
+    .into_iter()
+    .filter(|(n, _, _)| *n > 0)
+    .map(|(n, one, many)| format!("{n} {}", if n == 1 { one } else { many }))
+    .collect();
+    let losing = if parts.is_empty() {
+        String::new()
+    } else {
+        format!(" {} will no longer be available.", parts.join(", "))
+    };
+    let description = format!(
+        "{} is removed from {} ({}).{losing} Its saved data is kept.",
+        plugin.name(),
+        scope.label(),
+        scope.reach().to_lowercase(),
+    );
+    let title = format!("Uninstall {}?", plugin.name());
+    let change = Change {
+        id: plugin.id.clone(),
+        scope,
+        verb: Verb::Uninstall,
+    };
+    let view = view.clone();
+    window.open_alert_dialog(cx, move |alert, _, _| {
+        // Cloned per build: a dialog's builder runs again on every frame it is
+        // on screen, so nothing captured here can be consumed by one.
+        let (view, change) = (view.clone(), change.clone());
+        alert
+            .title(title.clone())
+            .description(description.clone())
+            .footer(
+                DialogFooter::new()
+                    .child(DialogClose::new().child(action("plugin-keep").ghost().label("Cancel")))
+                    .child(
+                        action("plugin-confirm-uninstall")
+                            .danger()
+                            .label("Uninstall")
+                            .on_click(move |_, window: &mut Window, cx: &mut App| {
+                                window.close_dialog(cx);
+                                view.update(cx, |view, cx| view.change(change.clone(), cx));
+                            }),
+                    ),
+            )
+    });
 }
 
 /// What a plugin carries, one chip per kind it has any of — none for a kind
