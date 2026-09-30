@@ -147,7 +147,7 @@ Plugins in this milestone are built into the same binary. Registration happens
 once before the first window is created; there is no plugin process, dynamic
 loading, IPC, marketplace or plugin-management screen.
 
-Deeper notes live beside the code — `CLAUDE.md` for how the app is put together,
+Deeper notes live beside the code — `docs/architecture.md` for how the app is put together,
 `DECISIONS.md` for the choices reading the code will not explain, and `DESIGN.md`
 with `DESIGN-ANSWER.md` for the UI contracts.
 

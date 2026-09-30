@@ -2,8 +2,8 @@
 
 This file records choices that are still in force and whose reasons cannot be
 recovered reliably by reading the code. It is not an implementation guide or a
-roadmap: current structure and operational details live in `CLAUDE.md`, known
-gaps live there and in `README.md`, and exact dependency revisions live in the
+roadmap: current structure and operational details live in
+`docs/architecture.md`, known gaps live in `docs/known-gaps.md` and `README.md`, and exact dependency revisions live in the
 manifests and committed `Cargo.lock`.
 
 Each decision states its context, the choice, and the consequences that future
@@ -69,7 +69,7 @@ msgpack RPC or mount it as a terminal tab.
 **Consequences.** The mode inherits the shared terminal patches. Its zoom changes
 the grid font size, it takes the `Terminal` key context, and merely selecting the
 mode does not spawn a process. PTY protocol support and remaining limitations
-are documented in `CLAUDE.md`.
+are documented in `docs/architecture.md`.
 
 ## D5 · Prefer the bundled icon registry; check in only missing shapes
 
@@ -151,4 +151,4 @@ mark local changes with `onehand patch` so the delta remains reviewable.
 **Consequences.** First-party formatting and lint commands exclude `vendor/`;
 do not run bulk fixers over it. The upstream revision and licence live beside
 the vendored crate, while the implemented patch set and protocol details live in
-`CLAUDE.md`.
+`docs/architecture.md`.
