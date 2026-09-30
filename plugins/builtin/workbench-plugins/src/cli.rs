@@ -101,11 +101,6 @@ struct Installed {
     #[serde(default)]
     version: Option<String>,
     scope: Scope,
-    /// Whether it is enabled in the end, for the directory the listing was
-    /// run in — every scope already folded in, the same on every record of one
-    /// plugin.
-    #[serde(default)]
-    enabled: bool,
     /// The project a project or local install belongs to.
     #[serde(default)]
     project_path: Option<PathBuf>,
@@ -122,24 +117,26 @@ pub(crate) struct Plugin {
     /// What each scope's settings file says, indexed as [`Scope::ALL`];
     /// `None` where the file says nothing about it.
     set: [Option<bool>; 3],
-    /// What the listing says it comes to in the end, which is what a scope
-    /// that sets nothing falls back to when no wider one does either.
-    enabled: bool,
 }
 
 impl Plugin {
     /// Whether it is on at `scope`: what that scope sets, else what the next
-    /// wider one sets, else the listing's own answer.
+    /// wider one sets, else off.
     ///
-    /// At the narrowest scope this is what a session started here gets, and it
-    /// is asserted against the listing's answer so the two cannot drift.
+    /// **Off, and not the listing's own `enabled`**, which looks like the
+    /// natural fallback and is not one: that answer has every scope folded in,
+    /// narrower ones included, so a project turning a plugin off would read
+    /// back as the plugin being off globally. A plugin installed and mentioned
+    /// by no settings file is off — which is what the listing says of one, and
+    /// why the narrowest scope's answer here is what a session started in the
+    /// project gets.
     pub(crate) fn in_force(&self, scope: Scope) -> bool {
         Scope::ALL
             .iter()
             .rev()
             .filter(|wider| **wider <= scope)
             .find_map(|wider| self.set[*wider as usize])
-            .unwrap_or(self.enabled)
+            .unwrap_or(false)
     }
 
     /// Whether `scope` sets it itself, rather than taking it from a wider one.
@@ -269,7 +266,6 @@ pub(crate) fn parse(
                 id: record.id,
                 version: record.version,
                 installed: vec![record.scope],
-                enabled: record.enabled,
             }),
         }
     }
@@ -413,7 +409,8 @@ mod tests {
     use super::*;
 
     /// Shaped as the real listing is: `enabled` is the same on every record of
-    /// one plugin, because it is the folded answer rather than the record's own.
+    /// one plugin, because it is the folded answer rather than the record's own
+    /// — which is why nothing here reads it.
     const LISTING: &str = r#"{
       "installed": [
         {"id": "ponytail@ponytail", "version": "4.9.0", "scope": "user", "enabled": false},
@@ -469,18 +466,28 @@ mod tests {
         let ponytail = plugin(&catalog, "ponytail@ponytail");
         assert!(ponytail.in_force(Scope::User));
         assert!(!ponytail.in_force(Scope::Project));
-        // Local sets nothing, so it takes the project's answer — which is the
-        // listing's own, as the narrowest scope's must be.
+        // Local sets nothing, so it takes the project's answer.
         assert!(!ponytail.in_force(Scope::Local));
         assert!(!ponytail.set_at(Scope::Local));
-        assert_eq!(ponytail.in_force(Scope::Local), ponytail.enabled);
     }
 
     #[test]
-    fn a_scope_that_sets_nothing_anywhere_takes_the_listings_answer() {
+    fn a_project_turning_a_plugin_off_does_not_read_back_as_off_globally() {
+        // Global says nothing; the project says off. The listing's folded
+        // answer is off, and it must not leak up into the Global switch.
+        let set = settings("", r#"{"enabledPlugins": {"figma@official": false}}"#, "");
+        let catalog = catalog(&set);
+        let figma = plugin(&catalog, "figma@official");
+        assert!(!figma.set_at(Scope::User));
+        assert!(!figma.in_force(Scope::User));
+        assert_eq!(figma.flip(Scope::User).verb, Verb::Enable);
+    }
+
+    #[test]
+    fn a_plugin_no_settings_file_mentions_is_off_at_every_scope() {
         let catalog = catalog(&settings("", "", ""));
         let figma = plugin(&catalog, "figma@official");
-        assert!(Scope::ALL.iter().all(|s| figma.in_force(*s)));
+        assert!(Scope::ALL.iter().all(|s| !figma.in_force(*s)));
         assert!(Scope::ALL.iter().all(|s| !figma.set_at(*s)));
     }
 

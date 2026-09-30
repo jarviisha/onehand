@@ -350,14 +350,20 @@ impl PluginsView {
             let flip = plugin.flip(scope);
             let on = plugin.in_force(scope);
             let own = plugin.set_at(scope);
-            let said = match (on, own) {
-                (true, true) => "on, set here",
-                (false, true) => "off, set here",
-                (true, false) => "on, from a wider scope",
-                (false, false) => "off, from a wider scope",
+            // Only a wider scope can be where an answer came from; with none
+            // setting it, the plugin is off because nothing turned it on.
+            let inherited = Scope::ALL
+                .iter()
+                .any(|wider| *wider < scope && plugin.set_at(*wider));
+            let said = match (on, own, inherited) {
+                (true, true, _) => "on, set here",
+                (false, true, _) => "off, set here",
+                (true, false, _) => "on, from a wider scope",
+                (false, false, true) => "off, from a wider scope",
+                (false, false, false) => "off, set nowhere",
             };
             let press = if on { "off" } else { "on" };
-            let button = action(("plugin-scope", i * 3 + scope as usize))
+            let button = action(("plugin-scope", i * Scope::ALL.len() + scope as usize))
                 .xsmall()
                 .label(scope.label())
                 .selected(on)
@@ -388,7 +394,7 @@ impl PluginsView {
             } else {
                 "Remove".to_string()
             };
-            action(("plugin-remove", i * 3 + *scope as usize))
+            action(("plugin-remove", i * Scope::ALL.len() + *scope as usize))
                 .xsmall()
                 .ghost()
                 .label(label)

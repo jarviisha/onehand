@@ -930,7 +930,7 @@ see the rail, below.
   is newer, since two landings can reach the screen out of order.
 
 - **Plugins**: the Claude Code plugins that reach a session started in the project on screen, one
-  row per plugin, and under them the known marketplaces' plugins — most installed first, searched,
+  row per plugin (capped at 200, the cut said), and under them the known marketplaces' plugins — most installed first, searched,
   capped at 60 rows with the cut said, and installed at the scope picked above the list. **Each row
   carries a switch per scope — Global (Claude Code's `user`), Project, Local — showing what is in
   force *at* that scope** (what it sets itself, else what the next wider one sets), outlined where
@@ -941,8 +941,9 @@ see the rail, below.
   record already carries a version number. **What each scope sets is read from the three
   `settings.json` files' `enabledPlugins`**, because the listing's `enabled` is the answer with every
   scope already folded in — the same on every record of one plugin — so it cannot tell a project
-  turning a plugin off from a plugin never turned on. The folded answer is still the fallback where
-  no scope sets anything, and the narrowest scope's value in force is asserted equal to it. The
+  turning a plugin off from a plugin never turned on. The folded answer is never the fallback — it
+  includes the narrower scopes, so it would read a project's *off* back as *off* everywhere — and a
+  plugin no scope mentions is off, which is what the listing says of one. The
   listing names every project's installs; only the global ones and this project's are kept.
   **An install never passes `-y`** — a marketplace can declare a command to run, and `-y` accepts it
   unseen — so one that wants a command refuses on the status line, left to a person in a terminal.

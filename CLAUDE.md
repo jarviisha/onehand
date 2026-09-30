@@ -2,7 +2,7 @@
 
 `onehand` is a Rust desktop GUI (**GPUI** + [gpui-component](https://github.com/longbridge/gpui-component))
 that hosts AI coding agents. Window: a left navigation **rail**, a central **agent pane** (a native
-chat), a right **Workbench** dock (editor, file tree, Markdown, Neovim, Issues) and a bottom
+chat), a right **Workbench** dock (editor, file tree, Markdown, Neovim, Issues, Plugins) and a bottom
 **terminal** dock. A *workspace* groups *project roots*; each root runs *sessions*, and **every
 session is an ACP agent** ([Agent Client Protocol](https://agentclientprotocol.com)).
 
