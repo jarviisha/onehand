@@ -660,6 +660,12 @@ mod tests {
             "UI-UX-PROPOSAL",
             "README",
             "CHANGELOG",
+            // The long-form documents under `docs/`, named with their
+            // extension: the bare words are ordinary English a comment may use.
+            "architecture.md",
+            "known-gaps.md",
+            "rules-and-gotchas.md",
+            "unattended.md",
         ];
         const SECTION_MARK: char = '\u{a7}';
 

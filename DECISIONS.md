@@ -3,8 +3,8 @@
 This file records choices that are still in force and whose reasons cannot be
 recovered reliably by reading the code. It is not an implementation guide or a
 roadmap: current structure and operational details live in
-`docs/architecture.md`, known gaps live in `docs/known-gaps.md` and `README.md`, and exact dependency revisions live in the
-manifests and committed `Cargo.lock`.
+`docs/architecture.md`, known gaps live in `docs/known-gaps.md` and `README.md`,
+and exact dependency revisions live in the manifests and committed `Cargo.lock`.
 
 Each decision states its context, the choice, and the consequences that future
 changes must account for. Superseded decisions should be replaced deliberately,

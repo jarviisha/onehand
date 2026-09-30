@@ -31,20 +31,28 @@ cargo check                      # fast type-check
 cargo test                       # everything; `cargo test <substring>` for one test
 cargo test -p onehand-core       # core only (fast, no GUI)
 make fmt                         # NOT bare `cargo fmt`
-make lint                        # clippy, warnings denied; NOT bare `cargo clippy`
+make lint                        # fmt check + clippy; CI adds CLIPPY_EXTRA="-- -D warnings"
 cargo build --release            # LTO; target/release/onehand
 
 # Headless ACP smoke test; ACP_CMD swaps the adapter
 cargo run -p onehand-core --example acp_smoke
+ACP_CMD="node crates/core/examples/mock_terminal_agent.js" cargo run -p onehand-core --example acp_smoke go
 ACP_CMD="node crates/core/examples/mock_ask_agent.js" cargo run -p onehand-core --example acp_smoke go
 ```
 
-- **`make fmt` / `make lint`, never bare cargo:** `vendor/` is a workspace member, and its diff
-  against upstream must stay exactly our patches.
-- **The app's chrome without an API key:** add an agent running
-  `node crates/core/examples/mock_ui_agent.js`. One prompt plays a whole transcript over about
-  12s: every block kind, a parked permission and question cards. Every other turn ends on a
-  JSON-RPC error on purpose. `fast` in the prompt lands it at once.
+- **Why the Makefile:** `vendor/` is a workspace member, and bare cargo fmt/clippy would rewrite
+  it. Its diff against upstream must stay exactly our patches.
+- **The app's chrome without an API key:** add this agent in Settings ▸ Agents or `onehand.toml`.
+  One prompt plays a whole transcript over about 12s: every block kind, a parked permission and
+  question cards. Every other turn ends on a JSON-RPC error on purpose. `fast` in the prompt
+  lands it at once.
+
+  ```toml
+  [[agents]]
+  name = "Mock UI"
+  command = "node"
+  args = ["crates/core/examples/mock_ui_agent.js"]
+  ```
 - **Tests:** inline `#[cfg(test)]` modules only; there is no `tests/` directory.
 - **CI:** fmt, core tests, app tests and clippy, all `--locked`, because `Cargo.lock` is the
   only pin for revless `gpui`. A `v*` tag cuts a GitHub pre-release tarball. Nothing goes to
@@ -67,23 +75,24 @@ ACP_CMD="node crates/core/examples/mock_ask_agent.js" cargo run -p onehand-core 
 - **Core is GUI-free:** `cargo tree -p onehand-core -i gpui` must error with "did not match any
   packages". Use `-i`, not `| grep gpui`: the checkout path contains `gpui`.
 - **Core dictates no async runtime.** Blocking functions, thin async wrappers. GPUI runs on smol
-  with no tokio reactor; tokio I/O inside the UI process panics. `crates/app/src/acp.rs` and
-  `remote.rs` are the only places tokio and smol meet.
+  with no tokio reactor; tokio I/O on the UI executor panics. In the app, `acp.rs` and `remote.rs`
+  drive their tokio side on runtimes of their own and cross to GPUI over a `futures` channel.
 - **Nothing in core is `pub` unless something outside the crate names it.** Every first-party
   library carries `#![warn(unreachable_pub)]`. `dead_code` stops at a `pub` item, which is how dead
   code hid before.
 - **In `crates/app` only `assets` and `shell` are `pub`; keep new modules private.**
 - **Shared rules live in core, not per call site** (e.g. `GitStatus::label`, `Chat::apply`,
   `AppConfig::update_in_place`, `Chats::reconcile`).
-- **`crates/app/src/guards.rs` tests hold rules rustc cannot:**
+- **`crates/app/src/guards.rs` tests hold rules rustc cannot.** Among them:
   - no glyph used as an icon;
+  - every button goes through the app's wrapper;
   - our own event enums matched exhaustively (never `matches!`);
   - no field assigned and never read;
   - code never cites a document;
   - every `.md` file is in English.
 
-  Each guard was added after the same mistake appeared in several places. Remove one only
-  after a probe shows a lint covers it.
+  Read the file before adding UI. Each guard was added after the same mistake appeared in
+  several places. Remove one only after a probe shows a lint covers it.
 
 ## GPUI model
 
@@ -97,9 +106,10 @@ ACP_CMD="node crates/core/examples/mock_ask_agent.js" cargo run -p onehand-core 
 - Async work runs as `cx.spawn` plus `cx.background_executor()`, and results come back through
   `entity.update`. Native dialogs, directory scans and file reads never run inline in a render or
   action handler.
-- Data model: `Shared` (global: agents, windows, recents, remote bridge, unattended) → `Shell` per
-  window → `Workspace { roots }` → `ProjectRoot { sessions }` → `Session { spec, uid }`. Sessions
-  connect lazily, on first show.
+- Data model: `Shared` (the process-wide global: agent menu, windows, recents, keymap, ACP
+  runtime, remote bridge, unattended runs, among others) → `Shell` per window →
+  `Workspace { roots }` → `ProjectRoot { sessions }` → `Session { spec, uid }`. Sessions connect
+  lazily, on first show.
 
 ## Rules
 
@@ -111,8 +121,9 @@ ACP_CMD="node crates/core/examples/mock_ask_agent.js" cargo run -p onehand-core 
   - Some bundled SVGs have a hard-coded stroke (`dash.svg`). After bumping `gpui-component`, grep
     for `stroke="black"`.
 - **Code describes; it never cites.** No comment, doc comment or runtime string names a document
-  (CLAUDE.md, DESIGN*.md, DECISIONS.md, a section or item code). Give the reason in the comment's
-  own words. Pointing at code is fine. Documents point at code, never the reverse.
+  (CLAUDE.md, DESIGN*.md, DECISIONS.md, anything under `docs/`, a section or item code). Give
+  the reason in the comment's own words. Pointing at code is fine. Documents point at code, never
+  the reverse.
 - **Every `.md` file is written in English.** Quoted non-English data stays as it is.
 - **Never hard-code a colour, radius or size.** Read `cx.theme()`; sizes are rems, because zoom
   overrides the rem base per panel.
@@ -120,8 +131,25 @@ ACP_CMD="node crates/core/examples/mock_ask_agent.js" cargo run -p onehand-core 
   rows through `controls::menu_item`/`menu_row`, so the pointer cursor is right.
 - **Keep rendering bounded**: a named cap per list, and say on screen when it bites.
 - **Don't self-verify UI by launching or screenshotting.** Build, test, stop; the user looks.
-- **A change the user can see updates DESIGN.md / DESIGN-ANSWER.md in the same change.** A
-  change to a subsystem updates its section in `docs/architecture.md`.
+
+## Load-bearing specifics
+
+- **Key contexts:**
+  - Window commands are bound `Shell && !Dialog`.
+  - `Ctrl+S` is bound `Shell && !Terminal`, so a PTY keeps it.
+  - Anything mounting a live grid, the Neovim mode included, must take the `Terminal` context,
+    or the editor's save fires over `:w`.
+  - The terminal toggle is plain `` Ctrl+` ``, because shift+backtick cannot be typed.
+  - Commands live in `crates/app/src/keymap.rs`, and overrides persist under `[keymap]`.
+- **Overlay layers:** `Shell::render` mounts `Root::render_{sheet,dialog,notification}_layer`
+  itself. Without them every dialog is dead.
+- **Unattended teardown:** a run's project is dropped with `Shell::forget_root`, never
+  `remove_root`, which re-shows the active session and steals the caret.
+- **Transcripts:** `items.jsonl` is append-only and written at every turn end. A rename writes
+  metadata only (`Chat::flush_meta`).
+- **Telegram token:** never in `onehand.toml`, which settings rewrite whole. It comes from
+  `$ONEHAND_TELEGRAM_TOKEN` or `<config_dir>/onehand/telegram.token`. A chat not on
+  `allowed_chats` gets no reply at all.
 
 ## Gotchas (one line each; full reasons in docs/rules-and-gotchas.md)
 
