@@ -339,10 +339,15 @@ pub struct Shell {
     settings_focus: gpui::FocusHandle,
     keymap_editor: Entity<crate::keymap::Editor>,
     settings_view: Entity<crate::settings::SettingsView>,
-    /// What each agent command's last *Test* found, by command.
+    /// What each agent's last *Test* found, by `settings::check_key`.
     agent_checks: HashMap<String, AgentCheck>,
     /// How the last write made from the Settings page showing went.
     settings_note: Option<Result<(), String>>,
+    /// The next workspace write was asked for from Settings, so how it goes is
+    /// Settings' to say. Workspace writes also come from runs, pins and the
+    /// dock, and one of those landing while Settings is open is not a change
+    /// the page in front of the user made.
+    workspace_note_wanted: bool,
     held_commands: std::collections::HashSet<&'static str>,
     /// The workspace-rename field.
     workspace_name: Entity<InputState>,
@@ -738,6 +743,7 @@ impl Shell {
                     let name = state.read(cx).value().trim().to_string();
                     if !name.is_empty() && name != shell.window.workspace.name {
                         shell.window.workspace.name = name;
+                        shell.workspace_note_wanted |= shell.settings_open;
                         shell.save_workspace_soon(cx);
                         cx.notify();
                     }
@@ -797,6 +803,7 @@ impl Shell {
             },
             agent_checks: HashMap::new(),
             settings_note: None,
+            workspace_note_wanted: false,
             held_commands: Default::default(),
             workspace_name,
             renaming: None,
@@ -2124,6 +2131,7 @@ impl Shell {
         {
             crate::unattended::check_now(self.project_for_runs(&root.path), cx);
         }
+        self.workspace_note_wanted |= self.settings_open;
         self.save_workspace(window, cx);
         // The project page's menu says whether this is on, in the entry that was
         // just used.
@@ -2648,7 +2656,8 @@ impl Shell {
         self.held_commands.clear();
         self.settings_open = true;
         self.settings_note = None;
-        self.keymap_editor.update(cx, |editor, _| editor.forget_note());
+        self.keymap_editor
+            .update(cx, |editor, _| editor.forget_note());
         self.settings_focus.focus(window, cx);
         cx.notify();
     }
@@ -2660,7 +2669,7 @@ impl Shell {
     /// and closing with nothing pending has nothing to lose.
     pub fn request_close_settings(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let pending = self.agent_draft.dirty(&Shared::global(cx).agents, cx)
-            || self.keymap_editor.read(cx).editing();
+            || self.keymap_editor.read(cx).dirty(cx);
         if !pending {
             self.close_settings(window, cx);
             return;
@@ -2721,16 +2730,33 @@ impl Shell {
         cx.notify();
     }
 
-    pub fn settings_note(&self) -> Option<Result<(), String>> {
-        self.settings_note.clone()
+    /// The word Settings shows beside its ✕ for `page`. The shortcut editor
+    /// writes the keymap itself, so it keeps its own; every other page's
+    /// writes come through [`Shell::report_write`].
+    pub fn settings_note(&self, page: SettingsPage, cx: &App) -> Option<Result<(), String>> {
+        match page {
+            SettingsPage::Shortcuts => self.keymap_editor.read(cx).note(),
+            _ => self.settings_note.clone(),
+        }
     }
 
-    /// Keep how a write went, for Settings to say beside its ✕ -- only while
-    /// Settings is open, since the same writes also happen from panels, where
-    /// nothing would ever read it.
-    fn note_settings(&mut self, result: Result<(), String>) {
-        if self.settings_open {
-            self.settings_note = Some(result);
+    /// Say how a write went: a failure as a notification wherever it came
+    /// from, and -- when `noted`, which is to say Settings asked for it -- the
+    /// outcome either way, for Settings to show beside its ✕.
+    fn report_write<E: std::fmt::Display>(
+        &mut self,
+        what: &str,
+        saved: Result<(), E>,
+        noted: bool,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let saved = saved.map_err(|e| e.to_string());
+        if let Err(e) = &saved {
+            window.push_notification(Notification::error(format!("{what} not saved — {e}")), cx);
+        }
+        if noted && self.settings_open {
+            self.settings_note = Some(saved);
         }
     }
 
@@ -2750,7 +2776,8 @@ impl Shell {
         self.settings_page = page;
         // A word about the last write belongs to the page it was made on.
         self.settings_note = None;
-        self.keymap_editor.update(cx, |editor, _| editor.forget_note());
+        self.keymap_editor
+            .update(cx, |editor, _| editor.forget_note());
         cx.notify();
     }
 
@@ -2809,23 +2836,19 @@ impl Shell {
         cx.notify();
     }
 
-    /// What the last *Test* of `command` found, if it has been tested.
-    pub fn agent_check(&self, command: &str) -> Option<&AgentCheck> {
-        self.agent_checks.get(command)
+    /// What the last *Test* filed under `key` found, if there was one.
+    pub fn agent_check(&self, key: &str) -> Option<&AgentCheck> {
+        self.agent_checks.get(key)
     }
 
     /// Look for an agent's command the way starting a session would, off the UI
     /// loop, without starting anything.
     pub fn check_agent(&mut self, idx: usize, cx: &mut Context<Self>) {
-        let Some(command) = Shared::global(cx)
-            .agents
-            .get(idx)
-            .map(|a| a.command.clone())
-        else {
+        let Some(spec) = Shared::global(cx).agents.get(idx).cloned() else {
             return;
         };
-        self.agent_checks
-            .insert(command.clone(), AgentCheck::Running);
+        let (key, command) = (crate::settings::check_key(&spec), spec.command);
+        self.agent_checks.insert(key.clone(), AgentCheck::Running);
         cx.notify();
         cx.spawn(async move |shell, cx| {
             let found = cx
@@ -2844,7 +2867,7 @@ impl Shell {
                         Some(at) => AgentCheck::Found(at),
                         None => AgentCheck::Missing,
                     };
-                    shell.agent_checks.insert(command, check);
+                    shell.agent_checks.insert(key, check);
                     cx.notify();
                 })
                 .ok();
@@ -2895,13 +2918,7 @@ impl Shell {
 
         let path = Shared::global(cx).config_path.clone();
         let saved = AppConfig::update_in_place(&path, |cfg| cfg.appearance = choice);
-        if let Err(e) = &saved {
-            window.push_notification(
-                Notification::error(format!("Appearance not saved — {e}")),
-                cx,
-            );
-        }
-        self.note_settings(saved.map_err(|e| e.to_string()));
+        self.report_write("Appearance", saved, true, window, cx);
         cx.notify();
     }
 
@@ -2911,10 +2928,7 @@ impl Shell {
         let shared = Shared::global(cx);
         let (path, agents) = (shared.config_path.clone(), shared.agents.clone());
         let saved = AppConfig::update_in_place(&path, |cfg| cfg.agents = agents);
-        if let Err(e) = &saved {
-            window.push_notification(Notification::error(format!("Agents not saved — {e}")), cx);
-        }
-        self.note_settings(saved.map_err(|e| e.to_string()));
+        self.report_write("Agents", saved, true, window, cx);
     }
 
     // ── Workspace settings ──────────────────────────────────────────────────
@@ -2972,6 +2986,7 @@ impl Shell {
         self.window.workspace.storage_dir = Some(dir.clone());
         self.workbench
             .update(cx, |panel, cx| panel.set_storage(Some(&dir), cx));
+        self.workspace_note_wanted |= self.settings_open;
         self.save_workspace(window, cx);
         self.set_window_identity(Some(dir.clone()), window, cx);
         cx.update_global::<Shared, _>(|shared, _| {
@@ -3559,13 +3574,8 @@ impl Shell {
         self.window.workspace.layout = layout;
 
         let saved = self.window.workspace.to_config().save_to(&dir);
-        if let Err(e) = &saved {
-            window.push_notification(
-                Notification::error(format!("Workspace not saved — {e}")),
-                cx,
-            );
-        }
-        self.note_settings(saved.map_err(|e| e.to_string()));
+        let noted = std::mem::take(&mut self.workspace_note_wanted);
+        self.report_write("Workspace", saved, noted, window, cx);
         cx.notify();
     }
 

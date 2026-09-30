@@ -1462,9 +1462,12 @@ centre is the chat, right dock the Workbench, bottom dock the terminal.
   tall off the bottom. It was capped at 1200×860 for one change, which left a one-control page
   looking lost; the nav is 13.5rem with 1rem of padding and the page 2rem, the sizes the Settings
   proposal in `docs/` settled on. **Beside the ✕ is a word on the last write** made from the page
-  showing — *Saved*, or *Not saved — why* in the danger ink (`Shell::note_settings`, fed by the
-  appearance, agents and workspace writes; the Shortcuts page's is the editor's own `note`, and its
-  failures stay under the field they are about). Settings apply as they are made, so whether the
+  showing — *Saved*, or *Not saved — why* in the danger ink (`Shell::report_write`, which every
+  appearance, agents and workspace write goes through; the Shortcuts page's is the editor's own
+  `note`, and its failures stay under the field they are about). **A workspace write is only noted
+  when Settings asked for it** (`Shell::workspace_note_wanted`, set by the name field, the unattended
+  switches and binding a folder): runs, pins and the dock write the same file, and one of those
+  landing while Settings is open is not a change the page on screen made. Settings apply as they are made, so whether the
   write took is the one thing left to say; the word goes with a page change or a reopen. The
   Connections page says **when the connectors last answered** (`unattended::accounts_checked_at`,
   through `chat::pane::rel_time`) and turns *Check again* into a refusing *Checking…* while one is out
@@ -1493,12 +1496,14 @@ centre is the chat, right dock the Workbench, bottom dock the terminal.
   open form on its agent), so being default is an order and not a second setting to drift from it.
   **An agent can be tested** (*Test*, `Shell::check_agent`): its command is looked for the way a
   session would — a path as a path, a bare name along `PATH` (`onehand_core::config::find_command`)
-  — off the UI loop, and the answer sits under the command, keyed by the command so an edit drops
-  it. It is asked for and never run on opening, and it only finds a file: whether the program
+  — off the UI loop, and the answer sits under the command, filed under the whole command line
+  (`settings::check_key`) so two agents on one launcher do not share an answer and an edit drops it.
+  It names the program it found, since the program is all it looked for. It is asked for and never run on opening, and it only finds a file: whether the program
   speaks ACP can be known only by starting it, which a check ahead of a session must not do.
   **Closing Settings with an edit pending asks first** (`Shell::request_close_settings`, behind the
-  ✕, Esc, the backdrop and a field's own Escape): an agent form holding changes, or a shortcut open
-  for editing, gets *Keep editing* / *Discard*; with nothing pending it closes at once, since a
+  ✕, Esc, the backdrop and a field's own Escape): an agent form holding changes, or a shortcut whose
+  field no longer matches its keys (`keymap::Editor::dirty`), gets *Keep editing* / *Discard* — a
+  shortcut opened and left as it was is nothing to lose; with nothing pending it closes at once, since a
   question on every close is one people learn to click through. The drafts already survive moving
   between pages — the agent form lives on the shell, the shortcut edit on its editor. Agents and the keymap were dialogs of their own behind two
   more rail rows, so "where is that setting" had three answers and which was right depended on which

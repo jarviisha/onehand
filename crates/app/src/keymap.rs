@@ -506,15 +506,7 @@ impl Editor {
         if reset {
             overrides.remove(command.id);
         } else {
-            let value = self.input.read(cx).value();
-            let keys = if value.trim().is_empty() {
-                Vec::new()
-            } else {
-                value
-                    .split_whitespace()
-                    .map(|s| s.trim().to_string())
-                    .collect()
-            };
+            let keys = typed_keys(&self.input.read(cx).value());
             overrides.insert(command.id.to_string(), keys);
         }
         let existing: Vec<_> = cx.key_bindings().borrow().bindings().cloned().collect();
@@ -546,10 +538,31 @@ impl Editor {
     }
 }
 
+/// The keys a shortcut field holds: alternatives separated by spaces, none at
+/// all when it is empty.
+fn typed_keys(value: &str) -> Vec<String> {
+    value.split_whitespace().map(str::to_string).collect()
+}
+
+/// Whether what is typed in a shortcut field differs from the keys the command
+/// has now.
+fn edit_changes(value: &str, current: &[String]) -> bool {
+    typed_keys(value) != current
+}
+
 impl Editor {
-    /// Whether a shortcut is open for editing, which is a change not yet saved.
+    /// Whether a shortcut is open for editing.
     pub fn editing(&self) -> bool {
         self.editing.is_some()
+    }
+
+    /// Whether the shortcut open for editing holds keys it does not have yet --
+    /// opened and left as it was is nothing to lose.
+    pub fn dirty(&self, cx: &App) -> bool {
+        self.editing.is_some_and(|index| {
+            let current = COMMANDS[index].keys(&Shared::global(cx).keymap);
+            edit_changes(&self.input.read(cx).value(), &current)
+        })
     }
 
     /// `Saved` right after a save went through, until the next edit starts. A
@@ -793,6 +806,20 @@ mod tests {
             action_at(&map, "enter", &["Dialog", "Input"]),
             Some(gpui_component::input::SelectAll.name().into())
         );
+    }
+
+    /// A shortcut opened and left as it was is not an unsaved change, so
+    /// closing Settings over it must not ask; one whose keys differ is.
+    #[test]
+    fn a_shortcut_edit_is_pending_only_when_its_keys_changed() {
+        let current = vec!["ctrl-shift-b".to_string()];
+        assert!(!edit_changes("ctrl-shift-b", &current));
+        assert!(!edit_changes("  ctrl-shift-b  ", &current));
+        assert!(edit_changes("ctrl-shift-x", &current));
+        assert!(edit_changes("ctrl-shift-b ctrl-alt-b", &current));
+        // Emptied is a change: it unassigns the command.
+        assert!(edit_changes("", &current));
+        assert!(!edit_changes("   ", &[]));
     }
 
     #[test]

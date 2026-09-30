@@ -1,5 +1,5 @@
-//! Settings: appearance, this workspace, the agent menu, the servers, the
-//! keymap.
+//! Settings: appearance, this workspace, the agent menu, the connections,
+//! the keymap.
 //!
 //! A modal, mounted by the shell so its rail row and its key share one dialog,
 //! and sized to the window up to 960 × 680. The shell restores the previous focus when
@@ -132,18 +132,22 @@ fn agent_row(shell: &Entity<Shell>, idx: usize, spec: &AgentSpec, cx: &App) -> i
     });
     let ink = crate::theme::status_ink(cx);
     let muted = cx.theme().muted_foreground;
-    // What the last check of this command found, said under the command it is
-    // about. Keyed by the command rather than the row, so it follows the agent
-    // through a reorder and is dropped the moment the command is edited.
+    // What the last check of this agent found, said under the command it is
+    // about. Keyed by the command line rather than the row, so it follows the
+    // agent through a reorder and is dropped the moment the line is edited. It
+    // names the program because the program is all it looked for.
     let check = shell
         .read(cx)
-        .agent_check(&spec.command)
+        .agent_check(&check_key(spec))
         .map(|check| match check {
             AgentCheck::Running => ("Checking…".to_string(), muted),
-            AgentCheck::Found(at) => (format!("Found at {}", at.display()), ink.success),
+            AgentCheck::Found(at) => (
+                format!("{} found at {}", spec.command, at.display()),
+                ink.success,
+            ),
             AgentCheck::Missing => (
                 format!(
-                    "`{}` was not found — check the command, or give its full path",
+                    "{} was not found — check the command, or give its full path",
                     spec.command
                 ),
                 ink.warning,
@@ -281,6 +285,13 @@ pub(crate) fn page_head(
 
 /// The scope tag for a page whose settings reach every window and workspace.
 pub(crate) const APP: &str = "App";
+
+/// What a *Test* result is filed under: the whole command line, so two agents
+/// that share a launcher and differ in their arguments are two entries, and an
+/// edit to either half drops the answer about the old one.
+pub fn check_key(spec: &AgentSpec) -> String {
+    format!("{}\0{}", spec.command, spec.args_line())
+}
 
 /// What the last *Test* of an agent's command found.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -536,8 +547,8 @@ fn appearance_picker(shell: &Entity<Shell>, current: Appearance) -> impl IntoEle
 
 /// Which page Settings is showing.
 ///
-/// Four pages because there are four groups of control, and three of them used
-/// to be their own surface: the agent list and the keyboard table were separate
+/// A page per group of control, and two of them used to be their own
+/// surface: the agent list and the keyboard table were separate
 /// dialogs behind separate rail rows, so "where is that setting" had three
 /// answers and which one was right depended on which row somebody remembered.
 /// One page, one way in, and the rail's footer is one row instead of three.
@@ -642,7 +653,8 @@ pub(crate) fn page_title(name: &'static str) -> impl IntoElement {
     div().text_xl().font_medium().child(name)
 }
 
-/// Settings: appearance, this workspace, the agent menu, the keymap.
+/// Settings: appearance, this workspace, the agent menu, the connections, the
+/// keymap.
 ///
 /// **A modal, and a roomy one.** At the few hundred pixels a dialog usually
 /// takes, the keymap and the agent form scrolled inside a box; drawn in the
@@ -741,12 +753,7 @@ fn settings(handle: &Entity<Shell>, cx: &App) -> AnyElement {
     let focus = handle.read(cx).settings_focus();
     let muted = cx.theme().muted_foreground;
     let status = crate::theme::status_ink(cx);
-    // The shortcut editor writes the keymap itself, so it keeps its own word
-    // on how that went; every other page's writes go through the shell.
-    let note = match current {
-        SettingsPage::Shortcuts => handle.read(cx).keymap_editor().read(cx).note(),
-        _ => handle.read(cx).settings_note(),
-    };
+    let note = handle.read(cx).settings_note(current, cx);
     let nav = SettingsPage::ALL
         .into_iter()
         .map(|page| nav_row(page, current, &handle, cx).into_any_element())
@@ -973,7 +980,7 @@ fn workspace_page(handle: &Entity<Shell>, cx: &App) -> AnyElement {
         Some("Other workspaces"),
         Some(
             "Each opens in a window of its own; one already on screen is brought forward \
-             instead."
+             instead. This window's workspace is left as it is."
                 .into(),
         ),
         cx,
@@ -1115,10 +1122,11 @@ fn unattended_section(handle: &Entity<Shell>, cx: &App) -> AnyElement {
     section(
         Some("Unattended runs"),
         Some(SharedString::from(format!(
-            "An issue you opened, labelled `{label}` — on the project's forge or in its \
+            "An issue you opened, labelled “{label}” — on the project's forge or in its \
              Issues tab — in a project switched on here is picked up by an agent, worked in \
              a worktree of its own, and answered with a pull request, or with commits on its \
-             branch where the project has no forge."
+             branch where the project has no forge. The switches are this workspace's; the \
+             label, how often to look and which agent runs are the app's, set in onehand.toml."
         ))),
         cx,
     )
@@ -1127,8 +1135,9 @@ fn unattended_section(handle: &Entity<Shell>, cx: &App) -> AnyElement {
     .child(field(
         "Search",
         about(
-            "Look for a labelled issue now rather than at the next scheduled look. Runs \
-             reach the forge through the Connections page.",
+            "Look for a labelled issue now rather than at the next scheduled look — in every \
+             open workspace, as the scheduled look does. Runs reach the forge through the \
+             Connections page.",
         ),
         div().h_flex().child(
             crate::controls::action("unattended-look-now")
@@ -1182,7 +1191,27 @@ fn unattended_section(handle: &Entity<Shell>, cx: &App) -> AnyElement {
 
 #[cfg(test)]
 mod tests {
-    use super::{DraftShift, draft_after_promote, draft_shift};
+    use super::{DraftShift, check_key, draft_after_promote, draft_shift};
+    use onehand_core::config::AgentSpec;
+
+    /// Two agents on one launcher are two agents: a result filed for one must
+    /// not be shown under the other.
+    #[test]
+    fn a_test_result_belongs_to_the_whole_command_line() {
+        let spec = |args: &[&str]| AgentSpec {
+            name: "a".into(),
+            command: "npx".into(),
+            args: args.iter().map(|a| a.to_string()).collect(),
+        };
+        assert_ne!(
+            check_key(&spec(&["-y", "one"])),
+            check_key(&spec(&["-y", "two"]))
+        );
+        assert_eq!(
+            check_key(&spec(&["-y", "one"])),
+            check_key(&spec(&["-y", "one"]))
+        );
+    }
 
     /// Making an agent the default moves a form open on any agent ahead of it.
     #[test]
