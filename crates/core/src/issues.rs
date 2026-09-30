@@ -379,8 +379,8 @@ pub struct Across {
     pub rows: Vec<AcrossRow>,
     /// Closed issues, counted rather than listed: the list is read for work.
     pub closed: usize,
-    /// The cap cut the list short.
-    pub cut: bool,
+    /// How many open issues the cap left out.
+    pub left_out: usize,
 }
 
 /// Every open issue in `files` — each a project's root and what its file
@@ -410,7 +410,7 @@ pub fn open_across(files: Vec<(PathBuf, Issues)>, cap: usize) -> Across {
     across
         .rows
         .sort_by_key(|row| std::cmp::Reverse(row.updated));
-    across.cut = across.rows.len() > cap;
+    across.left_out = across.rows.len().saturating_sub(cap);
     across.rows.truncate(cap);
     across
 }
@@ -509,11 +509,11 @@ mod tests {
         // One row per open issue across both files, the closed one counted.
         assert_eq!(seen, [("a2", 30), ("b1", 20), ("a1", 10)]);
         assert_eq!(all.rows[1].root, PathBuf::from("/b"));
-        assert_eq!((all.closed, all.cut), (1, false));
+        assert_eq!((all.closed, all.left_out), (1, 0));
 
         let capped = open_across(files, 2);
         assert_eq!(capped.rows.len(), 2);
-        assert!(capped.cut);
+        assert_eq!(capped.left_out, 1);
     }
 
     #[test]

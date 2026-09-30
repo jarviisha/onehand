@@ -557,6 +557,21 @@ pub(crate) fn rail_row(
     row_shape(id, icon, label, cx).hover(move |row| row.bg(hover).text_color(accent_fg))
 }
 
+/// A [`rail_row`] drawn as the one on screen, the way a selected list row is:
+/// the selected fill, its ink and a weight up, and no hover of its own, since
+/// the fill does not move under the pointer on a row that is already chosen.
+pub(crate) fn rail_row_marked(
+    id: &'static str,
+    icon: IconName,
+    label: &'static str,
+    cx: &App,
+) -> Stateful<Div> {
+    row_shape(id, icon, label, cx)
+        .font_medium()
+        .bg(cx.theme().sidebar_accent)
+        .text_color(cx.theme().sidebar_accent_foreground)
+}
+
 /// The one filled row in the rail: *New session*.
 ///
 /// This row has now worn all three coats, and each move had a reason. A loud
@@ -1165,6 +1180,19 @@ struct AutoStatus {
 /// parse, a mode the agent does not offer), or the last look at this project
 /// failing — a remote that is not on GitHub, a `gh` that is missing or signed
 /// out.
+/// The run a project's row names: one on that project's issues, as its issue
+/// number and whether it is waiting on a card, the working one ahead of a
+/// waiting one. `runs` is each run's project, issue and whether it waits.
+fn run_on<'a>(
+    runs: impl IntoIterator<Item = (&'a std::path::Path, u64, bool)>,
+    root: &std::path::Path,
+) -> Option<(u64, bool)> {
+    runs.into_iter()
+        .filter(|&(repo, _, _)| repo == root)
+        .map(|(_, number, waiting)| (number, waiting))
+        .min_by_key(|&(_, waiting)| waiting)
+}
+
 fn auto_status(
     unattended: bool,
     run: Option<(u64, bool)>,
@@ -1398,11 +1426,12 @@ fn folder_row(
     // the project the issue belongs to would say nothing about it.
     // A working run is named ahead of a waiting one, since a project can hold
     // both and the older, usually the waiting one, would otherwise hide it.
-    let run = crate::unattended::live_runs(cx)
-        .into_iter()
-        .filter(|run| run.repo == root.path)
-        .map(|run| (run.number, run.waiting.is_some()))
-        .min_by_key(|&(_, waiting)| waiting);
+    let runs = crate::unattended::live_runs(cx);
+    let run = run_on(
+        runs.iter()
+            .map(|run| (run.repo.as_path(), run.number, run.waiting.is_some())),
+        &root.path,
+    );
     let auto = auto_status(
         unattended,
         run,
@@ -1913,14 +1942,22 @@ pub fn rail(
                 // project what the rows below answer one project at a time.
                 // Quiet like *Add project…*, and marked while the page shows,
                 // as a project row is while it is the one on screen.
-                .child({
-                    let row = rail_row(
-                        "rail-workspace",
-                        IconName::LayoutDashboard,
-                        "Workspace overview",
-                        cx,
-                    )
-                    .text_color(cx.theme().muted_foreground)
+                .child(
+                    match window_state_shell.workspace_shown(cx) {
+                        true => rail_row_marked(
+                            "rail-workspace",
+                            IconName::LayoutDashboard,
+                            "Workspace overview",
+                            cx,
+                        ),
+                        false => rail_row(
+                            "rail-workspace",
+                            IconName::LayoutDashboard,
+                            "Workspace overview",
+                            cx,
+                        )
+                        .text_color(cx.theme().muted_foreground),
+                    }
                     .tooltip(|window, cx| {
                         Tooltip::new("What is waiting, working and open across every project")
                             .build(window, cx)
@@ -1929,14 +1966,8 @@ pub fn rail(
                         |shell: &mut Shell, _: &ClickEvent, window, cx| {
                             shell.show_workspace(window, cx);
                         },
-                    ));
-                    match window_state_shell.workspace_shown(cx) {
-                        true => row
-                            .bg(cx.theme().sidebar_accent)
-                            .text_color(cx.theme().sidebar_accent_foreground),
-                        false => row,
-                    }
-                })
+                    )),
+                )
                 .child(new_session_block(window_state_shell, window_state, cx))
                 // The hairline is where the header stops being about the
                 // workspace and starts being about the list: everything above
@@ -2476,7 +2507,7 @@ fn tab_bar(active: RailTab, cx: &mut Context<Shell>) -> impl IntoElement + use<>
 #[cfg(test)]
 mod tests {
     use super::{
-        LABEL_SHAPE_CAP, RailTab, auto_status, new_session_hint, project_hint, project_key,
+        LABEL_SHAPE_CAP, RailTab, auto_status, new_session_hint, project_hint, project_key, run_on,
         runs_more_than_one_agent, session_label, signal_hint,
     };
     use crate::chat::pane::SessionSignal;
@@ -2673,6 +2704,23 @@ mod tests {
         let hint = project_hint("p", None, 0, Some(&on.line), &path);
         assert_eq!(hint.last(), Some(&path));
         assert!(hint.contains(&on.line));
+    }
+
+    /// A project's row names a run on its own issues, and the working one
+    /// ahead of a waiting one: the older run is usually the waiting one, and
+    /// it would otherwise hide the run that is actually going.
+    #[test]
+    fn a_project_row_names_its_own_run_and_prefers_the_working_one() {
+        let (here, there) = (std::path::Path::new("/p"), std::path::Path::new("/q"));
+        assert_eq!(run_on([(there, 9, false)], here), None);
+        assert_eq!(
+            run_on([(here, 3, true), (there, 9, false)], here),
+            Some((3, true))
+        );
+        assert_eq!(
+            run_on([(here, 3, true), (here, 5, false)], here),
+            Some((5, false))
+        );
     }
 
     /// A project that is neither a repository nor changed is the row the old

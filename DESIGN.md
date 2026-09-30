@@ -195,9 +195,10 @@ One window hosts exactly one workspace. The frame is a navigation **rail** plus 
     issue selected. The project's own files are the only source: an issue
     brought in from a forge lives in the same file, so it is listed once. A
     **project filter** sits beside the heading as a small menu control reading
-    *All projects* or the project picked. Under the list a muted line says how
-    many closed issues are not listed, because an empty list and a list of
-    closed issues are different answers.
+    *All projects* or the project picked, and it narrows everything under the
+    heading: the list, its cap and the count of closed ones. Under the list a
+    muted line says how many closed issues are not listed, because an empty list
+    and a list of closed issues are different answers.
 
   **Bounded and said.** The runs are capped at a handful per group and the
   issues at a longer list. Each cap, when it bites, adds a muted line saying how

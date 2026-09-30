@@ -104,6 +104,13 @@ impl RootIssues {
         self.selected = Some(number);
         self.form = None;
     }
+
+    /// Take a read that has landed. Only the issues move: what is selected
+    /// stays, so an issue asked for before the read arrived is still the one
+    /// shown once it has.
+    fn land(&mut self, read: Issues) {
+        keep_newer(&mut self.issues, read);
+    }
 }
 
 /// The form a new issue or an edit is written in.
@@ -212,7 +219,7 @@ impl IssuesView {
                 state.forge = forge;
                 match read {
                     Ok(read) => {
-                        keep_newer(&mut state.issues, read);
+                        state.land(read);
                         view.status = None;
                     }
                     Err(why) => view.status = Some(why),
@@ -1172,12 +1179,21 @@ mod tests {
 
     #[test]
     fn an_issue_shown_before_the_read_lands_stays_selected() {
-        let root = PathBuf::from("/p");
-        let mut roots: HashMap<PathBuf, RootIssues> = HashMap::new();
-        roots.entry(root.clone()).or_default().show(7);
-        // What a read landing does to the entry.
-        let state = roots.entry(root).or_default();
-        keep_newer(&mut state.issues, Issues::default());
+        let mut issues = Issues::default();
+        issues
+            .create(
+                Draft {
+                    title: "seven".into(),
+                    ..Draft::default()
+                },
+                1,
+            )
+            .unwrap();
+        // The entry `show_issue` makes, then the read `load` lands into it.
+        let mut state = RootIssues::default();
+        state.show(7);
+        state.land(issues);
         assert_eq!(state.selected, Some(7));
+        assert!(state.issues.is_some());
     }
 }

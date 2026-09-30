@@ -786,7 +786,8 @@ caret with it. The rules that decide are core's (`onehand_core::unattended`); th
   (`issues::open_across`, core, tested): a forge's issue kept in step is imported into the same
   file, so reading the forge too would list it twice. They are read off the UI loop when the page
   is shown and at every `Shell::refresh_worktree` (turn end, window activation) while it shows,
-  and the filter is applied when it changes rather than per frame. A row is `dialogs::issue_row`,
+  and the filter is applied when it changes rather than per frame, so the cap and the closed count
+  follow it (`Across::left_out` is the count the cut line prints). A row is `dialogs::issue_row`,
   the picker's row, so an issue reads the same in both places. Pressing an issue emits
   `ChatPaneEvent::OpenIssue` and the shell selects the project, opens the Workbench on Issues and
   sends `Request::ShowIssue`. The mode makes the project's entry if its read has not started, and
@@ -1240,7 +1241,8 @@ centre is the chat, right dock the Workbench, bottom dock the terminal.
   workspace rather than about the list, and it is done once per project where *New session* is done
   all day. It was the last row *inside* the Projects group, which is a place a tab bar cannot have.
   *Workspace overview* sits under it, just as quiet, and opens the workspace page (see the chat
-  pane). It takes the selected fill while that page shows, and **no project or session row is
+  pane). It takes the selected fill while that page shows (`rail::rail_row_marked`, the same
+  look as a selected list row), and **no project or session row is
   marked meanwhile** (`Shell::workspace_shown`, read off the pane rather than mirrored on the
   shell), since the page is about none of them. The active project's ••• menu stays, because the
   project is still the selected one.

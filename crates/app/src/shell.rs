@@ -3306,6 +3306,15 @@ impl Shell {
         Some(onehand_core::issues::file_for(storage, root))
     }
 
+    /// Where the project at `root` sits in this window's list of roots.
+    fn root_index(&self, root: &Path) -> Option<usize> {
+        self.window
+            .workspace
+            .roots
+            .iter()
+            .position(|r| r.path == root)
+    }
+
     /// Whether `root` is one of this window's projects.
     pub fn holds_root(&self, root: &Path) -> bool {
         self.window.workspace.roots.iter().any(|r| r.path == root)
@@ -3348,13 +3357,7 @@ impl Shell {
     /// when the run's own project was the one being looked at is there anything
     /// to show instead. The worktree stays on disk; only the row goes.
     pub fn end_unattended(&mut self, dir: &Path, window: &mut Window, cx: &mut Context<Self>) {
-        let Some(idx) = self
-            .window
-            .workspace
-            .roots
-            .iter()
-            .position(|r| r.path == dir)
-        else {
+        let Some(idx) = self.root_index(dir) else {
             return;
         };
         let was_active = self.window.workspace.active_root == idx;
@@ -3486,12 +3489,10 @@ impl Shell {
             // A run's own worktree is not a project anybody chose, and its
             // issues are the project's it was cut from.
             .filter(|root| !root.transient)
-            .map(|root| {
-                (
-                    SharedString::from(root.label.clone()),
-                    root.path.clone(),
-                    self.issues_file(&root.path),
-                )
+            .map(|root| crate::chat::pane::PageProject {
+                label: SharedString::from(root.label.clone()),
+                root: root.path.clone(),
+                issues: self.issues_file(&root.path),
             })
             .collect();
         self.chat

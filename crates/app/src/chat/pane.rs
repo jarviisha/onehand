@@ -264,13 +264,29 @@ const PAGE_RUNS: usize = 5;
 /// many that a workspace of busy projects builds a thousand rows nobody reaches.
 const PAGE_ISSUES: usize = 100;
 
+/// The width of the column the pages drawn in place of a conversation keep to:
+/// the project page, the resume picker and the workspace page. One figure, so
+/// moving between them does not move the column.
+const PAGE_COLUMN: f32 = 560.;
+
+/// What the issue filter reads when it narrows to nothing.
+const ALL_PROJECTS: &str = "All projects";
+
+/// One project as the workspace page lists it.
+pub struct PageProject {
+    pub label: SharedString,
+    pub root: PathBuf,
+    /// The file its issues are kept in — `None` for a workspace bound to no
+    /// storage, which keeps none.
+    pub issues: Option<PathBuf>,
+}
+
 /// The page shown in place of a conversation when the user asks what the whole
 /// workspace needs: the runs waiting on them, the runs working, and every
 /// project's open issues.
 struct WorkspacePage {
-    /// Every project in rail order: its name, its root, and the file its issues
-    /// are kept in — `None` for a workspace bound to no storage.
-    projects: Vec<(SharedString, PathBuf, Option<PathBuf>)>,
+    /// Every project in rail order.
+    projects: Vec<PageProject>,
     /// The project the issue list is narrowed to, or `None` for all of them.
     filter: Option<PathBuf>,
     /// Every project's issues as last read. `None` while the first read is
@@ -304,8 +320,8 @@ impl WorkspacePage {
     fn label_of(&self, root: &Path) -> String {
         self.projects
             .iter()
-            .find(|(_, path, _)| path == root)
-            .map(|(label, _, _)| label.to_string())
+            .find(|project| project.root == root)
+            .map(|project| project.label.to_string())
             .or_else(|| {
                 root.file_name()
                     .map(|name| name.to_string_lossy().into_owned())
@@ -1036,7 +1052,7 @@ impl ChatPane {
     /// be and not a session closing.
     pub fn show_workspace(
         &mut self,
-        projects: Vec<(SharedString, PathBuf, Option<PathBuf>)>,
+        projects: Vec<PageProject>,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
@@ -1045,7 +1061,7 @@ impl ChatPane {
             .workspace
             .take()
             .and_then(|page| page.filter)
-            .filter(|only| projects.iter().any(|(_, root, _)| root == only));
+            .filter(|only| projects.iter().any(|project| &project.root == only));
         self.workspace = Some(WorkspacePage {
             projects,
             filter,
@@ -1071,7 +1087,7 @@ impl ChatPane {
         let files: Vec<(PathBuf, PathBuf)> = page
             .projects
             .iter()
-            .filter_map(|(_, root, file)| Some((root.clone(), file.clone()?)))
+            .filter_map(|project| Some((project.root.clone(), project.issues.clone()?)))
             .collect();
         page._load = Some(cx.spawn(async move |pane, cx| {
             let (read, failed) = cx
@@ -2118,7 +2134,7 @@ impl ChatPane {
                     .v_flex()
                     .gap_3()
                     .w_full()
-                    .max_w(px(560.))
+                    .max_w(px(PAGE_COLUMN))
                     // Bounded by the panel, for the same reason the project
                     // page's column is: this list is every conversation the
                     // agent has had in the project, and a column taller than
@@ -2251,7 +2267,7 @@ impl ChatPane {
                             .v_flex()
                             .gap_3()
                             .w_full()
-                            .max_w(px(560.))
+                            .max_w(px(PAGE_COLUMN))
                             // Bounded by the panel it sits in, so the page is
                             // centred while it fits and fills the space when it
                             // does not. Without this the column takes its
@@ -2389,7 +2405,7 @@ impl ChatPane {
         let muted = cx.theme().muted_foreground;
         let warning = crate::theme::status_ink(cx).warning;
         let heading = |text: &'static str| div().text_xs().text_color(muted).child(text);
-        let said = |text: String| div().text_xs().text_color(muted).child(text);
+        let muted_line = |text: String| div().text_xs().text_color(muted).child(text);
 
         let (waiting, working): (Vec<_>, Vec<_>) = crate::unattended::live_runs(cx)
             .into_iter()
@@ -2397,55 +2413,56 @@ impl ChatPane {
         // A run's row is an issue's row: its number, what it is about, and the
         // project at the end. For a waiting run what it is about is the
         // question, since answering that is what the row is pressed for.
-        let run_group =
-            |name: &'static str, runs: Vec<crate::unattended::LiveRun>, cx: &mut Context<Self>| {
-                let hidden = runs.len().saturating_sub(PAGE_RUNS);
-                (!runs.is_empty()).then(|| {
-                    div()
-                        .v_flex()
-                        .gap_1()
-                        .w_full()
-                        .flex_none()
-                        .child(heading(name))
-                        .children(
-                            runs.into_iter()
-                                .take(PAGE_RUNS)
-                                .enumerate()
-                                .map(|(i, run)| {
-                                    let (uid, window) = (run.uid, run.window);
-                                    crate::dialogs::issue_row(
-                                        (name, i),
-                                        run.number,
-                                        run.waiting.unwrap_or(run.title),
-                                        &[],
-                                        page.label_of(&run.repo),
-                                        cx,
-                                    )
-                                    .on_click(cx.listener(
-                                        move |_: &mut Self, _, _, cx| {
-                                            cx.emit(ChatPaneEvent::ShowRun { uid, window });
-                                        },
-                                    ))
-                                }),
-                        )
-                        .children((hidden > 0).then(|| said(format!("{hidden} more not shown"))))
-                })
-            };
+        let run_group = |name: &'static str,
+                         runs: Vec<crate::unattended::LiveRun>,
+                         cx: &mut Context<Self>| {
+            let hidden = runs.len().saturating_sub(PAGE_RUNS);
+            (!runs.is_empty()).then(|| {
+                div()
+                    .v_flex()
+                    .gap_1()
+                    .w_full()
+                    .flex_none()
+                    .child(heading(name))
+                    .children(
+                        runs.into_iter()
+                            .take(PAGE_RUNS)
+                            .enumerate()
+                            .map(|(i, run)| {
+                                let (uid, window) = (run.uid, run.window);
+                                crate::dialogs::issue_row(
+                                    (name, i),
+                                    run.number,
+                                    run.waiting.unwrap_or(run.title),
+                                    &[],
+                                    page.label_of(&run.repo),
+                                    cx,
+                                )
+                                .on_click(cx.listener(
+                                    move |_: &mut Self, _, _, cx| {
+                                        cx.emit(ChatPaneEvent::ShowRun { uid, window });
+                                    },
+                                ))
+                            }),
+                    )
+                    .children((hidden > 0).then(|| muted_line(format!("{hidden} more not shown"))))
+            })
+        };
         let waiting = run_group("Waiting on you", waiting, cx);
         let working = run_group("Working", working, cx);
 
-        let unbound =
-            !page.projects.is_empty() && page.projects.iter().all(|(_, _, file)| file.is_none());
+        let unbound = !page.projects.is_empty()
+            && page.projects.iter().all(|project| project.issues.is_none());
         let filter_name = page
             .filter
             .as_deref()
-            .map_or_else(|| "All projects".to_string(), |root| page.label_of(root));
+            .map_or_else(|| ALL_PROJECTS.to_string(), |root| page.label_of(root));
         let choices: Vec<(SharedString, Option<PathBuf>)> =
-            std::iter::once(("All projects".into(), None))
+            std::iter::once((ALL_PROJECTS.into(), None))
                 .chain(
                     page.projects
                         .iter()
-                        .map(|(label, root, _)| (label.clone(), Some(root.clone()))),
+                        .map(|project| (project.label.clone(), Some(project.root.clone()))),
                 )
                 .collect();
         let current = page.filter.clone();
@@ -2510,7 +2527,7 @@ impl ChatPane {
                 .into_any_element()
             })
             .collect();
-        let (closed, cut) = (page.shown.closed, page.shown.cut);
+        let (closed, left_out) = (page.shown.closed, page.shown.left_out);
 
         div()
             .size_full()
@@ -2533,7 +2550,7 @@ impl ChatPane {
                             .v_flex()
                             .gap_4()
                             .w_full()
-                            .max_w(px(640.))
+                            .max_w(px(PAGE_COLUMN))
                             // Bounded by the panel, so the column is centred
                             // while it fits and only the issue list scrolls
                             // when it does not.
@@ -2563,7 +2580,7 @@ impl ChatPane {
                                             .text_color(warning)
                                             .child(why.clone())
                                     }))
-                                    .children(note.map(said))
+                                    .children(note.map(muted_line))
                                     .children((!rows.is_empty()).then(|| {
                                         div()
                                             .id("workspace-issues")
@@ -2575,13 +2592,13 @@ impl ChatPane {
                                     }))
                                     // Said, not hidden: a list cut silently
                                     // reads as the whole of it.
-                                    .children(cut.then(|| {
-                                        said(format!(
-                                            "Showing the {PAGE_ISSUES} most recently changed."
-                                        ))
-                                    }))
+                                    .children(
+                                        (left_out > 0).then(|| {
+                                            muted_line(format!("{left_out} more not shown"))
+                                        }),
+                                    )
                                     .children((closed > 0 && !unbound).then(|| {
-                                        said(match closed {
+                                        muted_line(match closed {
                                             1 => "1 closed issue is not listed.".to_string(),
                                             n => format!("{n} closed issues are not listed."),
                                         })
