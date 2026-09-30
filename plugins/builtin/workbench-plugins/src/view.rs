@@ -237,15 +237,6 @@ impl PluginsView {
             Some(Err(why)) => return self.failed(why.clone(), cx),
             Some(Ok(catalog)) => catalog,
         };
-        let muted = cx.theme().muted_foreground;
-
-        let top = match &self.busy {
-            Some(change) => change.doing(),
-            // A session reads its plugins when its agent starts, so a change
-            // here is not seen by one already running — said, because a switch
-            // that visibly did nothing reads as broken.
-            None => "Changes reach a session when its agent next starts".to_string(),
-        };
         let tabs = switch(
             "plugins-tab",
             &Tab::ALL.map(Tab::label),
@@ -253,9 +244,7 @@ impl PluginsView {
                 .iter()
                 .position(|tab| *tab == self.tab)
                 .unwrap_or(0),
-            // The tabs are what the panel is organised around, so they are
-            // drawn at the size of its main controls rather than the rail's.
-            gpui_component::Size::Medium,
+            gpui_component::Size::Small,
             cx.listener(|view: &mut Self, i: &usize, _, cx| {
                 view.tab = Tab::ALL[*i];
                 cx.notify();
@@ -281,6 +270,20 @@ impl PluginsView {
                 if cut > 0 {
                     rows.push(note(format!("… {cut} more not shown"), cx));
                 }
+                // A session reads its plugins when its agent starts, so a
+                // change here is not seen by one already running — said,
+                // because a switch that visibly did nothing reads as broken.
+                // At the foot rather than the head: it is about every row, and
+                // read once is enough.
+                rows.push(
+                    div()
+                        .pt_2()
+                        .child(note(
+                            "Changes reach a session when its agent next starts.",
+                            cx,
+                        ))
+                        .into_any_element(),
+                );
                 (None, rows)
             }
             Tab::Marketplace => {
@@ -312,9 +315,7 @@ impl PluginsView {
                 let controls = div()
                     .h_flex()
                     .gap_2()
-                    .px_2()
-                    .pb_1()
-                    .child(div().flex_1().min_w_0().child(Input::new(&query)))
+                    .child(div().flex_1().min_w_0().child(Input::new(&query).small()))
                     .child(self.scope_picker(cx));
                 (Some(controls), rows)
             }
@@ -324,18 +325,12 @@ impl PluginsView {
             .flex_1()
             .min_h_0()
             .v_flex()
-            .child(
-                div()
-                    .px_2()
-                    .py_1()
-                    .truncate()
-                    .text_xs()
-                    .text_color(muted)
-                    .border_b_1()
-                    .border_color(cx.theme().border)
-                    .child(top),
-            )
-            .child(div().px_2().py_1p5().child(tabs))
+            .gap_3()
+            .p_3()
+            .child(tabs)
+            // What is happening, while it happens — only then, so an idle
+            // panel carries no line above its list.
+            .children(self.busy.as_ref().map(|change| note(change.doing(), cx)))
             .children(controls)
             .child(
                 div()
@@ -345,6 +340,7 @@ impl PluginsView {
                     .flex_1()
                     .min_h_0()
                     .v_flex()
+                    .gap_1()
                     .overflow_y_scroll()
                     .children(rows),
             )
@@ -383,6 +379,7 @@ impl PluginsView {
         // The search's own size, so the two sit level on one row.
         ButtonGroup::new("plugins-scope")
             .outline()
+            .small()
             .children(Scope::ALL.into_iter().enumerate().map(|(i, scope)| {
                 action(("plugins-scope", i))
                     .label(scope.label())
@@ -471,31 +468,35 @@ impl PluginsView {
                     cx.listener(move |view, _: &ClickEvent, _, cx| view.change(remove.clone(), cx)),
                 )
         });
+        // Remove is shown only while the pointer is on the row: it is the
+        // rarest thing done here, and a row of ever-present buttons is most of
+        // what made the list read as noise. `invisible` rather than absent, so
+        // the row does not change width under the pointer.
+        let group = gpui::SharedString::from(format!("plugin-row-{i}"));
         div()
+            .group(group.clone())
             .v_flex()
             .w_full()
             .px_2()
-            .py_1()
-            .gap_1()
+            .py_2()
+            .gap_1p5()
+            .rounded(cx.theme().radius)
             .child(
                 div()
                     .h_flex()
-                    .items_center()
+                    .items_baseline()
                     .gap_2()
-                    .text_sm()
                     .child(
                         div()
                             .flex_1()
                             .min_w_0()
                             .truncate()
+                            .text_sm()
                             // Drawn quieter while a session started here would
                             // not get it, whichever scope decided that.
                             .when(!on_here, |name| name.text_color(muted))
                             .child(plugin.id.clone()),
                     )
-                    .children(plugin.version.clone().map(|version| {
-                        div().flex_none().text_xs().text_color(muted).child(version)
-                    }))
                     // What a session started here gets, in words: the
                     // switches say what each file sets, and it takes all three
                     // read together to know the outcome.
@@ -514,8 +515,8 @@ impl PluginsView {
                                 // Something the three files do not show decides
                                 // it, so the switches describe the files and not
                                 // the outcome — said, so they are not believed.
-                                (true, true) => "on here, by settings not shown",
-                                (false, true) => "off here, by settings not shown",
+                                (true, true) => "on here · set elsewhere",
+                                (false, true) => "off here · set elsewhere",
                             }),
                     ),
             )
@@ -525,8 +526,21 @@ impl PluginsView {
                     .items_center()
                     .gap_1()
                     .children(switches)
+                    .children(
+                        plugin
+                            .version
+                            .clone()
+                            .map(|version| div().pl_1().text_xs().text_color(muted).child(version)),
+                    )
                     .child(div().flex_1())
-                    .children(removes),
+                    .child(
+                        div()
+                            .h_flex()
+                            .gap_1()
+                            .invisible()
+                            .group_hover(group, |style| style.visible())
+                            .children(removes),
+                    ),
             )
             .into_any_element()
     }
@@ -541,7 +555,7 @@ impl PluginsView {
         let scope = self.install_scope;
         let muted = cx.theme().muted_foreground;
         let meta = match plugin.install_count {
-            Some(count) => format!("{} · {count} installs", plugin.marketplace),
+            Some(count) => format!("{} · {} installs", plugin.marketplace, compact(count)),
             None => plugin.marketplace.clone(),
         };
         let install = Change {
@@ -569,8 +583,8 @@ impl PluginsView {
             .v_flex()
             .w_full()
             .px_2()
-            .py_1()
-            .gap_0p5()
+            .py_2()
+            .gap_1()
             .child(
                 div()
                     .h_flex()
@@ -584,7 +598,6 @@ impl PluginsView {
                             .text_sm()
                             .child(plugin.name.clone()),
                     )
-                    .child(div().flex_none().text_xs().text_color(muted).child(meta))
                     .child(control),
             )
             .when(!plugin.description.is_empty(), |row| {
@@ -596,6 +609,7 @@ impl PluginsView {
                         .child(plugin.description.clone()),
                 )
             })
+            .child(div().text_xs().text_color(muted).opacity(0.8).child(meta))
             .into_any_element()
     }
 }
@@ -610,4 +624,29 @@ fn note(text: impl Into<gpui::SharedString>, cx: &App) -> AnyElement {
         .text_color(cx.theme().muted_foreground)
         .child(text.into())
         .into_any_element()
+}
+
+/// A count as a person reads one at a glance: `3327` as `3.3k`. The exact
+/// number says nothing more about which plugin to pick, and four digits on
+/// every row are four digits of noise.
+fn compact(count: u64) -> String {
+    match count {
+        0..1_000 => count.to_string(),
+        1_000..1_000_000 => format!("{:.1}k", count as f64 / 1_000.0),
+        _ => format!("{:.1}M", count as f64 / 1_000_000.0),
+    }
+    .replace(".0", "")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::compact;
+
+    #[test]
+    fn a_count_reads_at_a_glance() {
+        assert_eq!(compact(7), "7");
+        assert_eq!(compact(3327), "3.3k");
+        assert_eq!(compact(12_000), "12k");
+        assert_eq!(compact(2_450_000), "2.5M");
+    }
 }

@@ -935,7 +935,10 @@ see the rail, below.
   rows with the cut said, and installed at the scope picked beside the search. Two lists and not one
   page, because stacked, a few hundred catalog rows pushed the installed ones out of reach and the
   search scrolled away with them; the search and the scope picker are pinned above the catalog's
-  list, and each tab keeps a scroll of its own. The switch is `onehand_plugin_host::switch`, the one
+  list, and each tab keeps a scroll of its own. The panel is padded and its rows spaced
+  rather than ruled; *Remove* appears only on the row under the pointer, the line saying a change
+  reaches a session at its next start sits once at the foot of *Installed*, and a catalog row is its
+  name and *Install*, then the description, then marketplace and a compact install count. The switch is `onehand_plugin_host::switch`, the one
   the rail's *Projects* / *All sessions* uses. **Each row
   carries a switch per scope — Global (Claude Code's `user`), Project, Local — showing what is in
   force *at* that scope** (what it sets itself, else what the next wider one sets), outlined where

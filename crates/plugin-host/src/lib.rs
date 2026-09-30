@@ -199,9 +199,8 @@ pub fn status_line(message: String, cx: &App) -> AnyElement {
 /// hosting it.
 ///
 /// `size` is the library's own scale, so a switch sits level with the buttons
-/// and inputs of that size beside it: the rail's is small, a row of chips in a
-/// narrow column, while a panel's tabs are what the whole panel is organised
-/// around and are drawn at the size of its main controls.
+/// and inputs of that size beside it: the rail's is the smallest, a row of
+/// chips in a narrow column, and a panel's tabs take a little room to breathe.
 pub fn switch(
     id: &'static str,
     labels: &[&'static str],
@@ -214,8 +213,7 @@ pub fn switch(
     let (track, plate, radius) = (theme.tokens.tab_bar_segmented, theme.accent, theme.radius);
     let (ink, ink_on) = (theme.muted_foreground, theme.accent_foreground);
     let pick = Rc::new(pick);
-    let small = matches!(size, Size::XSmall | Size::Small);
-    let large = matches!(size, Size::Large);
+
     div()
         .h_flex()
         .w_full()
@@ -234,10 +232,11 @@ pub fn switch(
                 .min_w_0()
                 .rounded(radius)
                 .cursor_pointer()
-                .map(|half| match (small, large) {
-                    (true, _) => half.text_xs(),
-                    (false, false) => half.py_1().text_sm(),
-                    (false, true) => half.py_1p5().text_base(),
+                .map(|half| match size {
+                    Size::XSmall => half.text_xs(),
+                    Size::Small => half.py_0p5().text_xs(),
+                    Size::Medium | Size::Size(_) => half.py_1().text_sm(),
+                    Size::Large => half.py_1p5().text_base(),
                 })
                 .text_color(if on { ink_on } else { ink })
                 .when(on, |half| half.bg(plate))
