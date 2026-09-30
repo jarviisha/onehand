@@ -1387,6 +1387,9 @@ fn folder_row(
 ) -> Row {
     let root = &window_state.workspace.roots[root_idx];
     let is_active = window_state.workspace.active_root == root_idx;
+    // The workspace page is about no one project, so while it shows, no project
+    // or session row is drawn as the one on screen.
+    let marked = is_active && !shell.workspace_shown(cx);
     let active_session = root.active_session;
     let pinned = root.pinned;
     let unattended = root.unattended;
@@ -1397,9 +1400,9 @@ fn folder_row(
     // both and the older, usually the waiting one, would otherwise hide it.
     let run = crate::unattended::live_runs(cx)
         .into_iter()
-        .filter(|(repo, _, _)| *repo == root.path)
-        .min_by_key(|&(_, _, waiting)| waiting)
-        .map(|(_, number, waiting)| (number, waiting));
+        .filter(|run| run.repo == root.path)
+        .map(|run| (run.number, run.waiting.is_some()))
+        .min_by_key(|&(_, waiting)| waiting);
     let auto = auto_status(
         unattended,
         run,
@@ -1452,7 +1455,7 @@ fn folder_row(
                     root_idx,
                     i,
                     session,
-                    is_active && active_session == i,
+                    marked && active_session == i,
                     Note::Agent { among_many },
                     cx,
                 )
@@ -1515,7 +1518,7 @@ fn folder_row(
         // at all -- the highlight moved to its session row and the row naming
         // the *project* went plain, so nothing on screen said which project the
         // user was in.
-        .active(is_active)
+        .active(marked)
         // **Selecting a project and folding it away are two different
         // intentions, so they are two different targets.** While the whole
         // row toggled, every click on a project both switched to it and
@@ -1734,7 +1737,8 @@ fn session_rows(
     let active = window_state
         .workspace
         .active_root()
-        .and_then(|root| root.active_session().map(|s| s.uid));
+        .and_then(|root| root.active_session().map(|s| s.uid))
+        .filter(|_| !shell.workspace_shown(cx));
 
     let mut rows: Vec<(u64, Row)> = Vec::new();
     for (root_idx, root) in window_state.workspace.roots.iter().enumerate() {
@@ -1905,6 +1909,34 @@ pub fn rail(
                             shell.add_root(cx);
                         })),
                 )
+                // The one way to the workspace page, which answers across every
+                // project what the rows below answer one project at a time.
+                // Quiet like *Add project…*, and marked while the page shows,
+                // as a project row is while it is the one on screen.
+                .child({
+                    let row = rail_row(
+                        "rail-workspace",
+                        IconName::LayoutDashboard,
+                        "Workspace overview",
+                        cx,
+                    )
+                    .text_color(cx.theme().muted_foreground)
+                    .tooltip(|window, cx| {
+                        Tooltip::new("What is waiting, working and open across every project")
+                            .build(window, cx)
+                    })
+                    .on_click(cx.listener(
+                        |shell: &mut Shell, _: &ClickEvent, window, cx| {
+                            shell.show_workspace(window, cx);
+                        },
+                    ));
+                    match window_state_shell.workspace_shown(cx) {
+                        true => row
+                            .bg(cx.theme().sidebar_accent)
+                            .text_color(cx.theme().sidebar_accent_foreground),
+                        false => row,
+                    }
+                })
                 .child(new_session_block(window_state_shell, window_state, cx))
                 // The hairline is where the header stops being about the
                 // workspace and starts being about the list: everything above

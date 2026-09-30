@@ -66,6 +66,11 @@ impl WorkbenchMode for Mode {
                 self.view.update(cx, |view, cx| view.mark_stale(cx));
                 true
             }
+            Request::ShowIssue(number) => {
+                self.view
+                    .update(cx, |view, cx| view.show_issue(*number, cx));
+                true
+            }
             _ => false,
         }
     }

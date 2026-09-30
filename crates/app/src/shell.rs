@@ -613,6 +613,8 @@ impl Shell {
                         Notification::warning(format!("Conversation not deleted — {why}")),
                         cx,
                     ),
+                    E::OpenIssue { root, number } => shell.open_issue(root, *number, window, cx),
+                    E::ShowRun { uid, window: at } => shell.show_run(*uid, *at, window, cx),
                 }
                 // A finished turn also changes what the rail's session dots
                 // say, and the rail is drawn from a query rather than from
@@ -3471,6 +3473,96 @@ impl Shell {
         }
     }
 
+    /// Show the workspace page: every project's open issues and every run.
+    /// Leaving it needs nothing of its own, since every rail click goes
+    /// through [`Self::show_active_session`], which shows a session or a
+    /// project page in its place.
+    pub fn show_workspace(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let workspace = &self.window.workspace;
+        let projects = workspace
+            .display_order()
+            .into_iter()
+            .map(|idx| &workspace.roots[idx])
+            // A run's own worktree is not a project anybody chose, and its
+            // issues are the project's it was cut from.
+            .filter(|root| !root.transient)
+            .map(|root| {
+                (
+                    SharedString::from(root.label.clone()),
+                    root.path.clone(),
+                    self.issues_file(&root.path),
+                )
+            })
+            .collect();
+        self.chat
+            .update(cx, |pane, cx| pane.show_workspace(projects, window, cx));
+        cx.notify();
+    }
+
+    /// Whether the workspace page is what the centre of the window shows, for
+    /// the rail row that leads to it.
+    pub fn workspace_shown(&self, cx: &App) -> bool {
+        self.chat.read(cx).showing_workspace()
+    }
+
+    /// Open issue `number` of the project at `root`: that project selected,
+    /// and the Workbench on its Issues mode with the issue showing.
+    fn open_issue(
+        &mut self,
+        root: &Path,
+        number: u64,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(idx) = self
+            .window
+            .workspace
+            .roots
+            .iter()
+            .position(|r| r.path == root)
+        else {
+            return;
+        };
+        self.select_root(idx, window, cx);
+        self.show_workbench(crate::workbench::ISSUES_MODE, window, cx);
+        self.workbench
+            .update(cx, |panel, cx| panel.show_issue(number, cx));
+    }
+
+    /// Show a run's session, in whichever window holds it — bringing that
+    /// window forward when it is not this one.
+    fn show_run(
+        &mut self,
+        uid: u64,
+        at: gpui::AnyWindowHandle,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if at == window.window_handle() {
+            self.show_unattended(uid, window, cx);
+            return;
+        }
+        let Some(shell) = Shared::global(cx)
+            .windows
+            .iter()
+            .find(|w| w.handle == at)
+            .map(|w| w.shell.clone())
+        else {
+            return;
+        };
+        // Deferred: that window's shell is not to be reached into from inside
+        // this one's update.
+        cx.defer(move |cx| {
+            at.update(cx, |_, window, cx| {
+                window.activate_window();
+                shell
+                    .update(cx, |shell, cx| shell.show_unattended(uid, window, cx))
+                    .ok();
+            })
+            .ok();
+        });
+    }
+
     /// How `uid`'s last answer ended, for a run's report.
     pub fn answer_tail(&self, uid: u64, cx: &App) -> Option<String> {
         self.chat.read(cx).answer_tail(uid, cx)
@@ -3617,6 +3709,9 @@ impl Shell {
     fn refresh_worktree(&mut self, cx: &mut Context<Self>) {
         self.refresh_git(cx);
         self.workbench.update(cx, |panel, cx| panel.rescan(cx));
+        // A run leaving a note or a sync landing changes the issue files too;
+        // a no-op unless the workspace page is what is showing.
+        self.chat.update(cx, |pane, cx| pane.reload_workspace(cx));
     }
 
     /// Refresh `git status` for every root, off the UI loop.

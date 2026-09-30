@@ -99,6 +99,13 @@ struct RootIssues {
     synced: Option<(Instant, String)>,
 }
 
+impl RootIssues {
+    fn show(&mut self, number: u64) {
+        self.selected = Some(number);
+        self.form = None;
+    }
+}
+
 /// The form a new issue or an edit is written in.
 struct Form {
     /// The issue being edited, or `None` for a new one.
@@ -397,10 +404,21 @@ impl IssuesView {
 
     fn select(&mut self, number: u64, cx: &mut Context<Self>) {
         if let Some(state) = self.state_mut() {
-            state.selected = Some(number);
-            state.form = None;
+            state.show(number);
             cx.notify();
         }
+    }
+
+    /// Select issue `number` of the active project, asked from outside the
+    /// mode. The project's entry is made here if its first read has not
+    /// started yet, and the read only fills that entry in, so a selection
+    /// made before the issues arrive is the one drawn once they do.
+    pub(crate) fn show_issue(&mut self, number: u64, cx: &mut Context<Self>) {
+        let Some(root) = self.root.clone() else {
+            return;
+        };
+        self.roots.entry(root).or_default().show(number);
+        cx.notify();
     }
 
     /// Open the form, empty for a new issue or holding what issue `editing`
@@ -1145,5 +1163,21 @@ fn excerpt(text: &str) -> String {
         Some((at, _)) => format!("{}…", &text[..at]),
         None if text.is_empty() => "(empty)".to_string(),
         None => text.to_string(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn an_issue_shown_before_the_read_lands_stays_selected() {
+        let root = PathBuf::from("/p");
+        let mut roots: HashMap<PathBuf, RootIssues> = HashMap::new();
+        roots.entry(root.clone()).or_default().show(7);
+        // What a read landing does to the entry.
+        let state = roots.entry(root).or_default();
+        keep_newer(&mut state.issues, Issues::default());
+        assert_eq!(state.selected, Some(7));
     }
 }

@@ -359,6 +359,62 @@ impl Issues {
     }
 }
 
+/// One open issue in a list drawn across every project of a workspace.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AcrossRow {
+    /// The project it belongs to.
+    pub root: PathBuf,
+    pub number: u64,
+    pub title: String,
+    pub labels: Vec<String>,
+    /// The forge's name for it, where it is kept in step with one.
+    pub reference: Option<String>,
+    pub updated: u64,
+}
+
+/// The open issues of several projects, as one list.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Across {
+    /// Open issues, the most recently changed first, at most the cap.
+    pub rows: Vec<AcrossRow>,
+    /// Closed issues, counted rather than listed: the list is read for work.
+    pub closed: usize,
+    /// The cap cut the list short.
+    pub cut: bool,
+}
+
+/// Every open issue in `files` — each a project's root and what its file
+/// holds — in one list, the most recently changed first and at most `cap`.
+///
+/// Only the projects' own files are read. An issue brought in from a forge is
+/// kept in the same file as a linked issue, so reading the forge as well would
+/// list it twice.
+pub fn open_across(files: Vec<(PathBuf, Issues)>, cap: usize) -> Across {
+    let mut across = Across::default();
+    for (root, issues) in files {
+        for issue in issues.issues {
+            if !issue.open {
+                across.closed += 1;
+                continue;
+            }
+            across.rows.push(AcrossRow {
+                root: root.clone(),
+                number: issue.number,
+                title: issue.title,
+                labels: issue.labels,
+                reference: issue.link.map(|link| link.reference),
+                updated: issue.updated,
+            });
+        }
+    }
+    across
+        .rows
+        .sort_by_key(|row| std::cmp::Reverse(row.updated));
+    across.cut = across.rows.len() > cap;
+    across.rows.truncate(cap);
+    across
+}
+
 /// Where the issues of the project at `root` are kept, in the workspace whose
 /// storage directory is `storage`.
 ///
@@ -431,6 +487,33 @@ mod tests {
             title: title.to_string(),
             ..Draft::default()
         }
+    }
+
+    #[test]
+    fn open_across_lists_open_issues_newest_changed_first_and_counts_closed() {
+        let mut a = Issues::default();
+        a.create(draft("a1"), 10).unwrap();
+        a.create(draft("a2"), 30).unwrap();
+        a.create(draft("a3"), 5).unwrap();
+        a.set_open(3, false, 40).unwrap();
+        let mut b = Issues::default();
+        b.create(draft("b1"), 20).unwrap();
+        let files = vec![(PathBuf::from("/a"), a), (PathBuf::from("/b"), b)];
+
+        let all = open_across(files.clone(), 10);
+        let seen: Vec<(&str, u64)> = all
+            .rows
+            .iter()
+            .map(|row| (row.title.as_str(), row.updated))
+            .collect();
+        // One row per open issue across both files, the closed one counted.
+        assert_eq!(seen, [("a2", 30), ("b1", 20), ("a1", 10)]);
+        assert_eq!(all.rows[1].root, PathBuf::from("/b"));
+        assert_eq!((all.closed, all.cut), (1, false));
+
+        let capped = open_across(files, 2);
+        assert_eq!(capped.rows.len(), 2);
+        assert!(capped.cut);
     }
 
     #[test]

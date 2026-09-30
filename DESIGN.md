@@ -167,6 +167,45 @@ One window hosts exactly one workspace. The frame is a navigation **rail** plus 
   filed away behind it. The row's own delete is offered here and nowhere else —
   this page is what shows when a project has no session on it, so every row on
   it is a conversation nothing is writing to.
+- **The workspace has a page too**, for the question no project page can
+  answer: what needs me, and what is there to do, across every project at once.
+  It is reached from a muted row in the rail's header, *Workspace overview*,
+  between *Add project…* and *New session*, and that row takes the selected
+  fill while the page shows. No project or session row is marked meanwhile,
+  since the page is about none of them. Any other rail click leaves it, since each one is
+  a choice of project or session. **The header stays**, as on the project page
+  and for the same reason: the terminal, the Workbench and the way back to a
+  hidden rail are still wanted. It names the page with the fixed word
+  *Workspace* and carries no dots menu, because nothing on the page is one
+  thing that could be renamed, exported or removed. Below it is the project
+  page's column: centred while it fits, bounded by the panel when it does not.
+  It holds three groups, each under a small muted heading, and each drawn only
+  when it has rows. Headings never scroll. Only the issue list does.
+  - **Waiting on you**: every unattended run standing on a card, one row each,
+    in the issue row's shape below: `#N` muted, then the question, truncated,
+    then the project muted at the end. Pressing a row opens that run's session,
+    where the card is. A run in another window brings that window forward.
+  - **Working**: every run not waiting, drawn the same way with the issue's
+    title in place of a question.
+  - **Open issues**: every project's own issues, open only, most recently
+    changed first. A row is the picker's row (number muted, title truncated, up
+    to three label pills) with the project's name muted at the end, followed by
+    the forge's reference where the issue is kept in step with one. Pressing it
+    selects that project and opens the Workbench on its Issues mode with that
+    issue selected. The project's own files are the only source: an issue
+    brought in from a forge lives in the same file, so it is listed once. A
+    **project filter** sits beside the heading as a small menu control reading
+    *All projects* or the project picked. Under the list a muted line says how
+    many closed issues are not listed, because an empty list and a list of
+    closed issues are different answers.
+
+  **Bounded and said.** The runs are capped at a handful per group and the
+  issues at a longer list. Each cap, when it bites, adds a muted line saying how
+  many were left out. **Three states say themselves.** While the files are read
+  the issue group says it is looking, which is different from having none. A
+  workspace bound to no storage keeps no issues, and the group says so in the
+  Issues mode's words rather than offering an empty list. A file that cannot be
+  read is named in the warning ink above the rows the others gave.
 - The **rail** is app chrome, not a panel: it lives outside the dock, so the dock
   cannot swallow it and a layout restore cannot lose it. `Ctrl+Shift+B` **hides
   it entirely** — it is never narrowed to an icon column, because at that width
