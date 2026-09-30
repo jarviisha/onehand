@@ -743,7 +743,9 @@ impl Shell {
                     let name = state.read(cx).value().trim().to_string();
                     if !name.is_empty() && name != shell.window.workspace.name {
                         shell.window.workspace.name = name;
-                        shell.workspace_note_wanted |= shell.settings_open;
+                        if shell.settings_open {
+                            shell.workspace_note_wanted = true;
+                        }
                         shell.save_workspace_soon(cx);
                         cx.notify();
                     }
@@ -2131,7 +2133,9 @@ impl Shell {
         {
             crate::unattended::check_now(self.project_for_runs(&root.path), cx);
         }
-        self.workspace_note_wanted |= self.settings_open;
+        if self.settings_open {
+            self.workspace_note_wanted = true;
+        }
         self.save_workspace(window, cx);
         // The project page's menu says whether this is on, in the entry that was
         // just used.
@@ -2721,6 +2725,9 @@ impl Shell {
             return;
         }
         self.settings_open = false;
+        // An unbound workspace writes nothing, so a flag set there is never
+        // taken; it must not outlive the Settings that set it.
+        self.workspace_note_wanted = false;
         if let Some(focus) = self.settings_return_focus.take() {
             focus.focus(window, cx);
         } else {
@@ -2774,8 +2781,10 @@ impl Shell {
 
     pub fn show_settings_page(&mut self, page: SettingsPage, cx: &mut Context<Self>) {
         self.settings_page = page;
-        // A word about the last write belongs to the page it was made on.
+        // A word about the last write belongs to the page it was made on, and
+        // so does a write still waiting on its debounce.
         self.settings_note = None;
+        self.workspace_note_wanted = false;
         self.keymap_editor
             .update(cx, |editor, _| editor.forget_note());
         cx.notify();
@@ -2986,7 +2995,9 @@ impl Shell {
         self.window.workspace.storage_dir = Some(dir.clone());
         self.workbench
             .update(cx, |panel, cx| panel.set_storage(Some(&dir), cx));
-        self.workspace_note_wanted |= self.settings_open;
+        if self.settings_open {
+            self.workspace_note_wanted = true;
+        }
         self.save_workspace(window, cx);
         self.set_window_identity(Some(dir.clone()), window, cx);
         cx.update_global::<Shared, _>(|shared, _| {

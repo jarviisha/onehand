@@ -1126,7 +1126,8 @@ fn unattended_section(handle: &Entity<Shell>, cx: &App) -> AnyElement {
              Issues tab — in a project switched on here is picked up by an agent, worked in \
              a worktree of its own, and answered with a pull request, or with commits on its \
              branch where the project has no forge. The switches are this workspace's; the \
-             label, how often to look and which agent runs are the app's, set in onehand.toml."
+             label and how often to look are the app's, set in onehand.toml, and so is \
+             the agent a run uses — the default agent unless onehand.toml names another."
         ))),
         cx,
     )

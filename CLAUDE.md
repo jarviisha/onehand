@@ -1467,7 +1467,9 @@ centre is the chat, right dock the Workbench, bottom dock the terminal.
   `note`, and its failures stay under the field they are about). **A workspace write is only noted
   when Settings asked for it** (`Shell::workspace_note_wanted`, set by the name field, the unattended
   switches and binding a folder): runs, pins and the dock write the same file, and one of those
-  landing while Settings is open is not a change the page on screen made. Settings apply as they are made, so whether the
+  landing while Settings is open is not a change the page on screen made. The flag is dropped on a
+  page change (a rename still waiting on its debounce would otherwise say *Saved* on the next page)
+  and on close (an unbound workspace writes nothing, so nothing would ever take it). Settings apply as they are made, so whether the
   write took is the one thing left to say; the word goes with a page change or a reopen. The
   Connections page says **when the connectors last answered** (`unattended::accounts_checked_at`,
   through `chat::pane::rel_time`) and turns *Check again* into a refusing *Checking…* while one is out
