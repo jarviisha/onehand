@@ -2445,6 +2445,7 @@ fn tab_bar(active: RailTab, cx: &mut Context<Shell>) -> impl IntoElement + use<>
             .iter()
             .position(|tab| *tab == active)
             .unwrap_or(0),
+        gpui_component::Size::Small,
         cx.listener(|shell: &mut Shell, i: &usize, _, cx| {
             shell.set_rail_tab(RailTab::ALL[*i], cx);
         }),

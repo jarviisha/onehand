@@ -19,7 +19,7 @@ use gpui::{
     ParentElement as _, StatefulInteractiveElement as _, Styled as _, Window, div,
 };
 use gpui_component::button::Button;
-use gpui_component::{ActiveTheme as _, Colorize as _, StyledExt as _};
+use gpui_component::{ActiveTheme as _, Colorize as _, Size, StyledExt as _};
 use std::rc::Rc;
 
 /// How a remote channel is opened, once its credential has been read.
@@ -197,10 +197,16 @@ pub fn status_line(message: String, cx: &App) -> AnyElement {
 /// **Here rather than in the app** for the reason [`action`] is: the rail and a
 /// built-in plugin both draw one, and a plugin cannot reach into the binary
 /// hosting it.
+///
+/// `size` is the library's own scale, so a switch sits level with the buttons
+/// and inputs of that size beside it: the rail's is small, a row of chips in a
+/// narrow column, while a panel's tabs are what the whole panel is organised
+/// around and are drawn at the size of its main controls.
 pub fn switch(
     id: &'static str,
     labels: &[&'static str],
     active: usize,
+    size: Size,
     pick: impl Fn(&usize, &mut Window, &mut App) + 'static,
     cx: &App,
 ) -> AnyElement {
@@ -208,6 +214,8 @@ pub fn switch(
     let (track, plate, radius) = (theme.tokens.tab_bar_segmented, theme.accent, theme.radius);
     let (ink, ink_on) = (theme.muted_foreground, theme.accent_foreground);
     let pick = Rc::new(pick);
+    let small = matches!(size, Size::XSmall | Size::Small);
+    let large = matches!(size, Size::Large);
     div()
         .h_flex()
         .w_full()
@@ -226,7 +234,11 @@ pub fn switch(
                 .min_w_0()
                 .rounded(radius)
                 .cursor_pointer()
-                .text_xs()
+                .map(|half| match (small, large) {
+                    (true, _) => half.text_xs(),
+                    (false, false) => half.py_1().text_sm(),
+                    (false, true) => half.py_1p5().text_base(),
+                })
                 .text_color(if on { ink_on } else { ink })
                 .when(on, |half| half.bg(plate))
                 .on_click(move |_, window, cx| pick(&i, window, cx))

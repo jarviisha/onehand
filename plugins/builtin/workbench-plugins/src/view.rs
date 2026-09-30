@@ -253,6 +253,9 @@ impl PluginsView {
                 .iter()
                 .position(|tab| *tab == self.tab)
                 .unwrap_or(0),
+            // The tabs are what the panel is organised around, so they are
+            // drawn at the size of its main controls rather than the rail's.
+            gpui_component::Size::Medium,
             cx.listener(|view: &mut Self, i: &usize, _, cx| {
                 view.tab = Tab::ALL[*i];
                 cx.notify();
@@ -311,7 +314,7 @@ impl PluginsView {
                     .gap_2()
                     .px_2()
                     .pb_1()
-                    .child(div().flex_1().min_w_0().child(Input::new(&query).xsmall()))
+                    .child(div().flex_1().min_w_0().child(Input::new(&query)))
                     .child(self.scope_picker(cx));
                 (Some(controls), rows)
             }
@@ -377,9 +380,9 @@ impl PluginsView {
     /// installs, and sixty menus are sixty places to make it.
     fn scope_picker(&self, cx: &mut Context<Self>) -> impl IntoElement + use<> {
         let current = self.install_scope;
+        // The search's own size, so the two sit level on one row.
         ButtonGroup::new("plugins-scope")
             .outline()
-            .xsmall()
             .children(Scope::ALL.into_iter().enumerate().map(|(i, scope)| {
                 action(("plugins-scope", i))
                     .label(scope.label())
