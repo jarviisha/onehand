@@ -85,7 +85,7 @@ Tests are inline `#[cfg(test)]` modules — there is no `tests/` directory.
 | `crates/plugin-api` | `onehand-plugin-api` | GUI-free plugin IDs, descriptors, capabilities and registration contract |
 | `crates/plugin-host` | `onehand-plugin-host` | the Workbench mode contract, the remote-channel factory type, and the three things a plugin cannot reach into the binary for: the button wrapper, status ink and the surface a dock card draws on |
 | `crates/terminal-ui` | `onehand-terminal-ui` | shared PTY/grid ownership used by the terminal dock and Neovim |
-| `plugins/builtin/*` | built-in plugins | Editor, Files, Markdown, Neovim, Issues, Telegram and GitHub contributions compiled into the binary |
+| `plugins/builtin/*` | built-in plugins | Editor, Files, Markdown, Neovim, Issues, Plugins, Telegram and GitHub contributions compiled into the binary |
 | `vendor/gpui-terminal` | `gpui-terminal` | a vendored terminal grid + the interaction layer upstream never had |
 
 The workspace root is a **virtual manifest** — it owns nothing but the member list and the release
@@ -935,15 +935,21 @@ see the rail, below.
   carries a switch per scope — Global (Claude Code's `user`), Project, Local — showing what is in
   force *at* that scope** (what it sets itself, else what the next wider one sets), outlined where
   the scope sets it and ghosted where it inherits; pressing one writes the opposite answer at that
-  scope alone, so turning a global plugin off for one project touches only that project. *Remove*
-  is per scope the plugin is installed at. **Every change goes through `claude plugin … --scope`
+  scope alone, so turning a global plugin off for one project touches only that project. **A scope
+  is offered only where the plugin is installed at it or wider** — Global for a plugin installed for
+  this project alone would write a setting naming a plugin no other project has. The row also says
+  in words what a session here gets (*on here* / *off here*), and **when that disagrees with the
+  listing's folded answer it says *by settings not shown*, in the warning ink**: managed settings,
+  a policy or a settings flag decided it, and the switches describe the three files rather than the
+  outcome. *Remove* is per scope the plugin is installed at. **Every change goes through `claude plugin … --scope`
   and nothing writes Claude Code's files**: their layout belongs to Claude Code, and its install
   record already carries a version number. **What each scope sets is read from the three
   `settings.json` files' `enabledPlugins`**, because the listing's `enabled` is the answer with every
   scope already folded in — the same on every record of one plugin — so it cannot tell a project
   turning a plugin off from a plugin never turned on. The folded answer is never the fallback — it
   includes the narrower scopes, so it would read a project's *off* back as *off* everywhere — and a
-  plugin no scope mentions is off, which is what the listing says of one. The
+  plugin no scope mentions is off, which is what the listing says of one. It is kept only to be
+  compared against, which is how a source the files do not show is noticed. The
   listing names every project's installs; only the global ones and this project's are kept.
   **An install never passes `-y`** — a marketplace can declare a command to run, and `-y` accepts it
   unseen — so one that wants a command refuses on the status line, left to a person in a terminal.

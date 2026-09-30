@@ -10,7 +10,7 @@ use gpui::{
 use gpui_component::button::{Button, ButtonGroup, ButtonVariants as _};
 use gpui_component::input::{Input, InputEvent, InputState};
 use gpui_component::{ActiveTheme, Disableable as _, Selectable as _, Sizable as _, StyledExt};
-use onehand_plugin_host::{action, hint, status_line};
+use onehand_plugin_host::{action, hint, status_ink, status_line};
 use std::path::{Path, PathBuf};
 
 /// How many installed plugins are drawn. Far past what anybody installs, so it
@@ -346,42 +346,42 @@ impl PluginsView {
     fn installed_row(&self, i: usize, plugin: &Plugin, cx: &mut Context<Self>) -> AnyElement {
         let muted = cx.theme().muted_foreground;
         let on_here = plugin.in_force(Scope::Local);
-        let switches = Scope::ALL.into_iter().map(|scope| {
-            let flip = plugin.flip(scope);
-            let on = plugin.in_force(scope);
-            let own = plugin.set_at(scope);
-            // Only a wider scope can be where an answer came from; with none
-            // setting it, the plugin is off because nothing turned it on.
-            let inherited = Scope::ALL
-                .iter()
-                .any(|wider| *wider < scope && plugin.set_at(*wider));
-            let said = match (on, own, inherited) {
-                (true, true, _) => "on, set here",
-                (false, true, _) => "off, set here",
-                (true, false, _) => "on, from a wider scope",
-                (false, false, true) => "off, from a wider scope",
-                (false, false, false) => "off, set nowhere",
-            };
-            let press = if on { "off" } else { "on" };
-            let button = action(("plugin-scope", i * Scope::ALL.len() + scope as usize))
-                .xsmall()
-                .label(scope.label())
-                .selected(on)
-                .loading(self.running(&flip))
-                .disabled(self.busy.is_some())
-                .tooltip(format!(
-                    "{}: {said} — press to turn it {press}",
-                    scope.meaning()
-                ));
-            let button: Button = if own {
-                button.outline()
-            } else {
-                button.ghost()
-            };
-            button.on_click(
-                cx.listener(move |view, _: &ClickEvent, _, cx| view.change(flip.clone(), cx)),
-            )
-        });
+        let elsewhere = plugin.decided_elsewhere();
+        let switches = Scope::ALL
+            .into_iter()
+            .filter(|scope| plugin.reaches(*scope))
+            .map(|scope| {
+                let flip = plugin.flip(scope);
+                let on = plugin.in_force(scope);
+                let own = plugin.set_at(scope);
+                let state = if on { "On" } else { "Off" };
+                let said = match plugin.source(scope) {
+                    Some(source) if source == scope => format!("{state}, set here"),
+                    Some(source) => format!("{state}, from {}", source.label()),
+                    // Nothing turned it on, so it is off.
+                    None => format!("{state}, set nowhere"),
+                };
+                let press = if on { "off" } else { "on" };
+                let button = action(("plugin-scope", i * Scope::ALL.len() + scope as usize))
+                    .xsmall()
+                    .label(scope.label())
+                    .selected(on)
+                    .loading(self.running(&flip))
+                    .disabled(self.busy.is_some())
+                    .tooltip(format!(
+                        "{} ({}). {said}. Press to turn it {press}.",
+                        scope.label(),
+                        scope.reach()
+                    ));
+                let button: Button = if own {
+                    button.outline()
+                } else {
+                    button.ghost()
+                };
+                button.on_click(
+                    cx.listener(move |view, _: &ClickEvent, _, cx| view.change(flip.clone(), cx)),
+                )
+            });
         let removes = plugin.installed.iter().map(|scope| {
             let remove = Change {
                 id: plugin.id.clone(),
@@ -432,7 +432,29 @@ impl PluginsView {
                     )
                     .children(plugin.version.clone().map(|version| {
                         div().flex_none().text_xs().text_color(muted).child(version)
-                    })),
+                    }))
+                    // What a session started here gets, in words: the
+                    // switches say what each file sets, and it takes all three
+                    // read together to know the outcome.
+                    .child(
+                        div()
+                            .flex_none()
+                            .text_xs()
+                            .text_color(if elsewhere {
+                                status_ink(cx).warning
+                            } else {
+                                muted
+                            })
+                            .child(match (on_here, elsewhere) {
+                                (true, false) => "on here",
+                                (false, false) => "off here",
+                                // Something the three files do not show decides
+                                // it, so the switches describe the files and not
+                                // the outcome — said, so they are not believed.
+                                (true, true) => "on here, by settings not shown",
+                                (false, true) => "off here, by settings not shown",
+                            }),
+                    ),
             )
             .child(
                 div()

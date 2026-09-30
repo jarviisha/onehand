@@ -8,9 +8,10 @@
 //!
 //! **One thing is read from files, because the command line does not say it:**
 //! what each scope's settings file sets. Its listing reports whether a plugin
-//! is enabled *in the end* — the three scopes already folded into one answer —
-//! so a project that turns a global plugin off and a plugin that was never on
-//! read the same. The settings files are Claude Code's documented configuration
+//! is enabled *in the end* — every scope already folded into one answer — so a
+//! project that turns a global plugin off and a plugin that was never on read
+//! the same; its `projectEnabled` speaks for the project's file alone and says
+//! nothing of the other two. The settings files are Claude Code's documented configuration
 //! rather than its internal state, and only their `enabledPlugins` key is read.
 //!
 //! Every call is blocking and bounded, for the reason the forge's calls are:
@@ -68,6 +69,16 @@ impl Scope {
         }
     }
 
+    /// How far it reaches, in a few words, for a tooltip that also has a
+    /// state to say.
+    pub(crate) fn reach(self) -> &'static str {
+        match self {
+            Scope::User => "every project",
+            Scope::Project => "this project, committed",
+            Scope::Local => "this project, this machine only",
+        }
+    }
+
     /// What choosing it means, for the tooltip.
     pub(crate) fn meaning(self) -> &'static str {
         match self {
@@ -101,6 +112,11 @@ struct Installed {
     #[serde(default)]
     version: Option<String>,
     scope: Scope,
+    /// Whether it is enabled in the end, for the directory the listing was
+    /// run in: every source of settings folded in, the same on every record
+    /// of one plugin.
+    #[serde(default)]
+    enabled: bool,
     /// The project a project or local install belongs to.
     #[serde(default)]
     project_path: Option<PathBuf>,
@@ -117,6 +133,11 @@ pub(crate) struct Plugin {
     /// What each scope's settings file says, indexed as [`Scope::ALL`];
     /// `None` where the file says nothing about it.
     set: [Option<bool>; 3],
+    /// The listing's own answer, with every source of settings folded in —
+    /// including ones not read here. Never a fallback for a scope (it holds
+    /// the narrower scopes too); only compared against, to notice a source
+    /// the three files do not account for.
+    enabled: bool,
 }
 
 impl Plugin {
@@ -131,17 +152,41 @@ impl Plugin {
     /// why the narrowest scope's answer here is what a session started in the
     /// project gets.
     pub(crate) fn in_force(&self, scope: Scope) -> bool {
-        Scope::ALL
-            .iter()
-            .rev()
-            .filter(|wider| **wider <= scope)
-            .find_map(|wider| self.set[*wider as usize])
+        self.source(scope)
+            .and_then(|source| self.set[source as usize])
             .unwrap_or(false)
+    }
+
+    /// Which scope decides it at `scope`: `scope` itself if its file mentions
+    /// it, else the nearest wider one that does, else none. The one walk every
+    /// other question about a scope is answered from.
+    pub(crate) fn source(&self, scope: Scope) -> Option<Scope> {
+        Scope::ALL
+            .into_iter()
+            .rev()
+            .filter(|wider| *wider <= scope)
+            .find(|wider| self.set[*wider as usize].is_some())
     }
 
     /// Whether `scope` sets it itself, rather than taking it from a wider one.
     pub(crate) fn set_at(&self, scope: Scope) -> bool {
-        self.set[scope as usize].is_some()
+        self.source(scope) == Some(scope)
+    }
+
+    /// Whether it is installed at `scope` or at a wider one — which is where
+    /// turning it on or off can mean anything. Global is not offered for a
+    /// plugin installed for this project alone: switched on there, the setting
+    /// would name a plugin no other project has, and read as on everywhere.
+    pub(crate) fn reaches(&self, scope: Scope) -> bool {
+        self.installed.iter().any(|at| *at <= scope)
+    }
+
+    /// Whether what a session here gets is decided by something the three
+    /// settings files do not show — managed settings, a policy, a settings
+    /// flag. Then the switches describe the files and not the outcome, and the
+    /// row has to say so rather than let them be believed.
+    pub(crate) fn decided_elsewhere(&self) -> bool {
+        self.in_force(Scope::Local) != self.enabled
     }
 
     /// The change that flips it at `scope`: whatever is in force there, the
@@ -266,6 +311,7 @@ pub(crate) fn parse(
                 id: record.id,
                 version: record.version,
                 installed: vec![record.scope],
+                enabled: record.enabled,
             }),
         }
     }
@@ -410,13 +456,13 @@ mod tests {
 
     /// Shaped as the real listing is: `enabled` is the same on every record of
     /// one plugin, because it is the folded answer rather than the record's own
-    /// — which is why nothing here reads it.
+    /// — and for a plugin no settings file mentions, it is off.
     const LISTING: &str = r#"{
       "installed": [
         {"id": "ponytail@ponytail", "version": "4.9.0", "scope": "user", "enabled": false},
         {"id": "karpathy@k", "scope": "project", "enabled": true, "projectPath": "/elsewhere"},
-        {"id": "figma@official", "scope": "local", "enabled": true, "projectPath": "/work/app"},
-        {"id": "figma@official", "scope": "user", "enabled": true}
+        {"id": "figma@official", "scope": "local", "enabled": false, "projectPath": "/work/app"},
+        {"id": "figma@official", "scope": "user", "enabled": false}
       ],
       "available": [
         {"pluginId": "rare@m", "name": "rare", "marketplaceName": "m", "installCount": 3},
@@ -538,6 +584,67 @@ mod tests {
     #[test]
     fn a_listing_that_is_not_json_is_said_rather_than_read_as_empty() {
         assert!(parse("Error: not logged in", Path::new("/"), &Default::default()).is_err());
+    }
+
+    #[test]
+    fn the_scope_that_decides_is_the_narrowest_that_sets_it() {
+        let set = settings(
+            r#"{"enabledPlugins": {"ponytail@ponytail": true}}"#,
+            r#"{"enabledPlugins": {"ponytail@ponytail": false}}"#,
+            "",
+        );
+        let catalog = catalog(&set);
+        let ponytail = plugin(&catalog, "ponytail@ponytail");
+        assert_eq!(ponytail.source(Scope::User), Some(Scope::User));
+        assert_eq!(ponytail.source(Scope::Project), Some(Scope::Project));
+        assert_eq!(ponytail.source(Scope::Local), Some(Scope::Project));
+        let figma = plugin(&catalog, "figma@official");
+        assert_eq!(figma.source(Scope::Local), None);
+    }
+
+    #[test]
+    fn a_scope_is_offered_only_where_the_plugin_is_installed_at_it_or_wider() {
+        let listing = r#"{"installed": [
+            {"id": "here@m", "scope": "local", "enabled": true, "projectPath": "/work/app"},
+            {"id": "shared@m", "scope": "project", "enabled": true, "projectPath": "/work/app"},
+            {"id": "everywhere@m", "scope": "user", "enabled": true}
+        ]}"#;
+        let catalog = parse(listing, Path::new("/work/app"), &Default::default()).unwrap();
+        let reach = |id| {
+            let plugin = plugin(&catalog, id);
+            Scope::ALL.map(|scope| plugin.reaches(scope))
+        };
+        // Turning a plugin on globally where it is installed for one project
+        // would write a setting that names a plugin no other project has.
+        assert_eq!(reach("here@m"), [false, false, true]);
+        assert_eq!(reach("shared@m"), [false, true, true]);
+        assert_eq!(reach("everywhere@m"), [true, true, true]);
+    }
+
+    #[test]
+    fn a_plugin_something_unread_turns_on_is_said_to_be_decided_elsewhere() {
+        // On in the end, while none of the three files mentions it: managed
+        // settings or a policy did it, and the switches cannot say so.
+        let listing = r#"{"installed": [
+            {"id": "managed@m", "scope": "user", "enabled": true}
+        ]}"#;
+        let listed = parse(listing, Path::new("/work/app"), &Default::default()).unwrap();
+        let managed = plugin(&listed, "managed@m");
+        assert!(!managed.in_force(Scope::Local));
+        assert!(managed.decided_elsewhere());
+        // Where the files and the listing agree, there is nothing to say.
+        let agreed = catalog(&settings("", "", ""));
+        assert!(!plugin(&agreed, "figma@official").decided_elsewhere());
+    }
+
+    #[test]
+    fn a_scopes_place_in_the_list_is_its_index_into_the_settings() {
+        assert!(
+            Scope::ALL
+                .iter()
+                .enumerate()
+                .all(|(i, scope)| *scope as usize == i)
+        );
     }
 
     #[test]
