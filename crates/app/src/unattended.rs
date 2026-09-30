@@ -16,12 +16,12 @@ use onehand_core::chat::ChatItem;
 use onehand_core::chat::UserAsk;
 use onehand_core::config::{AgentSpec, UnattendedConfig};
 use onehand_core::connector::{self, Connector};
-use onehand_core::unattended::{self as core, Ending, Issue, IssueRow, Tracker, Verdict};
+use onehand_core::unattended::{self as core, Budget, Ending, Issue, IssueRow, Tracker, Verdict};
 use onehand_core::worktree;
 use std::collections::HashMap;
 use std::path::Path;
 use std::path::PathBuf;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 /// How long a cancelled turn is given to wind down before the run is settled
 /// anyway. Cancelling asks the adapter to end the turn, and the turn ending is
@@ -29,7 +29,7 @@ use std::time::Duration;
 /// the one turn the run was about.
 const WIND_DOWN: Duration = Duration::from_secs(30);
 
-/// The unattended half of the process: its settings, the live run and the tick.
+/// The unattended half of the process: its settings, the live runs and the tick.
 pub struct Unattended {
     label: String,
     timeout: Duration,
@@ -48,7 +48,16 @@ pub struct Unattended {
     /// label and the interval do not matter — and it is only learned once an
     /// adapter has answered, which is after a claim.
     mode_refused: Option<String>,
-    run: Option<Run>,
+    /// Every run that has not ended. A run waiting on a person to answer a
+    /// card holds its issue and its session but not the slot, so one question
+    /// nobody has answered yet does not stop every other issue from being
+    /// worked. **A run is only started while none is working**, but one whose
+    /// card is answered carries on beside whatever started meanwhile: its turn
+    /// is already under way, and the protocol has no way to hold an agent
+    /// mid-turn — refusing would mean cancelling the work the answer was for.
+    // ponytail: waiting runs are not capped; each keeps an adapter alive. Cap
+    // them when a pile of unanswered runs is seen to cost something.
+    runs: Vec<Run>,
     /// What each connector last said about its account, for the lines in
     /// Settings. `None` until the first answer lands.
     accounts: Option<Accounts>,
@@ -107,16 +116,39 @@ struct Run {
     window: gpui::AnyWindowHandle,
     shell: WeakEntity<crate::shell::Shell>,
     prompted: bool,
+    /// The question a parked card is asking, while the run waits for a person
+    /// to answer it. The run never answers a card itself.
+    waiting: Option<String>,
+    /// How much of the timeout is left; it does not run while waiting.
+    budget: Budget,
     /// The turn has been cancelled, and this is what the run ends as once it
     /// has wound down.
     ending: Option<Ending>,
     _watch: Subscription,
+    /// Watches for the run's cards being answered. An answer changes the
+    /// transcript and says nothing else, so waiting for the agent's next event
+    /// instead would leave a run whose adapter went quiet waiting forever,
+    /// with no clock to end it.
+    _answered: Subscription,
     /// Fires if the session goes without saying so — its window closed under
     /// it — so the run settles now rather than holding the tick until its
     /// timeout and then reporting the wrong ending.
     _release: Subscription,
     /// The run's timeout, and after a cancel the wind-down in its place.
+    /// Empty while the run waits on a person.
     _clock: Task<()>,
+}
+
+impl Unattended {
+    /// The run on session `uid`, if it has not ended.
+    fn run_mut(&mut self, uid: u64) -> Option<&mut Run> {
+        self.runs.iter_mut().find(|run| run.uid == uid)
+    }
+
+    /// A run holding the slot: working rather than waiting.
+    fn working(&self) -> Option<&Run> {
+        self.runs.iter().find(|run| run.waiting.is_none())
+    }
 }
 
 /// Start the tick, or say why it cannot run.
@@ -169,7 +201,7 @@ pub fn boot(cfg: &UnattendedConfig, cx: &mut App) {
             claiming: false,
             blocked,
             mode_refused: None,
-            run: None,
+            runs: Vec::new(),
             accounts: None,
             checked_at: None,
             checks_out: 0,
@@ -337,14 +369,29 @@ fn opted_in_roots(cx: &App) -> Vec<Project> {
     roots
 }
 
-/// The run in progress, as the project it came from and the issue it is on.
+/// Every run that has not ended, as the project it came from, the issue it is
+/// on and whether it is waiting on a card.
 ///
 /// For the rail, which says on a project's row that a run is working one of its
 /// issues: the run's own session is on a worktree's row of its own, and nothing
 /// on the project the issue belongs to would otherwise say so.
-pub fn live_run(cx: &App) -> Option<(PathBuf, u64)> {
-    let run = Shared::global(cx).unattended.as_ref()?.run.as_ref()?;
-    Some((run.claimed.repo.clone(), run.claimed.issue.number))
+pub fn live_runs(cx: &App) -> Vec<(PathBuf, u64, bool)> {
+    Shared::global(cx)
+        .unattended
+        .as_ref()
+        .map(|u| {
+            u.runs
+                .iter()
+                .map(|run| {
+                    (
+                        run.claimed.repo.clone(),
+                        run.claimed.issue.number,
+                        run.waiting.is_some(),
+                    )
+                })
+                .collect()
+        })
+        .unwrap_or_default()
 }
 
 /// The label that asks for a run, for the places that tell the user which
@@ -357,23 +404,13 @@ pub fn label(cx: &App) -> String {
         .unwrap_or_default()
 }
 
-/// Whether `uid` is a run that cancels a card rather than leave it up: one the
-/// search found. A run somebody picked by hand hands the card to them instead.
-pub fn cancels_asks(uid: u64, cx: &App) -> bool {
-    Shared::global(cx)
-        .unattended
-        .as_ref()
-        .and_then(|u| u.run.as_ref())
-        .is_some_and(|run| run.uid == uid && !run.claimed.picked_by_hand())
-}
-
 /// Act on the unattended state, if there is one.
 fn with<R>(cx: &mut App, act: impl FnOnce(&mut Unattended) -> R) -> Option<R> {
     cx.update_global::<Shared, _>(|shared, _| shared.unattended.as_mut().map(act))
 }
 
-/// Look at every switched-on project, and search them for an issue if
-/// nothing is running and nothing blocks a run.
+/// Look at every switched-on project, and search them for an issue if no run
+/// is working and nothing blocks a run.
 ///
 /// **Every tick looks, even while a run is live.** The rows show what the last
 /// look found, and a tick that only looked while it was about to search left
@@ -389,7 +426,7 @@ fn tick(asked_from: Option<gpui::AnyWindowHandle>, cx: &mut App) {
     }
     let search = with(cx, |u| {
         let idle =
-            !u.claiming && u.blocked.is_none() && u.mode_refused.is_none() && u.run.is_none();
+            !u.claiming && u.blocked.is_none() && u.mode_refused.is_none() && u.working().is_none();
         idle.then(|| {
             u.claiming = true;
             u.label.clone()
@@ -632,9 +669,10 @@ fn trackers_blocking(
 
 /// Work `row`, picked by hand from a project's open issues, now.
 ///
-/// **Refused while a run is going**: one run at a time is the rule for picked
-/// and found alike, and the refusal names the issue already being worked so
-/// the person knows what they are waiting on. Anything that stops it before
+/// **Refused while a run is working**: one run at a time is the rule for picked
+/// and found alike — a run waiting on a person does not count — and the
+/// refusal names the issue already being worked so the person knows what they
+/// are waiting on. Anything that stops it before
 /// the claim — a claim refused where the issue lives — is said in the window it
 /// was picked from; after the claim, on the issue as well.
 pub fn start_picked(
@@ -645,7 +683,7 @@ pub fn start_picked(
     cx: &mut App,
 ) -> Result<(), String> {
     let label = with(cx, |u| {
-        if let Some(run) = &u.run {
+        if let Some(run) = u.working() {
             return Err(format!(
                 "An unattended run is already working on issue #{} — one at a time.",
                 run.claimed.issue.number
@@ -730,7 +768,7 @@ pub fn look_now(window: gpui::AnyWindowHandle, cx: &mut App) {
         Some("No project is switched on for unattended runs.".to_string())
     } else {
         with(cx, |u| {
-            if let Some(run) = &u.run {
+            if let Some(run) = u.working() {
                 Some(format!(
                     "A run is already working on issue #{} — one at a time.",
                     run.claimed.issue.number
@@ -840,37 +878,45 @@ fn start(claimed: Claimed, cx: &mut App) -> Result<(), Unstarted> {
     let watch = cx.subscribe(&session, move |session, event: &ChatEvent, cx| {
         on_event(uid, &session, event, cx)
     });
-    // A cancel already winding down keeps the ending it was heading for; only
-    // a session that went with nothing pending is reported as closed.
+    // A cancel already winding down keeps the ending it was heading for, and
+    // a run waiting on a card ends on the question nobody answered; only a
+    // session that went with nothing pending is reported as closed.
     let release = cx.observe_release(&session, move |_, cx| {
-        let pending = with(cx, |u| {
-            u.run
-                .as_ref()
-                .filter(|run| run.uid == uid)
-                .and_then(|run| run.ending.clone())
-        })
-        .flatten();
+        let pending = with(cx, |u| u.run_mut(uid).and_then(|run| pending_ending(run))).flatten();
         settle(uid, pending.unwrap_or(Ending::Closed), cx)
     });
-    let clock = cx.spawn(async move |cx| {
-        cx.background_executor().timer(timeout).await;
-        cx.update(|cx| cancel_toward(uid, Ending::TimedOut(timeout), cx));
+    // Fires on every notify the session makes, a streamed chunk included, so
+    // it reads rather than borrowing the global mutably, and a run that is not
+    // waiting costs one lookup.
+    let answered = cx.observe(&session, move |session, cx| {
+        let waiting = Shared::global(cx)
+            .unattended
+            .as_ref()
+            .and_then(|u| u.runs.iter().find(|run| run.uid == uid))
+            .is_some_and(|run| run.waiting.is_some());
+        if waiting && !session.read(cx).chat.awaiting_permission() {
+            resume(uid, &session, cx);
+        }
     });
+    let clock = clock(uid, timeout, timeout, cx);
     let (by_hand, opening, shown_in) = (
         claimed.picked_by_hand(),
         start_notes(&claimed),
         shell.clone(),
     );
     with(cx, |u| {
-        u.run = Some(Run {
+        u.runs.push(Run {
             claimed,
             uid,
             session: session.downgrade(),
             window,
             shell,
             prompted: false,
+            waiting: None,
+            budget: Budget::start(timeout, Instant::now()),
             ending: None,
             _watch: watch,
+            _answered: answered,
             _release: release,
             _clock: clock,
         })
@@ -932,13 +978,13 @@ fn spec_for(agent: Option<&str>, cx: &App) -> Option<AgentSpec> {
 
 /// One event from the run's session.
 fn on_event(uid: u64, session: &Entity<ChatSession>, event: &ChatEvent, cx: &mut App) {
-    let Some((prompted, cancelling, shell, picked)) = with(cx, |u| {
-        u.run.as_ref().filter(|run| run.uid == uid).map(|run| {
+    let Some((prompted, cancelling, waiting, shell)) = with(cx, |u| {
+        u.run_mut(uid).map(|run| {
             (
                 run.prompted,
                 run.ending.is_some(),
+                run.waiting.clone(),
                 run.shell.clone(),
-                run.claimed.picked_by_hand(),
             )
         })
     })
@@ -949,7 +995,7 @@ fn on_event(uid: u64, session: &Entity<ChatSession>, event: &ChatEvent, cx: &mut
         ChatEvent::Appended if !prompted => prompt(uid, session, cx),
         ChatEvent::Appended => {
             if prompted_by_someone_else(session, true, cx) {
-                settle(uid, Ending::TakenOver { asked: None }, cx);
+                settle(uid, Ending::TakenOver, cx);
             }
         }
         ChatEvent::TurnEnded if cancelling => settle_pending(uid, cx),
@@ -959,34 +1005,91 @@ fn on_event(uid: u64, session: &Entity<ChatSession>, event: &ChatEvent, cx: &mut
                 .and_then(|s| s.read(cx).answer_tail(uid, cx));
             settle(uid, Ending::TurnEnded { tail }, cx);
         }
-        ChatEvent::AwaitingUser(ask) => {
-            // **Somebody already looking is the person the card asks** — and
-            // so is whoever picked the run by hand, looking or not: they asked
-            // for it moments ago and are near, and a card left up for them
-            // (announced like any other) costs a wait where cancelling cost
-            // the run. The run never answers a card; handing it over is not
-            // answering it.
-            let question = question(*ask, session, cx);
-            if shell.upgrade().is_some_and(|s| s.read(cx).reading(uid, cx)) {
-                settle(uid, Ending::TakenOver { asked: None }, cx);
-            } else if picked {
-                // Not being read, so the issue is told what is waiting — the
-                // person may answer it from somewhere else entirely.
-                settle(
-                    uid,
-                    Ending::TakenOver {
-                        asked: Some(question),
-                    },
-                    cx,
-                );
-            } else {
-                cancel_toward(uid, Ending::Asked(question), cx);
-            }
+        // **The card is left up for a person**, wherever they answer it from —
+        // this window, the desktop notification, a chat on the remote bridge.
+        // The run never answers a card itself, and it no longer throws one
+        // away: a run that needed one decision is worth more waiting for it
+        // than cancelled over it. Answering is not taking over; the turn simply
+        // carries on.
+        ChatEvent::AwaitingUser(ask) if !cancelling => {
+            let asked = question(*ask, session, cx);
+            wait(uid, asked, session, cx);
         }
+        ChatEvent::AwaitingUser(_) => {}
         ChatEvent::Disconnected if cancelling => settle_pending(uid, cx),
-        ChatEvent::Disconnected => settle(uid, Ending::LinkLost, cx),
+        // A card goes with its adapter, so a run lost while waiting ends on the
+        // question it was waiting on: that is what the issue needs to hear.
+        ChatEvent::Disconnected => settle(uid, waiting.map_or(Ending::LinkLost, Ending::Asked), cx),
         ChatEvent::OpenFile(_) => {}
     }
+}
+
+/// The run's timeout: cancel it when `left` has run out. `limit` is the whole
+/// timeout, which is what the issue is told was hit.
+fn clock(uid: u64, left: Duration, limit: Duration, cx: &mut App) -> Task<()> {
+    cx.spawn(async move |cx| {
+        cx.background_executor().timer(left).await;
+        cx.update(|cx| cancel_toward(uid, Ending::TimedOut(limit), cx));
+    })
+}
+
+/// The run has parked a card: stop its clock, give up the slot, and let the
+/// search look for the next issue at once rather than at the next tick.
+fn wait(uid: u64, asked: String, session: &Entity<ChatSession>, cx: &mut App) {
+    let first = with(cx, |u| {
+        let run = u.run_mut(uid)?;
+        run.budget.pause(Instant::now());
+        run._clock = Task::ready(());
+        Some(run.waiting.replace(asked.clone()).is_none())
+    })
+    .flatten();
+    if first != Some(true) {
+        return;
+    }
+    note(session, format!("Waiting for an answer: {asked}"), cx);
+    // The rail's project row says a run is waiting; nothing it watches moved.
+    cx.refresh_windows();
+    tick(None, cx);
+}
+
+/// No card the run parked is waiting any more: start its clock again from
+/// where it stopped.
+///
+/// "Settled" rather than "answered", because a person pressing Stop settles
+/// the cards too; the turn ending right after is what ends the run then.
+fn resume(uid: u64, session: &Entity<ChatSession>, cx: &mut App) {
+    let Some((left, limit)) = with(cx, |u| {
+        let run = u.run_mut(uid)?;
+        run.waiting = None;
+        let now = Instant::now();
+        run.budget.resume(now);
+        Some((run.budget.left(now), run.budget.limit()))
+    })
+    .flatten() else {
+        return;
+    };
+    let ticking = clock(uid, left, limit, cx);
+    with(cx, |u| {
+        if let Some(run) = u.run_mut(uid) {
+            run._clock = ticking;
+        }
+    });
+    // Only what is known: after a Stop the turn ends next, so "carries on"
+    // would be the transcript's last word on a run that did not.
+    note(
+        session,
+        "Card settled; the clock runs again".to_string(),
+        cx,
+    );
+    cx.refresh_windows();
+}
+
+/// What a run ends as if it has to end now without a turn ending: what a
+/// cancel was heading for, or the question it was waiting on.
+fn pending_ending(run: &Run) -> Option<Ending> {
+    run.ending
+        .clone()
+        .or_else(|| run.waiting.clone().map(Ending::Asked))
 }
 
 /// Send the run's one prompt, once the adapter is up.
@@ -1002,14 +1105,15 @@ fn prompt(uid: u64, session: &Entity<ChatSession>, cx: &mut App) {
     // and this one going out makes the session theirs, and the run's own
     // prompt would either be refused as busy or land on top of their work.
     if session.read(cx).chat.busy || prompted_by_someone_else(session, false, cx) {
-        settle(uid, Ending::TakenOver { asked: None }, cx);
+        settle(uid, Ending::TakenOver, cx);
         return;
     }
     let Some((mode, text)) = with(cx, |u| {
-        let run = u.run.as_mut()?;
+        let mode = u.mode.clone();
+        let run = u.run_mut(uid)?;
         run.prompted = true;
         Some((
-            u.mode.clone(),
+            mode,
             core::prompt_for(
                 &run.claimed.issue,
                 &run.claimed.branch,
@@ -1132,10 +1236,7 @@ fn question(ask: UserAsk, session: &Entity<ChatSession>, cx: &App) -> String {
 /// to wind down, and is settled on the spot.
 fn cancel_toward(uid: u64, ending: Ending, cx: &mut App) {
     let Some(session) = with(cx, |u| {
-        let run = u
-            .run
-            .as_mut()
-            .filter(|run| run.uid == uid && run.ending.is_none())?;
+        let run = u.run_mut(uid).filter(|run| run.ending.is_none())?;
         run.ending = Some(ending.clone());
         Some(run.session.clone())
     })
@@ -1152,7 +1253,6 @@ fn cancel_toward(uid: u64, ending: Ending, cx: &mut App) {
     });
     let why = match &ending {
         Ending::TimedOut(_) => "the run timed out",
-        Ending::Asked(_) => "a question nobody is here to answer",
         _ => "the run is ending",
     };
     note(&session, format!("Cancelling the turn: {why}"), cx);
@@ -1161,21 +1261,19 @@ fn cancel_toward(uid: u64, ending: Ending, cx: &mut App) {
         cx.update(|cx| settle_pending(uid, cx));
     });
     with(cx, |u| {
-        if let Some(run) = u.run.as_mut().filter(|run| run.uid == uid) {
+        if let Some(run) = u.run_mut(uid) {
             run._clock = wind_down;
         }
     });
 }
 
 /// Settle as whatever the cancel was heading toward.
+///
+/// Only a cancel's ending, unlike [`pending_ending`]: this is reached when a
+/// cancelled turn has wound down, and a run can be cancelled only while it is
+/// working, never while it waits on a card.
 fn settle_pending(uid: u64, cx: &mut App) {
-    let pending = with(cx, |u| {
-        u.run
-            .as_ref()
-            .filter(|run| run.uid == uid)
-            .and_then(|run| run.ending.clone())
-    })
-    .flatten();
+    let pending = with(cx, |u| u.run_mut(uid).and_then(|run| run.ending.clone())).flatten();
     if let Some(ending) = pending {
         settle(uid, ending, cx);
     }
@@ -1188,7 +1286,11 @@ fn settle_pending(uid: u64, cx: &mut App) {
 /// delivered through.
 fn settle(uid: u64, ending: Ending, cx: &mut App) {
     cx.defer(move |cx| {
-        let Some(run) = with(cx, |u| u.run.take_if(|run| run.uid == uid)).flatten() else {
+        let Some(run) = with(cx, |u| {
+            let at = u.runs.iter().position(|run| run.uid == uid)?;
+            Some(u.runs.remove(at))
+        })
+        .flatten() else {
             return;
         };
         cx.refresh_windows();
@@ -1204,7 +1306,7 @@ fn settle(uid: u64, ending: Ending, cx: &mut App) {
         // watched it end may well carry on in it, and a project that vanished
         // at the next launch would take their place in it too. Only a found
         // run is taken down.
-        let keep = matches!(ending, Ending::TakenOver { .. }) || claimed.picked_by_hand();
+        let keep = matches!(ending, Ending::TakenOver) || claimed.picked_by_hand();
         if let Some(shell) = shell.upgrade() {
             let _ = window.update(cx, |_, window, cx| {
                 shell.update(cx, |shell, cx| match keep {

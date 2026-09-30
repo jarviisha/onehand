@@ -1167,7 +1167,7 @@ struct AutoStatus {
 /// out.
 fn auto_status(
     unattended: bool,
-    working: Option<u64>,
+    run: Option<(u64, bool)>,
     label: &str,
     stuck: Option<String>,
 ) -> Option<AutoStatus> {
@@ -1176,10 +1176,18 @@ fn auto_status(
         line: line.into(),
         stuck,
     };
-    match (unattended, working, stuck) {
-        (_, Some(n), _) => Some(status(
+    match (unattended, run, stuck) {
+        (_, Some((n, false)), _) => Some(status(
             format!("auto · #{n}"),
             format!("Unattended run working on issue #{n}"),
+            false,
+        )),
+        // Said apart from working: a run standing still on a card is waiting
+        // for the person reading this, and "working" would tell them there is
+        // nothing to do.
+        (_, Some((n, true)), _) => Some(status(
+            format!("auto · #{n} waiting"),
+            format!("Unattended run on issue #{n} is waiting for an answer"),
             false,
         )),
         (false, None, _) => None,
@@ -1385,12 +1393,16 @@ fn folder_row(
     // The issue a run is working on in this project right now, if one is. The
     // run's own session sits under a worktree's row of its own, so without this
     // the project the issue belongs to would say nothing about it.
-    let working = crate::unattended::live_run(cx)
-        .filter(|(repo, _)| *repo == root.path)
-        .map(|(_, number)| number);
+    // A working run is named ahead of a waiting one, since a project can hold
+    // both and the older, usually the waiting one, would otherwise hide it.
+    let run = crate::unattended::live_runs(cx)
+        .into_iter()
+        .filter(|(repo, _, _)| *repo == root.path)
+        .min_by_key(|&(_, _, waiting)| waiting)
+        .map(|(_, number, waiting)| (number, waiting));
     let auto = auto_status(
         unattended,
-        working,
+        run,
         &crate::unattended::label(cx),
         // What stops every run outranks what stops this project's.
         crate::unattended::blocked(cx).or_else(|| crate::unattended::problem(&root.path, cx)),
@@ -2606,11 +2618,15 @@ mod tests {
         let on = auto_status(true, None, "auto", None).unwrap();
         assert_eq!(on.badge.as_ref(), "auto");
         assert!(on.line.contains("`auto`") && !on.stuck);
-        let working = auto_status(true, Some(46), "auto", None).unwrap();
+        let working = auto_status(true, Some((46, false)), "auto", None).unwrap();
         assert_eq!(working.badge.as_ref(), "auto · #46");
-        assert!(working.line.contains("#46"));
+        assert!(working.line.contains("#46") && working.line.contains("working"));
+        // A run waiting on a card is not said to be working.
+        let waiting = auto_status(true, Some((46, true)), "auto", None).unwrap();
+        assert_eq!(waiting.badge.as_ref(), "auto · #46 waiting");
+        assert!(waiting.line.contains("waiting") && !waiting.line.contains("working"));
         // Switched off mid-run: the run already going is still said.
-        assert!(auto_status(false, Some(46), "auto", None).is_some());
+        assert!(auto_status(false, Some((46, false)), "auto", None).is_some());
         // On with nothing possible is stuck, and says why in its own words.
         let elsewhere = auto_status(
             true,

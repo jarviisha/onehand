@@ -551,14 +551,6 @@ impl ChatPane {
         self.session_of(uid).cloned()
     }
 
-    /// Whether the user is looking at `uid`'s conversation right now.
-    ///
-    /// The same reading the desktop notification is decided from, so the two
-    /// cannot disagree about whether somebody saw a card arrive.
-    pub fn reading(&self, uid: u64, cx: &App) -> bool {
-        self.presence(cx).seeing(uid) == onehand_core::chat::Attention::Reading
-    }
-
     /// Put down everything that belonged to the session leaving the screen.
     ///
     /// One place, because both of these are the same rule wearing two hats:
@@ -1636,14 +1628,6 @@ impl ChatPane {
         root: &str,
         cx: &mut Context<Self>,
     ) {
-        // A run the search found never leaves a card up for anybody who is not
-        // already looking at it: it cancels the turn and reports on the issue.
-        // Announcing the card would send somebody to answer a question that is
-        // gone by the time they arrive. One picked by hand leaves it up, so it
-        // is announced like any other.
-        if crate::unattended::cancels_asks(uid, cx) {
-            return;
-        }
         let say = self.telling(uid, Away::Asked(ask), cx);
         if say.desktop {
             super::session::notify_awaiting_user(ask, agent.to_string(), root.to_string());

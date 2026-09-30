@@ -577,7 +577,8 @@ of switches in Settings ▸ Workspace, all through `Shell::toggle_unattended`. `
 `onehand.toml` has no switch of its own any more — only the label (default `auto`), the interval,
 the timeout, the mode and the agent. A tick on `Shared` (one per process, like the bridge) looks for
 the oldest open issue **you** opened that carries the label, in the opted-in projects, in rail order;
-a project row says `auto`, or `auto · #N` while a run is on issue N (`crate::unattended::live_run`,
+a project row says `auto`, `auto · #N` while a run is on issue N, or `auto · #N waiting` while it
+waits on a card (`crate::unattended::live_runs`,
 with `cx.refresh_windows()` at start and settle because nothing the rail watches changes).
 **Everything outside the checkout goes through a connector, and a project that cannot be worked
 says so.** `onehand_core::connector::Connector` is the trait — account, whether it serves a project,
@@ -626,11 +627,17 @@ the prompt going out, a cancel, and the words the issue was told at the end. A r
 branches a worktree off `origin/<default>` and mints a session there. **Neither step moves anything on
 screen**: `ChatPane::open_unshown` connects without showing, and the worktree's root is
 `ProjectRoot::transient`, which `to_config` never writes. One prompt, one turn. The pull request the forge
-finds — or, with no forge, the commits on the branch — is the verdict, on every ending. A parked ask is cancelled, never answered — unless the user is
-reading that conversation, or picked the run by hand, in which case the run is **taken over** and
-the card stays up, announced like any other. A picked run handed over while nobody was reading it tells the
-issue the question it stopped on (`Ending::TakenOver { asked }`). The same happens the moment
-anybody else puts a prompt in. Taking over clears `transient` and saves. Teardown is
+finds — or, with no forge, the commits on the branch — is the verdict, on every ending. **A parked
+ask waits for a person and is never answered by the run**: the card stays up, announced like any
+other, and answering it from anywhere lets the turn carry on — answering is not taking over. While it
+waits the run's timeout does not count (`unattended::Budget`) and it **gives up the slot**
+(`Unattended::runs`), so the search looks for the next issue at once; a run is only *started* while
+none is working, but one whose card is answered carries on beside it, since a turn under way cannot
+be held. Cards are watched for being answered by observing the session, because an answer emits no
+event of its own. An adapter
+lost or a session closed while waiting ends the run as `Ending::Asked`, with the question on the
+issue. A prompt of anybody else's is a **take-over**: the run stops watching, which clears
+`transient` and saves. Teardown is
 `Shell::forget_root`, never `remove_root`, because that one re-shows the active session and takes the
 caret with it. The rules that decide are core's (`onehand_core::unattended`); the calls are the connector's.
 

@@ -15,7 +15,7 @@ open, the section says so.
 ## The shape
 
 ```
-tick (every N minutes, one process, one run at a time)
+tick (every N minutes, one process, one run started while none is working)
   └─ the project's own issues, then its forge's (gh issue list --label <trigger> --author @me)
      → the first labelled issue, or nothing
      └─ claim it: remove the trigger label + a comment (a note, for one kept in onehand)
@@ -24,7 +24,8 @@ tick (every N minutes, one process, one run at a time)
            └─ add it as a project root, mint a session on it *without showing it*, set the mode
               └─ one prompt: the issue, the rules, open the PR yourself — or, with no
                  forge, commit and do not push
-                 └─ watch: turn ended · parked an ask · adapter lost · timed out · taken over
+                 └─ watch: turn ended · adapter lost · timed out · taken over
+                    (a parked ask waits for a person, and gives up the slot while it does)
                     └─ verdict: gh pr list --head <branch> → PR or none; with no forge,
                        git rev-list --count <start>..HEAD → commits or none
                        └─ close the session, drop the root, tell the issue the outcome
@@ -188,15 +189,15 @@ Picking one runs the same path as a found issue, with four differences:
   comment says to pick the issue again to retry, since re-adding a label means
   nothing for an issue the search would never take;
 - the session is put on screen as it starts, in the window it was picked from,
-  so the person who picked it is reading it and a card it parks is theirs to
-  answer (the take-over rule);
+  so the person who picked it is reading it as it works;
 - when it ends, the session stays where it is and its project is kept for good,
   as a taken-over one is, since somebody who watched it end may carry on in it;
 - a mode the agent does not offer, once learned, refuses the pick *before* the
   claim, rather than claiming an issue for a run that would fail at its prompt.
 
-It is one run at a time for picked and found alike, and a pick while one is going
-is refused with the issue it is waiting on. Beside *Check again* in Settings,
+A run is started only while none is working, for picked and found alike, and a
+pick while one is working is refused with the issue it is waiting on. A run
+waiting on a card does not count. Beside *Check again* in Settings,
 *Look now* runs the search at once instead of at the next tick, and always says
 what came of it: nothing switched on, a run already going, what blocks every
 run, or that no issue of yours carries the label.
@@ -213,8 +214,9 @@ its last line is only read by somebody who opened it in time; the issue comment
 is the record that stays.
 
 **The rail says what is switched on and what is running.** A switched-on project
-row carries a pill reading `auto`, and `auto · #N` while a run is working issue N
-of that project. The run's own session is on a worktree's row of its own, so
+row carries a pill reading `auto`, `auto · #N` while a run is working issue N of
+that project, and `auto · #N waiting` while that run waits on a card — a working
+run is named ahead of a waiting one on the same project. The run's own session is on a worktree's row of its own, so
 without the pill the project the issue belongs to would say nothing about it.
 
 **Only issues you opened.** The issue body goes into the prompt word for word,
@@ -240,16 +242,16 @@ mode that asks questions would park on the first write.
 
 **`acceptEdits` covers file edits and nothing else.** Under it Claude Code still
 asks before every command — `cargo test`, `git commit`, `gh pr create` — so with
-rule 1 below a run would end at the first check it tried to run, which is every
-run. What a run may execute is therefore the **repository's own permission
+rule 1 below every run would stop at the first check it tried to run and wait
+for somebody to allow it. What a run may execute is therefore the **repository's own permission
 allowlist** (`.claude/settings.json`: the build, the tests, `git`, `gh`), which
 the adapter reads on `session/new`. That keeps the list next to the code it
 builds, reviewed like the code, and keeps rule 1 meaningful: a command outside
-the list is exactly the thing that should stop a run nobody is watching.
+the list is exactly the thing that should wait for a person.
 `bypassPermissions` would also work and is not the recommendation — under it
 rule 1 never fires, and "unattended" becomes "unsupervised with full rights".
-A root with no allowlist is not refused up front; its first run ends on the
-first command with the command quoted on the issue, which says what to add.
+A root with no allowlist is not refused up front; its first run parks on the
+first command and waits for somebody to allow it, which says what to add.
 **The project list is not the whole grant**: the adapter also reads the user's
 own `~/.claude/settings.json`, so what a run may do is the union of the two.
 That is stated rather than worked around — a second, app-supplied list would be
@@ -258,22 +260,27 @@ a deliberate one, not a list of whatever was once approved by hand.
 
 ## The seven rules that do not get simplified
 
-1. **A parked ask ends the run. It is never answered.** If the agent asks for
-   permission or asks a question, the run cancels the turn, closes the session
-   and comments the question on the issue. Auto-granting is the one shortcut that
-   turns "unattended" into "an agent with no supervision and full rights", and
-   it is also the honest signal that the issue was not small: an issue that needs
-   a decision needs a person. The mode set at the start is what keeps this rare;
-   this is what happens when it is not enough. **The one exception is a person
-   already there**: if the ask parks while the user is reading that very
-   conversation — `Attention::Reading`, the rule that already decides whether a
-   parked ask goes to the desktop — the run is taken over (rule 7) instead of
-   cancelled, and the ask stays up for them. **A run picked by hand is taken
-   over the same way whether or not anybody is looking**: the person who picked
-   it asked for it moments ago and is near, so the card stays up and is announced
-   like any other, where cancelling would throw the run away over a click they
-   were about to make. "Never answered" means never answered *by the run*; a
-   person looking at the card, or who asked for the run, is the person it asks.
+1. **A parked ask waits for a person. The run never answers it.** If the agent
+   asks for permission or asks a question, the card stays up and is announced
+   like any other — on the desktop, and to a remote chat following the session —
+   and the run waits. Auto-granting is the one shortcut that turns "unattended"
+   into "an agent with no supervision and full rights"; the mode set at the
+   start is what keeps asks rare, and this is what happens when it is not
+   enough. **Answering is not taking over**: the card is a request the adapter
+   is waiting on inside the turn, so an answer from anywhere simply lets the
+   turn carry on, and a card answers once, so nothing can resume twice.
+   **A waiting run gives up the slot** — it keeps its issue and its session,
+   and the search looks for the next issue at once — so one unanswered question
+   does not stop every other issue from being worked. When its card is
+   answered it carries on beside whatever started meanwhile: the turn is
+   already under way, and the only way to hold it back would be to cancel the
+   work the answer was for. An adapter lost or a
+   session closed while waiting ends the run on the question, which is put on
+   the issue; re-adding the label is the retry.
+   This rule used to end the run: it cancelled the turn and commented the
+   question, on the reasoning that an issue needing a decision is not small.
+   What that cost was the whole run over one click, and the person able to
+   make it can do so from wherever they are.
 2. **Never the user's checkout.** Every run is a fresh `git worktree` beside the
    repository, on a branch of its own. An agent writing to the tree somebody is
    working in, while they are working in it, is not a risk worth the ten lines
@@ -288,10 +295,13 @@ a deliberate one, not a list of whatever was once approved by hand.
    own timestamp says when, so the sentence carries no time. It never says a run *is*
    happening, since that is the one sentence a crash makes false. It also makes a loop impossible by construction — the label
    that would cause a second pick is gone before any work begins.
-4. **One wall-clock timeout per run, and it cancels.** An agent that neither
-   finishes nor asks is the expensive failure, and it is the one nobody is
-   watching for. The timeout is per run rather than per turn because a turn that
-   ends is progress and a run is what is being bounded.
+4. **One timeout per run, counting working time, and it cancels.** An agent
+   that neither finishes nor asks is the expensive failure, and it is the one
+   nobody is watching for. The timeout is per run rather than per turn because a
+   turn that ends is progress and a run is what is being bounded. **Time spent
+   waiting on a card does not count** (`unattended::Budget`): a run standing
+   still because nobody has answered yet is not the failure the timeout is for,
+   and one that ran through the wait would cancel a run for a slow reply.
 5. **The verdict is a PR, not the agent's word.** "I opened a pull request" is a
    sentence in a transcript. `gh pr list --head <branch>` is a fact, and it is
    one blocking call. The comment on the issue says which of the two happened.
@@ -300,14 +310,15 @@ a deliberate one, not a list of whatever was once approved by hand.
    comment saying "no pull request" beside a pull request is the worst answer
    available. A PR found makes the outcome `Opened`, with why the run stopped as
    a note under it.
-6. **A run is one turn.** The first `TurnEnded` ends it. An agent that stops to
-   ask in prose ("should I do A or B?") rather than through a parked ask slips
-   past rule 1, so a `NoPr` comment carries the end of the agent's answer
+6. **A run is one turn.** The first `TurnEnded` ends it. The prompt tells the
+   agent to ask through its question tool rather than in prose, so a question
+   becomes a card that waits. One asked in prose ("should I do A or B?") anyway
+   slips past rule 1, so a `NoPr` comment carries the end of the agent's answer
    (`Chat::answer_tail`) — which is where that question is — and a person
    reading the issue sees it without opening the transcript.
 7. **A person acting in the session takes it over.** The run's session is in the
-   rail and can be opened, typed into, or have its ask answered. The moment a
-   prompt or an answer comes from anywhere but the run itself — the composer, or
+   rail and can be opened and typed into. The moment a prompt comes from
+   anywhere but the run itself — the composer, or
    a chat on the remote bridge that `/use`d it, since which channel it came
    through changes nothing about who is now driving — the run stops watching:
    no cancel, no close, and comments `TakenOver`. From then on it is an ordinary
@@ -390,8 +401,9 @@ POSIX-only, which is marked where it is done.
 One prompt per run, built by `prompt_for(&Issue)`: the issue's number, title and
 body, the branch it is on, and four instructions — read the repository's own
 CLAUDE.md for conventions, run the repo's checks before committing, open the pull
-request with `gh pr create`, and if the issue turns out to need a decision, say
-so and stop rather than guessing.
+request with `gh pr create`, and if the issue turns out to need a decision, ask
+it through the agent's question tool and carry on once it is answered, rather
+than guessing.
 
 It deliberately does **not** restate the commit convention, the test commands or
 the PR format. Those are in the repository's own instructions, which the agent
@@ -420,13 +432,12 @@ why the run stopped as a note under it. Without one:
 
 ```
 TurnEnded(tail) → "The turn ended with no pull request on <branch>. It ended on: <tail>"
-Asked(q)        → "onehand stopped: it needs a decision. <q>"
+Asked(q)        → "The run ended waiting on a decision nobody answered; there is no pull request on <branch>. <q>"
+                  (its adapter was lost, or its session closed, while a card waited)
 LinkLost        → "The agent stopped answering; there is no pull request on <branch>."
 Closed          → "The run's session was closed before it finished; there is no pull request on <branch>."
 TimedOut        → "No pull request after <timeout>; the run was cancelled."
 TakenOver       → "Taken over by hand; the run stopped watching <branch>."
-TakenOver(q)    → "Handed over on a decision; the run stopped watching <branch>. <q>"
-                  (a picked run whose question parked while nobody was reading it)
 Failed(why)     → "onehand could not start the run: <why>"
 ```
 
@@ -435,7 +446,7 @@ the prompt — the default branch, the fetch, the worktree, a window to put the
 session in, the mode — can refuse, and each of those is the issue's to hear
 about, since the claim has already taken its label.
 
-**A cancel winds down before the session closes.** An ask or a timeout cancels
+**A cancel winds down before the session closes.** A timeout cancels
 the turn, and it is the turn ending that writes its transcript — closing the
 session on the spot would lose the one turn the run was about. So the run waits
 for that turn to end, or thirty seconds, whichever is first.
@@ -467,15 +478,11 @@ heading for.
 **A prompt that beats the run's own is a take-over.** Somebody typing between
 the adapter coming up and the run's prompt going out owns the session, and the
 run settles as taken over rather than failing to send and closing it on them.
-Answering a card is only a take-over through the reading exception: a card
-nobody is looking at is cancelled on the spot, so there is never an answer to
-see.
+Answering a card is not: it is what the run is waiting for.
 
-**A card a run is about to cancel is not announced** (a run the search found;
-a picked run's card is left up, so it is). The pane would otherwise
-send a desktop notification for a parked ask nobody is looking at, which is
-every ask a run sees — pointing somebody at a question that is gone by the time
-they arrive.
+**A run's card reaches a remote chat only if that chat follows the session**,
+as every card does — and a run's session is new, so by default nobody does.
+The desktop notification is the one that always goes.
 
 All of them are commented on the issue, and all of them leave the trigger label
 off.
@@ -504,8 +511,9 @@ accumulate one row per issue ever worked.
 
 ## Not built, on purpose
 
-- **Concurrency.** One run at a time; a tick during a run does nothing. Add when
-  one run at a time is measurably the bottleneck, which it will not be while the
+- **Concurrency.** One run working at a time; a tick during one does nothing.
+  Runs waiting on a card do not count, and are not capped. Add when one run at
+  a time is measurably the bottleneck, which it will not be while the
   issues are small.
 - **Cron expressions, quiet hours, a calendar.** An interval and a switch per
   project. Add when somebody actually wants runs only at night.
