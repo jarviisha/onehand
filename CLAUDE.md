@@ -31,7 +31,8 @@ cargo check                      # fast type-check
 cargo test                       # everything; `cargo test <substring>` for one test
 cargo test -p onehand-core       # core only (fast, no GUI)
 make fmt                         # NOT bare `cargo fmt`
-make lint                        # fmt check + clippy; CI adds CLIPPY_EXTRA="-- -D warnings"
+make lint                        # fmt check + clippy (warnings allowed locally)
+make clippy CLIPPY_EXTRA="-- -D warnings"  # what CI runs: warnings denied
 cargo build --release            # LTO; target/release/onehand
 
 # Headless ACP smoke test; ACP_CMD swaps the adapter
@@ -91,7 +92,7 @@ ACP_CMD="node crates/core/examples/mock_ask_agent.js" cargo run -p onehand-core 
   - code never cites a document;
   - every `.md` file is in English.
 
-  Read the file before adding UI. Each guard was added after the same mistake appeared in
+  Each guard was added after the same mistake appeared in
   several places. Remove one only after a probe shows a lint covers it.
 
 ## GPUI model
@@ -136,7 +137,7 @@ ACP_CMD="node crates/core/examples/mock_ask_agent.js" cargo run -p onehand-core 
 
 - **Key contexts:**
   - Window commands are bound `Shell && !Dialog`.
-  - `Ctrl+S` is bound `Shell && !Terminal`, so a PTY keeps it.
+  - `Ctrl+S` is bound `Shell && !Terminal && !Dialog`, so a PTY keeps it.
   - Anything mounting a live grid, the Neovim mode included, must take the `Terminal` context,
     or the editor's save fires over `:w`.
   - The terminal toggle is plain `` Ctrl+` ``, because shift+backtick cannot be typed.
@@ -148,7 +149,7 @@ ACP_CMD="node crates/core/examples/mock_ask_agent.js" cargo run -p onehand-core 
 - **Transcripts:** `items.jsonl` is append-only and written at every turn end. A rename writes
   metadata only (`Chat::flush_meta`).
 - **Telegram token:** never in `onehand.toml`, which settings rewrite whole. It comes from
-  `$ONEHAND_TELEGRAM_TOKEN` or `<config_dir>/onehand/telegram.token`. A chat not on
+  `$ONEHAND_TELEGRAM_TOKEN` (renamed by `token_env`) or `<config_dir>/onehand/telegram.token`. A chat not on
   `allowed_chats` gets no reply at all.
 
 ## Gotchas (one line each; full reasons in docs/rules-and-gotchas.md)

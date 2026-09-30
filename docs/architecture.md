@@ -1747,7 +1747,8 @@ for where that is read from and why it is not here. Declaration order does not b
 since it is a table like `[font]` and only the bare `appearance` key has to lead.
 
 `[font]` carries exactly one key, `monospace`, which `shell::use_installed_mono` takes as the first
-preference when it picks a mono family the machine actually has (see the font gotcha in [rules-and-gotchas.md](rules-and-gotchas.md)). It used to
+preference when it picks a mono family the machine actually has (see the font gotcha in
+[rules-and-gotchas.md](rules-and-gotchas.md)). It used to
 carry a body size, a master zoom, a sans family and a fallback list, and there was an `[icons]` table
 of per-role hex overrides beside it; decision D1 makes gpui-component's theme the look, so none of
 them ever reached the screen. **They parsed, which is what made them worse than absent** — a file
