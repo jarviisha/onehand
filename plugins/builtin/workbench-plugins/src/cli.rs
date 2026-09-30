@@ -69,13 +69,14 @@ impl Scope {
         }
     }
 
-    /// How far it reaches, in a few words, for a tooltip that also has a
-    /// state to say.
+    /// Who it reaches, as a menu row names it — by the people and places
+    /// affected rather than by the file, since that is what choosing one
+    /// decides.
     pub(crate) fn reach(self) -> &'static str {
         match self {
-            Scope::User => "every project",
-            Scope::Project => "this project, committed",
-            Scope::Local => "this project, this machine only",
+            Scope::User => "Every project",
+            Scope::Project => "This project, for everyone (committed)",
+            Scope::Local => "This project, on this machine",
         }
     }
 
@@ -166,11 +167,6 @@ impl Plugin {
             .rev()
             .filter(|wider| *wider <= scope)
             .find(|wider| self.set[*wider as usize].is_some())
-    }
-
-    /// Whether `scope` sets it itself, rather than taking it from a wider one.
-    pub(crate) fn set_at(&self, scope: Scope) -> bool {
-        self.source(scope) == Some(scope)
     }
 
     /// Whether it is installed at `scope` or at a wider one — which is where
@@ -529,7 +525,7 @@ mod tests {
         assert!(!ponytail.in_force(Scope::Project));
         // Local sets nothing, so it takes the project's answer.
         assert!(!ponytail.in_force(Scope::Local));
-        assert!(!ponytail.set_at(Scope::Local));
+        assert_ne!(ponytail.source(Scope::Local), Some(Scope::Local));
     }
 
     #[test]
@@ -539,7 +535,7 @@ mod tests {
         let set = settings("", r#"{"enabledPlugins": {"figma@official": false}}"#, "");
         let catalog = catalog(&set);
         let figma = plugin(&catalog, "figma@official");
-        assert!(!figma.set_at(Scope::User));
+        assert_eq!(figma.source(Scope::User), None);
         assert!(!figma.in_force(Scope::User));
         assert_eq!(figma.flip(Scope::User).verb, Verb::Enable);
     }
@@ -549,7 +545,7 @@ mod tests {
         let catalog = catalog(&settings("", "", ""));
         let figma = plugin(&catalog, "figma@official");
         assert!(Scope::ALL.iter().all(|s| !figma.in_force(*s)));
-        assert!(Scope::ALL.iter().all(|s| !figma.set_at(*s)));
+        assert!(Scope::ALL.iter().all(|s| figma.source(*s).is_none()));
     }
 
     #[test]

@@ -129,7 +129,8 @@ ACP_CMD="node crates/core/examples/mock_ask_agent.js" cargo run -p onehand-core 
 - **Never hard-code a colour, radius or size.** Read `cx.theme()`; sizes are rems, because zoom
   overrides the rem base per panel.
 - **Reuse gpui-component before building.** Buttons go through `crate::controls::action`, menu
-  rows through `controls::menu_item`/`menu_row`, so the pointer cursor is right.
+  rows through `controls::menu_item`/`menu_row` (re-exported from `onehand_plugin_host`, where a
+  plugin reaches them too), so the pointer cursor is right.
 - **Keep rendering bounded**: a named cap per list, and say on screen when it bites.
 - **Don't self-verify UI by launching or screenshotting.** Build, test, stop; the user looks.
 

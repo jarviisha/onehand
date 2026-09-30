@@ -7,10 +7,13 @@ use gpui::{
     AnyElement, App, AppContext as _, ClickEvent, Context, Entity, InteractiveElement as _,
     IntoElement, ParentElement, Render, StatefulInteractiveElement as _, Styled, Task, Window, div,
 };
-use gpui_component::button::{Button, ButtonGroup, ButtonVariants as _};
+use gpui_component::button::{ButtonGroup, ButtonVariants as _};
 use gpui_component::input::{Input, InputEvent, InputState};
-use gpui_component::{ActiveTheme, Disableable as _, Selectable as _, Sizable as _, StyledExt};
-use onehand_plugin_host::{action, hint, status_ink, status_line, switch};
+use gpui_component::switch::Switch;
+use gpui_component::{
+    ActiveTheme, Disableable as _, Icon, IconName, Selectable as _, Sizable as _, StyledExt,
+};
+use onehand_plugin_host::{action, hint, menu_below, menu_item, status_ink, status_line, switch};
 use std::path::{Path, PathBuf};
 
 /// How many installed plugins are drawn. Far past what anybody installs, so it
@@ -394,154 +397,139 @@ impl PluginsView {
             }))
     }
 
-    /// One installed plugin: its name, and a switch per scope.
+    /// One installed plugin: its name, one switch, and a menu.
     ///
-    /// **Each scope's switch shows what is in force at that scope** — what it
-    /// sets itself, else what it takes from a wider one — and pressing it
-    /// writes the other answer *at that scope*. So turning a global plugin off
-    /// for one project is the Project switch, and leaves every other project
-    /// alone. A switch whose scope sets the answer itself is outlined; one
-    /// taking it from a wider scope is not, which is the difference between
-    /// "this project turns it off" and "it is off everywhere".
+    /// **The switch is "on in this project", and it writes to Local** — this
+    /// project on this machine, the one file that reaches nobody else. It is
+    /// what somebody reaching for a switch on a row means, and the other two
+    /// scopes each reach somebody else: Global every other project, Project
+    /// every clone of this one. So those are in the ••• menu, each named for
+    /// who it reaches and checked where the plugin is on there, where they are
+    /// chosen on purpose rather than hit on the way past.
+    ///
+    /// Three scope buttons on every row were what this replaced. They answered
+    /// the question fully and could not be read: which was on, which set its
+    /// own answer and which inherited it were three codes — a fill, an outline,
+    /// the lack of one — that nothing on screen explained.
     fn installed_row(&self, i: usize, plugin: &Plugin, cx: &mut Context<Self>) -> AnyElement {
         let muted = cx.theme().muted_foreground;
         let on_here = plugin.in_force(Scope::Local);
-        let elsewhere = plugin.decided_elsewhere();
-        let switches = Scope::ALL
-            .into_iter()
-            .filter(|scope| plugin.reaches(*scope))
-            .map(|scope| {
-                let flip = plugin.flip(scope);
-                let on = plugin.in_force(scope);
-                let own = plugin.set_at(scope);
-                let state = if on { "On" } else { "Off" };
-                let said = match plugin.source(scope) {
-                    Some(source) if source == scope => format!("{state}, set here"),
-                    Some(source) => format!("{state}, from {}", source.label()),
-                    // Nothing turned it on, so it is off.
-                    None => format!("{state}, set nowhere"),
-                };
-                let press = if on { "off" } else { "on" };
-                let button = action(("plugin-scope", i * Scope::ALL.len() + scope as usize))
-                    .xsmall()
-                    .label(scope.label())
-                    .selected(on)
-                    .loading(self.running(&flip))
-                    .disabled(self.busy.is_some())
-                    .tooltip(format!(
-                        "{} ({}). {said}. Press to turn it {press}.",
-                        scope.label(),
-                        scope.reach()
-                    ));
-                let button: Button = if own {
-                    button.outline()
-                } else {
-                    button.ghost()
-                };
-                button.on_click(
-                    cx.listener(move |view, _: &ClickEvent, _, cx| view.change(flip.clone(), cx)),
-                )
-            });
-        let removes = plugin.installed.iter().map(|scope| {
-            let remove = Change {
-                id: plugin.id.clone(),
-                scope: *scope,
-                verb: Verb::Uninstall,
-            };
-            // Named by scope only where there is more than one to choose from.
-            let label = if plugin.installed.len() > 1 {
-                format!("Remove · {}", scope.label())
+        let busy = self.busy.is_some();
+        let here = plugin.flip(Scope::Local);
+        let view = cx.entity();
+
+        let switch = Switch::new(("plugin-on", i))
+            .checked(on_here)
+            .disabled(busy)
+            .tooltip(if on_here {
+                "On in this project — turn it off on this machine only"
             } else {
-                "Remove".to_string()
-            };
-            action(("plugin-remove", i * Scope::ALL.len() + *scope as usize))
-                .xsmall()
-                .ghost()
-                .label(label)
-                .loading(self.running(&remove))
-                .disabled(self.busy.is_some())
-                .tooltip(format!(
-                    "Uninstall from {}; the plugin's saved data is kept",
-                    scope.label()
-                ))
-                .on_click(
-                    cx.listener(move |view, _: &ClickEvent, _, cx| view.change(remove.clone(), cx)),
-                )
-        });
-        // Remove is shown only while the pointer is on the row: it is the
-        // rarest thing done here, and a row of ever-present buttons is most of
-        // what made the list read as noise. `invisible` rather than absent, so
-        // the row does not change width under the pointer.
-        let group = gpui::SharedString::from(format!("plugin-row-{i}"));
+                "Off in this project — turn it on on this machine only"
+            })
+            .on_click(cx.listener(move |view, _: &bool, _, cx| view.change(here.clone(), cx)));
+
+        // Named by what it acts on, so a menu held open across a re-list is
+        // one for this plugin and never for whichever row took its place.
+        let menu_id = gpui::SharedString::from(format!("plugin-menu-{}", plugin.id));
+        let trigger = action(gpui::SharedString::from(format!(
+            "plugin-menu-button-{}",
+            plugin.id
+        )))
+        .ghost()
+        .xsmall()
+        .icon(Icon::new(IconName::Ellipsis))
+        .disabled(busy)
+        .tooltip("Where it is on, and removing it");
+        let menu = {
+            let plugin = plugin.clone();
+            menu_below(menu_id, trigger, move |menu, _, _| {
+                let mut menu = menu.label("On for");
+                for scope in Scope::ALL.into_iter().filter(|s| plugin.reaches(*s)) {
+                    let flip = plugin.flip(scope);
+                    // Where it comes from, when it is not set at this scope:
+                    // the one fact the check mark cannot carry.
+                    let from = match plugin.source(scope) {
+                        Some(source) if source != scope => {
+                            format!(" · from {}", source.label())
+                        }
+                        _ => String::new(),
+                    };
+                    let view = view.clone();
+                    menu = menu.item(
+                        menu_item(format!("{}{from}", scope.reach()))
+                            .checked(plugin.in_force(scope))
+                            .on_click(move |_, _, cx: &mut App| {
+                                view.update(cx, |view, cx| view.change(flip.clone(), cx));
+                            }),
+                    );
+                }
+                menu = menu.separator();
+                for scope in &plugin.installed {
+                    let remove = Change {
+                        id: plugin.id.clone(),
+                        scope: *scope,
+                        verb: Verb::Uninstall,
+                    };
+                    // Named by scope only where there is more than one.
+                    let label = if plugin.installed.len() > 1 {
+                        format!("Remove from {}", scope.label())
+                    } else {
+                        "Remove".to_string()
+                    };
+                    let view = view.clone();
+                    menu = menu.item(menu_item(label).on_click(move |_, _, cx: &mut App| {
+                        view.update(cx, |view, cx| view.change(remove.clone(), cx));
+                    }));
+                }
+                menu
+            })
+        };
+
         div()
-            .group(group.clone())
-            .v_flex()
+            .h_flex()
+            .items_center()
+            .gap_2()
             .w_full()
             .px_2()
             .py_2()
-            .gap_1p5()
-            .rounded(cx.theme().radius)
             .child(
                 div()
-                    .h_flex()
-                    .items_baseline()
-                    .gap_2()
-                    .child(
-                        div()
-                            .flex_1()
-                            .min_w_0()
-                            .truncate()
-                            .text_sm()
-                            // Drawn quieter while a session started here would
-                            // not get it, whichever scope decided that.
-                            .when(!on_here, |name| name.text_color(muted))
-                            .child(plugin.id.clone()),
-                    )
-                    // What a session started here gets, in words: the
-                    // switches say what each file sets, and it takes all three
-                    // read together to know the outcome.
-                    .child(
-                        div()
-                            .flex_none()
-                            .text_xs()
-                            .text_color(if elsewhere {
-                                status_ink(cx).warning
-                            } else {
-                                muted
-                            })
-                            .child(match (on_here, elsewhere) {
-                                (true, false) => "on here",
-                                (false, false) => "off here",
-                                // Something the three files do not show decides
-                                // it, so the switches describe the files and not
-                                // the outcome — said, so they are not believed.
-                                (true, true) => "on here · set elsewhere",
-                                (false, true) => "off here · set elsewhere",
-                            }),
-                    ),
+                    .flex_1()
+                    .min_w_0()
+                    .truncate()
+                    .text_sm()
+                    // Drawn quieter while a session started here would not
+                    // get it, whichever scope decided that.
+                    .when(!on_here, |name| name.text_color(muted))
+                    .child(plugin.id.clone()),
             )
+            // Something the three files do not show decides it — managed
+            // settings, a policy — so the switch describes the files and not
+            // the outcome, and says so rather than be believed.
+            .when(plugin.decided_elsewhere(), |row| {
+                row.child(
+                    div()
+                        .flex_none()
+                        .text_xs()
+                        .text_color(status_ink(cx).warning)
+                        .child("set elsewhere"),
+                )
+            })
+            .children(
+                plugin
+                    .version
+                    .clone()
+                    .map(|version| div().flex_none().text_xs().text_color(muted).child(version)),
+            )
+            // The switch sets no cursor of its own, and an arrow over a
+            // control that acts reads as one that does not.
             .child(
                 div()
-                    .h_flex()
-                    .items_center()
-                    .gap_1()
-                    .children(switches)
-                    .children(
-                        plugin
-                            .version
-                            .clone()
-                            .map(|version| div().pl_1().text_xs().text_color(muted).child(version)),
-                    )
-                    .child(div().flex_1())
-                    .child(
-                        div()
-                            .h_flex()
-                            .gap_1()
-                            .invisible()
-                            .group_hover(group, |style| style.visible())
-                            .children(removes),
-                    ),
+                    .flex_none()
+                    .when(!busy, |d| d.cursor_pointer())
+                    .child(switch),
             )
+            .child(menu)
             .into_any_element()
     }
 

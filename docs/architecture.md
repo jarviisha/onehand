@@ -292,10 +292,12 @@ two places for the component library's arrow-cursor default to be let through.
 is the app's name for it; the guard that counts call sites exempts exactly one
 file for that reason.
 
-**Popup menu rows are the other half of that, and stay in the app** — no plugin
-draws a menu. A `PopupMenu` row sets no cursor at all, so every menu drew the
-arrow over entries that act while the buttons an inch away drew the pointer;
-`controls::menu_item` / `controls::menu_row` are the one place that answers it.
+**Popup menu rows are the other half of that, and live in the plugin host for the
+same reason** — the Plugins mode draws a menu too. A `PopupMenu` row sets no
+cursor at all, so every menu drew the arrow over entries that act while the
+buttons an inch away drew the pointer; `onehand_plugin_host::menu_item` /
+`menu_row` are the one place that answers it, with `menu_below` beside them, and
+`controls::` re-exports all three under the names the app already used.
 The library gives no hook on the row itself, only on what goes inside it, so the
 cursor is carried by the row's *content* stretched back out over the inset the
 row puts around it — otherwise a strip at each end of every row still draws the
@@ -940,16 +942,20 @@ see the rail, below.
   reaches a session at its next start sits once at the foot of *Installed*, and a catalog row is its
   name and *Install*, then the description, then marketplace and a compact install count. The switch is `onehand_plugin_host::switch`, the one
   the rail's *Projects* / *All sessions* uses. **Each row
-  carries a switch per scope — Global (Claude Code's `user`), Project, Local — showing what is in
-  force *at* that scope** (what it sets itself, else what the next wider one sets), outlined where
-  the scope sets it and ghosted where it inherits; pressing one writes the opposite answer at that
-  scope alone, so turning a global plugin off for one project touches only that project. **A scope
-  is offered only where the plugin is installed at it or wider** — Global for a plugin installed for
-  this project alone would write a setting naming a plugin no other project has. The row also says
-  in words what a session here gets (*on here* / *off here*), and **when that disagrees with the
-  listing's folded answer it says *by settings not shown*, in the warning ink**: managed settings,
-  a policy or a settings flag decided it, and the switches describe the three files rather than the
-  outcome. *Remove* is per scope the plugin is installed at. **Every change goes through `claude plugin … --scope`
+  is its name, its version, one switch and a ••• menu.** The switch is *on in this project* and
+  writes to Local — this project on this machine, the one file that reaches nobody else — because
+  that is what a switch on a row is taken to mean, and Global and Project each reach somebody else
+  (every other project; every clone of this one). Those are in the menu under *On for*, each named
+  for who it reaches, checked where the plugin is on there and marked *from Global* / *from Project*
+  where it inherits; picking one writes the opposite answer at that scope alone. **A scope is offered
+  only where the plugin is installed at it or wider** — Global for a plugin installed for this
+  project alone would write a setting naming a plugin no other project has. Three scope buttons on
+  every row came first and were replaced: which was on, which set its own answer and which inherited
+  it were a fill, an outline and the lack of one, which nothing on screen explained. **When what a
+  session here gets disagrees with the listing's folded answer, the row says *set elsewhere* in the
+  warning ink**: managed settings, a policy or a settings flag decided it, and the switch describes
+  the three files rather than the outcome. *Remove* is in the menu, per scope the plugin is
+  installed at. **Every change goes through `claude plugin … --scope`
   and nothing writes Claude Code's files**: their layout belongs to Claude Code, and its install
   record already carries a version number. **What each scope sets is read from the three
   `settings.json` files' `enabledPlugins`**, because the listing's `enabled` is the answer with every

@@ -10,7 +10,9 @@
 // a working feature.
 #![warn(unreachable_pub)]
 
+mod menu;
 mod workbench;
+pub use menu::{menu_below, menu_item, menu_row};
 pub use workbench::{Ask, Request, WorkbenchMode};
 
 use gpui::prelude::FluentBuilder as _;
