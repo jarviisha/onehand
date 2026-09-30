@@ -1,18 +1,22 @@
 //! The Plugins mode's own state — which project, what `claude` last said about
 //! it, the change in flight — and how it is drawn.
 
-use crate::cli::{self, Available, Catalog, Change, Installed, Scope};
+use crate::cli::{self, Available, Catalog, Change, Plugin, Scope, Verb};
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
     AnyElement, App, AppContext as _, ClickEvent, Context, Entity, InteractiveElement as _,
     IntoElement, ParentElement, Render, StatefulInteractiveElement as _, Styled, Task, Window, div,
 };
-use gpui_component::button::{ButtonGroup, ButtonVariants as _};
+use gpui_component::button::{Button, ButtonGroup, ButtonVariants as _};
 use gpui_component::input::{Input, InputEvent, InputState};
-use gpui_component::switch::Switch;
 use gpui_component::{ActiveTheme, Disableable as _, Selectable as _, Sizable as _, StyledExt};
 use onehand_plugin_host::{action, hint, status_line};
 use std::path::{Path, PathBuf};
+
+/// How many installed plugins are drawn. Far past what anybody installs, so it
+/// bounds the work of building rows rather than editing the list; the one time
+/// it bites, it says so.
+const INSTALLED_CAP: usize = 200;
 
 /// How many of the marketplaces' plugins are drawn at once. The official
 /// marketplace alone offers a few hundred, and a list nobody scrolls to the end
@@ -23,8 +27,8 @@ const MARKET_CAP: usize = 60;
 pub(crate) struct PluginsView {
     root: Option<PathBuf>,
     /// What `claude` last said about the active root, or why it could not.
-    /// Cleared on a project switch, since another project's installs are not
-    /// this one's.
+    /// Cleared on a project switch, since another project's installs and
+    /// settings are not this one's.
     catalog: Option<Result<Catalog, String>>,
     /// Whether the listing needs reading again before it is next drawn.
     stale: bool,
@@ -37,7 +41,8 @@ pub(crate) struct PluginsView {
     /// write a copy missing the other's.
     busy: Option<Change>,
     _change: Option<Task<()>>,
-    /// Why the last change did not happen, kept until the next one does.
+    /// Why the last change did not happen, kept until the next one does or the
+    /// project changes.
     ///
     /// A standing line rather than a notification: an install that was refused
     /// — most often for a command it wants run, which is left to a person on
@@ -71,6 +76,8 @@ impl PluginsView {
         }
         self.root = Some(root.to_path_buf());
         self.catalog = None;
+        // A refusal is about the project it happened in.
+        self.status = None;
         self.stale = true;
         cx.notify();
     }
@@ -79,6 +86,7 @@ impl PluginsView {
         if self.root.as_deref() == Some(root) {
             self.root = None;
             self.catalog = None;
+            self.status = None;
             self._list = None;
             cx.notify();
         }
@@ -92,7 +100,7 @@ impl PluginsView {
     /// Ask `claude` what is installed for the active root.
     ///
     /// The answer is dropped if the root has moved on while it was out, since
-    /// it names another project's project and local installs.
+    /// it names another project's installs and settings.
     fn list(&mut self, cx: &mut Context<Self>) {
         let Some(root) = self.root.clone() else {
             return;
@@ -117,6 +125,9 @@ impl PluginsView {
     /// Make one change, then read the listing again — the command line's
     /// answer to a change is a sentence, and what it did is only certain from
     /// what it lists afterwards.
+    ///
+    /// The change was made in the project it was pressed in, so a refusal is
+    /// said only while that project is still the one on screen.
     fn change(&mut self, change: Change, cx: &mut Context<Self>) {
         if self.busy.is_some() {
             return;
@@ -138,7 +149,9 @@ impl PluginsView {
                 .await;
             let _ = view.update(cx, |view: &mut Self, cx| {
                 view.busy = None;
-                if let Err(why) = done {
+                if view.root.as_deref() == Some(root.as_path())
+                    && let Err(why) = done
+                {
                     view.status = Some(why);
                 }
                 view.stale = true;
@@ -157,12 +170,19 @@ impl PluginsView {
         self.query = Some(query.clone());
         query
     }
+
+    /// Whether `change` is the one in flight, so the control that asked for
+    /// it — and only that one — shows it working.
+    fn running(&self, change: &Change) -> bool {
+        self.busy.as_ref() == Some(change)
+    }
 }
 
 impl Render for PluginsView {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         // Being drawn is what says the listing is worth reading, as it is for
-        // the Markdown mode's walk.
+        // the Markdown mode's walk. Not while a change is out: its own landing
+        // asks for one, and a listing read halfway through it is already stale.
         if self.stale && self.busy.is_none() {
             self.stale = false;
             self.list(cx);
@@ -182,38 +202,43 @@ impl PluginsView {
         if self.root.is_none() {
             return hint("No project root", cx);
         }
+        let query = self.query(window, cx);
         let catalog = match &self.catalog {
             None => return hint("Reading Claude Code's plugins…", cx),
-            Some(Err(why)) => return status_line(why.clone(), cx),
-            Some(Ok(catalog)) => catalog.clone(),
+            Some(Err(why)) => return self.failed(why.clone(), cx),
+            Some(Ok(catalog)) => catalog,
         };
-        let query = self.query(window, cx);
         let needle = query.read(cx).value().trim().to_lowercase();
-
         let muted = cx.theme().muted_foreground;
+
+        let installed_cut = catalog.installed.len().saturating_sub(INSTALLED_CAP);
         let installed: Vec<AnyElement> = catalog
             .installed
             .iter()
+            .take(INSTALLED_CAP)
             .enumerate()
             .map(|(i, plugin)| self.installed_row(i, plugin, cx))
             .collect();
         let matching: Vec<&Available> = catalog
             .available
             .iter()
-            .filter(|plugin| {
-                needle.is_empty()
-                    || plugin.name.to_lowercase().contains(&needle)
-                    || plugin.description.to_lowercase().contains(&needle)
-                    || plugin.marketplace.to_lowercase().contains(&needle)
-            })
+            .filter(|plugin| plugin.matches(&needle))
             .collect();
-        let cut = matching.len().saturating_sub(MARKET_CAP);
+        let market_cut = matching.len().saturating_sub(MARKET_CAP);
         let offered: Vec<AnyElement> = matching
             .iter()
             .take(MARKET_CAP)
             .enumerate()
-            .map(|(i, plugin)| self.available_row(i, plugin, &catalog.installed, cx))
+            .map(|(i, plugin)| self.available_row(i, plugin, catalog, cx))
             .collect();
+
+        let top = match &self.busy {
+            Some(change) => change.doing(),
+            // A session reads its plugins when its agent starts, so a change
+            // here is not seen by one already running — said, because a switch
+            // that visibly did nothing reads as broken.
+            None => "Changes reach a session when its agent next starts".to_string(),
+        };
 
         div()
             .id("plugins-body")
@@ -221,12 +246,25 @@ impl PluginsView {
             .min_h_0()
             .v_flex()
             .overflow_y_scroll()
-            .child(self.top_bar(cx))
+            .child(
+                div()
+                    .px_2()
+                    .py_1()
+                    .truncate()
+                    .text_xs()
+                    .text_color(muted)
+                    .border_b_1()
+                    .border_color(cx.theme().border)
+                    .child(top),
+            )
             .child(heading("Installed", cx))
             .when(installed.is_empty(), |list| {
-                list.child(note("Nothing installed that reaches this project", cx))
+                list.child(note("Nothing installed reaches this project", cx))
             })
             .children(installed)
+            .when(installed_cut > 0, |list| {
+                list.child(note(format!("… {installed_cut} more not shown"), cx))
+            })
             .child(heading("Marketplace", cx))
             .child(
                 div()
@@ -241,63 +279,42 @@ impl PluginsView {
                 list.child(note("No plugin matches the search", cx))
             })
             .children(offered)
-            .when(cut > 0, |list| {
-                list.child(
-                    div()
-                        .px_2()
-                        .py_1()
-                        .text_xs()
-                        .text_color(muted)
-                        .child(format!("… {cut} more not shown — narrow the search")),
-                )
+            .when(market_cut > 0, |list| {
+                list.child(note(
+                    format!("… {market_cut} more not shown — narrow the search"),
+                    cx,
+                ))
             })
             .into_any_element()
     }
 
-    /// What a change here reaches, and the busy line or the catalog refresh.
-    fn top_bar(&self, cx: &mut Context<Self>) -> AnyElement {
-        let line = match &self.busy {
-            Some(change) => change.doing(),
-            // A session reads its plugins when its agent starts, so a change
-            // here is not seen by one already running — said, because a switch
-            // that visibly did nothing reads as broken.
-            None => "Changes reach a session when its agent next starts".to_string(),
-        };
+    /// A listing that failed: why, and the way to ask again — otherwise the
+    /// only retry is leaving the mode and coming back, which nothing says.
+    fn failed(&self, why: String, cx: &mut Context<Self>) -> AnyElement {
         div()
-            .h_flex()
-            .items_center()
-            .gap_1()
-            .px_2()
-            .py_1()
-            .border_b_1()
-            .border_color(cx.theme().border)
+            .flex_1()
+            .v_flex()
+            .gap_2()
+            .p_2()
+            .child(status_line(why, cx))
             .child(
-                div()
-                    .flex_1()
-                    .min_w_0()
-                    .truncate()
-                    .text_xs()
-                    .text_color(cx.theme().muted_foreground)
-                    .child(line),
-            )
-            .when(self.busy.is_none(), |bar| {
-                bar.child(
-                    action("plugins-refresh")
+                div().px_2().child(
+                    action("plugins-retry")
                         .xsmall()
-                        .ghost()
-                        .label("Update marketplaces")
-                        .tooltip("Fetch every marketplace's catalog again")
+                        .outline()
+                        .label("Try again")
                         .on_click(cx.listener(|view, _: &ClickEvent, _, cx| {
-                            view.change(Change::Refresh, cx)
+                            view.catalog = None;
+                            view.mark_stale(cx)
                         })),
-                )
-            })
+                ),
+            )
             .into_any_element()
     }
 
     /// Where an install lands, as one segmented control above the list rather
     /// than a menu on every row: the choice is usually made once for a run of
-    /// installs, and three hundred menus are three hundred places to make it.
+    /// installs, and sixty menus are sixty places to make it.
     fn scope_picker(&self, cx: &mut Context<Self>) -> impl IntoElement + use<> {
         let current = self.install_scope;
         ButtonGroup::new("plugins-scope")
@@ -306,7 +323,7 @@ impl PluginsView {
             .children(Scope::ALL.into_iter().enumerate().map(|(i, scope)| {
                 action(("plugins-scope", i))
                     .label(scope.label())
-                    .tooltip(scope.meaning())
+                    .tooltip(format!("Install for: {}", scope.meaning()))
                     .selected(scope == current)
             }))
             .on_click(cx.listener(|view, clicked: &Vec<usize>, _, cx| {
@@ -317,68 +334,109 @@ impl PluginsView {
             }))
     }
 
-    fn installed_row(&self, i: usize, plugin: &Installed, cx: &mut Context<Self>) -> AnyElement {
-        let busy = self.busy.as_ref().and_then(Change::plugin) == Some(plugin.id.as_str());
-        let idle = self.busy.is_none();
-        let (id, scope, enabled) = (plugin.id.clone(), plugin.scope, plugin.enabled);
+    /// One installed plugin: its name, and a switch per scope.
+    ///
+    /// **Each scope's switch shows what is in force at that scope** — what it
+    /// sets itself, else what it takes from a wider one — and pressing it
+    /// writes the other answer *at that scope*. So turning a global plugin off
+    /// for one project is the Project switch, and leaves every other project
+    /// alone. A switch whose scope sets the answer itself is outlined; one
+    /// taking it from a wider scope is not, which is the difference between
+    /// "this project turns it off" and "it is off everywhere".
+    fn installed_row(&self, i: usize, plugin: &Plugin, cx: &mut Context<Self>) -> AnyElement {
+        let muted = cx.theme().muted_foreground;
+        let on_here = plugin.in_force(Scope::Local);
+        let switches = Scope::ALL.into_iter().map(|scope| {
+            let flip = plugin.flip(scope);
+            let on = plugin.in_force(scope);
+            let own = plugin.set_at(scope);
+            let said = match (on, own) {
+                (true, true) => "on, set here",
+                (false, true) => "off, set here",
+                (true, false) => "on, from a wider scope",
+                (false, false) => "off, from a wider scope",
+            };
+            let press = if on { "off" } else { "on" };
+            let button = action(("plugin-scope", i * 3 + scope as usize))
+                .xsmall()
+                .label(scope.label())
+                .selected(on)
+                .loading(self.running(&flip))
+                .disabled(self.busy.is_some())
+                .tooltip(format!(
+                    "{}: {said} — press to turn it {press}",
+                    scope.meaning()
+                ));
+            let button: Button = if own {
+                button.outline()
+            } else {
+                button.ghost()
+            };
+            button.on_click(
+                cx.listener(move |view, _: &ClickEvent, _, cx| view.change(flip.clone(), cx)),
+            )
+        });
+        let removes = plugin.installed.iter().map(|scope| {
+            let remove = Change {
+                id: plugin.id.clone(),
+                scope: *scope,
+                verb: Verb::Uninstall,
+            };
+            // Named by scope only where there is more than one to choose from.
+            let label = if plugin.installed.len() > 1 {
+                format!("Remove · {}", scope.label())
+            } else {
+                "Remove".to_string()
+            };
+            action(("plugin-remove", i * 3 + *scope as usize))
+                .xsmall()
+                .ghost()
+                .label(label)
+                .loading(self.running(&remove))
+                .disabled(self.busy.is_some())
+                .tooltip(format!(
+                    "Uninstall from {}; the plugin's saved data is kept",
+                    scope.label()
+                ))
+                .on_click(
+                    cx.listener(move |view, _: &ClickEvent, _, cx| view.change(remove.clone(), cx)),
+                )
+        });
         div()
-            .h_flex()
-            .items_center()
-            .gap_2()
+            .v_flex()
             .w_full()
             .px_2()
             .py_1()
-            .text_sm()
+            .gap_1()
             .child(
-                // The switch sets no cursor of its own, and an arrow over a
-                // control that acts reads as one that does not.
-                div().flex_none().when(idle, |d| d.cursor_pointer()).child(
-                    Switch::new(("plugin-enabled", i))
-                        .checked(enabled)
-                        .disabled(!idle)
-                        .on_click(cx.listener(move |view, on: &bool, _, cx| {
-                            let change = if *on {
-                                Change::Enable(id.clone(), scope)
-                            } else {
-                                Change::Disable(id.clone(), scope)
-                            };
-                            view.change(change, cx)
-                        })),
-                ),
+                div()
+                    .h_flex()
+                    .items_center()
+                    .gap_2()
+                    .text_sm()
+                    .child(
+                        div()
+                            .flex_1()
+                            .min_w_0()
+                            .truncate()
+                            // Drawn quieter while a session started here would
+                            // not get it, whichever scope decided that.
+                            .when(!on_here, |name| name.text_color(muted))
+                            .child(plugin.id.clone()),
+                    )
+                    .children(plugin.version.clone().map(|version| {
+                        div().flex_none().text_xs().text_color(muted).child(version)
+                    })),
             )
             .child(
                 div()
-                    .flex_1()
-                    .min_w_0()
-                    .truncate()
-                    .when(!enabled, |name| {
-                        name.text_color(cx.theme().muted_foreground)
-                    })
-                    .child(plugin.id.clone()),
+                    .h_flex()
+                    .items_center()
+                    .gap_1()
+                    .children(switches)
+                    .child(div().flex_1())
+                    .children(removes),
             )
-            .children(plugin.version.clone().map(|version| {
-                div()
-                    .flex_none()
-                    .text_xs()
-                    .text_color(cx.theme().muted_foreground)
-                    .child(version)
-            }))
-            .child(scope_tag(plugin.scope, cx))
-            .child(if busy {
-                note("…", cx)
-            } else {
-                let id = plugin.id.clone();
-                action(("plugin-remove", i))
-                    .xsmall()
-                    .ghost()
-                    .label("Remove")
-                    .disabled(!idle)
-                    .tooltip("Uninstall at this scope; the plugin's saved data is kept")
-                    .on_click(cx.listener(move |view, _: &ClickEvent, _, cx| {
-                        view.change(Change::Uninstall(id.clone(), scope), cx)
-                    }))
-                    .into_any_element()
-            })
             .into_any_element()
     }
 
@@ -386,19 +444,36 @@ impl PluginsView {
         &self,
         i: usize,
         plugin: &Available,
-        installed: &[Installed],
+        catalog: &Catalog,
         cx: &mut Context<Self>,
     ) -> AnyElement {
         let scope = self.install_scope;
         let muted = cx.theme().muted_foreground;
-        let here = installed
-            .iter()
-            .any(|p| p.id == plugin.id && p.scope == scope);
-        let busy = self.busy.as_ref().and_then(Change::plugin) == Some(plugin.id.as_str());
         let meta = match plugin.install_count {
             Some(count) => format!("{} · {count} installs", plugin.marketplace),
             None => plugin.marketplace.clone(),
         };
+        let install = Change {
+            id: plugin.id.clone(),
+            scope,
+            verb: Verb::Install,
+        };
+        let control =
+            if catalog.has(&plugin.id, scope) {
+                note("Installed", cx)
+            } else {
+                action(("plugin-install", i))
+                    .xsmall()
+                    .outline()
+                    .label("Install")
+                    .loading(self.running(&install))
+                    .disabled(self.busy.is_some())
+                    .tooltip(format!("Install for: {}", scope.meaning()))
+                    .on_click(cx.listener(move |view, _: &ClickEvent, _, cx| {
+                        view.change(install.clone(), cx)
+                    }))
+                    .into_any_element()
+            };
         div()
             .v_flex()
             .w_full()
@@ -419,23 +494,7 @@ impl PluginsView {
                             .child(plugin.name.clone()),
                     )
                     .child(div().flex_none().text_xs().text_color(muted).child(meta))
-                    .child(if here {
-                        note("Installed", cx)
-                    } else if busy {
-                        note("…", cx)
-                    } else {
-                        let id = plugin.id.clone();
-                        action(("plugin-install", i))
-                            .xsmall()
-                            .outline()
-                            .label("Install")
-                            .disabled(self.busy.is_some())
-                            .tooltip(format!("Install for: {}", scope.meaning()))
-                            .on_click(cx.listener(move |view, _: &ClickEvent, _, cx| {
-                                view.change(Change::Install(id.clone(), scope), cx)
-                            }))
-                            .into_any_element()
-                    }),
+                    .child(control),
             )
             .when(!plugin.description.is_empty(), |row| {
                 row.child(
@@ -462,27 +521,14 @@ fn heading(text: &'static str, cx: &App) -> AnyElement {
         .into_any_element()
 }
 
-fn note(text: &'static str, cx: &App) -> AnyElement {
+/// One muted line inside the list — an empty section, a cut, a plugin that is
+/// already installed where an install would land.
+fn note(text: impl Into<gpui::SharedString>, cx: &App) -> AnyElement {
     div()
         .flex_none()
         .px_2()
         .text_xs()
         .text_color(cx.theme().muted_foreground)
-        .child(text)
-        .into_any_element()
-}
-
-/// Which scope an install is at, as a small bordered word: the one fact that
-/// tells apart two rows of the same plugin.
-fn scope_tag(scope: Scope, cx: &App) -> AnyElement {
-    div()
-        .flex_none()
-        .px_1()
-        .rounded(cx.theme().radius)
-        .border_1()
-        .border_color(cx.theme().border)
-        .text_xs()
-        .text_color(cx.theme().muted_foreground)
-        .child(scope.label())
+        .child(text.into())
         .into_any_element()
 }

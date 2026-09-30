@@ -4829,6 +4829,7 @@ dependencies = [
 name = "onehand-workbench-plugins"
 version = "0.1.0"
 dependencies = [
+ "dirs 5.0.1",
  "gpui",
  "gpui-component",
  "onehand-core",

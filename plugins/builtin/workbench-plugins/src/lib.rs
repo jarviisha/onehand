@@ -54,10 +54,11 @@ impl WorkbenchMode for Mode {
     fn handle(&mut self, request: &Request<'_>, cx: &mut App) -> bool {
         match request {
             // Something other than this mode may have changed what is
-            // installed — a terminal, or the agent itself — so the list is read
-            // again the next time it is drawn. One local command, well under a
-            // second, so there is nothing to save by waiting longer.
-            Request::Shown => {
+            // installed — a terminal, or the agent itself during a turn — so
+            // the list is read again the next time it is drawn. One local
+            // command, well under a second, so there is nothing to save by
+            // waiting longer.
+            Request::Rescan | Request::Shown => {
                 self.view.update(cx, |view, cx| view.mark_stale(cx));
                 true
             }

@@ -929,20 +929,29 @@ see the rail, below.
   one more when it lands. Every write moves `Issues::revision` on, and the mode keeps whichever copy
   is newer, since two landings can reach the screen out of order.
 
-- **Plugins**: the Claude Code plugins that reach a session started in the project on screen —
-  installed globally (Claude Code's `user` scope), for the project, or for the project on this
-  machine alone (`local`) — each with a switch, a scope tag and *Remove*; under them the known
-  marketplaces' plugins, most installed first, searched, capped at 60 rows with the cut said, and
-  installed at the scope picked above the list. **Everything goes through `claude plugin … --json`
-  and nothing reads or writes Claude Code's own files**: their layout belongs to Claude Code and
-  already carries a version number, while the command line is what it publishes. The listing names
-  every project's installs, and only the global ones and this project's are kept. **An install never
-  passes `-y`** — a marketplace can declare a command to run, and `-y` accepts it unseen — so one
-  that wants a command refuses and says so on the status line, left to a person in a terminal.
-  **Remove keeps the plugin's data** (`--keep-data`), since reinstalling undoes a removal and
-  nothing undoes a deleted data directory. One change at a time, because each rewrites a settings
-  file or the install record; the list is read again after each and whenever the mode is shown.
-  A change reaches a session when its agent next starts, and the mode says so.
+- **Plugins**: the Claude Code plugins that reach a session started in the project on screen, one
+  row per plugin, and under them the known marketplaces' plugins — most installed first, searched,
+  capped at 60 rows with the cut said, and installed at the scope picked above the list. **Each row
+  carries a switch per scope — Global (Claude Code's `user`), Project, Local — showing what is in
+  force *at* that scope** (what it sets itself, else what the next wider one sets), outlined where
+  the scope sets it and ghosted where it inherits; pressing one writes the opposite answer at that
+  scope alone, so turning a global plugin off for one project touches only that project. *Remove*
+  is per scope the plugin is installed at. **Every change goes through `claude plugin … --scope`
+  and nothing writes Claude Code's files**: their layout belongs to Claude Code, and its install
+  record already carries a version number. **What each scope sets is read from the three
+  `settings.json` files' `enabledPlugins`**, because the listing's `enabled` is the answer with every
+  scope already folded in — the same on every record of one plugin — so it cannot tell a project
+  turning a plugin off from a plugin never turned on. The folded answer is still the fallback where
+  no scope sets anything, and the narrowest scope's value in force is asserted equal to it. The
+  listing names every project's installs; only the global ones and this project's are kept.
+  **An install never passes `-y`** — a marketplace can declare a command to run, and `-y` accepts it
+  unseen — so one that wants a command refuses on the status line, left to a person in a terminal.
+  **Remove keeps the plugin's data** (`--keep-data`): reinstalling undoes a removal, nothing undoes
+  a deleted data directory. One change at a time, since each rewrites a settings file or the install
+  record, with the pressed control showing it working; the list is read again after each, when the
+  mode is shown and at every `Rescan`. A change reaches a session when its agent next starts, and
+  the mode says so. There is no *Remove override* — the command line can set a scope on or off but
+  not back to saying nothing, so a scope once set stays set until its file is edited.
 
 State is per project root, held by the mode that works on it, so switching roots swaps the whole
 thing.
