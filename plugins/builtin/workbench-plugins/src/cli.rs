@@ -253,12 +253,27 @@ impl Catalog {
 
 /// The listing's shape with `--available`: installs and offers apart. Without
 /// that flag it is a bare array, so the flag is part of what this reads.
+///
+/// **Each record is read on its own, and one this build cannot read is
+/// skipped.** The listing is Claude Code's and grows: a scope this enum does
+/// not name — managed settings have one — read as part of one list would fail
+/// the whole listing, and the mode would show an error where every other
+/// plugin should be, with *Try again* failing the same way for good. Skipped,
+/// it costs that one record.
 #[derive(Deserialize)]
 struct Listing {
     #[serde(default)]
-    installed: Vec<Installed>,
+    installed: Vec<serde_json::Value>,
     #[serde(default)]
-    available: Vec<Available>,
+    available: Vec<serde_json::Value>,
+}
+
+/// The records of `records` this build can read.
+fn readable<T: serde::de::DeserializeOwned>(records: Vec<serde_json::Value>) -> Vec<T> {
+    records
+        .into_iter()
+        .filter_map(|record| serde_json::from_value(record).ok())
+        .collect()
 }
 
 /// What a settings file's `enabledPlugins` says, by plugin.
@@ -293,7 +308,7 @@ pub(crate) fn parse(
         .map_err(|err| format!("Claude Code's plugin list could not be read: {err}"))?;
     let root = canonical(root);
     let mut installed: Vec<Plugin> = Vec::new();
-    for record in listing.installed {
+    for record in readable::<Installed>(listing.installed) {
         let reaches = match record.scope {
             Scope::User => true,
             Scope::Project | Scope::Local => record
@@ -320,7 +335,7 @@ pub(crate) fn parse(
         plugin.installed.sort();
     }
 
-    let mut available = listing.available;
+    let mut available: Vec<Available> = readable(listing.available);
     for plugin in &mut available {
         plugin.haystack = format!(
             "{}\n{}\n{}",
@@ -579,6 +594,27 @@ mod tests {
         assert_eq!(order, ["popular", "rare", "uncounted"]);
         assert!(catalog.available[0].matches("does things"));
         assert!(!catalog.available[1].matches("does things"));
+    }
+
+    #[test]
+    fn a_record_this_build_cannot_read_is_skipped_rather_than_failing_the_listing() {
+        // A scope added after this was written — managed settings already
+        // have one — must cost that one record, not every row in the mode.
+        let listing = r#"{
+          "installed": [
+            {"id": "policy@corp", "scope": "managed", "enabled": true},
+            {"id": "ponytail@ponytail", "scope": "user", "enabled": true}
+          ],
+          "available": [
+            {"pluginId": "odd@m"},
+            {"pluginId": "ok@m", "name": "ok", "marketplaceName": "m"}
+          ]
+        }"#;
+        let catalog = parse(listing, Path::new("/work/app"), &Default::default()).unwrap();
+        let installed: Vec<&str> = catalog.installed.iter().map(|p| p.id.as_str()).collect();
+        assert_eq!(installed, ["ponytail@ponytail"]);
+        let available: Vec<&str> = catalog.available.iter().map(|p| p.id.as_str()).collect();
+        assert_eq!(available, ["ok@m"]);
     }
 
     #[test]

@@ -951,6 +951,9 @@ see the rail, below.
   plugin no scope mentions is off, which is what the listing says of one. It is kept only to be
   compared against, which is how a source the files do not show is noticed. The
   listing names every project's installs; only the global ones and this project's are kept.
+  **Each record is read on its own**, and one this build cannot read — a scope it does not name,
+  such as `managed` — is skipped rather than failing the listing, so a plugin installed by managed
+  settings is not listed here while every other one still is.
   **An install never passes `-y`** — a marketplace can declare a command to run, and `-y` accepts it
   unseen — so one that wants a command refuses on the status line, left to a person in a terminal.
   **Remove keeps the plugin's data** (`--keep-data`): reinstalling undoes a removal, nothing undoes
