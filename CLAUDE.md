@@ -577,7 +577,8 @@ of switches in Settings ▸ Workspace, all through `Shell::toggle_unattended`. `
 `onehand.toml` has no switch of its own any more — only the label (default `auto`), the interval,
 the timeout, the mode and the agent. A tick on `Shared` (one per process, like the bridge) looks for
 the oldest open issue **you** opened that carries the label, in the opted-in projects, in rail order;
-a project row says `auto`, or `auto · #N` while a run is on issue N (`crate::unattended::live_run`,
+a project row says `auto`, `auto · #N` while a run is on issue N, or `auto · #N waiting` while it
+waits on a card (`crate::unattended::live_runs`,
 with `cx.refresh_windows()` at start and settle because nothing the rail watches changes).
 **Everything outside the checkout goes through a connector, and a project that cannot be worked
 says so.** `onehand_core::connector::Connector` is the trait — account, whether it serves a project,

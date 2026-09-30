@@ -195,9 +195,9 @@ Picking one runs the same path as a found issue, with four differences:
 - a mode the agent does not offer, once learned, refuses the pick *before* the
   claim, rather than claiming an issue for a run that would fail at its prompt.
 
-It is one run working at a time for picked and found alike, and a pick while one
-is working is refused with the issue it is waiting on. A run waiting on a card
-does not count. Beside *Check again* in Settings,
+A run is started only while none is working, for picked and found alike, and a
+pick while one is working is refused with the issue it is waiting on. A run
+waiting on a card does not count. Beside *Check again* in Settings,
 *Look now* runs the search at once instead of at the next tick, and always says
 what came of it: nothing switched on, a run already going, what blocks every
 run, or that no issue of yours carries the label.
@@ -214,8 +214,9 @@ its last line is only read by somebody who opened it in time; the issue comment
 is the record that stays.
 
 **The rail says what is switched on and what is running.** A switched-on project
-row carries a pill reading `auto`, and `auto · #N` while a run is working issue N
-of that project. The run's own session is on a worktree's row of its own, so
+row carries a pill reading `auto`, `auto · #N` while a run is working issue N of
+that project, and `auto · #N waiting` while that run waits on a card — a working
+run is named ahead of a waiting one on the same project. The run's own session is on a worktree's row of its own, so
 without the pill the project the issue belongs to would say nothing about it.
 
 **Only issues you opened.** The issue body goes into the prompt word for word,

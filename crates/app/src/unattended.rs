@@ -885,11 +885,16 @@ fn start(claimed: Claimed, cx: &mut App) -> Result<(), Unstarted> {
         let pending = with(cx, |u| u.run_mut(uid).and_then(|run| pending_ending(run))).flatten();
         settle(uid, pending.unwrap_or(Ending::Closed), cx)
     });
+    // Fires on every notify the session makes, a streamed chunk included, so
+    // it reads rather than borrowing the global mutably, and a run that is not
+    // waiting costs one lookup.
     let answered = cx.observe(&session, move |session, cx| {
-        let waiting = with(cx, |u| {
-            u.run_mut(uid).is_some_and(|run| run.waiting.is_some())
-        });
-        if waiting == Some(true) && !session.read(cx).chat.awaiting_permission() {
+        let waiting = Shared::global(cx)
+            .unattended
+            .as_ref()
+            .and_then(|u| u.runs.iter().find(|run| run.uid == uid))
+            .is_some_and(|run| run.waiting.is_some());
+        if waiting && !session.read(cx).chat.awaiting_permission() {
             resume(uid, &session, cx);
         }
     });
@@ -1069,7 +1074,13 @@ fn resume(uid: u64, session: &Entity<ChatSession>, cx: &mut App) {
             run._clock = ticking;
         }
     });
-    note(session, "Card settled; the run carries on".to_string(), cx);
+    // Only what is known: after a Stop the turn ends next, so "carries on"
+    // would be the transcript's last word on a run that did not.
+    note(
+        session,
+        "Card settled; the clock runs again".to_string(),
+        cx,
+    );
     cx.refresh_windows();
 }
 
