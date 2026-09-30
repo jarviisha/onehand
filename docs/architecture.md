@@ -223,7 +223,7 @@ module owns, and events cross to GPUI on a plain `futures` channel belonging to 
 ### Built-in plugins
 
 `crates/app/src/plugins.rs` is the composition root, and it is three ordered lists:
-the Workbench modes (Editor, Markdown, Neovim, Issues, which is the order on the strip —
+the Workbench modes (Editor, Markdown, Neovim, Issues, Plugins, which is the order on the strip —
 Files is a mode too, composed inside the Editor rather than listed beside it),
 the connectors (`plugins::connectors`, GitHub alone today) and how a named
 remote channel is opened. Nothing registers, nothing is
@@ -764,7 +764,7 @@ renderer read `chat.items` / `chat.busy` without knowing where the model lives.
 
 ### Workbench
 
-[crates/app/src/workbench/](../crates/app/src/workbench/) — one dock panel, four modes. **The panel
+[crates/app/src/workbench/](../crates/app/src/workbench/) — one dock panel, five modes. **The panel
 draws none of them**: each is a crate implementing one trait, holding its own state and handing back
 its own view, and what is left here is the list, the active ID, the strip and the two facts the frame
 reads off the showing mode's declaration (see *Built-in plugins*).
@@ -928,6 +928,21 @@ see the rail, below.
   calls, so an edit made meanwhile waits for it; an edit saved while a sync runs sets a flag that runs
   one more when it lands. Every write moves `Issues::revision` on, and the mode keeps whichever copy
   is newer, since two landings can reach the screen out of order.
+
+- **Plugins**: the Claude Code plugins that reach a session started in the project on screen —
+  installed globally (Claude Code's `user` scope), for the project, or for the project on this
+  machine alone (`local`) — each with a switch, a scope tag and *Remove*; under them the known
+  marketplaces' plugins, most installed first, searched, capped at 60 rows with the cut said, and
+  installed at the scope picked above the list. **Everything goes through `claude plugin … --json`
+  and nothing reads or writes Claude Code's own files**: their layout belongs to Claude Code and
+  already carries a version number, while the command line is what it publishes. The listing names
+  every project's installs, and only the global ones and this project's are kept. **An install never
+  passes `-y`** — a marketplace can declare a command to run, and `-y` accepts it unseen — so one
+  that wants a command refuses and says so on the status line, left to a person in a terminal.
+  **Remove keeps the plugin's data** (`--keep-data`), since reinstalling undoes a removal and
+  nothing undoes a deleted data directory. One change at a time, because each rewrites a settings
+  file or the install record; the list is read again after each and whenever the mode is shown.
+  A change reaches a session when its agent next starts, and the mode says so.
 
 State is per project root, held by the mode that works on it, so switching roots swaps the whole
 thing.

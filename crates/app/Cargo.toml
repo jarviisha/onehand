@@ -35,6 +35,7 @@ onehand-workbench-editor = { path = "../../plugins/builtin/workbench-editor" }
 onehand-workbench-issues = { path = "../../plugins/builtin/workbench-issues" }
 onehand-workbench-markdown = { path = "../../plugins/builtin/workbench-markdown" }
 onehand-workbench-neovim = { path = "../../plugins/builtin/workbench-neovim" }
+onehand-workbench-plugins = { path = "../../plugins/builtin/workbench-plugins" }
 
 # gpui-component IS pinned by rev (decision D7).
 # The `tree-sitter-*` set is deliberately a *subset*, not `tree-sitter-languages`
