@@ -109,7 +109,7 @@ A release is cut by pushing a `v*` tag: that builds `--locked` on an older runne
 glibc requirement is one more distributions meet, and packages the binary with the icon, the desktop
 installer and the licences into a tarball attached to a GitHub pre-release. Nothing publishes to
 crates.io and nothing can — a git dependency with no rev is not publishable there, so tagged tarballs
-are the only channel. `onehand --version` and Settings' Shortcuts page both name the build.
+are the only channel. `onehand --version` and the foot of Settings' nav both name the build.
 
 Tests are inline `#[cfg(test)]` modules — there is no `tests/` directory.
 
@@ -615,8 +615,8 @@ unparsable interval, a mode the agent lacks) is `Unattended::blocked`, and it is
 leaving the state unset: the switches stay on screen, so the reason has to be readable by the rows
 and by Settings, and every connector is still asked. A project is looked at when it is switched on
 (`check_now`), when its window registers and on *Check again* (`recheck`), and on **every tick, a
-run included** — all three through one `look_blocking`. One signed-in line per connector heads the switches in
-Settings ▸ Workspace. A run's own worktree never offers the switch (`ProjectFacts::unattended` is
+run included** — all three through one `look_blocking`. One row per connector, signed in and as whom, is on
+Settings ▸ Connections, with its *Check again*; Settings ▸ Workspace keeps *Look now* and the switches. A run's own worktree never offers the switch (`ProjectFacts::unattended` is
 `None` there). **A run can also be picked by hand**: *Work an issue…* in either project menu opens
 `dialogs::pick_issue` over `unattended::open_issues_blocking` (every open issue, author on the row,
 bounded at `ISSUES_SHOWN`), and `unattended::start_picked` runs it now. That run is shown as it starts
@@ -1454,34 +1454,92 @@ centre is the chat, right dock the Workbench, bottom dock the terminal.
   reader: the dot on the conversation header's terminal button, the only thing on screen that can say
   a child process outlived a closed dock. It keeps the guard it had, on the pane's side, because it
   runs on every chunk a build prints.
-- **Dialogs** ([dialogs.rs](crates/app/src/dialogs.rs)): Settings, the conversation rename and the
-  worktree split. **Settings is a nav column and a page**, four pages wide: *Appearance* (the
+- **Dialogs** ([dialogs.rs](crates/app/src/dialogs.rs)): the conversation rename, the worktree
+  split, the branch rename and the issue picker. **Settings** lives in its own module,
+  [settings.rs](crates/app/src/settings.rs), and is a **roomy modal** (`settings::dialog`): as wide
+  and tall as the window less a margin, capped at 960×680px, centred on both axes through
+  `margin_top` rather than the library's tenth-of-the-viewport drop, which would push a box that
+  tall off the bottom. It was capped at 1200×860 for one change, which left a one-control page
+  looking lost; the nav is 13.5rem with 1rem of padding and the page 2rem, the sizes the Settings
+  proposal in `docs/` settled on. **Beside the ✕ is a word on the last write** made from the page
+  showing — *Saved*, or *Not saved — why* in the danger ink (`Shell::report_write`, which every
+  appearance, agents and workspace write goes through; the Shortcuts page's is the editor's own
+  `note`, and its failures stay under the field they are about). **A workspace write is only noted
+  when Settings asked for it** (`Shell::workspace_note_wanted`, set by the name field, the unattended
+  switches and binding a folder): runs, pins and the dock write the same file, and one of those
+  landing while Settings is open is not a change the page on screen made. The flag is dropped on a
+  page change (a rename still waiting on its debounce would otherwise say *Saved* on the next page)
+  and on close (an unbound workspace writes nothing, so nothing would ever take it). Settings apply as they are made, so whether the
+  write took is the one thing left to say; the word goes with a page change or a reopen. The
+  Connections page says **when the connectors last answered** (`unattended::accounts_checked_at`,
+  through `chat::pane::rel_time`) and turns *Check again* into a refusing *Checking…* while one is out
+  (`accounts_checking`, a count of checks still out rather than a flag, since a scheduled look
+  landing first would otherwise give the button back while the one asked for is running). It was drawn in the `DockArea`'s place for a while; that bought room and cost
+  a mode — every app command had to be switched off while it was up, and it had to be left by
+  navigating — so it went back to a modal with the room kept. **It is drawn by a view of its own**
+  (`settings::SettingsView`, holding the shell weakly) placed in the dialog's content, never built
+  inside `Shell::render`: every page reads the shell, and reading an entity from inside its own
+  render is the panic *"cannot read Shell while it is already being updated"*. A child view renders
+  after the parent's render has returned. The library's padding (`p_0`) and ✕ are off: the view pads
+  itself and draws its own ✕ in the corner, since the library's is a plain button with the arrow
+  cursor. Esc is the dialog's, plus the input's own `Escape` action caught on the view for when a
+  field holds the caret — the shortcut field's Esc still cancels the edit instead. **Settings is a nav column and a page**, five pages wide: *Appearance* (the
   light/dark/system picker), *Workspace* (the name and the storage binding, then *New* / *Open
-  workspace…*), *Agents* (the global agent menu and the form that edits it) and *Shortcuts* (the
-  keymap, with the build at its foot). Agents and the keymap were dialogs of their own behind two
+  workspace…*, then unattended runs), *Agents* (the global agent menu and the form that edits it),
+  *Connections* (every connector in `plugins::connectors`, signed in and as whom, and *Check again* —
+  a page of its own because more are coming and a connection is a fact about the machine rather
+  than about the one feature that needed it first; today that is GitHub alone, over `gh`. It was
+  called *MCP Servers* for one change and renamed for what it holds: none of these is an MCP
+  server, and a real MCP manager would be a group of its own) and *Shortcuts* (the keymap).
+  **Every page's head carries its scope** as a tag beside the title (`settings::page_head`) —
+  *App*, or *Workspace: name* on the one page about this window's workspace — so a setting is never
+  changed in the belief that it reaches the other way. **The default agent is the first in the
+  list** (`agents.first()` is what *New session* and the warm-up start); *Make default* on any other
+  row moves it there (`Shell::make_default_agent`, with `settings::draft_after_promote` keeping an
+  open form on its agent), so being default is an order and not a second setting to drift from it.
+  **An agent can be tested** (*Test*, `Shell::check_agent`): its command is looked for the way a
+  session would — a path as a path, a relative one from the project root the session would start it
+  in, a bare name along `PATH` (`onehand_core::config::find_command`)
+  — off the UI loop, and the answer sits under the command, filed under the whole command line
+  (`settings::check_key`) so two agents on one launcher do not share an answer and an edit drops it.
+  It names the program it found, since the program is all it looked for. It is asked for and never run on opening, and it only finds a file: whether the program
+  speaks ACP can be known only by starting it, which a check ahead of a session must not do.
+  **Closing Settings with an edit pending asks first** (`Shell::request_close_settings`, behind the
+  ✕, Esc, the backdrop and a field's own Escape): an agent form holding changes, or a shortcut whose
+  field no longer matches its keys (`keymap::Editor::dirty`), gets *Keep editing* / *Discard* — a
+  shortcut opened and left as it was is nothing to lose; with nothing pending it closes at once, since a
+  question on every close is one people learn to click through. The drafts already survive moving
+  between pages — the agent form lives on the shell, the shortcut edit on its editor. Agents and the keymap were dialogs of their own behind two
   more rail rows, so "where is that setting" had three answers and which was right depended on which
   row somebody remembered; the rail footer is one row now. What is in here belongs to three scopes —
   the theme is app-wide, the name and binding are one workspace's, the agent list is every
   workspace's — and stacked in a single column the only thing that said so was a row of `text_xs`
   labels. A page per scope says it without a sentence, and the appearance page says its own out loud
   because the theme is a global: two windows cannot be drawn in two modes.
-  Three things that shape carries. **The page is `Shell::settings_page`, not dialog state**: a
-  dialog is rebuilt from its content closure on every frame it is open, so a page captured
-  when it opened would be the page it showed until it closed — reading the shell inside the closure
-  is what makes the nav work at all. **The page scrolls and the dialog does not**, at one height for every
-  page, so the nav stays reachable from the bottom of the keymap and the box does not jump size
-  between pages. Both that height and the width are **clamped to the frame** (`dialogs::body_height`,
-  `width_within`): the library centres a dialog by subtracting half its width from half the
-  viewport's and never clamps, so a box wider than the window starts at a negative x with its nav
-  column off the left edge and its ✕ off the right, and nothing to scroll either back. And a nav row is a `div`, not the app's button wrapper, for the reason the rail's rows are:
-  a full-width library `Button` centres its content and cannot be refined out of it, so a column of
-  them reads as a stack of banners. No icons on them either — four words in a column need no second
-  alphabet, and every icon would be one chosen for a category rather than for a thing.
+  Three things that shape carries. **The page scrolls and the frame does not**, so the nav stays
+  reachable from the bottom of the keymap; the page's content is held to a centred reading measure
+  so a wide window does not stretch a field across it. **One surface, and the only lines on it are
+  between groups** (and the dialog's own edge): no border between the nav and the page, no header
+  bar (the ✕ sits in the top-right corner), no box around a group. A group (`settings::section`) is a heading and a
+  hairline above it; the page's first group is untitled and takes no rule, since a line between a
+  page's head and the first thing it heads divides what belongs together. A setting is **stacked**
+  (`settings::field`): its name, a line about it, and the control under both at the column's full
+  width, so an input is as wide as what goes in it. Things there are many of — agents, commands —
+  are `settings::list_row` instead, name left and actions right, where stacking would make every
+  entry three lines tall. The library's outlined `GroupBox` held these groups for one change and
+  was taken back out: a box per group on a page that is already one panel is a border saying what
+  the spacing says. The Shortcuts page groups commands by where they work (*Window*, *Composer*, the
+  fixed *Terminal* keys) and draws keys as the library's `Kbd` caps. The nav is headed *Settings*
+  and ends on the build (`onehand x.y.z`), which is about the app rather than any one page. A nav
+  row is a `div`, not the app's button wrapper, for the reason the rail's rows are: a full-width
+  library `Button` centres its content and cannot be refined out of it, so a column of them reads
+  as a stack of banners. Each leads with its page's mark — palette, folder, bot, and a keyboard,
+  which is the one `crate::icons` entry this page needed — so the column reads as the same kind of
+  list the rail beside it is.
   **There is no footer**, and that is the rule it keeps: every control sits under what it acts on.
   *Choose folder…* and *Unbind* were in one, three items below the folder they name and under a list
-  of arbitrary length — and a `.primary()` button at the foot of a settings dialog reads as *Save*,
-  while that one opens a picker and re-points where the workspace is written. The close button in the
-  title row and Esc are the way out, as on every dialog here.
+  of arbitrary length — and a `.primary()` button at the foot of a settings page reads as *Save*,
+  while that one opens a picker and re-points where the workspace is written.
 - **Multi-window**: one window hosts exactly one workspace. Opening a workspace whose storage dir is
   already on screen focuses that window instead of duplicating it; storage dirs are canonicalized on
   the way in so symlink and `..` aliases dedupe.

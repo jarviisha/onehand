@@ -4,7 +4,7 @@
 //! is about the window rather than about one panel.
 
 use crate::chat::ChatPane;
-use crate::dialogs::{AgentDraft, DraftShift, SettingsPage};
+use crate::settings::{AgentCheck, AgentDraft, DraftShift, SettingsPage};
 use crate::state::{OpenWindow, Shared, WorkspaceWindow};
 use crate::terminal::TerminalPanel;
 use crate::workbench::{EDITOR_MODE, MARKDOWN_MODE, NEOVIM_MODE, Workbench};
@@ -338,6 +338,16 @@ pub struct Shell {
     /// Held by Settings' body and focused when it opens.
     settings_focus: gpui::FocusHandle,
     keymap_editor: Entity<crate::keymap::Editor>,
+    settings_view: Entity<crate::settings::SettingsView>,
+    /// What each agent's last *Test* found, by `settings::check_key`.
+    agent_checks: HashMap<String, AgentCheck>,
+    /// How the last write made from the Settings page showing went.
+    settings_note: Option<Result<(), String>>,
+    /// The next workspace write was asked for from Settings, so how it goes is
+    /// Settings' to say. Workspace writes also come from runs, pins and the
+    /// dock, and one of those landing while Settings is open is not a change
+    /// the page in front of the user made.
+    workspace_note_wanted: bool,
     held_commands: std::collections::HashSet<&'static str>,
     /// The workspace-rename field.
     workspace_name: Entity<InputState>,
@@ -733,6 +743,9 @@ impl Shell {
                     let name = state.read(cx).value().trim().to_string();
                     if !name.is_empty() && name != shell.window.workspace.name {
                         shell.window.workspace.name = name;
+                        if shell.settings_open {
+                            shell.workspace_note_wanted = true;
+                        }
                         shell.save_workspace_soon(cx);
                         cx.notify();
                     }
@@ -786,6 +799,13 @@ impl Shell {
             settings_return_focus: None,
             settings_focus: cx.focus_handle(),
             keymap_editor: cx.new(|cx| crate::keymap::Editor::new(window, cx)),
+            settings_view: {
+                let shell = cx.weak_entity();
+                cx.new(|_| crate::settings::SettingsView::new(shell))
+            },
+            agent_checks: HashMap::new(),
+            settings_note: None,
+            workspace_note_wanted: false,
             held_commands: Default::default(),
             workspace_name,
             renaming: None,
@@ -2113,6 +2133,9 @@ impl Shell {
         {
             crate::unattended::check_now(self.project_for_runs(&root.path), cx);
         }
+        if self.settings_open {
+            self.workspace_note_wanted = true;
+        }
         self.save_workspace(window, cx);
         // The project page's menu says whether this is on, in the entry that was
         // just used.
@@ -2636,12 +2659,75 @@ impl Shell {
         self.settings_return_focus = window.focused(cx);
         self.held_commands.clear();
         self.settings_open = true;
+        self.settings_note = None;
+        self.keymap_editor
+            .update(cx, |editor, _| editor.forget_note());
         self.settings_focus.focus(window, cx);
         cx.notify();
     }
 
+    /// Close Settings, unless that would throw away something not saved.
+    ///
+    /// An agent form or a shortcut left mid-edit is asked about first, and only
+    /// then: a question on every close teaches the user to click through it,
+    /// and closing with nothing pending has nothing to lose.
+    pub fn request_close_settings(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let pending = self.agent_draft.dirty(&Shared::global(cx).agents, cx)
+            || self.keymap_editor.read(cx).dirty(cx);
+        if !pending {
+            self.close_settings(window, cx);
+            return;
+        }
+        let shell = cx.entity();
+        window.open_alert_dialog(cx, move |alert, _, _| {
+            let shell = shell.clone();
+            alert
+                .title("Discard unsaved changes?")
+                .description(
+                    "An agent or a shortcut is still being edited. Closing Settings now \
+                     throws those changes away.",
+                )
+                // Ours rather than the library's default pair, for the reason
+                // every button in this app is ours: the library draws its own
+                // with the arrow cursor.
+                .footer(
+                    DialogFooter::new()
+                        .child(
+                            DialogClose::new().child(
+                                crate::controls::action("keep-settings-edit")
+                                    .ghost()
+                                    .label("Keep editing"),
+                            ),
+                        )
+                        .child(
+                            crate::controls::action("discard-settings-edit")
+                                .danger()
+                                .label("Discard")
+                                .on_click(move |_, window: &mut Window, cx: &mut App| {
+                                    window.close_dialog(cx);
+                                    shell.update(cx, |shell: &mut Self, cx| {
+                                        shell.agent_draft.clear(window, cx);
+                                        shell.keymap_editor.update(cx, |editor, cx| {
+                                            if editor.editing() {
+                                                editor.cancel(window, cx);
+                                            }
+                                        });
+                                        shell.close_settings(window, cx);
+                                    });
+                                }),
+                        ),
+                )
+        });
+    }
+
     pub fn close_settings(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if !self.settings_open {
+            return;
+        }
         self.settings_open = false;
+        // An unbound workspace writes nothing, so a flag set there is never
+        // taken; it must not outlive the Settings that set it.
+        self.workspace_note_wanted = false;
         if let Some(focus) = self.settings_return_focus.take() {
             focus.focus(window, cx);
         } else {
@@ -2649,6 +2735,36 @@ impl Shell {
                 .update(cx, |pane, cx| pane.reclaim_focus(window, cx));
         }
         cx.notify();
+    }
+
+    /// The word Settings shows beside its ✕ for `page`. The shortcut editor
+    /// writes the keymap itself, so it keeps its own; every other page's
+    /// writes come through [`Shell::report_write`].
+    pub fn settings_note(&self, page: SettingsPage, cx: &App) -> Option<Result<(), String>> {
+        match page {
+            SettingsPage::Shortcuts => self.keymap_editor.read(cx).note(),
+            _ => self.settings_note.clone(),
+        }
+    }
+
+    /// Say how a write went: a failure as a notification wherever it came
+    /// from, and -- when `noted`, which is to say Settings asked for it -- the
+    /// outcome either way, for Settings to show beside its ✕.
+    fn report_write<E: std::fmt::Display>(
+        &mut self,
+        what: &str,
+        saved: Result<(), E>,
+        noted: bool,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let saved = saved.map_err(|e| e.to_string());
+        if let Err(e) = &saved {
+            window.push_notification(Notification::error(format!("{what} not saved — {e}")), cx);
+        }
+        if noted && self.settings_open {
+            self.settings_note = Some(saved);
+        }
     }
 
     pub fn settings_focus(&self) -> gpui::FocusHandle {
@@ -2665,6 +2781,12 @@ impl Shell {
 
     pub fn show_settings_page(&mut self, page: SettingsPage, cx: &mut Context<Self>) {
         self.settings_page = page;
+        // A word about the last write belongs to the page it was made on, and
+        // so does a write still waiting on its debounce.
+        self.settings_note = None;
+        self.workspace_note_wanted = false;
+        self.keymap_editor
+            .update(cx, |editor, _| editor.forget_note());
         cx.notify();
     }
 
@@ -2683,7 +2805,7 @@ impl Shell {
 
     /// Remove an agent, and move the form off the hole it leaves.
     ///
-    /// The rule is `dialogs::draft_shift`, which says why a position left
+    /// The rule is `settings::draft_shift`, which says why a position left
     /// uncorrected here is a form that saves over the wrong agent.
     pub fn delete_agent(&mut self, idx: usize, window: &mut Window, cx: &mut Context<Self>) {
         cx.update_global::<Shared, _>(|shared, _| {
@@ -2691,7 +2813,7 @@ impl Shell {
                 shared.agents.remove(idx);
             }
         });
-        match crate::dialogs::draft_shift(self.agent_draft.editing, idx) {
+        match crate::settings::draft_shift(self.agent_draft.editing, idx) {
             DraftShift::Keep => {}
             // The fields go too, not just the index: left filled under a button
             // that now reads "Add", the form offers to recreate the agent the
@@ -2701,6 +2823,77 @@ impl Shell {
         }
         self.persist_agents(window, cx);
         cx.notify();
+    }
+
+    /// Move an agent to the front of the list, which is what makes it the one
+    /// *New session* starts.
+    pub fn make_default_agent(&mut self, idx: usize, window: &mut Window, cx: &mut Context<Self>) {
+        let moved = cx.update_global::<Shared, _>(|shared, _| {
+            if idx == 0 || idx >= shared.agents.len() {
+                return false;
+            }
+            let spec = shared.agents.remove(idx);
+            shared.agents.insert(0, spec);
+            true
+        });
+        if !moved {
+            return;
+        }
+        self.agent_draft.editing =
+            crate::settings::draft_after_promote(self.agent_draft.editing, idx);
+        self.persist_agents(window, cx);
+        cx.notify();
+    }
+
+    /// What the last *Test* filed under `key` found, if there was one.
+    pub fn agent_check(&self, key: &str) -> Option<&AgentCheck> {
+        self.agent_checks.get(key)
+    }
+
+    /// Look for an agent's command the way starting a session would, off the UI
+    /// loop, without starting anything.
+    pub fn check_agent(&mut self, idx: usize, cx: &mut Context<Self>) {
+        let Some(spec) = Shared::global(cx).agents.get(idx).cloned() else {
+            return;
+        };
+        let (key, command) = (crate::settings::check_key(&spec), spec.command);
+        // A session starts its agent in the project's root, so a relative
+        // command is looked for from there: the project on screen is the one
+        // the next *New session* would start in.
+        let root = self
+            .window
+            .workspace
+            .active_root()
+            .map(|root| root.path.clone());
+        self.agent_checks.insert(key.clone(), AgentCheck::Running);
+        cx.notify();
+        cx.spawn(async move |shell, cx| {
+            let found = cx
+                .background_executor()
+                .spawn({
+                    let command = command.clone();
+                    async move {
+                        let path = std::env::var_os("PATH");
+                        onehand_core::config::find_command(
+                            &command,
+                            path.as_deref(),
+                            root.as_deref(),
+                        )
+                    }
+                })
+                .await;
+            shell
+                .update(cx, |shell, cx| {
+                    let check = match found {
+                        Some(at) => AgentCheck::Found(at),
+                        None => AgentCheck::Missing,
+                    };
+                    shell.agent_checks.insert(key, check);
+                    cx.notify();
+                })
+                .ok();
+        })
+        .detach();
     }
 
     /// Commit the form. Adds or replaces depending on `editing`.
@@ -2745,12 +2938,8 @@ impl Shell {
         apply_appearance(choice, Some(window), cx);
 
         let path = Shared::global(cx).config_path.clone();
-        if let Err(e) = AppConfig::update_in_place(&path, |cfg| cfg.appearance = choice) {
-            window.push_notification(
-                Notification::error(format!("Appearance not saved — {e}")),
-                cx,
-            );
-        }
+        let saved = AppConfig::update_in_place(&path, |cfg| cfg.appearance = choice);
+        self.report_write("Appearance", saved, true, window, cx);
         cx.notify();
     }
 
@@ -2759,9 +2948,8 @@ impl Shell {
     fn persist_agents(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let shared = Shared::global(cx);
         let (path, agents) = (shared.config_path.clone(), shared.agents.clone());
-        if let Err(e) = AppConfig::update_in_place(&path, |cfg| cfg.agents = agents) {
-            window.push_notification(Notification::error(format!("Agents not saved — {e}")), cx);
-        }
+        let saved = AppConfig::update_in_place(&path, |cfg| cfg.agents = agents);
+        self.report_write("Agents", saved, true, window, cx);
     }
 
     // ── Workspace settings ──────────────────────────────────────────────────
@@ -2819,6 +3007,9 @@ impl Shell {
         self.window.workspace.storage_dir = Some(dir.clone());
         self.workbench
             .update(cx, |panel, cx| panel.set_storage(Some(&dir), cx));
+        if self.settings_open {
+            self.workspace_note_wanted = true;
+        }
         self.save_workspace(window, cx);
         self.set_window_identity(Some(dir.clone()), window, cx);
         cx.update_global::<Shared, _>(|shared, _| {
@@ -3405,12 +3596,10 @@ impl Shell {
         let layout = self.dock_layout(cx);
         self.window.workspace.layout = layout;
 
-        if let Err(e) = self.window.workspace.to_config().save_to(&dir) {
-            window.push_notification(
-                Notification::error(format!("Workspace not saved — {e}")),
-                cx,
-            );
-        }
+        let saved = self.window.workspace.to_config().save_to(&dir);
+        let noted = std::mem::take(&mut self.workspace_note_wanted);
+        self.report_write("Workspace", saved, noted, window, cx);
+        cx.notify();
     }
 
     /// Re-read everything derived from the files on disk.
@@ -3683,7 +3872,7 @@ impl Render for Shell {
             )
             .children(
                 self.settings_open
-                    .then(|| crate::dialogs::settings(window, cx)),
+                    .then(|| crate::settings::dialog(self.settings_view.clone(), window, cx)),
             )
             .children(sheet_layer)
             .children(dialog_layer)

@@ -102,3 +102,7 @@ shield = "lucide:shield"
 # already use for ending a session by name, and unlike a power mark it does
 # not read as quitting the whole app.
 log-out = "lucide:log-out"
+# The Shortcuts entry in Settings' nav. The bundled set draws no keyboard or
+# key of any kind; its nearest shapes are `square-terminal`, which is the
+# terminal the app already has a dock for, and `asterisk`, a character.
+keyboard = "lucide:keyboard"
