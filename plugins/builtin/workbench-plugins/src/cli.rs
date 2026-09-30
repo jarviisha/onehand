@@ -536,32 +536,55 @@ pub(crate) fn update_to(
     commit: Option<&str>,
     entry: &serde_json::Value,
 ) -> Option<String> {
+    // A newer release is said by its number, which is the name a person
+    // knows it by.
     if let (Some(offered), Some(installed)) = (entry["version"].as_str(), version)
         && !is_hash(installed)
+        && newer(offered, installed)
     {
-        return newer(offered, installed).then(|| offered.to_string());
+        return Some(offered.to_string());
     }
+    // Otherwise the commit — checked even where the release number is the
+    // same, since a repository moves on without bumping it, and that is the
+    // case the installed commit is read for.
     let sha = entry["source"]["sha"].as_str().filter(|sha| is_hash(sha))?;
     let installed = commit?;
-    (!sha.eq_ignore_ascii_case(installed)).then(|| sha[..7].to_string())
+    let (sha, installed) = (sha.to_ascii_lowercase(), installed.to_ascii_lowercase());
+    // Either may be the short form of the other.
+    let same = sha.starts_with(&installed) || installed.starts_with(&sha);
+    (!same).then(|| sha[..7].to_string())
 }
 
-/// Whether release `offered` comes after `installed`: numbers compared part by
-/// part, a leading `v` and any pre-release or build suffix set aside. Two
-/// labels that are not both numbers fall back to being different at all.
+/// Whether release `offered` comes after `installed`.
+///
+/// Numbers compared part by part after a leading `v`, trailing zero parts not
+/// counting (`1.2` is `1.2.0`), and a release after its own pre-release
+/// (`1.3.0` after `1.3.0-beta`). A label that is not a release number on
+/// either side is not compared at all: a guess there is how a catalog lagging
+/// behind is offered as an update, and a downgrade offered is worse than an
+/// update missed.
 fn newer(offered: &str, installed: &str) -> bool {
-    let parts = |label: &str| -> Option<Vec<u64>> {
-        label
-            .trim_start_matches('v')
-            .split(['-', '+'])
-            .next()?
+    fn release(label: &str) -> Option<(Vec<u64>, bool)> {
+        let label = label.trim_start_matches('v');
+        let core = label.split('+').next()?;
+        let (numbers, pre) = match core.split_once('-') {
+            Some((numbers, _)) => (numbers, true),
+            None => (core, false),
+        };
+        let mut parts: Vec<u64> = numbers
             .split('.')
             .map(|part| part.parse().ok())
-            .collect()
-    };
-    match (parts(offered), parts(installed)) {
-        (Some(offered), Some(installed)) => offered > installed,
-        _ => offered.trim_start_matches('v') != installed.trim_start_matches('v'),
+            .collect::<Option<_>>()?;
+        while parts.len() > 1 && parts.last() == Some(&0) {
+            parts.pop();
+        }
+        Some((parts, pre))
+    }
+    match (release(offered), release(installed)) {
+        (Some((offered, offered_pre)), Some((installed, installed_pre))) => {
+            offered > installed || (offered == installed && installed_pre && !offered_pre)
+        }
+        _ => false,
     }
 }
 
@@ -985,6 +1008,57 @@ mod tests {
             update_to(Some("2a8ad9f74633"), Some(installed), &local),
             None
         );
+    }
+
+    #[test]
+    fn a_moved_commit_is_an_update_though_the_release_number_stayed() {
+        let both = serde_json::json!({"name": "p", "version": "1.2.3", "source": {
+            "source": "url", "sha": "c55ee46073ed923f86ce59a5eb3b6d895095d1b7"}});
+        let old = "5b15a47f2d7150f545fbcacbfe381787fc0230dc";
+        assert_eq!(
+            update_to(Some("1.2.3"), Some(old), &both).as_deref(),
+            Some("c55ee46")
+        );
+        // A newer release is named by its number even where a commit moved too.
+        let newer_release = serde_json::json!({"name": "p", "version": "1.3.0", "source": {
+            "source": "url", "sha": "c55ee46073ed923f86ce59a5eb3b6d895095d1b7"}});
+        assert_eq!(
+            update_to(Some("1.2.3"), Some(old), &newer_release).as_deref(),
+            Some("1.3.0")
+        );
+    }
+
+    #[test]
+    fn a_short_commit_on_either_side_matches_the_long_one_it_begins() {
+        let pinned = serde_json::json!({"name": "p", "source": {
+            "source": "url", "sha": "c55ee46073ed923f86ce59a5eb3b6d895095d1b7"}});
+        assert_eq!(update_to(Some("1.2.3"), Some("c55ee46"), &pinned), None);
+        assert_eq!(
+            update_to(Some("1.2.3"), Some("C55EE46073ED"), &pinned),
+            None
+        );
+        let short = serde_json::json!({"name": "p", "source": {"source": "url", "sha": "c55ee46"}});
+        assert_eq!(
+            update_to(
+                Some("1.2.3"),
+                Some("c55ee46073ed923f86ce59a5eb3b6d895095d1b7"),
+                &short
+            ),
+            None
+        );
+    }
+
+    #[test]
+    fn releases_compare_as_releases() {
+        assert!(newer("1.3.0", "1.3.0-beta"));
+        assert!(!newer("1.3.0-beta", "1.3.0"));
+        assert!(!newer("1.2.0", "1.2"));
+        assert!(!newer("1.2", "1.2.0"));
+        assert!(newer("1.10", "1.9.9"));
+        // Labels that are not numbers are not compared at all: a guess could
+        // offer a downgrade.
+        assert!(!newer("nightly", "stable"));
+        assert!(!newer("1.3.0", "latest"));
     }
 
     #[test]

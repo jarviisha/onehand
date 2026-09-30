@@ -954,7 +954,8 @@ see the rail, below.
   else off; a plugin no settings file mentions is off, which is what the listing says of one.
   **The ••• menu is five groups**, divided, with anything that does not apply left out rather than
   drawn refusing: *Open repository* (the manifest's `repository` or `homepage`) and *View
-  changelog* (a `CHANGELOG.md` at the plugin's top, opened in the editor); *Update to …* where one
+  changelog* (a `CHANGELOG.md`, `changelog.md` or `CHANGELOG` at the plugin's top, opened in
+  the editor); *Update to …* where one
   is known, and *Check for updates* (`claude plugin marketplace update` on its marketplace); *Change
   scope ▸* for a plugin installed at one scope — an install at the new scope, then a removal from the
   old, install first so a failure between leaves it at both and never at neither — and *Turn on for
@@ -997,9 +998,12 @@ see the rail, below.
   `SKILL.md`, directly or a category down — and a manifest that lists its skills replaces that
   folder, as Claude Code reads it), `commands/` and `agents/` (`.md` files, nested names joined with
   `:`, added to by manifest paths), `hooks/hooks.json` or the manifest's hooks, and `.mcp.json` or
-  the manifest's servers. The walk stays in the plugin's folder — a manifest path that is absolute
-  or climbs out with `..` is ignored and a symlink is never followed — and is bounded by entries
-  visited, depth and items kept, saying so when a bound bit.
+  the manifest's servers. The walk stays in the plugin's folder: a manifest path that is absolute
+  or climbs out with `..` is ignored, nothing is read whose resolved path lands outside the folder
+  (a link at the top as much as one deep inside), and a link met inside a folder is not walked into
+  even when it stays within. It is bounded by entries visited, depth and items kept, and says so
+  only when a bound left something unread. The start time the banner counts from is when the agent
+  was started — for one warmed on the project page ahead of its session, when it was warmed.
 
 State is per project root, held by the mode that works on it, so switching roots swaps the whole
 thing.

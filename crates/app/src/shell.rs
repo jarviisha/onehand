@@ -2623,7 +2623,8 @@ impl Shell {
 
     /// Tell the Workbench when the agent on screen started. Pushed rather
     /// than asked for, from the moments it changes: arriving at a session or a
-    /// project, and a restart.
+    /// project, the workspace page taking the centre, and the pane announcing
+    /// that it spawned an agent — which every start, restart and resume does.
     fn sync_agent_started(&mut self, cx: &mut Context<Self>) {
         let since = self.chat.read(cx).active_started(cx);
         self.workbench

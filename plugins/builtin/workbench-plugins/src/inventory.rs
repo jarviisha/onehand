@@ -62,15 +62,21 @@ pub(crate) struct Hook {
 /// never as a count that was guessed.
 ///
 /// **Only the plugin's own folder is read.** A manifest path that is absolute
-/// or climbs out with `..` is ignored, and a symlink is never walked into —
-/// the manifest is somebody else's file, and followed, `"commands": "/"` walks
-/// the whole disk and a link back to its own folder never ends.
+/// or climbs out with `..` is ignored; a folder or file whose resolved path
+/// lands outside the plugin — a link, at the top or deep inside — is not read;
+/// and a link met inside a folder is not walked into even when it stays
+/// within, since one pointing back at its own folder never ends. The manifest
+/// is somebody else's file, and followed, `"commands": "/"` walks the disk.
 pub(crate) fn read_blocking(root: &Path) -> Inventory {
-    let manifest = read_json(&root.join(".claude-plugin/plugin.json"));
+    let Ok(home) = root.canonicalize() else {
+        return Inventory::default();
+    };
     let mut walk = Walk {
+        home,
         visited: 0,
         cut: false,
     };
+    let manifest = walk.read_json(&root.join(".claude-plugin/plugin.json"));
     let paths = |key: &str, default: &str| -> Vec<PathBuf> {
         let mut paths = vec![root.join(default)];
         paths.extend(listed(&manifest[key]).filter_map(|p| inside(root, p)));
@@ -95,7 +101,7 @@ pub(crate) fn read_blocking(root: &Path) -> Inventory {
     };
     let mut skills = Vec::new();
     for base in skill_paths {
-        if base.join("SKILL.md").is_file() {
+        if walk.is_skill(&base) {
             skills.extend(name_of(&base));
             continue;
         }
@@ -103,12 +109,12 @@ pub(crate) fn read_blocking(root: &Path) -> Inventory {
             if !is_dir {
                 continue;
             }
-            if child.join("SKILL.md").is_file() {
+            if walk.is_skill(&child) {
                 skills.extend(name_of(&child));
                 continue;
             }
             for (grandchild, is_dir) in walk.entries(&child) {
-                if is_dir && grandchild.join("SKILL.md").is_file() {
+                if is_dir && walk.is_skill(&grandchild) {
                     skills.extend(name_of(&grandchild));
                 }
             }
@@ -126,11 +132,11 @@ pub(crate) fn read_blocking(root: &Path) -> Inventory {
     // MCP servers: `.mcp.json` by default, and the manifest either names a file
     // of its own or writes the servers inline.
     let mut mcp = Vec::new();
-    mcp.extend(servers(&read_json(&root.join(".mcp.json"))));
+    mcp.extend(servers(&walk.read_json(&root.join(".mcp.json"))));
     match &manifest["mcpServers"] {
         Value::String(path) => {
             if let Some(file) = inside(root, path) {
-                mcp.extend(servers(&read_json(&file)));
+                mcp.extend(servers(&walk.read_json(&file)));
             }
         }
         inline @ Value::Object(_) => mcp.extend(servers(inline)),
@@ -145,7 +151,7 @@ pub(crate) fn read_blocking(root: &Path) -> Inventory {
     }
     hook_files.dedup();
     for file in hook_files {
-        hooks.extend(hook_commands(&read_json(&file)));
+        hooks.extend(hook_commands(&walk.read_json(&file)));
     }
 
     let mut cut = walk.cut;
@@ -167,7 +173,7 @@ pub(crate) fn read_blocking(root: &Path) -> Inventory {
     let changelog = ["CHANGELOG.md", "changelog.md", "CHANGELOG"]
         .into_iter()
         .map(|name| root.join(name))
-        .find(|path| path.is_file());
+        .find(|path| walk.within(path) && path.is_file());
 
     Inventory {
         description: manifest["description"].as_str().map(str::to_string),
@@ -203,13 +209,6 @@ fn listed(value: &Value) -> impl Iterator<Item = &str> {
     many.into_iter()
 }
 
-fn read_json(path: &Path) -> Value {
-    std::fs::read_to_string(path)
-        .ok()
-        .and_then(|text| serde_json::from_str(&text).ok())
-        .unwrap_or(Value::Null)
-}
-
 fn name_of(path: &Path) -> Option<String> {
     path.file_name()
         .map(|name| name.to_string_lossy().into_owned())
@@ -217,14 +216,44 @@ fn name_of(path: &Path) -> Option<String> {
 
 /// One plugin's walk, and what it has spent.
 struct Walk {
+    /// The plugin's folder with every link resolved. Nothing is read whose
+    /// own resolved path is not under it — which is what keeps a link, at the
+    /// top of the folder as much as deep inside it, from taking the walk
+    /// anywhere else.
+    home: PathBuf,
     visited: usize,
     cut: bool,
 }
 
 impl Walk {
+    /// Whether `path`, links resolved, is inside the plugin's folder.
+    fn within(&self, path: &Path) -> bool {
+        path.canonicalize()
+            .is_ok_and(|resolved| resolved.starts_with(&self.home))
+    }
+
+    fn read_json(&self, path: &Path) -> Value {
+        if !self.within(path) {
+            return Value::Null;
+        }
+        std::fs::read_to_string(path)
+            .ok()
+            .and_then(|text| serde_json::from_str(&text).ok())
+            .unwrap_or(Value::Null)
+    }
+
+    /// Whether `dir` is a skill: a folder holding `SKILL.md`.
+    fn is_skill(&self, dir: &Path) -> bool {
+        let file = dir.join("SKILL.md");
+        self.within(&file) && file.is_file()
+    }
+
     /// The entries directly inside `dir`, each with whether it is a folder
     /// — symlinks left out, since a link is how a walk escapes or loops.
     fn entries(&mut self, dir: &Path) -> Vec<(PathBuf, bool)> {
+        if !self.within(dir) {
+            return Vec::new();
+        }
         let Ok(read) = std::fs::read_dir(dir) else {
             return Vec::new();
         };
@@ -251,7 +280,10 @@ impl Walk {
     /// `git:commit`.
     fn markdown_under(&mut self, base: &Path, dir: &Path, depth: usize, out: &mut Vec<String>) {
         if depth > DEPTH_CAP {
-            self.cut = true;
+            // Only a cut if something was actually left unread here.
+            if std::fs::read_dir(dir).is_ok_and(|mut read| read.next().is_some()) {
+                self.cut = true;
+            }
             return;
         }
         for (path, is_dir) in self.entries(dir) {
@@ -451,6 +483,42 @@ mod tests {
             .unwrap();
         let inventory = read_blocking(&plugin.0);
         assert_eq!(inventory.commands, ["real"]);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_folder_or_file_that_is_a_link_out_of_the_plugin_is_not_read() {
+        let outside = Folder::new("outside");
+        outside.write("secret.md", "");
+        outside.write(
+            "hooks.json",
+            r#"{"hooks": {"Stop": [{"hooks": [{"type": "command", "command": "rm -rf ~"}]}]}}"#,
+        );
+        let plugin = Folder::new("linked");
+        std::os::unix::fs::symlink(&outside.0, plugin.0.join("commands")).unwrap();
+        std::fs::create_dir_all(plugin.0.join("hooks")).unwrap();
+        std::os::unix::fs::symlink(
+            outside.0.join("hooks.json"),
+            plugin.0.join("hooks/hooks.json"),
+        )
+        .unwrap();
+        let inventory = read_blocking(&plugin.0);
+        assert!(inventory.commands.is_empty());
+        assert!(inventory.hooks.is_empty());
+    }
+
+    #[test]
+    fn only_something_actually_left_unread_counts_as_a_cut() {
+        let deep = Folder::new("deep-empty");
+        std::fs::create_dir_all(deep.0.join("commands/a/b/c/d/e")).unwrap();
+        deep.write("commands/top.md", "");
+        let inventory = read_blocking(&deep.0);
+        assert_eq!(inventory.commands, ["top"]);
+        assert!(!inventory.cut);
+
+        let deeper = Folder::new("deep-full");
+        deeper.write("commands/a/b/c/d/e/f/lost.md", "");
+        assert!(read_blocking(&deeper.0).cut);
     }
 
     #[test]

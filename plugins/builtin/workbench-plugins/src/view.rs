@@ -308,7 +308,10 @@ impl PluginsView {
                     Ok(()) => {
                         view.made.push(Made {
                             root: root.clone(),
-                            everywhere: change.scope == Scope::User,
+                            // A move out of the global scope takes it away
+                            // from every project, as much as one into it adds it.
+                            everywhere: change.scope == Scope::User
+                                || change.verb == Verb::Move(Scope::User),
                             at: Instant::now(),
                         });
                         // Only the latest can still be pending for a running
@@ -1266,10 +1269,9 @@ fn confirm_uninstall(
     let inventory = &plugin.inventory;
     let parts: Vec<String> = tally(inventory, "MCP server", "MCP servers")
         .into_iter()
-        .chain((!inventory.hooks.is_empty()).then(|| {
-            let n = inventory.hooks.len();
-            format!("{n} {}", if n == 1 { "hook" } else { "hooks" })
-        }))
+        .chain(
+            (!inventory.hooks.is_empty()).then(|| counted(inventory.hooks.len(), "hook", "hooks")),
+        )
         .collect();
     // A folder past the walk's bound was not read to the end, so the counts
     // are a floor and are said as one.
@@ -1330,8 +1332,13 @@ fn tally(inventory: &Inventory, mcp_one: &str, mcp_many: &str) -> Vec<String> {
     ]
     .into_iter()
     .filter(|(n, _, _)| *n > 0)
-    .map(|(n, one, many)| format!("{n} {}", if n == 1 { one } else { many }))
+    .map(|(n, one, many)| counted(n, one, many))
     .collect()
+}
+
+/// `n` of a thing, named in the singular or the plural as `n` needs.
+fn counted(n: usize, one: &str, many: &str) -> String {
+    format!("{n} {}", if n == 1 { one } else { many })
 }
 
 /// What a plugin carries, one chip per kind it has any of — none for a kind
