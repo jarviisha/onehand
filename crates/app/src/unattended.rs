@@ -54,9 +54,14 @@ pub struct Unattended {
     accounts: Option<Accounts>,
     /// When those answers landed, so Settings can say how old they are.
     checked_at: Option<std::time::SystemTime>,
-    /// A check asked for by hand is still out. Without it *Check again* looks
-    /// like it did nothing until the answer lands.
-    checking: bool,
+    /// How many checks started through [`check`] -- *Check again*, a project
+    /// switched on, a window registering -- have not answered yet. Without it
+    /// *Check again* looks like it did nothing until the answer lands.
+    ///
+    /// **A count and not a flag**, because checks overlap: a scheduled look or
+    /// a switch turned on can land while the one asked for is still out, and a
+    /// flag cleared by whichever lands first gives the button back early.
+    checks_out: usize,
     /// Why the last look at a project could not go ahead, by project.
     ///
     /// **Shown on the project's row**, because the alternative is stderr: a
@@ -167,7 +172,7 @@ pub fn boot(cfg: &UnattendedConfig, cx: &mut App) {
             run: None,
             accounts: None,
             checked_at: None,
-            checking: false,
+            checks_out: 0,
             problems: HashMap::new(),
             _tick: tick,
         });
@@ -195,7 +200,7 @@ pub fn accounts_checking(cx: &App) -> bool {
     Shared::global(cx)
         .unattended
         .as_ref()
-        .is_some_and(|u| u.checking)
+        .is_some_and(|u| u.checks_out > 0)
 }
 
 /// File what the connectors said, and when.
@@ -203,7 +208,6 @@ fn file_accounts(accounts: Accounts, cx: &mut App) {
     with(cx, |u| {
         u.accounts = Some(accounts);
         u.checked_at = Some(std::time::SystemTime::now());
-        u.checking = false;
     });
 }
 
@@ -234,7 +238,7 @@ pub fn check_now(project: Project, cx: &mut App) {
 /// file what was found. `prune` when `roots` is every switched-on project, so
 /// what is kept for a project since switched off or closed goes with it.
 fn check(roots: Vec<Project>, prune: bool, cx: &mut App) {
-    with(cx, |u| u.checking = true);
+    with(cx, |u| u.checks_out += 1);
     cx.refresh_windows();
     cx.spawn(async move |cx| {
         let (accounts, checked) = cx
@@ -242,6 +246,7 @@ fn check(roots: Vec<Project>, prune: bool, cx: &mut App) {
             .spawn(async move { look_blocking(roots) })
             .await;
         cx.update(|cx| {
+            with(cx, |u| u.checks_out = u.checks_out.saturating_sub(1));
             file_accounts(accounts, cx);
             record(checked, prune, cx);
         });

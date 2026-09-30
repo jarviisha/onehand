@@ -2857,6 +2857,14 @@ impl Shell {
             return;
         };
         let (key, command) = (crate::settings::check_key(&spec), spec.command);
+        // A session starts its agent in the project's root, so a relative
+        // command is looked for from there: the project on screen is the one
+        // the next *New session* would start in.
+        let root = self
+            .window
+            .workspace
+            .active_root()
+            .map(|root| root.path.clone());
         self.agent_checks.insert(key.clone(), AgentCheck::Running);
         cx.notify();
         cx.spawn(async move |shell, cx| {
@@ -2866,7 +2874,11 @@ impl Shell {
                     let command = command.clone();
                     async move {
                         let path = std::env::var_os("PATH");
-                        onehand_core::config::find_command(&command, path.as_deref())
+                        onehand_core::config::find_command(
+                            &command,
+                            path.as_deref(),
+                            root.as_deref(),
+                        )
                     }
                 })
                 .await;

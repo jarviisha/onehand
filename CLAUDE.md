@@ -1473,7 +1473,8 @@ centre is the chat, right dock the Workbench, bottom dock the terminal.
   write took is the one thing left to say; the word goes with a page change or a reopen. The
   Connections page says **when the connectors last answered** (`unattended::accounts_checked_at`,
   through `chat::pane::rel_time`) and turns *Check again* into a refusing *Checking…* while one is out
-  (`accounts_checking`). It was drawn in the `DockArea`'s place for a while; that bought room and cost
+  (`accounts_checking`, a count of checks still out rather than a flag, since a scheduled look
+  landing first would otherwise give the button back while the one asked for is running). It was drawn in the `DockArea`'s place for a while; that bought room and cost
   a mode — every app command had to be switched off while it was up, and it had to be left by
   navigating — so it went back to a modal with the room kept. **It is drawn by a view of its own**
   (`settings::SettingsView`, holding the shell weakly) placed in the dialog's content, never built
@@ -1497,7 +1498,8 @@ centre is the chat, right dock the Workbench, bottom dock the terminal.
   row moves it there (`Shell::make_default_agent`, with `settings::draft_after_promote` keeping an
   open form on its agent), so being default is an order and not a second setting to drift from it.
   **An agent can be tested** (*Test*, `Shell::check_agent`): its command is looked for the way a
-  session would — a path as a path, a bare name along `PATH` (`onehand_core::config::find_command`)
+  session would — a path as a path, a relative one from the project root the session would start it
+  in, a bare name along `PATH` (`onehand_core::config::find_command`)
   — off the UI loop, and the answer sits under the command, filed under the whole command line
   (`settings::check_key`) so two agents on one launcher do not share an answer and an edit drops it.
   It names the program it found, since the program is all it looked for. It is asked for and never run on opening, and it only finds a file: whether the program

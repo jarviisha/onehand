@@ -62,21 +62,31 @@ pub(crate) fn join_args(args: &[String]) -> String {
 /// Where an agent's command would be found, if anywhere.
 ///
 /// A command naming a path (anything with a separator in it) is checked as that
-/// path; a bare name is looked for in each directory of `path`, the value of
-/// `PATH`, in order, as the shell would. `None` is what a session started with
-/// this command would fail on, which is what checking it ahead of time is for.
+/// path, a relative one from `cwd` -- the directory the session would start it
+/// in, which is the project's root, since checked from the app's own launch
+/// directory it would answer for a place the agent never runs. A bare name is
+/// looked for in each directory of `path`, the value of `PATH`, in order, as
+/// the shell would. `None` is what a session started with this command would
+/// fail on, which is what checking it ahead of time is for.
 ///
 /// It asks whether a file is there, not whether it may be run or speaks the
 /// protocol: the permission bit is platform-specific, and the protocol can only
 /// be known by starting the program, which is the thing a check done ahead of a
 /// session must not do.
-pub fn find_command(command: &str, path: Option<&std::ffi::OsStr>) -> Option<PathBuf> {
+pub fn find_command(
+    command: &str,
+    path: Option<&std::ffi::OsStr>,
+    cwd: Option<&Path>,
+) -> Option<PathBuf> {
     let command = command.trim();
     if command.is_empty() {
         return None;
     }
     if command.contains(std::path::MAIN_SEPARATOR) || command.contains('/') {
-        let candidate = PathBuf::from(command);
+        let candidate = match cwd {
+            Some(cwd) => cwd.join(command),
+            None => PathBuf::from(command),
+        };
         return candidate.is_file().then_some(candidate);
     }
     std::env::split_paths(path?)
@@ -840,12 +850,34 @@ mod tests {
         let dir = exe.parent().unwrap().as_os_str().to_owned();
         let name = exe.file_name().unwrap().to_str().unwrap();
         // A path is checked as a path.
-        assert_eq!(find_command(exe.to_str().unwrap(), None), Some(exe.clone()));
+        assert_eq!(
+            find_command(exe.to_str().unwrap(), None, None),
+            Some(exe.clone())
+        );
         // A bare name is looked for on PATH, and only there.
-        assert_eq!(find_command(name, Some(&dir)), Some(exe.clone()));
-        assert_eq!(find_command(name, None), None);
-        assert_eq!(find_command("no-such-agent-here", Some(&dir)), None);
-        assert_eq!(find_command("  ", Some(&dir)), None);
+        assert_eq!(find_command(name, Some(&dir), None), Some(exe.clone()));
+        assert_eq!(find_command(name, None, None), None);
+        assert_eq!(find_command("no-such-agent-here", Some(&dir), None), None);
+        assert_eq!(find_command("  ", Some(&dir), None), None);
+    }
+
+    /// A relative path is resolved from where the session would start it --
+    /// the project root -- and not from wherever the app itself was launched.
+    #[test]
+    fn a_relative_command_is_found_from_the_directory_it_would_run_in() {
+        let exe = std::env::current_exe().unwrap();
+        let parent = exe.parent().unwrap();
+        let root = parent.parent().unwrap();
+        let relative = format!(
+            "{}/{}",
+            parent.file_name().unwrap().to_str().unwrap(),
+            exe.file_name().unwrap().to_str().unwrap()
+        );
+        assert_eq!(
+            find_command(&relative, None, Some(root)),
+            Some(root.join(&relative))
+        );
+        assert_eq!(find_command(&relative, None, Some(parent)), None);
     }
 
     #[test]
