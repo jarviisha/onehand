@@ -29,7 +29,9 @@
       "Bash(gh issue view *)",
       "Bash(gh pr create *)",
       "Bash(gh pr view *)",
-      "Bash(gh pr list *)"
+      "Bash(gh pr list *)",
+      "Bash(git merge-base *)",
+      "Bash(git rev-list *)"
     ],
     "additionalDirectories": [
       "/home/jarviisha/.local/share/applications"
