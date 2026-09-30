@@ -1,8 +1,10 @@
 # Proposal: Settings UI/UX improvements and new features
 
 Date: 2026-09-30  
-Status: Proposal. The first batch in §6 has been implemented except the theme preview; the rest is
-not implemented.
+Status: Proposal, partly implemented. Done: the modal size and spacing in §2, the scope tags, the
+*Saved* note, the default agent, the agent test, the connection's last-check time, the rename to
+Connections, and asking before discarding a draft. Dropped for now: the theme preview. Not doing:
+settings search. Not yet: interface size, density and the rest of §5.
 
 ## Basis for the assessment
 

@@ -341,6 +341,8 @@ pub struct Shell {
     settings_view: Entity<crate::settings::SettingsView>,
     /// What each agent command's last *Test* found, by command.
     agent_checks: HashMap<String, AgentCheck>,
+    /// How the last write made from the Settings page showing went.
+    settings_note: Option<Result<(), String>>,
     held_commands: std::collections::HashSet<&'static str>,
     /// The workspace-rename field.
     workspace_name: Entity<InputState>,
@@ -794,6 +796,7 @@ impl Shell {
                 cx.new(|_| crate::settings::SettingsView::new(shell))
             },
             agent_checks: HashMap::new(),
+            settings_note: None,
             held_commands: Default::default(),
             workspace_name,
             renaming: None,
@@ -2644,6 +2647,8 @@ impl Shell {
         self.settings_return_focus = window.focused(cx);
         self.held_commands.clear();
         self.settings_open = true;
+        self.settings_note = None;
+        self.keymap_editor.update(cx, |editor, _| editor.forget_note());
         self.settings_focus.focus(window, cx);
         cx.notify();
     }
@@ -2716,6 +2721,19 @@ impl Shell {
         cx.notify();
     }
 
+    pub fn settings_note(&self) -> Option<Result<(), String>> {
+        self.settings_note.clone()
+    }
+
+    /// Keep how a write went, for Settings to say beside its ✕ -- only while
+    /// Settings is open, since the same writes also happen from panels, where
+    /// nothing would ever read it.
+    fn note_settings(&mut self, result: Result<(), String>) {
+        if self.settings_open {
+            self.settings_note = Some(result);
+        }
+    }
+
     pub fn settings_focus(&self) -> gpui::FocusHandle {
         self.settings_focus.clone()
     }
@@ -2730,6 +2748,9 @@ impl Shell {
 
     pub fn show_settings_page(&mut self, page: SettingsPage, cx: &mut Context<Self>) {
         self.settings_page = page;
+        // A word about the last write belongs to the page it was made on.
+        self.settings_note = None;
+        self.keymap_editor.update(cx, |editor, _| editor.forget_note());
         cx.notify();
     }
 
@@ -2873,12 +2894,14 @@ impl Shell {
         apply_appearance(choice, Some(window), cx);
 
         let path = Shared::global(cx).config_path.clone();
-        if let Err(e) = AppConfig::update_in_place(&path, |cfg| cfg.appearance = choice) {
+        let saved = AppConfig::update_in_place(&path, |cfg| cfg.appearance = choice);
+        if let Err(e) = &saved {
             window.push_notification(
                 Notification::error(format!("Appearance not saved — {e}")),
                 cx,
             );
         }
+        self.note_settings(saved.map_err(|e| e.to_string()));
         cx.notify();
     }
 
@@ -2887,9 +2910,11 @@ impl Shell {
     fn persist_agents(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let shared = Shared::global(cx);
         let (path, agents) = (shared.config_path.clone(), shared.agents.clone());
-        if let Err(e) = AppConfig::update_in_place(&path, |cfg| cfg.agents = agents) {
+        let saved = AppConfig::update_in_place(&path, |cfg| cfg.agents = agents);
+        if let Err(e) = &saved {
             window.push_notification(Notification::error(format!("Agents not saved — {e}")), cx);
         }
+        self.note_settings(saved.map_err(|e| e.to_string()));
     }
 
     // ── Workspace settings ──────────────────────────────────────────────────
@@ -3533,12 +3558,15 @@ impl Shell {
         let layout = self.dock_layout(cx);
         self.window.workspace.layout = layout;
 
-        if let Err(e) = self.window.workspace.to_config().save_to(&dir) {
+        let saved = self.window.workspace.to_config().save_to(&dir);
+        if let Err(e) = &saved {
             window.push_notification(
                 Notification::error(format!("Workspace not saved — {e}")),
                 cx,
             );
         }
+        self.note_settings(saved.map_err(|e| e.to_string()));
+        cx.notify();
     }
 
     /// Re-read everything derived from the files on disk.

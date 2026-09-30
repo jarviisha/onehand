@@ -349,8 +349,9 @@ One window hosts exactly one workspace. The frame is a navigation **rail** plus 
   nothing is lost by it — the conversation already fills everything right of the
   rail whenever both docks are closed.
 - **No global top bar and no right toolbar.** Transient status is a toast;
-  modals are `Dialog`s. **Settings is a large one**, nearly the size of the
-  window, with its nav column on the left and a ✕ in its corner. Inside it is
+  modals are `Dialog`s. **Settings is a roomy one**, up to 960 × 680 and never
+  past the window, with its nav column on the left and a ✕ in its corner,
+  beside which the last write made from the page says *Saved* or why not. Inside it is
   one surface: no border beside the nav, no header bar, no box around a group
   — a group is a heading with a hairline above it, and a setting stacks its
   name, a line about it and a full-width control.

@@ -467,6 +467,8 @@ pub struct Editor {
     focus: gpui::FocusHandle,
     input: Entity<InputState>,
     error: Option<String>,
+    /// A save just went through, until the next edit starts.
+    saved: bool,
 }
 
 impl Editor {
@@ -476,12 +478,14 @@ impl Editor {
             focus: cx.focus_handle(),
             input: cx.new(|cx| InputState::new(window, cx).placeholder("ctrl-shift-j")),
             error: None,
+            saved: false,
         }
     }
 
     fn edit(&mut self, index: usize, window: &mut Window, cx: &mut Context<Self>) {
         self.editing = Some(index);
         self.error = None;
+        self.saved = false;
         let value = COMMANDS[index].keys(&Shared::global(cx).keymap).join(" ");
         self.input
             .update(cx, |input, cx| input.set_value(value, window, cx));
@@ -535,8 +539,9 @@ impl Editor {
         self.focus.focus(window, cx);
         self.editing = None;
         self.error = None;
-        let status = format!("{} — saved for every window", command.label);
-        window.push_notification(Notification::success(status), cx);
+        // Said beside Settings' ✕ rather than in a toast, the way every other
+        // page says a change was written.
+        self.saved = true;
         cx.notify();
     }
 }
@@ -545,6 +550,18 @@ impl Editor {
     /// Whether a shortcut is open for editing, which is a change not yet saved.
     pub fn editing(&self) -> bool {
         self.editing.is_some()
+    }
+
+    /// `Saved` right after a save went through, until the next edit starts. A
+    /// failure is not repeated here: it is already written on the page, under
+    /// the field it is about.
+    pub fn note(&self) -> Option<Result<(), String>> {
+        self.saved.then_some(Ok(()))
+    }
+
+    /// Drop that word, when Settings opens or leaves this page.
+    pub fn forget_note(&mut self) {
+        self.saved = false;
     }
 }
 

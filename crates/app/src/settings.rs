@@ -2,7 +2,7 @@
 //! keymap.
 //!
 //! A modal, mounted by the shell so its rail row and its key share one dialog,
-//! and sized to most of the window. The shell restores the previous focus when
+//! and sized to the window up to 960 × 680. The shell restores the previous focus when
 //! it closes.
 
 use crate::controls::Refuses as _;
@@ -644,11 +644,12 @@ pub(crate) fn page_title(name: &'static str) -> impl IntoElement {
 
 /// Settings: appearance, this workspace, the agent menu, the keymap.
 ///
-/// **A modal the size of most of the window.** At the few hundred pixels a
-/// dialog usually takes, the keymap and the agent form scrolled inside a box
-/// while the window around it sat unused; drawn in the panels' place instead,
-/// it had to be left by navigating, and every command had to be told it was
-/// not on screen. A large modal keeps the room and the one way out.
+/// **A modal, and a roomy one.** At the few hundred pixels a dialog usually
+/// takes, the keymap and the agent form scrolled inside a box; drawn in the
+/// panels' place instead, it had to be left by navigating, and every command
+/// had to be told it was not on screen. A modal up to 960 × 680 keeps enough
+/// room and the one way out, without a near-full-window box that left a
+/// one-control page looking lost in it.
 ///
 /// **A nav column and a page, not one scroll.** What is in here belongs to
 /// three different scopes -- the theme is app-wide, the name and the storage
@@ -694,6 +695,10 @@ impl gpui::Render for SettingsView {
 
 /// The modal around [`SettingsView`], sized to the window it opens in.
 ///
+/// **960 × 680 at most**: room for the nav and a page holding a stacked field
+/// at a comfortable width, without the near-full-window box that left a
+/// one-control page looking lost in it.
+///
 /// **Clamped to the frame on both axes**, because the library centres a
 /// dialog by subtracting half its width from half the viewport's and never
 /// clamps: a box wider than the window starts at a negative x, with the nav off
@@ -712,8 +717,8 @@ pub fn dialog(
     cx: &mut Context<Shell>,
 ) -> gpui_component::dialog::Dialog {
     let frame = window.viewport_size();
-    let width = (frame.width - gpui::px(64.)).clamp(gpui::px(360.), gpui::px(1200.));
-    let height = (frame.height - gpui::px(64.)).clamp(gpui::px(240.), gpui::px(860.));
+    let width = (frame.width - gpui::px(64.)).clamp(gpui::px(360.), gpui::px(960.));
+    let height = (frame.height - gpui::px(64.)).clamp(gpui::px(240.), gpui::px(680.));
     let top = ((frame.height - height) / 2.).max(gpui::px(0.));
     let handle = cx.entity();
 
@@ -735,6 +740,13 @@ fn settings(handle: &Entity<Shell>, cx: &App) -> AnyElement {
     let current = handle.read(cx).settings_page();
     let focus = handle.read(cx).settings_focus();
     let muted = cx.theme().muted_foreground;
+    let status = crate::theme::status_ink(cx);
+    // The shortcut editor writes the keymap itself, so it keeps its own word
+    // on how that went; every other page's writes go through the shell.
+    let note = match current {
+        SettingsPage::Shortcuts => handle.read(cx).keymap_editor().read(cx).note(),
+        _ => handle.read(cx).settings_note(),
+    };
     let nav = SettingsPage::ALL
         .into_iter()
         .map(|page| nav_row(page, current, &handle, cx).into_any_element())
@@ -770,10 +782,10 @@ fn settings(handle: &Entity<Shell>, cx: &App) -> AnyElement {
                 .v_flex()
                 .gap_0p5()
                 .flex_none()
-                .w(rems(15.))
+                .w(rems(13.5))
                 .h_full()
-                .px_8()
-                .py_6()
+                .px_4()
+                .py_5()
                 .child(
                     div()
                         .px_2()
@@ -811,9 +823,9 @@ fn settings(handle: &Entity<Shell>, cx: &App) -> AnyElement {
                         div()
                             .v_flex()
                             .w_full()
-                            .max_w(rems(58.))
-                            .px_24()
-                            .py_8()
+                            .max_w(rems(48.))
+                            .px_8()
+                            .py_6()
                             .child(page),
                     ),
                 ),
@@ -822,19 +834,43 @@ fn settings(handle: &Entity<Shell>, cx: &App) -> AnyElement {
         // header row holding one button is a border and a strip of surface
         // spent on it.
         .child(
-            div().absolute().top_3().right_3().child(
-                crate::controls::action("settings-close")
-                    .small()
-                    .ghost()
-                    .icon(Icon::new(IconName::Close))
-                    .tooltip("Close Settings")
-                    .on_click({
-                        let handle = handle.clone();
-                        move |_: &ClickEvent, window, cx| {
-                            handle.update(cx, |shell, cx| shell.request_close_settings(window, cx));
-                        }
-                    }),
-            ),
+            div()
+                .absolute()
+                .top_3()
+                .right_3()
+                .h_flex()
+                .items_center()
+                .gap_2()
+                // What the last change on this page did, beside the way out:
+                // settings apply as they are made, so the only thing left to
+                // say is whether the write took.
+                .children(note.map(|note| {
+                    let (line, ink) = match note {
+                        Ok(()) => ("Saved".to_string(), status.success),
+                        Err(why) => (format!("Not saved — {why}"), status.danger),
+                    };
+                    div()
+                        .max_w(rems(24.))
+                        .truncate()
+                        .text_sm()
+                        .text_color(ink)
+                        .child(line)
+                }))
+                .child(
+                    crate::controls::action("settings-close")
+                        .small()
+                        .ghost()
+                        .icon(Icon::new(IconName::Close))
+                        .tooltip("Close Settings")
+                        .on_click({
+                            let handle = handle.clone();
+                            move |_: &ClickEvent, window, cx| {
+                                handle.update(cx, |shell, cx| {
+                                    shell.request_close_settings(window, cx)
+                                });
+                            }
+                        }),
+                ),
         )
         .into_any_element()
 }
@@ -989,6 +1025,16 @@ fn connections_page(cx: &App) -> AnyElement {
     let muted = cx.theme().muted_foreground;
     let ink = crate::theme::status_ink(cx);
     let accounts = crate::unattended::accounts(cx);
+    let checking = crate::unattended::accounts_checking(cx);
+    // ponytail: read when the page is drawn, so it goes stale while nothing
+    // redraws it; every check that lands redraws, which is when it matters.
+    let checked = crate::unattended::accounts_checked_at(cx).map(|at| {
+        let secs = |t: std::time::SystemTime| {
+            t.duration_since(std::time::UNIX_EPOCH)
+                .map_or(0, |d| d.as_secs())
+        };
+        crate::chat::pane::rel_time(secs(std::time::SystemTime::now()), secs(at))
+    });
     let rows = crate::plugins::connectors()
         .iter()
         .map(|connector| {
@@ -1025,14 +1071,30 @@ fn connections_page(cx: &App) -> AnyElement {
         ))
         .child(
             section(None, None, cx).gap_3().children(rows).child(
-                div().h_flex().pt_2().child(
-                    crate::controls::action("connections-recheck")
-                        .outline()
-                        .label("Check again")
-                        .on_click(|_: &ClickEvent, _: &mut Window, cx: &mut App| {
-                            crate::unattended::recheck(cx);
-                        }),
-                ),
+                div()
+                    .h_flex()
+                    .items_center()
+                    .gap_3()
+                    .pt_2()
+                    .child(
+                        crate::controls::action("connections-recheck")
+                            .outline()
+                            .refuses(checking)
+                            .label(if checking {
+                                "Checking…"
+                            } else {
+                                "Check again"
+                            })
+                            .on_click(|_: &ClickEvent, _: &mut Window, cx: &mut App| {
+                                crate::unattended::recheck(cx);
+                            }),
+                    )
+                    .children(checked.map(|when| {
+                        div()
+                            .text_sm()
+                            .text_color(muted)
+                            .child(format!("Last checked {when}"))
+                    })),
             ),
         )
         .into_any_element()

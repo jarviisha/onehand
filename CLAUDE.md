@@ -1456,10 +1456,19 @@ centre is the chat, right dock the Workbench, bottom dock the terminal.
   runs on every chunk a build prints.
 - **Dialogs** ([dialogs.rs](crates/app/src/dialogs.rs)): the conversation rename, the worktree
   split, the branch rename and the issue picker. **Settings** lives in its own module,
-  [settings.rs](crates/app/src/settings.rs), and is a **large modal** (`settings::dialog`): as wide
-  and tall as the window less a margin, capped at 1200×860px, centred on both axes through
+  [settings.rs](crates/app/src/settings.rs), and is a **roomy modal** (`settings::dialog`): as wide
+  and tall as the window less a margin, capped at 960×680px, centred on both axes through
   `margin_top` rather than the library's tenth-of-the-viewport drop, which would push a box that
-  tall off the bottom. It was drawn in the `DockArea`'s place for a while; that bought room and cost
+  tall off the bottom. It was capped at 1200×860 for one change, which left a one-control page
+  looking lost; the nav is 13.5rem with 1rem of padding and the page 2rem, the sizes the Settings
+  proposal in `docs/` settled on. **Beside the ✕ is a word on the last write** made from the page
+  showing — *Saved*, or *Not saved — why* in the danger ink (`Shell::note_settings`, fed by the
+  appearance, agents and workspace writes; the Shortcuts page's is the editor's own `note`, and its
+  failures stay under the field they are about). Settings apply as they are made, so whether the
+  write took is the one thing left to say; the word goes with a page change or a reopen. The
+  Connections page says **when the connectors last answered** (`unattended::accounts_checked_at`,
+  through `chat::pane::rel_time`) and turns *Check again* into a refusing *Checking…* while one is out
+  (`accounts_checking`). It was drawn in the `DockArea`'s place for a while; that bought room and cost
   a mode — every app command had to be switched off while it was up, and it had to be left by
   navigating — so it went back to a modal with the room kept. **It is drawn by a view of its own**
   (`settings::SettingsView`, holding the shell weakly) placed in the dialog's content, never built

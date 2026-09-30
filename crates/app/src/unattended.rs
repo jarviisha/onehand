@@ -52,6 +52,11 @@ pub struct Unattended {
     /// What each connector last said about its account, for the lines in
     /// Settings. `None` until the first answer lands.
     accounts: Option<Accounts>,
+    /// When those answers landed, so Settings can say how old they are.
+    checked_at: Option<std::time::SystemTime>,
+    /// A check asked for by hand is still out. Without it *Check again* looks
+    /// like it did nothing until the answer lands.
+    checking: bool,
     /// Why the last look at a project could not go ahead, by project.
     ///
     /// **Shown on the project's row**, because the alternative is stderr: a
@@ -161,6 +166,8 @@ pub fn boot(cfg: &UnattendedConfig, cx: &mut App) {
             mode_refused: None,
             run: None,
             accounts: None,
+            checked_at: None,
+            checking: false,
             problems: HashMap::new(),
             _tick: tick,
         });
@@ -176,6 +183,28 @@ pub fn blocked(cx: &App) -> Option<String> {
 /// What each connector last said about its account, if they have answered yet.
 pub fn accounts(cx: &App) -> Option<Accounts> {
     Shared::global(cx).unattended.as_ref()?.accounts.clone()
+}
+
+/// When the connectors last answered, if they have.
+pub fn accounts_checked_at(cx: &App) -> Option<std::time::SystemTime> {
+    Shared::global(cx).unattended.as_ref()?.checked_at
+}
+
+/// Whether a check asked for by hand has not answered yet.
+pub fn accounts_checking(cx: &App) -> bool {
+    Shared::global(cx)
+        .unattended
+        .as_ref()
+        .is_some_and(|u| u.checking)
+}
+
+/// File what the connectors said, and when.
+fn file_accounts(accounts: Accounts, cx: &mut App) {
+    with(cx, |u| {
+        u.accounts = Some(accounts);
+        u.checked_at = Some(std::time::SystemTime::now());
+        u.checking = false;
+    });
 }
 
 /// Why the last look at `root` could not go ahead, if it could not.
@@ -205,13 +234,15 @@ pub fn check_now(project: Project, cx: &mut App) {
 /// file what was found. `prune` when `roots` is every switched-on project, so
 /// what is kept for a project since switched off or closed goes with it.
 fn check(roots: Vec<Project>, prune: bool, cx: &mut App) {
+    with(cx, |u| u.checking = true);
+    cx.refresh_windows();
     cx.spawn(async move |cx| {
         let (accounts, checked) = cx
             .background_executor()
             .spawn(async move { look_blocking(roots) })
             .await;
         cx.update(|cx| {
-            with(cx, |u| u.accounts = Some(accounts));
+            file_accounts(accounts, cx);
             record(checked, prune, cx);
         });
     })
@@ -395,7 +426,7 @@ fn tick(asked_from: Option<gpui::AnyWindowHandle>, cx: &mut App) {
             .await;
         cx.update(|cx| {
             if let Some(accounts) = accounts {
-                with(cx, |u| u.accounts = Some(accounts));
+                file_accounts(accounts, cx);
                 record(checked, true, cx);
             }
             if searching {
