@@ -992,7 +992,11 @@ see the rail, below.
   that moved on cannot be told from one that did not — a record in a shape this build does not know
   yields no commits and so no update, never a failure. **An update is known** where the catalog
   names a newer release than the one installed, or pins a commit other than the one installed; a
-  plugin kept in a folder of the marketplace's own repository names neither and shows none.
+  plugin kept in a folder of the marketplace's own repository names neither and shows none. A
+  catalog naming an older release is no update by its commit either — that pin is the older one.
+  **Each install is judged on its own**: a plugin at two scopes is two copies that can be at two
+  versions, so the row shows the copy an update is for (else the narrowest, the one a session here
+  loads) and *Update* goes to that copy's scope.
   **What a plugin carries is read from its own folder** (`inventory.rs`), since `claude plugin
   details` prints the same inventory only as prose: the manifest, then `skills/` (a folder holding
   `SKILL.md`, directly or a category down — and a manifest that lists its skills replaces that

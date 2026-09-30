@@ -401,6 +401,16 @@ impl PluginsView {
                     .or_insert_with(|| cx.focus_handle().tab_stop(true));
             }
         }
+        // *Has update* is offered only while something has one. Once the
+        // last is updated the chip goes, and a filter left on it would keep
+        // an empty list with nothing highlighted to say why — so it falls
+        // back to all.
+        if self.filter == Filter::HasUpdate
+            && let Some(Ok(catalog)) = &self.catalog
+            && !catalog.installed.iter().any(|p| p.update.is_some())
+        {
+            self.filter = Filter::All;
+        }
         let catalog = match &self.catalog {
             None => return hint("Reading Claude Code's plugins…", cx),
             Some(Err(why)) => return self.failed(why.clone(), cx),
@@ -444,8 +454,12 @@ impl PluginsView {
                                     .as_deref()
                                     .is_some_and(|d| d.to_lowercase().contains(&needle))
                         })
-                        .take(INSTALLED_CAP)
                         .collect();
+                    // The cut is of what the filter and the search left, not
+                    // of everything installed: counted from the whole list, a
+                    // search matching three said fifty more were hidden.
+                    let cut = shown.len().saturating_sub(INSTALLED_CAP);
+                    let shown: Vec<&Plugin> = shown.into_iter().take(INSTALLED_CAP).collect();
                     // On first, off after: what a session here gets is what is read
                     // first, and a plugin turned off is a record of a choice, kept
                     // below the ones in use rather than mixed in among them.
@@ -483,7 +497,6 @@ impl PluginsView {
                             cx,
                         ));
                     }
-                    let cut = catalog.installed.len().saturating_sub(INSTALLED_CAP);
                     if cut > 0 {
                         rows.push(note(format!("… {cut} more not shown"), cx));
                     }
@@ -782,16 +795,18 @@ impl PluginsView {
                     v.tooltip(move |window, cx| Tooltip::new(full.clone()).build(window, cx))
                 })
         });
-        let update = plugin.update.clone().map(|to| {
+        let update = plugin.update.clone().map(|update| {
+            // To the scope whose copy is behind, which is not always the
+            // first a plugin is installed at.
             let change = Change {
                 id: plugin.id.clone(),
-                scope: plugin.installed[0],
+                scope: update.scope,
                 verb: Verb::Update,
             };
             action(("plugin-update", i))
                 .xsmall()
                 .outline()
-                .label(format!("Update {to}"))
+                .label(format!("Update {}", update.to))
                 .loading(self.running(&change))
                 .disabled(busy)
                 .on_click(
@@ -938,24 +953,24 @@ impl PluginsView {
             // Its version. *Update to* only where a newer one is known;
             // *Check for updates* always, since fetching the catalog is how
             // one becomes known.
-            let scope = plugin.installed[0];
             let mut version = Vec::new();
-            if let Some(to) = &plugin.update {
-                let to = if cli::is_hash(to) || to.starts_with('v') {
-                    to.clone()
+            if let Some(update) = &plugin.update {
+                let to = if cli::is_hash(&update.to) || update.to.starts_with('v') {
+                    update.to.clone()
                 } else {
-                    format!("v{to}")
+                    format!("v{}", update.to)
                 };
                 let update = Change {
                     id: plugin.id.clone(),
-                    scope,
+                    scope: update.scope,
                     verb: Verb::Update,
                 };
                 version.push(menu_item(format!("Update to {to}")).on_click(act(&view, update)));
             }
+            // The scope is not read for a catalog fetch; any install's will do.
             let check = Change {
                 id: plugin.id.clone(),
-                scope,
+                scope: plugin.installed[0],
                 verb: Verb::CheckUpdates,
             };
             version.push(menu_item("Check for updates").on_click(act(&view, check)));

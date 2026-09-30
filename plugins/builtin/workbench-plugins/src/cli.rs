@@ -132,17 +132,23 @@ struct Installed {
 pub(crate) struct Plugin {
     /// `name@marketplace`, which is what every command takes.
     pub(crate) id: String,
-    pub(crate) version: Option<String>,
     /// What its folder carries. Empty until read, and empty for a folder that
     /// could not be — which draws as no chips, never as a guessed count.
     pub(crate) inventory: Inventory,
-    /// The version the marketplace now offers, where it can be told apart
-    /// from the one installed; `None` when it cannot, which is not the same as
-    /// "up to date" and is not drawn as one.
-    pub(crate) update: Option<String>,
+    /// What the marketplace now offers over one of its installs, and which
+    /// one; `None` where no install can be told apart from what is offered,
+    /// which is not the same as "up to date" and is not drawn as one.
+    pub(crate) update: Option<Update>,
+    /// The version, folder and commit of the install the row shows: the one
+    /// the update is for, else the narrowest — the copy a session here loads.
+    pub(crate) version: Option<String>,
     pub(crate) install_path: Option<PathBuf>,
     /// The commit it was installed from, where Claude Code's record says.
     pub(crate) commit: Option<String>,
+    /// Each install on its own. A plugin installed at two scopes is two
+    /// copies, possibly of two versions, and one can be behind while the other
+    /// is not.
+    installs: Vec<Install>,
     /// Where it is installed, which is where it can be removed from.
     pub(crate) installed: Vec<Scope>,
     /// What each scope's settings file says, indexed as [`Scope::ALL`];
@@ -153,6 +159,22 @@ pub(crate) struct Plugin {
     /// the narrower scopes too); only compared against, to notice a source
     /// the three files do not account for.
     enabled: bool,
+}
+
+/// One install of a plugin, at one scope.
+#[derive(Clone, Debug, PartialEq)]
+struct Install {
+    scope: Scope,
+    version: Option<String>,
+    install_path: Option<PathBuf>,
+}
+
+/// An update the marketplace offers, and the scope whose copy it is for — the
+/// one `claude plugin update` has to be told.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct Update {
+    pub(crate) to: String,
+    pub(crate) scope: Scope,
 }
 
 /// The marketplace Anthropic runs. A plugin from it is marked *Official*;
@@ -406,8 +428,16 @@ pub(crate) fn parse(
         if !reaches {
             continue;
         }
+        let install = Install {
+            scope: record.scope,
+            version: record.version.clone(),
+            install_path: record.install_path.clone(),
+        };
         match installed.iter_mut().find(|plugin| plugin.id == record.id) {
-            Some(plugin) => plugin.installed.push(record.scope),
+            Some(plugin) => {
+                plugin.installed.push(record.scope);
+                plugin.installs.push(install);
+            }
             None => installed.push(Plugin {
                 set: Scope::ALL.map(|scope| set[scope as usize].get(&record.id).copied()),
                 id: record.id,
@@ -416,6 +446,7 @@ pub(crate) fn parse(
                 update: None,
                 install_path: record.install_path,
                 commit: None,
+                installs: vec![install],
                 installed: vec![record.scope],
                 enabled: record.enabled,
             }),
@@ -463,17 +494,56 @@ pub(crate) fn list_blocking(root: &Path) -> Result<Catalog, String> {
         .map(|record| installed_commits(&record))
         .unwrap_or_default();
     for plugin in &mut catalog.installed {
+        let entry = entry_for(&markets, plugin.marketplace(), plugin.name());
+        assess(plugin, entry, &commits);
         if let Some(path) = &plugin.install_path {
             plugin.inventory = inventory::read_blocking(path);
-            plugin.commit = commits.get(path).cloned();
         }
-        plugin.update =
-            entry_for(&markets, plugin.marketplace(), plugin.name()).and_then(|entry| {
-                update_to(plugin.version.as_deref(), plugin.commit.as_deref(), entry)
-            });
     }
     complete_offers(&mut catalog, &markets);
     Ok(catalog)
+}
+
+/// Judge each of `plugin`'s installs against its catalog `entry`, and settle
+/// which one the row shows: the one an update is for, else the narrowest
+/// scope's — the copy a session started here loads. An update names that
+/// install's scope, so *Update* goes to the copy that is behind rather than to
+/// whichever scope happens to sort first.
+pub(crate) fn assess(
+    plugin: &mut Plugin,
+    entry: Option<&serde_json::Value>,
+    commits: &HashMap<PathBuf, String>,
+) {
+    let mut installs = plugin.installs.clone();
+    // Narrowest first: the copy a session here loads is the one shown when
+    // none is behind.
+    installs.sort_by_key(|install| std::cmp::Reverse(install.scope));
+    let judged: Vec<(&Install, Option<String>, Option<String>)> = installs
+        .iter()
+        .map(|install| {
+            let commit = install
+                .install_path
+                .as_ref()
+                .and_then(|path| commits.get(path))
+                .cloned();
+            let update = entry
+                .and_then(|entry| update_to(install.version.as_deref(), commit.as_deref(), entry));
+            (install, commit, update)
+        })
+        .collect();
+    let shown = judged
+        .iter()
+        .find(|(_, _, update)| update.is_some())
+        .or_else(|| judged.first());
+    if let Some((install, commit, update)) = shown {
+        plugin.version = install.version.clone();
+        plugin.install_path = install.install_path.clone();
+        plugin.commit = commit.clone();
+        plugin.update = update.clone().map(|to| Update {
+            to,
+            scope: install.scope,
+        });
+    }
 }
 
 /// Every known marketplace's catalog entries, by marketplace name.
@@ -540,9 +610,16 @@ pub(crate) fn update_to(
     // knows it by.
     if let (Some(offered), Some(installed)) = (entry["version"].as_str(), version)
         && !is_hash(installed)
-        && newer(offered, installed)
     {
-        return Some(offered.to_string());
+        if newer(offered, installed) {
+            return Some(offered.to_string());
+        }
+        // A catalog naming an *older* release has fallen behind, and the
+        // commit it pins is that older one: offering it would be offering the
+        // downgrade the release number just refused.
+        if newer(installed, offered) {
+            return None;
+        }
     }
     // Otherwise the commit — checked even where the release number is the
     // same, since a repository moves on without bumping it, and that is the
@@ -1059,6 +1136,62 @@ mod tests {
         // offer a downgrade.
         assert!(!newer("nightly", "stable"));
         assert!(!newer("1.3.0", "latest"));
+    }
+
+    #[test]
+    fn an_older_release_in_the_catalog_is_no_update_by_commit_either() {
+        // A marketplace copy that has fallen behind: its release is older, and
+        // its pin is a different commit — the older one. Not an update.
+        let stale = serde_json::json!({"name": "p", "version": "1.0.0", "source": {
+            "source": "url", "sha": "c55ee46073ed923f86ce59a5eb3b6d895095d1b7"}});
+        let installed = "5b15a47f2d7150f545fbcacbfe381787fc0230dc";
+        assert_eq!(update_to(Some("1.2.3"), Some(installed), &stale), None);
+    }
+
+    #[test]
+    fn each_install_is_judged_on_its_own_and_the_update_names_its_scope() {
+        let listing = r#"{"installed": [
+            {"id": "p@m", "scope": "user", "version": "1.2.3", "installPath": "/cache/u"},
+            {"id": "p@m", "scope": "local", "version": "1.2.3", "installPath": "/cache/l",
+             "projectPath": "/work/app"}
+        ]}"#;
+        let pinned = serde_json::json!({"name": "p", "source": {
+            "source": "url", "sha": "c55ee46073ed923f86ce59a5eb3b6d895095d1b7"}});
+        let current = "c55ee46073ed923f86ce59a5eb3b6d895095d1b7".to_string();
+        let stale = "5b15a47f2d7150f545fbcacbfe381787fc0230dc".to_string();
+
+        // The global copy is current and the local one is not: the update is
+        // the local one's, and the row shows that copy.
+        let mut catalog = parse(listing, Path::new("/work/app"), &Default::default()).unwrap();
+        let commits = HashMap::from([
+            (PathBuf::from("/cache/u"), current.clone()),
+            (PathBuf::from("/cache/l"), stale.clone()),
+        ]);
+        assess(&mut catalog.installed[0], Some(&pinned), &commits);
+        let plugin = &catalog.installed[0];
+        assert_eq!(
+            plugin.update,
+            Some(Update {
+                to: "c55ee46".into(),
+                scope: Scope::Local
+            })
+        );
+        assert_eq!(plugin.install_path.as_deref(), Some(Path::new("/cache/l")));
+        assert_eq!(plugin.commit.as_deref(), Some(stale.as_str()));
+
+        // Both current: no update, and the row shows the narrowest copy — the
+        // one a session here loads.
+        let mut catalog = parse(listing, Path::new("/work/app"), &Default::default()).unwrap();
+        let commits = HashMap::from([
+            (PathBuf::from("/cache/u"), current.clone()),
+            (PathBuf::from("/cache/l"), current),
+        ]);
+        assess(&mut catalog.installed[0], Some(&pinned), &commits);
+        assert_eq!(catalog.installed[0].update, None);
+        assert_eq!(
+            catalog.installed[0].install_path.as_deref(),
+            Some(Path::new("/cache/l"))
+        );
     }
 
     #[test]
