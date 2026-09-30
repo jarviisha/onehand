@@ -141,6 +141,10 @@ type AskBox = (usize, usize, String, String);
 
 pub struct ChatSession {
     pub chat: Chat,
+    /// When this session's adapter was spawned. A restart is a new session,
+    /// so this is when the agent now answering started — which is what tells
+    /// a change to its plugins apart from one it has already loaded.
+    pub started: std::time::Instant,
     /// Parsed markdown, keyed by [`MdId`]; the `usize` is how many bytes of the
     /// model's `source` are already in the state.
     ///
@@ -285,6 +289,7 @@ impl ChatSession {
                     spec.name.clone(),
                     Some(onehand_core::chat::conversations_dir()),
                 ),
+                started: std::time::Instant::now(),
                 md: HashMap::new(),
                 images: RefCell::new(HashMap::new()),
                 ask_inputs: HashMap::new(),

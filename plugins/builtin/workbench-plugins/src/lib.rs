@@ -9,10 +9,11 @@
 
 use gpui::{AnyView, App, Entity};
 use onehand_plugin_api::{PluginId, WorkbenchModeSpec};
-use onehand_plugin_host::{Request, WorkbenchMode};
+use onehand_plugin_host::{Ask, Request, WorkbenchMode};
 use std::path::Path;
 
 mod cli;
+mod inventory;
 mod view;
 use view::PluginsView;
 
@@ -27,9 +28,9 @@ pub struct Mode {
 }
 
 impl Mode {
-    pub fn new(cx: &mut App) -> Self {
+    pub fn new(ask: Ask, cx: &mut App) -> Self {
         Self {
-            view: PluginsView::new(cx),
+            view: PluginsView::new(ask, cx),
         }
     }
 }
@@ -60,6 +61,11 @@ impl WorkbenchMode for Mode {
             // waiting longer.
             Request::Rescan | Request::Shown => {
                 self.view.update(cx, |view, cx| view.mark_stale(cx));
+                true
+            }
+            Request::AgentStarted(since) => {
+                self.view
+                    .update(cx, |view, cx| view.agent_started(*since, cx));
                 true
             }
             _ => false,

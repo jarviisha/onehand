@@ -686,6 +686,7 @@ impl Shell {
                 use crate::workbench::WorkbenchEvent as E;
                 match event {
                     E::Hide => shell.hide_workbench(window, cx),
+                    E::RestartAgent => shell.restart_session(window, cx),
                     E::ToggleMaximize => {
                         shell.toggle_maximize_panel(FocusedPanel::Workbench, window, cx);
                     }
@@ -1143,11 +1144,15 @@ impl Shell {
             // are entirely the adapter's and the SDK's, and spending them while
             // the user reads the page is spending them for free.
             self.warm_default_agent(path, cx);
+            self.sync_agent_started(cx);
             return;
         };
         self.chat.update(cx, |pane, cx| {
             pane.show(uid, path.clone(), &spec, window, cx)
         });
+        // After `show`, which is what connects a session shown for the first
+        // time — before it, a fresh session has no agent to have started.
+        self.sync_agent_started(cx);
         // This project has a session on screen, so nothing here is waiting on a
         // fresh agent. A pre-start still in its delay is dropped rather than
         // allowed to fire -- but one that has already *started* is left alone.
@@ -2615,12 +2620,22 @@ impl Shell {
         cx.notify();
     }
 
+    /// Tell the Workbench when the agent on screen started. Pushed rather
+    /// than asked for, from the moments it changes: arriving at a session or a
+    /// project, and a restart.
+    fn sync_agent_started(&mut self, cx: &mut Context<Self>) {
+        let since = self.chat.read(cx).active_started(cx);
+        self.workbench
+            .update(cx, |panel, cx| panel.agent_started(since, cx));
+    }
+
     /// Restart the active session's adapter, guarded while a turn is running.
     pub fn restart_session(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.last_panel = FocusedPanel::Chat;
         match self.chat.update(cx, |pane, cx| pane.restart_active(cx)) {
             crate::chat::pane::Restart::Restarted => {
                 window.push_notification(Notification::info("Restarting the agent"), cx);
+                self.sync_agent_started(cx);
             }
             crate::chat::pane::Restart::Armed => window.push_notification(
                 Notification::warning("A turn is running — invoke Restart again to confirm"),

@@ -17,6 +17,7 @@
 //! Every call is blocking and bounded, for the reason the forge's calls are:
 //! a command nobody is watching must not be able to hang its caller.
 
+use crate::inventory::{self, Inventory};
 use serde::Deserialize;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -121,6 +122,9 @@ struct Installed {
     /// The project a project or local install belongs to.
     #[serde(default)]
     project_path: Option<PathBuf>,
+    /// Where its files are, which is what its contents are read from.
+    #[serde(default)]
+    install_path: Option<PathBuf>,
 }
 
 /// One installed plugin that reaches this project.
@@ -129,6 +133,14 @@ pub(crate) struct Plugin {
     /// `name@marketplace`, which is what every command takes.
     pub(crate) id: String,
     pub(crate) version: Option<String>,
+    /// What its folder carries. Empty until read, and empty for a folder that
+    /// could not be — which draws as no chips, never as a guessed count.
+    pub(crate) inventory: Inventory,
+    /// The version the marketplace now offers, where it can be told apart
+    /// from the one installed; `None` when it cannot, which is not the same as
+    /// "up to date" and is not drawn as one.
+    pub(crate) update: Option<String>,
+    install_path: Option<PathBuf>,
     /// Where it is installed, which is where it can be removed from.
     pub(crate) installed: Vec<Scope>,
     /// What each scope's settings file says, indexed as [`Scope::ALL`];
@@ -141,7 +153,28 @@ pub(crate) struct Plugin {
     enabled: bool,
 }
 
+/// The marketplace Anthropic runs. A plugin from it is marked *Official*;
+/// nothing in the listing carries a finer verified flag, so this is the whole
+/// of what the mark claims.
+const OFFICIAL: &str = "claude-plugins-official";
+
 impl Plugin {
+    /// The plugin's own name, without its marketplace.
+    pub(crate) fn name(&self) -> &str {
+        self.id
+            .split_once('@')
+            .map_or(self.id.as_str(), |(name, _)| name)
+    }
+
+    /// The marketplace it came from.
+    pub(crate) fn marketplace(&self) -> &str {
+        self.id.split_once('@').map_or("", |(_, market)| market)
+    }
+
+    pub(crate) fn official(&self) -> bool {
+        self.marketplace() == OFFICIAL
+    }
+
     /// Whether it is on at `scope`: what that scope sets, else what the next
     /// wider one sets, else off.
     ///
@@ -321,6 +354,9 @@ pub(crate) fn parse(
                 set: Scope::ALL.map(|scope| set[scope as usize].get(&record.id).copied()),
                 id: record.id,
                 version: record.version,
+                inventory: Inventory::default(),
+                update: None,
+                install_path: record.install_path,
                 installed: vec![record.scope],
                 enabled: record.enabled,
             }),
@@ -373,13 +409,90 @@ pub(crate) fn list_blocking(root: &Path) -> Result<Catalog, String> {
             .map(|json| enabled_plugins(&json))
             .unwrap_or_default()
     });
-    parse(&json, root, &set)
+    let mut catalog = parse(&json, root, &set)?;
+    let markets = marketplaces_blocking(root);
+    for plugin in &mut catalog.installed {
+        if let Some(path) = &plugin.install_path {
+            plugin.inventory = inventory::read_blocking(path);
+        }
+        let entry = markets
+            .get(plugin.marketplace())
+            .and_then(|market| market.iter().find(|entry| entry["name"] == plugin.name()));
+        plugin.update = match (&plugin.version, entry) {
+            (Some(version), Some(entry)) => update_to(version, entry),
+            _ => None,
+        };
+    }
+    Ok(catalog)
+}
+
+/// Every known marketplace's catalog entries, by marketplace name.
+///
+/// Where each one's copy is on disk comes from the command line
+/// (`marketplace list --json`); the catalog itself is the marketplace's own
+/// published `marketplace.json`. A marketplace that cannot be read contributes
+/// nothing, which leaves its plugins with no update known rather than failing
+/// the list.
+fn marketplaces_blocking(root: &Path) -> HashMap<String, Vec<serde_json::Value>> {
+    #[derive(Deserialize)]
+    #[serde(rename_all = "camelCase")]
+    struct Market {
+        name: String,
+        install_location: Option<PathBuf>,
+    }
+    let Ok(json) = claude(
+        root,
+        &["plugin", "marketplace", "list", "--json"],
+        LIST_LIMIT,
+    ) else {
+        return HashMap::new();
+    };
+    let markets: Vec<Market> = serde_json::from_str(&json).unwrap_or_default();
+    markets
+        .into_iter()
+        .filter_map(|market| {
+            let file = market
+                .install_location?
+                .join(".claude-plugin/marketplace.json");
+            let text = std::fs::read_to_string(file).ok()?;
+            let catalog: serde_json::Value = serde_json::from_str(&text).ok()?;
+            let entries = catalog["plugins"].as_array()?.clone();
+            Some((market.name, entries))
+        })
+        .collect()
+}
+
+/// Whether `version` reads as a commit rather than a release: seven or more
+/// hex digits and nothing else.
+pub(crate) fn is_hash(version: &str) -> bool {
+    version.len() >= 7 && version.chars().all(|c| c.is_ascii_hexdigit())
+}
+
+/// The version a catalog entry offers over `installed`, if the two can be
+/// compared at all.
+///
+/// Two ways, and only these: a release number the entry names, against a
+/// release installed; or the commit its source is pinned to, against a commit
+/// installed — shown by its first seven characters, since that is all a
+/// person reads of one. An entry whose source is a folder inside the
+/// marketplace's own repository names neither, and gets no answer rather than
+/// a guess.
+pub(crate) fn update_to(installed: &str, entry: &serde_json::Value) -> Option<String> {
+    if !is_hash(installed) {
+        return entry["version"]
+            .as_str()
+            .filter(|offered| *offered != installed)
+            .map(str::to_string);
+    }
+    let sha = entry["source"]["sha"].as_str()?;
+    (!sha.starts_with(installed) && is_hash(sha)).then(|| sha[..7].to_string())
 }
 
 /// What a change does to the plugin it names.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Verb {
     Install,
+    Update,
     Uninstall,
     Enable,
     Disable,
@@ -408,6 +521,7 @@ impl Change {
         let Change { id, scope, verb } = self;
         let word = match verb {
             Verb::Install => "install",
+            Verb::Update => "update",
             Verb::Uninstall => "uninstall",
             Verb::Enable => "enable",
             Verb::Disable => "disable",
@@ -424,6 +538,7 @@ impl Change {
         let Change { id, scope, verb } = self;
         let word = match verb {
             Verb::Install => "Installing",
+            Verb::Update => "Updating",
             Verb::Uninstall => "Removing",
             Verb::Enable => "Enabling",
             Verb::Disable => "Disabling",
@@ -677,6 +792,34 @@ mod tests {
                 .enumerate()
                 .all(|(i, scope)| *scope as usize == i)
         );
+    }
+
+    #[test]
+    fn a_release_is_compared_with_a_release_and_a_commit_with_a_commit() {
+        let semver = serde_json::json!({"name": "p", "version": "1.3.0"});
+        assert_eq!(update_to("1.2.3", &semver).as_deref(), Some("1.3.0"));
+        assert_eq!(update_to("1.3.0", &semver), None);
+        let pinned = serde_json::json!({"name": "p", "source": {
+            "source": "url", "sha": "c55ee46073ed923f86ce59a5eb3b6d895095d1b7"}});
+        assert_eq!(
+            update_to("5b15a47f2d71", &pinned).as_deref(),
+            Some("c55ee46")
+        );
+        assert_eq!(update_to("c55ee46073ed", &pinned), None);
+        // A folder inside the marketplace's own repository names no version
+        // and no commit: no answer, rather than a guess.
+        let local = serde_json::json!({"name": "p", "source": "./plugins/p"});
+        assert_eq!(update_to("2a8ad9f74633", &local), None);
+        assert_eq!(update_to("1.0.0", &local), None);
+    }
+
+    #[test]
+    fn a_plugin_is_named_by_its_name_and_marked_official_by_its_marketplace() {
+        let catalog = catalog(&settings("", "", ""));
+        let figma = plugin(&catalog, "figma@official");
+        assert_eq!(figma.name(), "figma");
+        assert_eq!(figma.marketplace(), "official");
+        assert!(!figma.official());
     }
 
     #[test]

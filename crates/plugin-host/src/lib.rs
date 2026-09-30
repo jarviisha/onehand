@@ -18,7 +18,7 @@ pub use workbench::{Ask, Request, WorkbenchMode};
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
     AnyElement, App, ElementId, Hsla, InteractiveElement as _, IntoElement as _,
-    ParentElement as _, StatefulInteractiveElement as _, Styled as _, Window, div,
+    ParentElement as _, SharedString, StatefulInteractiveElement as _, Styled as _, Window, div,
 };
 use gpui_component::button::Button;
 use gpui_component::{ActiveTheme as _, Colorize as _, Size, StyledExt as _};
@@ -205,7 +205,7 @@ pub fn status_line(message: String, cx: &App) -> AnyElement {
 /// chips in a narrow column, and a panel's tabs take a little room to breathe.
 pub fn switch(
     id: &'static str,
-    labels: &[&'static str],
+    labels: &[SharedString],
     active: usize,
     size: Size,
     pick: impl Fn(&usize, &mut Window, &mut App) + 'static,
@@ -243,7 +243,7 @@ pub fn switch(
                 .text_color(if on { ink_on } else { ink })
                 .when(on, |half| half.bg(plate))
                 .on_click(move |_, window, cx| pick(&i, window, cx))
-                .child(*label)
+                .child(label.clone())
         }))
         .into_any_element()
 }

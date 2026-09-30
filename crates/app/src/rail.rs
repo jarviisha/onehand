@@ -2440,7 +2440,7 @@ fn new_session_menu(
 fn tab_bar(active: RailTab, cx: &mut Context<Shell>) -> impl IntoElement + use<> {
     onehand_plugin_host::switch(
         "rail-tab",
-        &RailTab::ALL.map(RailTab::label),
+        &RailTab::ALL.map(|tab| tab.label().into()),
         RailTab::ALL
             .iter()
             .position(|tab| *tab == active)

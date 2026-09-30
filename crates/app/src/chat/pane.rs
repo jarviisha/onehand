@@ -1409,6 +1409,12 @@ impl ChatPane {
     }
 
     /// `uid`'s live session, if it has reached one.
+    /// When the agent of the session on screen started, if one is showing.
+    pub fn active_started(&self, cx: &App) -> Option<std::time::Instant> {
+        let session = self.session_of(self.active?)?;
+        Some(session.read(cx).started)
+    }
+
     fn session_of(&self, uid: u64) -> Option<&Entity<ChatSession>> {
         self.conversations.get(&uid)?.session()
     }

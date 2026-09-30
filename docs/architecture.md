@@ -955,7 +955,26 @@ see the rail, below.
   session here gets disagrees with the listing's folded answer, the row says *set elsewhere* in the
   warning ink**: managed settings, a policy or a settings flag decided it, and the switch describes
   the three files rather than the outcome. *Remove* is in the menu, per scope the plugin is
-  installed at. **Every change goes through `claude plugin … --scope`
+  installed at.
+  **The Installed tab** leads with a search and filter chips (All, Global, Project, Local, and *Has
+  update* only while one has); the segmented control carries each list's count. A row is the
+  plugin's name, its version in the monospace face (a commit cut to seven characters, the rest on
+  hover), an *Update x* chip where the marketplace offers a newer one, the switch and the menu; a
+  muted line with its marketplace and scopes, marked *Official* for Anthropic's marketplace (the
+  whole of what that mark claims — the listing has no finer verified flag); and a chip per kind it
+  carries (skills, commands, agents, MCP, and *hooks* in the warning ink with no count). Plugins off
+  in this project sit last under *Disabled · N*. **What a plugin carries is read from its own
+  folder** (`inventory.rs`), not from `claude plugin details`, which prints the same inventory as
+  prose with no `--json`: the published plugin layout — the manifest plus `skills/`, `commands/`,
+  `agents/`, `hooks/hooks.json`, `.mcp.json`, and whatever paths the manifest adds. **An update is
+  known only where it can be compared**: a release named by the catalog against a release installed,
+  or the commit a source is pinned to against a commit installed; a plugin kept in a folder of the
+  marketplace's own repository names neither and shows no chip. The row is a tab stop and opens a
+  drawer listing every component, a hook with the command it runs; Enter opens it and Space flips
+  the switch. **A banner appears only while this mode has made changes the agent on screen has not
+  loaded** — counted against when that agent started (`Request::AgentStarted`, pushed by the shell
+  from `ChatSession::started`), with *Restart agent* going back up as `Request::RestartAgent`. It
+  counts this mode's changes alone; one made from a terminal is not seen. **Every change goes through `claude plugin … --scope`
   and nothing writes Claude Code's files**: their layout belongs to Claude Code, and its install
   record already carries a version number. **What each scope sets is read from the three
   `settings.json` files' `enabledPlugins`**, because the listing's `enabled` is the answer with every
