@@ -226,19 +226,19 @@ One window hosts exactly one workspace. The frame is a navigation **rail** plus 
   logs the run as short notices, one fact per line, since a notice is a single
   centred line cut at the column's edge. The session stays when the run ends,
   and its project is kept.
-- **The connection runs are made through is stated where the switches are.** At
-  the head of Settings ▸ Workspace's list, one line reads *GitHub: signed in as
-  …, through `gh`* in the success ink, or says in the warning ink what is wrong
-  and what to run about it. Beside it sit two ghost buttons, *Check again* and
-  *Look now*. The second runs the search at once and always answers with a
+- **The connection runs are made through has a page of its own**, Settings ▸
+  Connections: a row per connector reading *Signed in as …* in the success ink,
+  or saying in the warning ink what is wrong and what to run about it, with
+  *Check again* under the list. Settings ▸ Workspace keeps *Look for an issue
+  now* above the switches, which runs the search at once and always answers with a
   notification — including when nothing is switched on, a run is already going,
   something blocks every run, or no labelled issue was found — because a button
   that sometimes does nothing visible reads as broken. When the config
   stops every run, a warning line under the explanation says so before any
   switch is read. Each switch takes the pointer across its own width only, not
-  across the empty column beside its name. There is no
-  line per forge: GitHub is the only one runs can reach, and a status for one
-  they cannot use would read as a promise.
+  across the empty column beside its name. The servers page lists only the
+  connectors the build carries — GitHub alone today — since a row for one
+  nothing can use would read as a promise.
 - **Everything else is a dock panel**, and the arrangement persists as **five
   values, not the library's `DockAreaState`**: Workbench width, terminal height,
   whether each is open, and the rail's width. `DockAreaState` is serde and would
@@ -349,7 +349,11 @@ One window hosts exactly one workspace. The frame is a navigation **rail** plus 
   nothing is lost by it — the conversation already fills everything right of the
   rail whenever both docks are closed.
 - **No global top bar and no right toolbar.** Transient status is a toast;
-  modals are `Dialog`s (workspace settings, agent manager, help).
+  modals are `Dialog`s. **Settings is a large one**, nearly the size of the
+  window, with its nav column on the left and a ✕ in its corner. Inside it is
+  one surface: no border beside the nav, no header bar, no box around a group
+  — a group is a heading with a hairline above it, and a setting stacks its
+  name, a line about it and a full-width control.
 - **No status bar either.** There was one — a row under the rail and the dock
   reading out the project, its branch, the running agent, unsaved buffers and any
   panel left off 100% — and it is gone. Every fact on it was either already said

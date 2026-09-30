@@ -25,6 +25,7 @@ mod keymap;
 mod plugins;
 mod rail;
 mod remote;
+mod settings;
 pub mod shell;
 mod state;
 mod terminal;

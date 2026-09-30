@@ -13,7 +13,7 @@ use gpui::{
 use gpui_component::button::ButtonVariants as _;
 use gpui_component::input::{Input, InputState};
 use gpui_component::notification::Notification;
-use gpui_component::{ActiveTheme, StyledExt, WindowExt as _};
+use gpui_component::{ActiveTheme, Sizable as _, StyledExt, WindowExt as _};
 use onehand_core::config::AppConfig;
 
 use crate::shell::*;
@@ -489,7 +489,7 @@ impl Editor {
         cx.notify();
     }
 
-    fn cancel(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+    pub fn cancel(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.focus.focus(window, cx);
         self.editing = None;
         self.error = None;
@@ -541,104 +541,200 @@ impl Editor {
     }
 }
 
+impl Editor {
+    /// Whether a shortcut is open for editing, which is a change not yet saved.
+    pub fn editing(&self) -> bool {
+        self.editing.is_some()
+    }
+}
+
 impl Render for Editor {
     fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        use crate::settings::{APP, field, list_row, page_head, section};
+
         let overrides = Shared::global(cx).keymap.clone();
+        let muted = cx.theme().muted_foreground;
+        let danger = crate::theme::status_ink(cx).danger;
         if let Some(index) = self.editing {
             let command = &COMMANDS[index];
-            return div().track_focus(&self.focus).key_context("ShortcutEditor")
-                .v_flex().gap_3().w_full()
+            return div()
+                .track_focus(&self.focus)
+                .key_context("ShortcutEditor")
+                .v_flex()
+                .gap_6()
+                .w_full()
                 .on_action(cx.listener(move |editor, _: &SaveShortcut, window, cx| {
                     editor.save(index, false, window, cx);
                 }))
                 .on_action(cx.listener(|editor, _: &CancelShortcut, window, cx| {
                     editor.cancel(window, cx);
                 }))
-                .child(crate::dialogs::page_title("Edit shortcut"))
-                .child(div().child(command.label))
-                .child(div().text_sm().text_color(cx.theme().muted_foreground).child(command.scope))
-                .child(Input::new(&self.input).w_full())
-                .child(div().text_sm().text_color(cx.theme().muted_foreground)
-                    .child(format!("Default: {}", command.defaults.join(" "))))
-                .child(div().text_sm().child("Separate alternatives with spaces. Leave empty to unassign. Enter saves; Escape cancels."))
-                .children(self.error.as_ref().map(|error| div().text_sm()
-                    .text_color(crate::theme::status_ink(cx).danger).child(error.clone())))
-                .child(div().h_flex().gap_2()
-                    .child(crate::controls::action("save-shortcut").label("Save").primary()
-                        .on_click(cx.listener(move |editor, _, window, cx| editor.save(index, false, window, cx))))
-                    .child(crate::controls::action("cancel-shortcut").label("Cancel")
-                        .on_click(cx.listener(|editor, _, window, cx| editor.cancel(window, cx)))))
-                .into_any_element();
-        }
-        let rows = COMMANDS
-            .iter()
-            .enumerate()
-            .map(|(index, command)| {
-                let keys = command.keys(&overrides);
-                let label = if keys.is_empty() {
-                    "Unassigned".to_string()
-                } else {
-                    keys.join(" / ")
-                };
-                div()
-                    .v_flex()
-                    .gap_2()
-                    .w_full()
-                    .py_2()
-                    .border_b_1()
-                    .border_color(cx.theme().border)
-                    .child(
-                        div()
-                            .h_flex()
-                            .items_start()
-                            .gap_2()
-                            .w_full()
-                            .child(
-                                div()
-                                    .v_flex()
-                                    .flex_1()
-                                    .min_w_0()
-                                    .child(command.label)
-                                    .child(
-                                        div()
-                                            .text_xs()
-                                            .text_color(cx.theme().muted_foreground)
-                                            .child(command.scope),
-                                    )
-                                    .child(div().text_sm().child(label)),
-                            )
-                            .child(
-                                crate::controls::action(("edit-shortcut", index))
-                                    .label("Edit")
-                                    .on_click(cx.listener(move |editor, _, window, cx| {
-                                        editor.edit(index, window, cx)
-                                    })),
-                            )
-                            .when(overrides.contains_key(command.id), |row| {
-                                row.child(
-                                    crate::controls::action(("reset-shortcut", index))
-                                        .label("Reset")
+                .child(page_head("Edit shortcut", command.label, APP, cx))
+                .child(
+                    section(None, None, cx)
+                        .child(field(
+                            "Keys",
+                            Some(
+                                "Separate alternatives with spaces. Leave empty to unassign. \
+                             Enter saves; Escape cancels."
+                                    .into_any_element(),
+                            ),
+                            Input::new(&self.input),
+                            cx,
+                        ))
+                        .child(
+                            div()
+                                .h_flex()
+                                .gap_2()
+                                .text_sm()
+                                .text_color(muted)
+                                .child(format!("Works: {}.", command.scope))
+                                .child(keys(command.defaults.iter().copied(), "none", cx))
+                                .child("by default"),
+                        )
+                        .children(
+                            self.error.as_ref().map(|error| {
+                                div().text_sm().text_color(danger).child(error.clone())
+                            }),
+                        )
+                        .child(
+                            // The same order the agent form keeps: the action
+                            // first, under the field it acts on.
+                            div()
+                                .h_flex()
+                                .gap_2()
+                                .child(
+                                    crate::controls::action("save-shortcut")
+                                        .label("Save")
+                                        .primary()
                                         .on_click(cx.listener(move |editor, _, window, cx| {
-                                            editor.save(index, true, window, cx)
+                                            editor.save(index, false, window, cx)
                                         })),
                                 )
-                            }),
-                    )
-            })
-            .collect::<Vec<_>>();
-        div().track_focus(&self.focus).v_flex().gap_3().w_full()
-            .child(crate::dialogs::page_title("Shortcuts"))
-            .child(div().text_sm().text_color(cx.theme().muted_foreground)
-                .child("Customize shortcuts for every window. Edit a command to change or unassign its keys."))
-            .children(cx.global::<LoadWarning>().0.as_ref().map(|error| div().text_sm()
-                .text_color(crate::theme::status_ink(cx).danger).child(format!("Loaded defaults because the saved keymap is invalid: {error}"))))
-            .children(self.error.as_ref().map(|error| div().text_sm().text_color(crate::theme::status_ink(cx).danger).child(error.clone())))
-            .children(rows)
-            .child(div().text_sm().child("Terminal: Ctrl+Shift+C / V copies / pastes; Tab / Shift+Tab go to the PTY. These terminal controls are fixed."))
-            .child(div().pt_2().text_xs().text_color(cx.theme().muted_foreground)
-                .child(format!("onehand {}", env!("CARGO_PKG_VERSION"))))
+                                .child(
+                                    crate::controls::action("cancel-shortcut")
+                                        .ghost()
+                                        .label("Cancel")
+                                        .on_click(cx.listener(|editor, _, window, cx| {
+                                            editor.cancel(window, cx)
+                                        })),
+                                ),
+                        ),
+                )
+                .into_any_element();
+        }
+
+        // Two groups, by where a command works: the window's own commands reach
+        // over any panel, the rest only while the composer holds the caret.
+        let mut window_rows = Vec::new();
+        let mut composer_rows = Vec::new();
+        for (index, command) in COMMANDS.iter().enumerate() {
+            let bound = command.keys(&overrides);
+            let row = list_row(
+                command.label,
+                Some(command.scope.into_any_element()),
+                div()
+                    .h_flex()
+                    .gap_2()
+                    .child(keys(bound.iter().map(String::as_str), "Unassigned", cx))
+                    .when(overrides.contains_key(command.id), |row| {
+                        row.child(
+                            crate::controls::action(("reset-shortcut", index))
+                                .ghost()
+                                .small()
+                                .label("Reset")
+                                .on_click(cx.listener(move |editor, _, window, cx| {
+                                    editor.save(index, true, window, cx)
+                                })),
+                        )
+                    })
+                    .child(
+                        crate::controls::action(("edit-shortcut", index))
+                            .ghost()
+                            .small()
+                            .label("Edit")
+                            .on_click(cx.listener(move |editor, _, window, cx| {
+                                editor.edit(index, window, cx)
+                            })),
+                    ),
+                cx,
+            )
+            .into_any_element();
+            match command.context.starts_with("Shell") {
+                true => window_rows.push(row),
+                false => composer_rows.push(row),
+            }
+        }
+
+        div()
+            .track_focus(&self.focus)
+            .v_flex()
+            .gap_6()
+            .w_full()
+            .child(page_head(
+                "Shortcuts",
+                "The keys for every window. Edit a command to change or unassign them.",
+                APP,
+                cx,
+            ))
+            .children(cx.global::<LoadWarning>().0.as_ref().map(|error| {
+                div().text_sm().text_color(danger).child(format!(
+                    "Loaded defaults because the saved keymap is invalid: {error}"
+                ))
+            }))
+            .children(
+                self.error
+                    .as_ref()
+                    .map(|error| div().text_sm().text_color(danger).child(error.clone())),
+            )
+            .child(section(Some("Window"), None, cx).children(window_rows))
+            .child(section(Some("Composer"), None, cx).children(composer_rows))
+            .child(
+                section(
+                    Some("Terminal"),
+                    Some(
+                        "Fixed, because a program running in the terminal has a claim on them."
+                            .into(),
+                    ),
+                    cx,
+                )
+                .child(list_row(
+                    "Copy / paste",
+                    None,
+                    keys(["ctrl-shift-c", "ctrl-shift-v"], "", cx),
+                    cx,
+                ))
+                .child(list_row(
+                    "Focus traversal",
+                    Some("Go to the program in the terminal instead.".into_any_element()),
+                    keys(["tab", "shift-tab"], "", cx),
+                    cx,
+                )),
+            )
             .into_any_element()
     }
+}
+
+/// A command's keys as the component library's key caps, or a muted word
+/// where it has none.
+fn keys<'a>(
+    keys: impl IntoIterator<Item = &'a str>,
+    none: &'static str,
+    cx: &App,
+) -> gpui::AnyElement {
+    let caps = keys
+        .into_iter()
+        .filter_map(|key| Keystroke::parse(key).ok())
+        .map(gpui_component::kbd::Kbd::new)
+        .collect::<Vec<_>>();
+    if caps.is_empty() {
+        return div()
+            .text_sm()
+            .text_color(cx.theme().muted_foreground)
+            .child(none)
+            .into_any_element();
+    }
+    div().h_flex().gap_1().children(caps).into_any_element()
 }
 
 #[cfg(test)]

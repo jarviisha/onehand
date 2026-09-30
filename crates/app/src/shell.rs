@@ -4,7 +4,7 @@
 //! is about the window rather than about one panel.
 
 use crate::chat::ChatPane;
-use crate::dialogs::{AgentDraft, DraftShift, SettingsPage};
+use crate::settings::{AgentCheck, AgentDraft, DraftShift, SettingsPage};
 use crate::state::{OpenWindow, Shared, WorkspaceWindow};
 use crate::terminal::TerminalPanel;
 use crate::workbench::{EDITOR_MODE, MARKDOWN_MODE, NEOVIM_MODE, Workbench};
@@ -338,6 +338,9 @@ pub struct Shell {
     /// Held by Settings' body and focused when it opens.
     settings_focus: gpui::FocusHandle,
     keymap_editor: Entity<crate::keymap::Editor>,
+    settings_view: Entity<crate::settings::SettingsView>,
+    /// What each agent command's last *Test* found, by command.
+    agent_checks: HashMap<String, AgentCheck>,
     held_commands: std::collections::HashSet<&'static str>,
     /// The workspace-rename field.
     workspace_name: Entity<InputState>,
@@ -786,6 +789,11 @@ impl Shell {
             settings_return_focus: None,
             settings_focus: cx.focus_handle(),
             keymap_editor: cx.new(|cx| crate::keymap::Editor::new(window, cx)),
+            settings_view: {
+                let shell = cx.weak_entity();
+                cx.new(|_| crate::settings::SettingsView::new(shell))
+            },
+            agent_checks: HashMap::new(),
             held_commands: Default::default(),
             workspace_name,
             renaming: None,
@@ -2640,7 +2648,64 @@ impl Shell {
         cx.notify();
     }
 
+    /// Close Settings, unless that would throw away something not saved.
+    ///
+    /// An agent form or a shortcut left mid-edit is asked about first, and only
+    /// then: a question on every close teaches the user to click through it,
+    /// and closing with nothing pending has nothing to lose.
+    pub fn request_close_settings(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let pending = self.agent_draft.dirty(&Shared::global(cx).agents, cx)
+            || self.keymap_editor.read(cx).editing();
+        if !pending {
+            self.close_settings(window, cx);
+            return;
+        }
+        let shell = cx.entity();
+        window.open_alert_dialog(cx, move |alert, _, _| {
+            let shell = shell.clone();
+            alert
+                .title("Discard unsaved changes?")
+                .description(
+                    "An agent or a shortcut is still being edited. Closing Settings now \
+                     throws those changes away.",
+                )
+                // Ours rather than the library's default pair, for the reason
+                // every button in this app is ours: the library draws its own
+                // with the arrow cursor.
+                .footer(
+                    DialogFooter::new()
+                        .child(
+                            DialogClose::new().child(
+                                crate::controls::action("keep-settings-edit")
+                                    .ghost()
+                                    .label("Keep editing"),
+                            ),
+                        )
+                        .child(
+                            crate::controls::action("discard-settings-edit")
+                                .danger()
+                                .label("Discard")
+                                .on_click(move |_, window: &mut Window, cx: &mut App| {
+                                    window.close_dialog(cx);
+                                    shell.update(cx, |shell: &mut Self, cx| {
+                                        shell.agent_draft.clear(window, cx);
+                                        shell.keymap_editor.update(cx, |editor, cx| {
+                                            if editor.editing() {
+                                                editor.cancel(window, cx);
+                                            }
+                                        });
+                                        shell.close_settings(window, cx);
+                                    });
+                                }),
+                        ),
+                )
+        });
+    }
+
     pub fn close_settings(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if !self.settings_open {
+            return;
+        }
         self.settings_open = false;
         if let Some(focus) = self.settings_return_focus.take() {
             focus.focus(window, cx);
@@ -2683,7 +2748,7 @@ impl Shell {
 
     /// Remove an agent, and move the form off the hole it leaves.
     ///
-    /// The rule is `dialogs::draft_shift`, which says why a position left
+    /// The rule is `settings::draft_shift`, which says why a position left
     /// uncorrected here is a form that saves over the wrong agent.
     pub fn delete_agent(&mut self, idx: usize, window: &mut Window, cx: &mut Context<Self>) {
         cx.update_global::<Shared, _>(|shared, _| {
@@ -2691,7 +2756,7 @@ impl Shell {
                 shared.agents.remove(idx);
             }
         });
-        match crate::dialogs::draft_shift(self.agent_draft.editing, idx) {
+        match crate::settings::draft_shift(self.agent_draft.editing, idx) {
             DraftShift::Keep => {}
             // The fields go too, not just the index: left filled under a button
             // that now reads "Add", the form offers to recreate the agent the
@@ -2701,6 +2766,69 @@ impl Shell {
         }
         self.persist_agents(window, cx);
         cx.notify();
+    }
+
+    /// Move an agent to the front of the list, which is what makes it the one
+    /// *New session* starts.
+    pub fn make_default_agent(&mut self, idx: usize, window: &mut Window, cx: &mut Context<Self>) {
+        let moved = cx.update_global::<Shared, _>(|shared, _| {
+            if idx == 0 || idx >= shared.agents.len() {
+                return false;
+            }
+            let spec = shared.agents.remove(idx);
+            shared.agents.insert(0, spec);
+            true
+        });
+        if !moved {
+            return;
+        }
+        self.agent_draft.editing =
+            crate::settings::draft_after_promote(self.agent_draft.editing, idx);
+        self.persist_agents(window, cx);
+        cx.notify();
+    }
+
+    /// What the last *Test* of `command` found, if it has been tested.
+    pub fn agent_check(&self, command: &str) -> Option<&AgentCheck> {
+        self.agent_checks.get(command)
+    }
+
+    /// Look for an agent's command the way starting a session would, off the UI
+    /// loop, without starting anything.
+    pub fn check_agent(&mut self, idx: usize, cx: &mut Context<Self>) {
+        let Some(command) = Shared::global(cx)
+            .agents
+            .get(idx)
+            .map(|a| a.command.clone())
+        else {
+            return;
+        };
+        self.agent_checks
+            .insert(command.clone(), AgentCheck::Running);
+        cx.notify();
+        cx.spawn(async move |shell, cx| {
+            let found = cx
+                .background_executor()
+                .spawn({
+                    let command = command.clone();
+                    async move {
+                        let path = std::env::var_os("PATH");
+                        onehand_core::config::find_command(&command, path.as_deref())
+                    }
+                })
+                .await;
+            shell
+                .update(cx, |shell, cx| {
+                    let check = match found {
+                        Some(at) => AgentCheck::Found(at),
+                        None => AgentCheck::Missing,
+                    };
+                    shell.agent_checks.insert(command, check);
+                    cx.notify();
+                })
+                .ok();
+        })
+        .detach();
     }
 
     /// Commit the form. Adds or replaces depending on `editing`.
@@ -3683,7 +3811,7 @@ impl Render for Shell {
             )
             .children(
                 self.settings_open
-                    .then(|| crate::dialogs::settings(window, cx)),
+                    .then(|| crate::settings::dialog(self.settings_view.clone(), window, cx)),
             )
             .children(sheet_layer)
             .children(dialog_layer)

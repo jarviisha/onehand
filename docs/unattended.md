@@ -161,8 +161,8 @@ is signed in as. Anything that stops a switched-on project from being worked —
 `gh` missing, signed out or unanswered on a project GitHub serves, or nothing to
 work at all — is kept per project and shown on its row, in the warning ink with the reason on hover. It is
 never left on stderr, where a switch that is on while nothing can happen would
-look exactly like one that is working. Settings ▸ Workspace heads its switches
-with the signed-in line and a *Check again*. A project is looked at when it is
+look exactly like one that is working. Settings ▸ Connections shows the
+signed-in line for each connector and a *Check again*. A project is looked at when it is
 switched on, when its window opens, and on every tick — a run in progress
 included, since a tick that only looked when it was about to search left the rows
 as stale as the run was long. A tick with nothing switched on asks GitHub

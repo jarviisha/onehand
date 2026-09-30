@@ -59,6 +59,31 @@ pub(crate) fn join_args(args: &[String]) -> String {
         .join(" ")
 }
 
+/// Where an agent's command would be found, if anywhere.
+///
+/// A command naming a path (anything with a separator in it) is checked as that
+/// path; a bare name is looked for in each directory of `path`, the value of
+/// `PATH`, in order, as the shell would. `None` is what a session started with
+/// this command would fail on, which is what checking it ahead of time is for.
+///
+/// It asks whether a file is there, not whether it may be run or speaks the
+/// protocol: the permission bit is platform-specific, and the protocol can only
+/// be known by starting the program, which is the thing a check done ahead of a
+/// session must not do.
+pub fn find_command(command: &str, path: Option<&std::ffi::OsStr>) -> Option<PathBuf> {
+    let command = command.trim();
+    if command.is_empty() {
+        return None;
+    }
+    if command.contains(std::path::MAIN_SEPARATOR) || command.contains('/') {
+        let candidate = PathBuf::from(command);
+        return candidate.is_file().then_some(candidate);
+    }
+    std::env::split_paths(path?)
+        .map(|dir| dir.join(command))
+        .find(|candidate| candidate.is_file())
+}
+
 /// Parse one line of arguments back into a list.
 ///
 /// Whitespace separates; `'…'` is literal; `"…"` honours `\` escapes; a bare
@@ -808,6 +833,20 @@ impl AppState {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_command_is_found_by_path_or_on_path_and_never_invented() {
+        let exe = std::env::current_exe().unwrap();
+        let dir = exe.parent().unwrap().as_os_str().to_owned();
+        let name = exe.file_name().unwrap().to_str().unwrap();
+        // A path is checked as a path.
+        assert_eq!(find_command(exe.to_str().unwrap(), None), Some(exe.clone()));
+        // A bare name is looked for on PATH, and only there.
+        assert_eq!(find_command(name, Some(&dir)), Some(exe.clone()));
+        assert_eq!(find_command(name, None), None);
+        assert_eq!(find_command("no-such-agent-here", Some(&dir)), None);
+        assert_eq!(find_command("  ", Some(&dir)), None);
+    }
 
     #[test]
     fn empty_file_keeps_defaults() {
