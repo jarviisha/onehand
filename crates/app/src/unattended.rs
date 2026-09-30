@@ -48,10 +48,13 @@ pub struct Unattended {
     /// label and the interval do not matter — and it is only learned once an
     /// adapter has answered, which is after a claim.
     mode_refused: Option<String>,
-    /// Every run that has not ended. **At most one is working**; the rest are
-    /// waiting on a person to answer a card they parked. A run waiting holds
-    /// its issue and its session but not the slot, so one question nobody has
-    /// answered yet does not stop every other issue from being worked.
+    /// Every run that has not ended. A run waiting on a person to answer a
+    /// card holds its issue and its session but not the slot, so one question
+    /// nobody has answered yet does not stop every other issue from being
+    /// worked. **A run is only started while none is working**, but one whose
+    /// card is answered carries on beside whatever started meanwhile: its turn
+    /// is already under way, and the protocol has no way to hold an agent
+    /// mid-turn — refusing would mean cancelling the work the answer was for.
     // ponytail: waiting runs are not capped; each keeps an adapter alive. Cap
     // them when a pile of unanswered runs is seen to cost something.
     runs: Vec<Run>,
@@ -122,6 +125,11 @@ struct Run {
     /// has wound down.
     ending: Option<Ending>,
     _watch: Subscription,
+    /// Watches for the run's cards being answered. An answer changes the
+    /// transcript and says nothing else, so waiting for the agent's next event
+    /// instead would leave a run whose adapter went quiet waiting forever,
+    /// with no clock to end it.
+    _answered: Subscription,
     /// Fires if the session goes without saying so — its window closed under
     /// it — so the run settles now rather than holding the tick until its
     /// timeout and then reporting the wrong ending.
@@ -137,7 +145,7 @@ impl Unattended {
         self.runs.iter_mut().find(|run| run.uid == uid)
     }
 
-    /// The run holding the slot: the one working rather than waiting.
+    /// A run holding the slot: working rather than waiting.
     fn working(&self) -> Option<&Run> {
         self.runs.iter().find(|run| run.waiting.is_none())
     }
@@ -361,20 +369,26 @@ fn opted_in_roots(cx: &App) -> Vec<Project> {
     roots
 }
 
-/// Every run that has not ended, as the project it came from and the issue it
-/// is on.
+/// Every run that has not ended, as the project it came from, the issue it is
+/// on and whether it is waiting on a card.
 ///
 /// For the rail, which says on a project's row that a run is working one of its
 /// issues: the run's own session is on a worktree's row of its own, and nothing
 /// on the project the issue belongs to would otherwise say so.
-pub fn live_runs(cx: &App) -> Vec<(PathBuf, u64)> {
+pub fn live_runs(cx: &App) -> Vec<(PathBuf, u64, bool)> {
     Shared::global(cx)
         .unattended
         .as_ref()
         .map(|u| {
             u.runs
                 .iter()
-                .map(|run| (run.claimed.repo.clone(), run.claimed.issue.number))
+                .map(|run| {
+                    (
+                        run.claimed.repo.clone(),
+                        run.claimed.issue.number,
+                        run.waiting.is_some(),
+                    )
+                })
                 .collect()
         })
         .unwrap_or_default()
@@ -656,8 +670,9 @@ fn trackers_blocking(
 /// Work `row`, picked by hand from a project's open issues, now.
 ///
 /// **Refused while a run is working**: one run at a time is the rule for picked
-/// and found alike — a run waiting on a person does not count — and the refusal names the issue already being worked so
-/// the person knows what they are waiting on. Anything that stops it before
+/// and found alike — a run waiting on a person does not count — and the
+/// refusal names the issue already being worked so the person knows what they
+/// are waiting on. Anything that stops it before
 /// the claim — a claim refused where the issue lives — is said in the window it
 /// was picked from; after the claim, on the issue as well.
 pub fn start_picked(
@@ -870,6 +885,14 @@ fn start(claimed: Claimed, cx: &mut App) -> Result<(), Unstarted> {
         let pending = with(cx, |u| u.run_mut(uid).and_then(|run| pending_ending(run))).flatten();
         settle(uid, pending.unwrap_or(Ending::Closed), cx)
     });
+    let answered = cx.observe(&session, move |session, cx| {
+        let waiting = with(cx, |u| {
+            u.run_mut(uid).is_some_and(|run| run.waiting.is_some())
+        });
+        if waiting == Some(true) && !session.read(cx).chat.awaiting_permission() {
+            resume(uid, &session, cx);
+        }
+    });
     let clock = clock(uid, timeout, timeout, cx);
     let (by_hand, opening, shown_in) = (
         claimed.picked_by_hand(),
@@ -888,6 +911,7 @@ fn start(claimed: Claimed, cx: &mut App) -> Result<(), Unstarted> {
             budget: Budget::start(timeout, Instant::now()),
             ending: None,
             _watch: watch,
+            _answered: answered,
             _release: release,
             _clock: clock,
         })
@@ -967,8 +991,6 @@ fn on_event(uid: u64, session: &Entity<ChatSession>, event: &ChatEvent, cx: &mut
         ChatEvent::Appended => {
             if prompted_by_someone_else(session, true, cx) {
                 settle(uid, Ending::TakenOver, cx);
-            } else if waiting.is_some() && !session.read(cx).chat.awaiting_permission() {
-                resume(uid, session, cx);
             }
         }
         ChatEvent::TurnEnded if cancelling => settle_pending(uid, cx),
@@ -1025,16 +1047,18 @@ fn wait(uid: u64, asked: String, session: &Entity<ChatSession>, cx: &mut App) {
     tick(None, cx);
 }
 
-/// Every card the run parked has been answered: start its clock again from
+/// No card the run parked is waiting any more: start its clock again from
 /// where it stopped.
+///
+/// "Settled" rather than "answered", because a person pressing Stop settles
+/// the cards too; the turn ending right after is what ends the run then.
 fn resume(uid: u64, session: &Entity<ChatSession>, cx: &mut App) {
     let Some((left, limit)) = with(cx, |u| {
-        let limit = u.timeout;
         let run = u.run_mut(uid)?;
         run.waiting = None;
         let now = Instant::now();
         run.budget.resume(now);
-        Some((run.budget.left(now), limit))
+        Some((run.budget.left(now), run.budget.limit()))
     })
     .flatten() else {
         return;
@@ -1045,7 +1069,7 @@ fn resume(uid: u64, session: &Entity<ChatSession>, cx: &mut App) {
             run._clock = ticking;
         }
     });
-    note(session, "Answered; the run carries on".to_string(), cx);
+    note(session, "Card settled; the run carries on".to_string(), cx);
     cx.refresh_windows();
 }
 
@@ -1233,6 +1257,10 @@ fn cancel_toward(uid: u64, ending: Ending, cx: &mut App) {
 }
 
 /// Settle as whatever the cancel was heading toward.
+///
+/// Only a cancel's ending, unlike [`pending_ending`]: this is reached when a
+/// cancelled turn has wound down, and a run can be cancelled only while it is
+/// working, never while it waits on a card.
 fn settle_pending(uid: u64, cx: &mut App) {
     let pending = with(cx, |u| u.run_mut(uid).and_then(|run| run.ending.clone())).flatten();
     if let Some(ending) = pending {

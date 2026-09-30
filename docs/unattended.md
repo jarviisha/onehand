@@ -15,7 +15,7 @@ open, the section says so.
 ## The shape
 
 ```
-tick (every N minutes, one process, one run working at a time)
+tick (every N minutes, one process, one run started while none is working)
   └─ the project's own issues, then its forge's (gh issue list --label <trigger> --author @me)
      → the first labelled issue, or nothing
      └─ claim it: remove the trigger label + a comment (a note, for one kept in onehand)
@@ -270,7 +270,10 @@ a deliberate one, not a list of whatever was once approved by hand.
    turn carry on, and a card answers once, so nothing can resume twice.
    **A waiting run gives up the slot** — it keeps its issue and its session,
    and the search looks for the next issue at once — so one unanswered question
-   does not stop every other issue from being worked. An adapter lost or a
+   does not stop every other issue from being worked. When its card is
+   answered it carries on beside whatever started meanwhile: the turn is
+   already under way, and the only way to hold it back would be to cancel the
+   work the answer was for. An adapter lost or a
    session closed while waiting ends the run on the question, which is put on
    the issue; re-adding the label is the retry.
    This rule used to end the run: it cancelled the turn and commented the

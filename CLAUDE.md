@@ -630,7 +630,10 @@ finds — or, with no forge, the commits on the branch — is the verdict, on ev
 ask waits for a person and is never answered by the run**: the card stays up, announced like any
 other, and answering it from anywhere lets the turn carry on — answering is not taking over. While it
 waits the run's timeout does not count (`unattended::Budget`) and it **gives up the slot**
-(`Unattended::runs`, at most one working), so the search looks for the next issue at once. An adapter
+(`Unattended::runs`), so the search looks for the next issue at once; a run is only *started* while
+none is working, but one whose card is answered carries on beside it, since a turn under way cannot
+be held. Cards are watched for being answered by observing the session, because an answer emits no
+event of its own. An adapter
 lost or a session closed while waiting ends the run as `Ending::Asked`, with the question on the
 issue. A prompt of anybody else's is a **take-over**: the run stops watching, which clears
 `transient` and saves. Teardown is

@@ -34,7 +34,8 @@ single-user desktop app with one execution slot can use, and to reversing
 **A waiting run gives up the slot.** It keeps its issue and its session, but
 the search may start the next issue, so one unanswered question does not stop
 the workspace. That means a working run and any number of waiting ones can each
-hold an adapter.
+hold an adapter, and a waiting run whose card is answered carries on beside the
+one started meanwhile — a turn under way cannot be held.
 
 **The workspace view is a page in the centre of the window**, not a Workbench
 mode or a rail tab: it has to hold a table across every project, and the rail

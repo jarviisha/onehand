@@ -517,6 +517,11 @@ impl Budget {
         self.since.get_or_insert(now);
     }
 
+    /// The whole timeout, however much of it is spent.
+    pub fn limit(&self) -> Duration {
+        self.limit
+    }
+
     /// What is left of the limit at `now`.
     pub fn left(&self, now: Instant) -> Duration {
         let running = self
