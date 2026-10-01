@@ -166,8 +166,6 @@ Listed because a missing feature nobody wrote down reads as a bug in the ones th
   always send the ordinary form. The rest of the required full-screen terminal behaviour is present.
 - **The terminal's cursor does not blink**, by decision — it would mean a repaint on a timer for the
   life of every tab, in a view that otherwise draws only when bytes arrive.
-- Transcript blocks the design contract asks for that are not drawn are marked *(not rendered)* in
-  DESIGN-ANSWER.md, each with the reason.
 - **The Plugins mode stops where the command line does.** It manages Claude Code's plugins only —
   no other agent's, so there is no agent picker and no per-agent enabling. There is no auto-update
   switch and no roll-back, since the command line offers neither and the mode writes none of

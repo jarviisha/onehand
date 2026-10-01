@@ -595,7 +595,7 @@ mod tests {
     /// **A file name is the rarest way to cite one.** For a long time this
     /// checked for the name plus its extension and nothing else, so it passed
     /// with thirty-one live citations sitting in front of it -- the section
-    /// marks and the short item codes the documents number their decisions and
+    /// marks and the short item codes the documents numbered their decisions and
     /// findings with, which is how anyone actually writes the pointer. All
     /// three forms rot the same way and all three are caught here now.
     /// Every button in the app answers the pointer.
@@ -653,6 +653,7 @@ mod tests {
             "DESIGN",
             "DESIGN-ANSWER",
             "DECISIONS",
+            "architecture.md",
             "AUDIT",
             "AUDIT-2",
             "MIGRATION-GPUI",
