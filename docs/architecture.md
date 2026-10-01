@@ -72,7 +72,9 @@ installer and the licences into a tarball attached to a GitHub pre-release. Noth
 crates.io and nothing can — a git dependency with no rev is not publishable there, so tagged tarballs
 are the only channel. `onehand --version` and the foot of Settings' nav both name the build.
 
-Tests are inline `#[cfg(test)]` modules — there is no `tests/` directory.
+Tests are `#[cfg(test)]` unit-test modules, inline or in a sibling `tests.rs` (`foo.rs` declares
+`mod tests;`, the body lives in `foo/tests.rs` and still reaches private items through `super::`).
+There is no `tests/` directory.
 
 ## Architecture
 
@@ -585,7 +587,7 @@ Settings ▸ Connections, with its *Check again*; Settings ▸ Workspace keeps *
 `dialogs::pick_issue` over `unattended::open_issues_blocking` (every open issue, author on the row,
 bounded at `ISSUES_SHOWN`), and `unattended::start_picked` runs it now. That run is shown as it starts
 (`Shell::show_session`) and kept on screen when it ends. *Look now* in Settings runs the search at
-once. Every run writes its own log into its transcript as notices (`unattended::note`) — the start,
+once. Every run writes its own log into its transcript as notices (`unattended::turn::note`) — the start,
 the prompt going out, a cancel, and the words the issue was told at the end. A run the search finds claims its issue by removing the label,
 branches a worktree off `origin/<default>` and mints a session there. **Neither step moves anything on
 screen**: `ChatPane::open_unshown` connects without showing, and the worktree's root is
@@ -1185,20 +1187,20 @@ centre is the chat, right dock the Workbench, bottom dock the terminal.
   row lists its sessions, each row selecting root *and* session in one click. A session row is named
   by its **conversation** (`Chat::conversation_title` — the first prompt, or a rename), falling back
   to the agent's name until it has been prompted; the agent's name rides in the suffix only where
-  **that project's own sessions disagree about it** (`rail::runs_more_than_one_agent`). The count
+  **that project's own sessions disagree about it** (`rail::project::runs_more_than_one_agent`). The count
   used to be the configured agent menu's, which is the wrong set: a second entry in `onehand.toml`
   put the same word on every session of every project, including the nine running one agent
   apiece. A footnote is for telling two rows apart, so the question is asked of the rows.
-  **Every list row is the rail's own** (`rail::RailRow`), not the library's `SidebarMenuItem`,
+  **Every list row is the rail's own** (`rail::row::RailRow`), not the library's `SidebarMenuItem`,
   because that component holds its label as a bare string in its own clipping box — no tooltip
   hook, no ellipsis, nowhere to hang a fade — so every answer to an overlong name was a guess made
   outside the row about what would fit inside it (a character cap derived from the rail's width
   through an assumed glyph, charged again for the nest inset and the footnote, wrong by a
   character either way). **A name that runs out of room now fades into the row's own fill**
-  (`rail::faded`) instead of being cut at a character with an ellipsis: the cut happens in pixels
+  (`rail::row::faded`) instead of being cut at a character with an ellipsis: the cut happens in pixels
   where the room actually ends, an ellipsis asserts "there is more" even when the name fit
   exactly, and the fade only takes text that is actually leaving. The overlay is painted in the
-  row's composited surface per state (`rail::row_surfaces`) — rest, hover via `group_hover`,
+  row's composited surface per state (`rail::row::row_surfaces`) — rest, hover via `group_hover`,
   active — because a fade into the resting colour over a hovered row is a smudge on exactly the
   row being looked at; painted right it is invisible wherever the name already ended, so nothing
   needs to know whether the name overflowed. **The fade needs a box that is the room and not the
@@ -1226,7 +1228,7 @@ centre is the chat, right dock the Workbench, bottom dock the terminal.
   warning dot for busy, an accent dot for a parked question, a success dot for a turn finished
   unseen. Busy is deliberately *not* a spinner: a session is busy for minutes at a time, and the one
   moving thing on an otherwise still rail pulls the eye for as long as it runs. Every mark names
-  itself in a tooltip (`rail::signal_hint`) — colour alone is a code that has to be learned first
+  itself in a tooltip (`rail::session::signal_hint`) — colour alone is a code that has to be learned first
   and cannot be read at all by someone who does not separate red from green.
   **The selected project row is marked whether or not it
   holds the session on screen**, only the selected project starts expanded, and a project with no
@@ -1278,8 +1280,8 @@ centre is the chat, right dock the Workbench, bottom dock the terminal.
   too. The mark on the row still says what each session wants, in a place that does not move. A flat
   row is still named by its session's uid and never by its place, since a closed session shifts
   everything under it.
-  **Both lists draw the same row** (`rail::session_row`) — same click, same menu, same mark — and
-  everything they disagree about is `rail::Note`, the footnote beside the mark: the agent on a tree
+  **Both lists draw the same row** (`rail::session::session_row`) — same click, same menu, same mark — and
+  everything they disagree about is `rail::session::Note`, the footnote beside the mark: the agent on a tree
   row, the project on a flat one. They were briefly written out separately, which left the flat one
   a near-verbatim copy that would have drifted at the first edit to either.
   Neither list is capped, and that is one ceiling rather than two: every row is a session somebody
@@ -1289,7 +1291,7 @@ centre is the chat, right dock the Workbench, bottom dock the terminal.
   no sessions does in the tree.
   The tab is **not persisted**: a launch that came up on the flat list would be one where the tree,
   the thing that says what a workspace *is*, had to be found before anything else could be read.
-- **The rail's header is a block one step above the list** (`rail::lead_row`): the workspace
+- **The rail's header is a block one step above the list** (`rail::row::lead_row`): the workspace
   name and *New session*, taller, at a larger text size and a weight up, with the identity's icon in
   full ink rather than muted. At the list's own scale they read as its first two entries, which is
   what they are not. **The 16px icon column does not move** — only the row around it grows, or the
@@ -1303,7 +1305,7 @@ centre is the chat, right dock the Workbench, bottom dock the terminal.
   marked meanwhile** (`Shell::workspace_shown`, read off the pane rather than mirrored on the
   shell), since the page is about none of them. The active project's ••• menu stays, because the
   project is still the selected one.
-- **The caret beside *New session* picks the project** (`rail::new_session_menu`), and the row itself
+- **The caret beside *New session* picks the project** (`rail::workspace::new_session_menu`), and the row itself
   is unchanged: one click still starts the default agent on the selected project. What the menu adds
   is the two things that click has to choose silently — every project in the workspace under *Start
   in* (each selecting that root on the way, since a session bound to a root the rail is not showing
@@ -1314,9 +1316,9 @@ centre is the chat, right dock the Workbench, bottom dock the terminal.
   that used to expand in the rail: that list pushed the whole tree down while it was open, which is
   affordable for two agents and not for a workspace's worth of projects, and the flag saying whether
   it was open had to be carried on the shell and cleared on every path that started a session.
-  It is drawn by `rail::menu_button`, the same builder the two ••• menus use — three controls, one
+  It is drawn by `rail::row::menu_button`, the same builder the two ••• menus use — three controls, one
   shape, after the second copy of it appeared here.
-- **The workspace identity row *is* the switcher** (`rail::workspace_menu`) — the whole row opens the
+- **The workspace identity row *is* the switcher** (`rail::workspace::workspace_menu`) — the whole row opens the
   menu, and nothing marks it but the hover, the pointer and the tooltip: no chevron, because a caret
   on the rail's topmost row competed with the primary action directly below it. The menu is the
   recents list — each row named by
@@ -1791,7 +1793,7 @@ rail hidden; the command palette remains unimplemented.
   creating a workspace on a folder that already has one **opens it** rather than starting a second one
   nothing distinguishes from the first. *Open workspace…* tries the picked folder and then that
   derived storage, because the folder a user can find in a picker is the project, not the data root.
-- **The overwrite guard is one function** (`shell::workspace_in`): a folder already holding a
+- **The overwrite guard is one function** (`shell::storage::workspace_in`): a folder already holding a
   workspace, a folder free to write into, and a config that exists and cannot be read — that last
   never reading as the second, or a workspace with one bad character in its file is a workspace
   deleted by a folder picker. The sentence refusing it lives there too, so the two write paths cannot
@@ -1806,7 +1808,7 @@ means a partial file overrides only the keys it sets. The default agent is Claud
 file the next launch reads.
 
 `appearance` is the one key the settings dialog writes: `system` (the default) · `light` · `dark`.
-There are two palettes and the app only chooses which one is loaded — `shell::apply_appearance`
+There are two palettes and the app only chooses which one is loaded — `shell::settings_dialog::apply_appearance`
 is the single place that does it, at boot and on every change. Each is the library's own config with
 the app's surface ramp written over it (`crate::theme::install`, run once before the first mode is
 chosen); see the theme module for what is ours and what is inherited. **A token the library keeps
@@ -1842,7 +1844,7 @@ optional `token_env`, and **it deliberately has no key for the token**; see the 
 for where that is read from and why it is not here. Declaration order does not bite for this one,
 since it is a table like `[font]` and only the bare `appearance` key has to lead.
 
-`[font]` carries exactly one key, `monospace`, which `shell::use_installed_mono` takes as the first
+`[font]` carries exactly one key, `monospace`, which `shell::boot::use_installed_mono` takes as the first
 preference when it picks a mono family the machine actually has (see the font gotcha in
 [rules-and-gotchas.md](rules-and-gotchas.md)). It used to
 carry a body size, a master zoom, a sans family and a fallback list, and there was an `[icons]` table

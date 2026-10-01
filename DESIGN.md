@@ -639,10 +639,10 @@ typography inside a code block (`❯`, `$`) is text, not an icon, and is exempt.
 ## §7 — Bounded rendering
 
 Every code, diff and output renderer draws **one element per line**, so unbounded
-content freezes the UI. Each cap is a named constant beside the renderer it
-bounds: diff lines per card across all hunks, mono output lines per well, the
-fold threshold beneath them, terminal lines, plan items, attachment rows and code
-block height in `crates/app/src/chat/transcript.rs`; completion rows and tray
+content freezes the UI. Each cap is a named constant: diff lines per card across
+all hunks, mono output lines per well, the fold threshold beneath them, terminal
+lines, plan items, attachment rows and code block height in
+`crates/app/src/chat/transcript/metrics.rs`, with the transcript's other measures; completion rows and tray
 chips in the composer; mention candidates in the session; and `MAX_TERM_BYTES` at
 parse time in core, which bounds the model rather than the view.
 
