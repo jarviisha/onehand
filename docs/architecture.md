@@ -584,7 +584,7 @@ Settings ▸ Connections, with its *Check again*; Settings ▸ Workspace keeps *
 `None` there). **A run can also be picked by hand**: *Work an issue…* in either project menu opens
 `dialogs::pick_issue` over `unattended::open_issues_blocking` (every open issue, author on the row,
 bounded at `ISSUES_SHOWN`), and `unattended::start_picked` runs it now. That run is shown as it starts
-(`Shell::show_unattended`) and kept on screen when it ends. *Look now* in Settings runs the search at
+(`Shell::show_session`) and kept on screen when it ends. *Look now* in Settings runs the search at
 once. Every run writes its own log into its transcript as notices (`unattended::note`) — the start,
 the prompt going out, a cancel, and the words the issue was told at the end. A run the search finds claims its issue by removing the label,
 branches a worktree off `origin/<default>` and mints a session there. **Neither step moves anything on
@@ -737,14 +737,29 @@ caret with it. The rules that decide are core's (`onehand_core::unattended`); th
   conversation, and a session closing, which is when somebody is most likely to want it back.
 
 - **The workspace page** (`ChatPane::show_workspace`, reached from the rail's *Workspace
-  overview*) answers across every project what the project page answers for one: the unattended
-  runs **waiting on you** (a parked card) and those **working**, then every project's **open
-  issues**, most recently changed first, with a project filter and a line counting the closed ones
+  overview*) answers across every project what the project page answers for one: **waiting on
+  you** (an unattended run on a parked card, and every session whose `ChatPane::signal` is lost,
+  awaiting the user or unseen) and **working** (the other runs, and every busy session), then
+  **projects** (one row each: `GitStatus::label`, session count, open issue count), **recent
+  conversations** (`chat::list_across`, core, tested: one read of the store for every project,
+  less any conversation already open in a session), and every project's **open issues**, most
+  recently changed first, with a project filter and a line counting the closed ones
   left out. It is a third thing the centre can show, beside a session and the project page:
   `active` is `None` and `workspace` is `Some`, and both `show` and `clear_active` clear it —
   `clear_active` counts it in its "unchanged" check, or clicking the project the user came from
-  would leave them on the page. **It holds no run store.** Runs are read per frame from
-  `unattended::live_runs` (a `LiveRun` each), which is cheap because a run starting, parking or
+  would leave them on the page. **Both docks go away while it shows** (`Shell::show_workspace`): the
+  terminal's open state is filed under its root and `terminal_root` cleared, so the next arrival is
+  a handover that restores it; `workbench_aside` remembers an open Workbench for
+  `show_active_session` to reopen. `show_workbench` and `show_terminal` refuse while the page
+  shows, which covers every key. **It holds no run store.** Runs are read per frame from
+  `unattended::live_runs` (a `LiveRun` each), and sessions from the uids `PageProject` carries
+  through the same `signal` query the rail's dots use. The project list (branch line and
+  session uids included) is built by `Shell::page_projects` when the page is shown and pushed again
+  by every git sweep while it shows (`ChatPane::set_page_projects`); a session closing always
+  leaves the page. Leaving restores the Workbench after the pane has left the page
+  (`Shell::show_active_session` wraps `arrive_at_active_root`), since `show_workbench` refuses
+  while it shows; `show_neovim` refuses before it starts an editor. `ResumeIn` makes the project
+  active without showing it, so the session it was last on is not connected for nothing. Live runs are cheap to read because a run starting, parking or
   ending already calls `cx.refresh_windows()`. Issues come from **the projects' own files alone**
   (`issues::open_across`, core, tested): a forge's issue kept in step is imported into the same
   file, so reading the forge too would list it twice. They are read off the UI loop when the page
@@ -755,9 +770,10 @@ caret with it. The rules that decide are core's (`onehand_core::unattended`); th
   `ChatPaneEvent::OpenIssue` and the shell selects the project, opens the Workbench on Issues and
   sends `Request::ShowIssue`. The mode makes the project's entry if its read has not started, and
   the read only fills that entry, so the selection survives the load. Pressing a run emits
-  `ShowRun`. In another window, that window is activated and its shell shows the session
-  (deferred, since one shell must not be reached into from inside another's update). Both
-  lists are capped (`PAGE_RUNS`, `PAGE_ISSUES`) and say so when a cap bites. An unbound
+  `ShowSession`, as does pressing a session; a project emits `ShowProject`, and a recent
+  conversation `ResumeIn`, which selects its project and starts a session resuming it. In another window, that window is activated and its shell shows the session
+  (deferred, since one shell must not be reached into from inside another's update). Every
+  list is capped (`PAGE_ACTIVE`, `PAGE_PROJECTS`, `PAGE_RECENT`, `PAGE_ISSUES`) and say so when a cap bites. An unbound
   workspace says it keeps no issues, as the Issues mode does.
 
 The **model** is core's (`onehand_core::chat`): `Chat` + `apply(AcpEvent)`, the conversation store, the

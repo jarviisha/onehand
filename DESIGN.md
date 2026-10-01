@@ -173,26 +173,51 @@ One window hosts exactly one workspace. The frame is a navigation **rail** plus 
   between *Add project…* and *New session*, and that row takes the selected
   fill while the page shows. No project or session row is marked meanwhile,
   since the page is about none of them. Any other rail click leaves it, since each one is
-  a choice of project or session. **The header stays**, as on the project page
-  and for the same reason: the terminal, the Workbench and the way back to a
-  hidden rail are still wanted. It names the page with the fixed word
+  a choice of project or session. **The header stays**, for the way back to a
+  hidden rail, but **without the terminal and Workbench buttons**: both docks
+  hold one project's things and the page stands on none. Opening the page puts
+  both away and their keys do nothing while it shows; leaving it brings each
+  back as it was, the terminal as the project arrived at left it. It names the page with the fixed word
   *Workspace* and carries no dots menu, because nothing on the page is one
-  thing that could be renamed, exported or removed. Below it is the project
-  page's column: centred while it fits, bounded by the panel when it does not.
-  It holds three groups, each under a small muted heading, and each drawn only
-  when it has rows. Headings never scroll. Only the issue list does.
-  - **Waiting on you**: every unattended run standing on a card, one row each,
-    in the issue row's shape below: `#N` muted, then the question, truncated,
-    then the project muted at the end. Pressing a row opens that run's session,
-    where the card is. A run in another window brings that window forward.
-  - **Working**: every run not waiting, drawn the same way with the issue's
-    title in place of a question.
+  thing that could be renamed, exported or removed. Below it the page is
+  **cards, not one column**: wider than the project page's column, top-aligned,
+  and scrolling as one, since cards that fill in as their reads land would move
+  a centred page each time one arrived. Each card is a hairline box (borders,
+  not fills) with its title in bold, a muted count beside it, and any control at
+  the far end of the title row. Three bands, top to bottom: **Waiting on you**
+  and **Working** side by side; then **Projects** as a wrapping grid of tiles;
+  then **Recent conversations** and **Open issues** side by side. A pair sits
+  side by side where the panel is wide enough and one under the other where it
+  is not. The two activity cards are always drawn and say *nothing is waiting*
+  or *nothing is running* when empty, so the page keeps one shape; inside a
+  card, a row is the issue row's shape — a muted head, the title truncated, a
+  muted line at the end — and pressing it goes to what it names.
+  - **Waiting on you**: every unattended run standing on a card (head `#N`,
+    then the question, then the project), and every session whose rail mark is
+    *lost*, *waiting for you* or *finished* (head the rail's own mark, then the
+    conversation's name, then the project and the state in the rail's word).
+    Pressing a run or session opens it; a run in another window brings that
+    window forward.
+  - **Working**: every other run, with the issue's title in place of a
+    question, and every session with a turn in flight, drawn the same way.
+  - **Projects**: one tile per project, a bordered box taking the hover fill:
+    a folder icon, the name in bold and, at the far end, the most urgent rail
+    mark among its sessions; under it the branch and changed count (or *Not a
+    git repository*), then how many sessions it holds and how many issues are
+    open (or *Nothing open*, and *Looking for open issues…* while they are
+    read). Pressing it selects the project.
+  - **Recent conversations**: the newest few past conversations across every
+    project, head how long ago, then the title, then the project and the agent.
+    One already open in a session is left out, since it is on the rail and a
+    second resume would put it in two sessions. Pressing one selects its project
+    and starts a session resuming it.
   - **Open issues**: every project's own issues, open only, most recently
     changed first. A row is the picker's row (number muted, title truncated, up
     to three label pills) with the project's name muted at the end, followed by
     the forge's reference where the issue is kept in step with one. Pressing it
     selects that project and opens the Workbench on its Issues mode with that
-    issue selected. The project's own files are the only source: an issue
+    issue selected. The one card that grows long, so the one whose list
+    scrolls inside it; the cards around it keep their place. The project's own files are the only source: an issue
     brought in from a forge lives in the same file, so it is listed once. A
     **project filter** sits beside the heading as a small menu control reading
     *All projects* or the project picked, and it narrows everything under the
@@ -200,8 +225,8 @@ One window hosts exactly one workspace. The frame is a navigation **rail** plus 
     muted line says how many closed issues are not listed, because an empty list
     and a list of closed issues are different answers.
 
-  **Bounded and said.** The runs are capped at a handful per group and the
-  issues at a longer list. Each cap, when it bites, adds a muted line saying how
+  **Bounded and said.** The two activity groups, the projects and the recent
+  conversations are each capped, and the issues at a longer list. Each cap, when it bites, adds a muted line saying how
   many were left out. **Three states say themselves.** While the files are read
   the issue group says it is looking, which is different from having none. A
   workspace bound to no storage keeps no issues, and the group says so in the

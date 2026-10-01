@@ -946,7 +946,7 @@ fn start(claimed: Claimed, cx: &mut App) -> Result<(), Unstarted> {
     // front of them; one found by the search never moves what is on screen.
     if by_hand && let Some(shell) = shown_in.upgrade() {
         let _ = window.update(cx, |_, window, cx| {
-            shell.update(cx, |shell, cx| shell.show_unattended(uid, window, cx))
+            shell.update(cx, |shell, cx| shell.show_session(uid, window, cx))
         });
     }
     Ok(())

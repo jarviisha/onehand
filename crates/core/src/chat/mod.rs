@@ -30,6 +30,6 @@ pub use steps::{
     FileVerdict, Outcome, RunOutcome, SummaryPart, TurnChanges,
 };
 pub use store::{
-    commit, conv_dir, conversations_dir, delete, list_conversations, load, now_secs, ConfigPick,
-    ConvMeta, ConversationSnapshot, PendingWrite, Prefs,
+    commit, conv_dir, conversations_dir, delete, list_across, list_conversations, load, now_secs,
+    ConfigPick, ConvMeta, ConversationSnapshot, PendingWrite, Prefs,
 };
