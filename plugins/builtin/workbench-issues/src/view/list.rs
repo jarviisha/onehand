@@ -313,6 +313,7 @@ impl IssuesView {
             menu_below(
                 SharedString::from(format!("issues-label-menu-{root}")),
                 trigger,
+                Size::XSmall,
                 move |menu, window, _| {
                     // In rems' worth of pixels, so a zoomed panel's menu keeps
                     // its proportion to the rows inside it.

@@ -581,11 +581,13 @@ impl ChatPane {
             Some(facts) => crate::controls::menu_below(
                 ("project-menu-popup", key),
                 trigger,
+                gpui_component::Size::Small,
                 project_menu(facts, this),
             ),
             None => crate::controls::menu_below(
                 ("conversation-menu-popup", key),
                 trigger,
+                gpui_component::Size::Small,
                 move |menu, _, cx| {
                     let danger = crate::theme::status_ink(cx).danger;
                     let (rename, export, history) = (this.clone(), this.clone(), this.clone());

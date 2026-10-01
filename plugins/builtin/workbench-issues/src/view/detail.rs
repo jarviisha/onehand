@@ -321,50 +321,57 @@ fn more_menu(root: &Path, issue: &LocalIssue, cx: &mut Context<IssuesView>) -> A
     // Named by the project and the issue, so a menu held open across a switch
     // is one for this issue and never for whichever took its place.
     let id = SharedString::from(format!("issue-more-menu-{}-{number}", root.display()));
-    menu_below(id, trigger, move |menu, _, _| {
-        let mut menu = menu;
-        if let Some(forge) = &forge {
-            let (open_view, copy_view) = (view.clone(), view.clone());
-            menu = menu
-                .item(
-                    menu_item(format!("Open on {forge}"))
-                        .icon(Icon::new(IconName::ExternalLink))
-                        .on_click(move |_, _, cx: &mut App| {
-                            open_view.update(cx, |view, cx| {
-                                view.with_url(number, |url, cx| cx.open_url(&url), cx)
-                            })
-                        }),
-                )
-                .item(
-                    menu_item("Copy link")
-                        .icon(Icon::new(IconName::Copy))
-                        .on_click(move |_, _, cx: &mut App| {
-                            copy_view.update(cx, |view, cx| {
-                                view.with_url(
-                                    number,
-                                    |url, cx| cx.write_to_clipboard(ClipboardItem::new_string(url)),
-                                    cx,
-                                )
-                            })
-                        }),
-                )
-                .separator();
-        }
-        let view = view.clone();
-        menu.item(if open {
-            menu_item("Close issue")
-                .icon(Icon::new(IconName::CircleX))
-                .on_click(move |_, window, cx: &mut App| {
-                    view.update(cx, |view, cx| view.confirm_close(number, window, cx))
-                })
-        } else {
-            menu_item("Reopen issue")
-                .icon(Icon::new(IconName::Redo))
-                .on_click(move |_, _, cx: &mut App| {
-                    view.update(cx, |view, cx| view.set_open(number, true, cx))
-                })
-        })
-    })
+    menu_below(
+        id,
+        trigger,
+        gpui_component::Size::XSmall,
+        move |menu, _, _| {
+            let mut menu = menu;
+            if let Some(forge) = &forge {
+                let (open_view, copy_view) = (view.clone(), view.clone());
+                menu = menu
+                    .item(
+                        menu_item(format!("Open on {forge}"))
+                            .icon(Icon::new(IconName::ExternalLink))
+                            .on_click(move |_, _, cx: &mut App| {
+                                open_view.update(cx, |view, cx| {
+                                    view.with_url(number, |url, cx| cx.open_url(&url), cx)
+                                })
+                            }),
+                    )
+                    .item(
+                        menu_item("Copy link")
+                            .icon(Icon::new(IconName::Copy))
+                            .on_click(move |_, _, cx: &mut App| {
+                                copy_view.update(cx, |view, cx| {
+                                    view.with_url(
+                                        number,
+                                        |url, cx| {
+                                            cx.write_to_clipboard(ClipboardItem::new_string(url))
+                                        },
+                                        cx,
+                                    )
+                                })
+                            }),
+                    )
+                    .separator();
+            }
+            let view = view.clone();
+            menu.item(if open {
+                menu_item("Close issue")
+                    .icon(Icon::new(IconName::CircleX))
+                    .on_click(move |_, window, cx: &mut App| {
+                        view.update(cx, |view, cx| view.confirm_close(number, window, cx))
+                    })
+            } else {
+                menu_item("Reopen issue")
+                    .icon(Icon::new(IconName::Redo))
+                    .on_click(move |_, _, cx: &mut App| {
+                        view.update(cx, |view, cx| view.set_open(number, true, cx))
+                    })
+            })
+        },
+    )
     .into_any_element()
 }
 

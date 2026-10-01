@@ -235,146 +235,150 @@ impl PluginsView {
         let plugin = plugin.clone();
         let view = cx.entity();
         let ask = self.ask.clone();
-        menu_below(menu_id, trigger, move |menu, window, cx| {
-            let danger = status_ink(cx).danger;
-            let mut groups: Vec<Vec<PopupMenuItem>> = Vec::new();
+        menu_below(
+            menu_id,
+            trigger,
+            gpui_component::Size::XSmall,
+            move |menu, window, cx| {
+                let danger = status_ink(cx).danger;
+                let mut groups: Vec<Vec<PopupMenuItem>> = Vec::new();
 
-            // Where it lives.
-            let mut about = Vec::new();
-            if let Some(url) = plugin.inventory.repository.clone() {
-                about.push(
-                    menu_item("Open repository")
-                        .on_click(move |_, _, cx: &mut App| cx.open_url(&url)),
-                );
-            }
-            if let Some(path) = plugin.inventory.changelog.clone() {
-                let ask = ask.clone();
-                about.push(menu_item("View changelog").on_click(
-                    move |_, window: &mut Window, cx: &mut App| {
-                        ask(&Request::OpenFile(&path), window, cx)
-                    },
-                ));
-            }
-            groups.push(about);
-
-            // Its version. *Update to* only where a newer one is known;
-            // *Check for updates* always, since fetching the catalog is how
-            // one becomes known.
-            let mut version = Vec::new();
-            if let Some(update) = &plugin.update {
-                let to = if cli::is_hash(&update.to) || update.to.starts_with('v') {
-                    update.to.clone()
-                } else {
-                    format!("v{}", update.to)
-                };
-                let update = Change {
-                    id: plugin.id.clone(),
-                    scope: update.scope,
-                    verb: Verb::Update,
-                };
-                version.push(menu_item(format!("Update to {to}")).on_click(act(&view, update)));
-            }
-            // The scope is not read for a catalog fetch; any install's will do.
-            let check = Change {
-                id: plugin.id.clone(),
-                scope: plugin.installed[0],
-                verb: Verb::CheckUpdates,
-            };
-            version.push(menu_item("Check for updates").on_click(act(&view, check)));
-            groups.push(version);
-
-            // Its files.
-            let mut files = Vec::new();
-            if let Some(path) = plugin.install_path.clone() {
-                files.push(
-                    menu_item("Open install folder")
-                        .on_click(move |_, _, cx: &mut App| cx.open_with_system(&path)),
-                );
-            }
-            let id = plugin.id.clone();
-            files.push(
-                menu_item("Copy plugin ID").on_click(move |_, _, cx: &mut App| {
-                    cx.write_to_clipboard(ClipboardItem::new_string(id.clone()));
-                }),
-            );
-
-            // Removing it: last, in the danger ink, and asked about first.
-            let removes: Vec<PopupMenuItem> = plugin
-                .installed
-                .iter()
-                .map(|scope| {
-                    let label = if plugin.installed.len() > 1 {
-                        format!("Uninstall from {}…", scope.label())
-                    } else {
-                        "Uninstall…".to_string()
-                    };
-                    let (view, plugin, scope) = (view.clone(), plugin.clone(), *scope);
-                    menu_row(move |_, _| div().text_color(danger).child(label.clone())).on_click(
+                // Where it lives.
+                let mut about = Vec::new();
+                if let Some(url) = plugin.inventory.repository.clone() {
+                    about.push(
+                        menu_item("Open repository")
+                            .on_click(move |_, _, cx: &mut App| cx.open_url(&url)),
+                    );
+                }
+                if let Some(path) = plugin.inventory.changelog.clone() {
+                    let ask = ask.clone();
+                    about.push(menu_item("View changelog").on_click(
                         move |_, window: &mut Window, cx: &mut App| {
-                            confirm_uninstall(&view, &plugin, scope, window, cx)
+                            ask(&Request::OpenFile(&path), window, cx)
                         },
-                    )
-                })
-                .collect();
+                    ));
+                }
+                groups.push(about);
 
-            let mut menu = menu;
-            let mut first = true;
-            let mut divide = |menu: PopupMenu| {
-                let menu = if first { menu } else { menu.separator() };
-                first = false;
-                menu
-            };
-            for group in groups.into_iter().filter(|group| !group.is_empty()) {
-                menu = group.into_iter().fold(divide(menu), PopupMenu::item);
-            }
+                // Its version. *Update to* only where a newer one is known;
+                // *Check for updates* always, since fetching the catalog is how
+                // one becomes known.
+                let mut version = Vec::new();
+                if let Some(update) = &plugin.update {
+                    let to = if cli::is_hash(&update.to) || update.to.starts_with('v') {
+                        update.to.clone()
+                    } else {
+                        format!("v{}", update.to)
+                    };
+                    let update = Change {
+                        id: plugin.id.clone(),
+                        scope: update.scope,
+                        verb: Verb::Update,
+                    };
+                    version.push(menu_item(format!("Update to {to}")).on_click(act(&view, update)));
+                }
+                // The scope is not read for a catalog fetch; any install's will do.
+                let check = Change {
+                    id: plugin.id.clone(),
+                    scope: plugin.installed[0],
+                    verb: Verb::CheckUpdates,
+                };
+                version.push(menu_item("Check for updates").on_click(act(&view, check)));
+                groups.push(version);
 
-            // Where it applies, as two submenus. *Change scope* only for a
-            // plugin installed at one scope: installed at two, which of them
-            // moves is a question the menu cannot ask.
-            menu = divide(menu);
-            if plugin.installed.len() == 1 {
-                let (plugin, view, from) = (plugin.clone(), view.clone(), plugin.installed[0]);
-                menu = menu.submenu("Change scope", window, cx, move |menu, _, _| {
-                    Scope::ALL.into_iter().fold(menu, |menu, to| {
-                        let item = menu_item(to.reach()).checked(to == from);
-                        menu.item(if to == from {
-                            item
+                // Its files.
+                let mut files = Vec::new();
+                if let Some(path) = plugin.install_path.clone() {
+                    files.push(
+                        menu_item("Open install folder")
+                            .on_click(move |_, _, cx: &mut App| cx.open_with_system(&path)),
+                    );
+                }
+                let id = plugin.id.clone();
+                files.push(
+                    menu_item("Copy plugin ID").on_click(move |_, _, cx: &mut App| {
+                        cx.write_to_clipboard(ClipboardItem::new_string(id.clone()));
+                    }),
+                );
+
+                // Removing it: last, in the danger ink, and asked about first.
+                let removes: Vec<PopupMenuItem> = plugin
+                    .installed
+                    .iter()
+                    .map(|scope| {
+                        let label = if plugin.installed.len() > 1 {
+                            format!("Uninstall from {}…", scope.label())
                         } else {
-                            item.on_click(act(
-                                &view,
-                                Change {
-                                    id: plugin.id.clone(),
-                                    scope: to,
-                                    verb: Verb::Move(from),
-                                },
-                            ))
-                        })
-                    })
-                });
-            }
-            let (on_for, view_on) = (plugin.clone(), view.clone());
-            menu = menu.submenu("Turn on for", window, cx, move |menu, _, _| {
-                Scope::ALL
-                    .into_iter()
-                    .filter(|scope| on_for.reaches(*scope))
-                    .fold(menu, |menu, scope| {
-                        let from = match on_for.source(scope) {
-                            Some(source) if source != scope => {
-                                format!(" · from {}", source.label())
-                            }
-                            _ => String::new(),
+                            "Uninstall…".to_string()
                         };
-                        menu.item(
-                            menu_item(format!("{}{from}", scope.reach()))
-                                .checked(on_for.in_force(scope))
-                                .on_click(act(&view_on, on_for.flip(scope))),
-                        )
+                        let (view, plugin, scope) = (view.clone(), plugin.clone(), *scope);
+                        menu_row(move |_, _| div().text_color(danger).child(label.clone()))
+                            .on_click(move |_, window: &mut Window, cx: &mut App| {
+                                confirm_uninstall(&view, &plugin, scope, window, cx)
+                            })
                     })
-            });
+                    .collect();
 
-            menu = files.into_iter().fold(divide(menu), PopupMenu::item);
-            removes.into_iter().fold(divide(menu), PopupMenu::item)
-        })
+                let mut menu = menu;
+                let mut first = true;
+                let mut divide = |menu: PopupMenu| {
+                    let menu = if first { menu } else { menu.separator() };
+                    first = false;
+                    menu
+                };
+                for group in groups.into_iter().filter(|group| !group.is_empty()) {
+                    menu = group.into_iter().fold(divide(menu), PopupMenu::item);
+                }
+
+                // Where it applies, as two submenus. *Change scope* only for a
+                // plugin installed at one scope: installed at two, which of them
+                // moves is a question the menu cannot ask.
+                menu = divide(menu);
+                if plugin.installed.len() == 1 {
+                    let (plugin, view, from) = (plugin.clone(), view.clone(), plugin.installed[0]);
+                    menu = menu.submenu("Change scope", window, cx, move |menu, _, _| {
+                        Scope::ALL.into_iter().fold(menu, |menu, to| {
+                            let item = menu_item(to.reach()).checked(to == from);
+                            menu.item(if to == from {
+                                item
+                            } else {
+                                item.on_click(act(
+                                    &view,
+                                    Change {
+                                        id: plugin.id.clone(),
+                                        scope: to,
+                                        verb: Verb::Move(from),
+                                    },
+                                ))
+                            })
+                        })
+                    });
+                }
+                let (on_for, view_on) = (plugin.clone(), view.clone());
+                menu = menu.submenu("Turn on for", window, cx, move |menu, _, _| {
+                    Scope::ALL
+                        .into_iter()
+                        .filter(|scope| on_for.reaches(*scope))
+                        .fold(menu, |menu, scope| {
+                            let from = match on_for.source(scope) {
+                                Some(source) if source != scope => {
+                                    format!(" · from {}", source.label())
+                                }
+                                _ => String::new(),
+                            };
+                            menu.item(
+                                menu_item(format!("{}{from}", scope.reach()))
+                                    .checked(on_for.in_force(scope))
+                                    .on_click(act(&view_on, on_for.flip(scope))),
+                            )
+                        })
+                });
+
+                menu = files.into_iter().fold(divide(menu), PopupMenu::item);
+                removes.into_iter().fold(divide(menu), PopupMenu::item)
+            },
+        )
     }
 
     /// One plugin the marketplaces offer.
@@ -534,6 +538,7 @@ impl PluginsView {
         let menu = menu_below(
             SharedString::from(format!("plugin-install-menu-{}", plugin.id)),
             caret,
+            gpui_component::Size::XSmall,
             move |menu, _, _| {
                 Scope::ALL
                     .into_iter()
