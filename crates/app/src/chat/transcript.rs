@@ -60,6 +60,9 @@ const MAX_CODE_BLOCK_H: Rems = rems(22.5);
 /// screen together at the sizes around them — which is the whole point of
 /// bounding it, and is why it is a height rather than a count of lines or rows.
 const MAX_BLOCKING_BODY_H: Rems = rems(16.);
+/// The question card's side padding, which its choices' scroll frame reaches
+/// back through to put the thumb on the card's edge.
+const ASK_INSET: Rems = rems(1.);
 /// The size every well of machine text is set at — a tool's output, a diff, a
 /// live terminal, and the fenced blocks inside an answer.
 ///
@@ -468,39 +471,20 @@ const BUBBLE_TAIL_GAP: Rems = rems(0.1875);
 /// given on the strength of and the wording a choice is made from, and a
 /// permission whose command is hidden in the middle is a permission answered
 /// blind.
+///
+/// **The thumb runs down the card's own edge**, in the card's right padding,
+/// rather than over the rows' borders: a choice's border running under the
+/// thumb reads as a row drawn wrong rather than as one that scrolls. So the
+/// frame reaches back through `inset` -- which must be the card's own right
+/// padding -- and the rows are held off by the same amount, which leaves them
+/// ending where the free-text box below the list does. That box is the last
+/// row of the options and sits outside the scroll because it is a control,
+/// so two edges here would read as one list cut in two.
 #[derive(IntoElement)]
 struct BlockingBody {
     target: TranscriptItemId,
     children: Vec<gpui::AnyElement>,
-    /// Whether the rows are held off the right edge to leave the scrollbar
-    /// thumb a column of its own.
-    gutter: bool,
-}
-
-impl BlockingBody {
-    fn new(target: TranscriptItemId, children: Vec<gpui::AnyElement>) -> Self {
-        Self {
-            target,
-            children,
-            gutter: true,
-        }
-    }
-
-    /// Give the gutter up, so these rows run to the same right edge as whatever
-    /// is drawn beside the box.
-    ///
-    /// **For the one caller whose list continues outside it.** A question's
-    /// free-text answer is the last row of its options and is drawn below this
-    /// box rather than inside it, because it is a control and must not scroll
-    /// away from the card that offers it -- so the gutter made four rows that
-    /// read as one list end at two different edges, which is a mistake rather
-    /// than a margin. What it costs is the case that gutter is for: a question
-    /// with enough options to scroll draws its thumb over the right-hand
-    /// border of a row, which is a hairline crossed rather than a row cut off.
-    fn flush(mut self) -> Self {
-        self.gutter = false;
-        self
-    }
+    inset: Rems,
 }
 
 impl RenderOnce for BlockingBody {
@@ -516,7 +500,7 @@ impl RenderOnce for BlockingBody {
         div()
             .id(("blocking-body-frame", key))
             .relative()
-            .w_full()
+            .mr(rems(-self.inset.0))
             .max_h(MAX_BLOCKING_BODY_H)
             .child(
                 div()
@@ -531,11 +515,7 @@ impl RenderOnce for BlockingBody {
                     .max_h(MAX_BLOCKING_BODY_H)
                     .overflow_y_scroll()
                     .track_scroll(&scroll)
-                    // The thumb overlays the viewport instead of taking a column
-                    // of its own, so the body is held off the right edge: a
-                    // choice's border running underneath the thumb reads as a
-                    // row drawn wrong rather than as one that scrolls.
-                    .when(self.gutter, |body| body.pr_2())
+                    .pr(self.inset)
                     .children(self.children),
             )
             // The mask takes vertical wheel input in the capture phase. A bubble
@@ -4145,7 +4125,7 @@ fn ask_form(
                 .v_flex()
                 .gap_3()
                 .w_full()
-                .px_4()
+                .px(ASK_INSET)
                 .pt_3p5()
                 .pb_4()
                 .children(form.question().map(|line| {
@@ -4160,7 +4140,11 @@ fn ask_form(
                 // nobody offered is written, so both are controls and both stay
                 // on the card beside the footer rather than inside the region
                 // that can be scrolled away from.
-                .children((!rows.is_empty()).then(|| BlockingBody::new(target, rows).flush()))
+                .children((!rows.is_empty()).then_some(BlockingBody {
+                    target,
+                    children: rows,
+                    inset: ASK_INSET,
+                }))
                 .children(form.custom_row(cx)),
         )
         // The rule over the footer is the footer's own, drawn as its first
