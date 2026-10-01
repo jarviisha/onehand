@@ -184,26 +184,42 @@ pub(super) fn popup_chrome(footer: bool, rail: bool) -> Rems {
     rems(h)
 }
 
+/// The inset every popup surface pads its contents by.
+const POPUP_INSET: Rems = rems(0.25);
+
 /// A popup's scrolling list, with its scrollbar on the popup's own right edge.
 ///
-/// The frame reaches back through the surface's inset and the rows are held
-/// off by the thumb's width, so the thumb runs down the popup's border rather
-/// than over the right end of a row -- where it sat on the highlight fill and
-/// read as part of the row under it. The parked question card draws its thumb
-/// the same way, and two scrolling cards stacked one over the other must not
-/// disagree about where a scrollbar goes.
+/// The frame reaches back through the surface's inset, so the thumb runs down
+/// the popup's border rather than over the right end of a row -- where it sat
+/// on the highlight fill and read as part of the row under it. The parked
+/// question card draws its thumb the same way, and two scrolling cards stacked
+/// one over the other must not disagree about where a scrollbar goes.
+///
+/// **The rows give way only while there is a thumb.** A list that fits draws
+/// none, so it keeps the inset alone and its rows end where the header's and
+/// footer's text does; one that scrolls is held clear of the thumb's lane.
+/// Read off last frame's layout, so a list that has just started to overflow
+/// moves its right edge one frame late, which nobody can see.
 ///
 /// `list` keeps its own bound and tracks `scroll` itself; this only adds the
 /// frame and the thumb.
 fn edge_scrolled(scroll: &gpui::ScrollHandle, list: gpui::Stateful<gpui::Div>) -> gpui::Div {
+    let scrolls = scroll.max_offset().y > gpui::px(0.);
     div()
         .relative()
         .v_flex()
         .min_h_0()
-        .mr_neg_1()
-        .child(list.pr_3())
+        .mr(rems(-POPUP_INSET.0))
+        .child(list.pr(match scrolls {
+            true => THUMB_LANE,
+            false => POPUP_INSET,
+        }))
         .child(Scrollbar::vertical(scroll).mode(ScrollbarMode::Always))
 }
+
+/// How far a scrolling list's rows stand off the popup's edge: the thumb and
+/// the scrollbar's own inset from the border, with a hair of air after it.
+const THUMB_LANE: Rems = rems(0.75);
 
 /// How tall the scrolling box may stand: a whole number of rows, always.
 ///
@@ -1945,7 +1961,7 @@ impl Composer {
                 // event's travel. And gpui gates both on the pointer actually
                 // being over the box, so nothing is swallowed at a distance.
                 .on_scroll_wheel(|_, _, cx| cx.stop_propagation())
-                .p_1()
+                .p(POPUP_INSET)
                 .child(popup_header(title, cx))
                 .child(edge_scrolled(
                     &self.rows_scroll,
@@ -2396,7 +2412,7 @@ impl Composer {
             // The conversation behind must not move because of this card
             // either; see the reason on the list above.
             .on_scroll_wheel(|_, _, cx| cx.stop_propagation())
-            .p_1()
+            .p(POPUP_INSET)
             // The same pinned row every other popup carries. This one is built
             // by its own function rather than through `popup`, so leaving it
             // out here would make the header a property of which overlay
