@@ -6,29 +6,26 @@
 //! forge. What is here is the half that needs a window: the list, the reading,
 //! the form, and when a sync runs.
 
-use gpui::prelude::FluentBuilder as _;
 use gpui::{
-    AnyElement, App, AppContext as _, ClickEvent, Context, Entity, InteractiveElement as _,
-    IntoElement, ParentElement, Render, StatefulInteractiveElement as _, Styled, Task, Window, div,
+    AnyElement, App, AppContext as _, Context, Entity, IntoElement, ParentElement, Render, Styled,
+    Task, Window, div,
 };
 use gpui_component::WindowExt as _;
-use gpui_component::button::ButtonVariants as _;
 use gpui_component::dialog::DialogButtonProps;
 use gpui_component::input::{InputState, TextareaState};
 use gpui_component::text::TextViewState;
-use gpui_component::tooltip::Tooltip;
-use gpui_component::{
-    ActiveTheme, Icon, IconName, Sizable as _, StyledExt, h_resizable, resizable_panel,
-};
+use gpui_component::{StyledExt, h_resizable, resizable_panel};
 use onehand_core::connector::{self, Connector};
 use onehand_core::issues::{self, Draft, Issues, LocalIssue, sync};
-use onehand_plugin_host::{action, hint, status_ink, status_line};
+use onehand_plugin_host::{hint, status_line};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 mod detail;
+mod list;
 use detail::{form_view, issue_view};
+use list::Showing;
 
 /// How often a project kept in step with its forge is synced while it is the
 /// one this mode is on, if nothing else has synced it sooner.
@@ -45,8 +42,9 @@ const SYNC_GAP: Duration = Duration::from_secs(60);
 const TICK: Duration = Duration::from_secs(60);
 
 /// The list's width before anybody drags it, and the range a drag may take it
-/// through — pixels, because that is the only thing the split accepts. Its
-/// rows are a number and a title, so the floor is what a short title needs.
+/// through — pixels, because that is the only thing the split accepts. A
+/// row's title wraps to two lines, so the floor is what the search box and the
+/// filters above the rows need.
 const LIST_W: f32 = 240.;
 const LIST_MIN: f32 = 160.;
 const LIST_MAX: f32 = 420.;
@@ -84,6 +82,13 @@ pub(crate) struct IssuesView {
     connectors: &'static [&'static dyn Connector],
     /// The timer behind the periodic sync, held for as long as the view.
     _sync_every: Task<()>,
+    /// The list's search box, made on its first draw.
+    query: Option<Entity<InputState>>,
+    /// Which half of the issues the list shows.
+    showing: Showing,
+    /// The one label the list is narrowed to, if any. Dropped on a switch of
+    /// project, whose issues carry labels of their own.
+    label: Option<String>,
 }
 
 /// One project's issues and what is open among them.
@@ -148,6 +153,9 @@ impl IssuesView {
             status: None,
             _load: None,
             connectors,
+            query: None,
+            showing: Showing::default(),
+            label: None,
             _sync_every: cx.spawn(async move |view, cx| {
                 let every = (SYNC_EVERY.as_secs() / TICK.as_secs()).max(1);
                 for tick in 1u64.. {
@@ -171,6 +179,7 @@ impl IssuesView {
             return;
         }
         self.root = Some(root.to_path_buf());
+        self.label = None;
         self.stale = true;
         cx.notify();
     }
@@ -648,7 +657,7 @@ impl IssuesView {
             return hint("Reading issues…", cx);
         };
 
-        let list = self.list(&issues, cx);
+        let list = self.list(&issues, window, cx);
         let detail = self.detail(&root, &issues, window, cx);
         div()
             .flex_1()
@@ -668,271 +677,6 @@ impl IssuesView {
                     )
                     .child(resizable_panel().child(detail)),
             )
-            .into_any_element()
-    }
-
-    /// The list: a header with the way to start a new issue, then a row per
-    /// issue, open ones first.
-    fn list(&self, issues: &Issues, cx: &mut Context<Self>) -> AnyElement {
-        let listed = issues.listed();
-        let open = listed.iter().filter(|i| i.open).count();
-        let selected = self
-            .root
-            .as_ref()
-            .and_then(|root| self.roots.get(root))
-            .and_then(|state| state.selected);
-        let muted = cx.theme().muted_foreground;
-        let header = div()
-            .h_flex()
-            .items_center()
-            .gap_2()
-            .w_full()
-            .flex_none()
-            .px_2()
-            .py_1()
-            .border_b_1()
-            .border_color(cx.theme().border)
-            .child(
-                div()
-                    .flex_1()
-                    .min_w_0()
-                    .truncate()
-                    .text_xs()
-                    .text_color(muted)
-                    .child(format!("{open} open, {} closed", listed.len() - open)),
-            )
-            .child(
-                action("issues-new")
-                    .xsmall()
-                    .ghost()
-                    .icon(Icon::new(IconName::Plus))
-                    .label("New issue")
-                    .on_click(cx.listener(|view, _: &ClickEvent, window, cx| {
-                        view.open_form(None, window, cx)
-                    })),
-            );
-
-        let footer = self.sync_footer(issues, cx);
-        let rows: Vec<AnyElement> = listed
-            .iter()
-            .take(LIST_CAP)
-            .map(|issue| self.row(issue, selected == Some(issue.number), cx))
-            .collect();
-        let cut = listed.len().saturating_sub(LIST_CAP);
-
-        div()
-            .size_full()
-            .v_flex()
-            .border_r_1()
-            .border_color(cx.theme().border)
-            .child(header)
-            .child(
-                div()
-                    .id("issues-list")
-                    .flex_1()
-                    .min_h_0()
-                    .v_flex()
-                    .p_1()
-                    .overflow_y_scroll()
-                    .when(listed.is_empty(), |list| {
-                        list.child(
-                            div()
-                                .px_2()
-                                .py_1()
-                                .text_xs()
-                                .text_color(muted)
-                                .child("No issues yet"),
-                        )
-                    })
-                    .children(rows)
-                    .when(cut > 0, |list| {
-                        list.child(
-                            div()
-                                .px_2()
-                                .py_1()
-                                .text_xs()
-                                .text_color(muted)
-                                .child(format!("… {cut} more not shown")),
-                        )
-                    }),
-            )
-            .children(footer)
-            .into_any_element()
-    }
-
-    /// The foot of the list: whether this project is kept in step with its
-    /// forge, when it last was, and the controls for it — a sync now, and a
-    /// pause. Drawn only where a forge serves the project; elsewhere there is
-    /// nothing to be in step with.
-    fn sync_footer(&self, issues: &Issues, cx: &mut Context<Self>) -> Option<AnyElement> {
-        let state = self.roots.get(self.root.as_ref()?)?;
-        let forge = state.forge?;
-        let name = forge.name();
-        let on = issues.in_step_with(name);
-        let muted = cx.theme().muted_foreground;
-        let warning = status_ink(cx).warning;
-        // A project that was kept in step once still holds its links, which is
-        // what tells a pause from never having started.
-        let paused = issues.listed().iter().any(|issue| issue.link.is_some());
-        let (icon, ink, line, detail) = match (on, state.syncing, &state.synced) {
-            (true, true, _) => (
-                IconName::LoaderCircle,
-                muted,
-                format!("Syncing with {name}…"),
-                None,
-            ),
-            (true, false, Some((at, Ok(said)))) => (
-                IconName::CircleCheck,
-                muted,
-                format!(
-                    "Synced with {name} · {}",
-                    onehand_core::rel_time(issues::now(), *at)
-                ),
-                Some(said.clone()),
-            ),
-            (true, false, Some((_, Err(why)))) => (
-                IconName::TriangleAlert,
-                warning,
-                why.lines().next().unwrap_or_default().to_string(),
-                Some(why.clone()),
-            ),
-            (true, false, None) => (
-                IconName::CircleCheck,
-                muted,
-                format!("Kept in step with {name}"),
-                None,
-            ),
-            (false, _, _) if paused => (
-                IconName::Pause,
-                muted,
-                format!("Sync with {name} paused"),
-                None,
-            ),
-            (false, _, _) => (
-                IconName::Info,
-                muted,
-                format!("Not synced with {name}"),
-                None,
-            ),
-        };
-        let failed = on && !state.syncing && matches!(state.synced, Some((_, Err(_))));
-        let status = div()
-            .id("issues-sync-status")
-            .flex_1()
-            .min_w_0()
-            .h_flex()
-            .items_center()
-            .gap_1()
-            .child(Icon::new(icon).xsmall().text_color(ink))
-            .child(
-                div()
-                    .flex_1()
-                    .min_w_0()
-                    .truncate()
-                    .text_xs()
-                    .text_color(ink)
-                    .child(line),
-            )
-            .when_some(detail, |status, detail| {
-                status.tooltip(move |window, cx| Tooltip::new(detail.clone()).build(window, cx))
-            });
-        let footer = div()
-            .h_flex()
-            .items_center()
-            .gap_1()
-            .w_full()
-            .flex_none()
-            .px_2()
-            .py_1()
-            .border_t_1()
-            .border_color(cx.theme().border)
-            .child(status)
-            // A sync is not offered while one runs: pressed then it would do
-            // nothing, and a control that answers with nothing reads as broken.
-            .when(on && !state.syncing, |footer| {
-                footer.child(
-                    if failed {
-                        action("issues-sync-retry")
-                            .xsmall()
-                            .ghost()
-                            .label("Retry")
-                            .tooltip(format!("Sync with {name} again"))
-                    } else {
-                        action("issues-sync-now")
-                            .xsmall()
-                            .ghost()
-                            .icon(Icon::new(IconName::Redo))
-                            .tooltip("Sync now")
-                    }
-                    .on_click(cx.listener(|view, _: &ClickEvent, _, cx| view.sync(true, cx))),
-                )
-            })
-            .child(if on {
-                action("issues-sync-pause")
-                    .xsmall()
-                    .ghost()
-                    .icon(Icon::new(IconName::Pause))
-                    .tooltip("Pause auto-sync; links to issues are kept")
-                    .on_click(
-                        cx.listener(|view, _: &ClickEvent, _, cx| view.set_syncing(false, cx)),
-                    )
-            } else {
-                action("issues-sync-resume")
-                    .xsmall()
-                    .ghost()
-                    .icon(Icon::new(IconName::Play))
-                    .tooltip(if paused {
-                        format!("Resume auto-sync with {name}")
-                    } else {
-                        format!(
-                            "Sync with {name}: bring in its open issues and keep both sides in step"
-                        )
-                    })
-                    .on_click(cx.listener(|view, _: &ClickEvent, _, cx| view.set_syncing(true, cx)))
-            });
-        Some(footer.into_any_element())
-    }
-
-    fn row(&self, issue: &LocalIssue, selected: bool, cx: &mut Context<Self>) -> AnyElement {
-        let number = issue.number;
-        let muted = cx.theme().muted_foreground;
-        let conflicted = issue.link.as_ref().is_some_and(|l| l.conflict.is_some());
-        div()
-            .id(("issue-row", number))
-            .h_flex()
-            .items_center()
-            .gap_2()
-            .w_full()
-            .h_6()
-            .px_2()
-            .rounded(cx.theme().radius)
-            .text_sm()
-            .cursor_pointer()
-            .when(selected, |row| row.bg(cx.theme().accent))
-            .hover(|row| row.bg(cx.theme().accent.opacity(0.5)))
-            .child(identity(issue, cx))
-            .child(
-                div()
-                    .flex_1()
-                    .min_w_0()
-                    .truncate()
-                    // A closed issue stays in the list as a record, drawn
-                    // quieter than the work that is still open.
-                    .when(!issue.open, |title| title.text_color(muted).line_through())
-                    .child(issue.title.clone()),
-            )
-            // An issue waiting on a person is marked in words, in the warning
-            // ink: it is the one row nothing will move until somebody opens it.
-            .when(conflicted, |row| {
-                row.child(
-                    div()
-                        .flex_none()
-                        .text_xs()
-                        .text_color(status_ink(cx).warning)
-                        .child("decide"),
-                )
-            })
-            .on_click(cx.listener(move |view, _: &ClickEvent, _, cx| view.select(number, cx)))
             .into_any_element()
     }
 
@@ -987,29 +731,6 @@ impl IssuesView {
                 Some(parsed)
             }
         }
-    }
-}
-
-/// How an issue is named on screen: its forge's reference, muted, or a *Draft*
-/// tag for one that has not left onehand. Its number here is a key and is never
-/// shown.
-fn identity(issue: &LocalIssue, cx: &App) -> AnyElement {
-    match issue.reference() {
-        Some(reference) => div()
-            .flex_none()
-            .text_xs()
-            .text_color(cx.theme().muted_foreground)
-            .child(reference.to_string())
-            .into_any_element(),
-        None => div()
-            .flex_none()
-            .px_1()
-            .rounded(cx.theme().radius)
-            .bg(cx.theme().secondary)
-            .text_xs()
-            .text_color(cx.theme().secondary_foreground)
-            .child("Draft")
-            .into_any_element(),
     }
 }
 

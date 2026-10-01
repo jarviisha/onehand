@@ -933,6 +933,17 @@ see the rail, below.
   status icon, *Synced with GitHub · 3m ago* (what moved on hover), a sync-now and a pause/resume
   control; a failed sync puts its first line there with *Retry*, the whole error on hover. The view
   redraws once a minute so the time stays true.
+  **The list is searched and filtered** (`view/list.rs`, its rules tested): a search box over the
+  rows narrows by title, or by forge reference when it starts with `#`, and an exact reference
+  (`#6`) jumps to that issue, turning the filters so its row is shown — never while a form is open,
+  which a search must not throw away. Under it an Open/Closed switch (the host's `switch`) carries
+  the counts of what the search and label let through, and a label menu narrows to one label;
+  *New issue* is an icon beside the search. A row is its title, wrapped to two lines, over a muted
+  line: reference or *Draft*, the first label and *+N*, how long since it changed. The selected
+  row takes the theme's list-active fill and a bar on its left edge, so it never reads as hover.
+  **The detail's header** is the wrapped title with *Edit* and ⋯ on its right, over a row with a
+  coloured Open/Closed badge, the reference (pressing it opens the forge's page), label chips, and
+  the first line of a *Priority* section if the body has one.
   **Kept in step with the project's forge, both ways, when switched on** (`onehand_core::issues::sync`;
   the switch is the pause/resume control in the list's footer and is stored in the issue file as `synced_with`, so it needs no
   workspace key). A linked issue carries a `Link` whose `base` is the snapshot both sides last agreed

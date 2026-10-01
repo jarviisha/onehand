@@ -1,12 +1,14 @@
-use super::{Form, IssuesView, NOTES_SHOWN, identity};
+use super::list::{chip, identity};
+use super::{Form, IssuesView, NOTES_SHOWN};
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
-    AnyElement, App, ClickEvent, ClipboardItem, Context, Entity, IntoElement, ParentElement,
-    SharedString, Styled, Window, div,
+    AnyElement, App, ClickEvent, ClipboardItem, Context, Entity, InteractiveElement as _,
+    IntoElement, ParentElement, SharedString, StatefulInteractiveElement as _, Styled, Window, div,
 };
 use gpui_component::button::ButtonVariants as _;
 use gpui_component::input::{Input, Textarea};
 use gpui_component::text::{TextView, TextViewState, TextViewStyle};
+use gpui_component::tooltip::Tooltip;
 use gpui_component::{ActiveTheme, Icon, IconName, Sizable as _, StyledExt};
 use onehand_core::issues::{LocalIssue, sync};
 use onehand_plugin_host::{action, menu_below, menu_item, status_ink};
@@ -25,54 +27,101 @@ pub(super) fn issue_view(
     let number = issue.number;
     let open = issue.open;
     let muted = cx.theme().muted_foreground;
-    let header = div()
+    // The title wraps rather than cutting: it is the one place the whole of
+    // it is read, and what is done to the issue stays to its right.
+    let header =
+        div()
+            .h_flex()
+            .items_start()
+            .gap_2()
+            .w_full()
+            .flex_none()
+            .px_3()
+            .pt_2()
+            .child(
+                div()
+                    .flex_1()
+                    .min_w_0()
+                    .font_semibold()
+                    .child(issue.title.clone()),
+            )
+            .child(
+                div()
+                    .h_flex()
+                    .flex_none()
+                    .items_center()
+                    .gap_1()
+                    .children(publish_to.map(|forge| {
+                        action("issue-publish")
+                            .xsmall()
+                            .ghost()
+                            .label(format!("Publish to {forge}"))
+                            .tooltip("Open it there too, and keep the two in step")
+                            .on_click(cx.listener(move |view, _: &ClickEvent, _, cx| {
+                                view.publish(number, cx)
+                            }))
+                    }))
+                    .child(
+                        action("issue-edit")
+                            .xsmall()
+                            .ghost()
+                            .label("Edit")
+                            .on_click(cx.listener(move |view, _: &ClickEvent, window, cx| {
+                                view.open_form(Some(number), window, cx)
+                            })),
+                    )
+                    .child(more_menu(root, issue, cx)),
+            );
+
+    // What it is at a glance: open or closed, where it lives, its labels, and
+    // how urgent the body says it is.
+    let state_ink = if open { status_ink(cx).success } else { muted };
+    let facts = div()
         .h_flex()
+        .flex_wrap()
         .items_center()
-        .gap_2()
-        .w_full()
+        .gap_1()
         .flex_none()
-        .px_2()
-        .py_1()
+        .px_3()
+        .pt_1()
+        .pb_2()
         .border_b_1()
         .border_color(cx.theme().border)
-        .child(identity(issue, cx))
+        .text_xs()
         .child(
             div()
-                .flex_1()
-                .min_w_0()
-                .truncate()
-                .font_semibold()
-                .child(issue.title.clone()),
+                .flex_none()
+                .px_1p5()
+                .rounded(cx.theme().radius)
+                .bg(state_ink.opacity(0.15))
+                .text_color(state_ink)
+                .child(if open { "Open" } else { "Closed" }),
         )
-        .children(publish_to.map(|forge| {
-            action("issue-publish")
-                .xsmall()
-                .ghost()
-                .label(format!("Publish to {forge}"))
-                .tooltip("Open it there too, and keep the two in step")
-                .on_click(cx.listener(move |view, _: &ClickEvent, _, cx| view.publish(number, cx)))
-        }))
-        .child(
-            action("issue-edit")
-                .xsmall()
-                .ghost()
-                .label("Edit")
-                .on_click(cx.listener(move |view, _: &ClickEvent, window, cx| {
-                    view.open_form(Some(number), window, cx)
-                })),
-        )
-        .child(more_menu(root, issue, cx));
-
-    let mut facts = vec![(if open { "Open" } else { "Closed" }).to_string()];
-    if !issue.labels.is_empty() {
-        facts.push(issue.labels.join(", "));
-    }
-    let facts = div()
-        .px_2()
-        .py_1()
-        .text_xs()
-        .text_color(muted)
-        .child(facts.join(" · "));
+        .child(match (issue.reference(), &issue.link) {
+            (Some(reference), Some(link)) => div()
+                .id("issue-reference")
+                .flex_none()
+                .text_color(muted)
+                .cursor_pointer()
+                .hover(|reference| reference.underline())
+                .tooltip({
+                    let tip = format!("Open on {}", link.connector);
+                    move |window, cx| Tooltip::new(tip.clone()).build(window, cx)
+                })
+                .on_click(cx.listener(move |view, _: &ClickEvent, _, cx| {
+                    view.with_url(number, |url, cx| cx.open_url(&url), cx)
+                }))
+                .child(reference.to_string())
+                .into_any_element(),
+            _ => identity(issue, cx),
+        })
+        .children(issue.labels.iter().map(|label| chip(label.clone(), cx)))
+        .children(priority(&issue.body).map(|priority| {
+            div()
+                .flex_none()
+                .text_color(muted)
+                .child(format!("Priority: {priority}"))
+        }));
     let conflict = conflict_view(issue, cx);
 
     // What runs have said about it, newest last, under the body — the record of
@@ -134,6 +183,33 @@ pub(super) fn issue_view(
         })
         .children(notes)
         .into_any_element()
+}
+
+/// The first line under a *Priority* heading in `body`, list marker and bold
+/// taken off, or `None` where the body has no such section or it is empty.
+fn priority(body: &str) -> Option<String> {
+    let heading = |line: &str| line.trim_start().starts_with('#');
+    let mut lines = body.lines();
+    lines.find(|line| {
+        heading(line)
+            && line
+                .trim()
+                .trim_start_matches('#')
+                .trim()
+                .trim_end_matches(':')
+                .eq_ignore_ascii_case("priority")
+    })?;
+    let first = lines
+        .take_while(|line| !heading(line))
+        .map(str::trim)
+        .find(|line| !line.is_empty())?;
+    let first = first
+        .strip_prefix(['-', '*', '+'])
+        .unwrap_or(first)
+        .replace("**", "")
+        .replace("__", "");
+    let first = first.trim();
+    (!first.is_empty()).then(|| first.to_string())
 }
 
 /// The ⋯ menu beside *Edit*: where the issue lives on its forge, and closing
@@ -362,3 +438,6 @@ fn excerpt(text: &str) -> String {
         None => text.to_string(),
     }
 }
+
+#[cfg(test)]
+mod tests;
