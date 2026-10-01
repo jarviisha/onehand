@@ -107,6 +107,18 @@ impl Workbench {
         match request {
             Request::OpenFile(path) => self.open_file(path, window, cx),
             Request::RestartAgent => cx.emit(WorkbenchEvent::RestartAgent),
+            Request::WorkIssueHere {
+                root,
+                number,
+                prompt,
+            } => cx.emit(WorkbenchEvent::WorkIssueHere {
+                root: root.to_path_buf(),
+                number: *number,
+                prompt: prompt.to_string(),
+            }),
+            Request::OpenConversation(session) => {
+                cx.emit(WorkbenchEvent::OpenConversation(session.to_string()))
+            }
             // The caret is the panel's half of reaping: a view dropped while it
             // holds focus leaves the window pointing at an element no frame
             // contains, and GPUI resolves a key along the path down to the
@@ -274,6 +286,11 @@ impl Workbench {
         cx.notify();
     }
 
+    /// Tell the modes which conversations have a live session in this window.
+    pub fn live_conversations(&mut self, ids: &[String], cx: &mut Context<Self>) {
+        self.broadcast(&Request::LiveConversations(ids), cx);
+    }
+
     /// Tell the modes when the agent on screen started, or that none is.
     pub fn agent_started(&mut self, since: Option<std::time::Instant>, cx: &mut Context<Self>) {
         self.broadcast(&Request::AgentStarted(since), cx);
@@ -348,6 +365,15 @@ pub enum WorkbenchEvent {
     /// A mode changed something the agent reads only when it starts, and the
     /// user asked for it to start again.
     RestartAgent,
+    /// Work issue `number` of project `root` in the checkout it is open on,
+    /// with `prompt` as the new session's first message.
+    WorkIssueHere {
+        root: std::path::PathBuf,
+        number: u64,
+        prompt: String,
+    },
+    /// Show the conversation the agent named `session`, live or saved.
+    OpenConversation(String),
 }
 
 impl EventEmitter<WorkbenchEvent> for Workbench {}

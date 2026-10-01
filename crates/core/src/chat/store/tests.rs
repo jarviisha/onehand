@@ -162,6 +162,13 @@ fn listing_never_opens_the_transcript() {
     assert!(list_conversations(&store, Path::new("/other"), None).is_empty());
     // Nor another agent's.
     assert!(list_conversations(&store, Path::new("/r"), Some("Other")).is_empty());
+    // Found by its id alone, with the project it ran in, whatever is open.
+    let (root, conv) = find_conversation(&store, "s1").unwrap();
+    assert_eq!(
+        (root, conv.title.as_str()),
+        (PathBuf::from("/r"), "Fix the login flow")
+    );
+    assert!(find_conversation(&store, "gone").is_none());
     let _ = std::fs::remove_dir_all(&store);
 }
 

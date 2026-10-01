@@ -490,6 +490,39 @@ impl ChatPane {
     fn session_of(&self, uid: u64) -> Option<&Entity<ChatSession>> {
         self.conversations.get(&uid)?.session()
     }
+
+    /// Session `uid`'s live session, for a caller outside the pane that has to
+    /// watch it.
+    pub fn session_entity(&self, uid: u64) -> Option<Entity<ChatSession>> {
+        self.session_of(uid).cloned()
+    }
+
+    /// The conversations with a live session in this pane, by the agent's
+    /// session id, sorted. A session whose adapter is lost is not live: it is
+    /// history on screen until somebody restarts it.
+    pub fn live_conversations(&self, cx: &App) -> Vec<String> {
+        let mut ids: Vec<String> = self
+            .conversations
+            .values()
+            .filter_map(|conversation| {
+                let chat = &conversation.session()?.read(cx).chat;
+                (chat.link != onehand_core::chat::Link::Lost)
+                    .then(|| chat.session_id.clone())
+                    .flatten()
+            })
+            .collect();
+        ids.sort();
+        ids
+    }
+
+    /// The session holding the conversation the agent named `id`, if one in
+    /// this pane does.
+    pub fn uid_of_conversation(&self, id: &str, cx: &App) -> Option<u64> {
+        self.conversations.iter().find_map(|(uid, conversation)| {
+            let session = conversation.session()?;
+            (session.read(cx).chat.session_id.as_deref() == Some(id)).then_some(*uid)
+        })
+    }
 }
 
 impl Panel for ChatPane {
@@ -830,16 +863,7 @@ impl Render for ChatPane {
     }
 }
 
-/// `3m ago` / `2h ago` / `5d ago`, for the resume picker's subtitle.
-pub fn rel_time(now: u64, then: u64) -> String {
-    let secs = now.saturating_sub(then);
-    match secs {
-        0..=59 => "just now".to_string(),
-        60..=3599 => format!("{}m ago", secs / 60),
-        3600..=86_399 => format!("{}h ago", secs / 3600),
-        _ => format!("{}d ago", secs / 86_400),
-    }
-}
+pub use onehand_core::rel_time;
 
 /// Whether the pane shows nothing but the wait.
 ///

@@ -87,13 +87,13 @@ pub(super) struct AutoStatus {
     pub(super) stuck: bool,
 }
 
-/// The run a project's row names: one on that project's issues, as its issue
-/// number and whether it is waiting on a card, the working one ahead of a
-/// waiting one. `runs` is each run's project, issue and whether it waits.
+/// The run a project's row names: one on that project's issues, as how its
+/// issue is shown and whether it is waiting on a card, the working one ahead
+/// of a waiting one. `runs` is each run's project, issue and whether it waits.
 pub(super) fn run_on<'a>(
-    runs: impl IntoIterator<Item = (&'a std::path::Path, u64, bool)>,
+    runs: impl IntoIterator<Item = (&'a std::path::Path, &'a str, bool)>,
     root: &std::path::Path,
-) -> Option<(u64, bool)> {
+) -> Option<(&'a str, bool)> {
     runs.into_iter()
         .filter(|&(repo, _, _)| repo == root)
         .map(|(_, number, waiting)| (number, waiting))
@@ -115,7 +115,7 @@ pub(super) fn run_on<'a>(
 /// out.
 pub(super) fn auto_status(
     unattended: bool,
-    run: Option<(u64, bool)>,
+    run: Option<(&str, bool)>,
     label: &str,
     stuck: Option<String>,
 ) -> Option<AutoStatus> {
@@ -126,16 +126,16 @@ pub(super) fn auto_status(
     };
     match (unattended, run, stuck) {
         (_, Some((n, false)), _) => Some(status(
-            format!("auto · #{n}"),
-            format!("Unattended run working on issue #{n}"),
+            format!("auto · {n}"),
+            format!("Unattended run working on issue {n}"),
             false,
         )),
         // Said apart from working: a run standing still on a card is waiting
         // for the person reading this, and "working" would tell them there is
         // nothing to do.
         (_, Some((n, true)), _) => Some(status(
-            format!("auto · #{n} waiting"),
-            format!("Unattended run on issue #{n} is waiting for an answer"),
+            format!("auto · {n} waiting"),
+            format!("Unattended run on issue {n} is waiting for an answer"),
             false,
         )),
         (false, None, _) => None,
@@ -349,7 +349,7 @@ pub(super) fn folder_row(
     let runs = crate::unattended::live_runs(cx);
     let run = run_on(
         runs.iter()
-            .map(|run| (run.repo.as_path(), run.number, run.waiting.is_some())),
+            .map(|run| (run.repo.as_path(), run.name.as_str(), run.waiting.is_some())),
         &root.path,
     );
     let auto = auto_status(

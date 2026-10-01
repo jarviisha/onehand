@@ -375,7 +375,8 @@ fn opted_in_roots(cx: &App) -> Vec<Project> {
 pub struct LiveRun {
     /// The project the issue was found in.
     pub repo: PathBuf,
-    pub number: u64,
+    /// How its issue is shown: the forge's number, or *Draft*.
+    pub name: String,
     pub title: String,
     /// The run's own session.
     pub uid: u64,
@@ -400,7 +401,7 @@ pub fn live_runs(cx: &App) -> Vec<LiveRun> {
                 .iter()
                 .map(|run| LiveRun {
                     repo: run.claimed.repo.clone(),
-                    number: run.claimed.issue.number,
+                    name: run.claimed.tracker.shown(&run.claimed.issue),
                     title: run.claimed.issue.title_text().to_string(),
                     uid: run.uid,
                     window: run.window,

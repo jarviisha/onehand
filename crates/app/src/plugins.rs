@@ -30,7 +30,11 @@ pub fn workbench_modes(ask: Ask, font_size: Pixels, cx: &mut App) -> Vec<Box<dyn
             font_size,
             cx,
         )),
-        Box::new(onehand_workbench_issues::Mode::new(connectors(), cx)),
+        Box::new(onehand_workbench_issues::Mode::new(
+            connectors(),
+            ask.clone(),
+            cx,
+        )),
         Box::new(onehand_workbench_plugins::Mode::new(ask, cx)),
     ]
 }

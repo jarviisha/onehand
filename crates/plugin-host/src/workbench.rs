@@ -152,10 +152,28 @@ pub enum Request<'a> {
     /// what an agent loads at start can tell which of its changes the running
     /// one has not seen.
     AgentStarted(Option<Instant>),
+    /// The conversations this window has a live session on, by the agent's
+    /// session id. Broadcast whenever the set changes, so a mode that keeps
+    /// record of which conversation took something up can tell whether that
+    /// one is still going.
+    LiveConversations(&'a [String]),
     /// Restart the agent of the session on screen. Only ever travels
     /// **upward**: the shell owns sessions, and a mode asking for this has
     /// changed something an agent reads only when it starts.
     RestartAgent,
+    /// Start a session on project `root`, in the checkout it is open on, with
+    /// `prompt` as its first message, and say on issue `number` which session
+    /// took it up once the agent has named it. Only ever travels **upward**,
+    /// for the reason [`Self::RestartAgent`] does.
+    WorkIssueHere {
+        root: &'a Path,
+        number: u64,
+        prompt: &'a str,
+    },
+    /// Put the conversation the agent named `session` on screen: the live
+    /// session holding it, or the saved one reopened on the project it ran
+    /// in. Only ever travels **upward**.
+    OpenConversation(&'a str),
 }
 
 /// How a mode reaches back into the panel.

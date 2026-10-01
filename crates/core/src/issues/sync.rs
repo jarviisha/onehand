@@ -221,11 +221,12 @@ fn reconcile(
                             "{reference} is no longer on {name}; this issue is kept here, \
                              no longer in step with it."
                         ),
+                        session: None,
                     });
                     continue;
                 }
                 Err(why) => {
-                    report.failures.push(format!("#{}: {why}", issue.number));
+                    report.failures.push(format!("{}: {why}", link.reference));
                     unasked = true;
                     continue;
                 }
@@ -276,14 +277,14 @@ fn step(
     let Some(link) = issue.link.as_ref() else {
         return;
     };
-    let (key, base) = (link.key.clone(), link.base.clone());
+    let (key, base, reference) = (link.key.clone(), link.base.clone(), link.reference.clone());
     let ours = issue.snapshot();
     let merge = merge(&base, &ours, &theirs);
     if !merge.conflicts.is_empty() {
         // What merged cleanly still lands here; the fields in conflict keep
         // this side's value, and the forge's side is kept to decide against.
         if !merge.merged.same_as(&ours) {
-            issue.apply(&merge.merged);
+            issue.apply(&merge.merged, connector.name(), now);
             issue.updated = now;
         }
         if let Some(link) = issue.link.as_mut() {
@@ -292,7 +293,7 @@ fn step(
         return;
     }
     if !merge.merged.same_as(&ours) {
-        issue.apply(&merge.merged);
+        issue.apply(&merge.merged, connector.name(), now);
         issue.updated = now;
         report.pulled += 1;
     }
@@ -300,7 +301,7 @@ fn step(
         if let Err(why) = connector.update_issue_blocking(root, &key, &theirs, &merge.merged) {
             // The ancestor is left where it was, so the next sync sees this
             // side's change as still to be sent and tries again.
-            report.failures.push(format!("#{}: {why}", issue.number));
+            report.failures.push(format!("{reference}: {why}"));
             if let Some(link) = issue.link.as_mut() {
                 link.conflict = None;
             }
@@ -480,6 +481,9 @@ mod tests {
         let kept = load(&file);
         assert_eq!(kept.get(1).unwrap().title, "changed there");
         assert!(!kept.get(1).unwrap().open, "closing there closes here");
+        // And the history says where and when it closed.
+        let last = kept.get(1).unwrap().notes.last().unwrap();
+        assert_eq!((last.at, last.text.as_str()), (3, "Closed on Forge"));
         let _ = std::fs::remove_dir_all(file.parent().unwrap());
     }
 
@@ -559,6 +563,8 @@ mod tests {
         let issue = kept.get(1).unwrap();
         assert!(issue.link.is_none());
         assert!(issue.notes[0].text.contains("no longer on Forge"));
+        // Unlinked, it still says where it came from.
+        assert_eq!(issue.arrival(), "Brought in from Forge");
         let _ = std::fs::remove_dir_all(file.parent().unwrap());
     }
 

@@ -190,14 +190,15 @@ pub fn pick_issue(shell: &Shell, cx: &mut Context<Shell>) -> Dialog {
         }))
 }
 
-/// One issue as a pressable row: the number muted, the title, a few labels as
-/// pills, and a muted word at the end saying where it lives or whose it is.
+/// One issue as a pressable row: how it is shown muted — the forge's number, or
+/// *Draft* — then the title, a few labels as pills, and a muted word at the end
+/// saying where it lives or whose it is.
 ///
 /// One builder for every list of issues, so an issue reads the same in the
 /// picker and on the workspace page.
 pub(crate) fn issue_row(
     id: impl Into<gpui::ElementId>,
-    number: u64,
+    shown: String,
     title: String,
     labels: &[String],
     trailing: String,
@@ -205,7 +206,7 @@ pub(crate) fn issue_row(
 ) -> gpui::Stateful<gpui::Div> {
     let (muted, radius) = (cx.theme().muted_foreground, cx.theme().radius);
     let (pill_bg, pill_fg) = (cx.theme().secondary, cx.theme().secondary_foreground);
-    row_shell(id, format!("#{number}"), title, cx)
+    row_shell(id, shown, title, cx)
         // A few labels, not all: the row is for telling issues apart, and the
         // title is what does most of that.
         .children(labels.iter().take(3).map(|label| {
@@ -320,12 +321,11 @@ fn issue_list(
                     // user's own, and what is worth saying is where it lives.
                     let trailing = match tracker {
                         onehand_core::unattended::Tracker::Local(_) => "in onehand".to_string(),
-                        // Kept in step: named by the forge's number where it
-                        // has one, which is the one its pull request will
-                        // reference.
+                        // Kept in step: the forge's number is already the
+                        // row's head, so the end says which forge.
                         onehand_core::unattended::Tracker::Synced { forge, .. } => {
                             match row.issue.forge_ref() {
-                                Some(reference) => format!("{} {reference}", forge.name()),
+                                Some(_) => forge.name().to_string(),
                                 None => "in onehand".to_string(),
                             }
                         }
@@ -335,7 +335,7 @@ fn issue_list(
                     };
                     issue_row(
                         ("issue", i),
-                        row.issue.number,
+                        tracker.shown(&row.issue),
                         row.issue.title_text().to_string(),
                         &row.labels,
                         trailing,

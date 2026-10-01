@@ -104,6 +104,18 @@ pub enum Tracker {
 }
 
 impl Tracker {
+    /// How `issue` is shown to a person: by the forge's number where it lives
+    /// on the forge or is kept in step with one, and as a draft where it is
+    /// kept in onehand only — the number it is filed under there is a key,
+    /// and beside a forge's own it reads as a second issue.
+    pub fn shown(&self, issue: &Issue) -> String {
+        match (self, issue.forge_ref()) {
+            (Self::Forge(_), _) => format!("#{}", issue.number),
+            (_, Some(reference)) => reference.to_string(),
+            (_, None) => "Draft".to_string(),
+        }
+    }
+
     /// How the prompt names `issue`.
     fn names(&self, issue: &Issue) -> String {
         let number = issue.number;

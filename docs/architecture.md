@@ -921,12 +921,59 @@ see the rail, below.
   process-wide lock and through `config::write_atomic`, made against what is on disk rather than the
   copy on screen, so a person editing and anything else in the process writing cannot each save a copy
   missing the other's change; a file this build cannot read is refused and never written over. The
-  file is read again when the mode is next drawn after being shown or after a turn ends. What runs
-  said about an issue is kept on it as **notes** and drawn under its body, the latest few, with the
-  cut said. Unattended runs work these issues too — see *Unattended runs*. No shortcut yet, and no
-  deletion — closing is the way an issue leaves the work.
+  file is read again when the mode is next drawn after being shown or after a turn ends. **Every
+  issue keeps its history as notes** (`Note { at, text, session }`) and draws it under its body,
+  oldest first under how it arrived (`LocalIssue::arrival`: *Opened here*, or *Brought in from
+  GitHub as #6*, dated by `created`), each line with its local time (chrono, already built into
+  the app through gpui) and how long ago, the latest 50 with the cut said: what runs said, every
+  change of state made here (`Issues::set_open`) or brought in from the forge (`LocalIssue::apply`,
+  *Closed on GitHub*). **A note can name the conversation that took the issue
+  up** by the agent's session id, which outlives a restart where a session's uid does not; its
+  *Open session* asks the shell (`Request::OpenConversation`, `Shell::open_conversation`) for the
+  live session holding it, else finds the saved one by its id (`chat::find_conversation`) and
+  reopens it on the project it ran in, adding that folder back when it has left the workspace — an
+  unattended run's worktree does when the run ends — and saying so when the folder is gone.
+  **Work here** starts an ordinary session on the project's own checkout with
+  `issues::work_here_prompt` as its first message (`Request::WorkIssueHere`,
+  `Shell::work_issue_here`): no worktree, no branch, no claim, no timeout, and the prompt tells the
+  agent to leave its changes uncommitted, since this is somebody's working copy. The prompt waits for
+  the adapter and is not sent if somebody typed into the session first; the issue hears which
+  session took it once the agent has named it. **An issue a live session is on is not offered *Work here*:**
+  the shell tells the Workbench which conversations have a live session in the window
+  (`Request::LiveConversations`, sent from the pane observer only when the set changes), and an issue
+  whose history names one of them shows *Open session* in its place and *working* on its row.
+  Unattended runs work these issues too — see *Unattended runs*. No shortcut yet, and no
+  deletion — closing is the way an issue leaves the work, from the detail's ⋯ menu (beside *Open on
+  GitHub* and *Copy link*, whose address `Connector::issue_url_blocking` asks the forge for) and
+  behind a confirmation, since a bare *Close* there read as closing the view.
+  **An issue is named by its forge's reference** (`LocalIssue::reference`), or a *Draft* tag before it
+  is published; the number it is filed under here is the file's key and is never drawn, because shown
+  beside the forge's it read as a second issue. **The list's footer says how the sync stands** — a
+  status icon, *Synced with GitHub · 3m ago* (what moved on hover), a sync-now and a pause/resume
+  control; a failed sync puts its first line there with *Retry*, the whole error on hover. The view
+  redraws once a minute so the time stays true.
+  **The list is searched and filtered** (`view/list.rs`, its rules tested): a search box over the
+  rows narrows by title, or by forge reference when it starts with `#`, and an exact reference
+  (`#6`) jumps to that issue, turning the filters so its row is shown — never while a form is open,
+  which a search must not throw away. Under it an Open/Closed switch (the host's `switch`) carries
+  the counts of what the search and label let through, and a label menu narrows to one label;
+  *New issue* is an icon beside the search. A row is its title, wrapped to two lines, over a muted
+  line: reference or *Draft*, the first label and *+N*, how long since it changed. The selected
+  row takes the selected fill (`accent`) and nothing else — no bar, no ring — since the ramp holds
+  that step clear of hover; a left bar was asked for and declined on those grounds.
+  **The detail's header** is the wrapped title with *Edit* and ⋯ on its right, over a row with an
+  Open/Closed badge (the `success` fill while open, the quiet chip once closed), the reference (pressing it opens the forge's page), label chips, and
+  the first line of a *Priority* section if the body has one.
+  **Files the body names open in the editor** (`view/mentions.rs`, tested): repo-relative paths, in
+  code or bare beside punctuation, outside fenced and indented blocks and links, are checked off the
+  UI loop, and the ones that exist are rewritten into `onehand-file:` links before the body is parsed
+  again; the renderer's link hook opens those through `Request::OpenFile` and hands any other link to
+  the system. A path that does not exist stays as written. The same files are listed once each
+  under the body as *Referenced files* (capped, the cut said). Inline code takes the well (`muted`)
+  instead of the renderer's selected-fill fallback; the renderer styles it through a highlight, which
+  carries no font family or padding, so neither is reachable.
   **Kept in step with the project's forge, both ways, when switched on** (`onehand_core::issues::sync`;
-  the switch is the list's sync bar and is stored in the issue file as `synced_with`, so it needs no
+  the switch is the pause/resume control in the list's footer and is stored in the issue file as `synced_with`, so it needs no
   workspace key). A linked issue carries a `Link` whose `base` is the snapshot both sides last agreed
   on, and a sync is a **three-way merge per field** against it: title, description and state take the
   side that changed, a field both sides changed differently is a **conflict** that moves nothing until
@@ -945,7 +992,7 @@ see the rail, below.
   retried rather than read later as the forge's; an issue gone from the forge is unlinked with a note.
   Forge line endings are normalized first, or every sync would see an edit nobody made. It runs when
   the file is read (at most once a minute), after every change made here, every five minutes on the
-  project on screen, and on *Sync now*; the whole sync holds the issue file's lock across the forge's
+  project on screen, and on the footer's sync-now control; the whole sync holds the issue file's lock across the forge's
   calls, so an edit made meanwhile waits for it; an edit saved while a sync runs sets a flag that runs
   one more when it lands. Every write moves `Issues::revision` on, and the mode keeps whichever copy
   is newer, since two landings can reach the screen out of order.

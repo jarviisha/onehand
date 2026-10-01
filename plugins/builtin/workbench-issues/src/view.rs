@@ -6,26 +6,27 @@
 //! forge. What is here is the half that needs a window: the list, the reading,
 //! the form, and when a sync runs.
 
-use gpui::prelude::FluentBuilder as _;
 use gpui::{
-    AnyElement, App, AppContext as _, ClickEvent, Context, Entity, InteractiveElement as _,
-    IntoElement, ParentElement, Render, StatefulInteractiveElement as _, Styled, Task, Window, div,
+    AnyElement, App, AppContext as _, Context, Entity, IntoElement, ParentElement, Render, Styled,
+    Task, Window, div,
 };
-use gpui_component::button::ButtonVariants as _;
+use gpui_component::WindowExt as _;
+use gpui_component::dialog::DialogButtonProps;
 use gpui_component::input::{InputState, TextareaState};
 use gpui_component::text::TextViewState;
-use gpui_component::{
-    ActiveTheme, Icon, IconName, Sizable as _, StyledExt, h_resizable, resizable_panel,
-};
+use gpui_component::{StyledExt, h_resizable, resizable_panel};
 use onehand_core::connector::{self, Connector};
 use onehand_core::issues::{self, Draft, Issues, LocalIssue, sync};
-use onehand_plugin_host::{action, hint, status_ink, status_line};
+use onehand_plugin_host::{Ask, Request, hint, status_line};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 mod detail;
+mod list;
+mod mentions;
 use detail::{form_view, issue_view};
+use list::Showing;
 
 /// How often a project kept in step with its forge is synced while it is the
 /// one this mode is on, if nothing else has synced it sooner.
@@ -36,9 +37,15 @@ const SYNC_EVERY: Duration = Duration::from_secs(300);
 /// each of them.
 const SYNC_GAP: Duration = Duration::from_secs(60);
 
+/// How often the view is drawn again with nothing having changed, so the
+/// footer's "synced 3m ago" keeps telling the time. A multiple of it is
+/// [`SYNC_EVERY`].
+const TICK: Duration = Duration::from_secs(60);
+
 /// The list's width before anybody drags it, and the range a drag may take it
-/// through — pixels, because that is the only thing the split accepts. Its
-/// rows are a number and a title, so the floor is what a short title needs.
+/// through — pixels, because that is the only thing the split accepts. A
+/// row's title wraps to two lines, so the floor is what the search box and the
+/// filters above the rows need.
 const LIST_W: f32 = 240.;
 const LIST_MIN: f32 = 160.;
 const LIST_MAX: f32 = 420.;
@@ -48,10 +55,13 @@ const LIST_MAX: f32 = 420.;
 /// a list nobody scrolls to the end of is not worth building to the end.
 const LIST_CAP: usize = 500;
 
-/// How many of an issue's notes are drawn under it: the latest ones, since a
-/// note is what a run said about how it ended and the last run is the one that
-/// is read.
-const NOTES_SHOWN: usize = 5;
+/// How many of the files a body names are listed under it. A body that names
+/// more is a list of files, and the list says how many it left out.
+const FILES_SHOWN: usize = 20;
+
+/// How many entries of an issue's history are drawn under it: the latest ones,
+/// since the last thing that happened to it is the one read first.
+const HISTORY_SHOWN: usize = 50;
 
 pub(crate) struct IssuesView {
     root: Option<PathBuf>,
@@ -76,6 +86,19 @@ pub(crate) struct IssuesView {
     connectors: &'static [&'static dyn Connector],
     /// The timer behind the periodic sync, held for as long as the view.
     _sync_every: Task<()>,
+    /// The list's search box, made on its first draw.
+    query: Option<Entity<InputState>>,
+    /// Which half of the issues the list shows.
+    showing: Showing,
+    /// The one label the list is narrowed to, if any. Dropped on a switch of
+    /// project, whose issues carry labels of their own.
+    label: Option<String>,
+    /// How the mode asks the Workbench for something — a file opened in the
+    /// editor.
+    ask: Ask,
+    /// The conversations with a live session in this window, by the agent's
+    /// session id: an issue whose history names one of them is being worked.
+    live: Vec<String>,
 }
 
 /// One project's issues and what is open among them.
@@ -85,10 +108,9 @@ struct RootIssues {
     issues: Option<Issues>,
     selected: Option<u64>,
     form: Option<Form>,
-    /// The selected issue's body, parsed, and the stamp it was parsed at — so
-    /// it is parsed again when the issue changes and never on a frame when it
-    /// has not.
-    body: Option<(u64, u64, Entity<TextViewState>)>,
+    /// The selected issue's body, parsed — so it is parsed again when the
+    /// issue changes and never on a frame when it has not.
+    body: Option<Body>,
     /// The forge that serves this project, if one does — found when its
     /// issues are read, since asking reads the project's git remote.
     forge: Option<&'static dyn Connector>,
@@ -98,8 +120,9 @@ struct RootIssues {
     /// meanwhile — so another runs as soon as it lands, rather than leaving
     /// the edit for the timer.
     again: bool,
-    /// When the last sync finished, and what it came to in one line.
-    synced: Option<(Instant, String)>,
+    /// When the last sync finished, in seconds since the epoch, and what it
+    /// came to: what moved, in one line, or what it could not do.
+    synced: Option<(u64, Result<String, String>)>,
 }
 
 impl RootIssues {
@@ -116,17 +139,35 @@ impl RootIssues {
     }
 }
 
+/// An issue's body as drawn: parsed, and the project's files it names.
+struct Body {
+    /// The issue and the stamp it was parsed at.
+    number: u64,
+    updated: u64,
+    parsed: Entity<TextViewState>,
+    /// The files it names that exist, in the order it names them. Empty
+    /// until the check, which reads the disk, has come back.
+    files: Vec<String>,
+}
+
 /// The form a new issue or an edit is written in.
 struct Form {
     /// The issue being edited, or `None` for a new one.
     editing: Option<u64>,
+    /// How the issue being edited is named on its forge; `None` for a draft
+    /// or a new issue.
+    editing_reference: Option<String>,
     title: Entity<InputState>,
     labels: Entity<InputState>,
     body: Entity<TextareaState>,
 }
 
 impl IssuesView {
-    pub(crate) fn new(connectors: &'static [&'static dyn Connector], cx: &mut App) -> Entity<Self> {
+    pub(crate) fn new(
+        connectors: &'static [&'static dyn Connector],
+        ask: Ask,
+        cx: &mut App,
+    ) -> Entity<Self> {
         cx.new(|cx| Self {
             root: None,
             storage: None,
@@ -136,13 +177,22 @@ impl IssuesView {
             status: None,
             _load: None,
             connectors,
+            query: None,
+            showing: Showing::default(),
+            label: None,
+            ask,
+            live: Vec::new(),
             _sync_every: cx.spawn(async move |view, cx| {
-                loop {
-                    cx.background_executor().timer(SYNC_EVERY).await;
-                    if view
-                        .update(cx, |view: &mut Self, cx| view.sync(false, cx))
-                        .is_err()
-                    {
+                let every = (SYNC_EVERY.as_secs() / TICK.as_secs()).max(1);
+                for tick in 1u64.. {
+                    cx.background_executor().timer(TICK).await;
+                    let alive = view.update(cx, |view: &mut Self, cx| {
+                        cx.notify();
+                        if tick % every == 0 {
+                            view.sync(false, cx);
+                        }
+                    });
+                    if alive.is_err() {
                         return;
                     }
                 }
@@ -155,6 +205,7 @@ impl IssuesView {
             return;
         }
         self.root = Some(root.to_path_buf());
+        self.label = None;
         self.stale = true;
         cx.notify();
     }
@@ -176,6 +227,11 @@ impl IssuesView {
         self.storage = storage;
         self.roots.clear();
         self.stale = true;
+        cx.notify();
+    }
+
+    pub(crate) fn set_live(&mut self, ids: &[String], cx: &mut Context<Self>) {
+        self.live = ids.to_vec();
         cx.notify();
     }
 
@@ -262,7 +318,7 @@ impl IssuesView {
             || state
                 .synced
                 .as_ref()
-                .is_none_or(|(at, _)| at.elapsed() >= SYNC_GAP);
+                .is_none_or(|(at, _)| issues::now().saturating_sub(*at) >= SYNC_GAP.as_secs());
         if state.syncing && wanted && now {
             state.again = true;
             return;
@@ -286,20 +342,14 @@ impl IssuesView {
                 };
                 state.syncing = false;
                 let again = std::mem::take(&mut state.again);
-                match done {
+                let came_to = match done {
                     Ok((kept, report)) => {
                         keep_newer(&mut state.issues, kept);
-                        state.synced = Some((Instant::now(), said(&report, forge.name())));
-                        view.status = failures(&report);
+                        failures(&report).map_or_else(|| Ok(said(&report, forge.name())), Err)
                     }
-                    Err(why) => {
-                        state.synced = Some((
-                            Instant::now(),
-                            format!("Could not sync with {}", forge.name()),
-                        ));
-                        view.status = Some(why);
-                    }
-                }
+                    Err(why) => Err(why),
+                };
+                state.synced = Some((issues::now(), came_to));
                 cx.notify();
                 if again {
                     view.sync_root(root, true, cx);
@@ -448,6 +498,9 @@ impl IssuesView {
         };
         let form = Form {
             editing,
+            editing_reference: current
+                .as_ref()
+                .and_then(|issue| issue.reference().map(str::to_string)),
             title: cx.new(|cx| {
                 InputState::new(window, cx)
                     .placeholder("Title")
@@ -502,6 +555,99 @@ impl IssuesView {
         );
     }
 
+    /// Ask before closing issue `number`: closing is the one way an issue
+    /// leaves the work, and on a project kept in step it closes on the forge
+    /// too. Reopening is not asked about — it takes nothing away.
+    fn confirm_close(&mut self, number: u64, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(state) = self.state_mut() else {
+            return;
+        };
+        let Some(issue) = state.issues.as_ref().and_then(|kept| kept.get(number)) else {
+            return;
+        };
+        let description = match &issue.link {
+            Some(link) => format!(
+                "\u{201c}{}\u{201d} moves to the closed list here and closes on {} at the next sync. It can be reopened.",
+                issue.title, link.connector
+            ),
+            None => format!(
+                "\u{201c}{}\u{201d} moves to the closed list. It can be reopened.",
+                issue.title
+            ),
+        };
+        // The project is held so a dialog left open across a switch closes the
+        // issue it was opened for, never the same number in another project.
+        let root = self.root.clone();
+        let view = cx.entity();
+        window.open_alert_dialog(cx, move |alert, _, _| {
+            let (root, view) = (root.clone(), view.clone());
+            alert
+                .title("Close this issue?")
+                .description(description.clone())
+                .button_props(
+                    DialogButtonProps::default()
+                        .ok_text("Close issue")
+                        .show_cancel(true),
+                )
+                .on_ok(move |_, _, cx| {
+                    view.update(cx, |view, cx| {
+                        if view.root == root {
+                            view.set_open(number, false, cx);
+                        }
+                    });
+                    true
+                })
+        });
+    }
+
+    /// Find issue `number`'s address on its forge, then hand it to `then` —
+    /// opening it, copying it. Asked of the forge each time rather than built
+    /// here, since the forge is the one that knows where a moved repository
+    /// went.
+    fn with_url(
+        &mut self,
+        number: u64,
+        then: impl FnOnce(String, &mut App) + 'static,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(root) = self.root.clone() else {
+            return;
+        };
+        let Some(state) = self.roots.get(&root) else {
+            return;
+        };
+        let Some(link) = state
+            .issues
+            .as_ref()
+            .and_then(|kept| kept.get(number))
+            .and_then(|issue| issue.link.clone())
+        else {
+            return;
+        };
+        let Some(forge) = state.forge.filter(|forge| forge.name() == link.connector) else {
+            self.status = Some(format!(
+                "{} {} cannot be reached from this project",
+                link.connector, link.reference
+            ));
+            cx.notify();
+            return;
+        };
+        cx.spawn(async move |view, cx| {
+            let url = cx
+                .background_executor()
+                .spawn(async move { forge.issue_url_blocking(&root, &link.key) })
+                .await;
+            let _ = view.update(cx, |view: &mut Self, cx| match url {
+                Ok(url) => then(url, cx),
+                Err(why) => {
+                    view.status = Some(why);
+                    cx.notify();
+                }
+            });
+        })
+        .detach();
+    }
+
     fn set_open(&mut self, number: u64, open: bool, cx: &mut Context<Self>) {
         let now = issues::now();
         self.change(
@@ -542,7 +688,7 @@ impl IssuesView {
             return hint("Reading issues…", cx);
         };
 
-        let list = self.list(&issues, cx);
+        let list = self.list(&issues, window, cx);
         let detail = self.detail(&root, &issues, window, cx);
         div()
             .flex_1()
@@ -562,214 +708,6 @@ impl IssuesView {
                     )
                     .child(resizable_panel().child(detail)),
             )
-            .into_any_element()
-    }
-
-    /// The list: a header with the way to start a new issue, then a row per
-    /// issue, open ones first.
-    fn list(&self, issues: &Issues, cx: &mut Context<Self>) -> AnyElement {
-        let listed = issues.listed();
-        let open = listed.iter().filter(|i| i.open).count();
-        let selected = self
-            .root
-            .as_ref()
-            .and_then(|root| self.roots.get(root))
-            .and_then(|state| state.selected);
-        let muted = cx.theme().muted_foreground;
-        let header = div()
-            .h_flex()
-            .items_center()
-            .gap_2()
-            .w_full()
-            .flex_none()
-            .px_2()
-            .py_1()
-            .border_b_1()
-            .border_color(cx.theme().border)
-            .child(
-                div()
-                    .flex_1()
-                    .min_w_0()
-                    .truncate()
-                    .text_xs()
-                    .text_color(muted)
-                    .child(format!("{open} open, {} closed", listed.len() - open)),
-            )
-            .child(
-                action("issues-new")
-                    .xsmall()
-                    .ghost()
-                    .icon(Icon::new(IconName::Plus))
-                    .label("New issue")
-                    .on_click(cx.listener(|view, _: &ClickEvent, window, cx| {
-                        view.open_form(None, window, cx)
-                    })),
-            );
-
-        let bar = self.sync_bar(issues, cx);
-        let rows: Vec<AnyElement> = listed
-            .iter()
-            .take(LIST_CAP)
-            .map(|issue| self.row(issue, selected == Some(issue.number), cx))
-            .collect();
-        let cut = listed.len().saturating_sub(LIST_CAP);
-
-        div()
-            .size_full()
-            .v_flex()
-            .border_r_1()
-            .border_color(cx.theme().border)
-            .child(header)
-            .children(bar)
-            .child(
-                div()
-                    .id("issues-list")
-                    .flex_1()
-                    .min_h_0()
-                    .v_flex()
-                    .p_1()
-                    .overflow_y_scroll()
-                    .when(listed.is_empty(), |list| {
-                        list.child(
-                            div()
-                                .px_2()
-                                .py_1()
-                                .text_xs()
-                                .text_color(muted)
-                                .child("No issues yet"),
-                        )
-                    })
-                    .children(rows)
-                    .when(cut > 0, |list| {
-                        list.child(
-                            div()
-                                .px_2()
-                                .py_1()
-                                .text_xs()
-                                .text_color(muted)
-                                .child(format!("… {cut} more not shown")),
-                        )
-                    }),
-            )
-            .into_any_element()
-    }
-
-    /// The line under the list's header saying whether this project is kept in
-    /// step with its forge, and the controls for it. Drawn only where a forge
-    /// serves the project — elsewhere there is nothing to be in step with.
-    fn sync_bar(&self, issues: &Issues, cx: &mut Context<Self>) -> Option<AnyElement> {
-        let state = self.roots.get(self.root.as_ref()?)?;
-        let forge = state.forge?;
-        let on = issues.in_step_with(forge.name());
-        let line = match (&state.synced, on, state.syncing) {
-            (_, true, true) => format!("Syncing with {}…", forge.name()),
-            (Some((_, said)), true, false) => said.clone(),
-            (None, true, false) => format!("Kept in step with {}", forge.name()),
-            (_, false, _) => format!("Not kept in step with {}", forge.name()),
-        };
-        let bar = div()
-            .h_flex()
-            .items_center()
-            .gap_1()
-            .w_full()
-            .flex_none()
-            .px_2()
-            .py_1()
-            .border_b_1()
-            .border_color(cx.theme().border)
-            .child(
-                div()
-                    .flex_1()
-                    .min_w_0()
-                    .truncate()
-                    .text_xs()
-                    .text_color(cx.theme().muted_foreground)
-                    .child(line),
-            );
-        Some(if on {
-            // Not offered while one is running: pressed then, it would do
-            // nothing, and a control that answers with nothing reads as broken.
-            bar.when(!state.syncing, |bar| {
-                bar.child(
-                    action("issues-sync-now")
-                        .xsmall()
-                        .ghost()
-                        .label("Sync now")
-                        .on_click(cx.listener(|view, _: &ClickEvent, _, cx| view.sync(true, cx))),
-                )
-            })
-            .child(
-                action("issues-sync-off")
-                    .xsmall()
-                    .ghost()
-                    .label("Stop")
-                    .tooltip("Stop keeping these issues in step; the links are kept")
-                    .on_click(
-                        cx.listener(|view, _: &ClickEvent, _, cx| view.set_syncing(false, cx)),
-                    ),
-            )
-            .into_any_element()
-        } else {
-            bar.child(
-                action("issues-sync-on")
-                    .xsmall()
-                    .ghost()
-                    .label(format!("Sync with {}", forge.name()))
-                    .tooltip("Bring in its open issues and keep both sides in step")
-                    .on_click(
-                        cx.listener(|view, _: &ClickEvent, _, cx| view.set_syncing(true, cx)),
-                    ),
-            )
-            .into_any_element()
-        })
-    }
-
-    fn row(&self, issue: &LocalIssue, selected: bool, cx: &mut Context<Self>) -> AnyElement {
-        let number = issue.number;
-        let muted = cx.theme().muted_foreground;
-        let conflicted = issue.link.as_ref().is_some_and(|l| l.conflict.is_some());
-        div()
-            .id(("issue-row", number))
-            .h_flex()
-            .items_center()
-            .gap_2()
-            .w_full()
-            .h_6()
-            .px_2()
-            .rounded(cx.theme().radius)
-            .text_sm()
-            .cursor_pointer()
-            .when(selected, |row| row.bg(cx.theme().accent))
-            .hover(|row| row.bg(cx.theme().accent.opacity(0.5)))
-            .child(
-                div()
-                    .flex_none()
-                    .text_xs()
-                    .text_color(muted)
-                    .child(format!("#{number}")),
-            )
-            .child(
-                div()
-                    .flex_1()
-                    .min_w_0()
-                    .truncate()
-                    // A closed issue stays in the list as a record, drawn
-                    // quieter than the work that is still open.
-                    .when(!issue.open, |title| title.text_color(muted).line_through())
-                    .child(issue.title.clone()),
-            )
-            // An issue waiting on a person is marked in words, in the warning
-            // ink: it is the one row nothing will move until somebody opens it.
-            .when(conflicted, |row| {
-                row.child(
-                    div()
-                        .flex_none()
-                        .text_xs()
-                        .text_color(status_ink(cx).warning)
-                        .child("decide"),
-                )
-            })
-            .on_click(cx.listener(move |view, _: &ClickEvent, _, cx| view.select(number, cx)))
             .into_any_element()
     }
 
@@ -799,31 +737,129 @@ impl IssuesView {
             .filter(|_| issue.link.is_none())
             .map(|forge| forge.name());
         let body = self.parsed_body(root, &issue, cx);
-        issue_view(&issue, body, publish_to, window, cx)
+        let working = working_in(&issue, &self.live).map(str::to_string);
+        issue_view(root, &issue, body, publish_to, working, window, cx)
     }
 
-    /// The selected issue's body as parsed markdown, parsed again only when
-    /// the issue has changed since the last time.
+    /// Put a request to the Workbench about the project on screen, once this
+    /// view is no longer being updated: the Workbench puts what it is asked to
+    /// every mode, this one included, and a press inside this view lands while
+    /// the view is mid-update.
+    fn ask_later(
+        &self,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+        put: impl FnOnce(&Ask, &Path, &mut Window, &mut App) + 'static,
+    ) {
+        let Some(root) = self.root.clone() else {
+            return;
+        };
+        let ask = self.ask.clone();
+        window.defer(cx, move |window, cx| put(&ask, &root, window, cx));
+    }
+
+    /// Start a session on the project on screen, in the checkout it is open
+    /// on, with issue `number` as its first message.
+    fn work_here(&mut self, number: u64, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(prompt) = self
+            .state_mut()
+            .and_then(|state| state.issues.as_ref()?.get(number))
+            .map(issues::work_here_prompt)
+        else {
+            return;
+        };
+        self.ask_later(window, cx, move |ask, root, window, cx| {
+            let request = Request::WorkIssueHere {
+                root,
+                number,
+                prompt: &prompt,
+            };
+            ask(&request, window, cx)
+        });
+    }
+
+    /// Put the conversation the agent named `session` on screen.
+    fn open_session(&mut self, session: String, window: &mut Window, cx: &mut Context<Self>) {
+        self.ask_later(window, cx, move |ask, _, window, cx| {
+            ask(&Request::OpenConversation(&session), window, cx)
+        });
+    }
+
+    /// Open `path`, relative to the project on screen, in the editor.
+    fn open_path(&mut self, path: &str, window: &mut Window, cx: &mut Context<Self>) {
+        let path = path.to_string();
+        self.ask_later(window, cx, move |ask, root, window, cx| {
+            ask(&Request::OpenFile(&root.join(&path)), window, cx)
+        });
+    }
+
+    /// The selected issue's body as parsed markdown and the files it names,
+    /// parsed again only when the issue has changed since the last time.
+    ///
+    /// Parsed at once as written, then again with the files it names made
+    /// links once a check off the UI loop has said which of them exist.
     fn parsed_body(
         &mut self,
         root: &Path,
         issue: &LocalIssue,
         cx: &mut Context<Self>,
-    ) -> Option<Entity<TextViewState>> {
+    ) -> Option<(Entity<TextViewState>, Vec<String>)> {
         if issue.body.is_empty() {
             return None;
         }
         let state = self.roots.get_mut(root)?;
-        match &state.body {
-            Some((n, at, parsed)) if *n == issue.number && *at == issue.updated => {
-                Some(parsed.clone())
-            }
-            _ => {
-                let parsed = cx.new(|cx| TextViewState::markdown(&issue.body, cx));
-                state.body = Some((issue.number, issue.updated, parsed.clone()));
-                Some(parsed)
-            }
+        if let Some(body) = &state.body
+            && body.number == issue.number
+            && body.updated == issue.updated
+        {
+            return Some((body.parsed.clone(), body.files.clone()));
         }
+        let parsed = cx.new(|cx| TextViewState::markdown(&issue.body, cx));
+        state.body = Some(Body {
+            number: issue.number,
+            updated: issue.updated,
+            parsed: parsed.clone(),
+            files: Vec::new(),
+        });
+        let (number, updated) = (issue.number, issue.updated);
+        let (root, text) = (root.to_path_buf(), issue.body.clone());
+        cx.spawn(async move |view, cx| {
+            let (linked, files) = cx
+                .background_executor()
+                .spawn({
+                    let root = root.clone();
+                    async move {
+                        let found = mentions::mentions(&text);
+                        let mut files: Vec<String> = Vec::new();
+                        for mention in &found {
+                            if !files.contains(&mention.path) && root.join(&mention.path).is_file()
+                            {
+                                files.push(mention.path.clone());
+                            }
+                        }
+                        (mentions::linked(&text, &found, &files), files)
+                    }
+                })
+                .await;
+            let _ = view.update(cx, |view: &mut Self, cx| {
+                let Some(body) = view
+                    .roots
+                    .get_mut(&root)
+                    .and_then(|state| state.body.as_mut())
+                else {
+                    return;
+                };
+                if body.number != number || body.updated != updated || files.is_empty() {
+                    return;
+                }
+                body.files = files;
+                body.parsed
+                    .update(cx, |parsed, cx| parsed.set_text(&linked, cx));
+                cx.notify();
+            });
+        })
+        .detach();
+        Some((parsed, Vec::new()))
     }
 }
 
@@ -855,10 +891,23 @@ fn said(report: &sync::Report, forge: &str) -> String {
 /// everything: the first failure in full, and how many more there were.
 fn failures(report: &sync::Report) -> Option<String> {
     let first = report.failures.first()?;
+    // The cause first: the footer shows this in one line, cut to fit, and a
+    // preamble there is what the cut would leave.
     Some(match report.failures.len() - 1 {
-        0 => format!("Not kept in step: {first}"),
-        more => format!("Not kept in step: {first} (and {more} more)"),
+        0 => first.clone(),
+        more => format!("{first} (and {more} more)"),
     })
+}
+
+/// The live session working `issue`: the latest conversation its history
+/// names that is among `live`, the ones with a session in this window.
+fn working_in<'a>(issue: &'a LocalIssue, live: &[String]) -> Option<&'a str> {
+    issue
+        .notes
+        .iter()
+        .rev()
+        .filter_map(|note| note.session.as_deref())
+        .find(|session| live.iter().any(|id| id == session))
 }
 
 /// Put `incoming` on screen unless what is there was written later. Two reads

@@ -9,7 +9,7 @@
 use gpui::{AnyView, App, Entity};
 use onehand_core::connector::Connector;
 use onehand_plugin_api::{PluginId, WorkbenchModeSpec};
-use onehand_plugin_host::{Request, WorkbenchMode};
+use onehand_plugin_host::{Ask, Request, WorkbenchMode};
 use std::path::Path;
 
 mod view;
@@ -26,9 +26,9 @@ pub struct Mode {
 }
 
 impl Mode {
-    pub fn new(connectors: &'static [&'static dyn Connector], cx: &mut App) -> Self {
+    pub fn new(connectors: &'static [&'static dyn Connector], ask: Ask, cx: &mut App) -> Self {
         Self {
-            view: IssuesView::new(connectors, cx),
+            view: IssuesView::new(connectors, ask, cx),
         }
     }
 }
@@ -64,6 +64,10 @@ impl WorkbenchMode for Mode {
             // longer than that.
             Request::Rescan | Request::Shown => {
                 self.view.update(cx, |view, cx| view.mark_stale(cx));
+                true
+            }
+            Request::LiveConversations(ids) => {
+                self.view.update(cx, |view, cx| view.set_live(ids, cx));
                 true
             }
             Request::ShowIssue(number) => {

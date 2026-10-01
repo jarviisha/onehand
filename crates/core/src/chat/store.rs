@@ -419,6 +419,15 @@ pub fn list_across(store: &Path, projects: &[PathBuf]) -> Vec<(PathBuf, ConvMeta
         .collect()
 }
 
+/// The conversation the agent named `session_id`, with the project root it ran
+/// in, whatever that project is — one whose folder has since left the
+/// workspace included. Blocking: it reads one `meta.json`.
+pub fn find_conversation(store: &Path, session_id: &str) -> Option<(PathBuf, ConvMeta)> {
+    let dir = conv_dir(store, session_id);
+    let meta = meta_at(&dir)?;
+    Some((PathBuf::from(&meta.root), describe(&dir, meta)))
+}
+
 /// Every conversation `keep` accepts by its project root and agent, with that
 /// root, newest first.
 fn list_where(store: &Path, keep: impl Fn(&str, &str) -> bool) -> Vec<(String, ConvMeta)> {

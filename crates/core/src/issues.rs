@@ -133,17 +133,59 @@ pub struct Link {
     pub conflict: Option<Snapshot>,
 }
 
-/// One thing said about an issue, and when.
+/// One thing said about an issue, and when: a run starting or ending on it, its
+/// state changing, a session taking it up.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Note {
     pub at: u64,
     pub text: String,
+    /// The conversation working the issue, by the agent's session id, for a
+    /// note that says one took it up — what lets the issue name the session
+    /// and open it again after onehand has restarted.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub session: Option<String>,
+}
+
+impl Note {
+    /// An issue closed or reopened at `now`, on the forge named `on` if the
+    /// change was made there rather than here.
+    fn state(open: bool, on: Option<&str>, now: u64) -> Self {
+        let did = if open { "Reopened" } else { "Closed" };
+        Note {
+            at: now,
+            text: match on {
+                Some(forge) => format!("{did} on {forge}"),
+                None => did.to_string(),
+            },
+            session: None,
+        }
+    }
 }
 
 impl LocalIssue {
+    /// How it came to be kept here, for the first line of its history, which
+    /// `created` dates: brought in from a forge, or opened here.
+    pub fn arrival(&self) -> String {
+        match (&self.imported_from, &self.link) {
+            (Some(forge), Some(link)) if &link.connector == forge => {
+                format!("Brought in from {forge} as {}", link.reference)
+            }
+            (Some(forge), _) => format!("Brought in from {forge}"),
+            (None, _) => "Opened here".to_string(),
+        }
+    }
+
     /// Its link to the connector named `name`, if it has one.
     pub(crate) fn link_on(&self, name: &str) -> Option<&Link> {
         self.link.as_ref().filter(|link| link.connector == name)
+    }
+
+    /// How a person names it: the forge's reference once it is on one. `None`
+    /// is a draft that has not left onehand. The number it is filed under here
+    /// is a key and nothing else — shown beside a forge's own, the two read as
+    /// two issues, and they disagree as soon as one was opened on the forge.
+    pub fn reference(&self) -> Option<&str> {
+        self.link.as_ref().map(|link| link.reference.as_str())
     }
 
     /// Whether it was written here — never linked to anything, never brought
@@ -163,7 +205,12 @@ impl LocalIssue {
         }
     }
 
-    fn apply(&mut self, said: &Snapshot) {
+    /// Take what `from` says of this issue, noting a change of state, since
+    /// one made on the forge is as much a part of its history as one made here.
+    fn apply(&mut self, said: &Snapshot, from: &str, now: u64) {
+        if self.open != said.open {
+            self.notes.push(Note::state(said.open, Some(from), now));
+        }
         self.title = said.title.clone();
         self.body = said.body.clone();
         self.open = said.open;
@@ -267,7 +314,27 @@ impl Issues {
         if issue.open != open {
             issue.open = open;
             issue.updated = now;
+            issue.notes.push(Note::state(open, None, now));
         }
+        Ok(())
+    }
+
+    /// Say on issue `number` that the conversation `session` took it up, in
+    /// the words `text`.
+    pub fn taken_up(
+        &mut self,
+        number: u64,
+        text: &str,
+        session: String,
+        now: u64,
+    ) -> Result<(), String> {
+        let issue = self.find_mut(number)?;
+        issue.notes.push(Note {
+            at: now,
+            text: text.to_string(),
+            session: Some(session),
+        });
+        issue.updated = now;
         Ok(())
     }
 
@@ -281,6 +348,7 @@ impl Issues {
         issue.notes.push(Note {
             at: now,
             text: text.to_string(),
+            session: None,
         });
         issue.updated = now;
         Ok(())
@@ -325,6 +393,7 @@ impl Issues {
         };
         let in_conflict = sync::merge(&link.base, &ours, &theirs).conflicts;
         link.base = theirs.clone();
+        let from = link.connector.clone();
         if !keep_mine {
             // Only what was in dispute: a field nobody disagreed about keeps
             // what it says here, and the next sync sends it.
@@ -332,7 +401,7 @@ impl Issues {
             for field in in_conflict {
                 field.take(&mut said, &theirs);
             }
-            issue.apply(&said);
+            issue.apply(&said, &from, now);
         }
         issue.updated = now;
         Ok(())
@@ -470,6 +539,45 @@ fn save_blocking(file: &Path, issues: &Issues) -> Result<(), String> {
         .map_err(|err| format!("{} could not be written: {err}", file.display()))
 }
 
+/// The prompt that works `issue` in the checkout the project is open on, with
+/// no branch or worktree of its own, and leaves what it changed for a person
+/// to read before anything is committed — the checkout is somebody's working
+/// copy, with whatever else they had going in it.
+pub fn work_here_prompt(issue: &LocalIssue) -> String {
+    let named = match &issue.link {
+        Some(link) => format!("{} issue {}", link.connector, link.reference),
+        None => "this issue, which is kept in onehand rather than on a forge".to_string(),
+    };
+    format!(
+        "Work {named} in this checkout.\n\n\
+         Title: {title}\n\n\
+         {body}\n\n\
+         ---\n\n\
+         Work on the branch that is checked out, in this directory.\n\n\
+         1. Do not create a branch or a worktree, and do not switch branches.\n\
+         2. Read the repository's own agent instructions, and whatever they point at, \
+         and follow its conventions.\n\
+         3. Run the repository's checks.\n\
+         4. Leave your changes uncommitted for review: do not commit, push or open a \
+         pull request.\n\
+         5. If the issue needs a decision from a person, ask it with your tool for \
+         asking the user a question. Do not guess.\n",
+        title = issue.title,
+        body = issue.body.trim(),
+    )
+}
+
+/// Say on the issue `number` kept in `file` that the conversation `session`
+/// took it up, in the words `text`. Blocking: one read-change-write.
+pub fn taken_up_blocking(
+    file: &Path,
+    number: u64,
+    text: &str,
+    session: String,
+) -> Result<(), String> {
+    update_blocking(file, |kept| kept.taken_up(number, text, session, now())).map(drop)
+}
+
 /// The time now, in the unit issues are stamped in.
 pub fn now() -> u64 {
     std::time::SystemTime::now()
@@ -514,6 +622,69 @@ mod tests {
         let capped = open_across(files, 2);
         assert_eq!(capped.rows.len(), 2);
         assert_eq!(capped.left_out, 1);
+    }
+
+    #[test]
+    fn an_issue_is_named_by_its_forge_reference_and_a_draft_by_nothing() {
+        let mut issues = Issues::default();
+        let n = issues.create(draft("a"), 1).unwrap();
+        assert_eq!(issues.get(n).unwrap().reference(), None);
+        issues.find_mut(n).unwrap().link = Some(Link {
+            connector: "GitHub".into(),
+            key: "6".into(),
+            reference: "#6".into(),
+            base: Snapshot::default(),
+            conflict: None,
+        });
+        // Filed here as #1, known everywhere as GitHub's #6.
+        assert_eq!(issues.get(n).unwrap().reference(), Some("#6"));
+        // Written here and published: it arrived here, not from the forge.
+        assert_eq!(issues.get(n).unwrap().arrival(), "Opened here");
+        issues.find_mut(n).unwrap().imported_from = Some("GitHub".into());
+        assert_eq!(
+            issues.get(n).unwrap().arrival(),
+            "Brought in from GitHub as #6"
+        );
+    }
+
+    #[test]
+    fn a_change_of_state_is_noted_once_with_its_time() {
+        let mut issues = Issues::default();
+        let n = issues.create(draft("a"), 1).unwrap();
+        issues.set_open(n, false, 5).unwrap();
+        issues.set_open(n, false, 6).unwrap();
+        issues.set_open(n, true, 9).unwrap();
+        let said: Vec<(u64, &str)> = issues
+            .get(n)
+            .unwrap()
+            .notes
+            .iter()
+            .map(|note| (note.at, note.text.as_str()))
+            .collect();
+        assert_eq!(said, [(5, "Closed"), (9, "Reopened")]);
+    }
+
+    #[test]
+    fn a_session_taking_an_issue_up_is_kept_with_it() {
+        let mut issues = Issues::default();
+        let n = issues.create(draft("a"), 1).unwrap();
+        issues.taken_up(n, "Worked here", "s-1".into(), 4).unwrap();
+        let note = issues.get(n).unwrap().notes.last().unwrap().clone();
+        assert_eq!((note.at, note.session.as_deref()), (4, Some("s-1")));
+        // A note with no session is written without the field, so a file from
+        // before it existed reads back the same.
+        let text = serde_json::to_string(&issues).unwrap();
+        assert_eq!(text.matches("\"session\"").count(), 1);
+    }
+
+    #[test]
+    fn working_here_keeps_to_the_checkout_and_commits_nothing() {
+        let mut issue = Issues::default();
+        let n = issue.create(draft("Fix the footer"), 1).unwrap();
+        let prompt = work_here_prompt(issue.get(n).unwrap());
+        assert!(prompt.contains("Title: Fix the footer"));
+        assert!(prompt.contains("Do not create a branch or a worktree"));
+        assert!(prompt.contains("do not commit, push or open a pull request"));
     }
 
     #[test]

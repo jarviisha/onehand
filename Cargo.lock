@@ -4796,6 +4796,7 @@ dependencies = [
 name = "onehand-workbench-issues"
 version = "0.1.0"
 dependencies = [
+ "chrono",
  "gpui",
  "gpui-component",
  "onehand-core",

@@ -456,3 +456,13 @@ fn a_run_that_ended_waiting_says_the_question() {
     let quiet = report(&Ending::TakenOver, &Ok(Verdict::NoPullRequest), "b");
     assert!(!quiet.contains('>'), "{quiet}");
 }
+
+#[test]
+fn an_issue_is_shown_by_its_forge_number_and_a_kept_one_as_a_draft() {
+    assert_eq!(forge().shown(&issue(7, "a")), "#7");
+    let (kept, dir) = local("shown", &[]);
+    assert_eq!(kept.shown(&issue(3, "a")), "Draft");
+    // Kept here and in step with the forge: the forge's number, never ours.
+    assert_eq!(kept.shown(&issue(3, "a").at("#41".into())), "#41");
+    let _ = std::fs::remove_dir_all(dir);
+}

@@ -18,6 +18,7 @@ use std::path::PathBuf;
 mod boot;
 mod docks;
 mod drafts;
+mod issue_work;
 mod remote_runs;
 mod render;
 mod roots;
@@ -252,6 +253,9 @@ pub struct Shell {
     /// The rail's session rows as of the last repaint, so a chat notify that
     /// changes nothing the rail shows does not cost a rail rebuild.
     rail_sessions: Vec<(u64, RailSession)>,
+    /// The conversations with a live session here, as the Workbench was last
+    /// told them.
+    live_conversations: Vec<String>,
     /// Which of the rail's two lists is showing.
     ///
     /// Not persisted: it is where the user is looking right now, and a launch
