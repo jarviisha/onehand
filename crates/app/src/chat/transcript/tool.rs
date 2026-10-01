@@ -2,9 +2,8 @@ use super::fold_key;
 use super::metrics::{
     BLOCK_INSET, CODE_LH, CODE_TEXT, COMMAND_OPEN_SHARE, COPY_ICON, COPY_SIZE, DETAIL_INSET,
     DIFF_NUM_PAD, DIFF_NUM_W, DIFF_SIGN_W, DIFF_TEXT_PAD, FOLD_H, FOLD_ROW, FRAME_PAD, LARGE_DIFF,
-    MAX_DIFF_LINES, MAX_MONO_LINES, MONO_ADVANCE, OBJECT_TEXT, PILL_PAD_X, PILL_PAD_Y,
-    PREVIEW_DIFF, PREVIEW_OUT, ROW_PAD_X, SMOKE_DIFF, SMOKE_OUT, STACK_GAP, TIGHT_GAP,
-    radius_block, radius_control,
+    MONO_ADVANCE, OBJECT_TEXT, PILL_PAD_X, PILL_PAD_Y, PREVIEW_DIFF, PREVIEW_OUT, ROW_PAD_X,
+    SMOKE_DIFF, SMOKE_OUT, STACK_GAP, TIGHT_GAP, radius_block, radius_control,
 };
 use super::parts::{
     ActivityRow, Object, RowMark, activity_row, copy_button, line_counts, plain_box, row_note,
@@ -25,6 +24,13 @@ use onehand_core::chat::activity;
 use onehand_core::chat::{ToolItem, TranscriptItemId};
 use onehand_core::diff::Row as DiffRow;
 use std::path::Path;
+
+/// Diff lines drawn per tool card, **shared across all its hunks** — a
+/// MultiEdit touching twenty files must not cost twenty times the budget.
+const MAX_DIFF_LINES: usize = 200;
+
+/// Lines of a mono output well before the tail is dropped.
+const MAX_MONO_LINES: usize = 60;
 
 // ── tool call ───────────────────────────────────────────────────────────────
 
@@ -78,6 +84,7 @@ pub(super) fn tool(
         _ if presented.subject.trim().is_empty() => None,
         _ => Some(Object::path(path_for_display(&root, &presented.subject))),
     };
+
     let meta = match (t.call.status, deleted) {
         // **The code where there is one, the word where there is not.** Only a
         // command run through the terminal extension reports a status, so a

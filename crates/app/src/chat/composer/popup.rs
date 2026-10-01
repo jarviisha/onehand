@@ -125,7 +125,7 @@ pub fn popup_room(panel: gpui::Pixels, reserved: gpui::Pixels, rem: gpui::Pixels
 /// Both halves are asked for by name rather than inferred, because only the
 /// caller knows which of them it is about to draw: the footer belongs to a
 /// completion and the rail to the one config group promoted out of the list.
-pub(in crate::chat) fn popup_chrome(footer: bool, rail: bool) -> Rems {
+pub(super) fn popup_chrome(footer: bool, rail: bool) -> Rems {
     let mut h = POPUP_HEADER_H.0 + POPUP_INSET_H.0;
     if footer {
         h += POPUP_FOOTER_H.0;
@@ -184,11 +184,7 @@ const THUMB_LANE: Rems = rems(0.75);
 /// rows if the chrome happens to be — which nothing arranged and no test
 /// checked. Floored here it is exact whatever the chrome comes to, so the
 /// chrome estimate stops being load-bearing.
-pub(in crate::chat) fn popup_list_h(
-    room: gpui::Pixels,
-    rem: gpui::Pixels,
-    chrome: Rems,
-) -> gpui::Pixels {
+pub(super) fn popup_list_h(room: gpui::Pixels, rem: gpui::Pixels, chrome: Rems) -> gpui::Pixels {
     let row = POPUP_ROW_H.to_pixels(rem);
     let left = room - chrome.to_pixels(rem);
     (left / row).floor().max(1.) * row
@@ -212,7 +208,7 @@ pub(in crate::chat) fn popup_list_h(
 /// The headings and the footer sentences stay at the control height — they are
 /// labels rather than rows, and a heading as tall as the things under it reads
 /// as one of them.
-pub(in crate::chat) const POPUP_ROW_H: Rems = rems(2.);
+pub(super) const POPUP_ROW_H: Rems = rems(2.);
 /// How the label over a run of rows is lettered, and how tall its line stands.
 ///
 /// A step under the smallest size anything else in this popup is set at. The

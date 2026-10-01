@@ -1,7 +1,7 @@
 use super::fold_key;
 use super::metrics::{
-    BUTTON_H, FRAME_PAD, LINE_H, MAX_TODO_ITEMS, PART_GAP, PLAN_BAR_H, PLAN_BOX, PLAN_DOT,
-    STACK_GAP, TEXT_PAD_X, WORK_TEXT, radius_block, radius_tag,
+    BUTTON_H, FRAME_PAD, LINE_H, PART_GAP, PLAN_BAR_H, PLAN_BOX, PLAN_DOT, STACK_GAP, TEXT_PAD_X,
+    WORK_TEXT, radius_block, radius_tag,
 };
 use super::parts::chevron_slot;
 use crate::chat::session::ChatSession;
@@ -11,6 +11,9 @@ use gpui_component::button::ButtonVariants as _;
 use gpui_component::{ActiveTheme, Icon, IconName, StyledExt};
 use onehand_core::acp::PlanStatus;
 use onehand_core::chat::{PlanItem, TranscriptItemId};
+
+/// Plan entries drawn before the list is truncated.
+const MAX_TODO_ITEMS: usize = 50;
 
 // ── plan / TodoWrite ────────────────────────────────────────────────────────
 
@@ -51,6 +54,7 @@ pub(super) fn plan(
                 PlanStatus::InProgress => crate::theme::status_ink(cx).warning,
                 PlanStatus::Pending => cx.theme().muted_foreground,
             };
+
             div()
                 .h_flex()
                 .items_center()

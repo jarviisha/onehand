@@ -72,8 +72,9 @@ installer and the licences into a tarball attached to a GitHub pre-release. Noth
 crates.io and nothing can — a git dependency with no rev is not publishable there, so tagged tarballs
 are the only channel. `onehand --version` and the foot of Settings' nav both name the build.
 
-Tests are `#[cfg(test)]` unit-test modules, inline or in a sibling `tests.rs` (`foo.rs` declares
-`mod tests;`, the body lives in `foo/tests.rs` and still reaches private items through `super::`).
+Tests are `#[cfg(test)]` unit-test modules, inline or in a file of their own beside the module
+(`foo.rs` declares `mod tests;`, the body lives in `foo/tests.rs` and still reaches private items
+through `super::`; `config.rs` keeps a second such file, `config/persist_tests.rs`).
 There is no `tests/` directory.
 
 ## Architecture
@@ -614,8 +615,8 @@ caret with it. The rules that decide are core's (`onehand_core::unattended`); th
   caches (parsed markdown per block, decoded images). The pump is **held**, not detached: dropping the
   session drops the task, which drops the receiver, which kills the adapter. Nothing else has to
   remember to shut an agent down.
-- `transcript.rs` — one element per `ChatItem`, following DESIGN-ANSWER.md §5. Bounded (§8).
-- `composer.rs` — the card the pane mounts: the input, `@`/`/` completion, attachments,
+- `transcript.rs` (and one file per block kind under `transcript/`) — one element per `ChatItem`, following DESIGN-ANSWER.md §5. Bounded (§8).
+- `composer.rs` (completion, popup, rows, attachments and card under `composer/`) — the card the pane mounts: the input, `@`/`/` completion, attachments,
   agent-advertised selectors and Send. It draws itself and reports the send press as an event,
   because which of Send and Stop was pressed is a question about the turn, not about the click.
   **Everything that floats over it is built here and drawn as one object** — the card, a parked
@@ -652,7 +653,7 @@ caret with it. The rules that decide are core's (`onehand_core::unattended`); th
   the permission mode on the right — left is the project, right is the turn. The branch is a
   control rather than a label, emitting `ChatPaneEvent::Project` so the shell opens the same menu
   the rail's project rows carry, branch rename included.
-- `pane.rs` — what the shell mounts: session switching, the resume picker, the project page, unseen
+- `pane.rs` (sessions, bridge, pages, header, body and runs under `pane/`) — what the shell mounts: session switching, the resume picker, the project page, unseen
   badges, and the run plan the virtualized list reads.
   **The transcript stops being drawn at the composer's middle** and fades into the surface over the
   last few lines before it (`SMOKE`): the overlay is transparent around its surfaces, so an unclipped
@@ -1165,7 +1166,7 @@ hard-coded to `None`.
 [crates/app/src/shell.rs](../crates/app/src/shell.rs) owns the window: the rail plus a `DockArea` whose
 centre is the chat, right dock the Workbench, bottom dock the terminal.
 
-- The **rail** ([rail.rs](../crates/app/src/rail.rs), gpui-component's `Sidebar`) is app chrome and
+- The **rail** ([rail.rs](../crates/app/src/rail.rs) and `rail/`, gpui-component's `Sidebar`) is app chrome and
   lives *outside* the dock, so a layout restore cannot lose it. **It is drawn in the ramp's well and
   is now the only panel in the window lifted off the reading surface**, asked for at the call site
   rather than left to the `sidebar` token, which ships a value of its own and would bring the panel
@@ -1793,7 +1794,7 @@ rail hidden; the command palette remains unimplemented.
   creating a workspace on a folder that already has one **opens it** rather than starting a second one
   nothing distinguishes from the first. *Open workspace…* tries the picked folder and then that
   derived storage, because the folder a user can find in a picker is the project, not the data root.
-- **The overwrite guard is one function** (`shell::storage::workspace_in`): a folder already holding a
+- **The overwrite guard is one function** (`workspace_in` in `shell/storage.rs`): a folder already holding a
   workspace, a folder free to write into, and a config that exists and cannot be read — that last
   never reading as the second, or a workspace with one bad character in its file is a workspace
   deleted by a folder picker. The sentence refusing it lives there too, so the two write paths cannot
@@ -1808,7 +1809,7 @@ means a partial file overrides only the keys it sets. The default agent is Claud
 file the next launch reads.
 
 `appearance` is the one key the settings dialog writes: `system` (the default) · `light` · `dark`.
-There are two palettes and the app only chooses which one is loaded — `shell::settings_dialog::apply_appearance`
+There are two palettes and the app only chooses which one is loaded — `apply_appearance` (`shell/settings_dialog.rs`)
 is the single place that does it, at boot and on every change. Each is the library's own config with
 the app's surface ramp written over it (`crate::theme::install`, run once before the first mode is
 chosen); see the theme module for what is ours and what is inherited. **A token the library keeps
@@ -1844,7 +1845,7 @@ optional `token_env`, and **it deliberately has no key for the token**; see the 
 for where that is read from and why it is not here. Declaration order does not bite for this one,
 since it is a table like `[font]` and only the bare `appearance` key has to lead.
 
-`[font]` carries exactly one key, `monospace`, which `shell::boot::use_installed_mono` takes as the first
+`[font]` carries exactly one key, `monospace`, which `use_installed_mono` (`shell/boot.rs`) takes as the first
 preference when it picks a mono family the machine actually has (see the font gotcha in
 [rules-and-gotchas.md](rules-and-gotchas.md)). It used to
 carry a body size, a master zoom, a sans family and a fallback list, and there was an `[icons]` table

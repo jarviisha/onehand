@@ -12,7 +12,7 @@
 use super::composer::{Composer, ComposerEvent};
 use super::conversation::Conversation;
 use super::session::ChatSession;
-use super::transcript::{self};
+use super::transcript;
 use gpui::{
     App, AppContext, Context, Entity, EventEmitter, FocusHandle, Focusable, InteractiveElement,
     IntoElement, ParentElement, Rems, Render, SharedString, Styled, Window, div, rems,
@@ -24,9 +24,9 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 
 mod body;
+mod bridge;
 mod header;
 mod project_page;
-mod remote;
 mod runs;
 mod sessions;
 mod workspace_page;

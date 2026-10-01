@@ -42,7 +42,7 @@ mod workspace;
 use project::folder_row;
 pub use project::{pick_item, unattended_item};
 use row::KeyedMenu;
-pub(crate) use row::{rail_row, rail_row_marked};
+use row::{rail_row, rail_row_marked};
 use session::session_rows;
 pub(crate) use session::{signal_mark, signal_word};
 pub(crate) use workspace::ellipsize_front;

@@ -1,8 +1,8 @@
 use super::Room;
 use super::metrics::{
-    BUBBLE_PAD_X, BUBBLE_PAD_Y, BUBBLE_TAIL_GAP, BUTTON_H, HAIR_GAP, MARK_SIZE,
-    MAX_ATTACHMENT_ROWS, STACK_GAP, THUMB_H, THUMB_W, TIGHT_GAP, USER_BUBBLE_MAX,
-    USER_BUBBLE_MAX_NARROW, radius_block, radius_bubble, radius_control,
+    BUBBLE_PAD_X, BUBBLE_PAD_Y, BUBBLE_TAIL_GAP, BUTTON_H, HAIR_GAP, MARK_SIZE, STACK_GAP, THUMB_H,
+    THUMB_W, TIGHT_GAP, USER_BUBBLE_MAX, USER_BUBBLE_MAX_NARROW, radius_block, radius_bubble,
+    radius_control,
 };
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
@@ -11,6 +11,9 @@ use gpui::{
 };
 use gpui_component::{ActiveTheme, Icon, IconName, StyledExt};
 use onehand_core::chat::UserMsg;
+
+/// Attachment rows drawn under a prompt before the rest are counted.
+const MAX_ATTACHMENT_ROWS: usize = 8;
 
 // ── user prompt — filled, shrink-to-fit, against the right edge ─────────────
 

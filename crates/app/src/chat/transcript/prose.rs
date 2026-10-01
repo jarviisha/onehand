@@ -1,21 +1,24 @@
 use super::fold_key;
 use super::metrics::{
-    DETAIL_INSET, FENCE_LEADING, FENCE_TEXT, FRAME_PAD, HAIR_GAP, MAX_CODE_BLOCK_H, OBJECT_TEXT,
-    PARAGRAPH_GAP, PART_GAP, ROW_PAD_X, STACK_GAP, TEXT, TEXT_PAD_X, TEXT_PAD_Y, TIGHT_GAP,
-    radius_block,
+    DETAIL_INSET, FENCE_LEADING, FENCE_TEXT, FRAME_PAD, HAIR_GAP, OBJECT_TEXT, PARAGRAPH_GAP,
+    PART_GAP, ROW_PAD_X, STACK_GAP, TEXT, TEXT_PAD_X, TEXT_PAD_Y, TIGHT_GAP, radius_block,
 };
 use super::parts::{ActivityRow, Object, RowMark, activity_row, copy_button, copy_turn_button};
 use super::strip::group_icon;
 use crate::chat::session::ChatSession;
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
-    App, ClickEvent, Entity, HighlightStyle, InteractiveElement, IntoElement, ParentElement,
+    App, ClickEvent, Entity, HighlightStyle, InteractiveElement, IntoElement, ParentElement, Rems,
     StyleRefinement, Styled, Window, div, relative, rems,
 };
 use gpui_component::text::{TextView, TextViewStyle};
 use gpui_component::{ActiveTheme, StyledExt};
 use onehand_core::chat::activity;
 use onehand_core::chat::{Md, Thought, TranscriptItemId, TurnAnswer};
+
+/// Height a fenced code block in prose is allowed before it scrolls inside
+/// itself instead of pushing the rest of the answer off screen.
+const MAX_CODE_BLOCK_H: Rems = rems(22.5);
 
 // ── agent answer ────────────────────────────────────────────────────────────
 

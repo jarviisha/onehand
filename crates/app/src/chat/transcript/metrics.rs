@@ -2,28 +2,6 @@ use gpui::{App, Rems, rems};
 use gpui_component::ActiveTheme;
 use onehand_core::chat::COMMAND_FOLD_LINES;
 
-/// Diff lines drawn per tool card, **shared across all its hunks** — a
-/// MultiEdit touching twenty files must not cost twenty times the budget.
-pub(super) const MAX_DIFF_LINES: usize = 200;
-/// Lines of a mono output well before the tail is dropped.
-pub(super) const MAX_MONO_LINES: usize = 60;
-/// Plan entries drawn before the list is truncated.
-pub(super) const MAX_TODO_ITEMS: usize = 50;
-/// Attachment rows drawn under a prompt before the rest are counted.
-pub(super) const MAX_ATTACHMENT_ROWS: usize = 8;
-/// Height a fenced code block in prose is allowed before it scrolls inside
-/// itself instead of pushing the rest of the answer off screen.
-pub(super) const MAX_CODE_BLOCK_H: Rems = rems(22.5);
-/// Height the body of a blocking card may occupy before it scrolls inside
-/// itself.
-///
-/// Set a step under the transcript's other bounded card because what it holds
-/// back is different: that one is a detail somebody chose to unfold, this one is
-/// standing between the conversation and everything after it. The number is what
-/// leaves the card's header, its body and the buttons that answer it on one
-/// screen together at the sizes around them — which is the whole point of
-/// bounding it, and is why it is a height rather than a count of lines or rows.
-pub(super) const MAX_BLOCKING_BODY_H: Rems = rems(16.);
 /// The question card's side padding, which its choices' scroll frame reaches
 /// back through to put the thumb on the card's edge.
 pub(super) const ASK_INSET: Rems = rems(1.);

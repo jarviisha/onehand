@@ -1,8 +1,8 @@
 use super::fold_key;
 use super::metrics::{
     BUTTON_H, CHEVRON_MARK, CHEVRON_SLOT, CODE_LH, CONTROL_ROW, DETAIL_INSET, DETAIL_OPEN_H,
-    FRAME_PAD, GLYPH_DROP, KIND_ICON, MARK_SIZE, MAX_BLOCKING_BODY_H, OBJECT_TEXT, PART_GAP,
-    PILL_H, ROW_PAD_X, ROW_PAD_Y, STATUS_DOT, TIGHT_GAP, VERB_TEXT, radius_block, radius_control,
+    FRAME_PAD, GLYPH_DROP, KIND_ICON, MARK_SIZE, OBJECT_TEXT, PART_GAP, PILL_H, ROW_PAD_X,
+    ROW_PAD_Y, STATUS_DOT, TIGHT_GAP, VERB_TEXT, radius_block, radius_control,
 };
 use crate::chat::session::ChatSession;
 use gpui::prelude::FluentBuilder as _;
@@ -17,6 +17,17 @@ use gpui_component::spinner::Spinner;
 use gpui_component::{ActiveTheme, Icon, IconName, Sizable as _, StyledExt};
 use onehand_core::acp::{ToolKind, ToolStatus};
 use onehand_core::chat::TranscriptItemId;
+
+/// Height the body of a blocking card may occupy before it scrolls inside
+/// itself.
+///
+/// Set a step under the transcript's other bounded card because what it holds
+/// back is different: that one is a detail somebody chose to unfold, this one is
+/// standing between the conversation and everything after it. The number is what
+/// leaves the card's header, its body and the buttons that answer it on one
+/// screen together at the sizes around them — which is the whole point of
+/// bounding it, and is why it is a height rather than a count of lines or rows.
+const MAX_BLOCKING_BODY_H: Rems = rems(16.);
 
 /// The body of a blocking card, bounded and scrolling inside itself.
 ///
@@ -726,11 +737,7 @@ pub(super) fn row_note(
 }
 
 /// A word in a ring: the one shape a state takes wherever one is named.
-pub(in crate::chat) fn pill(
-    label: impl Into<SharedString>,
-    ink: gpui::Hsla,
-    cx: &App,
-) -> gpui::Div {
+pub(super) fn pill(label: impl Into<SharedString>, ink: gpui::Hsla, cx: &App) -> gpui::Div {
     div()
         .flex_none()
         .h(PILL_H)
