@@ -73,7 +73,7 @@ fn the_pinned_header_names_what_the_popup_is() {
 }
 
 #[test]
-fn a_list_is_cappanel_and_never_below_its_floor() {
+fn a_list_is_capped_by_the_panel_and_never_below_its_floor() {
     use super::popup::POPUP_MIN_H;
     use super::popup_room;
     use gpui::px;
