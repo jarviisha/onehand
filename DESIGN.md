@@ -642,7 +642,7 @@ Every code, diff and output renderer draws **one element per line**, so unbounde
 content freezes the UI. Each cap is a named constant beside the renderer it
 bounds: diff lines per card across all hunks, mono output lines per well, the
 fold threshold beneath them, terminal lines, plan items, attachment rows and code
-block height in `crates/app/src/chat/transcript.rs`; completion rows and tray
+block height in the block files under `crates/app/src/chat/transcript/`; completion rows and tray
 chips in the composer; mention candidates in the session; and `MAX_TERM_BYTES` at
 parse time in core, which bounds the model rather than the view.
 

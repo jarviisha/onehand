@@ -13,7 +13,8 @@ block type the chat renders, how it folds, and how it behaves mid-stream.
 > ([DESIGN.md](DESIGN.md) §3–§4), and the numeric caps live as named constants
 > next to the renderers they bound (§8).
 >
-> The renderer is [crates/app/src/chat/transcript.rs](crates/app/src/chat/transcript.rs);
+> The renderer is [crates/app/src/chat/transcript.rs](crates/app/src/chat/transcript.rs) and one
+> file per block kind beside it under `crates/app/src/chat/transcript/`;
 > the model it draws is `onehand_core::chat` (P3-A moved it there, so both the
 > model and this document outlived the front end they were written for).
 

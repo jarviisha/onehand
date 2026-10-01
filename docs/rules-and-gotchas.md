@@ -85,7 +85,7 @@ The full text behind the short forms in `CLAUDE.md`, with the reason for each.
   `mono_font_family` is one hard-coded name per platform, and on Linux it is DejaVu Sans Mono — which
   plenty of distributions do not ship. Every well in the transcript then drew in the body face while
   the code drawing it was, correctly, asking for mono, with nothing on screen or in the log to say
-  the request went nowhere. `shell::use_installed_mono` picks a family from
+  the request went nowhere. `use_installed_mono` (`shell/boot.rs`) picks a family from
   `cx.text_system().all_font_names()` once at boot; the choosing rule is
   `onehand_core::config::resolve_monospace`, which is pure and tested. **Never assume a family name
   resolves** — check it against the enumeration. The terminal is the sharpest case: its grid is

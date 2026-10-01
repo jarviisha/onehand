@@ -54,7 +54,8 @@ ACP_CMD="node crates/core/examples/mock_ask_agent.js" cargo run -p onehand-core 
   command = "node"
   args = ["crates/core/examples/mock_ui_agent.js"]
   ```
-- **Tests:** inline `#[cfg(test)]` modules only; there is no `tests/` directory.
+- **Tests:** unit tests live in `#[cfg(test)]` modules, inline or in a file of their own beside
+  the module (`foo.rs` + `foo/tests.rs`); there is still no `tests/` directory.
 - **CI:** fmt, core tests, app tests and clippy, all `--locked`, because `Cargo.lock` is the
   only pin for revless `gpui`. A `v*` tag cuts a GitHub pre-release tarball. Nothing goes to
   crates.io.
@@ -158,7 +159,7 @@ ACP_CMD="node crates/core/examples/mock_ask_agent.js" cargo run -p onehand-core 
 - **Key bindings beat `on_key_down`**, matched against the focus context stack first. A binding
   can silently steal a key a PTY needs. `!Ctx` means "nowhere in the stack".
 - **`with_rem_size` goes in all three element phases** (layout, prepaint, paint).
-- **Font families fail silently.** Pick from `all_font_names()` (`shell::use_installed_mono`,
+- **Font families fail silently.** Pick from `all_font_names()` (`use_installed_mono` (`shell/boot.rs`),
   `config::resolve_monospace`); never assume a name resolves.
 - **`mx_auto` does nothing in a `gpui::list` row**, which is its own layout root. Centre with
   `h_flex().justify_center()` around a `max_w` child.

@@ -71,12 +71,16 @@ background executor, one interval in the config, no cron expressions.
 | `crates/core/src/connector.rs` | `Connector`, what a run asks of the system a project lives on, and `serving`, which picks the first one that takes a project |
 | `plugins/builtin/connector-github/src/lib.rs` | the `gh` calls, the `origin` and ssh-alias check, and the account check |
 | `crates/core/src/process.rs` | `output_within`: a command with a limit on its exit *and* its output, stopped with its whole process group |
-| `crates/app/src/unattended.rs` | the tick, the live `Run`, the subscription, the timeout, the wind-down, the teardown |
+| `crates/app/src/unattended.rs` | the tick and the live `Run` |
+| `crates/app/src/unattended/launch.rs` | claiming an issue, cutting its worktree and starting the run |
+| `crates/app/src/unattended/turn.rs` | the subscription, the timeout, the wind-down, the teardown |
 | `crates/core/src/config.rs` | `UnattendedConfig` |
 | `crates/core/src/workspace.rs` | `ProjectRoot::transient`, left out by `to_config`, and `add_transient_root`, which adds one with its session without selecting it |
 | `crates/core/src/worktree.rs` | `branch_off_blocking`, a new branch from a named start, and `fetch_blocking`; `worktree add` and the fetch both bounded and never prompting |
-| `crates/app/src/shell.rs` | `run_unattended`, `end_unattended`, `adopt_unattended`, and `forget_root`, the half of `remove_root` that asks nothing and moves nothing |
-| `crates/app/src/chat/pane.rs` | `open_unshown` and `reading` |
+| `crates/app/src/shell/remote_runs.rs` | `run_unattended`, `end_unattended`, `adopt_unattended` |
+| `crates/app/src/shell/roots.rs` | `forget_root`, the half of `remove_root` that asks nothing and moves nothing |
+| `crates/app/src/chat/pane/sessions.rs` | `open_unshown` |
+| `crates/app/src/chat/viewport.rs` | `reading` |
 
 The split is the one the crate boundary already forces: everything that can be
 decided without a window — which issue, what the prompt says, what the outcome
