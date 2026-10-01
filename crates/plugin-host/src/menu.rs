@@ -3,12 +3,12 @@
 
 use gpui::{
     App, Context, DismissEvent, ElementId, Entity, Focusable as _, IntoElement, ParentElement as _,
-    SharedString, Styled as _, Window, div, px, rems,
+    SharedString, Styled as _, Window, div, px,
 };
+use gpui_component::StyledExt as _;
 use gpui_component::button::Button;
 use gpui_component::menu::{PopupMenu, PopupMenuItem};
 use gpui_component::popover::Popover;
-use gpui_component::{Sizable as _, Size, StyledExt as _};
 use std::rc::Rc;
 
 /// The inset a `PopupMenu` puts between its edge and a row's content.
@@ -63,37 +63,21 @@ pub fn menu_item(label: impl Into<SharedString>) -> PopupMenuItem {
 
 /// A menu that opens *below* its trigger, left-aligned to it.
 ///
-/// The library's own `dropdown_menu` cannot say "below": every corner anchor
-/// it offers pins a corner of the *menu* to the *top* of the trigger --
-/// `TopLeft` lays the menu's first row over the control that opened it, and
-/// `BottomLeft` hangs the whole menu above -- and the side-positioned path its
-/// selects and tooltips use is not reachable from a menu trigger. What this
-/// rides instead is the popover's own offset mechanism: [`Popover`] applies
-/// the caller's style refinement to the popup's content, and a `top` inset
-/// there is exactly how the popover nudges its own popup off its trigger.
+/// **Below is where the library's top-left anchor already puts it**, with
+/// its own quarter-rem nudge between the two, so this adds no offset. The
+/// anchor names the trigger's top-left corner, but the positioner holding the
+/// menu is an absolutely placed child of the block that also holds the
+/// trigger, and its place in that block is under the trigger. An inset of a
+/// trigger's height on top of that, written when the menu still landed over
+/// its trigger, left every menu a whole button's height away from it.
 /// The open state, the second-press close and the focus hand-off stay the
 /// library's, and the click-out dismiss is the menu's own mouse-down-out.
-/// What the inset moves is the *drawn* menu, which carries its own hitbox;
-/// the popover's occluding wrapper stays where the positioner put it, over
-/// the trigger.
 ///
 /// **This mirrors the popover wiring inside
 /// [`gpui_component::menu::DropdownMenu`]** -- the slot, the build-on-open,
 /// the focus, the dismiss subscription -- and has to, because that wiring is
 /// private to the library. Bumping the `gpui-component` rev means diffing
 /// this function against it.
-///
-/// **The trigger's size is handed over and set here**, and the inset is that
-/// size's height plus a quarter rem. The library keeps a button's size to
-/// itself, so the inset cannot read it; restating one height for every trigger
-/// left the menu half a rem below an extra-small one. Setting the size from the
-/// same argument the inset is worked out from is what keeps the two from
-/// drifting apart.
-///
-/// One ceiling, accepted for a trigger sitting at the top of its panel: the
-/// inset lands *after* the positioner has clamped the popup into the viewport,
-/// so in a window shorter than the menu the last rows overhang the bottom edge
-/// rather than flipping above the trigger.
 ///
 /// The menu entity is kept in window state and built once per open, not once
 /// per frame: the content closure runs on every render while the popup is up,
@@ -122,7 +106,6 @@ pub fn menu_item(label: impl Into<SharedString>) -> PopupMenuItem {
 pub fn menu_below(
     id: impl Into<ElementId>,
     trigger: Button,
-    size: Size,
     build: impl Fn(PopupMenu, &mut Window, &mut Context<PopupMenu>) -> PopupMenu + 'static,
 ) -> Popover {
     let build = Rc::new(build);
@@ -131,10 +114,7 @@ pub fn menu_below(
     Popover::new(id)
         .appearance(false)
         .overlay_closable(false)
-        .trigger(trigger.with_size(size))
-        // The quarter rem keeps the menu's edge off the trigger. In rems, so
-        // a zoomed panel moves the menu with the button it belongs to.
-        .top(rems(trigger_height(size) + 0.25))
+        .trigger(trigger)
         .content(move |_, window, cx| {
             let slot = window.use_keyed_state((slot_key.clone(), "menu-below"), cx, |_, _| {
                 None::<Entity<PopupMenu>>
@@ -162,16 +142,4 @@ pub fn menu_below(
                 }
             }
         })
-}
-
-/// How tall the library draws a button of `size`, in rems: its own heights,
-/// restated because it keeps them private. A size given in pixels is read as
-/// the small one, which is what nothing here hands over.
-fn trigger_height(size: Size) -> f32 {
-    match size {
-        Size::XSmall => 1.25,
-        Size::Small | Size::Size(_) => 1.5,
-        Size::Medium => 2.,
-        Size::Large => 2.75,
-    }
 }

@@ -494,7 +494,6 @@ impl ChatPane {
                 .label(filter_name)
                 .icon(Icon::new(IconName::ChevronDown))
                 .text_color(muted),
-            gpui_component::Size::Small,
             move |mut menu, _, _| {
                 for (label, only) in &choices {
                     let (only, this) = (only.clone(), this.clone());
