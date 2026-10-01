@@ -112,6 +112,11 @@ pub trait Connector: Send + Sync + 'static {
     /// How an agent opens a pull request here, as the words it is told to use:
     /// "`gh pr create`".
     fn open_pull_request_with(&self) -> &'static str;
+
+    /// The web address of issue `key`, for a person to open or share.
+    fn issue_url_blocking(&self, _root: &Path, _key: &str) -> Result<String, String> {
+        Err(format!("{} gives no address for an issue.", self.name()))
+    }
 }
 
 /// Where in `connectors` the first one that serves the project at `root` is,

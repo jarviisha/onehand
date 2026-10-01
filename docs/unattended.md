@@ -147,7 +147,7 @@ to work — no forge and a workspace that keeps no issues — or not being a git
 repository.
 
 **A synced project is searched through the sync, and only there.** When a
-project's issues are kept in step with its forge (the Issues tab's sync bar), a
+project's issues are kept in step with its forge (the pause and resume control in the Issues tab's footer), a
 run looks at the project's own issues alone — the forge's are already among
 them — syncing first so a label added on the forge is seen. The claim takes the
 label off here and the sync takes it off the forge; every note is also a comment

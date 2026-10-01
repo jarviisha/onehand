@@ -11,9 +11,12 @@ use gpui::{
     AnyElement, App, AppContext as _, ClickEvent, Context, Entity, InteractiveElement as _,
     IntoElement, ParentElement, Render, StatefulInteractiveElement as _, Styled, Task, Window, div,
 };
+use gpui_component::WindowExt as _;
 use gpui_component::button::ButtonVariants as _;
+use gpui_component::dialog::DialogButtonProps;
 use gpui_component::input::{InputState, TextareaState};
 use gpui_component::text::TextViewState;
+use gpui_component::tooltip::Tooltip;
 use gpui_component::{
     ActiveTheme, Icon, IconName, Sizable as _, StyledExt, h_resizable, resizable_panel,
 };
@@ -22,7 +25,7 @@ use onehand_core::issues::{self, Draft, Issues, LocalIssue, sync};
 use onehand_plugin_host::{action, hint, status_ink, status_line};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 mod detail;
 use detail::{form_view, issue_view};
@@ -35,6 +38,11 @@ const SYNC_EVERY: Duration = Duration::from_secs(300);
 /// reading the file again, are frequent; the forge does not need to hear about
 /// each of them.
 const SYNC_GAP: Duration = Duration::from_secs(60);
+
+/// How often the view is drawn again with nothing having changed, so the
+/// footer's "synced 3m ago" keeps telling the time. A multiple of it is
+/// [`SYNC_EVERY`].
+const TICK: Duration = Duration::from_secs(60);
 
 /// The list's width before anybody drags it, and the range a drag may take it
 /// through — pixels, because that is the only thing the split accepts. Its
@@ -98,8 +106,9 @@ struct RootIssues {
     /// meanwhile — so another runs as soon as it lands, rather than leaving
     /// the edit for the timer.
     again: bool,
-    /// When the last sync finished, and what it came to in one line.
-    synced: Option<(Instant, String)>,
+    /// When the last sync finished, in seconds since the epoch, and what it
+    /// came to: what moved, in one line, or what it could not do.
+    synced: Option<(u64, Result<String, String>)>,
 }
 
 impl RootIssues {
@@ -120,6 +129,9 @@ impl RootIssues {
 struct Form {
     /// The issue being edited, or `None` for a new one.
     editing: Option<u64>,
+    /// How the issue being edited is named on its forge; `None` for a draft
+    /// or a new issue.
+    editing_reference: Option<String>,
     title: Entity<InputState>,
     labels: Entity<InputState>,
     body: Entity<TextareaState>,
@@ -137,12 +149,16 @@ impl IssuesView {
             _load: None,
             connectors,
             _sync_every: cx.spawn(async move |view, cx| {
-                loop {
-                    cx.background_executor().timer(SYNC_EVERY).await;
-                    if view
-                        .update(cx, |view: &mut Self, cx| view.sync(false, cx))
-                        .is_err()
-                    {
+                let every = (SYNC_EVERY.as_secs() / TICK.as_secs()).max(1);
+                for tick in 1u64.. {
+                    cx.background_executor().timer(TICK).await;
+                    let alive = view.update(cx, |view: &mut Self, cx| {
+                        cx.notify();
+                        if tick % every == 0 {
+                            view.sync(false, cx);
+                        }
+                    });
+                    if alive.is_err() {
                         return;
                     }
                 }
@@ -262,7 +278,7 @@ impl IssuesView {
             || state
                 .synced
                 .as_ref()
-                .is_none_or(|(at, _)| at.elapsed() >= SYNC_GAP);
+                .is_none_or(|(at, _)| issues::now().saturating_sub(*at) >= SYNC_GAP.as_secs());
         if state.syncing && wanted && now {
             state.again = true;
             return;
@@ -286,20 +302,14 @@ impl IssuesView {
                 };
                 state.syncing = false;
                 let again = std::mem::take(&mut state.again);
-                match done {
+                let came_to = match done {
                     Ok((kept, report)) => {
                         keep_newer(&mut state.issues, kept);
-                        state.synced = Some((Instant::now(), said(&report, forge.name())));
-                        view.status = failures(&report);
+                        failures(&report).map_or_else(|| Ok(said(&report, forge.name())), Err)
                     }
-                    Err(why) => {
-                        state.synced = Some((
-                            Instant::now(),
-                            format!("Could not sync with {}", forge.name()),
-                        ));
-                        view.status = Some(why);
-                    }
-                }
+                    Err(why) => Err(why),
+                };
+                state.synced = Some((issues::now(), came_to));
                 cx.notify();
                 if again {
                     view.sync_root(root, true, cx);
@@ -448,6 +458,9 @@ impl IssuesView {
         };
         let form = Form {
             editing,
+            editing_reference: current
+                .as_ref()
+                .and_then(|issue| issue.reference().map(str::to_string)),
             title: cx.new(|cx| {
                 InputState::new(window, cx)
                     .placeholder("Title")
@@ -500,6 +513,99 @@ impl IssuesView {
             },
             cx,
         );
+    }
+
+    /// Ask before closing issue `number`: closing is the one way an issue
+    /// leaves the work, and on a project kept in step it closes on the forge
+    /// too. Reopening is not asked about — it takes nothing away.
+    fn confirm_close(&mut self, number: u64, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(state) = self.state_mut() else {
+            return;
+        };
+        let Some(issue) = state.issues.as_ref().and_then(|kept| kept.get(number)) else {
+            return;
+        };
+        let description = match &issue.link {
+            Some(link) => format!(
+                "\u{201c}{}\u{201d} moves to the closed list here and closes on {} at the next sync. It can be reopened.",
+                issue.title, link.connector
+            ),
+            None => format!(
+                "\u{201c}{}\u{201d} moves to the closed list. It can be reopened.",
+                issue.title
+            ),
+        };
+        // The project is held so a dialog left open across a switch closes the
+        // issue it was opened for, never the same number in another project.
+        let root = self.root.clone();
+        let view = cx.entity();
+        window.open_alert_dialog(cx, move |alert, _, _| {
+            let (root, view) = (root.clone(), view.clone());
+            alert
+                .title("Close this issue?")
+                .description(description.clone())
+                .button_props(
+                    DialogButtonProps::default()
+                        .ok_text("Close issue")
+                        .show_cancel(true),
+                )
+                .on_ok(move |_, _, cx| {
+                    view.update(cx, |view, cx| {
+                        if view.root == root {
+                            view.set_open(number, false, cx);
+                        }
+                    });
+                    true
+                })
+        });
+    }
+
+    /// Find issue `number`'s address on its forge, then hand it to `then` —
+    /// opening it, copying it. Asked of the forge each time rather than built
+    /// here, since the forge is the one that knows where a moved repository
+    /// went.
+    fn with_url(
+        &mut self,
+        number: u64,
+        then: impl FnOnce(String, &mut App) + 'static,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(root) = self.root.clone() else {
+            return;
+        };
+        let Some(state) = self.roots.get(&root) else {
+            return;
+        };
+        let Some(link) = state
+            .issues
+            .as_ref()
+            .and_then(|kept| kept.get(number))
+            .and_then(|issue| issue.link.clone())
+        else {
+            return;
+        };
+        let Some(forge) = state.forge.filter(|forge| forge.name() == link.connector) else {
+            self.status = Some(format!(
+                "{} {} cannot be reached from this project",
+                link.connector, link.reference
+            ));
+            cx.notify();
+            return;
+        };
+        cx.spawn(async move |view, cx| {
+            let url = cx
+                .background_executor()
+                .spawn(async move { forge.issue_url_blocking(&root, &link.key) })
+                .await;
+            let _ = view.update(cx, |view: &mut Self, cx| match url {
+                Ok(url) => then(url, cx),
+                Err(why) => {
+                    view.status = Some(why);
+                    cx.notify();
+                }
+            });
+        })
+        .detach();
     }
 
     fn set_open(&mut self, number: u64, open: bool, cx: &mut Context<Self>) {
@@ -606,7 +712,7 @@ impl IssuesView {
                     })),
             );
 
-        let bar = self.sync_bar(issues, cx);
+        let footer = self.sync_footer(issues, cx);
         let rows: Vec<AnyElement> = listed
             .iter()
             .take(LIST_CAP)
@@ -620,7 +726,6 @@ impl IssuesView {
             .border_r_1()
             .border_color(cx.theme().border)
             .child(header)
-            .children(bar)
             .child(
                 div()
                     .id("issues-list")
@@ -651,23 +756,87 @@ impl IssuesView {
                         )
                     }),
             )
+            .children(footer)
             .into_any_element()
     }
 
-    /// The line under the list's header saying whether this project is kept in
-    /// step with its forge, and the controls for it. Drawn only where a forge
-    /// serves the project — elsewhere there is nothing to be in step with.
-    fn sync_bar(&self, issues: &Issues, cx: &mut Context<Self>) -> Option<AnyElement> {
+    /// The foot of the list: whether this project is kept in step with its
+    /// forge, when it last was, and the controls for it — a sync now, and a
+    /// pause. Drawn only where a forge serves the project; elsewhere there is
+    /// nothing to be in step with.
+    fn sync_footer(&self, issues: &Issues, cx: &mut Context<Self>) -> Option<AnyElement> {
         let state = self.roots.get(self.root.as_ref()?)?;
         let forge = state.forge?;
-        let on = issues.in_step_with(forge.name());
-        let line = match (&state.synced, on, state.syncing) {
-            (_, true, true) => format!("Syncing with {}…", forge.name()),
-            (Some((_, said)), true, false) => said.clone(),
-            (None, true, false) => format!("Kept in step with {}", forge.name()),
-            (_, false, _) => format!("Not kept in step with {}", forge.name()),
+        let name = forge.name();
+        let on = issues.in_step_with(name);
+        let muted = cx.theme().muted_foreground;
+        let warning = status_ink(cx).warning;
+        // A project that was kept in step once still holds its links, which is
+        // what tells a pause from never having started.
+        let paused = issues.listed().iter().any(|issue| issue.link.is_some());
+        let (icon, ink, line, detail) = match (on, state.syncing, &state.synced) {
+            (true, true, _) => (
+                IconName::LoaderCircle,
+                muted,
+                format!("Syncing with {name}…"),
+                None,
+            ),
+            (true, false, Some((at, Ok(said)))) => (
+                IconName::CircleCheck,
+                muted,
+                format!(
+                    "Synced with {name} · {}",
+                    onehand_core::rel_time(issues::now(), *at)
+                ),
+                Some(said.clone()),
+            ),
+            (true, false, Some((_, Err(why)))) => (
+                IconName::TriangleAlert,
+                warning,
+                why.lines().next().unwrap_or_default().to_string(),
+                Some(why.clone()),
+            ),
+            (true, false, None) => (
+                IconName::CircleCheck,
+                muted,
+                format!("Kept in step with {name}"),
+                None,
+            ),
+            (false, _, _) if paused => (
+                IconName::Pause,
+                muted,
+                format!("Sync with {name} paused"),
+                None,
+            ),
+            (false, _, _) => (
+                IconName::Info,
+                muted,
+                format!("Not synced with {name}"),
+                None,
+            ),
         };
-        let bar = div()
+        let failed = on && !state.syncing && matches!(state.synced, Some((_, Err(_))));
+        let status = div()
+            .id("issues-sync-status")
+            .flex_1()
+            .min_w_0()
+            .h_flex()
+            .items_center()
+            .gap_1()
+            .child(Icon::new(icon).xsmall().text_color(ink))
+            .child(
+                div()
+                    .flex_1()
+                    .min_w_0()
+                    .truncate()
+                    .text_xs()
+                    .text_color(ink)
+                    .child(line),
+            )
+            .when_some(detail, |status, detail| {
+                status.tooltip(move |window, cx| Tooltip::new(detail.clone()).build(window, cx))
+            });
+        let footer = div()
             .h_flex()
             .items_center()
             .gap_1()
@@ -675,53 +844,53 @@ impl IssuesView {
             .flex_none()
             .px_2()
             .py_1()
-            .border_b_1()
+            .border_t_1()
             .border_color(cx.theme().border)
-            .child(
-                div()
-                    .flex_1()
-                    .min_w_0()
-                    .truncate()
-                    .text_xs()
-                    .text_color(cx.theme().muted_foreground)
-                    .child(line),
-            );
-        Some(if on {
-            // Not offered while one is running: pressed then, it would do
+            .child(status)
+            // A sync is not offered while one runs: pressed then it would do
             // nothing, and a control that answers with nothing reads as broken.
-            bar.when(!state.syncing, |bar| {
-                bar.child(
-                    action("issues-sync-now")
-                        .xsmall()
-                        .ghost()
-                        .label("Sync now")
-                        .on_click(cx.listener(|view, _: &ClickEvent, _, cx| view.sync(true, cx))),
+            .when(on && !state.syncing, |footer| {
+                footer.child(
+                    if failed {
+                        action("issues-sync-retry")
+                            .xsmall()
+                            .ghost()
+                            .label("Retry")
+                            .tooltip(format!("Sync with {name} again"))
+                    } else {
+                        action("issues-sync-now")
+                            .xsmall()
+                            .ghost()
+                            .icon(Icon::new(IconName::Redo))
+                            .tooltip("Sync now")
+                    }
+                    .on_click(cx.listener(|view, _: &ClickEvent, _, cx| view.sync(true, cx))),
                 )
             })
-            .child(
-                action("issues-sync-off")
+            .child(if on {
+                action("issues-sync-pause")
                     .xsmall()
                     .ghost()
-                    .label("Stop")
-                    .tooltip("Stop keeping these issues in step; the links are kept")
+                    .icon(Icon::new(IconName::Pause))
+                    .tooltip("Pause auto-sync; links to issues are kept")
                     .on_click(
                         cx.listener(|view, _: &ClickEvent, _, cx| view.set_syncing(false, cx)),
-                    ),
-            )
-            .into_any_element()
-        } else {
-            bar.child(
-                action("issues-sync-on")
+                    )
+            } else {
+                action("issues-sync-resume")
                     .xsmall()
                     .ghost()
-                    .label(format!("Sync with {}", forge.name()))
-                    .tooltip("Bring in its open issues and keep both sides in step")
-                    .on_click(
-                        cx.listener(|view, _: &ClickEvent, _, cx| view.set_syncing(true, cx)),
-                    ),
-            )
-            .into_any_element()
-        })
+                    .icon(Icon::new(IconName::Play))
+                    .tooltip(if paused {
+                        format!("Resume auto-sync with {name}")
+                    } else {
+                        format!(
+                            "Sync with {name}: bring in its open issues and keep both sides in step"
+                        )
+                    })
+                    .on_click(cx.listener(|view, _: &ClickEvent, _, cx| view.set_syncing(true, cx)))
+            });
+        Some(footer.into_any_element())
     }
 
     fn row(&self, issue: &LocalIssue, selected: bool, cx: &mut Context<Self>) -> AnyElement {
@@ -741,13 +910,7 @@ impl IssuesView {
             .cursor_pointer()
             .when(selected, |row| row.bg(cx.theme().accent))
             .hover(|row| row.bg(cx.theme().accent.opacity(0.5)))
-            .child(
-                div()
-                    .flex_none()
-                    .text_xs()
-                    .text_color(muted)
-                    .child(format!("#{number}")),
-            )
+            .child(identity(issue, cx))
             .child(
                 div()
                     .flex_1()
@@ -799,7 +962,7 @@ impl IssuesView {
             .filter(|_| issue.link.is_none())
             .map(|forge| forge.name());
         let body = self.parsed_body(root, &issue, cx);
-        issue_view(&issue, body, publish_to, window, cx)
+        issue_view(root, &issue, body, publish_to, window, cx)
     }
 
     /// The selected issue's body as parsed markdown, parsed again only when
@@ -824,6 +987,29 @@ impl IssuesView {
                 Some(parsed)
             }
         }
+    }
+}
+
+/// How an issue is named on screen: its forge's reference, muted, or a *Draft*
+/// tag for one that has not left onehand. Its number here is a key and is never
+/// shown.
+fn identity(issue: &LocalIssue, cx: &App) -> AnyElement {
+    match issue.reference() {
+        Some(reference) => div()
+            .flex_none()
+            .text_xs()
+            .text_color(cx.theme().muted_foreground)
+            .child(reference.to_string())
+            .into_any_element(),
+        None => div()
+            .flex_none()
+            .px_1()
+            .rounded(cx.theme().radius)
+            .bg(cx.theme().secondary)
+            .text_xs()
+            .text_color(cx.theme().secondary_foreground)
+            .child("Draft")
+            .into_any_element(),
     }
 }
 

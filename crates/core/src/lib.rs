@@ -40,3 +40,15 @@ pub mod tree;
 pub mod unattended;
 pub mod workspace;
 pub mod worktree;
+
+/// `3m ago` / `2h ago` / `5d ago`: how long before `now` the moment `then` was,
+/// both in seconds since the epoch.
+pub fn rel_time(now: u64, then: u64) -> String {
+    let secs = now.saturating_sub(then);
+    match secs {
+        0..=59 => "just now".to_string(),
+        60..=3599 => format!("{}m ago", secs / 60),
+        3600..=86_399 => format!("{}h ago", secs / 3600),
+        _ => format!("{}d ago", secs / 86_400),
+    }
+}

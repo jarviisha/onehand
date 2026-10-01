@@ -225,7 +225,7 @@ fn reconcile(
                     continue;
                 }
                 Err(why) => {
-                    report.failures.push(format!("#{}: {why}", issue.number));
+                    report.failures.push(format!("{}: {why}", link.reference));
                     unasked = true;
                     continue;
                 }
@@ -276,7 +276,7 @@ fn step(
     let Some(link) = issue.link.as_ref() else {
         return;
     };
-    let (key, base) = (link.key.clone(), link.base.clone());
+    let (key, base, reference) = (link.key.clone(), link.base.clone(), link.reference.clone());
     let ours = issue.snapshot();
     let merge = merge(&base, &ours, &theirs);
     if !merge.conflicts.is_empty() {
@@ -300,7 +300,7 @@ fn step(
         if let Err(why) = connector.update_issue_blocking(root, &key, &theirs, &merge.merged) {
             // The ancestor is left where it was, so the next sync sees this
             // side's change as still to be sent and tries again.
-            report.failures.push(format!("#{}: {why}", issue.number));
+            report.failures.push(format!("{reference}: {why}"));
             if let Some(link) = issue.link.as_mut() {
                 link.conflict = None;
             }

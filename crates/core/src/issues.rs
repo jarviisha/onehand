@@ -146,6 +146,14 @@ impl LocalIssue {
         self.link.as_ref().filter(|link| link.connector == name)
     }
 
+    /// How a person names it: the forge's reference once it is on one. `None`
+    /// is a draft that has not left onehand. The number it is filed under here
+    /// is a key and nothing else — shown beside a forge's own, the two read as
+    /// two issues, and they disagree as soon as one was opened on the forge.
+    pub fn reference(&self) -> Option<&str> {
+        self.link.as_ref().map(|link| link.reference.as_str())
+    }
+
     /// Whether it was written here — never linked to anything, never brought
     /// in from anywhere. The only issues a search may take as the user's own
     /// without asking a forge.
@@ -514,6 +522,22 @@ mod tests {
         let capped = open_across(files, 2);
         assert_eq!(capped.rows.len(), 2);
         assert_eq!(capped.left_out, 1);
+    }
+
+    #[test]
+    fn an_issue_is_named_by_its_forge_reference_and_a_draft_by_nothing() {
+        let mut issues = Issues::default();
+        let n = issues.create(draft("a"), 1).unwrap();
+        assert_eq!(issues.get(n).unwrap().reference(), None);
+        issues.find_mut(n).unwrap().link = Some(Link {
+            connector: "GitHub".into(),
+            key: "6".into(),
+            reference: "#6".into(),
+            base: Snapshot::default(),
+            conflict: None,
+        });
+        // Filed here as #1, known everywhere as GitHub's #6.
+        assert_eq!(issues.get(n).unwrap().reference(), Some("#6"));
     }
 
     #[test]

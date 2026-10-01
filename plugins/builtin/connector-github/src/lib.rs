@@ -132,6 +132,15 @@ impl Connector for GitHub {
         "`gh pr create`"
     }
 
+    fn issue_url_blocking(&self, root: &Path, key: &str) -> Result<String, String> {
+        let url = gh(root, &["issue", "view", key, "--json", "url", "-q", ".url"])?;
+        if url.is_empty() {
+            Err(format!("GitHub gave no address for issue {key}."))
+        } else {
+            Ok(url)
+        }
+    }
+
     /// `git fetch` as ever, and, when that fails on an ssh `origin`, the same
     /// repository again over HTTPS with `gh`'s own sign-in. An ssh remote fails
     /// for an app opened from the desktop far more often than for a terminal —

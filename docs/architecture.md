@@ -924,9 +924,17 @@ see the rail, below.
   file is read again when the mode is next drawn after being shown or after a turn ends. What runs
   said about an issue is kept on it as **notes** and drawn under its body, the latest few, with the
   cut said. Unattended runs work these issues too — see *Unattended runs*. No shortcut yet, and no
-  deletion — closing is the way an issue leaves the work.
+  deletion — closing is the way an issue leaves the work, from the detail's ⋯ menu (beside *Open on
+  GitHub* and *Copy link*, whose address `Connector::issue_url_blocking` asks the forge for) and
+  behind a confirmation, since a bare *Close* there read as closing the view.
+  **An issue is named by its forge's reference** (`LocalIssue::reference`), or a *Draft* tag before it
+  is published; the number it is filed under here is the file's key and is never drawn, because shown
+  beside the forge's it read as a second issue. **The list's footer says how the sync stands** — a
+  status icon, *Synced with GitHub · 3m ago* (what moved on hover), a sync-now and a pause/resume
+  control; a failed sync puts its first line there with *Retry*, the whole error on hover. The view
+  redraws once a minute so the time stays true.
   **Kept in step with the project's forge, both ways, when switched on** (`onehand_core::issues::sync`;
-  the switch is the list's sync bar and is stored in the issue file as `synced_with`, so it needs no
+  the switch is the pause/resume control in the list's footer and is stored in the issue file as `synced_with`, so it needs no
   workspace key). A linked issue carries a `Link` whose `base` is the snapshot both sides last agreed
   on, and a sync is a **three-way merge per field** against it: title, description and state take the
   side that changed, a field both sides changed differently is a **conflict** that moves nothing until
@@ -945,7 +953,7 @@ see the rail, below.
   retried rather than read later as the forge's; an issue gone from the forge is unlinked with a note.
   Forge line endings are normalized first, or every sync would see an edit nobody made. It runs when
   the file is read (at most once a minute), after every change made here, every five minutes on the
-  project on screen, and on *Sync now*; the whole sync holds the issue file's lock across the forge's
+  project on screen, and on the footer's sync-now control; the whole sync holds the issue file's lock across the forge's
   calls, so an edit made meanwhile waits for it; an edit saved while a sync runs sets a flag that runs
   one more when it lands. Every write moves `Issues::revision` on, and the mode keeps whichever copy
   is newer, since two landings can reach the screen out of order.

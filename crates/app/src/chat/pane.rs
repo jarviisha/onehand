@@ -830,16 +830,7 @@ impl Render for ChatPane {
     }
 }
 
-/// `3m ago` / `2h ago` / `5d ago`, for the resume picker's subtitle.
-pub fn rel_time(now: u64, then: u64) -> String {
-    let secs = now.saturating_sub(then);
-    match secs {
-        0..=59 => "just now".to_string(),
-        60..=3599 => format!("{}m ago", secs / 60),
-        3600..=86_399 => format!("{}h ago", secs / 3600),
-        _ => format!("{}d ago", secs / 86_400),
-    }
-}
+pub use onehand_core::rel_time;
 
 /// Whether the pane shows nothing but the wait.
 ///

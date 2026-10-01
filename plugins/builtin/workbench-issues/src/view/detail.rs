@@ -1,18 +1,21 @@
-use super::{Form, IssuesView, NOTES_SHOWN};
+use super::{Form, IssuesView, NOTES_SHOWN, identity};
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
-    AnyElement, App, ClickEvent, Context, Entity, IntoElement, ParentElement, Styled, Window, div,
+    AnyElement, App, ClickEvent, ClipboardItem, Context, Entity, IntoElement, ParentElement,
+    SharedString, Styled, Window, div,
 };
 use gpui_component::button::ButtonVariants as _;
 use gpui_component::input::{Input, Textarea};
 use gpui_component::text::{TextView, TextViewState, TextViewStyle};
-use gpui_component::{ActiveTheme, Sizable as _, StyledExt};
+use gpui_component::{ActiveTheme, Icon, IconName, Sizable as _, StyledExt};
 use onehand_core::issues::{LocalIssue, sync};
-use onehand_plugin_host::{action, status_ink};
+use onehand_plugin_host::{action, menu_below, menu_item, status_ink};
+use std::path::Path;
 
-/// One issue, read: its number and title with what can be done to it, its
-/// labels, and its body.
+/// One issue, read: how it is named and its title with what can be done to it,
+/// its labels, and its body.
 pub(super) fn issue_view(
+    root: &Path,
     issue: &LocalIssue,
     body: Option<Entity<TextViewState>>,
     publish_to: Option<&'static str>,
@@ -32,12 +35,7 @@ pub(super) fn issue_view(
         .py_1()
         .border_b_1()
         .border_color(cx.theme().border)
-        .child(
-            div()
-                .flex_none()
-                .text_color(muted)
-                .child(format!("#{number}")),
-        )
+        .child(identity(issue, cx))
         .child(
             div()
                 .flex_1()
@@ -63,22 +61,9 @@ pub(super) fn issue_view(
                     view.open_form(Some(number), window, cx)
                 })),
         )
-        .child(
-            action("issue-close")
-                .xsmall()
-                .ghost()
-                .label(if open { "Close" } else { "Reopen" })
-                .on_click(
-                    cx.listener(move |view, _: &ClickEvent, _, cx| {
-                        view.set_open(number, !open, cx)
-                    }),
-                ),
-        );
+        .child(more_menu(root, issue, cx));
 
     let mut facts = vec![(if open { "Open" } else { "Closed" }).to_string()];
-    if let Some(link) = &issue.link {
-        facts.push(format!("{} {}", link.connector, link.reference));
-    }
     if !issue.labels.is_empty() {
         facts.push(issue.labels.join(", "));
     }
@@ -149,6 +134,69 @@ pub(super) fn issue_view(
         })
         .children(notes)
         .into_any_element()
+}
+
+/// The ⋯ menu beside *Edit*: where the issue lives on its forge, and closing
+/// or reopening it. Closing is here rather than a button of its own because a
+/// bare *Close* beside an issue reads as closing the view.
+fn more_menu(root: &Path, issue: &LocalIssue, cx: &mut Context<IssuesView>) -> AnyElement {
+    let number = issue.number;
+    let open = issue.open;
+    let forge = issue.link.as_ref().map(|link| link.connector.clone());
+    let view = cx.entity();
+    let trigger = action("issue-more")
+        .xsmall()
+        .ghost()
+        .icon(Icon::new(IconName::Ellipsis))
+        .tooltip("More actions");
+    // Named by the project and the issue, so a menu held open across a switch
+    // is one for this issue and never for whichever took its place.
+    let id = SharedString::from(format!("issue-more-menu-{}-{number}", root.display()));
+    menu_below(id, trigger, move |menu, _, _| {
+        let mut menu = menu;
+        if let Some(forge) = &forge {
+            let (open_view, copy_view) = (view.clone(), view.clone());
+            menu = menu
+                .item(
+                    menu_item(format!("Open on {forge}"))
+                        .icon(Icon::new(IconName::ExternalLink))
+                        .on_click(move |_, _, cx: &mut App| {
+                            open_view.update(cx, |view, cx| {
+                                view.with_url(number, |url, cx| cx.open_url(&url), cx)
+                            })
+                        }),
+                )
+                .item(
+                    menu_item("Copy link")
+                        .icon(Icon::new(IconName::Copy))
+                        .on_click(move |_, _, cx: &mut App| {
+                            copy_view.update(cx, |view, cx| {
+                                view.with_url(
+                                    number,
+                                    |url, cx| cx.write_to_clipboard(ClipboardItem::new_string(url)),
+                                    cx,
+                                )
+                            })
+                        }),
+                )
+                .separator();
+        }
+        let view = view.clone();
+        menu.item(if open {
+            menu_item("Close issue")
+                .icon(Icon::new(IconName::CircleX))
+                .on_click(move |_, window, cx: &mut App| {
+                    view.update(cx, |view, cx| view.confirm_close(number, window, cx))
+                })
+        } else {
+            menu_item("Reopen issue")
+                .icon(Icon::new(IconName::Redo))
+                .on_click(move |_, _, cx: &mut App| {
+                    view.update(cx, |view, cx| view.set_open(number, true, cx))
+                })
+        })
+    })
+    .into_any_element()
 }
 
 /// What a person has to decide about an issue both sides changed: each field in
@@ -248,7 +296,10 @@ pub(super) fn form_view(form: &Form, cx: &mut Context<IssuesView>) -> AnyElement
                 .text_xs()
                 .text_color(cx.theme().muted_foreground)
                 .child(match form.editing {
-                    Some(number) => format!("Editing #{number}"),
+                    Some(_) => match &form.editing_reference {
+                        Some(reference) => format!("Editing {reference}"),
+                        None => "Editing draft".to_string(),
+                    },
                     None => "New issue".to_string(),
                 }),
         )
