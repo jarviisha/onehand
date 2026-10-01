@@ -289,8 +289,15 @@ const PAGE_CARD: f32 = 22.;
 /// The width a project tile starts from, in rems.
 const PAGE_TILE: f32 = 14.;
 
+/// The widest a project tile grows into its row, in rems, so a short last row
+/// does not stretch one tile across the page.
+const PAGE_TILE_MAX: f32 = 21.;
+
 /// How tall the open-issues card's list grows before it scrolls, in rems.
 const PAGE_ISSUES_H: f32 = 24.;
+
+/// The height of a workspace page card's title row, in rems.
+const PAGE_TITLE_H: f32 = 1.75;
 
 /// What the issue filter reads while it is not narrowing the list at all.
 const ALL_PROJECTS: &str = "All projects";
@@ -1153,6 +1160,24 @@ impl ChatPane {
                 cx.notify();
             });
         }));
+    }
+
+    /// Replace the workspace page's projects with a fresher listing, keeping
+    /// everything it has read. A filter on a project no longer listed goes.
+    pub fn set_page_projects(&mut self, projects: Vec<PageProject>, cx: &mut Context<Self>) {
+        let Some(page) = self.workspace.as_mut() else {
+            return;
+        };
+        if page
+            .filter
+            .as_ref()
+            .is_some_and(|only| !projects.iter().any(|project| &project.root == only))
+        {
+            page.filter = None;
+            page.refilter();
+        }
+        page.projects = projects;
+        cx.notify();
     }
 
     /// Whether the workspace page is what the pane shows.
@@ -2455,9 +2480,10 @@ impl ChatPane {
         let here = self.window;
         let now = onehand_core::chat::now_secs();
 
-        // A run's row is an issue's row: its number, what it is about, and the
-        // project at the end. For a waiting run what it is about is the
-        // question, since answering that is what the row is pressed for.
+        // The two activity cards gather runs and sessions alike. A run's row is
+        // an issue's row: its number, what it is about, and the project at the
+        // end. For a waiting run what it is about is the question, since
+        // answering that is what the row is pressed for.
         let (mut waiting, mut working) = (Vec::new(), Vec::new());
         for run in crate::unattended::live_runs(cx) {
             let (uid, window) = (run.uid, run.window);
@@ -2544,32 +2570,27 @@ impl ChatPane {
             .take(PAGE_PROJECTS)
             .enumerate()
             .map(|(i, project)| {
-                let open = page
-                    .read
-                    .iter()
-                    .flatten()
-                    .find(|(root, _)| *root == project.root)
-                    .map_or(0, |(_, issues)| {
-                        issues.listed().iter().filter(|issue| issue.open).count()
-                    });
+                // `None` while the issues are still being read, which is a
+                // wait and not an answer of none.
+                let open = page.read.as_ref().map(|read| {
+                    read.iter()
+                        .find(|(root, _)| *root == project.root)
+                        .map_or(0, |(_, issues)| {
+                            issues.listed().iter().filter(|issue| issue.open).count()
+                        })
+                });
+                let sessions = project.sessions.len();
                 let holds: Vec<String> = [
-                    match project.sessions.len() {
-                        0 => None,
-                        1 => Some("1 session".to_string()),
-                        n => Some(format!("{n} sessions")),
-                    },
-                    match open {
-                        0 => None,
-                        1 => Some("1 open issue".to_string()),
-                        n => Some(format!("{n} open issues")),
-                    },
+                    (sessions > 0).then(|| count_of(sessions, "session")),
+                    open.filter(|n| *n > 0).map(|n| count_of(n, "open issue")),
                 ]
                 .into_iter()
                 .flatten()
                 .collect();
-                let holds = match holds.is_empty() {
-                    true => "Nothing open".to_string(),
-                    false => holds.join(" · "),
+                let holds = match (holds.is_empty(), open) {
+                    (false, _) => holds.join(" · "),
+                    (true, None) => "Looking for open issues…".to_string(),
+                    (true, Some(_)) => "Nothing open".to_string(),
                 };
                 let rollup = SessionSignal::most_urgent(
                     project
@@ -2578,17 +2599,12 @@ impl ChatPane {
                         .filter_map(|(uid, _)| self.signal(*uid, cx)),
                 );
                 let root = project.root.clone();
-                div()
+                card_box(cx)
                     .id(("workspace-project", i))
                     .flex_grow_1()
                     .flex_basis(rems(PAGE_TILE))
-                    .max_w(rems(PAGE_TILE * 1.5))
-                    .v_flex()
+                    .max_w(rems(PAGE_TILE_MAX))
                     .gap_1()
-                    .p_3()
-                    .rounded(cx.theme().radius)
-                    .border_1()
-                    .border_color(cx.theme().border)
                     .cursor_pointer()
                     .hover(|tile| tile.bg(cx.theme().list_hover))
                     .child(
@@ -2626,14 +2642,7 @@ impl ChatPane {
                 .v_flex()
                 .gap_2()
                 .w_full()
-                .child(
-                    div()
-                        .h_flex()
-                        .gap_2()
-                        .items_center()
-                        .child(div().text_sm().font_semibold().child("Projects"))
-                        .child(muted_line(page.projects.len().to_string())),
-                )
+                .child(card_title("Projects", Some(page.projects.len()), None, cx))
                 .child(div().h_flex().flex_wrap().gap_3().w_full().children(tiles))
                 .children(
                     (hidden_projects > 0)
@@ -5264,6 +5273,61 @@ fn waiting_hint(what: SharedString, cx: &App) -> impl IntoElement + use<> {
         .child(what)
 }
 
+/// A card on the workspace page: a bordered box, its title in bold with a
+/// muted count beside it, an optional control at the far end, and whatever it
+/// holds below.
+fn page_card(
+    title: &'static str,
+    count: Option<usize>,
+    control: Option<gpui::AnyElement>,
+    cx: &App,
+) -> Div {
+    card_box(cx).child(card_title(title, count, control, cx))
+}
+
+/// The hairline box every card on the workspace page is drawn in, a project
+/// tile included.
+fn card_box(cx: &App) -> Div {
+    div()
+        .v_flex()
+        .gap_2()
+        .min_w_0()
+        .p_3()
+        .rounded(cx.theme().radius)
+        .border_1()
+        .border_color(cx.theme().border)
+}
+
+/// A workspace page heading: the title in bold, a muted count beside it and an
+/// optional control at the far end.
+fn card_title(
+    title: &'static str,
+    count: Option<usize>,
+    control: Option<gpui::AnyElement>,
+    cx: &App,
+) -> Div {
+    let muted = cx.theme().muted_foreground;
+    div()
+        .h_flex()
+        .items_center()
+        .gap_2()
+        // The control's own height must not change the title row's, or a card
+        // with a filter sits taller than the one beside it.
+        .h(rems(PAGE_TITLE_H))
+        .child(div().font_semibold().child(title))
+        .children(count.map(|n| div().text_xs().text_color(muted).child(n.to_string())))
+        .child(div().flex_1())
+        .children(control)
+}
+
+/// `n` of `noun`, with the noun's plural where `n` is not one.
+fn count_of(n: usize, noun: &str) -> String {
+    match n {
+        1 => format!("1 {noun}"),
+        n => format!("{n} {noun}s"),
+    }
+}
+
 /// One archived conversation, as a card that can be picked.
 ///
 /// Shared by a session's resume picker and the project page, because they ask
@@ -5278,39 +5342,6 @@ fn waiting_hint(what: SharedString, cx: &App) -> impl IntoElement + use<> {
 /// delete is the reason -- a control that acts on one conversation belongs
 /// within the card naming it, and the same shape holds for the picker, which
 /// simply adds nothing.
-/// A card on the workspace page: a bordered box, its title in bold with a
-/// muted count beside it, an optional control at the far end, and whatever it
-/// holds below.
-fn page_card(
-    title: &'static str,
-    count: Option<usize>,
-    control: Option<gpui::AnyElement>,
-    cx: &App,
-) -> Div {
-    let muted = cx.theme().muted_foreground;
-    div()
-        .v_flex()
-        .gap_2()
-        .min_w_0()
-        .p_3()
-        .rounded(cx.theme().radius)
-        .border_1()
-        .border_color(cx.theme().border)
-        .child(
-            div()
-                .h_flex()
-                .items_center()
-                .gap_2()
-                // The control's own height must not change the title row's,
-                // or a card with a filter sits taller than the one beside it.
-                .h(rems(1.75))
-                .child(div().font_semibold().child(title))
-                .children(count.map(|n| div().text_xs().text_color(muted).child(n.to_string())))
-                .child(div().flex_1())
-                .children(control),
-        )
-}
-
 fn conversation_card(
     id: impl Into<ElementId>,
     title: SharedString,

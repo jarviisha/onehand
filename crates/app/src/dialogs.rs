@@ -255,10 +255,10 @@ fn row_shell(
     title: String,
     cx: &App,
 ) -> gpui::Stateful<gpui::Div> {
-    let (muted, radius, accent) = (
+    let (muted, radius, hover) = (
         cx.theme().muted_foreground,
         cx.theme().radius,
-        cx.theme().accent,
+        cx.theme().list_hover,
     );
     div()
         .id(id)
@@ -270,7 +270,7 @@ fn row_shell(
         .py_1()
         .rounded(radius)
         .cursor_pointer()
-        .hover(move |row| row.bg(accent.opacity(0.5)))
+        .hover(move |row| row.bg(hover))
         .child(div().flex_none().text_color(muted).child(lead))
         .child(div().flex_1().min_w_0().truncate().child(title))
 }

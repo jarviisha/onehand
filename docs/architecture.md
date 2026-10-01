@@ -584,7 +584,7 @@ Settings ▸ Connections, with its *Check again*; Settings ▸ Workspace keeps *
 `None` there). **A run can also be picked by hand**: *Work an issue…* in either project menu opens
 `dialogs::pick_issue` over `unattended::open_issues_blocking` (every open issue, author on the row,
 bounded at `ISSUES_SHOWN`), and `unattended::start_picked` runs it now. That run is shown as it starts
-(`Shell::show_unattended`) and kept on screen when it ends. *Look now* in Settings runs the search at
+(`Shell::show_session`) and kept on screen when it ends. *Look now* in Settings runs the search at
 once. Every run writes its own log into its transcript as notices (`unattended::note`) — the start,
 the prompt going out, a cancel, and the words the issue was told at the end. A run the search finds claims its issue by removing the label,
 branches a worktree off `origin/<default>` and mints a session there. **Neither step moves anything on
@@ -753,8 +753,13 @@ caret with it. The rules that decide are core's (`onehand_core::unattended`); th
   `show_active_session` to reopen. `show_workbench` and `show_terminal` refuse while the page
   shows, which covers every key. **It holds no run store.** Runs are read per frame from
   `unattended::live_runs` (a `LiveRun` each), and sessions from the uids `PageProject` carries
-  through the same `signal` query the rail's dots use. The branch, the session list and the
-  project list are a snapshot taken when the page is shown. Live runs are cheap to read because a run starting, parking or
+  through the same `signal` query the rail's dots use. The project list (branch line and
+  session uids included) is built by `Shell::page_projects` when the page is shown and pushed again
+  by every git sweep while it shows (`ChatPane::set_page_projects`); a session closing always
+  leaves the page. Leaving restores the Workbench after the pane has left the page
+  (`Shell::show_active_session` wraps `arrive_at_active_root`), since `show_workbench` refuses
+  while it shows; `show_neovim` refuses before it starts an editor. `ResumeIn` makes the project
+  active without showing it, so the session it was last on is not connected for nothing. Live runs are cheap to read because a run starting, parking or
   ending already calls `cx.refresh_windows()`. Issues come from **the projects' own files alone**
   (`issues::open_across`, core, tested): a forge's issue kept in step is imported into the same
   file, so reading the forge too would list it twice. They are read off the UI loop when the page

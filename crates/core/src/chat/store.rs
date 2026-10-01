@@ -409,13 +409,13 @@ pub fn list_conversations(store: &Path, project: &Path, agent: Option<&str>) -> 
 /// project it belongs to, newest first. One read of the store however many
 /// projects are asked about. Blocking — call it off the UI loop.
 pub fn list_across(store: &Path, projects: &[PathBuf]) -> Vec<(PathBuf, ConvMeta)> {
-    let wanted: Vec<String> = projects.iter().map(|p| p.display().to_string()).collect();
-    list_where(store, |root, _| wanted.iter().any(|p| p == root))
+    let wanted: std::collections::HashMap<String, &PathBuf> = projects
+        .iter()
+        .map(|p| (p.display().to_string(), p))
+        .collect();
+    list_where(store, |root, _| wanted.contains_key(root))
         .into_iter()
-        .filter_map(|(root, conv)| {
-            let at = projects.iter().find(|p| p.display().to_string() == root)?;
-            Some((at.clone(), conv))
-        })
+        .filter_map(|(root, conv)| Some(((*wanted.get(&root)?).clone(), conv)))
         .collect()
 }
 

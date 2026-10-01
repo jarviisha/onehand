@@ -204,7 +204,8 @@ One window hosts exactly one workspace. The frame is a navigation **rail** plus 
     a folder icon, the name in bold and, at the far end, the most urgent rail
     mark among its sessions; under it the branch and changed count (or *Not a
     git repository*), then how many sessions it holds and how many issues are
-    open (or *Nothing open*). Pressing it selects the project.
+    open (or *Nothing open*, and *Looking for open issues…* while they are
+    read). Pressing it selects the project.
   - **Recent conversations**: the newest few past conversations across every
     project, head how long ago, then the title, then the project and the agent.
     One already open in a session is left out, since it is on the rail and a
