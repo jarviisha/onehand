@@ -923,7 +923,7 @@ see the rail, below.
   missing the other's change; a file this build cannot read is refused and never written over. The
   file is read again when the mode is next drawn after being shown or after a turn ends. What runs
   said about an issue is kept on it as **notes** and drawn under its body, the latest few, with the
-  cut said. Unattended runs work these issues too — see *Unattended runs*. No shortcut yet, and no
+  cut said. Unattended runs work these issues too — see *Unattended runs*. No
   deletion — closing is the way an issue leaves the work, from the detail's ⋯ menu (beside *Open on
   GitHub* and *Copy link*, whose address `Connector::issue_url_blocking` asks the forge for) and
   behind a confirmation, since a bare *Close* there read as closing the view.
@@ -944,6 +944,20 @@ see the rail, below.
   **The detail's header** is the wrapped title with *Edit* and ⋯ on its right, over a row with a
   coloured Open/Closed badge, the reference (pressing it opens the forge's page), label chips, and
   the first line of a *Priority* section if the body has one.
+  **Files the body names open in the editor** (`view/mentions.rs`, tested): repo-relative paths, in
+  code or bare beside punctuation, outside fenced and indented blocks and links, are checked off the
+  UI loop, and the ones that exist are rewritten into `onehand-file:` links before the body is parsed
+  again; the renderer's link hook opens those through `Request::OpenFile` and hands any other link to
+  the system. A path that does not exist stays as written. The same files are listed once each
+  under the body as *Referenced files* (capped, the cut said). Inline code takes the well and the
+  code blue; the renderer styles it through a highlight, which carries no font family or padding,
+  so neither is reachable.
+  **Single-key shortcuts** (`view/keys.rs`, tested) are read by the mode's own focus handle, which
+  `WorkbenchMode::focus` gives the caret: `j`/`k` move through the rows as drawn, Enter shows the
+  first when none is, `/` goes to the search, `e` edits, `c` starts an issue, `o` opens it on the
+  forge. In the search only Escape is one (back to the list); Enter there takes the first match. A
+  form open anywhere takes every key, since `j` or `c` there would throw away what is written. The
+  app's keymap refuses bare letters, so no binding can take these first.
   **Kept in step with the project's forge, both ways, when switched on** (`onehand_core::issues::sync`;
   the switch is the pause/resume control in the list's footer and is stored in the issue file as `synced_with`, so it needs no
   workspace key). A linked issue carries a `Link` whose `base` is the snapshot both sides last agreed

@@ -1,9 +1,12 @@
+use super::keys::keyed;
 use super::list::{chip, identity};
-use super::{Form, IssuesView, NOTES_SHOWN};
+use super::mentions::FILE_LINK;
+use super::{FILES_SHOWN, Form, IssuesView, NOTES_SHOWN};
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
-    AnyElement, App, ClickEvent, ClipboardItem, Context, Entity, InteractiveElement as _,
-    IntoElement, ParentElement, SharedString, StatefulInteractiveElement as _, Styled, Window, div,
+    AnyElement, App, ClickEvent, ClipboardItem, Context, Entity, HighlightStyle,
+    InteractiveElement as _, IntoElement, ParentElement, SharedString,
+    StatefulInteractiveElement as _, Styled, WeakEntity, Window, div,
 };
 use gpui_component::button::ButtonVariants as _;
 use gpui_component::input::{Input, Textarea};
@@ -11,7 +14,7 @@ use gpui_component::text::{TextView, TextViewState, TextViewStyle};
 use gpui_component::tooltip::Tooltip;
 use gpui_component::{ActiveTheme, Icon, IconName, Sizable as _, StyledExt};
 use onehand_core::issues::{LocalIssue, sync};
-use onehand_plugin_host::{action, menu_below, menu_item, status_ink};
+use onehand_plugin_host::{action, menu_below, menu_item, status_hue, status_ink};
 use std::path::Path;
 
 /// One issue, read: how it is named and its title with what can be done to it,
@@ -19,7 +22,7 @@ use std::path::Path;
 pub(super) fn issue_view(
     root: &Path,
     issue: &LocalIssue,
-    body: Option<Entity<TextViewState>>,
+    body: Option<(Entity<TextViewState>, Vec<String>)>,
     publish_to: Option<&'static str>,
     window: &mut Window,
     cx: &mut Context<IssuesView>,
@@ -66,6 +69,7 @@ pub(super) fn issue_view(
                             .xsmall()
                             .ghost()
                             .label("Edit")
+                            .tooltip(keyed("Edit", "e"))
                             .on_click(cx.listener(move |view, _: &ClickEvent, window, cx| {
                                 view.open_form(Some(number), window, cx)
                             })),
@@ -105,7 +109,7 @@ pub(super) fn issue_view(
                 .cursor_pointer()
                 .hover(|reference| reference.underline())
                 .tooltip({
-                    let tip = format!("Open on {}", link.connector);
+                    let tip = keyed(&format!("Open on {}", link.connector), "o");
                     move |window, cx| Tooltip::new(tip.clone()).build(window, cx)
                 })
                 .on_click(cx.listener(move |view, _: &ClickEvent, _, cx| {
@@ -161,16 +165,17 @@ pub(super) fn issue_view(
         .child(header)
         .child(facts)
         .children(conflict)
-        .child(match body {
-            Some(body) => div()
+        .child(match &body {
+            Some((parsed, _)) => div()
                 .flex_1()
                 .min_h_0()
                 .p_3()
                 .child(
-                    TextView::new(&body)
+                    TextView::new(parsed)
                         .selectable(true)
                         .scrollable(true)
-                        .style(body_style(window.rem_size(), cx)),
+                        .style(body_style(window.rem_size(), cx))
+                        .on_link_click(on_link(cx.entity().downgrade())),
                 )
                 .into_any_element(),
             None => div()
@@ -181,6 +186,7 @@ pub(super) fn issue_view(
                 .child("No description")
                 .into_any_element(),
         })
+        .children(body.and_then(|(_, files)| referenced(files, cx)))
         .children(notes)
         .into_any_element()
 }
@@ -413,16 +419,97 @@ pub(super) fn form_view(form: &Form, cx: &mut Context<IssuesView>) -> AnyElement
         .into_any_element()
 }
 
+/// What pressing a link in the body does: a file it names opens in the editor,
+/// and anything else goes to the system, as it would without this hook.
+fn on_link(
+    view: WeakEntity<IssuesView>,
+) -> impl Fn(&SharedString, &ClickEvent, &mut Window, &mut App) + Send + Sync + 'static {
+    move |url, _, window, cx| match url.strip_prefix(FILE_LINK) {
+        Some(path) => {
+            let _ = view.update(cx, |view, cx| view.open_path(path, window, cx));
+        }
+        None => cx.open_url(url),
+    }
+}
+
+/// The files the body names, under it: each once, in the order it names them,
+/// pressed to open in the editor. `None` for a body that names none.
+fn referenced(files: Vec<String>, cx: &mut Context<IssuesView>) -> Option<AnyElement> {
+    if files.is_empty() {
+        return None;
+    }
+    let muted = cx.theme().muted_foreground;
+    let left_out = files.len().saturating_sub(FILES_SHOWN);
+    Some(
+        div()
+            .flex_none()
+            .v_flex()
+            .gap_0p5()
+            .px_3()
+            .py_2()
+            .border_t_1()
+            .border_color(cx.theme().border)
+            .child(div().text_xs().text_color(muted).child("Referenced files"))
+            .children(
+                files
+                    .into_iter()
+                    .take(FILES_SHOWN)
+                    .enumerate()
+                    .map(|(i, path)| {
+                        let open = path.clone();
+                        div()
+                            .id(("issue-file", i))
+                            .h_flex()
+                            .items_center()
+                            .gap_1()
+                            .min_w_0()
+                            .px_1()
+                            .rounded(cx.theme().radius)
+                            .cursor_pointer()
+                            .hover(|row| row.bg(cx.theme().list_hover))
+                            .text_xs()
+                            .font_family(cx.theme().mono_font_family.clone())
+                            .child(Icon::new(IconName::File).xsmall().text_color(muted))
+                            .child(div().min_w_0().truncate().child(path))
+                            .on_click(cx.listener(move |view, _: &ClickEvent, window, cx| {
+                                view.open_path(&open, window, cx)
+                            }))
+                    }),
+            )
+            .when(left_out > 0, |list| {
+                list.child(
+                    div()
+                        .text_xs()
+                        .text_color(muted)
+                        .child(format!("… {left_out} more not shown")),
+                )
+            })
+            .into_any_element(),
+    )
+}
+
 /// Body styling. The renderer sizes its headings from an absolute pixel base,
 /// which the panel's rem-base zoom cannot reach by itself, so the base in force
 /// is written in by hand.
 fn body_style(rem: gpui::Pixels, cx: &App) -> TextViewStyle {
-    let mut style = TextViewStyle::default().code_block(
-        gpui::StyleRefinement::default()
-            .p(gpui::rems(0.75))
-            .text_size(gpui::rems(0.8125))
-            .bg(cx.theme().muted),
-    );
+    let theme = cx.theme();
+    let mut style = TextViewStyle::default()
+        .code_block(
+            gpui::StyleRefinement::default()
+                .p(gpui::rems(0.75))
+                .text_size(gpui::rems(0.8125))
+                .bg(theme.muted),
+        )
+        // Inline code on the well rather than the renderer's own accent, which
+        // in the dark palette is a slab louder than the prose around it, and
+        // in the blue the transcript gives code. The renderer styles inline
+        // code through a highlight, which carries colour and background but
+        // no font family and no padding, so those two are out of reach here.
+        .inline_code(HighlightStyle {
+            color: Some(status_hue(theme.blue, theme.foreground)),
+            background_color: Some(theme.muted),
+            ..HighlightStyle::default()
+        });
     style.heading_base_font_size = rem;
     style
 }

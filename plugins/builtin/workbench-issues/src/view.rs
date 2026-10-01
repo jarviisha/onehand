@@ -7,8 +7,9 @@
 //! the form, and when a sync runs.
 
 use gpui::{
-    AnyElement, App, AppContext as _, Context, Entity, IntoElement, ParentElement, Render, Styled,
-    Task, Window, div,
+    AnyElement, App, AppContext as _, Context, Entity, FocusHandle, Focusable,
+    InteractiveElement as _, IntoElement, KeyDownEvent, ParentElement, Render, ScrollHandle,
+    Styled, Task, Window, div,
 };
 use gpui_component::WindowExt as _;
 use gpui_component::dialog::DialogButtonProps;
@@ -17,14 +18,17 @@ use gpui_component::text::TextViewState;
 use gpui_component::{StyledExt, h_resizable, resizable_panel};
 use onehand_core::connector::{self, Connector};
 use onehand_core::issues::{self, Draft, Issues, LocalIssue, sync};
-use onehand_plugin_host::{hint, status_line};
+use onehand_plugin_host::{Ask, Request, hint, status_line};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 mod detail;
+mod keys;
 mod list;
+mod mentions;
 use detail::{form_view, issue_view};
+use keys::{Focus, Key};
 use list::Showing;
 
 /// How often a project kept in step with its forge is synced while it is the
@@ -53,6 +57,10 @@ const LIST_MAX: f32 = 420.;
 /// said to have them, and the rest are not built: every row is an element, and
 /// a list nobody scrolls to the end of is not worth building to the end.
 const LIST_CAP: usize = 500;
+
+/// How many of the files a body names are listed under it. A body that names
+/// more is a list of files, and the list says how many it left out.
+const FILES_SHOWN: usize = 20;
 
 /// How many of an issue's notes are drawn under it: the latest ones, since a
 /// note is what a run said about how it ended and the last run is the one that
@@ -89,6 +97,15 @@ pub(crate) struct IssuesView {
     /// The one label the list is narrowed to, if any. Dropped on a switch of
     /// project, whose issues carry labels of their own.
     label: Option<String>,
+    /// Where the mode's keys land when nothing inside it has the caret, so its
+    /// single-letter shortcuts reach it.
+    focus: FocusHandle,
+    /// The list's scroll, so a row moved to with the keyboard is brought into
+    /// view.
+    list_scroll: ScrollHandle,
+    /// How the mode asks the Workbench for something — a file opened in the
+    /// editor.
+    ask: Ask,
 }
 
 /// One project's issues and what is open among them.
@@ -98,10 +115,9 @@ struct RootIssues {
     issues: Option<Issues>,
     selected: Option<u64>,
     form: Option<Form>,
-    /// The selected issue's body, parsed, and the stamp it was parsed at — so
-    /// it is parsed again when the issue changes and never on a frame when it
-    /// has not.
-    body: Option<(u64, u64, Entity<TextViewState>)>,
+    /// The selected issue's body, parsed — so it is parsed again when the
+    /// issue changes and never on a frame when it has not.
+    body: Option<Body>,
     /// The forge that serves this project, if one does — found when its
     /// issues are read, since asking reads the project's git remote.
     forge: Option<&'static dyn Connector>,
@@ -130,6 +146,23 @@ impl RootIssues {
     }
 }
 
+impl Focusable for IssuesView {
+    fn focus_handle(&self, _: &App) -> FocusHandle {
+        self.focus.clone()
+    }
+}
+
+/// An issue's body as drawn: parsed, and the project's files it names.
+struct Body {
+    /// The issue and the stamp it was parsed at.
+    number: u64,
+    updated: u64,
+    parsed: Entity<TextViewState>,
+    /// The files it names that exist, in the order it names them. Empty
+    /// until the check, which reads the disk, has come back.
+    files: Vec<String>,
+}
+
 /// The form a new issue or an edit is written in.
 struct Form {
     /// The issue being edited, or `None` for a new one.
@@ -143,7 +176,11 @@ struct Form {
 }
 
 impl IssuesView {
-    pub(crate) fn new(connectors: &'static [&'static dyn Connector], cx: &mut App) -> Entity<Self> {
+    pub(crate) fn new(
+        connectors: &'static [&'static dyn Connector],
+        ask: Ask,
+        cx: &mut App,
+    ) -> Entity<Self> {
         cx.new(|cx| Self {
             root: None,
             storage: None,
@@ -156,6 +193,9 @@ impl IssuesView {
             query: None,
             showing: Showing::default(),
             label: None,
+            focus: cx.focus_handle(),
+            list_scroll: ScrollHandle::new(),
+            ask,
             _sync_every: cx.spawn(async move |view, cx| {
                 let every = (SYNC_EVERY.as_secs() / TICK.as_secs()).max(1);
                 for tick in 1u64.. {
@@ -634,6 +674,8 @@ impl Render for IssuesView {
         }
         let body = self.body(window, cx);
         div()
+            .track_focus(&self.focus)
+            .on_key_down(cx.listener(Self::key_down))
             .flex_1()
             .min_h_0()
             .v_flex()
@@ -709,28 +751,174 @@ impl IssuesView {
         issue_view(root, &issue, body, publish_to, window, cx)
     }
 
-    /// The selected issue's body as parsed markdown, parsed again only when
-    /// the issue has changed since the last time.
+    /// Open `path`, relative to the project on screen, in the editor.
+    ///
+    /// Deferred: the Workbench puts the request to every mode, this one
+    /// included, and this view is mid-update when a press inside it lands.
+    fn open_path(&mut self, path: &str, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(root) = self.root.clone() else {
+            return;
+        };
+        let (ask, path) = (self.ask.clone(), root.join(path));
+        window.defer(cx, move |window, cx| {
+            ask(&Request::OpenFile(&path), window, cx)
+        });
+    }
+
+    /// The mode's single-key shortcuts, refused while anything is being typed.
+    fn key_down(&mut self, event: &KeyDownEvent, window: &mut Window, cx: &mut Context<Self>) {
+        let stroke = &event.keystroke;
+        let key = match stroke.key.as_str() {
+            "enter" | "escape" => stroke.key.as_str(),
+            other => stroke.key_char.as_deref().unwrap_or(other),
+        };
+        let chorded = stroke.modifiers.control || stroke.modifiers.alt || stroke.modifiers.platform;
+        let Some(shortcut) = keys::shortcut(key, chorded, self.focus_now(window, cx)) else {
+            return;
+        };
+        cx.stop_propagation();
+        let selected = self.state_mut().and_then(|state| state.selected);
+        match shortcut {
+            Key::Next => self.step(1, cx),
+            Key::Previous => self.step(-1, cx),
+            Key::Open => {
+                if selected.is_none() {
+                    self.step(1, cx)
+                }
+            }
+            Key::Search => {
+                if let Some(query) = &self.query {
+                    query.update(cx, |query, cx| query.focus(window, cx));
+                }
+            }
+            Key::Edit => {
+                if let Some(number) = selected {
+                    self.open_form(Some(number), window, cx)
+                }
+            }
+            Key::New => self.open_form(None, window, cx),
+            Key::OpenOnForge => {
+                if let Some(number) = selected {
+                    self.with_url(number, |url, cx| cx.open_url(&url), cx)
+                }
+            }
+            Key::LeaveSearch => self.focus.focus(window, cx),
+        }
+    }
+
+    /// Where the keys are going: a form open anywhere is the writer's, and the
+    /// search box is the searcher's.
+    fn focus_now(&mut self, window: &Window, cx: &mut Context<Self>) -> Focus {
+        if self.state_mut().is_some_and(|state| state.form.is_some()) {
+            return Focus::Field;
+        }
+        match &self.query {
+            Some(query) if query.focus_handle(cx).is_focused(window) => Focus::Search,
+            _ => Focus::Panel,
+        }
+    }
+
+    /// Show the row `by` away from the one shown, in the list as it is drawn
+    /// now; the first row when none is shown.
+    fn step(&mut self, by: isize, cx: &mut Context<Self>) {
+        let Some(root) = self.root.clone() else {
+            return;
+        };
+        let Some(kept) = self.roots.get(&root).and_then(|state| state.issues.clone()) else {
+            return;
+        };
+        let text = self
+            .query
+            .as_ref()
+            .map(|query| query.read(cx).value().to_string())
+            .unwrap_or_default();
+        let rows = self.rows(&kept, &text);
+        let Some(state) = self.roots.get_mut(&root) else {
+            return;
+        };
+        let at = state
+            .selected
+            .and_then(|n| rows.iter().position(|&row| row == n));
+        let next = match at {
+            Some(at) => at
+                .saturating_add_signed(by)
+                .min(rows.len().saturating_sub(1)),
+            None => 0,
+        };
+        if let Some(&number) = rows.get(next) {
+            state.show(number);
+            self.list_scroll.scroll_to_item(next);
+            cx.notify();
+        }
+    }
+
+    /// The selected issue's body as parsed markdown and the files it names,
+    /// parsed again only when the issue has changed since the last time.
+    ///
+    /// Parsed at once as written, then again with the files it names made
+    /// links once a check off the UI loop has said which of them exist.
     fn parsed_body(
         &mut self,
         root: &Path,
         issue: &LocalIssue,
         cx: &mut Context<Self>,
-    ) -> Option<Entity<TextViewState>> {
+    ) -> Option<(Entity<TextViewState>, Vec<String>)> {
         if issue.body.is_empty() {
             return None;
         }
         let state = self.roots.get_mut(root)?;
-        match &state.body {
-            Some((n, at, parsed)) if *n == issue.number && *at == issue.updated => {
-                Some(parsed.clone())
-            }
-            _ => {
-                let parsed = cx.new(|cx| TextViewState::markdown(&issue.body, cx));
-                state.body = Some((issue.number, issue.updated, parsed.clone()));
-                Some(parsed)
-            }
+        if let Some(body) = &state.body
+            && body.number == issue.number
+            && body.updated == issue.updated
+        {
+            return Some((body.parsed.clone(), body.files.clone()));
         }
+        let parsed = cx.new(|cx| TextViewState::markdown(&issue.body, cx));
+        state.body = Some(Body {
+            number: issue.number,
+            updated: issue.updated,
+            parsed: parsed.clone(),
+            files: Vec::new(),
+        });
+        let (number, updated) = (issue.number, issue.updated);
+        let (root, text) = (root.to_path_buf(), issue.body.clone());
+        cx.spawn(async move |view, cx| {
+            let (linked, files) = cx
+                .background_executor()
+                .spawn({
+                    let root = root.clone();
+                    async move {
+                        let found = mentions::mentions(&text);
+                        let mut files: Vec<String> = Vec::new();
+                        for mention in &found {
+                            if !files.contains(&mention.path) && root.join(&mention.path).is_file()
+                            {
+                                files.push(mention.path.clone());
+                            }
+                        }
+                        (mentions::linked(&text, &found, &files), files)
+                    }
+                })
+                .await;
+            let _ = view.update(cx, |view: &mut Self, cx| {
+                let Some(body) = view
+                    .roots
+                    .get_mut(&root)
+                    .and_then(|state| state.body.as_mut())
+                else {
+                    return;
+                };
+                if body.number != number || body.updated != updated || files.is_empty() {
+                    return;
+                }
+                body.files = files;
+                body.parsed
+                    .update(cx, |parsed, cx| parsed.set_text(&linked, cx));
+                cx.notify();
+            });
+        })
+        .detach();
+        Some((parsed, Vec::new()))
     }
 }
 
