@@ -7,9 +7,8 @@
 //! the form, and when a sync runs.
 
 use gpui::{
-    AnyElement, App, AppContext as _, Context, Entity, FocusHandle, Focusable,
-    InteractiveElement as _, IntoElement, KeyDownEvent, ParentElement, Render, ScrollHandle,
-    Styled, Task, Window, div,
+    AnyElement, App, AppContext as _, Context, Entity, IntoElement, ParentElement, Render, Styled,
+    Task, Window, div,
 };
 use gpui_component::WindowExt as _;
 use gpui_component::dialog::DialogButtonProps;
@@ -24,11 +23,9 @@ use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 mod detail;
-mod keys;
 mod list;
 mod mentions;
 use detail::{form_view, issue_view};
-use keys::{Focus, Key};
 use list::Showing;
 
 /// How often a project kept in step with its forge is synced while it is the
@@ -97,12 +94,6 @@ pub(crate) struct IssuesView {
     /// The one label the list is narrowed to, if any. Dropped on a switch of
     /// project, whose issues carry labels of their own.
     label: Option<String>,
-    /// Where the mode's keys land when nothing inside it has the caret, so its
-    /// single-letter shortcuts reach it.
-    focus: FocusHandle,
-    /// The list's scroll, so a row moved to with the keyboard is brought into
-    /// view.
-    list_scroll: ScrollHandle,
     /// How the mode asks the Workbench for something — a file opened in the
     /// editor.
     ask: Ask,
@@ -143,12 +134,6 @@ impl RootIssues {
     /// shown once it has.
     fn land(&mut self, read: Issues) {
         keep_newer(&mut self.issues, read);
-    }
-}
-
-impl Focusable for IssuesView {
-    fn focus_handle(&self, _: &App) -> FocusHandle {
-        self.focus.clone()
     }
 }
 
@@ -193,8 +178,6 @@ impl IssuesView {
             query: None,
             showing: Showing::default(),
             label: None,
-            focus: cx.focus_handle(),
-            list_scroll: ScrollHandle::new(),
             ask,
             _sync_every: cx.spawn(async move |view, cx| {
                 let every = (SYNC_EVERY.as_secs() / TICK.as_secs()).max(1);
@@ -674,8 +657,6 @@ impl Render for IssuesView {
         }
         let body = self.body(window, cx);
         div()
-            .track_focus(&self.focus)
-            .on_key_down(cx.listener(Self::key_down))
             .flex_1()
             .min_h_0()
             .v_flex()
@@ -763,93 +744,6 @@ impl IssuesView {
         window.defer(cx, move |window, cx| {
             ask(&Request::OpenFile(&path), window, cx)
         });
-    }
-
-    /// The mode's single-key shortcuts, refused while anything is being typed.
-    fn key_down(&mut self, event: &KeyDownEvent, window: &mut Window, cx: &mut Context<Self>) {
-        let stroke = &event.keystroke;
-        let key = match stroke.key.as_str() {
-            "enter" | "escape" => stroke.key.as_str(),
-            other => stroke.key_char.as_deref().unwrap_or(other),
-        };
-        let chorded = stroke.modifiers.control || stroke.modifiers.alt || stroke.modifiers.platform;
-        let Some(shortcut) = keys::shortcut(key, chorded, self.focus_now(window, cx)) else {
-            return;
-        };
-        cx.stop_propagation();
-        let selected = self.state_mut().and_then(|state| state.selected);
-        match shortcut {
-            Key::Next => self.step(1, cx),
-            Key::Previous => self.step(-1, cx),
-            Key::Open => {
-                if selected.is_none() {
-                    self.step(1, cx)
-                }
-            }
-            Key::Search => {
-                if let Some(query) = &self.query {
-                    query.update(cx, |query, cx| query.focus(window, cx));
-                }
-            }
-            Key::Edit => {
-                if let Some(number) = selected {
-                    self.open_form(Some(number), window, cx)
-                }
-            }
-            Key::New => self.open_form(None, window, cx),
-            Key::OpenOnForge => {
-                if let Some(number) = selected {
-                    self.with_url(number, |url, cx| cx.open_url(&url), cx)
-                }
-            }
-            Key::LeaveSearch => self.focus.focus(window, cx),
-        }
-    }
-
-    /// Where the keys are going: a form open anywhere is the writer's, and the
-    /// search box is the searcher's.
-    fn focus_now(&mut self, window: &Window, cx: &mut Context<Self>) -> Focus {
-        if self.state_mut().is_some_and(|state| state.form.is_some()) {
-            return Focus::Field;
-        }
-        match &self.query {
-            Some(query) if query.focus_handle(cx).is_focused(window) => Focus::Search,
-            _ => Focus::Panel,
-        }
-    }
-
-    /// Show the row `by` away from the one shown, in the list as it is drawn
-    /// now; the first row when none is shown.
-    fn step(&mut self, by: isize, cx: &mut Context<Self>) {
-        let Some(root) = self.root.clone() else {
-            return;
-        };
-        let Some(kept) = self.roots.get(&root).and_then(|state| state.issues.clone()) else {
-            return;
-        };
-        let text = self
-            .query
-            .as_ref()
-            .map(|query| query.read(cx).value().to_string())
-            .unwrap_or_default();
-        let rows = self.rows(&kept, &text);
-        let Some(state) = self.roots.get_mut(&root) else {
-            return;
-        };
-        let at = state
-            .selected
-            .and_then(|n| rows.iter().position(|&row| row == n));
-        let next = match at {
-            Some(at) => at
-                .saturating_add_signed(by)
-                .min(rows.len().saturating_sub(1)),
-            None => 0,
-        };
-        if let Some(&number) = rows.get(next) {
-            state.show(number);
-            self.list_scroll.scroll_to_item(next);
-            cx.notify();
-        }
     }
 
     /// The selected issue's body as parsed markdown and the files it names,

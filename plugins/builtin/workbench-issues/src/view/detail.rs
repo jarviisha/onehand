@@ -1,4 +1,3 @@
-use super::keys::keyed;
 use super::list::{chip, identity};
 use super::mentions::FILE_LINK;
 use super::{FILES_SHOWN, Form, IssuesView, NOTES_SHOWN};
@@ -69,7 +68,6 @@ pub(super) fn issue_view(
                             .xsmall()
                             .ghost()
                             .label("Edit")
-                            .tooltip(keyed("Edit", "e"))
                             .on_click(cx.listener(move |view, _: &ClickEvent, window, cx| {
                                 view.open_form(Some(number), window, cx)
                             })),
@@ -109,7 +107,7 @@ pub(super) fn issue_view(
                 .cursor_pointer()
                 .hover(|reference| reference.underline())
                 .tooltip({
-                    let tip = keyed(&format!("Open on {}", link.connector), "o");
+                    let tip = format!("Open on {}", link.connector);
                     move |window, cx| Tooltip::new(tip.clone()).build(window, cx)
                 })
                 .on_click(cx.listener(move |view, _: &ClickEvent, _, cx| {

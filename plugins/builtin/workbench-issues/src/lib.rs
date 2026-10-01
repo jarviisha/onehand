@@ -6,7 +6,7 @@
 // a working feature.
 #![warn(unreachable_pub)]
 
-use gpui::{AnyView, App, Entity, Focusable as _, Window};
+use gpui::{AnyView, App, Entity};
 use onehand_core::connector::Connector;
 use onehand_plugin_api::{PluginId, WorkbenchModeSpec};
 use onehand_plugin_host::{Ask, Request, WorkbenchMode};
@@ -40,13 +40,6 @@ impl WorkbenchMode for Mode {
 
     fn view(&self) -> AnyView {
         self.view.clone().into()
-    }
-
-    /// The caret goes to the mode itself, where its single-key shortcuts
-    /// are read.
-    fn focus(&self, window: &mut Window, cx: &mut App) -> bool {
-        self.view.read(cx).focus_handle(cx).focus(window, cx);
-        true
     }
 
     fn set_root(&mut self, root: &Path, cx: &mut App) {

@@ -1,7 +1,6 @@
 //! The left half of the Issues mode: the search, the filters, a row per issue
 //! and the sync footer under them.
 
-use super::keys::keyed;
 use super::{IssuesView, LIST_CAP};
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
@@ -94,37 +93,15 @@ impl IssuesView {
         if let Some(query) = &self.query {
             return query.clone();
         }
-        let query = cx
-            .new(|cx| InputState::new(window, cx).placeholder("Search titles, or #6 to jump (/)"));
-        cx.subscribe_in(
-            &query,
-            window,
-            |view, query, event: &InputEvent, window, cx| {
-                match event {
-                    InputEvent::Change => {
-                        let text = query.read(cx).value().to_string();
-                        view.jump(&text);
-                    }
-                    // Enter takes the first row found and hands the keys back to
-                    // the list, where j and k go on from it.
-                    InputEvent::PressEnter { .. } => {
-                        let text = query.read(cx).value().to_string();
-                        let first = view
-                            .state_mut()
-                            .filter(|state| state.form.is_none())
-                            .and_then(|state| state.issues.clone())
-                            .and_then(|kept| view.rows(&kept, &text).first().copied());
-                        if let (Some(number), Some(state)) = (first, view.state_mut()) {
-                            state.show(number);
-                            view.list_scroll.scroll_to_item(0);
-                        }
-                        view.focus.focus(window, cx);
-                    }
-                    InputEvent::Focus | InputEvent::Blur => {}
-                }
-                cx.notify();
-            },
-        )
+        let query =
+            cx.new(|cx| InputState::new(window, cx).placeholder("Search titles, or #6 to jump"));
+        cx.subscribe(&query, |view, query, event: &InputEvent, cx| {
+            if matches!(event, InputEvent::Change) {
+                let text = query.read(cx).value().to_string();
+                view.jump(&text);
+            }
+            cx.notify();
+        })
         .detach();
         self.query = Some(query.clone());
         query
@@ -157,21 +134,6 @@ impl IssuesView {
         {
             self.label = None;
         }
-    }
-
-    /// The numbers of the rows the list draws for search `text`, in order —
-    /// what the keyboard walks.
-    pub(super) fn rows(&self, issues: &Issues, text: &str) -> Vec<u64> {
-        let narrowing = Narrowing {
-            query: text,
-            label: self.label.as_deref(),
-        };
-        listed(issues, &narrowing, self.showing)
-            .0
-            .iter()
-            .take(LIST_CAP)
-            .map(|issue| issue.number)
-            .collect()
     }
 
     /// The list: the search and the way to start a new issue, the filters,
@@ -217,7 +179,7 @@ impl IssuesView {
                     .small()
                     .ghost()
                     .icon(Icon::new(IconName::Plus))
-                    .tooltip(keyed("New issue", "c"))
+                    .tooltip("New issue")
                     .on_click(cx.listener(|view, _: &ClickEvent, window, cx| {
                         view.open_form(None, window, cx)
                     })),
@@ -288,7 +250,6 @@ impl IssuesView {
             .child(
                 div()
                     .id("issues-list")
-                    .track_scroll(&self.list_scroll)
                     .flex_1()
                     .min_h_0()
                     .v_flex()
