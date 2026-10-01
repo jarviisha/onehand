@@ -574,6 +574,12 @@ Its shape, and the reason for each part:
   surface also carries that chrome, so flooring there left the fold wherever the
   chrome happened to put it — which is the part-row the flooring exists to
   prevent.
+- **The scrollbar runs down the popup's own right edge**, in the surface's
+  inset, with the rows held clear of it. Laid over the rows, the thumb sat on
+  the highlight fill and on the right end of every row's border, and read as
+  part of the row under it. A parked question card's choices put their thumb
+  on the card's edge the same way, so two scrolling cards stacked one over the
+  other agree about where a scrollbar goes.
 - **Height is measured once against an empty query** and held while the popup is
   open. It belongs to the list, not to what is typed: taken from what was on
   screen it held while a query narrowed and grew when a character was deleted,

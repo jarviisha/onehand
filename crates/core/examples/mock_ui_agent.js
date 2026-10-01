@@ -535,7 +535,8 @@ const step = {
   },
 
   // The quick shape: one single-select field, which commits on the click and
-  // carries no Submit to hunt for.
+  // carries no Submit to hunt for. Enough choices, with long enough
+  // descriptions, that the list outgrows its cap and scrolls.
   question() {
     pending = 'question';
     send({
@@ -557,6 +558,30 @@ const step = {
               oneOf: [
                 { const: 'memory', title: 'In memory', description: 'Fastest, lost on exit' },
                 { const: 'sqlite', title: 'SQLite', description: 'Survives a restart' },
+                {
+                  const: 'disk',
+                  title: 'Flat files on disk',
+                  description:
+                    'One file per key under the cache directory, so it survives a restart and can be ' +
+                    'inspected by hand, at the cost of a syscall per read',
+                },
+                {
+                  const: 'redis',
+                  title: 'Redis',
+                  description:
+                    'Shared between every process on the machine and survives a restart of this one, ' +
+                    'but adds a server somebody has to keep running',
+                },
+                {
+                  const: 'mmap',
+                  title: 'A memory-mapped file',
+                  description: 'Reads as fast as memory and survives a restart, but a crash mid-write can tear an entry',
+                },
+                {
+                  const: 'none',
+                  title: 'No cache',
+                  description: 'Recompute every time; slow, but nothing can go stale and there is nothing to invalidate',
+                },
               ],
             },
             question_0_custom: { type: 'string', title: 'Other' },
@@ -571,6 +596,8 @@ const step = {
   // single-select, a multi-select and a free-text field -- because each draws
   // differently, and a card of three identical questions would only ever
   // exercise one of the three.
+  //
+  // The two fields with choices carry enough of them to scroll.
   //
   // `*_custom` beside a field is the "Other" box: the choices are what the
   // agent thought of, and that is the answer it did not.
@@ -596,6 +623,25 @@ const step = {
                 { const: 'backfill', title: 'Backfill them', description: 'One pass over the table on the next boot' },
                 { const: 'leave', title: 'Leave them', description: 'Old rows keep the old shape forever' },
                 { const: 'drop', title: 'Drop them', description: 'Cannot be undone' },
+                {
+                  const: 'lazy',
+                  title: 'Migrate them lazily',
+                  description:
+                    'Each row is rewritten the first time it is read, so the cost is spread over normal ' +
+                    'traffic, but the table holds two shapes until every row has been touched',
+                },
+                {
+                  const: 'copy',
+                  title: 'Copy into a new table',
+                  description:
+                    'Write the new shape beside the old one and swap the names once the copy has caught up; ' +
+                    'needs twice the disk for the length of the copy',
+                },
+                {
+                  const: 'archive',
+                  title: 'Archive them',
+                  description: 'Move the old rows to cold storage where they can still be read, but not written',
+                },
               ],
             },
             question_0_custom: { type: 'string', title: 'Other' },
@@ -608,6 +654,11 @@ const step = {
                   { const: 'tests', title: 'Tests' },
                   { const: 'docs', title: 'Docs' },
                   { const: 'bench', title: 'A benchmark' },
+                  { const: 'changelog', title: 'A changelog entry' },
+                  { const: 'rollback', title: 'A rollback script' },
+                  { const: 'fixtures', title: 'Fixtures for the new shape' },
+                  { const: 'dashboard', title: 'A dashboard for the migration' },
+                  { const: 'runbook', title: 'A runbook for whoever is on call' },
                 ],
               },
             },

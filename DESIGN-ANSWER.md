@@ -1644,6 +1644,10 @@ The agent *asking*, which is not the same as asking permission — Claude Code's
   agent's. Bare, it read as a field left over from somewhere else. The row is
   the border and the field inside it draws none: two rings around one input read
   as two inputs.
+- **The choices scroll; their thumb runs down the card's own edge.** It sits in
+  the card's right padding with the rows held clear of it, so the rows still end
+  where the free-text row below them does. Laid over the rows, the thumb crossed
+  the right-hand border of every choice and read as a row drawn wrong.
 - **The keyboard has a walk and a jump, and the row says which key reaches it.**
   The arrows move a cursor and settle nothing, `Enter` takes what the cursor is
   on, `Esc` passes on this question at the same scale the *Skip* beside it does
