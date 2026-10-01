@@ -203,30 +203,9 @@ pub(crate) fn issue_row(
     trailing: String,
     cx: &App,
 ) -> gpui::Stateful<gpui::Div> {
-    let (muted, radius, accent) = (
-        cx.theme().muted_foreground,
-        cx.theme().radius,
-        cx.theme().accent,
-    );
+    let (muted, radius) = (cx.theme().muted_foreground, cx.theme().radius);
     let (pill_bg, pill_fg) = (cx.theme().secondary, cx.theme().secondary_foreground);
-    div()
-        .id(id)
-        .h_flex()
-        .items_center()
-        .gap_2()
-        .w_full()
-        .px_2()
-        .py_1()
-        .rounded(radius)
-        .cursor_pointer()
-        .hover(move |row| row.bg(accent.opacity(0.5)))
-        .child(
-            div()
-                .flex_none()
-                .text_color(muted)
-                .child(format!("#{number}")),
-        )
-        .child(div().flex_1().min_w_0().truncate().child(title))
+    row_shell(id, format!("#{number}"), title, cx)
         // A few labels, not all: the row is for telling issues apart, and the
         // title is what does most of that.
         .children(labels.iter().take(3).map(|label| {
@@ -246,6 +225,54 @@ pub(crate) fn issue_row(
                 .text_color(muted)
                 .child(trailing),
         )
+}
+
+/// A row in the issue row's shape with something other than a number at its
+/// head — a session's mark, a project's folder, a conversation's age — and no
+/// labels. What the workspace page lists that is not an issue.
+pub(crate) fn page_row(
+    id: impl Into<gpui::ElementId>,
+    lead: impl IntoElement,
+    title: String,
+    trailing: String,
+    cx: &App,
+) -> gpui::Stateful<gpui::Div> {
+    let muted = cx.theme().muted_foreground;
+    row_shell(id, lead, title, cx).child(
+        div()
+            .flex_none()
+            .text_xs()
+            .text_color(muted)
+            .child(trailing),
+    )
+}
+
+/// What both row shapes share: the pressable line, its muted head and its
+/// truncated title.
+fn row_shell(
+    id: impl Into<gpui::ElementId>,
+    lead: impl IntoElement,
+    title: String,
+    cx: &App,
+) -> gpui::Stateful<gpui::Div> {
+    let (muted, radius, accent) = (
+        cx.theme().muted_foreground,
+        cx.theme().radius,
+        cx.theme().accent,
+    );
+    div()
+        .id(id)
+        .h_flex()
+        .items_center()
+        .gap_2()
+        .w_full()
+        .px_2()
+        .py_1()
+        .rounded(radius)
+        .cursor_pointer()
+        .hover(move |row| row.bg(accent.opacity(0.5)))
+        .child(div().flex_none().text_color(muted).child(lead))
+        .child(div().flex_1().min_w_0().truncate().child(title))
 }
 
 /// The picker's body: a wait, a failure, an empty answer, or the rows.

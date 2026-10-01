@@ -397,6 +397,31 @@ fn describe(dir: &Path, meta: Meta) -> ConvMeta {
 /// Blocking — call it off the UI loop.
 pub fn list_conversations(store: &Path, project: &Path, agent: Option<&str>) -> Vec<ConvMeta> {
     let project = project.display().to_string();
+    list_where(store, |root, conv_agent| {
+        root == project && agent.is_none_or(|a| conv_agent == a)
+    })
+    .into_iter()
+    .map(|(_, conv)| conv)
+    .collect()
+}
+
+/// Conversations under `store` belonging to any of `projects`, each with the
+/// project it belongs to, newest first. One read of the store however many
+/// projects are asked about. Blocking — call it off the UI loop.
+pub fn list_across(store: &Path, projects: &[PathBuf]) -> Vec<(PathBuf, ConvMeta)> {
+    let wanted: Vec<String> = projects.iter().map(|p| p.display().to_string()).collect();
+    list_where(store, |root, _| wanted.iter().any(|p| p == root))
+        .into_iter()
+        .filter_map(|(root, conv)| {
+            let at = projects.iter().find(|p| p.display().to_string() == root)?;
+            Some((at.clone(), conv))
+        })
+        .collect()
+}
+
+/// Every conversation `keep` accepts by its project root and agent, with that
+/// root, newest first.
+fn list_where(store: &Path, keep: impl Fn(&str, &str) -> bool) -> Vec<(String, ConvMeta)> {
     let mut out = Vec::new();
     let Ok(entries) = std::fs::read_dir(store) else {
         return out;
@@ -412,12 +437,13 @@ pub fn list_conversations(store: &Path, project: &Path, agent: Option<&str>) -> 
         let Some(meta) = meta_at(&dir) else {
             continue;
         };
-        if meta.root != project || agent.is_some_and(|a| meta.agent != a) {
+        if !keep(&meta.root, &meta.agent) {
             continue;
         }
-        out.push(describe(&dir, meta));
+        let root = meta.root.clone();
+        out.push((root, describe(&dir, meta)));
     }
-    out.sort_by_key(|conv| std::cmp::Reverse(conv.updated));
+    out.sort_by_key(|(_, conv)| std::cmp::Reverse(conv.updated));
     out
 }
 
@@ -967,6 +993,22 @@ mod tests {
         assert!(list_conversations(&store, Path::new("/other"), None).is_empty());
         // Nor another agent's.
         assert!(list_conversations(&store, Path::new("/r"), Some("Other")).is_empty());
+        let _ = std::fs::remove_dir_all(&store);
+    }
+
+    #[test]
+    fn listing_across_projects_names_each_ones_project() {
+        let store = scratch("across");
+        let mut chat = chat_in(&store, "s1");
+        chat.push_user("Fix the login flow".into(), Vec::new());
+        save(&mut chat);
+
+        let projects = [PathBuf::from("/other"), PathBuf::from("/r")];
+        let found = list_across(&store, &projects);
+        assert_eq!(found.len(), 1);
+        assert_eq!(found[0].0, PathBuf::from("/r"));
+        assert_eq!(found[0].1.session_id, "s1");
+        assert!(list_across(&store, &projects[..1]).is_empty());
         let _ = std::fs::remove_dir_all(&store);
     }
 

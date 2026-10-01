@@ -434,6 +434,9 @@ pub struct Shell {
     /// Knowing whose state is on screen is enough to file it correctly at the one
     /// moment it matters, which is the switch itself.
     terminal_root: Option<PathBuf>,
+    /// Whether the Workbench was open when the workspace page put it away, so
+    /// leaving the page puts it back.
+    workbench_aside: bool,
     /// Session uids per root, most recently viewed first. What `Ctrl+Tab`
     /// walks.
     mru: HashMap<PathBuf, Vec<u64>>,
@@ -615,7 +618,29 @@ impl Shell {
                         cx,
                     ),
                     E::OpenIssue { root, number } => shell.open_issue(root, *number, window, cx),
-                    E::ShowRun { uid, window: at } => shell.show_run(*uid, *at, window, cx),
+                    E::ShowSession { uid, window: at } => shell.show_run(*uid, *at, window, cx),
+                    E::ShowProject(root) => {
+                        if let Some(idx) = shell.root_index(root) {
+                            shell.select_root(idx, window, cx);
+                        }
+                    }
+                    // Into its own project first: a session is minted on the
+                    // project that is selected.
+                    E::ResumeIn {
+                        root,
+                        agent,
+                        archive,
+                    } => {
+                        if let Some(idx) = shell.root_index(root) {
+                            shell.select_root(idx, window, cx);
+                            let _ = shell.start_session(
+                                Some(agent.clone()),
+                                Some(archive.clone()),
+                                window,
+                                cx,
+                            );
+                        }
+                    }
                 }
                 // A finished turn also changes what the rail's session dots
                 // say, and the rail is drawn from a query rather than from
@@ -839,6 +864,7 @@ impl Shell {
                 .into_iter()
                 .collect(),
             terminal_root: seed_root,
+            workbench_aside: false,
             mru: HashMap::new(),
             tab_cycle: None,
             pending_remove: None,
@@ -1085,6 +1111,12 @@ impl Shell {
         // because asking to see a session in a project is asking to see the
         // project.
         self.reveal_root();
+        // Leaving the workspace page: the Workbench it put away comes back. The
+        // terminal needs nothing here, since the handover below restores it.
+        if std::mem::take(&mut self.workbench_aside) {
+            let mode = self.workbench.read(cx).mode();
+            self.show_workbench(mode, window, cx);
+        }
         // Every arrival at a project passes through here, whether or not it has
         // a session on it -- which is what the branch below cannot be, since it
         // only runs where the project page is what is shown. The strip under
@@ -2293,6 +2325,11 @@ impl Shell {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        // The Workbench and the terminal are one project's, and the workspace
+        // page stands on none.
+        if self.workspace_shown(cx) {
+            return;
+        }
         self.last_panel = FocusedPanel::Workbench;
         let open = self.dock.read(cx).is_dock_open(DockPlacement::Right, cx);
         self.workbench
@@ -2348,6 +2385,9 @@ impl Shell {
     /// Toggle the bottom terminal regardless of focus. A shell is spawned on
     /// first open and never at boot (see [`crate::terminal`]).
     pub fn show_terminal(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.workspace_shown(cx) {
+            return;
+        }
         self.last_panel = FocusedPanel::Terminal;
         let open = self.dock.read(cx).is_dock_open(DockPlacement::Bottom, cx);
         // **An open dock with nothing in it is not a dock to close.** Closing
@@ -3508,9 +3548,32 @@ impl Shell {
             .map(|root| crate::chat::pane::PageProject {
                 label: SharedString::from(root.label.clone()),
                 root: root.path.clone(),
+                sessions: root
+                    .sessions
+                    .iter()
+                    .map(|session| (session.uid, SharedString::from(session.title().to_string())))
+                    .collect(),
+                git: self
+                    .window
+                    .git
+                    .get(&root.path)
+                    .map(gitstat::GitStatus::label),
                 issues: self.issues_file(&root.path),
             })
             .collect();
+        // Both docks hold one project's things, and this page is about all of
+        // them. Put away, not closed: the terminal's state is filed under its
+        // project and `terminal_root` let go, so the next arrival is a handover
+        // that restores it, and the Workbench comes back on leaving.
+        if !self.workspace_shown(cx) {
+            if let Some(root) = self.terminal_root.take() {
+                let live = self.dock.read(cx).is_dock_open(DockPlacement::Bottom, cx);
+                self.terminal_open.insert(root, live);
+            }
+            self.set_terminal_visible(false, window, cx);
+            self.workbench_aside = self.dock.read(cx).is_dock_open(DockPlacement::Right, cx);
+            self.hide_workbench(window, cx);
+        }
         self.chat
             .update(cx, |pane, cx| pane.show_workspace(projects, window, cx));
         // No session is showing now, so there is no running agent to be
