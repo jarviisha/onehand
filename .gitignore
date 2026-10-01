@@ -30,3 +30,5 @@ onehand-workspace.toml
 .claude/settings.local.json
 
 # Cargo.lock is intentionally kept (binary crate) — do NOT ignore it.
+
+localDocs
