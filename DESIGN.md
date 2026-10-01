@@ -192,7 +192,8 @@ One window hosts exactly one workspace. The frame is a navigation **rail** plus 
   or *nothing is running* when empty, so the page keeps one shape; inside a
   card, a row is the issue row's shape — a muted head, the title truncated, a
   muted line at the end — and pressing it goes to what it names.
-  - **Waiting on you**: every unattended run standing on a card (head `#N`,
+  - **Waiting on you**: every unattended run standing on a card (head the
+    issue as shown — the forge's `#N`, or *Draft* for one kept in onehand only,
     then the question, then the project), and every session whose rail mark is
     *lost*, *waiting for you* or *finished* (head the rail's own mark, then the
     conversation's name, then the project and the state in the rail's word).
@@ -212,9 +213,10 @@ One window hosts exactly one workspace. The frame is a navigation **rail** plus 
     second resume would put it in two sessions. Pressing one selects its project
     and starts a session resuming it.
   - **Open issues**: every project's own issues, open only, most recently
-    changed first. A row is the picker's row (number muted, title truncated, up
-    to three label pills) with the project's name muted at the end, followed by
-    the forge's reference where the issue is kept in step with one. Pressing it
+    changed first. A row is the picker's row (the forge's reference muted, or
+    *Draft* for one not on a forge — onehand's own number is a key and is never
+    drawn — title truncated, up to three label pills) with the project's name
+    muted at the end. Pressing it
     selects that project and opens the Workbench on its Issues mode with that
     issue selected. The one card that grows long, so the one whose list
     scrolls inside it; the cards around it keep their place. The project's own files are the only source: an issue
@@ -261,8 +263,8 @@ One window hosts exactly one workspace. The frame is a navigation **rail** plus 
   project's ••• menu (the rail's and the project page's), and a list of
   switches under Settings ▸ Workspace, where every project's answer can be read
   at once. While on, the row carries a pill in the change count's style reading
-  **`auto`**, and **`auto · #N`** while a run is working issue N of that
-  project. It is a word and not a glyph, because the pill already reads as a
+  **`auto`**, and **`auto · #N`** while a run is working an issue of that
+  project, the issue as shown everywhere: the forge's number, or *Draft*. It is a word and not a glyph, because the pill already reads as a
   fact about the project and an icon would be one more shape to learn. It never
   gives way to width, because a permission to push is the worst thing the row
   could quietly hide. The hover says it in full: which label is looked for, or

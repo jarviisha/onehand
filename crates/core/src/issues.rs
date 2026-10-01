@@ -146,7 +146,35 @@ pub struct Note {
     pub session: Option<String>,
 }
 
+impl Note {
+    /// An issue closed or reopened at `now`, on the forge named `on` if the
+    /// change was made there rather than here.
+    fn state(open: bool, on: Option<&str>, now: u64) -> Self {
+        let did = if open { "Reopened" } else { "Closed" };
+        Note {
+            at: now,
+            text: match on {
+                Some(forge) => format!("{did} on {forge}"),
+                None => did.to_string(),
+            },
+            session: None,
+        }
+    }
+}
+
 impl LocalIssue {
+    /// How it came to be kept here, for the first line of its history, which
+    /// `created` dates: brought in from a forge, or opened here.
+    pub fn arrival(&self) -> String {
+        match (&self.imported_from, &self.link) {
+            (Some(forge), Some(link)) if &link.connector == forge => {
+                format!("Brought in from {forge} as {}", link.reference)
+            }
+            (Some(forge), _) => format!("Brought in from {forge}"),
+            (None, _) => "Opened here".to_string(),
+        }
+    }
+
     /// Its link to the connector named `name`, if it has one.
     pub(crate) fn link_on(&self, name: &str) -> Option<&Link> {
         self.link.as_ref().filter(|link| link.connector == name)
@@ -181,14 +209,7 @@ impl LocalIssue {
     /// one made on the forge is as much a part of its history as one made here.
     fn apply(&mut self, said: &Snapshot, from: &str, now: u64) {
         if self.open != said.open {
-            self.notes.push(Note {
-                at: now,
-                text: format!(
-                    "{} on {from}",
-                    if said.open { "Reopened" } else { "Closed" }
-                ),
-                session: None,
-            });
+            self.notes.push(Note::state(said.open, Some(from), now));
         }
         self.title = said.title.clone();
         self.body = said.body.clone();
@@ -293,11 +314,7 @@ impl Issues {
         if issue.open != open {
             issue.open = open;
             issue.updated = now;
-            issue.notes.push(Note {
-                at: now,
-                text: (if open { "Reopened" } else { "Closed" }).to_string(),
-                session: None,
-            });
+            issue.notes.push(Note::state(open, None, now));
         }
         Ok(())
     }
@@ -550,6 +567,17 @@ pub fn work_here_prompt(issue: &LocalIssue) -> String {
     )
 }
 
+/// Say on the issue `number` kept in `file` that the conversation `session`
+/// took it up, in the words `text`. Blocking: one read-change-write.
+pub fn taken_up_blocking(
+    file: &Path,
+    number: u64,
+    text: &str,
+    session: String,
+) -> Result<(), String> {
+    update_blocking(file, |kept| kept.taken_up(number, text, session, now())).map(drop)
+}
+
 /// The time now, in the unit issues are stamped in.
 pub fn now() -> u64 {
     std::time::SystemTime::now()
@@ -610,6 +638,13 @@ mod tests {
         });
         // Filed here as #1, known everywhere as GitHub's #6.
         assert_eq!(issues.get(n).unwrap().reference(), Some("#6"));
+        // Written here and published: it arrived here, not from the forge.
+        assert_eq!(issues.get(n).unwrap().arrival(), "Opened here");
+        issues.find_mut(n).unwrap().imported_from = Some("GitHub".into());
+        assert_eq!(
+            issues.get(n).unwrap().arrival(),
+            "Brought in from GitHub as #6"
+        );
     }
 
     #[test]

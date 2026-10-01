@@ -227,9 +227,7 @@ fn name_session(uid: u64, session: &Entity<ChatSession>, cx: &mut App) {
                 "Taken up by an unattended run in {}, on branch {branch}",
                 dir.display()
             );
-            let done = onehand_core::issues::update_blocking(&file, |kept| {
-                kept.taken_up(number, &said, id, onehand_core::issues::now())
-            });
+            let done = onehand_core::issues::taken_up_blocking(&file, number, &said, id);
             if let Err(why) = done {
                 eprintln!("onehand: could not note the session on issue: {why}");
             }

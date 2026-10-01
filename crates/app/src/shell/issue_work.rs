@@ -62,14 +62,12 @@ impl Shell {
                 let done = cx
                     .background_executor()
                     .spawn(async move {
-                        onehand_core::issues::update_blocking(&file, |kept| {
-                            kept.taken_up(
-                                number,
-                                "Taken up by a session on this checkout",
-                                id,
-                                onehand_core::issues::now(),
-                            )
-                        })
+                        onehand_core::issues::taken_up_blocking(
+                            &file,
+                            number,
+                            "Taken up by a session on this checkout",
+                            id,
+                        )
                     })
                     .await;
                 if let Err(why) = done {

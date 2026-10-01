@@ -235,12 +235,6 @@ impl IssuesView {
         cx.notify();
     }
 
-    /// The live session working `issue`: the latest conversation its history
-    /// names that still has one in this window.
-    fn working(&self, issue: &LocalIssue) -> Option<String> {
-        working_in(issue, &self.live).map(str::to_string)
-    }
-
     pub(crate) fn mark_stale(&mut self, cx: &mut Context<Self>) {
         self.stale = true;
         cx.notify();
@@ -743,17 +737,30 @@ impl IssuesView {
             .filter(|_| issue.link.is_none())
             .map(|forge| forge.name());
         let body = self.parsed_body(root, &issue, cx);
-        let working = self.working(&issue);
+        let working = working_in(&issue, &self.live).map(str::to_string);
         issue_view(root, &issue, body, publish_to, working, window, cx)
     }
 
-    /// Start a session on the project on screen, in the checkout it is open
-    /// on, with issue `number` as its first message. Deferred, as
-    /// [`Self::open_path`] is.
-    fn work_here(&mut self, number: u64, window: &mut Window, cx: &mut Context<Self>) {
+    /// Put a request to the Workbench about the project on screen, once this
+    /// view is no longer being updated: the Workbench puts what it is asked to
+    /// every mode, this one included, and a press inside this view lands while
+    /// the view is mid-update.
+    fn ask_later(
+        &self,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+        put: impl FnOnce(&Ask, &Path, &mut Window, &mut App) + 'static,
+    ) {
         let Some(root) = self.root.clone() else {
             return;
         };
+        let ask = self.ask.clone();
+        window.defer(cx, move |window, cx| put(&ask, &root, window, cx));
+    }
+
+    /// Start a session on the project on screen, in the checkout it is open
+    /// on, with issue `number` as its first message.
+    fn work_here(&mut self, number: u64, window: &mut Window, cx: &mut Context<Self>) {
         let Some(prompt) = self
             .state_mut()
             .and_then(|state| state.issues.as_ref()?.get(number))
@@ -761,49 +768,32 @@ impl IssuesView {
         else {
             return;
         };
-        let ask = self.ask.clone();
-        window.defer(cx, move |window, cx| {
-            ask(
-                &Request::WorkIssueHere {
-                    root: &root,
-                    number,
-                    prompt: &prompt,
-                },
-                window,
-                cx,
-            )
+        self.ask_later(window, cx, move |ask, root, window, cx| {
+            let request = Request::WorkIssueHere {
+                root,
+                number,
+                prompt: &prompt,
+            };
+            ask(&request, window, cx)
         });
     }
 
     /// Put the conversation the agent named `session` on screen.
     fn open_session(&mut self, session: String, window: &mut Window, cx: &mut Context<Self>) {
-        let Some(root) = self.root.clone() else {
-            return;
-        };
-        let ask = self.ask.clone();
-        window.defer(cx, move |window, cx| {
-            ask(
-                &Request::OpenConversation {
-                    root: &root,
-                    session: &session,
-                },
-                window,
-                cx,
-            )
+        self.ask_later(window, cx, move |ask, root, window, cx| {
+            let request = Request::OpenConversation {
+                root,
+                session: &session,
+            };
+            ask(&request, window, cx)
         });
     }
 
     /// Open `path`, relative to the project on screen, in the editor.
-    ///
-    /// Deferred: the Workbench puts the request to every mode, this one
-    /// included, and this view is mid-update when a press inside it lands.
     fn open_path(&mut self, path: &str, window: &mut Window, cx: &mut Context<Self>) {
-        let Some(root) = self.root.clone() else {
-            return;
-        };
-        let (ask, path) = (self.ask.clone(), root.join(path));
-        window.defer(cx, move |window, cx| {
-            ask(&Request::OpenFile(&path), window, cx)
+        let path = path.to_string();
+        self.ask_later(window, cx, move |ask, root, window, cx| {
+            ask(&Request::OpenFile(&root.join(&path)), window, cx)
         });
     }
 
@@ -905,13 +895,16 @@ fn said(report: &sync::Report, forge: &str) -> String {
 /// everything: the first failure in full, and how many more there were.
 fn failures(report: &sync::Report) -> Option<String> {
     let first = report.failures.first()?;
+    // The cause first: the footer shows this in one line, cut to fit, and a
+    // preamble there is what the cut would leave.
     Some(match report.failures.len() - 1 {
-        0 => format!("Not kept in step: {first}"),
-        more => format!("Not kept in step: {first} (and {more} more)"),
+        0 => first.clone(),
+        more => format!("{first} (and {more} more)"),
     })
 }
 
-/// The latest conversation `issue`'s history names that is among `live`.
+/// The live session working `issue`: the latest conversation its history
+/// names that is among `live`, the ones with a session in this window.
 fn working_in<'a>(issue: &'a LocalIssue, live: &[String]) -> Option<&'a str> {
     issue
         .notes

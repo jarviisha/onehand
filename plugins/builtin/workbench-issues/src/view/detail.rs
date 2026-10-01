@@ -200,8 +200,7 @@ pub(super) fn issue_view(
 fn history(issue: &LocalIssue, cx: &mut Context<IssuesView>) -> AnyElement {
     let muted = cx.theme().muted_foreground;
     let now = onehand_core::issues::now();
-    let arrived =
-        (issue.created > 0).then(|| (issue.created, "Added to onehand".to_string(), None));
+    let arrived = (issue.created > 0).then(|| (issue.created, issue.arrival(), None));
     let entries: Vec<(u64, String, Option<String>)> = arrived
         .into_iter()
         .chain(

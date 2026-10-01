@@ -923,10 +923,11 @@ see the rail, below.
   missing the other's change; a file this build cannot read is refused and never written over. The
   file is read again when the mode is next drawn after being shown or after a turn ends. **Every
   issue keeps its history as notes** (`Note { at, text, session }`) and draws it under its body,
-  oldest first under *Added to onehand*, each line with its local time (chrono, already built into
+  oldest first under how it arrived (`LocalIssue::arrival`: *Opened here*, or *Brought in from
+  GitHub as #6*, dated by `created`), each line with its local time (chrono, already built into
   the app through gpui) and how long ago, the latest 50 with the cut said: what runs said, every
   change of state made here (`Issues::set_open`) or brought in from the forge (`LocalIssue::apply`,
-  *Closed on GitHub*), and an import. **A note can name the conversation that took the issue
+  *Closed on GitHub*). **A note can name the conversation that took the issue
   up** by the agent's session id, which outlives a restart where a session's uid does not; its
   *Open session* asks the shell (`Request::OpenConversation`, `Shell::open_conversation`) for the
   live session holding it, else reopens the saved one on whichever project here it ran in.
@@ -938,7 +939,8 @@ see the rail, below.
   session took it once the agent has named it. **An issue a live session is on is not offered *Work here*:**
   the shell tells the Workbench which conversations have a live session in the window
   (`Request::LiveConversations`, sent from the pane observer only when the set changes), and an issue
-  whose history names one of them shows *Open session* in its place and *working* on its row. Unattended runs work these issues too — see *Unattended runs*. No shortcut yet, and no
+  whose history names one of them shows *Open session* in its place and *working* on its row.
+  Unattended runs work these issues too — see *Unattended runs*. No shortcut yet, and no
   deletion — closing is the way an issue leaves the work, from the detail's ⋯ menu (beside *Open on
   GitHub* and *Copy link*, whose address `Connector::issue_url_blocking` asks the forge for) and
   behind a confirmation, since a bare *Close* there read as closing the view.

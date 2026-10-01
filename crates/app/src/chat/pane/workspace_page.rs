@@ -263,7 +263,7 @@ impl ChatPane {
             let waits = run.waiting.is_some();
             let row = crate::dialogs::issue_row(
                 ("workspace-run", uid as usize),
-                run.number,
+                run.name,
                 run.waiting.unwrap_or(run.title),
                 &[],
                 page.label_of(&run.repo),
@@ -525,13 +525,10 @@ impl ChatPane {
             .enumerate()
             .map(|(i, row)| {
                 let (root, number) = (row.root.clone(), row.number);
-                let trailing = match &row.reference {
-                    Some(reference) => format!("{} · {reference}", page.label_of(&row.root)),
-                    None => page.label_of(&row.root),
-                };
+                let trailing = page.label_of(&row.root);
                 crate::dialogs::issue_row(
                     ("workspace-issue", i),
-                    row.number,
+                    row.reference.clone().unwrap_or_else(|| "Draft".to_string()),
                     row.title.clone(),
                     &row.labels,
                     trailing,

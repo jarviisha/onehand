@@ -15,6 +15,10 @@ use onehand_core::issues::{self, Issues, LocalIssue};
 use onehand_plugin_host::{action, menu_below, menu_item, status_ink, switch};
 use std::collections::BTreeSet;
 
+/// How many labels the label filter offers, in name order. A project with more
+/// is said to have them under the last one.
+const LABELS_SHOWN: usize = 100;
+
 /// Which half of the issues the list shows. Open by default: an open issue is
 /// work, a closed one a record.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -290,6 +294,7 @@ impl IssuesView {
         if labels.is_empty() {
             return None;
         }
+        let left_out = labels.len().saturating_sub(LABELS_SHOWN);
         let picked = self.label.clone();
         let trigger = action("issues-label-filter")
             .xsmall()
@@ -322,12 +327,15 @@ impl IssuesView {
                             .checked(picked.is_none())
                             .on_click(pick(None)),
                     );
-                    for label in &labels {
+                    for label in labels.iter().take(LABELS_SHOWN) {
                         menu = menu.item(
                             menu_item(label.clone())
                                 .checked(picked.as_ref() == Some(label))
                                 .on_click(pick(Some(label.clone()))),
                         );
+                    }
+                    if left_out > 0 {
+                        menu = menu.label(format!("… {left_out} more labels not shown"));
                     }
                     menu
                 },
@@ -355,7 +363,7 @@ impl IssuesView {
                 IconName::LoaderCircle,
                 muted,
                 format!("Syncing with {name}…"),
-                None,
+                format!("Bringing in what changed on {name} and sending what changed here"),
             ),
             (true, false, Some((at, Ok(said)))) => (
                 IconName::CircleCheck,
@@ -364,31 +372,33 @@ impl IssuesView {
                     "Synced with {name} · {}",
                     onehand_core::rel_time(issues::now(), *at)
                 ),
-                Some(said.clone()),
+                said.clone(),
             ),
             (true, false, Some((_, Err(why)))) => (
                 IconName::TriangleAlert,
                 warning,
                 why.lines().next().unwrap_or_default().to_string(),
-                Some(why.clone()),
+                why.clone(),
             ),
             (true, false, None) => (
                 IconName::CircleCheck,
                 muted,
                 format!("Kept in step with {name}"),
-                None,
+                format!("No sync with {name} has finished since onehand started"),
             ),
             (false, _, _) if paused => (
                 IconName::Pause,
                 muted,
                 format!("Sync with {name} paused"),
-                None,
+                format!(
+                    "Nothing is sent to or brought in from {name}; links to its issues are kept"
+                ),
             ),
             (false, _, _) => (
                 IconName::Info,
                 muted,
                 format!("Not synced with {name}"),
-                None,
+                format!("These issues are kept here only; resume to keep them in step with {name}"),
             ),
         };
         let failed = on && !state.syncing && matches!(state.synced, Some((_, Err(_))));
@@ -409,9 +419,7 @@ impl IssuesView {
                     .text_color(ink)
                     .child(line),
             )
-            .when_some(detail, |status, detail| {
-                status.tooltip(move |window, cx| Tooltip::new(detail.clone()).build(window, cx))
-            });
+            .tooltip(move |window, cx| Tooltip::new(detail.clone()).build(window, cx));
         let footer = div()
             .h_flex()
             .items_center()
@@ -483,7 +491,7 @@ impl IssuesView {
         let theme = cx.theme();
         let muted = theme.muted_foreground;
         let conflicted = issue.link.as_ref().is_some_and(|l| l.conflict.is_some());
-        let working = self.working(issue).is_some();
+        let working = super::working_in(issue, &self.live).is_some();
         let meta = div()
             .h_flex()
             .items_center()

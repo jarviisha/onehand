@@ -174,15 +174,15 @@ fn a_project_says_whether_its_issues_are_worked_and_which_one_is() {
     let on = auto_status(true, None, "auto", None).unwrap();
     assert_eq!(on.badge.as_ref(), "auto");
     assert!(on.line.contains("`auto`") && !on.stuck);
-    let working = auto_status(true, Some((46, false)), "auto", None).unwrap();
+    let working = auto_status(true, Some(("#46", false)), "auto", None).unwrap();
     assert_eq!(working.badge.as_ref(), "auto · #46");
     assert!(working.line.contains("#46") && working.line.contains("working"));
     // A run waiting on a card is not said to be working.
-    let waiting = auto_status(true, Some((46, true)), "auto", None).unwrap();
+    let waiting = auto_status(true, Some(("#46", true)), "auto", None).unwrap();
     assert_eq!(waiting.badge.as_ref(), "auto · #46 waiting");
     assert!(waiting.line.contains("waiting") && !waiting.line.contains("working"));
     // Switched off mid-run: the run already going is still said.
-    assert!(auto_status(false, Some((46, false)), "auto", None).is_some());
+    assert!(auto_status(false, Some(("#46", false)), "auto", None).is_some());
     // On with nothing possible is stuck, and says why in its own words.
     let elsewhere = auto_status(
         true,
@@ -205,14 +205,14 @@ fn a_project_says_whether_its_issues_are_worked_and_which_one_is() {
 #[test]
 fn a_project_row_names_its_own_run_and_prefers_the_working_one() {
     let (here, there) = (std::path::Path::new("/p"), std::path::Path::new("/q"));
-    assert_eq!(run_on([(there, 9, false)], here), None);
+    assert_eq!(run_on([(there, "#9", false)], here), None);
     assert_eq!(
-        run_on([(here, 3, true), (there, 9, false)], here),
-        Some((3, true))
+        run_on([(here, "#3", true), (there, "#9", false)], here),
+        Some(("#3", true))
     );
     assert_eq!(
-        run_on([(here, 3, true), (here, 5, false)], here),
-        Some((5, false))
+        run_on([(here, "#3", true), (here, "#5", false)], here),
+        Some(("#5", false))
     );
 }
 

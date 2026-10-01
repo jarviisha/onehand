@@ -327,11 +327,7 @@ fn import(issues: &mut Issues, connector: &str, remote: &RemoteIssue, now: u64) 
         labels: said.labels.clone(),
         created: now,
         updated: now,
-        notes: vec![Note {
-            at: now,
-            text: format!("Brought in from {connector} as {}", remote.reference),
-            session: None,
-        }],
+        notes: Vec::new(),
         link: Some(Link {
             connector: connector.to_string(),
             key: remote.key.clone(),
@@ -566,8 +562,9 @@ mod tests {
         let kept = load(&file);
         let issue = kept.get(1).unwrap();
         assert!(issue.link.is_none());
-        assert!(issue.notes[0].text.starts_with("Brought in from Forge"));
-        assert!(issue.notes[1].text.contains("no longer on Forge"));
+        assert!(issue.notes[0].text.contains("no longer on Forge"));
+        // Unlinked, it still says where it came from.
+        assert_eq!(issue.arrival(), "Brought in from Forge");
         let _ = std::fs::remove_dir_all(file.parent().unwrap());
     }
 
