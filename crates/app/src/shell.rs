@@ -553,6 +553,7 @@ impl Shell {
                         });
                     }
                     E::WorkTreeTouched => shell.refresh_worktree(cx),
+                    E::AgentStarted => shell.sync_agent_started(cx),
                     E::ShowRail => shell.show_rail(cx),
                     // The visibility button and its shortcut preserve the selected mode.
                     E::ToggleWorkbench => shell.toggle_workbench(window, cx),
@@ -686,6 +687,7 @@ impl Shell {
                 use crate::workbench::WorkbenchEvent as E;
                 match event {
                     E::Hide => shell.hide_workbench(window, cx),
+                    E::RestartAgent => shell.restart_session(window, cx),
                     E::ToggleMaximize => {
                         shell.toggle_maximize_panel(FocusedPanel::Workbench, window, cx);
                     }
@@ -1143,11 +1145,15 @@ impl Shell {
             // are entirely the adapter's and the SDK's, and spending them while
             // the user reads the page is spending them for free.
             self.warm_default_agent(path, cx);
+            self.sync_agent_started(cx);
             return;
         };
         self.chat.update(cx, |pane, cx| {
             pane.show(uid, path.clone(), &spec, window, cx)
         });
+        // After `show`, which is what connects a session shown for the first
+        // time — before it, a fresh session has no agent to have started.
+        self.sync_agent_started(cx);
         // This project has a session on screen, so nothing here is waiting on a
         // fresh agent. A pre-start still in its delay is dropped rather than
         // allowed to fire -- but one that has already *started* is left alone.
@@ -2615,6 +2621,16 @@ impl Shell {
         cx.notify();
     }
 
+    /// Tell the Workbench when the agent on screen started. Pushed rather
+    /// than asked for, from the moments it changes: arriving at a session or a
+    /// project, the workspace page taking the centre, and the pane announcing
+    /// that it spawned an agent — which every start, restart and resume does.
+    fn sync_agent_started(&mut self, cx: &mut Context<Self>) {
+        let since = self.chat.read(cx).active_started(cx);
+        self.workbench
+            .update(cx, |panel, cx| panel.agent_started(since, cx));
+    }
+
     /// Restart the active session's adapter, guarded while a turn is running.
     pub fn restart_session(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.last_panel = FocusedPanel::Chat;
@@ -3497,6 +3513,9 @@ impl Shell {
             .collect();
         self.chat
             .update(cx, |pane, cx| pane.show_workspace(projects, window, cx));
+        // No session is showing now, so there is no running agent to be
+        // behind on anything.
+        self.sync_agent_started(cx);
         cx.notify();
     }
 

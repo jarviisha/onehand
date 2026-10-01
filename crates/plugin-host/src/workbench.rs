@@ -15,6 +15,7 @@ use onehand_plugin_api::WorkbenchModeSpec;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
+use std::time::Instant;
 
 /// One Workbench mode.
 ///
@@ -145,6 +146,16 @@ pub enum Request<'a> {
     /// lists issues. Sent after the project is chosen, so it may arrive before
     /// that project's issues have been read.
     ShowIssue(u64),
+    /// When the agent of the session on screen started, or `None` while no
+    /// session is showing. Broadcast whenever that changes — a project or
+    /// session switch, a first connect, a restart — so a mode that changes
+    /// what an agent loads at start can tell which of its changes the running
+    /// one has not seen.
+    AgentStarted(Option<Instant>),
+    /// Restart the agent of the session on screen. Only ever travels
+    /// **upward**: the shell owns sessions, and a mode asking for this has
+    /// changed something an agent reads only when it starts.
+    RestartAgent,
 }
 
 /// How a mode reaches back into the panel.

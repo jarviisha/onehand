@@ -106,6 +106,7 @@ impl Workbench {
     fn answer(&mut self, request: &Request<'_>, window: &mut Window, cx: &mut Context<Self>) {
         match request {
             Request::OpenFile(path) => self.open_file(path, window, cx),
+            Request::RestartAgent => cx.emit(WorkbenchEvent::RestartAgent),
             // The caret is the panel's half of reaping: a view dropped while it
             // holds focus leaves the window pointing at an element no frame
             // contains, and GPUI resolves a key along the path down to the
@@ -273,6 +274,11 @@ impl Workbench {
         cx.notify();
     }
 
+    /// Tell the modes when the agent on screen started, or that none is.
+    pub fn agent_started(&mut self, since: Option<std::time::Instant>, cx: &mut Context<Self>) {
+        self.broadcast(&Request::AgentStarted(since), cx);
+    }
+
     /// Re-read whatever the modes listed off the disk.
     ///
     /// Called when a turn ends and when the window is activated — the two
@@ -339,6 +345,9 @@ impl EventEmitter<PanelEvent> for Workbench {}
 pub enum WorkbenchEvent {
     Hide,
     ToggleMaximize,
+    /// A mode changed something the agent reads only when it starts, and the
+    /// user asked for it to start again.
+    RestartAgent,
 }
 
 impl EventEmitter<WorkbenchEvent> for Workbench {}

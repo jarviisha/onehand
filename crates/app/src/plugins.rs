@@ -25,8 +25,13 @@ pub fn workbench_modes(ask: Ask, font_size: Pixels, cx: &mut App) -> Vec<Box<dyn
         // this one rather than listed beside it.
         Box::new(onehand_workbench_editor::Mode::new(ask.clone(), cx)),
         Box::new(onehand_workbench_markdown::Mode::new(ask.clone(), cx)),
-        Box::new(onehand_workbench_neovim::Mode::new(ask, font_size, cx)),
+        Box::new(onehand_workbench_neovim::Mode::new(
+            ask.clone(),
+            font_size,
+            cx,
+        )),
         Box::new(onehand_workbench_issues::Mode::new(connectors(), cx)),
+        Box::new(onehand_workbench_plugins::Mode::new(ask, cx)),
     ]
 }
 
@@ -68,6 +73,7 @@ mod tests {
             onehand_workbench_markdown::SPEC,
             onehand_workbench_neovim::SPEC,
             onehand_workbench_issues::SPEC,
+            onehand_workbench_plugins::SPEC,
         ];
         for spec in &declared {
             let grid = spec.id == onehand_workbench_neovim::SPEC.id;

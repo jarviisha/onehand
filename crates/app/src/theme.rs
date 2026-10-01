@@ -201,6 +201,14 @@ fn paint(colors: &mut ThemeConfigColors, ramp: &Ramp) {
     set(&mut colors.accent, ramp.selected);
     set(&mut colors.accent_foreground, ramp.selected_ink);
     set(&mut colors.border, ramp.hairline);
+    // A switch that is off is a track and a thumb, and both have to be seen
+    // for the control to say anything: the library draws the track in
+    // `secondary_active` — the selected step above, a fill meant to be quiet —
+    // and the thumb in the surface, so an off switch was a faint smudge with an
+    // invisible knob. A control's parts are held to 3:1 against what they sit
+    // on, and the well's ink is already the ramp's answer to "readable on the
+    // surface": as the track, the surface-coloured thumb stands off it too.
+    set(&mut colors.switch, ramp.well_ink);
     // The rail runs on the ramp too, but one notch quieter than the
     // conversation, because it is chrome rather than a second thing to read.
     //
@@ -462,6 +470,22 @@ mod tests {
                 "{name}: {label} is {ratio:.2}, under {floor}"
             );
         };
+
+        // An off switch: its track against the surface it sits on, and its
+        // thumb (drawn in the surface) against the track. Graphical parts of a
+        // control are held to 3:1, not the 4.5 text is.
+        check(
+            "an off switch's track against the surface",
+            theme.switch,
+            theme.background,
+            3.0,
+        );
+        check(
+            "an off switch's thumb against its track",
+            theme.switch_thumb,
+            theme.switch,
+            3.0,
+        );
 
         // Surfaces, against whatever sits next to them.
         check(

@@ -17,6 +17,7 @@ members = [
     "plugins/builtin/workbench-issues",
     "plugins/builtin/workbench-markdown",
     "plugins/builtin/workbench-neovim",
+    "plugins/builtin/workbench-plugins",
     "vendor/gpui-terminal",
 ]
 resolver = "2"

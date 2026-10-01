@@ -23,6 +23,7 @@ use onehand_core::acp::{self, AcpEvent};
 use onehand_core::config::AgentSpec;
 use std::cell::RefCell;
 use std::path::PathBuf;
+use std::time::Instant;
 
 /// Events buffered between the adapter and the UI before the forwarder waits.
 /// Matches the buffer core's own stream uses; a turn that out-runs the UI slows
@@ -53,6 +54,9 @@ struct Warm {
     args: Vec<String>,
     cwd: PathBuf,
     events: mpsc::Receiver<AcpEvent>,
+    /// When its process was started, which is when the agent read what it
+    /// loads at start — not when a session came to adopt it.
+    started: Instant,
 }
 
 impl Warm {
@@ -110,6 +114,7 @@ impl AcpRuntime {
             args: spec.args.clone(),
             cwd,
             events,
+            started: Instant::now(),
         });
     }
 
@@ -129,12 +134,17 @@ impl AcpRuntime {
     /// `connect` kills the child. So a caller holds the receiver for exactly as
     /// long as it wants the agent alive — there is no separate shutdown to
     /// remember.
+    ///
+    /// Also handed back: when the adapter was started. For one spawned here
+    /// that is now; for a parked one it is when it was parked, since an agent
+    /// reads what it loads at start and a change made while it sat parked is
+    /// one it has not seen.
     pub fn connect(
         &self,
         spec: &AgentSpec,
         cwd: PathBuf,
         resume: Option<String>,
-    ) -> mpsc::Receiver<AcpEvent> {
+    ) -> (mpsc::Receiver<AcpEvent>, Instant) {
         // A resume names a conversation, and the parked adapter has already
         // been through `session/new` on a fresh one -- it is the wrong process
         // to hand this caller, so it stays parked for whoever wants a new
@@ -145,9 +155,9 @@ impl AcpRuntime {
                 .borrow_mut()
                 .take_if(|warm| warm.matches(spec, &cwd))
         {
-            return warm.events;
+            return (warm.events, warm.started);
         }
-        self.start(spec, cwd, resume)
+        (self.start(spec, cwd, resume), Instant::now())
     }
 
     /// Spawn an adapter and forward its events, with no reference to the parked

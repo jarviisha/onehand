@@ -705,6 +705,7 @@ impl ChatPane {
             stored.as_ref().map(|s| s.session_id.clone()),
             cx,
         );
+        cx.emit(ChatPaneEvent::AgentStarted);
         if let Some(stored) = stored {
             // The conversation is adopted *before* the adapter's replay lands,
             // so a stale resume still shows it instead of a blank pane. Through
@@ -1406,6 +1407,12 @@ impl ChatPane {
         }
         self.terminal_live = live;
         cx.notify();
+    }
+
+    /// When the agent of the session on screen started, if one is showing.
+    pub fn active_started(&self, cx: &App) -> Option<std::time::Instant> {
+        let session = self.session_of(self.active?)?;
+        Some(session.read(cx).started)
     }
 
     /// `uid`'s live session, if it has reached one.
@@ -4099,6 +4106,11 @@ pub enum ChatPaneEvent {
     /// other panels. Which session it was does not matter — an agent writes to
     /// the root, and the panels are per root.
     WorkTreeTouched,
+    /// An agent was just spawned for a session — a first connect, a
+    /// restart, a resume. Announced so the shell can tell whatever keeps
+    /// count of what the running agent has loaded; every path that starts one
+    /// passes through here, which no caller of those paths can promise.
+    AgentStarted,
     /// The rail is hidden and the user asked for it back.
     ///
     /// Announced rather than acted on for the usual reason: the rail is the

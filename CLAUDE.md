@@ -2,7 +2,7 @@
 
 `onehand` is a Rust desktop GUI (**GPUI** + [gpui-component](https://github.com/longbridge/gpui-component))
 that hosts AI coding agents. Window: a left navigation **rail**, a central **agent pane** (a native
-chat), a right **Workbench** dock (editor, file tree, Markdown, Neovim, Issues) and a bottom
+chat), a right **Workbench** dock (editor, file tree, Markdown, Neovim, Issues, Plugins) and a bottom
 **terminal** dock. A *workspace* groups *project roots*; each root runs *sessions*, and **every
 session is an ACP agent** ([Agent Client Protocol](https://agentclientprotocol.com)).
 
@@ -66,9 +66,9 @@ ACP_CMD="node crates/core/examples/mock_ask_agent.js" cargo run -p onehand-core 
 | `crates/app` | `onehand` | GPUI front end + binary (`main.rs` is ~15 lines; logic lives in the lib) |
 | `crates/core` | `onehand-core` | GUI-free logic: config, workspace tree, ACP client, chat model, remote bridge, connectors, issues, editor rules, git status, worktrees |
 | `crates/plugin-api` | `onehand-plugin-api` | GUI-free plugin IDs and descriptors |
-| `crates/plugin-host` | `onehand-plugin-host` | `WorkbenchMode` + `Request`, remote-channel factory, and the shared button wrapper, status ink and dock surface |
+| `crates/plugin-host` | `onehand-plugin-host` | `WorkbenchMode` + `Request`, remote-channel factory, and what a plugin draws as the app does: the button wrapper, menu rows and `menu_below`, the segmented `switch`, status ink and dock surface |
 | `crates/terminal-ui` | `onehand-terminal-ui` | PTY/grid ownership shared by the terminal dock and Neovim |
-| `plugins/builtin/*` | built-in plugins | Editor, Files, Markdown, Neovim, Issues, Telegram, GitHub; composed in `crates/app/src/plugins.rs` |
+| `plugins/builtin/*` | built-in plugins | Editor, Files, Markdown, Neovim, Issues, Plugins, Telegram, GitHub; composed in `crates/app/src/plugins.rs` |
 | `vendor/gpui-terminal` | `gpui-terminal` | vendored terminal grid + our `onehand patch` interaction layer |
 
 ## Invariants
@@ -129,7 +129,8 @@ ACP_CMD="node crates/core/examples/mock_ask_agent.js" cargo run -p onehand-core 
 - **Never hard-code a colour, radius or size.** Read `cx.theme()`; sizes are rems, because zoom
   overrides the rem base per panel.
 - **Reuse gpui-component before building.** Buttons go through `crate::controls::action`, menu
-  rows through `controls::menu_item`/`menu_row`, so the pointer cursor is right.
+  rows through `controls::menu_item`/`menu_row` (re-exported from `onehand_plugin_host`, where a
+  plugin reaches them too), so the pointer cursor is right.
 - **Keep rendering bounded**: a named cap per list, and say on screen when it bites.
 - **Don't self-verify UI by launching or screenshotting.** Build, test, stop; the user looks.
 

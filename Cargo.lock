@@ -4701,6 +4701,7 @@ dependencies = [
  "onehand-workbench-issues",
  "onehand-workbench-markdown",
  "onehand-workbench-neovim",
+ "onehand-workbench-plugins",
  "rfd",
  "tokio",
  "toml 0.8.23",
@@ -4822,6 +4823,20 @@ dependencies = [
  "onehand-plugin-api",
  "onehand-plugin-host",
  "onehand-terminal-ui",
+]
+
+[[package]]
+name = "onehand-workbench-plugins"
+version = "0.1.0"
+dependencies = [
+ "dirs 5.0.1",
+ "gpui",
+ "gpui-component",
+ "onehand-core",
+ "onehand-plugin-api",
+ "onehand-plugin-host",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]

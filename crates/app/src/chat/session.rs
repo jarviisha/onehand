@@ -141,6 +141,11 @@ type AskBox = (usize, usize, String, String);
 
 pub struct ChatSession {
     pub chat: Chat,
+    /// When this session's adapter was started — for one warmed ahead of the
+    /// session, when it was warmed. A restart is a new session, so this is
+    /// when the agent now answering started, which is what tells a change to
+    /// its plugins apart from one it has already loaded.
+    pub started: std::time::Instant,
     /// Parsed markdown, keyed by [`MdId`]; the `usize` is how many bytes of the
     /// model's `source` are already in the state.
     ///
@@ -256,7 +261,7 @@ impl ChatSession {
         resume: Option<String>,
         cx: &mut App,
     ) -> Entity<Self> {
-        let events = Shared::global(cx).acp.connect(spec, root.clone(), resume);
+        let (events, started) = Shared::global(cx).acp.connect(spec, root.clone(), resume);
 
         cx.new(|cx| {
             // `@`-mention candidates. Bounded and off the UI loop: a deep tree
@@ -285,6 +290,7 @@ impl ChatSession {
                     spec.name.clone(),
                     Some(onehand_core::chat::conversations_dir()),
                 ),
+                started,
                 md: HashMap::new(),
                 images: RefCell::new(HashMap::new()),
                 ask_inputs: HashMap::new(),
