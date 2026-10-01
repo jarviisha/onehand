@@ -23,6 +23,7 @@ pub(super) fn issue_view(
     issue: &LocalIssue,
     body: Option<(Entity<TextViewState>, Vec<String>)>,
     publish_to: Option<&'static str>,
+    working: Option<String>,
     window: &mut Window,
     cx: &mut Context<IssuesView>,
 ) -> AnyElement {
@@ -63,8 +64,22 @@ pub(super) fn issue_view(
                                 view.publish(number, cx)
                             }))
                     }))
-                    .when(open, |actions| {
-                        actions.child(
+                    // A session still going on it is where the work is: a
+                    // second one started here would be two agents editing
+                    // one checkout from two conversations.
+                    .map(|actions| match working {
+                        Some(session) => actions.child(
+                            action("issue-open-working")
+                                .xsmall()
+                                .ghost()
+                                .icon(Icon::new(IconName::Bot))
+                                .label("Open session")
+                                .tooltip("A session is working this issue; show it")
+                                .on_click(cx.listener(move |view, _: &ClickEvent, window, cx| {
+                                    view.open_session(session.clone(), window, cx)
+                                })),
+                        ),
+                        None if open => actions.child(
                             action("issue-work-here")
                                 .xsmall()
                                 .ghost()
@@ -77,7 +92,8 @@ pub(super) fn issue_view(
                                 .on_click(cx.listener(move |view, _: &ClickEvent, window, cx| {
                                     view.work_here(number, window, cx)
                                 })),
-                        )
+                        ),
+                        None => actions,
                     })
                     .child(
                         action("issue-edit")

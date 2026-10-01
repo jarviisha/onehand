@@ -210,6 +210,15 @@ impl Shell {
                 shell.rail_sessions = sessions;
                 cx.notify();
             }
+            // Guarded the same way: what an issue says about the session
+            // working it moves only when a conversation comes up or goes.
+            let live = shell.chat.read(cx).live_conversations(cx);
+            if live != shell.live_conversations {
+                shell
+                    .workbench
+                    .update(cx, |panel, cx| panel.live_conversations(&live, cx));
+                shell.live_conversations = live;
+            }
         })
         .detach();
 
@@ -408,6 +417,7 @@ impl Shell {
             _pending_warm: None,
             git_generation: 0,
             rail_sessions: Vec::new(),
+            live_conversations: Vec::new(),
             rail_tab: crate::rail::RailTab::Projects,
             folds: HashMap::new(),
             last_panel: FocusedPanel::Chat,

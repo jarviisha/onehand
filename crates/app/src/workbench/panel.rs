@@ -290,6 +290,11 @@ impl Workbench {
     }
 
     /// Tell the modes when the agent on screen started, or that none is.
+    /// Tell the modes which conversations have a live session in this window.
+    pub fn live_conversations(&mut self, ids: &[String], cx: &mut Context<Self>) {
+        self.broadcast(&Request::LiveConversations(ids), cx);
+    }
+
     pub fn agent_started(&mut self, since: Option<std::time::Instant>, cx: &mut Context<Self>) {
         self.broadcast(&Request::AgentStarted(since), cx);
     }

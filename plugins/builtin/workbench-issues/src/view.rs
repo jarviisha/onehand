@@ -96,6 +96,9 @@ pub(crate) struct IssuesView {
     /// How the mode asks the Workbench for something — a file opened in the
     /// editor.
     ask: Ask,
+    /// The conversations with a live session in this window, by the agent's
+    /// session id: an issue whose history names one of them is being worked.
+    live: Vec<String>,
 }
 
 /// One project's issues and what is open among them.
@@ -178,6 +181,7 @@ impl IssuesView {
             showing: Showing::default(),
             label: None,
             ask,
+            live: Vec::new(),
             _sync_every: cx.spawn(async move |view, cx| {
                 let every = (SYNC_EVERY.as_secs() / TICK.as_secs()).max(1);
                 for tick in 1u64.. {
@@ -224,6 +228,17 @@ impl IssuesView {
         self.roots.clear();
         self.stale = true;
         cx.notify();
+    }
+
+    pub(crate) fn set_live(&mut self, ids: &[String], cx: &mut Context<Self>) {
+        self.live = ids.to_vec();
+        cx.notify();
+    }
+
+    /// The live session working `issue`: the latest conversation its history
+    /// names that still has one in this window.
+    fn working(&self, issue: &LocalIssue) -> Option<String> {
+        working_in(issue, &self.live).map(str::to_string)
     }
 
     pub(crate) fn mark_stale(&mut self, cx: &mut Context<Self>) {
@@ -728,7 +743,8 @@ impl IssuesView {
             .filter(|_| issue.link.is_none())
             .map(|forge| forge.name());
         let body = self.parsed_body(root, &issue, cx);
-        issue_view(root, &issue, body, publish_to, window, cx)
+        let working = self.working(&issue);
+        issue_view(root, &issue, body, publish_to, working, window, cx)
     }
 
     /// Start a session on the project on screen, in the checkout it is open
@@ -893,6 +909,16 @@ fn failures(report: &sync::Report) -> Option<String> {
         0 => format!("Not kept in step: {first}"),
         more => format!("Not kept in step: {first} (and {more} more)"),
     })
+}
+
+/// The latest conversation `issue`'s history names that is among `live`.
+fn working_in<'a>(issue: &'a LocalIssue, live: &[String]) -> Option<&'a str> {
+    issue
+        .notes
+        .iter()
+        .rev()
+        .filter_map(|note| note.session.as_deref())
+        .find(|session| live.iter().any(|id| id == session))
 }
 
 /// Put `incoming` on screen unless what is there was written later. Two reads

@@ -483,6 +483,7 @@ impl IssuesView {
         let theme = cx.theme();
         let muted = theme.muted_foreground;
         let conflicted = issue.link.as_ref().is_some_and(|l| l.conflict.is_some());
+        let working = self.working(issue).is_some();
         let meta = div()
             .h_flex()
             .items_center()
@@ -509,6 +510,17 @@ impl IssuesView {
             .when(conflicted, |meta| {
                 meta.child("·")
                     .child(div().text_color(status_ink(cx).warning).child("decide"))
+            })
+            // One a live session is on, so it is not started a second time.
+            .when(working, |meta| {
+                meta.child("·").child(
+                    div()
+                        .h_flex()
+                        .items_center()
+                        .gap_0p5()
+                        .child(Icon::new(IconName::Bot).xsmall())
+                        .child("working"),
+                )
             });
         div()
             .id(("issue-row", number))

@@ -497,6 +497,24 @@ impl ChatPane {
         self.session_of(uid).cloned()
     }
 
+    /// The conversations with a live session in this pane, by the agent's
+    /// session id, sorted. A session whose adapter is lost is not live: it is
+    /// history on screen until somebody restarts it.
+    pub fn live_conversations(&self, cx: &App) -> Vec<String> {
+        let mut ids: Vec<String> = self
+            .conversations
+            .values()
+            .filter_map(|conversation| {
+                let chat = &conversation.session()?.read(cx).chat;
+                (chat.link != onehand_core::chat::Link::Lost)
+                    .then(|| chat.session_id.clone())
+                    .flatten()
+            })
+            .collect();
+        ids.sort();
+        ids
+    }
+
     /// The session holding the conversation the agent named `id`, if one in
     /// this pane does.
     pub fn uid_of_conversation(&self, id: &str, cx: &App) -> Option<u64> {

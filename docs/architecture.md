@@ -935,7 +935,10 @@ see the rail, below.
   `Shell::work_issue_here`): no worktree, no branch, no claim, no timeout, and the prompt tells the
   agent to leave its changes uncommitted, since this is somebody's working copy. The prompt waits for
   the adapter and is not sent if somebody typed into the session first; the issue hears which
-  session took it once the agent has named it. Unattended runs work these issues too — see *Unattended runs*. No shortcut yet, and no
+  session took it once the agent has named it. **An issue a live session is on is not offered *Work here*:**
+  the shell tells the Workbench which conversations have a live session in the window
+  (`Request::LiveConversations`, sent from the pane observer only when the set changes), and an issue
+  whose history names one of them shows *Open session* in its place and *working* on its row. Unattended runs work these issues too — see *Unattended runs*. No shortcut yet, and no
   deletion — closing is the way an issue leaves the work, from the detail's ⋯ menu (beside *Open on
   GitHub* and *Copy link*, whose address `Connector::issue_url_blocking` asks the forge for) and
   behind a confirmation, since a bare *Close* there read as closing the view.

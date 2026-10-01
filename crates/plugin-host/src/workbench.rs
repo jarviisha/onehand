@@ -152,6 +152,11 @@ pub enum Request<'a> {
     /// what an agent loads at start can tell which of its changes the running
     /// one has not seen.
     AgentStarted(Option<Instant>),
+    /// The conversations this window has a live session on, by the agent's
+    /// session id. Broadcast whenever the set changes, so a mode that keeps
+    /// record of which conversation took something up can tell whether that
+    /// one is still going.
+    LiveConversations(&'a [String]),
     /// Restart the agent of the session on screen. Only ever travels
     /// **upward**: the shell owns sessions, and a mode asking for this has
     /// changed something an agent reads only when it starts.
