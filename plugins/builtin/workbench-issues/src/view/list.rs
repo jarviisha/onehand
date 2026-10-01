@@ -148,6 +148,16 @@ impl IssuesView {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> AnyElement {
+        // A label no issue carries any more is dropped: its menu is gone with
+        // it, and a filter nothing on screen can clear hides every issue.
+        if let Some(label) = &self.label
+            && !issues
+                .listed()
+                .iter()
+                .any(|issue| issue.labels.contains(label))
+        {
+            self.label = None;
+        }
         let query = self.query(window, cx);
         let text = query.read(cx).value().to_string();
         let narrowing = Narrowing {

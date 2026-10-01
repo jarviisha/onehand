@@ -8,4 +8,6 @@ fn priority_is_the_first_line_of_its_section() {
     // A section with nothing under it before the next heading says nothing.
     assert_eq!(priority("## Priority\n\n## Steps\nP1"), None);
     assert_eq!(priority("Priority is high"), None);
+    // Bold with no list marker: the opening `*` is the bold's, not a marker.
+    assert_eq!(priority("## Priority\n**High**").as_deref(), Some("High"));
 }

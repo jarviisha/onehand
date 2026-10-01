@@ -7,7 +7,7 @@ use gpui::{Context, SharedString, Window};
 use gpui_component::WindowExt as _;
 use gpui_component::notification::Notification;
 use onehand_core::chat::Link;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 impl Shell {
     /// Start a session on project `root` with `prompt` as its first message,
@@ -82,12 +82,15 @@ impl Shell {
 
     /// Put the conversation the agent named `session` on screen: the live
     /// session in this window that holds it, else the saved one reopened on
-    /// the project it ran in — which has to be one this window holds, or there
-    /// is nowhere to reopen it. `root` is the project the asking issue is in,
-    /// looked in first.
+    /// the project it ran in.
+    ///
+    /// **That project may have left the workspace**: an unattended run's
+    /// worktree is dropped from it when the run ends, while the folder stays
+    /// on disk. Asked to open what was said there, the folder is added back —
+    /// a person pressing for that conversation is asking for its project too —
+    /// and only a folder that is gone is a refusal, said with its path.
     pub(super) fn open_conversation(
         &mut self,
-        root: &Path,
         session: &str,
         window: &mut Window,
         cx: &mut Context<Self>,
@@ -96,40 +99,45 @@ impl Shell {
             self.show_session(uid, window, cx);
             return;
         }
-        let mut projects: Vec<PathBuf> = vec![root.to_path_buf()];
-        projects.extend(
-            self.window
-                .workspace
-                .roots
-                .iter()
-                .map(|r| r.path.clone())
-                .filter(|path| path != root),
-        );
         let session = session.to_string();
         cx.spawn_in(window, async move |shell, cx| {
             let found = cx
                 .background_executor()
                 .spawn(async move {
-                    onehand_core::chat::list_across(
+                    let found = onehand_core::chat::find_conversation(
                         &onehand_core::chat::conversations_dir(),
-                        &projects,
-                    )
-                    .into_iter()
-                    .find(|(_, conv)| conv.session_id == session)
+                        &session,
+                    )?;
+                    let there = found.0.is_dir();
+                    Some((found, there))
                 })
                 .await;
             let _ = shell.update_in(cx, |shell, window, cx| {
-                let Some((root, conv)) = found else {
+                let Some(((root, conv), there)) = found else {
                     window.push_notification(
-                        Notification::warning(
-                            "That session's conversation is not saved under any project open here",
-                        ),
+                        Notification::warning("That session's conversation was not saved"),
                         cx,
                     );
                     return;
                 };
-                let Some(idx) = shell.root_index(&root) else {
-                    return;
+                let idx = match shell.root_index(&root) {
+                    Some(idx) => idx,
+                    None if there => {
+                        let idx = shell.window.workspace.add_root(root.clone());
+                        shell.refresh_git(cx);
+                        shell.save_workspace(window, cx);
+                        idx
+                    }
+                    None => {
+                        window.push_notification(
+                            Notification::warning(format!(
+                                "The folder that conversation ran in is gone: {}",
+                                root.display()
+                            )),
+                            cx,
+                        );
+                        return;
+                    }
                 };
                 shell.select_root(idx, window, cx);
                 let _ = shell.start_session(

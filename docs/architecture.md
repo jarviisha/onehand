@@ -930,7 +930,9 @@ see the rail, below.
   *Closed on GitHub*). **A note can name the conversation that took the issue
   up** by the agent's session id, which outlives a restart where a session's uid does not; its
   *Open session* asks the shell (`Request::OpenConversation`, `Shell::open_conversation`) for the
-  live session holding it, else reopens the saved one on whichever project here it ran in.
+  live session holding it, else finds the saved one by its id (`chat::find_conversation`) and
+  reopens it on the project it ran in, adding that folder back when it has left the workspace — an
+  unattended run's worktree does when the run ends — and saying so when the folder is gone.
   **Work here** starts an ordinary session on the project's own checkout with
   `issues::work_here_prompt` as its first message (`Request::WorkIssueHere`,
   `Shell::work_issue_here`): no worktree, no branch, no claim, no timeout, and the prompt tells the

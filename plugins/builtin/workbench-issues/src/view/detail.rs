@@ -296,7 +296,9 @@ fn priority(body: &str) -> Option<String> {
         .map(str::trim)
         .find(|line| !line.is_empty())?;
     let first = first
-        .strip_prefix(['-', '*', '+'])
+        .strip_prefix("- ")
+        .or_else(|| first.strip_prefix("* "))
+        .or_else(|| first.strip_prefix("+ "))
         .unwrap_or(first)
         .replace("**", "")
         .replace("__", "");

@@ -780,12 +780,8 @@ impl IssuesView {
 
     /// Put the conversation the agent named `session` on screen.
     fn open_session(&mut self, session: String, window: &mut Window, cx: &mut Context<Self>) {
-        self.ask_later(window, cx, move |ask, root, window, cx| {
-            let request = Request::OpenConversation {
-                root,
-                session: &session,
-            };
-            ask(&request, window, cx)
+        self.ask_later(window, cx, move |ask, _, window, cx| {
+            ask(&Request::OpenConversation(&session), window, cx)
         });
     }
 

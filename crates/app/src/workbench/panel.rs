@@ -116,11 +116,8 @@ impl Workbench {
                 number: *number,
                 prompt: prompt.to_string(),
             }),
-            Request::OpenConversation { root, session } => {
-                cx.emit(WorkbenchEvent::OpenConversation {
-                    root: root.to_path_buf(),
-                    session: session.to_string(),
-                })
+            Request::OpenConversation(session) => {
+                cx.emit(WorkbenchEvent::OpenConversation(session.to_string()))
             }
             // The caret is the panel's half of reaping: a view dropped while it
             // holds focus leaves the window pointing at an element no frame
@@ -376,10 +373,7 @@ pub enum WorkbenchEvent {
         prompt: String,
     },
     /// Show the conversation the agent named `session`, live or saved.
-    OpenConversation {
-        root: std::path::PathBuf,
-        session: String,
-    },
+    OpenConversation(String),
 }
 
 impl EventEmitter<WorkbenchEvent> for Workbench {}

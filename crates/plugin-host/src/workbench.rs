@@ -171,9 +171,9 @@ pub enum Request<'a> {
         prompt: &'a str,
     },
     /// Put the conversation the agent named `session` on screen: the live
-    /// session holding it, or the saved one reopened on project `root`. Only
-    /// ever travels **upward**.
-    OpenConversation { root: &'a Path, session: &'a str },
+    /// session holding it, or the saved one reopened on the project it ran
+    /// in. Only ever travels **upward**.
+    OpenConversation(&'a str),
 }
 
 /// How a mode reaches back into the panel.
