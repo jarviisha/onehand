@@ -33,6 +33,7 @@ use gpui::{
 use gpui_component::button::{Button, ButtonVariants as _};
 use gpui_component::input::{InputEvent, Textarea, TextareaState};
 use gpui_component::menu::DropdownMenu as _;
+use gpui_component::scroll::{Scrollbar, ScrollbarMode};
 use gpui_component::{
     ActiveTheme, Disableable as _, Icon, IconName, Selectable as _, Sizable as _, StyledExt,
 };
@@ -181,6 +182,27 @@ pub(super) fn popup_chrome(footer: bool, rail: bool) -> Rems {
         h += POPUP_RAIL_H.0;
     }
     rems(h)
+}
+
+/// A popup's scrolling list, with its scrollbar on the popup's own right edge.
+///
+/// The frame reaches back through the surface's inset and the rows are held
+/// off by the thumb's width, so the thumb runs down the popup's border rather
+/// than over the right end of a row -- where it sat on the highlight fill and
+/// read as part of the row under it. The parked question card draws its thumb
+/// the same way, and two scrolling cards stacked one over the other must not
+/// disagree about where a scrollbar goes.
+///
+/// `list` keeps its own bound and tracks `scroll` itself; this only adds the
+/// frame and the thumb.
+fn edge_scrolled(scroll: &gpui::ScrollHandle, list: gpui::Stateful<gpui::Div>) -> gpui::Div {
+    div()
+        .relative()
+        .v_flex()
+        .min_h_0()
+        .mr_neg_1()
+        .child(list.pr_3())
+        .child(Scrollbar::vertical(scroll).mode(ScrollbarMode::Always))
 }
 
 /// How tall the scrolling box may stand: a whole number of rows, always.
@@ -555,6 +577,8 @@ pub struct Composer {
     pub attachments: Vec<StagedAttachment>,
     /// The popup's scroll, so the highlight can be kept on screen.
     rows_scroll: gpui::ScrollHandle,
+    /// The attachment manager's scroll, for its scrollbar.
+    attachments_scroll: gpui::ScrollHandle,
     /// A recoverable composer-side failure that has no chat-model blocker of
     /// its own, such as failing to persist an image from the clipboard.
     feedback: Option<SharedString>,
@@ -604,6 +628,7 @@ impl Composer {
             opened_rows: None,
             attachments: Vec::new(),
             rows_scroll: gpui::ScrollHandle::new(),
+            attachments_scroll: gpui::ScrollHandle::new(),
             feedback: None,
             _subscriptions: vec![subscription],
         }
@@ -1922,7 +1947,8 @@ impl Composer {
                 .on_scroll_wheel(|_, _, cx| cx.stop_propagation())
                 .p_1()
                 .child(popup_header(title, cx))
-                .child(
+                .child(edge_scrolled(
+                    &self.rows_scroll,
                     div()
                         .id("completion")
                         .v_flex()
@@ -2086,7 +2112,7 @@ impl Composer {
                         .children(
                             label_filler.map(|_| div().min_h(GROUP_LABEL_H).mb_1p5().flex_none()),
                         ),
-                )
+                ))
                 // **Outside the scrolling box, and that is the whole point of
                 // them.** Both are sentences about the list rather than choices
                 // in it, and both appear only once the list is long -- so held
@@ -2290,8 +2316,10 @@ impl Composer {
             .id("attachment-manager")
             .v_flex()
             .w_full()
+            .min_h_0()
             .max_h(room)
             .overflow_y_scroll()
+            .track_scroll(&self.attachments_scroll)
             .children(
                 self.attachments
                     .iter()
@@ -2383,7 +2411,7 @@ impl Composer {
                 format!("Attachments · {}", self.attachments.len()).into(),
                 cx,
             ))
-            .child(list)
+            .child(edge_scrolled(&self.attachments_scroll, list))
             // Pinned under the list and behind the same rule the completion
             // popup's footer takes. Held among the rows it was scrolled out of
             // sight in exactly the case that produced it: it only exists once

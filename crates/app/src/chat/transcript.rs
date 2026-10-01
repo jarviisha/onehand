@@ -494,9 +494,9 @@ impl BlockingBody {
     /// box rather than inside it, because it is a control and must not scroll
     /// away from the card that offers it -- so the gutter made four rows that
     /// read as one list end at two different edges, which is a mistake rather
-    /// than a margin. What it costs is the case that gutter is for: a question
-    /// with enough options to scroll draws its thumb over the right-hand
-    /// border of a row, which is a hairline crossed rather than a row cut off.
+    /// than a margin. The thumb goes into the card's right padding instead, so
+    /// this assumes the caller pads the card by the `4` the frame reaches back
+    /// through.
     fn flush(mut self) -> Self {
         self.gutter = false;
         self
@@ -516,7 +516,14 @@ impl RenderOnce for BlockingBody {
         div()
             .id(("blocking-body-frame", key))
             .relative()
-            .w_full()
+            // Flush, the frame reaches through the card's right padding and the
+            // rows are held back by the same amount: the thumb runs down the
+            // card's own edge instead of over the rows' borders, and the rows
+            // still end where the box below them does.
+            .map(|frame| match self.gutter {
+                true => frame.w_full(),
+                false => frame.mr_neg_4(),
+            })
             .max_h(MAX_BLOCKING_BODY_H)
             .child(
                 div()
@@ -535,7 +542,10 @@ impl RenderOnce for BlockingBody {
                     // of its own, so the body is held off the right edge: a
                     // choice's border running underneath the thumb reads as a
                     // row drawn wrong rather than as one that scrolls.
-                    .when(self.gutter, |body| body.pr_2())
+                    .map(|body| match self.gutter {
+                        true => body.pr_2(),
+                        false => body.pr_4(),
+                    })
                     .children(self.children),
             )
             // The mask takes vertical wheel input in the capture phase. A bubble
