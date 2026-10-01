@@ -258,6 +258,14 @@ impl Shell {
                 match event {
                     E::Hide => shell.hide_workbench(window, cx),
                     E::RestartAgent => shell.restart_session(window, cx),
+                    E::WorkIssueHere {
+                        root,
+                        number,
+                        prompt,
+                    } => shell.work_issue_here(root, *number, prompt, window, cx),
+                    E::OpenConversation { root, session } => {
+                        shell.open_conversation(root, session, window, cx)
+                    }
                     E::ToggleMaximize => {
                         shell.toggle_maximize_panel(FocusedPanel::Workbench, window, cx);
                     }

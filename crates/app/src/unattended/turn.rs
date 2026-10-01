@@ -187,6 +187,7 @@ fn prompt(uid: u64, session: &Entity<ChatSession>, cx: &mut App) {
             format!("Mode {mode} set; issue sent as the prompt"),
             cx,
         );
+        name_session(uid, session, cx);
     } else {
         settle(
             uid,
@@ -194,6 +195,46 @@ fn prompt(uid: u64, session: &Entity<ChatSession>, cx: &mut App) {
             cx,
         );
     }
+}
+
+/// Say on an issue kept in onehand which conversation the run is working it
+/// in, so the issue can open it — the run's own notes name the worktree and
+/// the outcome, and neither is a way back to what the agent said. An issue
+/// that lives only on the forge has nowhere to keep it.
+fn name_session(uid: u64, session: &Entity<ChatSession>, cx: &mut App) {
+    let Some(id) = session.read(cx).chat.session_id.clone() else {
+        return;
+    };
+    let Some((tracker, number, dir, branch)) = with(cx, |u| {
+        u.run_mut(uid).map(|run| {
+            (
+                run.claimed.tracker.clone(),
+                run.claimed.issue.number,
+                run.claimed.dir.clone(),
+                run.claimed.branch.clone(),
+            )
+        })
+    })
+    .flatten() else {
+        return;
+    };
+    let (Tracker::Local(file) | Tracker::Synced { file, .. }) = tracker else {
+        return;
+    };
+    cx.background_executor()
+        .spawn(async move {
+            let said = format!(
+                "Taken up by an unattended run in {}, on branch {branch}",
+                dir.display()
+            );
+            let done = onehand_core::issues::update_blocking(&file, |kept| {
+                kept.taken_up(number, &said, id, onehand_core::issues::now())
+            });
+            if let Err(why) = done {
+                eprintln!("onehand: could not note the session on issue: {why}");
+            }
+        })
+        .detach();
 }
 
 /// What the run's transcript opens with: which issue, how it was chosen, and

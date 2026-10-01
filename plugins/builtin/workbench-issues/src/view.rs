@@ -59,10 +59,9 @@ const LIST_CAP: usize = 500;
 /// more is a list of files, and the list says how many it left out.
 const FILES_SHOWN: usize = 20;
 
-/// How many of an issue's notes are drawn under it: the latest ones, since a
-/// note is what a run said about how it ended and the last run is the one that
-/// is read.
-const NOTES_SHOWN: usize = 5;
+/// How many entries of an issue's history are drawn under it: the latest ones,
+/// since the last thing that happened to it is the one read first.
+const HISTORY_SHOWN: usize = 50;
 
 pub(crate) struct IssuesView {
     root: Option<PathBuf>,
@@ -730,6 +729,52 @@ impl IssuesView {
             .map(|forge| forge.name());
         let body = self.parsed_body(root, &issue, cx);
         issue_view(root, &issue, body, publish_to, window, cx)
+    }
+
+    /// Start a session on the project on screen, in the checkout it is open
+    /// on, with issue `number` as its first message. Deferred, as
+    /// [`Self::open_path`] is.
+    fn work_here(&mut self, number: u64, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(root) = self.root.clone() else {
+            return;
+        };
+        let Some(prompt) = self
+            .state_mut()
+            .and_then(|state| state.issues.as_ref()?.get(number))
+            .map(issues::work_here_prompt)
+        else {
+            return;
+        };
+        let ask = self.ask.clone();
+        window.defer(cx, move |window, cx| {
+            ask(
+                &Request::WorkIssueHere {
+                    root: &root,
+                    number,
+                    prompt: &prompt,
+                },
+                window,
+                cx,
+            )
+        });
+    }
+
+    /// Put the conversation the agent named `session` on screen.
+    fn open_session(&mut self, session: String, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(root) = self.root.clone() else {
+            return;
+        };
+        let ask = self.ask.clone();
+        window.defer(cx, move |window, cx| {
+            ask(
+                &Request::OpenConversation {
+                    root: &root,
+                    session: &session,
+                },
+                window,
+                cx,
+            )
+        });
     }
 
     /// Open `path`, relative to the project on screen, in the editor.

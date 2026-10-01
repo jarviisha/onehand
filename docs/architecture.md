@@ -921,9 +921,21 @@ see the rail, below.
   process-wide lock and through `config::write_atomic`, made against what is on disk rather than the
   copy on screen, so a person editing and anything else in the process writing cannot each save a copy
   missing the other's change; a file this build cannot read is refused and never written over. The
-  file is read again when the mode is next drawn after being shown or after a turn ends. What runs
-  said about an issue is kept on it as **notes** and drawn under its body, the latest few, with the
-  cut said. Unattended runs work these issues too — see *Unattended runs*. No shortcut yet, and no
+  file is read again when the mode is next drawn after being shown or after a turn ends. **Every
+  issue keeps its history as notes** (`Note { at, text, session }`) and draws it under its body,
+  oldest first under *Added to onehand*, each line with its local time (chrono, already built into
+  the app through gpui) and how long ago, the latest 50 with the cut said: what runs said, every
+  change of state made here (`Issues::set_open`) or brought in from the forge (`LocalIssue::apply`,
+  *Closed on GitHub*), and an import. **A note can name the conversation that took the issue
+  up** by the agent's session id, which outlives a restart where a session's uid does not; its
+  *Open session* asks the shell (`Request::OpenConversation`, `Shell::open_conversation`) for the
+  live session holding it, else reopens the saved one on whichever project here it ran in.
+  **Work here** starts an ordinary session on the project's own checkout with
+  `issues::work_here_prompt` as its first message (`Request::WorkIssueHere`,
+  `Shell::work_issue_here`): no worktree, no branch, no claim, no timeout, and the prompt tells the
+  agent to leave its changes uncommitted, since this is somebody's working copy. The prompt waits for
+  the adapter and is not sent if somebody typed into the session first; the issue hears which
+  session took it once the agent has named it. Unattended runs work these issues too — see *Unattended runs*. No shortcut yet, and no
   deletion — closing is the way an issue leaves the work, from the detail's ⋯ menu (beside *Open on
   GitHub* and *Copy link*, whose address `Connector::issue_url_blocking` asks the forge for) and
   behind a confirmation, since a bare *Close* there read as closing the view.

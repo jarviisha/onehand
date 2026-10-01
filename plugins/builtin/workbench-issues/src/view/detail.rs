@@ -1,6 +1,6 @@
 use super::list::{chip, identity};
 use super::mentions::FILE_LINK;
-use super::{FILES_SHOWN, Form, IssuesView, NOTES_SHOWN};
+use super::{FILES_SHOWN, Form, HISTORY_SHOWN, IssuesView};
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
     AnyElement, App, ClickEvent, ClipboardItem, Context, Entity, HighlightStyle,
@@ -63,6 +63,22 @@ pub(super) fn issue_view(
                                 view.publish(number, cx)
                             }))
                     }))
+                    .when(open, |actions| {
+                        actions.child(
+                            action("issue-work-here")
+                                .xsmall()
+                                .ghost()
+                                .icon(Icon::new(IconName::Bot))
+                                .label("Work here")
+                                .tooltip(
+                                    "Start a session on this checkout with the issue as its \
+                                     prompt. No branch or worktree; changes are left uncommitted",
+                                )
+                                .on_click(cx.listener(move |view, _: &ClickEvent, window, cx| {
+                                    view.work_here(number, window, cx)
+                                })),
+                        )
+                    })
                     .child(
                         action("issue-edit")
                             .xsmall()
@@ -126,34 +142,7 @@ pub(super) fn issue_view(
         }));
     let conflict = conflict_view(issue, cx);
 
-    // What runs have said about it, newest last, under the body — the record of
-    // what was tried, which the body itself never changes to say.
-    let notes = (!issue.notes.is_empty()).then(|| {
-        div()
-            .flex_none()
-            .max_h(gpui::rems(12.))
-            .v_flex()
-            .gap_1()
-            .px_2()
-            .py_1()
-            .border_t_1()
-            .border_color(cx.theme().border)
-            .when(issue.notes.len() > NOTES_SHOWN, |notes| {
-                notes.child(div().text_xs().text_color(muted).child(format!(
-                    "… {} earlier notes not shown",
-                    issue.notes.len() - NOTES_SHOWN
-                )))
-            })
-            .children(
-                issue
-                    .notes
-                    .iter()
-                    .rev()
-                    .take(NOTES_SHOWN)
-                    .rev()
-                    .map(|note| div().text_xs().text_color(muted).child(note.text.clone())),
-            )
-    });
+    let history = history(issue, cx);
 
     div()
         .flex_1()
@@ -185,8 +174,92 @@ pub(super) fn issue_view(
                 .into_any_element(),
         })
         .children(body.and_then(|(_, files)| referenced(files, cx)))
-        .children(notes)
+        .child(history)
         .into_any_element()
+}
+
+/// Everything that happened to the issue, oldest first under its arrival:
+/// each with when, in local time and how long ago, and for one a session took
+/// up, a way to open that session. The latest ones only, with the cut said.
+fn history(issue: &LocalIssue, cx: &mut Context<IssuesView>) -> AnyElement {
+    let muted = cx.theme().muted_foreground;
+    let now = onehand_core::issues::now();
+    let arrived =
+        (issue.created > 0).then(|| (issue.created, "Added to onehand".to_string(), None));
+    let entries: Vec<(u64, String, Option<String>)> = arrived
+        .into_iter()
+        .chain(
+            issue
+                .notes
+                .iter()
+                .map(|note| (note.at, note.text.clone(), note.session.clone())),
+        )
+        .collect();
+    let left_out = entries.len().saturating_sub(HISTORY_SHOWN);
+    div()
+        .id("issue-history")
+        .flex_none()
+        .max_h(gpui::rems(14.))
+        .overflow_y_scroll()
+        .v_flex()
+        .gap_1()
+        .px_3()
+        .py_2()
+        .border_t_1()
+        .border_color(cx.theme().border)
+        .child(div().text_xs().text_color(muted).child("History"))
+        .when(left_out > 0, |list| {
+            list.child(
+                div()
+                    .text_xs()
+                    .text_color(muted)
+                    .child(format!("… {left_out} earlier not shown")),
+            )
+        })
+        .children(
+            entries
+                .into_iter()
+                .skip(left_out)
+                .enumerate()
+                .map(|(i, (at, text, session))| {
+                    div()
+                        .h_flex()
+                        .items_start()
+                        .gap_2()
+                        .text_xs()
+                        .child(div().flex_none().text_color(muted).child(format!(
+                            "{} · {}",
+                            moment(at),
+                            onehand_core::rel_time(now, at)
+                        )))
+                        .child(div().flex_1().min_w_0().child(text))
+                        .children(session.map(|session| {
+                            action(("issue-history-session", i))
+                                .xsmall()
+                                .ghost()
+                                .label("Open session")
+                                .tooltip("Show the conversation that took this issue up")
+                                .on_click(cx.listener(move |view, _: &ClickEvent, window, cx| {
+                                    view.open_session(session.clone(), window, cx)
+                                }))
+                        }))
+                }),
+        )
+        .into_any_element()
+}
+
+/// `secs` since the epoch as a date and minute in the machine's own time zone,
+/// which is the one the person reading it lives in.
+fn moment(secs: u64) -> String {
+    i64::try_from(secs)
+        .ok()
+        .and_then(|secs| chrono::DateTime::from_timestamp(secs, 0))
+        .map(|at| {
+            at.with_timezone(&chrono::Local)
+                .format("%Y-%m-%d %H:%M")
+                .to_string()
+        })
+        .unwrap_or_default()
 }
 
 /// The first line under a *Priority* heading in `body`, list marker and bold

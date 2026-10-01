@@ -156,6 +156,19 @@ pub enum Request<'a> {
     /// **upward**: the shell owns sessions, and a mode asking for this has
     /// changed something an agent reads only when it starts.
     RestartAgent,
+    /// Start a session on project `root`, in the checkout it is open on, with
+    /// `prompt` as its first message, and say on issue `number` which session
+    /// took it up once the agent has named it. Only ever travels **upward**,
+    /// for the reason [`Self::RestartAgent`] does.
+    WorkIssueHere {
+        root: &'a Path,
+        number: u64,
+        prompt: &'a str,
+    },
+    /// Put the conversation the agent named `session` on screen: the live
+    /// session holding it, or the saved one reopened on project `root`. Only
+    /// ever travels **upward**.
+    OpenConversation { root: &'a Path, session: &'a str },
 }
 
 /// How a mode reaches back into the panel.

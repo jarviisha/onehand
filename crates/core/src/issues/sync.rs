@@ -221,6 +221,7 @@ fn reconcile(
                             "{reference} is no longer on {name}; this issue is kept here, \
                              no longer in step with it."
                         ),
+                        session: None,
                     });
                     continue;
                 }
@@ -283,7 +284,7 @@ fn step(
         // What merged cleanly still lands here; the fields in conflict keep
         // this side's value, and the forge's side is kept to decide against.
         if !merge.merged.same_as(&ours) {
-            issue.apply(&merge.merged);
+            issue.apply(&merge.merged, connector.name(), now);
             issue.updated = now;
         }
         if let Some(link) = issue.link.as_mut() {
@@ -292,7 +293,7 @@ fn step(
         return;
     }
     if !merge.merged.same_as(&ours) {
-        issue.apply(&merge.merged);
+        issue.apply(&merge.merged, connector.name(), now);
         issue.updated = now;
         report.pulled += 1;
     }
@@ -326,7 +327,11 @@ fn import(issues: &mut Issues, connector: &str, remote: &RemoteIssue, now: u64) 
         labels: said.labels.clone(),
         created: now,
         updated: now,
-        notes: Vec::new(),
+        notes: vec![Note {
+            at: now,
+            text: format!("Brought in from {connector} as {}", remote.reference),
+            session: None,
+        }],
         link: Some(Link {
             connector: connector.to_string(),
             key: remote.key.clone(),
@@ -480,6 +485,9 @@ mod tests {
         let kept = load(&file);
         assert_eq!(kept.get(1).unwrap().title, "changed there");
         assert!(!kept.get(1).unwrap().open, "closing there closes here");
+        // And the history says where and when it closed.
+        let last = kept.get(1).unwrap().notes.last().unwrap();
+        assert_eq!((last.at, last.text.as_str()), (3, "Closed on Forge"));
         let _ = std::fs::remove_dir_all(file.parent().unwrap());
     }
 
@@ -558,7 +566,8 @@ mod tests {
         let kept = load(&file);
         let issue = kept.get(1).unwrap();
         assert!(issue.link.is_none());
-        assert!(issue.notes[0].text.contains("no longer on Forge"));
+        assert!(issue.notes[0].text.starts_with("Brought in from Forge"));
+        assert!(issue.notes[1].text.contains("no longer on Forge"));
         let _ = std::fs::remove_dir_all(file.parent().unwrap());
     }
 

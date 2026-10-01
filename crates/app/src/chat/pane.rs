@@ -490,6 +490,21 @@ impl ChatPane {
     fn session_of(&self, uid: u64) -> Option<&Entity<ChatSession>> {
         self.conversations.get(&uid)?.session()
     }
+
+    /// Session `uid`'s live session, for a caller outside the pane that has to
+    /// watch it.
+    pub fn session_entity(&self, uid: u64) -> Option<Entity<ChatSession>> {
+        self.session_of(uid).cloned()
+    }
+
+    /// The session holding the conversation the agent named `id`, if one in
+    /// this pane does.
+    pub fn uid_of_conversation(&self, id: &str, cx: &App) -> Option<u64> {
+        self.conversations.iter().find_map(|(uid, conversation)| {
+            let session = conversation.session()?;
+            (session.read(cx).chat.session_id.as_deref() == Some(id)).then_some(*uid)
+        })
+    }
 }
 
 impl Panel for ChatPane {

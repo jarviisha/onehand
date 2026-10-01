@@ -18,6 +18,7 @@ use std::path::PathBuf;
 mod boot;
 mod docks;
 mod drafts;
+mod issue_work;
 mod remote_runs;
 mod render;
 mod roots;

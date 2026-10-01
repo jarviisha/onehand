@@ -151,7 +151,8 @@ project's issues are kept in step with its forge (the pause and resume control i
 run looks at the project's own issues alone — the forge's are already among
 them — syncing first so a label added on the forge is seen. The claim takes the
 label off here and the sync takes it off the forge; every note is also a comment
-on the forge's issue; the pull request references the forge's number. An issue
+on the forge's issue, except the one naming the run's session (`turn::name_session`),
+which only an issue kept here has anywhere to keep and which means nothing on the forge; the pull request references the forge's number. An issue
 brought in from the forge is taken only if the forge says the user wrote it,
 the rule the forge's own search keeps.
 
