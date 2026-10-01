@@ -358,6 +358,8 @@ pub(super) fn apply_appearance(choice: Appearance, window: Option<&mut Window>, 
     });
     Theme::change(mode, window, cx);
 
+    // Changing the mode swaps in the whole theme config, which carries the
+    // library's own monospace family; put back the one this machine resolved.
     if let Some(family) = Shared::global(cx).mono_family.clone() {
         Theme::global_mut(cx).mono_font_family = family.into();
     }

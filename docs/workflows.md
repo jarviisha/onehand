@@ -93,8 +93,13 @@ unattended run cuts for its issue, then Push → Pull request → Status checks,
 `[unattended] workflow` names by default; see [unattended.md](unattended.md)). The person's own are in
 `<config_dir>/onehand/workflows/<slug>.toml`, made by duplicating a shipped one or from *New
 workflow* in Settings ▸ Workflows. A build from before the rename kept them in `pipelines/`;
-they move here at start, behind the one-instance lock, by the rules in
-[architecture.md](architecture.md#workflows).
+they move here at start, behind the one-instance lock (`store::migrate_old_dir_blocking`), and the
+move can be cut short at any point and run again: a file this build cannot read stays where it was
+and is reported; a name already in `workflows/` keeps that copy, and the old one is removed only when
+it is the same text (otherwise it stays and is reported, since an older build may have saved an edit
+there); any other is written whole (temp file and rename), and its directory waited on to reach the
+disk, before the old one goes. A `pipelines/` that is there but cannot be listed is reported, not
+taken for empty. Anything that is not a template is left alone, and `pipelines/` goes once empty.
 
 **A file this build cannot read is never written over.** A `schema_version` above
 `workflow::SCHEMA_VERSION` was written by a newer onehand; it is listed as unreadable, and a save
