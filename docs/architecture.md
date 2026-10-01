@@ -959,18 +959,19 @@ see the rail, below.
   the counts of what the search and label let through, and a label menu narrows to one label;
   *New issue* is an icon beside the search. A row is its title, wrapped to two lines, over a muted
   line: reference or *Draft*, the first label and *+N*, how long since it changed. The selected
-  row takes the theme's list-active fill and a bar on its left edge, so it never reads as hover.
-  **The detail's header** is the wrapped title with *Edit* and ⋯ on its right, over a row with a
-  coloured Open/Closed badge, the reference (pressing it opens the forge's page), label chips, and
+  row takes the selected fill (`accent`) and nothing else — no bar, no ring — since the ramp holds
+  that step clear of hover; a left bar was asked for and declined on those grounds.
+  **The detail's header** is the wrapped title with *Edit* and ⋯ on its right, over a row with an
+  Open/Closed badge (the `success` fill while open, the quiet chip once closed), the reference (pressing it opens the forge's page), label chips, and
   the first line of a *Priority* section if the body has one.
   **Files the body names open in the editor** (`view/mentions.rs`, tested): repo-relative paths, in
   code or bare beside punctuation, outside fenced and indented blocks and links, are checked off the
   UI loop, and the ones that exist are rewritten into `onehand-file:` links before the body is parsed
   again; the renderer's link hook opens those through `Request::OpenFile` and hands any other link to
   the system. A path that does not exist stays as written. The same files are listed once each
-  under the body as *Referenced files* (capped, the cut said). Inline code takes the well and the
-  code blue; the renderer styles it through a highlight, which carries no font family or padding,
-  so neither is reachable.
+  under the body as *Referenced files* (capped, the cut said). Inline code takes the well (`muted`)
+  instead of the renderer's selected-fill fallback; the renderer styles it through a highlight, which
+  carries no font family or padding, so neither is reachable.
   **Kept in step with the project's forge, both ways, when switched on** (`onehand_core::issues::sync`;
   the switch is the pause/resume control in the list's footer and is stored in the issue file as `synced_with`, so it needs no
   workspace key). A linked issue carries a `Link` whose `base` is the snapshot both sides last agreed

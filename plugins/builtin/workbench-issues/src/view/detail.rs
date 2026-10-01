@@ -13,7 +13,7 @@ use gpui_component::text::{TextView, TextViewState, TextViewStyle};
 use gpui_component::tooltip::Tooltip;
 use gpui_component::{ActiveTheme, Icon, IconName, Sizable as _, StyledExt};
 use onehand_core::issues::{LocalIssue, sync};
-use onehand_plugin_host::{action, menu_below, menu_item, status_hue, status_ink};
+use onehand_plugin_host::{action, menu_below, menu_item, status_ink};
 use std::path::Path;
 
 /// One issue, read: how it is named and its title with what can be done to it,
@@ -109,7 +109,6 @@ pub(super) fn issue_view(
 
     // What it is at a glance: open or closed, where it lives, its labels, and
     // how urgent the body says it is.
-    let state_ink = if open { status_ink(cx).success } else { muted };
     let facts = div()
         .h_flex()
         .flex_wrap()
@@ -127,8 +126,19 @@ pub(super) fn issue_view(
                 .flex_none()
                 .px_1p5()
                 .rounded(cx.theme().radius)
-                .bg(state_ink.opacity(0.15))
-                .text_color(state_ink)
+                // The status fill for work still open; a closed one takes
+                // the quiet chip every other tag here wears.
+                .map(|badge| {
+                    if open {
+                        badge
+                            .bg(cx.theme().success)
+                            .text_color(cx.theme().success_foreground)
+                    } else {
+                        badge
+                            .bg(cx.theme().secondary)
+                            .text_color(cx.theme().secondary_foreground)
+                    }
+                })
                 .child(if open { "Open" } else { "Closed" }),
         )
         .child(match (issue.reference(), &issue.link) {
@@ -588,13 +598,12 @@ fn body_style(rem: gpui::Pixels, cx: &App) -> TextViewStyle {
                 .text_size(gpui::rems(0.8125))
                 .bg(theme.muted),
         )
-        // Inline code on the well rather than the renderer's own accent, which
-        // in the dark palette is a slab louder than the prose around it, and
-        // in the blue the transcript gives code. The renderer styles inline
+        // Inline code on the well, the quiet fill, rather than the renderer's
+        // own fallback to the selected one, which in the dark palette is a
+        // slab louder than the prose around it. The renderer styles inline
         // code through a highlight, which carries colour and background but
         // no font family and no padding, so those two are out of reach here.
         .inline_code(HighlightStyle {
-            color: Some(status_hue(theme.blue, theme.foreground)),
             background_color: Some(theme.muted),
             ..HighlightStyle::default()
         });

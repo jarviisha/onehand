@@ -548,18 +548,13 @@ impl IssuesView {
             .px_2()
             .py_1()
             .rounded(theme.radius)
-            // The bar is always there and only coloured when selected, so a
-            // row does not shift sideways as the selection moves onto it.
-            .border_l_2()
-            .border_color(if selected {
-                theme.list_active_border
-            } else {
-                gpui::transparent_black()
-            })
             .cursor_pointer()
+            // A selection is a fill and only a fill: the selected step, which
+            // the ramp holds clear of the hover step, so a row that is both
+            // does not read as merely hovered. No bar or ring beside it.
             .map(|row| {
                 if selected {
-                    row.bg(theme.list_active)
+                    row.bg(theme.accent).text_color(theme.accent_foreground)
                 } else {
                     row.hover(|row| row.bg(theme.list_hover))
                 }
