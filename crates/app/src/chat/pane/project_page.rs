@@ -463,6 +463,10 @@ impl ChatPane {
                                         });
                                     })),
                             )
+                            // Pipeline runs that stopped short of their own
+                            // outcome here, each to resume or let go. Above
+                            // the conversations: one is work left half done.
+                            .children(unfinished_runs(&project.path, cx))
                             .children(
                                 note.map(|note| div().text_xs().text_color(muted).child(note)),
                             )
@@ -566,6 +570,92 @@ pub(super) fn count_of(n: usize, noun: &str) -> String {
         1 => format!("1 {noun}"),
         n => format!("{n} {noun}s"),
     }
+}
+
+/// How many unfinished pipeline runs the page lists before it says how many
+/// more there are.
+const UNFINISHED_ROWS: usize = 5;
+
+/// The unfinished pipeline runs of the project at `root`: what each was
+/// asked to do and where it stopped, with *Resume* and *Discard*.
+fn unfinished_runs(root: &Path, cx: &mut Context<ChatPane>) -> Option<gpui::AnyElement> {
+    let runs = crate::pipeline::unfinished_in(root, cx);
+    if runs.is_empty() {
+        return None;
+    }
+    let muted = cx.theme().muted_foreground;
+    let hidden = runs.len().saturating_sub(UNFINISHED_ROWS);
+    let rows: Vec<_> = runs
+        .into_iter()
+        .take(UNFINISHED_ROWS)
+        .enumerate()
+        .map(|(i, run)| {
+            let (resume, discard) = (run.id.clone(), run.id.clone());
+            div()
+                .h_flex()
+                .items_center()
+                .gap_2()
+                .w_full()
+                .p_2()
+                .rounded(cx.theme().radius)
+                .border_1()
+                .border_color(cx.theme().border)
+                .child(
+                    div()
+                        .v_flex()
+                        .gap_0p5()
+                        .flex_1()
+                        .min_w_0()
+                        .child(div().truncate().child(run.title))
+                        .child(
+                            div()
+                                .text_xs()
+                                .text_color(muted)
+                                .truncate()
+                                .child(format!("{} · stopped at {}", run.name, run.step)),
+                        ),
+                )
+                .child(
+                    crate::controls::action(("pipeline-discard", i))
+                        .ghost()
+                        .small()
+                        .label("Discard")
+                        .tooltip("Forget this run; its work stays where it is")
+                        .on_click(cx.listener(move |_: &mut ChatPane, _, _, cx| {
+                            cx.emit(ChatPaneEvent::DiscardPipeline(discard.clone()));
+                        })),
+                )
+                .child(
+                    crate::controls::action(("pipeline-resume", i))
+                        .small()
+                        .label("Resume")
+                        .tooltip("Carry on from that step in a new session")
+                        .on_click(cx.listener(move |_: &mut ChatPane, _, _, cx| {
+                            cx.emit(ChatPaneEvent::ResumePipeline(resume.clone()));
+                        })),
+                )
+        })
+        .collect();
+    Some(
+        div()
+            .v_flex()
+            .gap_2()
+            .w_full()
+            .child(
+                div()
+                    .text_xs()
+                    .text_color(muted)
+                    .child("Unfinished pipelines"),
+            )
+            .children(rows)
+            .children((hidden > 0).then(|| {
+                div()
+                    .text_xs()
+                    .text_color(muted)
+                    .child(format!("{hidden} more not shown"))
+            }))
+            .into_any_element(),
+    )
 }
 
 /// One archived conversation, as a card that can be picked.
