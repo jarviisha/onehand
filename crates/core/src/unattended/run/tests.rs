@@ -444,3 +444,16 @@ fn a_checkout_is_never_told_to_commit() {
         assert!(!said.contains("branch"), "{said}");
     }
 }
+
+#[test]
+fn a_checkout_never_tells_the_agent_to_undo_what_a_person_did() {
+    // The person may be working in the checkout too, so a change or a
+    // commit the gate saw may be theirs: only the agent's own is undone.
+    for missing in [Missing::Committed, Missing::PlanTouchedCode] {
+        let said = carry_on(&missing, Step::Plan, None, Place::Checkout);
+        assert!(!said.contains("back as they were"), "{said}");
+        assert!(said.contains("leave"), "{said}");
+        assert!(said.contains("not yours"), "{said}");
+        assert!(said.contains("commit"), "{said}");
+    }
+}

@@ -974,7 +974,9 @@ see the rail, below.
   taken as the plan and the change start, so a checkout that was already dirty is measured fairly;
   a commit is sent back (`Missing::Committed`). The plan is a local note on the issue; with *Approve
   plans before work* the session waits, and *Continue* / *Revise…* on its step strip go on. A
-  prompt the driver did not send takes the session over and the steps stop. The prompt waits for
+  prompt the driver did not send takes the session over and the steps stop, and so does a *Stop*
+  (`Chat::cancelled`, from the turn's stop reason), so a plan cut short is never taken as the plan.
+  *Continue* and *Revise…* reach the driver as `ChatPaneEvent::ContinueSteps` / `ReviseSteps`. The prompt waits for
   the adapter and is not sent if somebody typed into the session first; the issue hears which
   session took it once the agent has named it, on the project it is kept in. **An issue a live session is on is not offered *Work*:**
   the shell tells the Workbench which conversations have a live session in the window

@@ -804,6 +804,15 @@ pub enum ChatPaneEvent {
     },
     /// Select the project at this root — a row of the workspace page.
     ShowProject(PathBuf),
+    /// Session `uid` works an issue in steps in its checkout, and its plan is
+    /// approved: go on to the change. Announced, because the steps are the
+    /// shell's and the strip that offers this only draws them.
+    ContinueSteps(u64),
+    /// Send that plan back to be written again, with what to `change` in it.
+    ReviseSteps {
+        uid: u64,
+        change: String,
+    },
     /// Resume `archive` on `agent` in the project at `root` — a recent
     /// conversation on the workspace page.
     ResumeIn {

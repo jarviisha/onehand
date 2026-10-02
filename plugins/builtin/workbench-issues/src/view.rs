@@ -864,9 +864,10 @@ impl IssuesView {
                      going on in it. Changes are left uncommitted."
                     .to_string(),
                 (Some(_), true) => "An unattended run: the issue is claimed, and a worktree \
-                     on a branch of the run's own is cut from the default branch. A plan, the \
-                     change, the project's check and a draft pull request, each checked by \
-                     onehand before the next."
+                     on a branch of the run's own is cut from the default branch, or from the \
+                     branch checked out here on a project with no forge. A plan, the change, \
+                     the project's check and, with a forge, a draft pull request, each checked \
+                     by onehand before the next."
                     .to_string(),
                 (None, true) => "The branch checked out here: a plan, the change and the \
                      project's check, each checked by onehand before the next. Nothing is \

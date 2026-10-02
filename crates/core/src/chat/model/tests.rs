@@ -1701,6 +1701,34 @@ fn a_turn_ending_settles_what_it_left_running() {
     );
 }
 
+/// Whether the last turn was cancelled is kept, so something driving the
+/// session can tell a Stop from a turn that finished.
+#[test]
+fn a_cancelled_turn_is_told_from_a_finished_one() {
+    let (mut chat, _rx) = chat_with_tx();
+    assert!(!chat.cancelled);
+    chat.apply(AcpEvent::TurnEnded {
+        stop_reason: "cancelled".into(),
+    });
+    assert!(chat.cancelled);
+    assert!(chat.submit("next", &[]));
+    chat.apply(AcpEvent::TurnEnded {
+        stop_reason: "end_turn".into(),
+    });
+    assert!(!chat.cancelled);
+
+    // A Stop the adapter answers with an error still ends a turn as
+    // "end_turn"; the cancel asked for is what counts, until the next prompt.
+    chat.busy = true;
+    chat.cancel_turn();
+    chat.apply(AcpEvent::TurnEnded {
+        stop_reason: "end_turn".into(),
+    });
+    assert!(chat.cancelled);
+    assert!(chat.submit("again", &[]));
+    assert!(!chat.cancelled);
+}
+
 #[test]
 fn the_turn_ending_is_reported_once() {
     let (mut chat, _rx) = chat_with_tx();

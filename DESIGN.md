@@ -293,7 +293,8 @@ One window hosts exactly one workspace. The frame is a navigation **rail** plus 
   textarea, off by default, inside a box that shows the pointer; checked, the textarea empties,
   an *Extra instructions (optional)* line sits over it, and the muted line says what the steps
   are for the place picked. A checkout worked in steps carries the same strip under its header,
-  *Issue #N* then *Plan*, *Implement*, *Verify*; while its plan waits, *Revise…* (ghost) and
+  *Issue* and the issue as shown everywhere (the forge's number, or *Draft*), then *Plan*,
+  *Implement*, *Verify*; while its plan waits, *Revise…* (ghost) and
   *Continue* (primary, with a check icon) sit at the strip's right end, and its row in the Issues
   mode says *waiting* in the warning ink. An issue a run is working shows the step's
   name where *working* would be.
@@ -576,6 +577,7 @@ the theme, will not follow the focus rules, and will have to be maintained here:
 | Buttons, ghost/primary variants | `Button` + `ButtonVariants` |
 | Modals | `Dialog` |
 | On/off settings | `Switch`, inside a box that shows the pointer, since the switch sets no cursor of its own |
+| An option of one dialog, for the one thing it starts | `Checkbox`, inside a box that shows the pointer, for the same reason |
 | Single-line and multi-line input | `InputState` + `TextInput` / `Textarea` |
 | The file editor | `EditorState` + `Editor` (tree-sitter, no LSP — D3) |
 | Markdown | `TextView` + `TextViewState` |

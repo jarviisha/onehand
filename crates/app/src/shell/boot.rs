@@ -99,6 +99,10 @@ impl Shell {
                     E::WorkTreeTouched => shell.refresh_worktree(cx),
                     E::AgentStarted => shell.sync_agent_started(cx),
                     E::ShowRail => shell.show_rail(cx),
+                    E::ContinueSteps(uid) => super::hand_steps::approve(*uid, cx),
+                    E::ReviseSteps { uid, change } => {
+                        super::hand_steps::revise(*uid, change.clone(), cx)
+                    }
                     // The visibility button and its shortcut preserve the selected mode.
                     E::ToggleWorkbench => shell.toggle_workbench(window, cx),
                     // The dock having a shell in it is the same condition

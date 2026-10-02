@@ -2,9 +2,12 @@ use super::{ChatPane, ChatPaneEvent, ProjectAction, ProjectFacts, rel_time};
 use crate::chat::conversation::{Conversation, SessionPhase};
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
-    App, Context, Entity, IntoElement, ParentElement, Rems, SharedString, Styled, Window, div, rems,
+    App, AppContext as _, Context, Entity, IntoElement, ParentElement, Rems, SharedString, Styled,
+    Window, div, rems,
 };
+use gpui_component::WindowExt as _;
 use gpui_component::button::ButtonVariants as _;
+use gpui_component::input::{Textarea, TextareaState};
 use gpui_component::menu::{DropdownMenu as _, PopupMenuItem};
 use gpui_component::{ActiveTheme, Icon, IconName, Sizable as _, StyledExt};
 use onehand_core::chat::{Chat, ConvMeta};
@@ -131,7 +134,7 @@ impl ChatPane {
     /// not an answer to "how far along is it", and the steps are few enough to
     /// be read in one glance. A checkout's plan waiting for approval is
     /// approved here, in its own session, so *Continue* and *Revise…* follow.
-    pub(super) fn run_steps(&self, cx: &App) -> Option<impl IntoElement + use<>> {
+    pub(super) fn run_steps(&self, cx: &mut Context<Self>) -> Option<impl IntoElement + use<>> {
         let uid = self.active?;
         let (named, at_step, steps, awaiting) = match crate::unattended::live_runs(cx)
             .into_iter()
@@ -192,7 +195,9 @@ impl ChatPane {
                                     .xsmall()
                                     .ghost()
                                     .label("Revise…")
-                                    .on_click(move |_, window, cx| open_revise(uid, window, cx)),
+                                    .on_click(cx.listener(move |_, _, window, cx| {
+                                        open_revise(uid, window, cx)
+                                    })),
                             )
                             .child(
                                 crate::controls::action("hand-steps-continue")
@@ -201,9 +206,9 @@ impl ChatPane {
                                     .icon(Icon::new(IconName::Check))
                                     .label("Continue")
                                     .tooltip("Go on from the plan to the change")
-                                    .on_click(move |_, _, cx| {
-                                        crate::shell::hand_steps::approve(uid, cx)
-                                    }),
+                                    .on_click(cx.listener(move |_, _, _, cx| {
+                                        cx.emit(ChatPaneEvent::ContinueSteps(uid))
+                                    })),
                             ),
                     )
                 }),
@@ -919,17 +924,15 @@ struct HistoryRow {
 
 /// Put up the window that sends session `uid`'s plan back to be written
 /// again, with what to change in it.
-fn open_revise(uid: u64, window: &mut Window, cx: &mut App) {
-    use gpui::AppContext as _;
-    use gpui_component::WindowExt as _;
-    use gpui_component::input::{Textarea, TextareaState};
+fn open_revise(uid: u64, window: &mut Window, cx: &mut Context<ChatPane>) {
+    let pane = cx.entity().downgrade();
     let note = cx.new(|cx| {
         TextareaState::new(window, cx).placeholder("What should the plan do differently?")
     });
     note.update(cx, |input, cx| input.focus(window, cx));
     window.open_dialog(cx, move |dialog, _, cx| {
         let send = {
-            let note = note.clone();
+            let (note, pane) = (note.clone(), pane.clone());
             move |_: &gpui::ClickEvent, window: &mut Window, cx: &mut App| {
                 let text = note.read(cx).value().trim().to_string();
                 if text.is_empty() {
@@ -937,7 +940,9 @@ fn open_revise(uid: u64, window: &mut Window, cx: &mut App) {
                     return;
                 }
                 window.close_dialog(cx);
-                crate::shell::hand_steps::revise(uid, text, cx);
+                let _ = pane.update(cx, |_, cx| {
+                    cx.emit(ChatPaneEvent::ReviseSteps { uid, change: text })
+                });
             }
         };
         dialog

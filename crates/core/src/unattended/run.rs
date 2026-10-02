@@ -57,15 +57,21 @@ impl Facts {
     }
 
     /// Read them for a checkout worked in place, counting commits past
-    /// `since` and comparing its work with `digest`, what
-    /// [`worktree::work_digest_blocking`] said as the step started. Blocking.
-    pub fn read_checkout_blocking(dir: &Path, since: &str, digest: &str) -> Result<Self, String> {
+    /// `since` and calling the work changed unless it is at one of `digests`,
+    /// what [`worktree::work_digest_blocking`] said as the step started and
+    /// after any turn whose change may have been a person's. Blocking.
+    pub fn read_checkout_blocking(
+        dir: &Path,
+        since: &str,
+        digests: &[String],
+    ) -> Result<Self, String> {
+        let now = worktree::work_digest_blocking(dir)?;
         Ok(Self {
             commits: worktree::commits_since_blocking(dir, since)?,
             dirty: false,
             head: worktree::head_blocking(dir)?,
             pr: None,
-            changed: worktree::work_digest_blocking(dir)? != digest,
+            changed: !digests.contains(&now),
         })
     }
 }
@@ -260,9 +266,19 @@ pub fn carry_on(
         ),
         (_, Place::Branch) => "commit it on this branch".to_string(),
     };
-    let (looked_at, put_back, then) = match place {
-        Place::Branch => ("the branch", "the worktree and the branch", "then commit"),
-        Place::Checkout => ("the checkout", "the checkout", "and leave it uncommitted"),
+    let (looked_at, then, put_back) = match place {
+        Place::Branch => (
+            "the branch",
+            "then commit",
+            "Put the worktree and the branch back as they were",
+        ),
+        // A person may be working in a checkout too, so what the gate saw
+        // change may be theirs: the agent undoes only its own.
+        Place::Checkout => (
+            "the checkout",
+            "and leave it uncommitted",
+            "Undo any edit or commit you made, and leave every change that is not yours",
+        ),
     };
     let said = match missing {
         Missing::Uncommitted => {
@@ -284,16 +300,17 @@ pub fn carry_on(
              nothing."
             .to_string(),
         Missing::PlanTouchedCode => format!(
-            "that turn changed the code, and this step is only the plan. Put {put_back} \
-             back as they were, then answer with the plan alone."
+            "that turn changed the code, and this step is only the plan. {put_back}, then \
+             answer with the plan alone."
         ),
         Missing::CheckFailed(tail) => format!(
             "the project's check failed. Fix what it reports, {then}.\n\n```\n{}\n```",
             tail.trim()
         ),
-        Missing::Committed => "that turn committed, and the work here is to stay \
-             uncommitted for the person who started it. Undo the commits made in this step, \
-             keeping their changes in the checkout, and do not commit again."
+        Missing::Committed => "a commit landed during that turn, and the work here is to \
+             stay uncommitted for the person who started it. If you made it, undo it, keeping \
+             its changes in the checkout, and do not commit again; leave any commit that is \
+             not yours."
             .to_string(),
         Missing::Unchanged => format!(
             "that turn changed nothing in the checkout, so the issue is not done. Carry on \

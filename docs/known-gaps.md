@@ -189,9 +189,12 @@ Listed because a missing feature nobody wrote down reads as a bug in the ones th
 - **A checkout worked in steps lives only as long as the app.** It has no record, so a restart
   leaves an ordinary session; work it on by hand. Its plan cannot be approved from the remote
   bridge, only by *Continue* in its session, and its plan is a note on the issue here, never a
-  comment on a forge. *Stop* reads as a turn that ended, and the step carries on: type a message
-  to take the session over instead. An edit inside a file that was already untracked is not seen
-  by its gate.
+  comment on a forge. Its gate cannot tell whose a change is: a file the person saves during the
+  plan, or a commit they make during a step, is sent back as the agent's and costs one turn. The
+  agent is told to undo only what is its own, and from then on the checkout may stay as that turn
+  left it. A Stop the adapter does not report is caught only when it was pressed in onehand, here
+  or from the remote bridge. An edit inside a file that was already untracked is
+  not seen by its gate.
 - **A plan's gate cannot see edits on top of a worktree that was already dirty.** The plan is
   measured from where its session found the worktree, by its head and whether anything was
   uncommitted; an earlier attempt that left uncommitted work hides further edits to it. A content

@@ -33,9 +33,10 @@ struct Hand {
     issue: Issue,
     /// The step, the plan, a person's note on it and their instructions.
     progress: Progress,
-    /// Where the step's work is measured from: the head and the digest of
-    /// the uncommitted work as the plan or the change started.
-    from: Option<(String, String)>,
+    /// Where the step's work is measured from: the head, and the digests of
+    /// the uncommitted work it may still be at — as the plan or the change
+    /// started, and after a turn whose change may have been a person's.
+    from: Option<(String, Vec<String>)>,
     /// Turns that failed their step's gate.
     missed: u32,
     /// How many prompts the steps have sent the session: any more, and the
@@ -60,6 +61,23 @@ pub(crate) struct Shown {
 
 /// The steps a checkout takes: no pull request, since nothing is pushed.
 pub(crate) const STEPS: [Step; 3] = [Step::Plan, Step::Implement, Step::Verify];
+
+/// What a session's steps say when a person took the session over.
+const TAKEN_OVER: &str = "Taken over by hand; onehand stopped checking the steps";
+
+/// What they say when a person pressed Stop.
+const STOPPED: &str = "Stopped by hand; onehand stopped checking the steps";
+
+/// What they say when the agent refused the prompt they sent.
+const REFUSED: &str = "Steps stopped: the agent did not take the prompt";
+
+/// Read the session `uid`'s steps, if it is working in steps. Apart from
+/// [`with`] because every event the session sends, a streamed chunk
+/// included, asks: a mutable borrow would tell every observer of the
+/// global that it changed.
+fn read<R>(uid: u64, cx: &App, look: impl FnOnce(&Hand) -> R) -> Option<R> {
+    cx.try_global::<HandSteps>()?.0.get(&uid).map(look)
+}
 
 /// Act on the session `uid`'s steps, if it is working in steps.
 fn with<R>(uid: u64, cx: &mut App, act: impl FnOnce(&mut Hand) -> R) -> Option<R> {
@@ -119,8 +137,7 @@ pub(super) fn begin(uid: u64, session: &Entity<ChatSession>, cx: &mut App) {
 
 /// Where session `uid` stands, if it is working in steps.
 pub(crate) fn shown(uid: u64, cx: &App) -> Option<Shown> {
-    let hand = cx.try_global::<HandSteps>()?.0.get(&uid)?;
-    Some(Shown {
+    read(uid, cx, |hand| Shown {
         name: hand.tracker.shown(&hand.issue),
         step: hand.progress.step,
         awaiting: hand.awaiting,
@@ -165,10 +182,10 @@ pub(crate) fn approve(uid: u64, cx: &mut App) {
 }
 
 /// Send the plan back to be written again, with what to change in it.
-pub(crate) fn revise(uid: u64, said: String, cx: &mut App) {
+pub(crate) fn revise(uid: u64, change: String, cx: &mut App) {
     let session = with(uid, cx, |hand| {
         let waited = std::mem::take(&mut hand.awaiting);
-        hand.progress.revise = Some(said);
+        hand.progress.revise = Some(change);
         hand.session.upgrade().filter(|_| waited)
     })
     .flatten();
@@ -178,23 +195,21 @@ pub(crate) fn revise(uid: u64, said: String, cx: &mut App) {
 }
 
 fn on_event(uid: u64, session: &Entity<ChatSession>, event: &ChatEvent, cx: &mut App) {
-    let Some((sent, awaiting)) = with(uid, cx, |hand| (hand.sent, hand.awaiting)) else {
+    let Some((sent, awaiting)) = read(uid, cx, |hand| (hand.sent, hand.awaiting)) else {
         return;
     };
     match event {
         ChatEvent::Appended => {
             if prompted_by_someone_else(session, sent, cx) {
-                end(
-                    uid,
-                    session,
-                    "Taken over by hand; onehand stopped checking the steps",
-                    cx,
-                );
+                end(uid, session, TAKEN_OVER, cx);
             }
         }
         // Only a turn the steps sent is judged: the first prompt may still be
         // on its way, and a plan waiting for approval has no turn running.
         ChatEvent::TurnEnded if sent == 0 || awaiting => {}
+        // A Stop is the person's word that this is not to go on: judged, a
+        // plan cut short would pass as the plan and the change would start.
+        ChatEvent::TurnEnded if session.read(cx).chat.cancelled => end(uid, session, STOPPED, cx),
         ChatEvent::TurnEnded => after_turn(uid, session, cx),
         // A person is at the window to answer it.
         ChatEvent::AwaitingUser(_) => {}
@@ -240,7 +255,32 @@ fn forget(uid: u64, cx: &mut App) {
 /// and the change are each judged by what they changed from where they
 /// started, so a checkout that was already dirty is measured fairly.
 fn send_step(uid: u64, session: &Entity<ChatSession>, step: Step, cx: &mut App) {
-    let Some(root) = with(uid, cx, |hand| hand.root.clone()) else {
+    measured(uid, session, false, cx, move |session, cx| {
+        let Some(text) = with(uid, cx, |hand| {
+            hand.progress.step = step;
+            hand.sent += 1;
+            prompt(hand, step)
+        }) else {
+            return;
+        };
+        note_step(uid, session, step, cx);
+        if !session.update(cx, |session, cx| session.submit(&text, &[], cx)) {
+            end(uid, session, REFUSED, cx);
+        }
+    });
+}
+
+/// Take where the step's work is measured from as the checkout stands now,
+/// then `then`, unless somebody typed into the session meanwhile. `again`
+/// keeps where the step started as well, for a step already under way.
+fn measured(
+    uid: u64,
+    session: &Entity<ChatSession>,
+    again: bool,
+    cx: &mut App,
+    then: impl FnOnce(&Entity<ChatSession>, &mut App) + 'static,
+) {
+    let Some(root) = read(uid, cx, |hand| hand.root.clone()) else {
         return;
     };
     let weak = session.downgrade();
@@ -260,44 +300,33 @@ fn send_step(uid: u64, session: &Entity<ChatSession>, step: Step, cx: &mut App) 
             };
             let from = match from {
                 Ok(from) => from,
-                Err(why) => {
-                    let said = format!("Steps stopped: the checkout could not be read: {why}");
-                    end(uid, &session, &said, cx);
-                    return;
-                }
+                Err(why) => return unreadable(uid, &session, &why, cx),
             };
-            let Some(sent) = with(uid, cx, |hand| hand.sent) else {
+            let Some(sent) = read(uid, cx, |hand| hand.sent) else {
                 return;
             };
             if prompted_by_someone_else(&session, sent, cx) {
-                end(
-                    uid,
-                    &session,
-                    "Taken over by hand; onehand stopped checking the steps",
-                    cx,
-                );
+                end(uid, &session, TAKEN_OVER, cx);
                 return;
             }
-            let Some(text) = with(uid, cx, |hand| {
-                hand.from = Some(from);
-                hand.progress.step = step;
-                hand.sent += 1;
-                prompt(hand, step)
-            }) else {
-                return;
-            };
-            note_step(uid, &session, step, cx);
-            if !session.update(cx, |session, cx| session.submit(&text, &[], cx)) {
-                end(
-                    uid,
-                    &session,
-                    "Steps stopped: the agent did not take the prompt",
-                    cx,
-                );
-            }
+            let (head, digest) = from;
+            with(uid, cx, |hand| match hand.from.as_mut().filter(|_| again) {
+                Some((at, digests)) => {
+                    *at = head;
+                    digests.push(digest);
+                }
+                None => hand.from = Some((head, vec![digest])),
+            });
+            then(&session, cx);
         });
     })
     .detach();
+}
+
+/// The checkout could not be read, for `why`: the steps cannot judge it.
+fn unreadable(uid: u64, session: &Entity<ChatSession>, why: &str, cx: &mut App) {
+    let said = format!("Steps stopped: the checkout could not be read: {why}");
+    end(uid, session, &said, cx);
 }
 
 /// The prompt that starts `step`, in the checkout.
@@ -319,7 +348,7 @@ fn prompt(hand: &Hand, step: Step) -> String {
 fn note_step(uid: u64, session: &Entity<ChatSession>, step: Step, cx: &mut App) {
     let said = format!("Step: {}", step.label());
     note(session, said.clone(), cx);
-    if let Some((tracker, number)) = with(uid, cx, |h| (h.tracker.clone(), h.issue.number)) {
+    if let Some((tracker, number)) = read(uid, cx, |h| (h.tracker.clone(), h.issue.number)) {
         cx.background_executor()
             .spawn(async move {
                 if let Err(why) = tracker.note_blocking(number, &said) {
@@ -333,7 +362,7 @@ fn note_step(uid: u64, session: &Entity<ChatSession>, step: Step, cx: &mut App) 
 
 /// A turn the steps sent ended: read the checkout, then judge the step.
 fn after_turn(uid: u64, session: &Entity<ChatSession>, cx: &mut App) {
-    let Some((root, step, from, missed, shell)) = with(uid, cx, |h| {
+    let Some((root, step, from, missed, shell)) = read(uid, cx, |h| {
         (
             h.root.clone(),
             h.progress.step,
@@ -344,7 +373,7 @@ fn after_turn(uid: u64, session: &Entity<ChatSession>, cx: &mut App) {
     }) else {
         return;
     };
-    let Some((head, digest)) = from else {
+    let Some((head, digests)) = from else {
         return;
     };
     let answer = match step {
@@ -360,7 +389,7 @@ fn after_turn(uid: u64, session: &Entity<ChatSession>, cx: &mut App) {
     cx.spawn(async move |cx| {
         let facts = cx
             .background_executor()
-            .spawn(async move { Facts::read_checkout_blocking(&root, &head, &digest) })
+            .spawn(async move { Facts::read_checkout_blocking(&root, &head, &digests) })
             .await;
         cx.update(|cx| {
             let Some(session) = weak.upgrade() else {
@@ -368,11 +397,7 @@ fn after_turn(uid: u64, session: &Entity<ChatSession>, cx: &mut App) {
             };
             let facts = match facts {
                 Ok(facts) => facts,
-                Err(why) => {
-                    let said = format!("Steps stopped: the checkout could not be read: {why}");
-                    end(uid, &session, &said, cx);
-                    return;
-                }
+                Err(why) => return unreadable(uid, &session, &why, cx),
             };
             let gate = Gate {
                 committed: false,
@@ -389,11 +414,16 @@ fn after_turn(uid: u64, session: &Entity<ChatSession>, cx: &mut App) {
     .detach();
 }
 
-/// Do what the step's gate or the check decided.
+/// Do what the step's gate or the check decided, unless somebody typed into
+/// the session while the checkout was read or checked: then it is theirs.
 fn dispatch(uid: u64, session: &Entity<ChatSession>, next: Next, answer: String, cx: &mut App) {
-    let Some(step) = with(uid, cx, |hand| hand.progress.step) else {
+    let Some((step, sent)) = read(uid, cx, |hand| (hand.progress.step, hand.sent)) else {
         return;
     };
+    if prompted_by_someone_else(session, sent, cx) {
+        end(uid, session, TAKEN_OVER, cx);
+        return;
+    }
     if step == Step::Plan && plan_passed(&next) {
         keep_plan(uid, answer, cx);
     }
@@ -450,19 +480,31 @@ fn keep_plan(uid: u64, plan: String, cx: &mut App) {
 
 /// Send the session back to work, saying what the checkout still lacks.
 /// Costs one of its turns.
+///
+/// **A change the gate cannot pin on the agent is allowed to stay.** A
+/// person may be working in the checkout too, so a commit or an edit seen in
+/// the plan may be theirs. The agent is told to undo only its own, and the
+/// checkout may then be as the step found it or as that turn left it, so a
+/// person's change does not fail every turn left.
 fn carry_on(uid: u64, session: &Entity<ChatSession>, missing: Missing, cx: &mut App) {
-    let Some(sent) = with(uid, cx, |hand| hand.sent) else {
-        return;
-    };
-    if prompted_by_someone_else(session, sent, cx) {
-        end(
-            uid,
-            session,
-            "Taken over by hand; onehand stopped checking the steps",
-            cx,
-        );
-        return;
+    match missing {
+        Missing::Committed | Missing::PlanTouchedCode => {
+            measured(uid, session, true, cx, move |session, cx| {
+                send_carry_on(uid, session, missing, cx)
+            });
+        }
+        Missing::Uncommitted
+        | Missing::NoCommits
+        | Missing::NoPullRequest
+        | Missing::Unpushed
+        | Missing::NoPlan
+        | Missing::CheckFailed(_)
+        | Missing::Unchanged => send_carry_on(uid, session, missing, cx),
     }
+}
+
+/// Prompt the session to carry on with what is `missing`.
+fn send_carry_on(uid: u64, session: &Entity<ChatSession>, missing: Missing, cx: &mut App) {
     let Some((text, missed)) = with(uid, cx, |hand| {
         hand.sent += 1;
         hand.missed += 1;
@@ -478,12 +520,7 @@ fn carry_on(uid: u64, session: &Entity<ChatSession>, missing: Missing, cx: &mut 
             cx,
         );
     } else {
-        end(
-            uid,
-            session,
-            "Steps stopped: the agent did not take the prompt",
-            cx,
-        );
+        end(uid, session, REFUSED, cx);
     }
 }
 
@@ -523,7 +560,7 @@ fn run_check(uid: u64, session: &Entity<ChatSession>, cx: &mut App) {
                 return;
             };
             let max = crate::unattended::turns(cx);
-            let Some(turns_left) = with(uid, cx, |hand| core::turns_left(max, hand.missed)) else {
+            let Some(turns_left) = read(uid, cx, |hand| core::turns_left(max, hand.missed)) else {
                 return;
             };
             let said = match &ran {
