@@ -311,6 +311,51 @@ pub fn commits_since_blocking(dir: &Path, base: &str) -> Result<u64, String> {
         .map_err(|err| format!("git printed an unreadable count: {err}"))
 }
 
+/// `git -C <dir> <args>`, answering with what it printed, trimmed.
+fn read_blocking(dir: &Path, args: &[&str]) -> Result<String, String> {
+    let out =
+        output_within(git(dir).args(args), LOCAL_LIMIT).map_err(|err| format!("git {err}"))?;
+    if !out.status.success() {
+        return Err(git_message(&out.stderr));
+    }
+    Ok(String::from_utf8_lossy(&out.stdout).trim().to_string())
+}
+
+/// The commit checked out at `dir`.
+pub fn head_blocking(dir: &Path) -> Result<String, String> {
+    read_blocking(dir, &["rev-parse", "HEAD"])
+}
+
+/// Whether the checkout at `dir` holds anything not committed, a new file
+/// nobody added included: work that would be lost to everyone but this
+/// folder.
+pub fn dirty_blocking(dir: &Path) -> Result<bool, String> {
+    read_blocking(dir, &["status", "--porcelain"]).map(|out| !out.is_empty())
+}
+
+/// A fingerprint of the work in the checkout at `dir` that no commit holds:
+/// equal before and after a turn exactly when the turn left it as it was, so
+/// a checkout that was already dirty is measured by what the turn changed.
+// ponytail: an edit inside a file that was already untracked is not seen,
+// since only its name is in the status; hash those files' contents if that
+// ever lets a turn through.
+pub fn work_digest_blocking(dir: &Path) -> Result<String, String> {
+    use std::hash::{Hash as _, Hasher as _};
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    for args in [
+        &["status", "--porcelain=v1", "-z", "--untracked-files=all"][..],
+        &["diff", "HEAD", "--binary"][..],
+    ] {
+        let out =
+            output_within(git(dir).args(args), LOCAL_LIMIT).map_err(|err| format!("git {err}"))?;
+        if !out.status.success() {
+            return Err(git_message(&out.stderr));
+        }
+        out.stdout.hash(&mut hasher);
+    }
+    Ok(format!("{:016x}", hasher.finish()))
+}
+
 /// `git -C <root>`, with every way git has of asking a person for something
 /// switched off.
 fn git(root: &Path) -> std::process::Command {
@@ -651,6 +696,46 @@ mod tests {
             branch_exists_blocking(&repo, "keep"),
             "and must not destroy it"
         );
+
+        let _ = std::fs::remove_dir_all(&repo);
+    }
+
+    /// The digest moves with any change no commit holds, a new file included,
+    /// and comes back when the change is undone.
+    #[test]
+    fn the_work_digest_follows_uncommitted_changes() {
+        let git = |dir: &Path, args: &[&str]| {
+            std::process::Command::new("git")
+                .arg("-C")
+                .arg(dir)
+                .args(args)
+                .output()
+                .expect("git must be installed to run this test")
+        };
+        let repo = std::env::temp_dir().join(format!("onehand-digest-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&repo);
+        std::fs::create_dir_all(&repo).unwrap();
+        git(&repo, &["init", "-q", "-b", "main"]);
+        git(&repo, &["config", "user.email", "t@example.com"]);
+        git(&repo, &["config", "user.name", "T"]);
+        std::fs::write(repo.join("a.txt"), "x").unwrap();
+        git(&repo, &["add", "a.txt"]);
+        git(&repo, &["commit", "-qm", "one"]);
+
+        let clean = work_digest_blocking(&repo).unwrap();
+        std::fs::write(repo.join("a.txt"), "y").unwrap();
+        let edited = work_digest_blocking(&repo).unwrap();
+        assert_ne!(clean, edited);
+        std::fs::write(repo.join("a.txt"), "z").unwrap();
+        assert_ne!(
+            edited,
+            work_digest_blocking(&repo).unwrap(),
+            "a second edit"
+        );
+        std::fs::write(repo.join("a.txt"), "x").unwrap();
+        assert_eq!(clean, work_digest_blocking(&repo).unwrap());
+        std::fs::write(repo.join("new.txt"), "n").unwrap();
+        assert_ne!(clean, work_digest_blocking(&repo).unwrap(), "a new file");
 
         let _ = std::fs::remove_dir_all(&repo);
     }

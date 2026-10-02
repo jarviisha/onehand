@@ -163,6 +163,7 @@ impl Chat {
     /// exactly the kind of thing a second front end gets wrong, so it lives
     /// here rather than in either one.
     pub fn cancel_turn(&mut self) {
+        self.cancelled = true;
         self.cancel_pending_permissions();
         if let Some(tx) = &self.tx {
             let _ = tx.send(AcpRequest::Cancel);
@@ -400,6 +401,7 @@ impl Chat {
             return false;
         }
         self.prompts_sent += 1;
+        self.cancelled = false;
 
         self.push_user(
             text.to_string(),

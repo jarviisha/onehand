@@ -279,7 +279,10 @@ impl Chat {
                 view.exited = true;
                 view.exit_code = exit_code;
             }
-            AcpEvent::TurnEnded { .. } => {
+            AcpEvent::TurnEnded { stop_reason } => {
+                // Or'd with the cancel asked for: an adapter that answers a
+                // cancel with an error ends the turn as `end_turn`.
+                self.cancelled |= stop_reason == "cancelled";
                 self.finish_active_turn(event_at.unwrap_or_else(store::now_secs));
                 self.busy = false;
                 self.finalize_thought();
