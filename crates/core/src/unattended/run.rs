@@ -29,6 +29,9 @@ pub struct Facts {
     pub head: String,
     /// The branch's pull request; always `None` on a project with no forge.
     pub pr: Option<PullRequest>,
+    /// The work no commit holds differs from where the step started. What a
+    /// checkout's step is judged by, where the work is left uncommitted.
+    pub changed: bool,
 }
 
 impl Facts {
@@ -49,8 +52,31 @@ impl Facts {
                 Some(forge) => forge.pull_request_for_blocking(repo, branch)?,
                 None => None,
             },
+            changed: false,
         })
     }
+
+    /// Read them for a checkout worked in place, counting commits past
+    /// `since` and comparing its work with `digest`, what
+    /// [`worktree::work_digest_blocking`] said as the step started. Blocking.
+    pub fn read_checkout_blocking(dir: &Path, since: &str, digest: &str) -> Result<Self, String> {
+        Ok(Self {
+            commits: worktree::commits_since_blocking(dir, since)?,
+            dirty: false,
+            head: worktree::head_blocking(dir)?,
+            pr: None,
+            changed: worktree::work_digest_blocking(dir)? != digest,
+        })
+    }
+}
+
+/// Where a session's steps work: on a branch of their own, which the work is
+/// committed to, or in a checkout a person has open, where it is left
+/// uncommitted for them.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Place {
+    Branch,
+    Checkout,
 }
 
 /// A named stretch of an attempt, with its own prompt and a condition onehand
@@ -106,6 +132,10 @@ pub enum Missing {
     PlanTouchedCode,
     /// The project's check command failed, ending on this.
     CheckFailed(String),
+    /// A checkout's work was committed, and it is to be left uncommitted.
+    Committed,
+    /// A checkout's step ended with its work as the step found it.
+    Unchanged,
 }
 
 /// What a run does once a turn has ended.
@@ -133,6 +163,9 @@ pub enum Next {
 /// What a step's gate needs to know beyond the branch.
 #[derive(Debug, Clone, Copy)]
 pub struct Gate<'a> {
+    /// The work is committed on a branch of its own, rather than left
+    /// uncommitted in a checkout.
+    pub committed: bool,
     /// The project has a forge the work goes to.
     pub forge: bool,
     /// The project wants a person to approve a plan before work starts.
@@ -164,16 +197,20 @@ pub fn next(step: Step, facts: &Facts, gate: &Gate) -> Next {
     {
         return Next::Settle;
     }
-    let committed = if facts.dirty {
-        Err(Missing::Uncommitted)
-    } else if facts.commits == 0 {
-        Err(Missing::NoCommits)
-    } else {
-        Ok(())
+    let committed = match gate.committed {
+        true if facts.dirty => Err(Missing::Uncommitted),
+        true if facts.commits == 0 => Err(Missing::NoCommits),
+        false if facts.commits > 0 => Err(Missing::Committed),
+        false if !facts.changed => Err(Missing::Unchanged),
+        true | false => Ok(()),
+    };
+    let touched = match gate.committed {
+        true => facts.dirty,
+        false => facts.changed,
     };
     let passed = match step {
         Step::Plan if gate.answer.trim().is_empty() => Err(Missing::NoPlan),
-        Step::Plan if facts.dirty || facts.commits > 0 => Err(Missing::PlanTouchedCode),
+        Step::Plan if touched || facts.commits > 0 => Err(Missing::PlanTouchedCode),
         Step::Plan if gate.approve_plans => Ok(Next::AwaitApproval),
         Step::Plan => Ok(Next::Advance(Step::Implement)),
         Step::Implement | Step::Verify => committed.map(|()| match (gate.check, gate.forge) {
@@ -208,14 +245,24 @@ pub fn after_check(ran: Result<(), String>, turns_left: u32, forge: bool) -> Nex
 
 /// The prompt that sends a session back to work in `step`, naming what is
 /// missing.
-pub fn carry_on(missing: &Missing, step: Step, forge: Option<&dyn Connector>) -> String {
-    let finish = match forge {
-        Some(forge) if step == Step::OpenPr => format!(
+pub fn carry_on(
+    missing: &Missing,
+    step: Step,
+    forge: Option<&dyn Connector>,
+    place: Place,
+) -> String {
+    let finish = match (forge, place) {
+        (_, Place::Checkout) => "leave it uncommitted in this checkout".to_string(),
+        (Some(forge), Place::Branch) if step == Step::OpenPr => format!(
             "commit it, push the branch, and open the draft pull request with {} if it \
              has none yet",
             forge.open_pull_request_with()
         ),
-        _ => "commit it on this branch".to_string(),
+        (_, Place::Branch) => "commit it on this branch".to_string(),
+    };
+    let (looked_at, put_back, then) = match place {
+        Place::Branch => ("the branch", "the worktree and the branch", "then commit"),
+        Place::Checkout => ("the checkout", "the checkout", "and leave it uncommitted"),
     };
     let said = match missing {
         Missing::Uncommitted => {
@@ -236,16 +283,24 @@ pub fn carry_on(missing: &Missing, step: Step, forge: Option<&dyn Connector>) ->
         Missing::NoPlan => "that turn gave no plan. Answer with the plan itself, and change \
              nothing."
             .to_string(),
-        Missing::PlanTouchedCode => "that turn changed the code, and this step is only the \
-             plan. Put the worktree and the branch back as they were, then answer with the \
-             plan alone."
-            .to_string(),
+        Missing::PlanTouchedCode => format!(
+            "that turn changed the code, and this step is only the plan. Put {put_back} \
+             back as they were, then answer with the plan alone."
+        ),
         Missing::CheckFailed(tail) => format!(
-            "the project's check failed. Fix what it reports, then commit.\n\n```\n{}\n```",
+            "the project's check failed. Fix what it reports, {then}.\n\n```\n{}\n```",
             tail.trim()
         ),
+        Missing::Committed => "that turn committed, and the work here is to stay \
+             uncommitted for the person who started it. Undo the commits made in this step, \
+             keeping their changes in the checkout, and do not commit again."
+            .to_string(),
+        Missing::Unchanged => format!(
+            "that turn changed nothing in the checkout, so the issue is not done. Carry on \
+             with it, then {finish}."
+        ),
     };
-    format!("onehand checked the branch after that turn: {said}")
+    format!("onehand checked {looked_at} after that turn: {said}")
 }
 
 /// How long a pull request with no checks at all is given for them to appear.
@@ -467,13 +522,19 @@ pub struct Progress {
     /// What a person asked to change in that plan.
     #[serde(default)]
     pub revise: Option<String>,
+    /// What the person who started the run asked of every step, beyond the
+    /// issue.
+    #[serde(default)]
+    pub extra: Option<String>,
 }
 
 impl Progress {
     /// A repair starts at the change, since what to do is in the failing
-    /// checks; every other attempt starts with a plan.
-    pub fn new(start: Start, since: Option<String>) -> Self {
+    /// checks; every other attempt starts with a plan. `extra` is what the
+    /// person starting it asked of every step; an empty one is none.
+    pub fn new(start: Start, since: Option<String>, extra: Option<String>) -> Self {
         Self {
+            extra: extra.filter(|extra| !extra.trim().is_empty()),
             step: match start {
                 Start::Repair { .. } => Step::Implement,
                 Start::Fresh | Start::Earlier | Start::Review { .. } => Step::Plan,

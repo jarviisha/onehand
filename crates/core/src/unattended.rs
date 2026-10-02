@@ -14,7 +14,7 @@ mod run;
 pub use run::{
     after_check, after_checks, carry_on, load_records_blocking, new_record_file, next, runs_dir,
     save_record_blocking, turns_left, Checked, Facts, Failure, Gate, Kept, Missing, Next, Phase,
-    Progress, Record, Spent, Start, Step, CHECKS_GRACE,
+    Place, Progress, Record, Spent, Start, Step, CHECKS_GRACE,
 };
 
 /// An issue a run can take.
@@ -54,6 +54,16 @@ impl Issue {
     /// What the issue is called.
     pub fn title_text(&self) -> &str {
         &self.title
+    }
+
+    /// An issue kept here, carrying the forge's reference when it is kept in
+    /// step with one, so its pull request names it there.
+    pub fn from_local(kept: &issues::LocalIssue) -> Self {
+        let issue = Self::from(kept);
+        match kept.reference() {
+            Some(reference) => issue.at(reference.to_string()),
+            None => issue,
+        }
     }
 }
 
@@ -510,6 +520,11 @@ pub fn target_dir() -> Option<std::path::PathBuf> {
 /// earlier attempt, answering a review, repairing checks — and carries the
 /// plan and a person's note on it. `failed` is how the project's check ended,
 /// for a session that starts by fixing it.
+///
+/// In a [`Place::Checkout`] a person started the session in the checkout they
+/// have open, so nothing is committed, pushed or switched: the change is left
+/// for them, and `branch` is not named. There is no pull request step there.
+#[allow(clippy::too_many_arguments)]
 pub fn step_prompt(
     step: Step,
     issue: &Issue,
@@ -518,7 +533,16 @@ pub fn step_prompt(
     forge: Option<&dyn Connector>,
     progress: &Progress,
     failed: Option<&str>,
+    place: Place,
 ) -> String {
+    let forge = forge.filter(|_| place == Place::Branch);
+    let (looked_at, leave) = match place {
+        Place::Branch => ("the branch", ""),
+        Place::Checkout => (
+            "the checkout",
+            " Leave your changes uncommitted: do not commit, push or switch branches.",
+        ),
+    };
     let start = &progress.start;
     let plan = progress
         .plan
@@ -537,7 +561,7 @@ pub fn step_prompt(
             format!(
                 "This step is the plan. Read the code the issue touches and answer with a \
                  plan: what you will change, where, and how you will know it works. Do not \
-                 edit any file, commit or push: onehand checks the branch, and a plan that \
+                 edit any file, commit or push: onehand checks {looked_at}, and a plan that \
                  changed code is sent back.{revise}"
             )
         }
@@ -551,16 +575,31 @@ pub fn step_prompt(
                 Some(_) => "Follow the plan",
                 None => "Make the change",
             };
+            match place {
+                Place::Branch => format!(
+                    "This step is the change. {what}, run the repository's checks, and commit \
+                     your work on this branch. {push}{plan}"
+                ),
+                Place::Checkout => format!(
+                    "This step is the change. {what}, and run the repository's checks.\
+                     {leave}{plan}"
+                ),
+            }
+        }
+        Step::Verify => {
+            let then = match place {
+                Place::Branch => " Fix what it reports, then commit. Do not push.",
+                Place::Checkout => " Fix what it reports.",
+            };
             format!(
-                "This step is the change. {what}, run the repository's checks, and commit \
-                 your work on this branch. {push}{plan}"
+                "This step is the check. The project's check command failed on {looked_at}.\
+                 {then}{leave}\n\n```\n{}\n```",
+                failed.unwrap_or("(no output)").trim()
             )
         }
-        Step::Verify => format!(
-            "This step is the check. The project's check command failed on this branch. \
-             Fix what it reports, then commit. Do not push.\n\n```\n{}\n```",
-            failed.unwrap_or("(no output)").trim()
-        ),
+        Step::OpenPr if place == Place::Checkout => {
+            format!("This step is the result.{leave}")
+        }
         Step::OpenPr => match (forge, tracker, issue.forge_ref()) {
             (Some(_), _, _) if start.has_pull_request() => "This step is the pull request. \
                  Push the branch: its pull request is already open, so do not open another."
@@ -588,14 +627,36 @@ pub fn step_prompt(
                 .to_string(),
         },
     };
+    let (watched, place) = match place {
+        Place::Branch => (
+            "unattended — nobody is watching this session",
+            format!("You are on branch `{branch}`, in a worktree of its own."),
+        ),
+        Place::Checkout => (
+            "in steps, which onehand checks one by one",
+            "You are in this checkout, on whatever branch it has. A person has it open \
+             and may be working in it too."
+                .to_string(),
+        ),
+    };
+    let extra = progress
+        .extra
+        .as_deref()
+        .map(|extra| {
+            format!(
+                "Instructions from the person who started this:\n\n{}\n\n",
+                quoted(extra.trim())
+            )
+        })
+        .unwrap_or_default();
     format!(
-        "Work {named} in this repository, unattended — nobody is watching this \
-         session.\n\n\
+        "Work {named} in this repository, {watched}.\n\n\
          Title: {title}\n\n\
          {body}\n\n\
          ---\n\n\
-         You are on branch `{branch}`, in a worktree of its own.\n\n\
+         {place}\n\n\
          {context}\
+         {extra}\
          Read the repository's own agent instructions, and whatever they point at, and \
          follow its conventions. Decide whatever the code, the tests and the documentation \
          let you infer, and list the assumptions that mattered {listed}. Only a decision \

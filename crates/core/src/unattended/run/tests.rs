@@ -26,11 +26,13 @@ fn facts(commits: u64, dirty: bool, pr: Option<PullRequest>) -> Facts {
         dirty,
         head: "h1".into(),
         pr,
+        changed: false,
     }
 }
 
 fn gate(forge: bool, turns_left: u32) -> Gate<'static> {
     Gate {
+        committed: true,
         forge,
         approve_plans: false,
         check: false,
@@ -153,6 +155,7 @@ fn a_check_passing_moves_on_and_one_failing_is_handed_back() {
         &Missing::CheckFailed("error: boom".into()),
         Step::Verify,
         None,
+        Place::Branch,
     );
     assert!(said.contains("```\nerror: boom\n```"), "{said}");
 }
@@ -160,9 +163,19 @@ fn a_check_passing_moves_on_and_one_failing_is_handed_back() {
 #[test]
 fn only_the_pull_request_step_is_told_to_push() {
     let forge = &crate::connector::fake::Fake::SERVING;
-    let implement = carry_on(&Missing::Uncommitted, Step::Implement, Some(forge));
+    let implement = carry_on(
+        &Missing::Uncommitted,
+        Step::Implement,
+        Some(forge),
+        Place::Branch,
+    );
     assert!(!implement.contains("push"), "{implement}");
-    let open = carry_on(&Missing::Uncommitted, Step::OpenPr, Some(forge));
+    let open = carry_on(
+        &Missing::Uncommitted,
+        Step::OpenPr,
+        Some(forge),
+        Place::Branch,
+    );
     assert!(open.contains("push"), "{open}");
 }
 
@@ -281,6 +294,7 @@ fn a_run_file_reads_back_as_it_was_written() {
                 number: 3,
             },
             Some("abc".into()),
+            Some("keep it small".into()),
         ),
     };
     let mut approval = record.clone();
@@ -308,13 +322,13 @@ fn a_record_from_before_steps_reads_as_the_change() {
     let progress: Progress = serde_json::from_str(old).unwrap();
     assert_eq!(progress.step, Step::Implement);
     assert_eq!(progress.plan, None);
-    assert_eq!(Progress::new(Start::Fresh, None).step, Step::Plan);
+    assert_eq!(Progress::new(Start::Fresh, None, None).step, Step::Plan);
     let repair = Start::Repair {
         pr: "u".into(),
         conflicting: true,
         failing: Vec::new(),
     };
-    assert_eq!(Progress::new(repair, None).step, Step::Implement);
+    assert_eq!(Progress::new(repair, None, None).step, Step::Implement);
 }
 
 #[test]
@@ -362,4 +376,71 @@ fn steps_are_listed_in_the_order_a_run_takes_them() {
     // they compare in has to be the order they are taken in.
     assert!(Step::ALL.is_sorted());
     assert!(Step::Plan < Step::OpenPr);
+}
+
+/// A checkout's facts: `commits` past the step's start, and whether its
+/// uncommitted work changed.
+fn checkout(commits: u64, changed: bool) -> Facts {
+    Facts {
+        changed,
+        ..facts(commits, false, None)
+    }
+}
+
+/// A checkout's gate, with or without a check command.
+fn in_checkout(check: bool) -> Gate<'static> {
+    Gate {
+        committed: false,
+        check,
+        answer: "the plan",
+        ..gate(false, 2)
+    }
+}
+
+#[test]
+fn a_checkout_is_judged_by_its_uncommitted_change() {
+    let gate = in_checkout(true);
+    assert_eq!(
+        next(Step::Implement, &checkout(0, true), &gate),
+        Next::RunCheck
+    );
+    assert_eq!(
+        next(Step::Implement, &checkout(0, false), &gate),
+        Next::CarryOn(Missing::Unchanged)
+    );
+    assert_eq!(
+        next(Step::Implement, &checkout(1, true), &gate),
+        Next::CarryOn(Missing::Committed)
+    );
+    // With no check command, and once the check passes, the change is left
+    // where it is: there is no forge to take it to.
+    assert_eq!(
+        next(Step::Verify, &checkout(0, true), &in_checkout(false)),
+        Next::Settle
+    );
+    assert_eq!(after_check(Ok(()), 2, false), Next::Settle);
+    // A plan in a checkout that was already dirty is fine; one that changed it
+    // is not.
+    assert_eq!(
+        next(Step::Plan, &checkout(0, false), &gate),
+        Next::Advance(Step::Implement)
+    );
+    assert_eq!(
+        next(Step::Plan, &checkout(0, true), &gate),
+        Next::CarryOn(Missing::PlanTouchedCode)
+    );
+}
+
+#[test]
+fn a_checkout_is_never_told_to_commit() {
+    for missing in [
+        Missing::Committed,
+        Missing::Unchanged,
+        Missing::PlanTouchedCode,
+        Missing::CheckFailed("boom".into()),
+    ] {
+        let said = carry_on(&missing, Step::Implement, None, Place::Checkout);
+        assert!(!said.contains("then commit"), "{said}");
+        assert!(!said.contains("branch"), "{said}");
+    }
 }

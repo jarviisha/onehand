@@ -8,7 +8,7 @@ fn forge() -> Tracker {
 
 /// A fresh attempt's progress.
 fn fresh() -> Progress {
-    Progress::new(Start::Fresh, None)
+    Progress::new(Start::Fresh, None, None)
 }
 
 /// [`step_prompt`] on branch `b` with no check output.
@@ -24,7 +24,16 @@ fn prompt(
     } else {
         "b"
     };
-    step_prompt(step, issue, branch, tracker, forge, progress, None)
+    step_prompt(
+        step,
+        issue,
+        branch,
+        tracker,
+        forge,
+        progress,
+        None,
+        Place::Branch,
+    )
 }
 
 /// A tracker over a scratch issue file of its own, holding `issues`.
@@ -532,7 +541,7 @@ fn a_session_on_an_open_pull_request_pushes_to_it_rather_than_opening_another() 
         pr: "https://x/pull/2".into(),
         number: 2,
     };
-    let progress = Progress::new(start, None);
+    let progress = Progress::new(start, None, None);
     let said = prompt(
         Step::OpenPr,
         &issue(4, "t"),
@@ -587,6 +596,7 @@ fn each_step_prompt_names_its_own_rules() {
         forge,
         &progress,
         Some("error: boom"),
+        Place::Branch,
     );
     assert!(verify.contains("```\nerror: boom\n```"), "{verify}");
     let open = prompt(Step::OpenPr, &issue, &tracker, forge, &progress);
@@ -617,4 +627,72 @@ fn a_step_note_stays_in_onehand() {
     assert_eq!(kept.get(1).unwrap().notes[0].text, "Step: Implement");
     assert_eq!(forge().note_blocking(1, "Step: Plan"), Ok(()));
     let _ = std::fs::remove_dir_all(dir);
+}
+
+#[test]
+fn a_checkout_prompt_names_no_branch_and_leaves_the_work_uncommitted() {
+    let (tracker, dir) = local("checkout-prompt", &[("Fix it", &[])]);
+    let issue = issue(1, "Fix it");
+    let forge = Some(&Fake::SERVING as &dyn Connector);
+    for step in [Step::Plan, Step::Implement, Step::Verify] {
+        let said = step_prompt(
+            step,
+            &issue,
+            "onehand/issue-1",
+            &tracker,
+            forge,
+            &fresh(),
+            Some("boom"),
+            Place::Checkout,
+        );
+        assert!(!said.contains("onehand/issue-1"), "{said}");
+        assert!(!said.contains("worktree"), "{said}");
+        assert!(!said.contains("pull request"), "{said}");
+        assert!(!said.contains("unattended"), "{said}");
+        if step != Step::Plan {
+            assert!(said.contains("Leave your changes uncommitted"), "{said}");
+        }
+    }
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+#[test]
+fn extra_instructions_reach_every_step() {
+    let issue = issue(5, "t");
+    let tracker = forge();
+    let forge = Some(&Fake::SERVING as &dyn Connector);
+    let progress = Progress::new(Start::Fresh, None, Some("Only touch the rail.".into()));
+    for step in Step::ALL {
+        for place in [Place::Branch, Place::Checkout] {
+            let said = step_prompt(step, &issue, "b", &tracker, forge, &progress, None, place);
+            assert!(said.contains("> Only touch the rail."), "{said}");
+        }
+    }
+    let blank = Progress::new(Start::Fresh, None, Some("  ".into()));
+    assert_eq!(blank.extra, None, "an empty box is no instructions");
+}
+
+#[test]
+fn a_kept_issue_keeps_its_forge_reference() {
+    let mut kept = crate::issues::Issues::default();
+    let n = kept
+        .create(
+            crate::issues::Draft {
+                title: "Fix it".into(),
+                ..Default::default()
+            },
+            1,
+        )
+        .unwrap();
+    let draft = kept.get(n).unwrap().clone();
+    assert_eq!(Issue::from_local(&draft).forge_ref(), None);
+    let mut linked = draft;
+    linked.link = Some(crate::issues::Link {
+        connector: "Forge".into(),
+        key: "6".into(),
+        reference: "#6".into(),
+        base: Default::default(),
+        conflict: None,
+    });
+    assert_eq!(Issue::from_local(&linked).forge_ref(), Some("#6"));
 }
