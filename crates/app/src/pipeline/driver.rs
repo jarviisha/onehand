@@ -8,9 +8,9 @@
 //! mistake two drivers disagreeing made before.
 
 use super::Pipelines;
-use crate::chat::session::{ChatEvent, ChatSession};
+use crate::chat::session::{ChatEvent, ChatSession, note};
 use gpui::{App, BorrowAppContext as _, Entity, Subscription, Task, WeakEntity};
-use onehand_core::chat::{ChatItem, Link, TranscriptItemId};
+use onehand_core::chat::{Link, TranscriptItemId};
 use onehand_core::pipeline::{
     Action, Facts, Mark, Outcome, PipelineRun, Stop, files, run_command_blocking,
 };
@@ -42,6 +42,17 @@ pub(super) struct Driven {
     _answered: Subscription,
     _release: Subscription,
     _clock: Task<()>,
+}
+
+impl Driven {
+    /// Working time spent on the run, sessions before this one included.
+    fn spent_secs(&self) -> u64 {
+        let used = self
+            .budget
+            .limit()
+            .saturating_sub(self.budget.left(Instant::now()));
+        self.spent_before + used.as_secs()
+    }
 }
 
 /// How long a run may work when its template's timeout does not read, which
@@ -154,7 +165,7 @@ fn on_event(uid: u64, session: &Entity<ChatSession>, event: &ChatEvent, cx: &mut
     }
     match event {
         ChatEvent::Appended => {
-            if prompted_by_someone_else(session, sent, cx) {
+            if session.read(cx).chat.prompted_beyond(sent) {
                 advance(uid, cx, |run| run.stopped(Stop::TakenOver));
             }
         }
@@ -177,14 +188,6 @@ fn on_event(uid: u64, session: &Entity<ChatSession>, event: &ChatEvent, cx: &mut
     }
 }
 
-/// Whether somebody other than the run has put a prompt into the session,
-/// given how many the run sent. Counted from what was sent, not from the user
-/// rows in the transcript: an adapter delivers user chunks of its own.
-fn prompted_by_someone_else(session: &Entity<ChatSession>, sent: usize, cx: &App) -> bool {
-    let chat = &session.read(cx).chat;
-    chat.queued.is_some() || chat.prompts_sent > sent
-}
-
 /// Do what the engine said.
 fn act(uid: u64, action: Action, cx: &mut App) {
     let Some(session) = read(uid, cx, |d| d.session.upgrade()) else {
@@ -197,7 +200,7 @@ fn act(uid: u64, action: Action, cx: &mut App) {
         }
         return;
     };
-    if !matches_finish(&action) {
+    if !ends_run(&action) {
         announce_step(uid, &session, cx);
     }
     match action {
@@ -219,7 +222,9 @@ fn act(uid: u64, action: Action, cx: &mut App) {
     cx.refresh_windows();
 }
 
-fn matches_finish(action: &Action) -> bool {
+/// Whether doing `action` ends the run, which is the one action after which
+/// there is no step to announce and nothing to save.
+fn ends_run(action: &Action) -> bool {
     match action {
         Action::Finish(_) => true,
         Action::Measure
@@ -260,11 +265,7 @@ fn save(uid: u64, cx: &mut App) {
         let Some(d) = p.runs.get_mut(&uid) else {
             return;
         };
-        let used = d
-            .budget
-            .limit()
-            .saturating_sub(d.budget.left(Instant::now()));
-        d.run.spent_secs = d.spent_before + used.as_secs();
+        d.run.spent_secs = d.spent_secs();
         p.writer
             .send(files::FileOp::Save(d.file.clone(), Box::new(d.run.clone())));
     });
@@ -296,7 +297,11 @@ fn send(uid: u64, session: &Entity<ChatSession>, text: String, cx: &mut App) {
         with(uid, cx, |d| d.pending = Some(text));
         return;
     }
-    if prompted_by_someone_else(session, read(uid, cx, |d| d.sent).unwrap_or(0), cx) {
+    if session
+        .read(cx)
+        .chat
+        .prompted_beyond(read(uid, cx, |d| d.sent).unwrap_or(0))
+    {
         advance(uid, cx, |run| run.stopped(Stop::TakenOver));
         return;
     }
@@ -423,7 +428,7 @@ fn finish(uid: u64, session: Option<&Entity<ChatSession>>, outcome: Outcome, cx:
     let Some(driven) = driven else {
         return;
     };
-    let resumable = matches_resumable(&outcome);
+    let resumable = outcome.resumable();
     if let Some(session) = session {
         let said = match resumable {
             true => format!("{}; resume it from the project's page", outcome.said()),
@@ -432,12 +437,8 @@ fn finish(uid: u64, session: Option<&Entity<ChatSession>>, outcome: Outcome, cx:
         note(session, said, cx);
     }
     let file = driven.file.clone();
-    let used = driven
-        .budget
-        .limit()
-        .saturating_sub(driven.budget.left(Instant::now()));
     let mut run = driven.run.clone();
-    run.spent_secs = driven.spent_before + used.as_secs();
+    run.spent_secs = driven.spent_secs();
     if resumable {
         super::park(run, cx);
     } else {
@@ -446,24 +447,5 @@ fn finish(uid: u64, session: Option<&Entity<ChatSession>>, outcome: Outcome, cx:
     cx.defer(move |cx| {
         drop(driven);
         cx.refresh_windows();
-    });
-}
-
-fn matches_resumable(outcome: &Outcome) -> bool {
-    match outcome {
-        Outcome::Stopped(Stop::LinkLost | Stop::Closed) => true,
-        Outcome::Stopped(Stop::ByPerson | Stop::TakenOver | Stop::TimedOut)
-        | Outcome::Done
-        | Outcome::Exhausted { .. }
-        | Outcome::Failed(_) => false,
-    }
-}
-
-/// Add a line about the run to its session's transcript.
-fn note(session: &Entity<ChatSession>, text: String, cx: &mut App) {
-    session.update(cx, |session, cx| {
-        session.chat.items.push(ChatItem::notice(text));
-        cx.emit(ChatEvent::Appended);
-        cx.notify();
     });
 }

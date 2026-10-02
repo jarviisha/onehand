@@ -2,14 +2,12 @@
 //! session left unfinished.
 
 use super::Shell;
-use crate::settings::PipelineDraft;
 use crate::state::Shared;
-use gpui::{AppContext as _, Context, Entity, ParentElement as _, SharedString, Window};
+use gpui::{AppContext as _, Context, Entity, SharedString, Window};
 use gpui_component::WindowExt as _;
-use gpui_component::button::ButtonVariants as _;
-use gpui_component::input::{InputEvent, InputState, TextareaState};
+use gpui_component::input::{InputState, TextareaState};
 use gpui_component::notification::Notification;
-use onehand_core::pipeline::{self as core, Brief, PipelineRun, Place, Setup, StepKind, Template};
+use onehand_core::pipeline::{self as core, Brief, PipelineRun, Place, Setup, Template};
 use onehand_core::worktree;
 use std::path::PathBuf;
 
@@ -193,11 +191,7 @@ impl Shell {
             .iter()
             .find(|root| root.path == launcher.root)
             .and_then(|root| root.check.clone());
-        let wants_check = template.steps.iter().any(|step| match &step.kind {
-            StepKind::Command { command, .. } => command.is_none(),
-            StepKind::Agent { .. } | StepKind::Approval { .. } => false,
-        });
-        if wants_check && check.is_none() {
+        if template.needs_check() && check.is_none() {
             return Err(format!(
                 "This template runs the project's check command, and {} has none. Set one \
                  under Settings ▸ Pipelines.",
@@ -229,14 +223,14 @@ impl Shell {
             .map(|spec| spec.name.clone());
         let id = core::files::new_id();
         let (run, first) = PipelineRun::begin(id, template, brief, setup);
-        self.drive_pipeline(run, first, false, window, cx);
+        self.drive_pipeline(run, Some(first), window, cx);
     }
 
     /// Resume the unfinished run `id`: its project is put on screen, added
     /// back if it left the workspace, and a new session carries on from the
     /// step it was at.
     pub fn resume_pipeline(&mut self, id: &str, window: &mut Window, cx: &mut Context<Self>) {
-        let Some(mut run) = crate::pipeline::take_unfinished(id, cx) else {
+        let Some(run) = crate::pipeline::take_unfinished(id, cx) else {
             return;
         };
         if !run.setup.dir.is_dir() {
@@ -250,18 +244,18 @@ impl Shell {
             crate::pipeline::park(run, cx);
             return;
         }
-        let first = run.resume();
-        self.drive_pipeline(run, first, true, window, cx);
+        self.drive_pipeline(run, None, window, cx);
     }
 
     /// Show the run's project, start a session on it, and hand both to the
-    /// driver. A `resumed` run that cannot start goes back on the unfinished
-    /// list; a new one had nothing yet worth keeping.
+    /// driver, starting with `first`, or with the run resumed once its new
+    /// session exists when that is `None`. A resumed run that cannot start
+    /// goes back on the unfinished list; a new one had nothing yet worth
+    /// keeping.
     fn drive_pipeline(
         &mut self,
-        run: PipelineRun,
-        first: core::Action,
-        resumed: bool,
+        mut run: PipelineRun,
+        first: Option<core::Action>,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
@@ -285,268 +279,14 @@ impl Shell {
                 Notification::warning("The pipeline's session did not start"),
                 cx,
             );
-            if resumed {
+            if first.is_none() {
                 crate::pipeline::park(run, cx);
             }
             return;
         };
+        let first = first.unwrap_or_else(|| run.resume());
         // Deferred: the driver reaches into the session and the global the
         // shell is reading from while this runs.
         cx.defer(move |cx| crate::pipeline::start(uid, &session, run, first, cx));
-    }
-}
-
-// ── Settings ▸ Pipelines ────────────────────────────────────────────────────
-
-impl Shell {
-    pub fn pipeline_draft(&self) -> Option<&PipelineDraft> {
-        self.pipeline_draft.as_ref()
-    }
-
-    /// Open the form on a new template, one agent step to start from.
-    pub fn new_pipeline(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let mut template = Template::blank("");
-        template.steps.push(core::StepSpec {
-            id: "plan".to_string(),
-            label: "Plan".to_string(),
-            kind: StepKind::Agent {
-                prompt: "{brief}".to_string(),
-                gates: vec![core::GateKind::Answered],
-                keep_answer: true,
-            },
-        });
-        self.pipeline_draft = Some(PipelineDraft::load(&template, None, window, cx));
-        cx.notify();
-    }
-
-    /// Open the form on a copy of template `at`, to be saved as a new one.
-    pub fn duplicate_pipeline(&mut self, at: usize, window: &mut Window, cx: &mut Context<Self>) {
-        let Some(Ok(mut template)) = crate::pipeline::templates(cx)
-            .get(at)
-            .map(|entry| entry.template.clone())
-        else {
-            return;
-        };
-        template.name = format!("{} copy", template.name);
-        self.pipeline_draft = Some(PipelineDraft::load(&template, None, window, cx));
-        cx.notify();
-    }
-
-    /// Open the form on the person's own template `at`.
-    pub fn edit_pipeline(&mut self, at: usize, window: &mut Window, cx: &mut Context<Self>) {
-        let Some(entry) = crate::pipeline::templates(cx).get(at).cloned() else {
-            return;
-        };
-        let (Ok(template), Some(file)) = (entry.template, entry.file) else {
-            return;
-        };
-        self.pipeline_draft = Some(PipelineDraft::load(&template, Some(file), window, cx));
-        cx.notify();
-    }
-
-    /// Change the open form with `edit`.
-    pub fn edit_pipeline_draft(
-        &mut self,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-        edit: impl FnOnce(&mut PipelineDraft, &mut Window, &mut gpui::App),
-    ) {
-        if let Some(draft) = self.pipeline_draft.as_mut() {
-            edit(draft, window, cx);
-        }
-        cx.notify();
-    }
-
-    pub fn clear_pipeline_draft(&mut self, cx: &mut Context<Self>) {
-        self.pipeline_draft = None;
-        cx.notify();
-    }
-
-    /// Write the form to its file, or to a new one, and read the templates
-    /// again. Refused while the template has problems, or shares its name
-    /// with another, since the launcher lists them by name.
-    pub fn save_pipeline_draft(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let Some(draft) = self.pipeline_draft.as_ref() else {
-            return;
-        };
-        let Ok(template) = draft.to_template(cx) else {
-            return;
-        };
-        if !core::validate(&template).is_empty() {
-            return;
-        }
-        let file = draft.file.clone();
-        let same = |entry: &crate::pipeline::Entry| file.is_some() && entry.file == file;
-        let clash = crate::pipeline::templates(cx)
-            .iter()
-            .any(|entry| !same(entry) && entry.name() == template.name);
-        if clash {
-            let why = format!("another template is already called {}", template.name);
-            self.report_write("Pipeline", Err(why), true, window, cx);
-            cx.notify();
-            return;
-        }
-        cx.spawn_in(window, async move |shell, cx| {
-            let kept = template.clone();
-            let saved = cx
-                .background_executor()
-                .spawn(async move {
-                    core::store::save_blocking(&core::store::dir(), file.as_deref(), &kept)
-                })
-                .await;
-            let _ = shell.update_in(cx, |shell: &mut Self, window, cx| {
-                match saved {
-                    Ok(path) => {
-                        if let Some(draft) = shell.pipeline_draft.as_mut() {
-                            draft.file = Some(path);
-                            draft.original = template;
-                        }
-                        shell.report_write("Pipeline", Ok::<(), String>(()), true, window, cx);
-                        crate::pipeline::reload_templates(cx);
-                    }
-                    Err(why) => shell.report_write("Pipeline", Err(why), true, window, cx),
-                }
-                cx.notify();
-            });
-        })
-        .detach();
-    }
-
-    /// Ask, then delete the person's own template `at`.
-    pub fn confirm_delete_pipeline(
-        &mut self,
-        at: usize,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        let Some(entry) = crate::pipeline::templates(cx).get(at).cloned() else {
-            return;
-        };
-        let Some(file) = entry.file.clone() else {
-            return;
-        };
-        let name = entry.name();
-        let shell = cx.entity();
-        window.open_alert_dialog(cx, move |alert, _, _| {
-            let (shell, file) = (shell.clone(), file.clone());
-            alert
-                .title(format!("Delete {name}?"))
-                .description(
-                    "The template's file is deleted. Runs already started from it carry on \
-                     with the copy they took.",
-                )
-                .footer(
-                    gpui_component::dialog::DialogFooter::new()
-                        .child(
-                            gpui_component::dialog::DialogClose::new().child(
-                                crate::controls::action("keep-pipeline")
-                                    .ghost()
-                                    .label("Keep"),
-                            ),
-                        )
-                        .child(
-                            crate::controls::action("delete-pipeline-confirm")
-                                .danger()
-                                .label("Delete")
-                                .on_click(move |_, window: &mut Window, cx: &mut gpui::App| {
-                                    window.close_dialog(cx);
-                                    let file = file.clone();
-                                    shell.update(cx, |shell: &mut Self, cx| {
-                                        shell.delete_pipeline_file(file, window, cx)
-                                    });
-                                }),
-                        ),
-                )
-        });
-    }
-
-    /// Delete the template file `file`, off the UI thread, and read the
-    /// templates again.
-    fn delete_pipeline_file(&mut self, file: PathBuf, window: &mut Window, cx: &mut Context<Self>) {
-        cx.spawn_in(window, async move |shell, cx| {
-            let gone = {
-                let file = file.clone();
-                cx.background_executor()
-                    .spawn(async move { core::store::delete_blocking(&file) })
-                    .await
-            };
-            let _ = shell.update_in(cx, |shell: &mut Self, window, cx| {
-                if gone.is_ok()
-                    && shell
-                        .pipeline_draft
-                        .as_ref()
-                        .is_some_and(|d| d.file.as_ref() == Some(&file))
-                {
-                    shell.pipeline_draft = None;
-                }
-                shell.report_write("Pipeline", gone, true, window, cx);
-                crate::pipeline::reload_templates(cx);
-                cx.notify();
-            });
-        })
-        .detach();
-    }
-
-    /// A check command field for every project that has none yet. Each edit
-    /// is written to its project and saved, debounced, as the workspace name
-    /// is: there is no Save button beside it.
-    pub(super) fn make_check_inputs(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let roots: Vec<_> = self
-            .window
-            .workspace
-            .roots
-            .iter()
-            .filter(|root| !root.transient && !self.check_inputs.contains_key(&root.path))
-            .map(|root| (root.path.clone(), root.check.clone().unwrap_or_default()))
-            .collect();
-        for (path, check) in roots {
-            let input = cx.new(|cx| {
-                InputState::new(window, cx)
-                    .placeholder("None: a command step that names none cannot run here")
-                    .default_value(check)
-            });
-            let at = path.clone();
-            cx.subscribe_in(
-                &input,
-                window,
-                move |shell: &mut Self, state, event: &InputEvent, _, cx| {
-                    if !matches!(event, InputEvent::Change) {
-                        return;
-                    }
-                    let typed = state.read(cx).value().trim().to_string();
-                    let check = (!typed.is_empty()).then_some(typed);
-                    let Some(root) = shell
-                        .window
-                        .workspace
-                        .roots
-                        .iter_mut()
-                        .find(|r| r.path == at)
-                    else {
-                        return;
-                    };
-                    if root.check != check {
-                        root.check = check;
-                        shell.workspace_note_wanted = true;
-                        shell.save_workspace_soon(cx);
-                    }
-                },
-            )
-            .detach();
-            self.check_inputs.insert(path, input);
-        }
-    }
-
-    /// Each project of this workspace beside its check command field, once
-    /// Settings has made them.
-    pub fn check_inputs(&self) -> Vec<(SharedString, Entity<InputState>)> {
-        self.window
-            .workspace
-            .roots
-            .iter()
-            .filter_map(|root| {
-                let input = self.check_inputs.get(&root.path)?.clone();
-                Some((root.label.clone().into(), input))
-            })
-            .collect()
     }
 }

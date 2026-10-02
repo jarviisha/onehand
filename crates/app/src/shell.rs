@@ -19,6 +19,7 @@ mod boot;
 mod docks;
 mod drafts;
 mod issue_work;
+mod pipeline_settings;
 mod pipelines;
 mod remote_runs;
 mod render;

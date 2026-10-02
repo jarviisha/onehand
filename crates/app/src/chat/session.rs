@@ -251,6 +251,16 @@ pub struct ChatSession {
 
 impl EventEmitter<ChatEvent> for ChatSession {}
 
+/// Add a line to session's transcript in onehand's own voice: what a run
+/// driving the session did, for the person reading it.
+pub(crate) fn note(session: &Entity<ChatSession>, text: String, cx: &mut App) {
+    session.update(cx, |session, cx| {
+        session.chat.items.push(ChatItem::notice(text));
+        cx.emit(ChatEvent::Appended);
+        cx.notify();
+    });
+}
+
 impl ChatSession {
     /// Spawn `spec` against `root` and start folding its events into a fresh
     /// transcript.

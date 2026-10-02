@@ -470,8 +470,11 @@ One window hosts exactly one workspace. The frame is a navigation **rail** plus 
   and *On failure, back to*; or *Approves the answer of*. A step is pointed at
   through a menu of the earlier steps that fit. Every problem with the template
   is listed in the danger ink above *Save*, which is spent while any remains;
-  closing Settings with the form changed asks first. *Check commands* closes
-  the page: one field per project of this workspace, saved as it is typed.
+  closing Settings, or opening another template, with the form changed asks
+  first. *Check commands* closes the page: one field per project of this
+  workspace, saved as it is typed. The template list, the launcher's template
+  menu and the check command fields are each capped and say how many more
+  they left out.
 - **No status bar either.** There was one — a row under the rail and the dock
   reading out the project, its branch, the running agent, unsaved buffers and any
   panel left off 100% — and it is gone. Every fact on it was either already said

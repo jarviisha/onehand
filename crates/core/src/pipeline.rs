@@ -21,9 +21,9 @@ mod template;
 mod validate;
 
 pub use facts::{run_command_blocking, Facts, Mark};
-pub use run::{Action, Brief, Marks, Outcome, PipelineRun, Setup, Stop, Transition};
+pub use run::{Action, Brief, Outcome, PipelineRun, Setup, Stop};
 pub use template::{GateKind, Place, StepKind, StepSpec, Template, SCHEMA_VERSION};
-pub use validate::{validate, Problem};
+pub use validate::validate;
 
 /// The branch a run on a worktree works on: `pipeline/<title words>`, built
 /// only from characters a branch name may hold.

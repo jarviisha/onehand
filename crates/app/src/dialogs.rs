@@ -230,8 +230,12 @@ pub fn run_pipeline(shell: &Shell, cx: &mut Context<Shell>) -> Dialog {
         None => "No template is on offer yet.".to_string(),
     };
     let handle = cx.entity();
+    let left_out = entries
+        .len()
+        .saturating_sub(crate::pipeline::TEMPLATES_SHOWN);
     let names: Vec<(usize, String, bool)> = entries
         .iter()
+        .take(crate::pipeline::TEMPLATES_SHOWN)
         .enumerate()
         .map(|(at, entry)| (at, entry.name(), entry.file.is_none()))
         .collect();
@@ -266,6 +270,9 @@ pub fn run_pipeline(shell: &Shell, cx: &mut Context<Shell>) -> Dialog {
                                     });
                                 }),
                         );
+                    }
+                    if left_out > 0 {
+                        menu = menu.label(format!("{left_out} more templates not shown"));
                     }
                     menu
                 },

@@ -329,7 +329,7 @@ pub fn head_blocking(dir: &Path) -> Result<String, String> {
 /// Whether the checkout at `dir` holds anything not committed, a new file
 /// nobody added included: work that would be lost to everyone but this
 /// folder.
-pub fn dirty_blocking(dir: &Path) -> Result<bool, String> {
+pub(crate) fn dirty_blocking(dir: &Path) -> Result<bool, String> {
     read_blocking(dir, &["status", "--porcelain"]).map(|out| !out.is_empty())
 }
 
@@ -339,7 +339,7 @@ pub fn dirty_blocking(dir: &Path) -> Result<bool, String> {
 // ponytail: an edit inside a file that was already untracked is not seen,
 // since only its name is in the status; hash those files' contents if that
 // ever lets a turn through.
-pub fn work_digest_blocking(dir: &Path) -> Result<String, String> {
+pub(crate) fn work_digest_blocking(dir: &Path) -> Result<String, String> {
     use std::hash::{Hash as _, Hasher as _};
     let mut hasher = std::collections::hash_map::DefaultHasher::new();
     for args in [

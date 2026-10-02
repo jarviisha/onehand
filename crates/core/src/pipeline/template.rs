@@ -49,6 +49,15 @@ impl Template {
         }
     }
 
+    /// Whether a run needs the project's check command: a command step names
+    /// no command of its own.
+    pub fn needs_check(&self) -> bool {
+        self.steps.iter().any(|step| match &step.kind {
+            StepKind::Command { command, .. } => command.is_none(),
+            StepKind::Agent { .. } | StepKind::Approval { .. } => false,
+        })
+    }
+
     /// Where the step `id` is, if the template has one.
     pub fn index_of(&self, id: &str) -> Option<usize> {
         self.steps.iter().position(|step| step.id == id)
@@ -111,33 +120,6 @@ pub enum StepKind {
     /// Wait for a person to approve the answer the step `of` kept, or send
     /// it back with a note.
     Approval { of: String },
-}
-
-impl StepKind {
-    /// The kinds, as the editor offers them, each in its emptiest form.
-    pub fn choices() -> [Self; 3] {
-        [
-            Self::Agent {
-                prompt: String::new(),
-                gates: Vec::new(),
-                keep_answer: false,
-            },
-            Self::Command {
-                command: None,
-                on_fail: String::new(),
-            },
-            Self::Approval { of: String::new() },
-        ]
-    }
-
-    /// What a person calls the kind.
-    pub fn label(&self) -> &'static str {
-        match self {
-            Self::Agent { .. } => "Agent",
-            Self::Command { .. } => "Command",
-            Self::Approval { .. } => "Approval",
-        }
-    }
 }
 
 /// A condition onehand checks itself after an agent turn, against the work

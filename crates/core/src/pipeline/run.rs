@@ -91,6 +91,19 @@ pub enum Outcome {
 }
 
 impl Outcome {
+    /// Whether the run may be picked up again from where it was: its agent
+    /// stopped or its session went, neither of which is the run's own
+    /// outcome, and app shutdown can look like either.
+    pub fn resumable(&self) -> bool {
+        match self {
+            Self::Stopped(Stop::LinkLost | Stop::Closed) => true,
+            Self::Stopped(Stop::ByPerson | Stop::TakenOver | Stop::TimedOut)
+            | Self::Done
+            | Self::Exhausted { .. }
+            | Self::Failed(_) => false,
+        }
+    }
+
     /// What happened, as a line for the transcript.
     pub fn said(&self) -> String {
         match self {
@@ -143,7 +156,10 @@ enum Await {
     Turn,
     Command,
     Approval,
-    Over,
+    /// The run ended; one that may be resumed waits to be.
+    Over {
+        resumable: bool,
+    },
 }
 
 /// How many transitions a run's history keeps, newest last.
@@ -220,7 +236,7 @@ impl PipelineRun {
 
     /// The run has ended.
     pub fn over(&self) -> bool {
-        self.awaiting == Await::Over
+        matches!(self.awaiting, Await::Over { .. })
     }
 
     /// The mark asked for: the step's prompt, or the carry-on waiting on it.
@@ -375,11 +391,12 @@ impl PipelineRun {
         self.finish(Outcome::Failed(why))
     }
 
-    /// Carry on in a new session, after a restart: the step again, from the
-    /// mark it kept, so work done before the restart still counts as done in
-    /// this step.
+    /// Carry on in a new session, after a restart or after its agent or
+    /// session went: the step again, from the mark it kept, so work done
+    /// before still counts as done in this step. A run that ended on its own
+    /// outcome does not come back.
     pub fn resume(&mut self) -> Action {
-        if self.over() {
+        if self.awaiting == (Await::Over { resumable: false }) {
             return Action::Idle;
         }
         self.log_here("resumed");
@@ -398,7 +415,7 @@ impl PipelineRun {
         let from = self.step_id();
         let Some(to) = self.template.steps.get(at).map(|step| step.id.clone()) else {
             self.log(from, "done".to_string(), why);
-            self.awaiting = Await::Over;
+            self.awaiting = Await::Over { resumable: false };
             return Action::Finish(Outcome::Done);
         };
         if at > self.furthest {
@@ -458,7 +475,9 @@ impl PipelineRun {
             Outcome::Failed(_) => "failed",
         };
         self.log(self.step_id(), to.to_string(), &outcome.said());
-        self.awaiting = Await::Over;
+        self.awaiting = Await::Over {
+            resumable: outcome.resumable(),
+        };
         Action::Finish(outcome)
     }
 

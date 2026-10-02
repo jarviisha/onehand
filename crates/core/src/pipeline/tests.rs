@@ -315,6 +315,37 @@ fn resume_keeps_where_the_step_started() {
     assert_eq!(fresh.resume(), Action::Measure);
 }
 
+/// A run parked in this process, its agent gone or its session closed,
+/// resumes without a trip through its file.
+#[test]
+fn a_run_parked_in_this_process_resumes() {
+    for stop in [Stop::LinkLost, Stop::Closed] {
+        let mut run = at_approval();
+        run.approved();
+        prompt_of(run.measured(mark("a", "d0")));
+        assert!(matches!(run.stopped(stop), Action::Finish(outcome) if outcome.resumable()));
+        let mut parked = run.clone();
+        assert!(prompt_of(parked.resume()).contains("This step is the change"));
+    }
+    // A run that ended on its own outcome does not come back.
+    let mut run = at_approval();
+    assert!(!matches!(run.stopped(Stop::ByPerson), Action::Finish(o) if o.resumable()));
+    assert_eq!(run.resume(), Action::Idle);
+}
+
+#[test]
+fn a_template_needs_a_check_command_only_for_a_command_step_naming_none() {
+    assert!(checkout().needs_check());
+    let mut named = checkout();
+    named.steps[3].kind = StepKind::Command {
+        command: Some("make check".into()),
+        on_fail: "implement".into(),
+    };
+    assert!(!named.needs_check());
+    named.steps.pop();
+    assert!(!named.needs_check());
+}
+
 #[test]
 fn a_run_keeps_the_template_it_began_with() {
     let mut template = checkout();

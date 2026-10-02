@@ -541,6 +541,15 @@ impl Chat {
         }
     }
 
+    /// Whether somebody other than whatever sent `sent` prompts has put one
+    /// into this session: any more went out, or one waits behind the turn.
+    /// Either came from the composer or the remote bridge, so a person is
+    /// driving. Counted from what was *sent*, not from the user rows in the
+    /// transcript: an adapter delivers user chunks of its own mid-turn.
+    pub fn prompted_beyond(&self, sent: usize) -> bool {
+        self.queued.is_some() || self.prompts_sent > sent
+    }
+
     /// A parked permission prompt is waiting for the user's answer (it blocks
     /// the turn until they click an option). Also drives the rail session
     /// row's status dot.

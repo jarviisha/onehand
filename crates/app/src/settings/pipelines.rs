@@ -30,14 +30,35 @@ pub struct PipelineDraft {
     pub steps: Vec<StepDraft>,
 }
 
+/// A step's kind as the form holds it: the kind alone, its fields kept apart
+/// on [`StepDraft`] so switching kinds and back loses nothing typed.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum Kind {
+    Agent,
+    Command,
+    Approval,
+}
+
+impl Kind {
+    const ALL: [Self; 3] = [Self::Agent, Self::Command, Self::Approval];
+
+    /// What a person calls it.
+    fn label(self) -> &'static str {
+        match self {
+            Self::Agent => "Agent",
+            Self::Command => "Command",
+            Self::Approval => "Approval",
+        }
+    }
+}
+
 /// One step's fields. The prompt, gates, command and the step another kind
 /// points at are all kept whatever the kind, so switching kinds and back
 /// loses nothing typed.
 pub struct StepDraft {
     pub id: Entity<InputState>,
     pub label: Entity<InputState>,
-    /// Which of [`StepKind::choices`] it is.
-    pub kind: usize,
+    pub kind: Kind,
     pub prompt: Entity<TextareaState>,
     pub gates: Vec<GateKind>,
     pub keep_answer: bool,
@@ -57,16 +78,23 @@ impl StepDraft {
                 prompt,
                 gates,
                 keep_answer,
-            } => (0, prompt.as_str(), gates.clone(), *keep_answer, "", ""),
+            } => (
+                Kind::Agent,
+                prompt.as_str(),
+                gates.clone(),
+                *keep_answer,
+                "",
+                "",
+            ),
             StepKind::Command { command, on_fail } => (
-                1,
+                Kind::Command,
                 "",
                 Vec::new(),
                 false,
                 command.as_deref().unwrap_or_default(),
                 on_fail.as_str(),
             ),
-            StepKind::Approval { of } => (2, "", Vec::new(), false, "", of.as_str()),
+            StepKind::Approval { of } => (Kind::Approval, "", Vec::new(), false, "", of.as_str()),
         };
         let prompt = prompt.to_string();
         Self {
@@ -91,16 +119,16 @@ impl StepDraft {
             id: self.id.read(cx).value().trim().to_string(),
             label: self.label.read(cx).value().trim().to_string(),
             kind: match self.kind {
-                0 => StepKind::Agent {
+                Kind::Agent => StepKind::Agent {
                     prompt: self.prompt.read(cx).value().to_string(),
                     gates: self.gates.clone(),
                     keep_answer: self.keep_answer,
                 },
-                1 => StepKind::Command {
+                Kind::Command => StepKind::Command {
                     command: (!command.is_empty()).then_some(command),
                     on_fail: self.target.clone(),
                 },
-                _ => StepKind::Approval {
+                Kind::Approval => StepKind::Approval {
                     of: self.target.clone(),
                 },
             },
@@ -170,7 +198,7 @@ impl PipelineDraft {
     }
 
     /// Add a step of `kind` at the end, with an id no other step has.
-    pub fn add_step(&mut self, kind: usize, window: &mut Window, cx: &mut App) {
+    pub fn add_step(&mut self, kind: Kind, window: &mut Window, cx: &mut App) {
         let taken: Vec<String> = self
             .steps
             .iter()
@@ -182,8 +210,19 @@ impl PipelineDraft {
             .unwrap_or_default();
         let spec = StepSpec {
             id,
-            label: StepKind::choices()[kind].label().to_string(),
-            kind: StepKind::choices()[kind].clone(),
+            label: kind.label().to_string(),
+            kind: match kind {
+                Kind::Agent => StepKind::Agent {
+                    prompt: String::new(),
+                    gates: Vec::new(),
+                    keep_answer: false,
+                },
+                Kind::Command => StepKind::Command {
+                    command: None,
+                    on_fail: String::new(),
+                },
+                Kind::Approval => StepKind::Approval { of: String::new() },
+            },
         };
         self.steps.push(StepDraft::new(&spec, window, cx));
     }
@@ -208,8 +247,12 @@ pub(super) fn pipelines_page(handle: &Entity<Shell>, cx: &App) -> AnyElement {
     let muted = cx.theme().muted_foreground;
     let warning = crate::theme::status_ink(cx).warning;
 
+    let left_out = entries
+        .len()
+        .saturating_sub(crate::pipeline::TEMPLATES_SHOWN);
     let rows = entries
         .iter()
+        .take(crate::pipeline::TEMPLATES_SHOWN)
         .enumerate()
         .map(|(i, entry)| {
             let shipped = entry.file.is_none();
@@ -268,6 +311,12 @@ pub(super) fn pipelines_page(handle: &Entity<Shell>, cx: &App) -> AnyElement {
     let list = section(None, None, cx)
         .gap_3()
         .children(rows)
+        .when(left_out > 0, |list| {
+            list.child(div().text_sm().text_color(muted).child(format!(
+                "{left_out} more templates not shown; remove some from {}",
+                core::store::dir().display()
+            )))
+        })
         .when(entries.is_empty(), |list| {
             list.child(
                 div()
@@ -365,7 +414,7 @@ fn form(handle: &Entity<Shell>, draft: &crate::settings::PipelineDraft, cx: &App
         .iter()
         .map(|step| Earlier {
             id: step.id.read(cx).value().trim().to_string(),
-            agent: step.kind == 0,
+            agent: step.kind == Kind::Agent,
             keeps: step.keep_answer,
         })
         .collect();
@@ -440,23 +489,18 @@ fn form(handle: &Entity<Shell>, draft: &crate::settings::PipelineDraft, cx: &App
         div()
             .h_flex()
             .gap_2()
-            .children(
-                StepKind::choices()
-                    .iter()
-                    .enumerate()
-                    .map(|(kind, choice)| {
-                        crate::controls::action(("add-step", kind))
-                            .ghost()
-                            .small()
-                            .icon(Icon::new(IconName::Plus))
-                            .label(format!("{} step", choice.label()))
-                            .on_click(click(handle, move |shell, window, cx| {
-                                shell.edit_pipeline_draft(window, cx, |d, window, cx| {
-                                    d.add_step(kind, window, cx)
-                                });
-                            }))
-                    }),
-            ),
+            .children(Kind::ALL.into_iter().enumerate().map(|(at, kind)| {
+                crate::controls::action(("add-step", at))
+                    .ghost()
+                    .small()
+                    .icon(Icon::new(IconName::Plus))
+                    .label(format!("{} step", kind.label()))
+                    .on_click(click(handle, move |shell, window, cx| {
+                        shell.edit_pipeline_draft(window, cx, |d, window, cx| {
+                            d.add_step(kind, window, cx)
+                        });
+                    }))
+            })),
     )
     .children(
         problems
@@ -502,7 +546,6 @@ fn step_box(
     place: Place,
     cx: &App,
 ) -> AnyElement {
-    let kinds = StepKind::choices();
     let kind_menu = {
         let handle = handle.clone();
         crate::controls::menu_below(
@@ -510,12 +553,12 @@ fn step_box(
             crate::controls::action(("step-kind-trigger", i))
                 .outline()
                 .xsmall()
-                .label(kinds[step.kind].label())
+                .label(step.kind.label())
                 .icon(Icon::new(IconName::ChevronDown)),
             move |mut menu, _, _| {
-                for (kind, choice) in StepKind::choices().iter().enumerate() {
+                for kind in Kind::ALL {
                     let handle = handle.clone();
-                    menu = menu.item(crate::controls::menu_item(choice.label()).on_click(
+                    menu = menu.item(crate::controls::menu_item(kind.label()).on_click(
                         move |_, window: &mut Window, cx: &mut App| {
                             handle.update(cx, |shell, cx| {
                                 shell.edit_pipeline_draft(window, cx, |d, _, _| {
@@ -582,7 +625,7 @@ fn step_box(
         );
 
     let body = match step.kind {
-        0 => {
+        Kind::Agent => {
             let gates = GateKind::ALL
                 .iter()
                 .filter(|gate| gate.fits(place) || step.gates.contains(gate))
@@ -646,14 +689,14 @@ fn step_box(
                 .child(div().h_flex().child(keep))
                 .into_any_element()
         }
-        kind => {
-            let title = match kind {
-                1 => "On failure, back to",
-                _ => "Approves the answer of",
+        kind @ (Kind::Command | Kind::Approval) => {
+            let (title, needs_keep) = match kind {
+                Kind::Command => ("On failure, back to", false),
+                Kind::Agent | Kind::Approval => ("Approves the answer of", true),
             };
             let choices: Vec<String> = earlier
                 .iter()
-                .filter(|step| step.agent && (kind == 1 || step.keeps))
+                .filter(|step| step.agent && (!needs_keep || step.keeps))
                 .map(|step| step.id.clone())
                 .collect();
             let current = step.target.clone();
@@ -696,7 +739,7 @@ fn step_box(
             div()
                 .v_flex()
                 .gap_3()
-                .when(kind == 1, |col| {
+                .when(kind == Kind::Command, |col| {
                     col.child(field(
                         "Command",
                         about("Run by onehand in the work, through sh."),
@@ -723,10 +766,15 @@ fn step_box(
         .into_any_element()
 }
 
+/// How many projects' check command fields the page draws before it says how
+/// many more there are.
+const CHECKS_SHOWN: usize = 30;
+
 /// Each project's check command: what a command step that names none runs.
 fn checks_section(handle: &Entity<Shell>, cx: &App) -> AnyElement {
     let rows = handle.read(cx).check_inputs();
     let empty = rows.is_empty();
+    let left_out = rows.len().saturating_sub(CHECKS_SHOWN);
     section(
         Some("Check commands"),
         Some(SharedString::from(
@@ -737,8 +785,17 @@ fn checks_section(handle: &Entity<Shell>, cx: &App) -> AnyElement {
     )
     .children(
         rows.into_iter()
+            .take(CHECKS_SHOWN)
             .map(|(name, input)| field(name, None, Input::new(&input), cx).into_any_element()),
     )
+    .when(left_out > 0, |group| {
+        group.child(
+            div()
+                .text_sm()
+                .text_color(cx.theme().muted_foreground)
+                .child(format!("{left_out} more projects not shown")),
+        )
+    })
     .when(empty, |group| {
         group.child(
             div()

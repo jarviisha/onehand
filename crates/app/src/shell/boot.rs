@@ -167,10 +167,6 @@ impl Shell {
                             shell.select_root(idx, window, cx);
                         }
                     }
-                    // Its project made the active one first, since a session
-                    // is minted on that, but not shown: showing it would
-                    // connect the session it was last on, which nobody asked
-                    // for. The new session's own arrival shows the project.
                     // Deferred: the run reaches into its session, which may
                     // be what is announcing this.
                     E::ContinuePipeline(uid) => {
@@ -190,6 +186,10 @@ impl Shell {
                         let id = id.clone();
                         cx.defer(move |cx| crate::pipeline::discard(&id, cx));
                     }
+                    // Its project made the active one first, since a session
+                    // is minted on that, but not shown: showing it would
+                    // connect the session it was last on, which nobody asked
+                    // for. The new session's own arrival shows the project.
                     E::ResumeIn {
                         root,
                         agent,

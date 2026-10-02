@@ -98,32 +98,6 @@ impl ChatPane {
         .detach();
     }
 
-    /// The session header: what conversation this is, what it is doing, and the
-    /// things you do *to* it.
-    ///
-    /// Separate from the composer's row because the two answer different
-    /// questions. The composer's controls are about the message being written —
-    /// what to attach, which mode to send it in, whether to send it at all.
-    /// Export, Restart and Close are about the conversation as a whole, and
-    /// mixing them into one row of seven buttons made every one of them equally
-    /// easy to hit by accident.
-    ///
-    /// It is also **the only chrome this panel has**. The dock draws the
-    /// conversation as a bare panel with no tab bar, so the two ways back to
-    /// something the window has put away — the rail and the Workbench — have
-    /// nowhere else to be offered from, and a route that exists only as a
-    /// keystroke is a route only someone who already knows it can take.
-    ///
-    /// **The name names the conversation and the vertical-dots mark beside it
-    /// carries its menu**, and every other
-    /// control sits on the side of what it acts on: the way back to a hidden
-    /// rail at the row's left edge, the side the rail returns to, and the
-    /// right-hand end reading outward from the name — the past conversations
-    /// and closing the session, which act on the session the name names, then
-    /// the terminal and last the Workbench, whose dock is the window's right
-    /// edge, so the outermost control moves the outermost panel. The dots are
-    /// the row's one menu mark, and everything behind them is something done
-    /// to the conversation the name beside them is.
     /// Where the pipeline run driving this session stands: its template's
     /// name, then every step in order, the ones behind it checked off and the
     /// one it is at in full ink, and *Stop* at the far end. `None` for a
@@ -222,6 +196,32 @@ impl ChatPane {
         )
     }
 
+    /// The session header: what conversation this is, what it is doing, and the
+    /// things you do *to* it.
+    ///
+    /// Separate from the composer's row because the two answer different
+    /// questions. The composer's controls are about the message being written —
+    /// what to attach, which mode to send it in, whether to send it at all.
+    /// Export, Restart and Close are about the conversation as a whole, and
+    /// mixing them into one row of seven buttons made every one of them equally
+    /// easy to hit by accident.
+    ///
+    /// It is also **the only chrome this panel has**. The dock draws the
+    /// conversation as a bare panel with no tab bar, so the two ways back to
+    /// something the window has put away — the rail and the Workbench — have
+    /// nowhere else to be offered from, and a route that exists only as a
+    /// keystroke is a route only someone who already knows it can take.
+    ///
+    /// **The name names the conversation and the vertical-dots mark beside it
+    /// carries its menu**, and every other
+    /// control sits on the side of what it acts on: the way back to a hidden
+    /// rail at the row's left edge, the side the rail returns to, and the
+    /// right-hand end reading outward from the name — the past conversations
+    /// and closing the session, which act on the session the name names, then
+    /// the terminal and last the Workbench, whose dock is the window's right
+    /// edge, so the outermost control moves the outermost panel. The dots are
+    /// the row's one menu mark, and everything behind them is something done
+    /// to the conversation the name beside them is.
     pub(super) fn header(&self, cx: &mut Context<Self>) -> impl IntoElement + use<> {
         let chat = self.active_chat(cx);
         let title = chat.and_then(Chat::conversation_title).unwrap_or_else(|| {

@@ -116,6 +116,11 @@ pub(crate) fn reload_templates(cx: &mut App) {
     .detach();
 }
 
+/// How many templates a list or a menu of them draws before it says how many
+/// more there are. Far more than anybody keeps; it is there so a folder of
+/// generated files cannot freeze the page.
+pub(crate) const TEMPLATES_SHOWN: usize = 50;
+
 /// The templates on offer, shipped first.
 pub(crate) fn templates(cx: &App) -> Vec<Entry> {
     cx.try_global::<Pipelines>()
