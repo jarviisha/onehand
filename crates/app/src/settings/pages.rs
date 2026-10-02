@@ -379,24 +379,69 @@ fn unattended_section(handle: &Entity<Shell>, cx: &App) -> AnyElement {
         div()
             .v_flex()
             .gap_3()
-            .children(choices.into_iter().map(|(idx, name, on)| {
-                let shell = handle.clone();
+            .children(choices.into_iter().map(|choice| {
+                let (idx, shell, approve) = (choice.idx, handle.clone(), handle.clone());
+                let check = handle.read(cx).check_input(&choice.root).cloned();
                 // The switch sets no cursor of its own, and an arrow over a
                 // control that acts reads as one that does not. Held to its own
                 // width, so the empty space to the right of the name is not a
                 // target.
-                div().h_flex().child(
-                    div().flex_none().cursor_pointer().child(
-                        Switch::new(("unattended", idx))
-                            .checked(on)
-                            .label(name)
-                            .on_click(move |_: &bool, window: &mut Window, cx: &mut App| {
-                                shell.update(cx, |shell, cx| {
-                                    shell.toggle_unattended(idx, window, cx)
-                                });
-                            }),
-                    ),
-                )
+                div()
+                    .v_flex()
+                    .gap_1()
+                    .child(
+                        div().h_flex().child(
+                            div().flex_none().cursor_pointer().child(
+                                Switch::new(("unattended", idx))
+                                    .checked(choice.on)
+                                    .label(choice.name)
+                                    .on_click(move |_: &bool, window: &mut Window, cx: &mut App| {
+                                        shell.update(cx, |shell, cx| {
+                                            shell.toggle_unattended(idx, window, cx)
+                                        });
+                                    }),
+                            ),
+                        ),
+                    )
+                    // How this project's runs are gated, under its switch: a
+                    // run picked by hand is gated the same way, switch or not.
+                    .child(
+                        div()
+                            .v_flex()
+                            .gap_1()
+                            .pl_4()
+                            .child(
+                                div().h_flex().child(
+                                    div().flex_none().cursor_pointer().child(
+                                        Switch::new(("approve-plans", idx))
+                                            .checked(choice.approve_plans)
+                                            .label("Approve plans before work")
+                                            .on_click(
+                                                move |_: &bool, window: &mut Window, cx: &mut App| {
+                                                    approve.update(cx, |shell, cx| {
+                                                        shell.toggle_approve_plans(idx, window, cx)
+                                                    });
+                                                },
+                                            ),
+                                    ),
+                                ),
+                            )
+                            .children(check.map(|check| {
+                                div()
+                                    .v_flex()
+                                    .gap_0p5()
+                                    .child(
+                                        div()
+                                            .text_xs()
+                                            .text_color(cx.theme().muted_foreground)
+                                            .child(
+                                                "Check command, run by onehand on a run's \
+                                                 commits before its pull request",
+                                            ),
+                                    )
+                                    .child(Input::new(&check))
+                            })),
+                    )
             })),
         cx,
     ))

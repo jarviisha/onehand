@@ -40,7 +40,7 @@ mod row;
 mod session;
 mod workspace;
 use project::folder_row;
-pub use project::{pick_item, unattended_item};
+pub use project::{approve_item, pick_item, unattended_item};
 use row::KeyedMenu;
 use row::{rail_row, rail_row_marked};
 use session::session_rows;

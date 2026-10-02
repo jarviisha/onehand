@@ -216,6 +216,9 @@ pub struct Shell {
     held_commands: std::collections::HashSet<&'static str>,
     /// The workspace-rename field.
     workspace_name: Entity<InputState>,
+    /// Each project's check command field in Settings, by root, made as
+    /// Settings opens.
+    check_inputs: std::collections::HashMap<std::path::PathBuf, Entity<InputState>>,
     /// The session whose name is being edited, if any.
     ///
     /// By uid, not by position: the rename outlives its own dialog frame, and a

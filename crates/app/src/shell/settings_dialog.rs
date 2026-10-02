@@ -1,9 +1,13 @@
 use super::Shell;
 use crate::settings::{AgentCheck, AgentDraft, DraftShift, SettingsPage};
 use crate::state::Shared;
-use gpui::{App, BorrowAppContext, Context, Entity, ParentElement, Window, WindowAppearance};
+use gpui::{
+    App, AppContext as _, BorrowAppContext, Context, Entity, ParentElement, Window,
+    WindowAppearance,
+};
 use gpui_component::button::ButtonVariants as _;
 use gpui_component::dialog::{DialogClose, DialogFooter};
+use gpui_component::input::{InputEvent, InputState};
 use gpui_component::notification::Notification;
 use gpui_component::{Theme, ThemeMode, WindowExt as _};
 use onehand_core::config::{AgentSpec, AppConfig, Appearance};
@@ -29,7 +33,63 @@ impl Shell {
         self.keymap_editor
             .update(cx, |editor, _| editor.forget_note());
         self.settings_focus.focus(window, cx);
+        self.make_check_inputs(window, cx);
         cx.notify();
+    }
+
+    /// A check command field for every project that has none yet. Each edit
+    /// is written to its project and saved, debounced, as the name is: there
+    /// is no Save button beside it.
+    fn make_check_inputs(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let roots: Vec<_> = self
+            .window
+            .workspace
+            .roots
+            .iter()
+            .filter(|root| !root.transient && !self.check_inputs.contains_key(&root.path))
+            .map(|root| (root.path.clone(), root.check.clone().unwrap_or_default()))
+            .collect();
+        for (path, check) in roots {
+            let input = cx.new(|cx| {
+                InputState::new(window, cx)
+                    .placeholder("None: the check step is skipped")
+                    .default_value(check)
+            });
+            let at = path.clone();
+            cx.subscribe_in(
+                &input,
+                window,
+                move |shell: &mut Self, state, event: &InputEvent, _, cx| {
+                    if !matches!(event, InputEvent::Change) {
+                        return;
+                    }
+                    let typed = state.read(cx).value().trim().to_string();
+                    let check = (!typed.is_empty()).then_some(typed);
+                    let Some(root) = shell
+                        .window
+                        .workspace
+                        .roots
+                        .iter_mut()
+                        .find(|r| r.path == at)
+                    else {
+                        return;
+                    };
+                    if root.check != check {
+                        root.check = check;
+                        shell.workspace_note_wanted = true;
+                        shell.save_workspace_soon(cx);
+                    }
+                },
+            )
+            .detach();
+            self.check_inputs.insert(path, input);
+        }
+    }
+
+    /// The check command field for the project at `root`, once Settings has
+    /// made it.
+    pub fn check_input(&self, root: &std::path::Path) -> Option<&Entity<InputState>> {
+        self.check_inputs.get(root)
     }
 
     /// Close Settings, unless that would throw away something not saved.

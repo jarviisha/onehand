@@ -75,6 +75,19 @@ pub fn unattended_item(
         .on_click(click)
 }
 
+/// The menu entry that makes a project's runs wait for their plan to be
+/// approved, ticked while they do. Beside [`unattended_item`] in both of a
+/// project's menus.
+pub fn approve_item(
+    on: bool,
+    click: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static,
+) -> PopupMenuItem {
+    crate::controls::menu_item("Approve plans before work")
+        .icon(Icon::new(IconName::CircleCheck))
+        .checked(on)
+        .on_click(click)
+}
+
 /// What a project row says about unattended runs.
 #[derive(Debug, PartialEq)]
 pub(super) struct AutoStatus {
@@ -182,12 +195,14 @@ fn project_menu(
         pinned,
         is_repo,
         unattended,
+        approve_plans,
     }: ProjectFacts,
     shell: WeakEntity<Shell>,
 ) -> impl Fn(PopupMenu, &mut Window, &mut App) -> PopupMenu + use<> {
     move |menu, _, cx: &mut App| {
         let danger = crate::theme::status_ink(cx).danger;
-        let (pin, auto, pick, start, split, terminal, copy, refresh, remove) = (
+        let (pin, auto, approve, pick, start, split, terminal, copy, refresh, remove) = (
+            shell.clone(),
             shell.clone(),
             shell.clone(),
             shell.clone(),
@@ -217,6 +232,15 @@ fn project_menu(
                     shell.toggle_unattended(root_idx, window, cx);
                 })
                 .ok();
+            }))
+        })
+        .when_some(approve_plans, |menu, on| {
+            menu.item(approve_item(on, move |_, window, cx: &mut App| {
+                approve
+                    .update(cx, |shell: &mut Shell, cx| {
+                        shell.toggle_approve_plans(root_idx, window, cx);
+                    })
+                    .ok();
             }))
         })
         .when(is_repo && unattended.is_some(), |menu| {

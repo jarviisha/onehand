@@ -184,6 +184,9 @@ pub struct ProjectFacts {
     /// switch is not offered at all, which is a run's own worktree: not a
     /// project anybody chose, and one no run ever searches.
     pub unattended: Option<bool>,
+    /// Whether its runs wait for their plan to be approved, offered wherever
+    /// the switch above is.
+    pub approve_plans: Option<bool>,
 }
 
 impl ProjectFacts {
@@ -196,6 +199,7 @@ impl ProjectFacts {
             pinned: root.pinned,
             is_repo,
             unattended: (!root.transient).then_some(root.unattended),
+            approve_plans: (!root.transient).then_some(root.approve_plans),
         }
     }
 }
@@ -655,6 +659,8 @@ pub enum ProjectAction {
     TogglePin,
     /// Let its labelled issues be worked unattended, or stop that.
     ToggleUnattended,
+    /// Make its runs wait for their plan to be approved, or stop that.
+    ToggleApprovePlans,
     /// Open its open issues, to pick one to work now.
     PickIssue,
     /// Split it into a second checkout. Offered on repositories only.

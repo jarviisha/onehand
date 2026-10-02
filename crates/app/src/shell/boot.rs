@@ -124,6 +124,9 @@ impl Shell {
                         match action {
                             P::TogglePin => shell.toggle_pin(root_idx, window, cx),
                             P::ToggleUnattended => shell.toggle_unattended(root_idx, window, cx),
+                            P::ToggleApprovePlans => {
+                                shell.toggle_approve_plans(root_idx, window, cx)
+                            }
                             P::PickIssue => shell.begin_pick(root_idx, cx),
                             P::Worktree => shell.begin_worktree(root_idx, window, cx),
                             P::RenameBranch => shell.begin_branch_rename(window, cx),
@@ -429,6 +432,7 @@ impl Shell {
             workspace_note_wanted: false,
             held_commands: Default::default(),
             workspace_name,
+            check_inputs: Default::default(),
             renaming: None,
             rename_input: cx.new(|cx| {
                 InputState::new(window, cx).placeholder("What this conversation is about")

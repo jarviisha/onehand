@@ -6,6 +6,17 @@ use gpui_component::notification::Notification;
 use onehand_core::config::AgentSpec;
 use std::path::{Path, PathBuf};
 
+/// One project as Settings lists it for unattended runs.
+pub struct RunChoice {
+    pub idx: usize,
+    pub name: SharedString,
+    /// Its labelled issues are worked.
+    pub on: bool,
+    /// Its runs wait for their plan to be approved.
+    pub approve_plans: bool,
+    pub root: PathBuf,
+}
+
 impl Shell {
     /// Turn unattended runs on or off for a project, from either of the places
     /// that offer it — the project's menu and Settings.
@@ -50,17 +61,47 @@ impl Shell {
         cx.notify();
     }
 
+    /// Make a project's runs wait for their plan to be approved, or stop
+    /// that, from either of the project's menus or Settings. Read by a run at
+    /// each plan it writes, so it counts from the next one.
+    pub fn toggle_approve_plans(
+        &mut self,
+        root_idx: usize,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if self
+            .window
+            .workspace
+            .roots
+            .get(root_idx)
+            .is_none_or(|root| root.transient)
+        {
+            return;
+        }
+        self.window.workspace.toggle_approve_plans(root_idx);
+        self.save_workspace(window, cx);
+        self.sync_project_facts(cx);
+        cx.notify();
+    }
+
     /// Every project the Settings list offers the switch for: name, whether it
     /// is on, and its index. A run's own worktree is left out — it is not a
     /// project anybody chose, and it goes when the run does.
-    pub fn unattended_choices(&self) -> Vec<(usize, SharedString, bool)> {
+    pub fn unattended_choices(&self) -> Vec<RunChoice> {
         self.window
             .workspace
             .roots
             .iter()
             .enumerate()
             .filter(|(_, root)| !root.transient)
-            .map(|(i, root)| (i, SharedString::from(root.label.clone()), root.unattended))
+            .map(|(idx, root)| RunChoice {
+                idx,
+                name: SharedString::from(root.label.clone()),
+                on: root.unattended,
+                approve_plans: root.approve_plans,
+                root: root.path.clone(),
+            })
             .collect()
     }
 

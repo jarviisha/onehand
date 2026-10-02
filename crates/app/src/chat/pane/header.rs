@@ -702,6 +702,7 @@ fn project_menu(
         pinned,
         is_repo,
         unattended,
+        approve_plans,
     }: ProjectFacts,
     pane: Entity<ChatPane>,
 ) -> impl Fn(
@@ -731,6 +732,12 @@ fn project_menu(
             menu.item(crate::rail::unattended_item(
                 on,
                 act(ProjectAction::ToggleUnattended, pane.clone()),
+            ))
+        })
+        .when_some(approve_plans, |menu, on| {
+            menu.item(crate::rail::approve_item(
+                on,
+                act(ProjectAction::ToggleApprovePlans, pane.clone()),
             ))
         })
         .when(is_repo && unattended.is_some(), |menu| {
