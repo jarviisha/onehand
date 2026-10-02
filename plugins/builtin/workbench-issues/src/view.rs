@@ -102,6 +102,9 @@ pub(crate) struct IssuesView {
     /// The conversations with a live session in this window, by the agent's
     /// session id: an issue whose history names one of them is being worked.
     live: Vec<String>,
+    /// The projects that are linked worktrees, each with the same folder in
+    /// its main checkout, whose issues it shares.
+    homes: HashMap<PathBuf, PathBuf>,
 }
 
 /// One project's issues and what is open among them.
@@ -185,6 +188,7 @@ impl IssuesView {
             label: None,
             ask,
             live: Vec::new(),
+            homes: HashMap::new(),
             _sync_every: cx.spawn(async move |view, cx| {
                 let every = (SYNC_EVERY.as_secs() / TICK.as_secs()).max(1);
                 for tick in 1u64.. {
@@ -243,10 +247,38 @@ impl IssuesView {
         cx.notify();
     }
 
+    /// Take which projects are worktrees, and of which main checkout. A
+    /// project whose answer changed keeps its issues somewhere else now, so
+    /// what was read for it is dropped and the one on screen is read again.
+    pub(crate) fn set_git(
+        &mut self,
+        git: &HashMap<PathBuf, onehand_core::gitstat::GitStatus>,
+        cx: &mut Context<Self>,
+    ) {
+        let homes: HashMap<PathBuf, PathBuf> = git
+            .iter()
+            .filter_map(|(root, git)| Some((root.clone(), git.home.clone()?)))
+            .collect();
+        if homes == self.homes {
+            return;
+        }
+        let moved = |root: &PathBuf| homes.get(root) != self.homes.get(root);
+        self.roots.retain(|root, _| !moved(root));
+        self.stale |= self.root.as_ref().is_some_and(moved);
+        self.homes = homes;
+        cx.notify();
+    }
+
+    /// Where `root`'s issues are kept, if this workspace keeps any.
+    fn file_of(&self, root: &Path) -> Option<PathBuf> {
+        let home = self.homes.get(root).map(PathBuf::as_path);
+        Some(issues::file_for(self.storage.as_deref()?, root, home))
+    }
+
     /// The active project's file, if this workspace keeps one.
     fn file(&self) -> Option<(PathBuf, PathBuf)> {
         let root = self.root.clone()?;
-        let file = issues::file_for(self.storage.as_deref()?, &root);
+        let file = self.file_of(&root)?;
         Some((root, file))
     }
 
@@ -306,10 +338,9 @@ impl IssuesView {
     /// comes back for a project needs: the one on screen may have changed
     /// while it ran.
     fn sync_root(&mut self, root: PathBuf, now: bool, cx: &mut Context<Self>) {
-        let Some(storage) = self.storage.as_deref() else {
+        let Some(file) = self.file_of(&root) else {
             return;
         };
-        let file = issues::file_for(storage, &root);
         let Some(state) = self.roots.get_mut(&root) else {
             return;
         };

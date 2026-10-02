@@ -485,15 +485,19 @@ pub fn open_across(files: Vec<(PathBuf, Issues)>, cap: usize) -> Across {
 }
 
 /// Where the issues of the project at `root` are kept, in the workspace whose
-/// storage directory is `storage`.
+/// storage directory is `storage`. A root in a linked worktree keeps them with
+/// the same folder in the main checkout, its `home`
+/// ([`crate::gitstat::GitStatus::home`]): the worktree is a second checkout of
+/// that project, whose issues are the ones being worked in it.
 ///
 /// Named by the project's folder and a digest of its whole path, as a
-/// workspace's own storage folder is: two checkouts of one repository are two
+/// workspace's own storage folder is: two clones of one repository are two
 /// projects with one folder name.
-pub fn file_for(storage: &Path, root: &Path) -> PathBuf {
+pub fn file_for(storage: &Path, root: &Path, home: Option<&Path>) -> PathBuf {
+    let project = home.unwrap_or(root);
     storage
         .join("issues")
-        .join(format!("{}.json", crate::workspace::stem_for(root)))
+        .join(format!("{}.json", crate::workspace::stem_for(project)))
 }
 
 /// The issues kept in `file`. A file that is not there yet is a project with
@@ -838,11 +842,14 @@ mod tests {
     #[test]
     fn the_file_is_per_project_under_the_workspace_storage() {
         let storage = Path::new("/store");
-        let a = file_for(storage, Path::new("/code/app"));
-        let b = file_for(storage, Path::new("/other/app"));
+        let a = file_for(storage, Path::new("/code/app"), None);
+        let b = file_for(storage, Path::new("/other/app"), None);
         assert!(a.starts_with("/store/issues"));
-        assert_ne!(a, b, "two checkouts with one folder name are two projects");
-        assert_eq!(a, file_for(storage, Path::new("/code/app")));
+        assert_ne!(a, b, "two clones with one folder name are two projects");
+        assert_eq!(a, file_for(storage, Path::new("/code/app"), None));
+        // A worktree of the first keeps its issues with it.
+        let home = Some(Path::new("/code/app"));
+        assert_eq!(a, file_for(storage, Path::new("/code/app-fix"), home));
     }
 
     #[test]

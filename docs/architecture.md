@@ -919,7 +919,12 @@ see the rail, below.
   the draft check (a title is required), labels as comma-separated words. **Kept in the workspace's
   storage directory, one file per project** (`issues/<folder>-<digest>.json`, named by
   `workspace::stem_for` as the workspace's own folder is), never in the checkout — a file there would
-  leave a clean repository dirty and travel with every clone. So **an unbound workspace keeps no
+  leave a clean repository dirty and travel with every clone. **A linked worktree shares its main
+  checkout's file**: `gitstat::read_blocking` finds the same folder in the main checkout
+  (`GitStatus::home`, from `git rev-parse --git-common-dir`), and `issues::file_for` names the file
+  by that path instead. The Issues mode learns it from `Request::SetGit` and the shell from its own
+  git map (`Shell::issues_file`). Until the first git read lands, a worktree is read as its own
+  project. A worktree of a bare repository has no main checkout and keeps a file of its own. So **an unbound workspace keeps no
   issues**, and the mode says so rather than offering a form whose work would be thrown away; it
   learns where to write from `Request::SetStorage`, told once when the panel is built and again on
   bind and unbind. **Every change is one read-change-write** (`issues::update_blocking`) under a

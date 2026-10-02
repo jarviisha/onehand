@@ -53,6 +53,11 @@ pub struct GitStatus {
     pub changed: usize,
     /// Per-path change state, keyed by repo-relative path.
     pub entries: HashMap<PathBuf, FileChange>,
+    /// For a root in a linked worktree, the same folder in the repository's
+    /// main checkout: the project whose keeping (its issues) this one shares,
+    /// since a worktree is a second checkout of that project rather than a
+    /// project of its own. `None` in the main checkout itself.
+    pub home: Option<PathBuf>,
 }
 
 impl GitStatus {
@@ -143,6 +148,7 @@ pub(crate) fn parse_porcelain(out: &str) -> GitStatus {
         branch,
         changed,
         entries,
+        home: None,
     }
 }
 
@@ -168,6 +174,7 @@ pub(crate) fn rebase_to_root(status: GitStatus, prefix: &str) -> GitStatus {
         // includes changes the panel can't show would read as a bug.
         changed: entries.len(),
         entries,
+        home: status.home,
     }
 }
 
@@ -192,11 +199,39 @@ pub fn read_blocking(root: &Path) -> Option<GitStatus> {
     let out = git(&["status", "--porcelain=v2", "--branch", "-z"])?;
     let status = parse_porcelain(&String::from_utf8_lossy(&out.stdout));
     // Porcelain paths are relative to the repo *toplevel*; the root may be a
-    // subdir of it. Fetch the offset and re-base.
-    let prefix = git(&["rev-parse", "--show-prefix"])
-        .map(|out| String::from_utf8_lossy(&out.stdout).trim().to_string())
-        .unwrap_or_default();
-    Some(rebase_to_root(status, &prefix))
+    // subdir of it. Fetch the offset and re-base. The same call says where
+    // the repository's main checkout is, one line each in the order asked.
+    let out = git(&[
+        "rev-parse",
+        "--path-format=absolute",
+        "--git-common-dir",
+        "--show-toplevel",
+        "--show-prefix",
+    ])
+    .map(|out| String::from_utf8_lossy(&out.stdout).into_owned())
+    .unwrap_or_default();
+    let mut lines = out.lines();
+    let (common, top, prefix) = (
+        lines.next().unwrap_or_default(),
+        lines.next().unwrap_or_default(),
+        lines.next().unwrap_or_default().trim(),
+    );
+    let mut status = rebase_to_root(status, prefix);
+    status.home = home_of(Path::new(common), Path::new(top), prefix);
+    Some(status)
+}
+
+/// Where a root at `prefix` in the checkout `top` sits in the repository's
+/// main checkout, given the repository's common git directory `common`, when
+/// `top` is a linked worktree. The main checkout is the folder holding
+/// `common`, so a repository whose git directory is not a `.git` inside a
+/// checkout (a bare one) has no main checkout to share with, and is `None`.
+pub(crate) fn home_of(common: &Path, top: &Path, prefix: &str) -> Option<PathBuf> {
+    if common.file_name()? != ".git" {
+        return None;
+    }
+    let main = common.parent()?;
+    (main != top).then(|| main.join(prefix.trim_end_matches('/')))
 }
 
 /// Async wrapper over [`read_blocking`] for callers already on tokio.
@@ -228,6 +263,24 @@ u UU N... 100644 100644 100644 100644 abc def ghi conflict.rs\0\
         assert_eq!(st.branch, "main");
         assert_eq!(st.changed, 4);
         assert_eq!(st.label(), "main · 4 changed");
+    }
+
+    #[test]
+    fn a_linked_worktree_is_at_home_in_the_main_checkout() {
+        let common = Path::new("/code/app/.git");
+        assert_eq!(home_of(common, Path::new("/code/app"), ""), None);
+        assert_eq!(
+            home_of(common, Path::new("/code/app-fix"), ""),
+            Some(PathBuf::from("/code/app"))
+        );
+        assert_eq!(
+            home_of(common, Path::new("/code/app-fix"), "crates/core/"),
+            Some(PathBuf::from("/code/app/crates/core"))
+        );
+        assert_eq!(
+            home_of(Path::new("/srv/app.git"), Path::new("/code/wt"), ""),
+            None
+        );
     }
 
     #[test]

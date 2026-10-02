@@ -66,6 +66,10 @@ impl WorkbenchMode for Mode {
                 self.view.update(cx, |view, cx| view.mark_stale(cx));
                 true
             }
+            Request::SetGit(git) => {
+                self.view.update(cx, |view, cx| view.set_git(git, cx));
+                true
+            }
             Request::LiveConversations(ids) => {
                 self.view.update(cx, |view, cx| view.set_live(ids, cx));
                 true

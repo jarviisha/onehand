@@ -129,10 +129,16 @@ impl Shell {
         }
     }
 
-    /// Where `root`'s own issues are kept, if this workspace keeps anything.
+    /// Where `root`'s own issues are kept, if this workspace keeps anything:
+    /// with its main checkout's once git has said `root` is a worktree.
     pub fn issues_file(&self, root: &Path) -> Option<PathBuf> {
         let storage = self.window.workspace.storage_dir.as_deref()?;
-        Some(onehand_core::issues::file_for(storage, root))
+        let home = self
+            .window
+            .git
+            .get(root)
+            .and_then(|git| git.home.as_deref());
+        Some(onehand_core::issues::file_for(storage, root, home))
     }
 
     /// Add `dir` as a transient project and start `spec` on it, off screen,
