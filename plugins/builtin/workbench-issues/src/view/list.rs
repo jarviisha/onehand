@@ -502,6 +502,11 @@ impl IssuesView {
         let muted = theme.muted_foreground;
         let conflicted = issue.link.as_ref().is_some_and(|l| l.conflict.is_some());
         let working = super::working_in(issue, &self.live).is_some();
+        // A run on it says its step instead, or that its plan waits for a
+        // person, in the warning ink "decide" wears for the same reason.
+        let run = self
+            .run_on(number)
+            .map(|run| (run.awaiting, run.step.label()));
         let meta = div()
             .h_flex()
             .items_center()
@@ -529,8 +534,23 @@ impl IssuesView {
                 meta.child("·")
                     .child(div().text_color(status_ink(cx).warning).child("decide"))
             })
+            .when_some(run, |meta, (awaiting, step)| match awaiting {
+                true => meta.child("·").child(
+                    div()
+                        .text_color(status_ink(cx).warning)
+                        .child("approve plan"),
+                ),
+                false => meta.child("·").child(
+                    div()
+                        .h_flex()
+                        .items_center()
+                        .gap_0p5()
+                        .child(Icon::new(IconName::Bot).xsmall())
+                        .child(step),
+                ),
+            })
             // One a live session is on, so it is not started a second time.
-            .when(working, |meta| {
+            .when(working && run.is_none(), |meta| {
                 meta.child("·").child(
                     div()
                         .h_flex()

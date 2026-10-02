@@ -14,6 +14,7 @@ use gpui::{
 use gpui_component::menu::{PopupMenu, PopupMenuItem};
 use gpui_component::{ActiveTheme, Icon, IconName, StyledExt};
 use onehand_core::agent::Session;
+use onehand_core::unattended::Step;
 
 /// What a project row says on hover: the whole of everything the row cuts.
 ///
@@ -100,17 +101,41 @@ pub(super) struct AutoStatus {
     pub(super) stuck: bool,
 }
 
+/// Where a run a project's row names stands.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum RunState {
+    /// Working, at this step.
+    Working(Step),
+    /// Standing still on a card it parked.
+    Card,
+    /// Its plan waits for a person to approve it.
+    Approval,
+}
+
+impl RunState {
+    /// Which of two runs on one project the row names: the working one, since
+    /// the older run is usually the waiting one and would hide the run that
+    /// is actually going.
+    fn rank(self) -> u8 {
+        match self {
+            Self::Working(_) => 0,
+            Self::Card => 1,
+            Self::Approval => 2,
+        }
+    }
+}
+
 /// The run a project's row names: one on that project's issues, as how its
-/// issue is shown and whether it is waiting on a card, the working one ahead
-/// of a waiting one. `runs` is each run's project, issue and whether it waits.
+/// issue is shown and where it stands. `runs` is each run's project, issue
+/// and state.
 pub(super) fn run_on<'a>(
-    runs: impl IntoIterator<Item = (&'a std::path::Path, &'a str, bool)>,
+    runs: impl IntoIterator<Item = (&'a std::path::Path, &'a str, RunState)>,
     root: &std::path::Path,
-) -> Option<(&'a str, bool)> {
+) -> Option<(&'a str, RunState)> {
     runs.into_iter()
         .filter(|&(repo, _, _)| repo == root)
-        .map(|(_, number, waiting)| (number, waiting))
-        .min_by_key(|&(_, waiting)| waiting)
+        .map(|(_, number, state)| (number, state))
+        .min_by_key(|&(_, state)| state.rank())
 }
 
 /// What a project row says about unattended runs, or `None` while the project
@@ -128,7 +153,7 @@ pub(super) fn run_on<'a>(
 /// out.
 pub(super) fn auto_status(
     unattended: bool,
-    run: Option<(&str, bool)>,
+    run: Option<(&str, RunState)>,
     label: &str,
     stuck: Option<String>,
 ) -> Option<AutoStatus> {
@@ -138,17 +163,25 @@ pub(super) fn auto_status(
         stuck,
     };
     match (unattended, run, stuck) {
-        (_, Some((n, false)), _) => Some(status(
-            format!("auto · {n}"),
-            format!("Unattended run working on issue {n}"),
+        (_, Some((n, RunState::Working(step))), _) => Some(status(
+            format!("auto · {n} · {}", step.label()),
+            format!(
+                "Unattended run working on issue {n}, at its {} step",
+                step.label()
+            ),
             false,
         )),
         // Said apart from working: a run standing still on a card is waiting
         // for the person reading this, and "working" would tell them there is
         // nothing to do.
-        (_, Some((n, true)), _) => Some(status(
+        (_, Some((n, RunState::Card)), _) => Some(status(
             format!("auto · {n} waiting"),
             format!("Unattended run on issue {n} is waiting for an answer"),
+            false,
+        )),
+        (_, Some((n, RunState::Approval)), _) => Some(status(
+            format!("auto · {n} · plan"),
+            "Waiting for its plan to be approved".to_string(),
             false,
         )),
         (false, None, _) => None,
@@ -371,9 +404,21 @@ pub(super) fn folder_row(
     // A working run is named ahead of a waiting one, since a project can hold
     // both and the older, usually the waiting one, would otherwise hide it.
     let runs = crate::unattended::live_runs(cx);
+    let approvals = crate::unattended::awaiting_approval(cx);
     let run = run_on(
         runs.iter()
-            .map(|run| (run.repo.as_path(), run.name.as_str(), run.waiting.is_some())),
+            .map(|run| {
+                let state = match run.waiting {
+                    Some(_) => RunState::Card,
+                    None => RunState::Working(run.step),
+                };
+                (run.repo.as_path(), run.name.as_str(), state)
+            })
+            .chain(
+                approvals
+                    .iter()
+                    .map(|a| (a.repo.as_path(), a.name.as_str(), RunState::Approval)),
+            ),
         &root.path,
     );
     let auto = auto_status(

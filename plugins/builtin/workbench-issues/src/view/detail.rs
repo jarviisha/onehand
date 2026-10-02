@@ -16,6 +16,17 @@ use onehand_core::issues::{LocalIssue, sync};
 use onehand_plugin_host::{action, menu_below, menu_item, status_ink};
 use std::path::Path;
 
+/// What holds an issue, which decides what its detail offers in place of
+/// starting a session on it.
+pub(super) enum Held {
+    /// An unattended run whose plan waits for a person to approve it.
+    Plan,
+    /// A live session, by the conversation the agent named.
+    Session(String),
+    /// An unattended run between its sessions or at work in one elsewhere.
+    Run,
+}
+
 /// One issue, read: how it is named and its title with what can be done to it,
 /// its labels, and its body.
 pub(super) fn issue_view(
@@ -23,7 +34,7 @@ pub(super) fn issue_view(
     issue: &LocalIssue,
     body: Option<(Entity<TextViewState>, Vec<String>)>,
     publish_to: Option<&'static str>,
-    working: Option<String>,
+    held: Option<Held>,
     window: &mut Window,
     cx: &mut Context<IssuesView>,
 ) -> AnyElement {
@@ -57,8 +68,32 @@ pub(super) fn issue_view(
         // A session still going on it is where the work is: a second one
         // started here would be two agents editing one checkout from two
         // conversations.
-        .map(|actions| match working {
-            Some(session) => actions.child(
+        .map(|actions| match held {
+            // A plan waiting for a person: this is where it is approved or
+            // sent back. Its run has no session meanwhile.
+            Some(Held::Plan) => actions
+                .child(
+                    action("issue-revise-plan")
+                        .xsmall()
+                        .ghost()
+                        .label("Revise…")
+                        .tooltip("Send the plan back with what to change")
+                        .on_click(cx.listener(move |view, _: &ClickEvent, window, cx| {
+                            view.open_revise(number, window, cx)
+                        })),
+                )
+                .child(
+                    action("issue-approve-plan")
+                        .xsmall()
+                        .primary()
+                        .icon(Icon::new(IconName::CircleCheck))
+                        .label("Approve plan")
+                        .tooltip("Let the run go on from its plan to the change")
+                        .on_click(cx.listener(move |view, _: &ClickEvent, window, cx| {
+                            view.approve_plan(number, window, cx)
+                        })),
+                ),
+            Some(Held::Session(session)) => actions.child(
                 action("issue-open-working")
                     .xsmall()
                     .ghost()
@@ -69,6 +104,9 @@ pub(super) fn issue_view(
                         view.open_session(session.clone(), window, cx)
                     })),
             ),
+            // A run holds the issue between its sessions, on its checks: a
+            // session started here would work the same branch beside it.
+            Some(Held::Run) => actions,
             None if open => actions.child(work_menu(root, number, cx)),
             None => actions,
         })

@@ -701,10 +701,24 @@ pub fn live_runs(cx: &App) -> Vec<LiveRun> {
         .unwrap_or_default()
 }
 
-/// Every run waiting for a person to approve its plan, oldest first, as
-/// `(repo, name, title)`: they have no session, so [`live_runs`] does not list
-/// them.
-pub fn awaiting_approval(cx: &App) -> Vec<(PathBuf, String, String, u64)> {
+/// A run whose plan waits for a person to approve it, as the rail and the
+/// workspace page read it. It has no session, so [`live_runs`] does not list
+/// it.
+pub struct Approval {
+    /// The project the issue was found in.
+    pub repo: PathBuf,
+    /// How its issue is shown: the forge's number, or *Draft*.
+    pub name: String,
+    pub title: String,
+    /// The number its issue is filed under where it lives.
+    pub number: u64,
+    /// Its issue is kept in onehand, so the Issues panel lists it and can
+    /// approve it.
+    pub kept_here: bool,
+}
+
+/// Every run waiting for its plan to be approved, oldest first.
+pub fn awaiting_approval(cx: &App) -> Vec<Approval> {
     Shared::global(cx)
         .unattended
         .as_ref()
@@ -714,12 +728,16 @@ pub fn awaiting_approval(cx: &App) -> Vec<(PathBuf, String, String, u64)> {
                 .filter(|p| matches_approval(p.phase))
                 .map(|p| {
                     let c = &p.claimed;
-                    (
-                        c.repo.clone(),
-                        c.tracker.shown(&c.issue),
-                        c.issue.title_text().to_string(),
-                        c.issue.number,
-                    )
+                    Approval {
+                        repo: c.repo.clone(),
+                        name: c.tracker.shown(&c.issue),
+                        title: c.issue.title_text().to_string(),
+                        number: c.issue.number,
+                        kept_here: match c.tracker {
+                            Tracker::Local(_) | Tracker::Synced { .. } => true,
+                            Tracker::Forge(_) => false,
+                        },
+                    }
                 })
                 .collect()
         })

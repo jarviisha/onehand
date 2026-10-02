@@ -1,11 +1,12 @@
 use super::RailTab;
-use super::project::{auto_status, project_hint, run_on, runs_more_than_one_agent};
+use super::project::{RunState, auto_status, project_hint, run_on, runs_more_than_one_agent};
 use super::row::project_key;
 use super::session::{LABEL_SHAPE_CAP, session_label, signal_hint};
 use super::workspace::new_session_hint;
 use crate::chat::pane::SessionSignal;
 use gpui::SharedString;
 use onehand_core::config::PanelLayout;
+use onehand_core::unattended::Step;
 use std::path::Path;
 
 /// A project's row has to be named by the project, because the library
@@ -174,15 +175,21 @@ fn a_project_says_whether_its_issues_are_worked_and_which_one_is() {
     let on = auto_status(true, None, "auto", None).unwrap();
     assert_eq!(on.badge.as_ref(), "auto");
     assert!(on.line.contains("`auto`") && !on.stuck);
-    let working = auto_status(true, Some(("#46", false)), "auto", None).unwrap();
-    assert_eq!(working.badge.as_ref(), "auto · #46");
-    assert!(working.line.contains("#46") && working.line.contains("working"));
+    let working = RunState::Working(Step::Implement);
+    let shown = auto_status(true, Some(("#46", working)), "auto", None).unwrap();
+    assert_eq!(shown.badge.as_ref(), "auto · #46 · Implement");
+    assert!(shown.line.contains("#46") && shown.line.contains("working"));
+    assert!(shown.line.contains("Implement step"));
     // A run waiting on a card is not said to be working.
-    let waiting = auto_status(true, Some(("#46", true)), "auto", None).unwrap();
+    let waiting = auto_status(true, Some(("#46", RunState::Card)), "auto", None).unwrap();
     assert_eq!(waiting.badge.as_ref(), "auto · #46 waiting");
     assert!(waiting.line.contains("waiting") && !waiting.line.contains("working"));
+    // Nor is one whose plan waits to be approved.
+    let plan = auto_status(true, Some(("#46", RunState::Approval)), "auto", None).unwrap();
+    assert_eq!(plan.badge.as_ref(), "auto · #46 · plan");
+    assert_eq!(plan.line.as_ref(), "Waiting for its plan to be approved");
     // Switched off mid-run: the run already going is still said.
-    assert!(auto_status(false, Some(("#46", false)), "auto", None).is_some());
+    assert!(auto_status(false, Some(("#46", working)), "auto", None).is_some());
     // On with nothing possible is stuck, and says why in its own words.
     let elsewhere = auto_status(
         true,
@@ -205,14 +212,18 @@ fn a_project_says_whether_its_issues_are_worked_and_which_one_is() {
 #[test]
 fn a_project_row_names_its_own_run_and_prefers_the_working_one() {
     let (here, there) = (std::path::Path::new("/p"), std::path::Path::new("/q"));
-    assert_eq!(run_on([(there, "#9", false)], here), None);
+    let working = RunState::Working(Step::Plan);
+    assert_eq!(run_on([(there, "#9", working)], here), None);
     assert_eq!(
-        run_on([(here, "#3", true), (there, "#9", false)], here),
-        Some(("#3", true))
+        run_on([(here, "#3", RunState::Card), (there, "#9", working)], here),
+        Some(("#3", RunState::Card))
     );
     assert_eq!(
-        run_on([(here, "#3", true), (here, "#5", false)], here),
-        Some(("#5", false))
+        run_on(
+            [(here, "#3", RunState::Approval), (here, "#5", working)],
+            here
+        ),
+        Some(("#5", working))
     );
 }
 

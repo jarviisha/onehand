@@ -278,6 +278,38 @@ impl ChatPane {
                 false => working.push(row),
             }
         }
+        // A plan waiting for approval is approved from the Issues panel, which
+        // is where its row leads. One on an issue that lives only on a forge
+        // is not listed there, so its row leads nowhere and says so.
+        for (i, run) in crate::unattended::awaiting_approval(cx)
+            .into_iter()
+            .enumerate()
+        {
+            let about = match run.kept_here {
+                true => format!("Plan to approve: {}", run.title),
+                false => format!("Plan waiting, with nowhere to approve it: {}", run.title),
+            };
+            let row = crate::dialogs::issue_row(
+                ("workspace-approval", i),
+                run.name,
+                about,
+                &[],
+                page.label_of(&run.repo),
+                cx,
+            );
+            let (root, number) = (run.repo, run.number);
+            waiting.push(match run.kept_here {
+                true => row
+                    .on_click(cx.listener(move |_: &mut Self, _, _, cx| {
+                        cx.emit(ChatPaneEvent::OpenIssue {
+                            root: root.clone(),
+                            number,
+                        });
+                    }))
+                    .into_any_element(),
+                false => row.into_any_element(),
+            });
+        }
         // A session's row leads with the rail's mark, so the same dot means the
         // same thing in both places, and names the state in words at the end.
         // An idle session that has been read carries no signal and no row.

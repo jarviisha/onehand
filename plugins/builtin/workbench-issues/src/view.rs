@@ -20,7 +20,7 @@ use gpui_component::{
 };
 use onehand_core::connector::{self, Connector};
 use onehand_core::issues::{self, Draft, Issues, LocalIssue, sync};
-use onehand_plugin_host::{Ask, Request, action, hint, status_line};
+use onehand_plugin_host::{Ask, IssueRun, Request, action, hint, status_line};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
@@ -28,7 +28,7 @@ use std::time::Duration;
 mod detail;
 mod list;
 mod mentions;
-use detail::{form_view, issue_view};
+use detail::{Held, form_view, issue_view};
 use list::Showing;
 
 /// How often a project kept in step with its forge is synced while it is the
@@ -102,6 +102,8 @@ pub(crate) struct IssuesView {
     /// The conversations with a live session in this window, by the agent's
     /// session id: an issue whose history names one of them is being worked.
     live: Vec<String>,
+    /// The unattended runs that have not ended on issues kept here.
+    runs: Vec<IssueRun>,
     /// The projects that are linked worktrees, each with the same folder in
     /// its main checkout, whose issues it shares.
     homes: HashMap<PathBuf, PathBuf>,
@@ -188,6 +190,7 @@ impl IssuesView {
             label: None,
             ask,
             live: Vec::new(),
+            runs: Vec::new(),
             homes: HashMap::new(),
             _sync_every: cx.spawn(async move |view, cx| {
                 let every = (SYNC_EVERY.as_secs() / TICK.as_secs()).max(1);
@@ -240,6 +243,20 @@ impl IssuesView {
     pub(crate) fn set_live(&mut self, ids: &[String], cx: &mut Context<Self>) {
         self.live = ids.to_vec();
         cx.notify();
+    }
+
+    pub(crate) fn set_runs(&mut self, runs: &[IssueRun], cx: &mut Context<Self>) {
+        self.runs = runs.to_vec();
+        cx.notify();
+    }
+
+    /// The unattended run on issue `number` of the project on screen, if one
+    /// has not ended.
+    fn run_on(&self, number: u64) -> Option<&IssueRun> {
+        let root = self.root.as_deref()?;
+        self.runs
+            .iter()
+            .find(|run| run.repo == root && run.number == number)
     }
 
     pub(crate) fn mark_stale(&mut self, cx: &mut Context<Self>) {
@@ -771,8 +788,14 @@ impl IssuesView {
             .filter(|_| issue.link.is_none())
             .map(|forge| forge.name());
         let body = self.parsed_body(root, &issue, cx);
-        let working = working_in(&issue, &self.live).map(str::to_string);
-        issue_view(root, &issue, body, publish_to, working, window, cx)
+        let run = self.run_on(issue.number).map(|run| run.awaiting);
+        let held = match (run, working_in(&issue, &self.live)) {
+            (Some(true), _) => Some(Held::Plan),
+            (_, Some(session)) => Some(Held::Session(session.to_string())),
+            (Some(false), None) => Some(Held::Run),
+            (None, None) => None,
+        };
+        issue_view(root, &issue, body, publish_to, held, window, cx)
     }
 
     /// Put a request to the Workbench about the project on screen, once this
@@ -883,6 +906,84 @@ impl IssuesView {
                                 .icon(Icon::new(IconName::Bot))
                                 .label("Start session")
                                 .on_click(start),
+                        ),
+                )
+        });
+    }
+
+    /// Let the run on issue `number` go on from its plan to the change.
+    fn approve_plan(&mut self, number: u64, window: &mut Window, cx: &mut Context<Self>) {
+        self.ask_later(window, cx, move |ask, root, window, cx| {
+            ask(&Request::ApprovePlan { root, number }, window, cx)
+        });
+    }
+
+    /// Put up the window that sends the plan of the run on issue `number` back
+    /// to be written again, with what to change in it.
+    fn open_revise(&mut self, number: u64, window: &mut Window, cx: &mut Context<Self>) {
+        let note = cx.new(|cx| {
+            TextareaState::new(window, cx).placeholder("What should the plan do differently?")
+        });
+        note.update(cx, |input, cx| input.focus(window, cx));
+        let view = cx.entity();
+        window.open_dialog(cx, move |dialog, _, cx| {
+            let send = {
+                let (view, note) = (view.clone(), note.clone());
+                move |_: &gpui::ClickEvent, window: &mut Window, cx: &mut App| {
+                    let text = note.read(cx).value().trim().to_string();
+                    if text.is_empty() {
+                        window.push_notification("Say what to change in the plan", cx);
+                        return;
+                    }
+                    window.close_dialog(cx);
+                    view.update(cx, |view, cx| {
+                        view.ask_later(window, cx, move |ask, root, window, cx| {
+                            let request = Request::RevisePlan {
+                                root,
+                                number,
+                                note: &text,
+                            };
+                            ask(&request, window, cx)
+                        })
+                    });
+                }
+            };
+            dialog
+                .title("Revise the plan")
+                .child(
+                    div()
+                        .v_flex()
+                        .gap_2()
+                        .child(
+                            div()
+                                .text_xs()
+                                .text_color(cx.theme().muted_foreground)
+                                .child(
+                                    "The run writes its plan again in a new session, with this \
+                                     note and the plan it wrote before.",
+                                ),
+                        )
+                        .child(Textarea::new(&note).h(gpui::rems(10.))),
+                )
+                .footer(
+                    div()
+                        .h_flex()
+                        .gap_2()
+                        .w_full()
+                        .justify_end()
+                        .child(
+                            action("issue-revise-cancel")
+                                .small()
+                                .ghost()
+                                .label("Cancel")
+                                .on_click(|_, window, cx| window.close_dialog(cx)),
+                        )
+                        .child(
+                            action("issue-revise-send")
+                                .small()
+                                .primary()
+                                .label("Send back")
+                                .on_click(send),
                         ),
                 )
         });
