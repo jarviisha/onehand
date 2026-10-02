@@ -30,69 +30,58 @@ pub(super) fn issue_view(
     let number = issue.number;
     let open = issue.open;
     let muted = cx.theme().muted_foreground;
-    // The title wraps rather than cutting: it is the one place the whole of
-    // it is read, and what is done to the issue stays to its right.
-    let header =
-        div()
-            .h_flex()
-            .items_start()
-            .gap_2()
-            .w_full()
-            .flex_none()
-            .px_3()
-            .pt_2()
-            .child(
-                div()
-                    .flex_1()
-                    .min_w_0()
-                    .font_semibold()
-                    .child(issue.title.clone()),
-            )
-            .child(
-                div()
-                    .h_flex()
-                    .flex_none()
-                    .items_center()
-                    .gap_1()
-                    .children(publish_to.map(|forge| {
-                        action("issue-publish")
-                            .xsmall()
-                            .ghost()
-                            .label(format!("Publish to {forge}"))
-                            .tooltip("Open it there too, and keep the two in step")
-                            .on_click(cx.listener(move |view, _: &ClickEvent, _, cx| {
-                                view.publish(number, cx)
-                            }))
-                    }))
-                    // A session still going on it is where the work is: a
-                    // second one started here would be two agents editing
-                    // one checkout from two conversations.
-                    .map(|actions| match working {
-                        Some(session) => actions.child(
-                            action("issue-open-working")
-                                .xsmall()
-                                .ghost()
-                                .icon(Icon::new(IconName::Bot))
-                                .label("Open session")
-                                .tooltip("A session is working this issue; show it")
-                                .on_click(cx.listener(move |view, _: &ClickEvent, window, cx| {
-                                    view.open_session(session.clone(), window, cx)
-                                })),
-                        ),
-                        None if open => actions.child(work_menu(root, number, cx)),
-                        None => actions,
-                    })
-                    .child(
-                        action("issue-edit")
-                            .xsmall()
-                            .ghost()
-                            .label("Edit")
-                            .on_click(cx.listener(move |view, _: &ClickEvent, window, cx| {
-                                view.open_form(Some(number), window, cx)
-                            })),
-                    )
-                    .child(more_menu(root, issue, cx)),
-            );
+    // The title wraps rather than cutting, across the whole width: it is the
+    // one place the whole of it is read.
+    let header = div()
+        .w_full()
+        .flex_none()
+        .px_3()
+        .pt_2()
+        .font_semibold()
+        .child(issue.title.clone());
+
+    // What can be done to it, at the right of the line that says what it is.
+    let actions = div()
+        .h_flex()
+        .flex_none()
+        .items_center()
+        .gap_1()
+        .children(publish_to.map(|forge| {
+            action("issue-publish")
+                .xsmall()
+                .ghost()
+                .label(format!("Publish to {forge}"))
+                .tooltip("Open it there too, and keep the two in step")
+                .on_click(cx.listener(move |view, _: &ClickEvent, _, cx| view.publish(number, cx)))
+        }))
+        // A session still going on it is where the work is: a second one
+        // started here would be two agents editing one checkout from two
+        // conversations.
+        .map(|actions| match working {
+            Some(session) => actions.child(
+                action("issue-open-working")
+                    .xsmall()
+                    .ghost()
+                    .icon(Icon::new(IconName::Bot))
+                    .label("Open session")
+                    .tooltip("A session is working this issue; show it")
+                    .on_click(cx.listener(move |view, _: &ClickEvent, window, cx| {
+                        view.open_session(session.clone(), window, cx)
+                    })),
+            ),
+            None if open => actions.child(work_menu(root, number, cx)),
+            None => actions,
+        })
+        .child(
+            action("issue-edit")
+                .xsmall()
+                .ghost()
+                .label("Edit")
+                .on_click(cx.listener(move |view, _: &ClickEvent, window, cx| {
+                    view.open_form(Some(number), window, cx)
+                })),
+        )
+        .child(more_menu(root, issue, cx));
 
     // What it is at a glance: open or closed, where it lives, its labels, and
     // how urgent the body says it is.
@@ -101,12 +90,8 @@ pub(super) fn issue_view(
         .flex_wrap()
         .items_center()
         .gap_1()
-        .flex_none()
-        .px_3()
-        .pt_1()
-        .pb_2()
-        .border_b_1()
-        .border_color(cx.theme().border)
+        .flex_1()
+        .min_w_0()
         .text_xs()
         .child(
             div()
@@ -153,6 +138,19 @@ pub(super) fn issue_view(
                 .text_color(muted)
                 .child(format!("Priority: {priority}"))
         }));
+    let facts = div()
+        .h_flex()
+        .items_center()
+        .gap_2()
+        .flex_none()
+        .px_3()
+        .pt_1()
+        .pb_2()
+        .border_b_1()
+        .border_color(cx.theme().border)
+        .child(facts)
+        .child(actions);
+
     let conflict = conflict_view(issue, cx);
 
     let history = history(issue, cx);
