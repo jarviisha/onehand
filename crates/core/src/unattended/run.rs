@@ -450,7 +450,9 @@ pub struct Progress {
     /// Working time spent in this attempt, in seconds.
     pub spent_secs: u64,
     /// The commit this attempt's work is counted from, when that is not the
-    /// base: an answer to a review counts only what it adds.
+    /// base: where the change step started, so an earlier attempt's commits
+    /// do not pass it, or for a review answered before that, where the
+    /// attempt started. A repair keeps the base.
     pub since: Option<String>,
     /// The step the run is in. Each field from here on defaults, because a
     /// record written before it existed must still read.

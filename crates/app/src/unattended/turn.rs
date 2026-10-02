@@ -342,6 +342,13 @@ fn advance(
         let run = u.run_mut(uid)?;
         run.sent += 1;
         run.progress.step = step;
+        // The plan passed, so the head is still where the plan found it.
+        if step == Step::Implement
+            && counts_own_commits(&run.progress.start)
+            && let Some((head, _)) = &run.plan_from
+        {
+            run.progress.since = Some(head.clone());
+        }
         let record = enter_step(run);
         let c = &run.claimed;
         let text = core::step_prompt(
@@ -362,6 +369,20 @@ fn advance(
     note_step(uid, session, step, cx);
     if !session.update(cx, |session, cx| session.submit(&text, &[], cx)) {
         settle(uid, Ending::TurnEnded { tail }, cx);
+    }
+}
+
+/// Whether a change made in this attempt has to be a commit of its own,
+/// counted from where the change step started.
+///
+/// **Not for a repair**: it is told to leave the code alone when a failure is
+/// not its change's, and a gate demanding a commit would send it back to
+/// change code anyway. Every other start has to add work, or an earlier
+/// attempt's commits pass the gate on a turn that only read the code.
+fn counts_own_commits(start: &Start) -> bool {
+    match start {
+        Start::Repair { .. } => false,
+        Start::Fresh | Start::Earlier | Start::Review { .. } => true,
     }
 }
 
@@ -562,7 +583,7 @@ fn prompt(uid: u64, session: &Entity<ChatSession>, cx: &mut App) {
         settle(uid, Ending::TakenOver, cx);
         return;
     }
-    let Some((mode, step, dir, repo)) = with(cx, |u| {
+    let Some((mode, step, dir, repo, own)) = with(cx, |u| {
         let mode = u.mode.clone();
         let run = u.run_mut(uid)?;
         // Taken now, so the events that arrive while the worktree is read are
@@ -573,6 +594,7 @@ fn prompt(uid: u64, session: &Entity<ChatSession>, cx: &mut App) {
             run.progress.step,
             run.claimed.dir.clone(),
             run.claimed.repo.clone(),
+            counts_own_commits(&run.progress.start),
         ))
     })
     .flatten() else {
@@ -613,7 +635,7 @@ fn prompt(uid: u64, session: &Entity<ChatSession>, cx: &mut App) {
     }
     let weak = session.downgrade();
     cx.spawn(async move |cx| {
-        let (from, ran) = cx
+        let (from, since, ran) = cx
             .background_executor()
             .spawn(async move {
                 let from = (step == Step::Plan)
@@ -624,10 +646,13 @@ fn prompt(uid: u64, session: &Entity<ChatSession>, cx: &mut App) {
                         ))
                     })
                     .flatten();
+                let since = (step == Step::Implement && own)
+                    .then(|| worktree::head_blocking(&dir).ok())
+                    .flatten();
                 let ran = check.map(|command| {
                     command.map_or(Ok(()), |command| core::verify_blocking(&dir, &command))
                 });
-                (from, ran)
+                (from, since, ran)
             })
             .await;
         cx.update(|cx| {
@@ -638,13 +663,20 @@ fn prompt(uid: u64, session: &Entity<ChatSession>, cx: &mut App) {
                 settle(uid, Ending::TakenOver, cx);
                 return;
             }
-            let forge = with(cx, |u| {
+            let counted = with(cx, |u| {
                 let run = u.run_mut(uid)?;
                 run.plan_from = from;
-                Some(run.claimed.forge.is_some())
+                let counted = since.map(|head| {
+                    run.progress.since = Some(head);
+                    (run.claimed.file.clone(), enter_step(run))
+                });
+                Some((run.claimed.forge.is_some(), counted))
             })
-            .flatten()
-            .unwrap_or_default();
+            .flatten();
+            let (forge, counted) = counted.unwrap_or_default();
+            if let Some((file, record)) = counted {
+                save_record(file, record, cx);
+            }
             let (step, failed) = match ran {
                 None => (step, None),
                 Some(Err(tail)) => (Step::Verify, Some(tail)),

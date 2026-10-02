@@ -309,19 +309,17 @@ fn carry_on_runs(cx: &mut App) {
     .detach();
 }
 
-/// Give the next parked run that is due a session one, if the slot is free and
-/// a window holds its project. One that cannot start is told so on its issue.
-pub fn resume_parked(cx: &mut App) {
-    let held: Vec<PathBuf> = with(cx, |u| {
-        u.parked
-            .iter()
-            .filter(|p| p.phase == Phase::Working)
-            .map(|p| p.claimed.repo.clone())
-            .collect()
-    })
-    .unwrap_or_default();
-    let held: Vec<PathBuf> = held
-        .into_iter()
+/// The projects of the parked runs due a session that a window holds, which
+/// are the only ones that can get one. A run whose project no window holds
+/// waits for one to open it.
+fn resumable(cx: &App) -> Vec<PathBuf> {
+    let Some(u) = Shared::global(cx).unattended.as_ref() else {
+        return Vec::new();
+    };
+    u.parked
+        .iter()
+        .filter(|p| p.phase == Phase::Working)
+        .map(|p| p.claimed.repo.clone())
         .filter(|repo| {
             Shared::global(cx).windows.iter().any(|w| {
                 w.shell
@@ -329,7 +327,13 @@ pub fn resume_parked(cx: &mut App) {
                     .is_some_and(|s| s.read(cx).holds_root(repo))
             })
         })
-        .collect();
+        .collect()
+}
+
+/// Give the next parked run that is due a session one, if the slot is free and
+/// a window holds its project. One that cannot start is told so on its issue.
+pub fn resume_parked(cx: &mut App) {
+    let held = resumable(cx);
     let next = with(cx, |u| {
         let free =
             !u.claiming && u.blocked.is_none() && u.mode_refused.is_none() && u.working().is_none();
@@ -923,13 +927,18 @@ fn tick(asked_from: Option<gpui::AnyWindowHandle>, cx: &mut App) {
         resume_parked(cx);
         return;
     }
-    // A run due a session goes before any new issue.
+    // A run due a session goes before any new issue — one that can get a
+    // session, that is: a run whose project no window holds would otherwise
+    // stop every search until somebody reopened it.
+    let held = resumable(cx);
     let search = with(cx, |u| {
         let idle = !u.claiming
             && u.blocked.is_none()
             && u.mode_refused.is_none()
             && u.working().is_none()
-            && u.parked.iter().all(|p| p.phase != Phase::Working);
+            && u.parked
+                .iter()
+                .all(|p| p.phase != Phase::Working || !held.contains(&p.claimed.repo));
         idle.then(|| {
             u.claiming = true;
             (u.label.clone(), u.busy())

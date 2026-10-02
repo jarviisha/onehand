@@ -372,8 +372,11 @@ a deliberate one, not a list of whatever was once approved by hand.
      run with no session (`Phase::AwaitingApproval`), giving up the slot,
      until the Issues panel's *Approve plan* or *Revise…*; a wait longer than
      the `timeout` ends it as `Exhausted`.
-   - **Implement** passes on commits and a clean worktree. The agent is told
-     not to push.
+   - **Implement** passes on a clean worktree and a commit made since the step
+     started, so the commits an earlier attempt left, or a session cut short by
+     a restart, do not pass it for a turn that only read the code. A repair
+     counts from the base instead: it is told to leave the code alone when a
+     failure is not its change's. The agent is told not to push.
    - **Verify** is onehand running the project's check command itself
      (`verify_blocking`: `sh -c`, fifteen minutes, the shared target
      directory). A failure goes back to the same session with the last 200
@@ -425,7 +428,8 @@ first: telling a broken test from a dead runner means reading the log, which
 the agent does better. The bound is `repairs` per attempt, and **the same check
 failing again right after a repair aimed at it stops the run** — that is the
 agent being unable to fix it, or the failure not being its to fix, and another
-round would only spend time. A due repair goes before any new issue.
+round would only spend time. A due repair goes before any new issue — one a window can give a session to: a
+run whose project no open window holds waits without holding up the search.
 
 **A review is answered by putting the label back.** The next claim of an issue
 looks for the newest branch under `onehand/issue-<N>` — found by its prefix,
