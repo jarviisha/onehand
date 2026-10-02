@@ -1,4 +1,4 @@
-use super::launch::{Claimed, save, save_record};
+use super::launch::{Claimed, report_blocking, save, save_record};
 use super::{Parked, Run, WIND_DOWN, tick, with};
 use crate::chat::session::{ChatEvent, ChatSession};
 use crate::state::Shared;
@@ -29,6 +29,11 @@ pub(super) fn on_event(uid: u64, session: &Entity<ChatSession>, event: &ChatEven
             }
         }
         ChatEvent::TurnEnded if cancelling => settle_pending(uid, cx),
+        // A Stop is a person acting in the session, not a turn to judge:
+        // judged, a plan cut short would pass as the plan and the change start.
+        ChatEvent::TurnEnded if session.read(cx).chat.cancelled => {
+            settle(uid, Ending::TakenOver, cx)
+        }
         ChatEvent::TurnEnded => after_turn(uid, session, cx),
         // **The card is left up for a person**, wherever they answer it from —
         // this window, the desktop notification, a chat on the remote bridge.
@@ -320,7 +325,9 @@ fn keep_plan(uid: u64, plan: String, awaiting: bool, cx: &mut App) {
     };
     let said = format!("onehand's run wrote this plan:\n\n{plan}{after}");
     cx.background_executor()
-        .spawn(async move { tell_issue(&tracker, &repo, number, &said) })
+        .spawn(async move {
+            tell_issue(&tracker, &repo, number, &said);
+        })
         .detach();
 }
 
@@ -368,7 +375,7 @@ fn advance(
     .flatten() else {
         return;
     };
-    save_record(file, record, cx);
+    save_record(file, record);
     note_step(uid, session, step, cx);
     if !session.update(cx, |session, cx| session.submit(&text, &[], cx)) {
         settle(uid, Ending::TurnEnded { tail }, cx);
@@ -438,7 +445,7 @@ fn run_check(uid: u64, session: &Entity<ChatSession>, tail: Option<String>, cx: 
     .flatten() else {
         return;
     };
-    save_record(file, record, cx);
+    save_record(file, record);
     note_step(uid, session, Step::Verify, cx);
     let Some(command) = project_of(&repo, cx).and_then(|p| p.check) else {
         // Switched off since the gate read it: nothing to run.
@@ -509,7 +516,7 @@ fn carry_on(
     .flatten() else {
         return;
     };
-    save_record(file, record, cx);
+    save_record(file, record);
     let lacking = match missing {
         Missing::Uncommitted => "uncommitted changes",
         Missing::NoCommits => "no commit",
@@ -557,7 +564,7 @@ fn park(uid: u64, phase: Phase, said: &'static str, cx: &mut App) {
             ..
         } = run;
         progress.spent_secs = budget.spent(Instant::now()).as_secs();
-        save(&claimed, phase, &progress, cx);
+        save(&claimed, phase, &progress);
         if let Some(session) = session.upgrade() {
             note(&session, said.to_string(), cx);
         }
@@ -593,7 +600,7 @@ fn prompt(uid: u64, session: &Entity<ChatSession>, cx: &mut App) {
         settle(uid, Ending::TakenOver, cx);
         return;
     }
-    let Some((mode, step, dir, repo, own)) = with(cx, |u| {
+    let Some((mode, step, dir, repo, own, counted)) = with(cx, |u| {
         let mode = u.mode.clone();
         let run = u.run_mut(uid)?;
         // Taken now, so the events that arrive while the worktree is read are
@@ -605,6 +612,7 @@ fn prompt(uid: u64, session: &Entity<ChatSession>, cx: &mut App) {
             run.claimed.dir.clone(),
             run.claimed.repo.clone(),
             counts_own_commits(&run.progress.start),
+            run.progress.since.is_some(),
         ))
     })
     .flatten() else {
@@ -656,7 +664,10 @@ fn prompt(uid: u64, session: &Entity<ChatSession>, cx: &mut App) {
                         ))
                     })
                     .flatten();
-                let since = (step == Step::Implement && own)
+                // A mark already kept for the change is where it began: a
+                // session resumed after a restart keeps it, or commits made
+                // before the restart would no longer count as the change's.
+                let since = (step == Step::Implement && own && !counted)
                     .then(|| worktree::head_blocking(&dir).ok())
                     .flatten();
                 let ran = check.map(|command| {
@@ -685,7 +696,7 @@ fn prompt(uid: u64, session: &Entity<ChatSession>, cx: &mut App) {
             .flatten();
             let (forge, counted) = counted.unwrap_or_default();
             if let Some((file, record)) = counted {
-                save_record(file, record, cx);
+                save_record(file, record);
             }
             let (step, failed) = match ran {
                 None => (step, None),
@@ -736,7 +747,7 @@ fn first_prompt(
         return;
     };
     if let Some((file, record)) = moved {
-        save_record(file, record, cx);
+        save_record(file, record);
         note_step(uid, session, step, cx);
     }
     if session.update(cx, |session, cx| session.submit(&text, &[], cx)) {
@@ -941,6 +952,7 @@ pub(super) fn settle(uid: u64, ending: Ending, cx: &mut App) {
         let owns_root = run.owns_root;
         let Run {
             claimed,
+            progress,
             window,
             shell,
             session,
@@ -959,7 +971,7 @@ pub(super) fn settle(uid: u64, ending: Ending, cx: &mut App) {
             &shell,
             cx,
         );
-        conclude(claimed, ending, Some(session), cx);
+        conclude(claimed, progress, ending, Some(session), cx);
     });
 }
 
@@ -987,10 +999,12 @@ fn take_down(
     });
 }
 
-/// Tell the issue how the run ended, let go of its file, and put the outcome
-/// as the last line of `session`'s transcript, if there is one.
+/// Tell the issue how the run ended, let go of its file once it has heard,
+/// and put the outcome as the last line of `session`'s transcript, if there
+/// is one.
 pub(super) fn conclude(
     claimed: Claimed,
+    progress: core::Progress,
     ending: Ending,
     session: Option<WeakEntity<ChatSession>>,
     cx: &mut App,
@@ -1001,17 +1015,14 @@ pub(super) fn conclude(
             .spawn(async move {
                 let found = verdict_blocking(&claimed, &ending);
                 let said = core::report(&ending, &found, &claimed.branch);
-                tell_issue(&claimed.tracker, &claimed.repo, claimed.issue.number, &said);
-                // ponytail: removed after the forge calls above, which leaves a
-                // save of the same file queued just before them seconds to
-                // land first. A save landing after this would bring the run
-                // back at the next launch; a per-run write queue is the fix if
-                // that is ever seen.
-                if let Err(why) = std::fs::remove_file(&claimed.file)
-                    && why.kind() != std::io::ErrorKind::NotFound
-                {
-                    eprintln!("onehand: could not remove a finished run's file: {why}");
-                }
+                let record = claimed.record(Phase::Working, &progress);
+                report_blocking(
+                    &claimed.tracker,
+                    &claimed.repo,
+                    claimed.issue.number,
+                    said,
+                    Some((claimed.file.clone(), record)),
+                );
                 core::outcome_line(&ending, &found)
             })
             .await;
@@ -1048,9 +1059,18 @@ fn verdict_blocking(claimed: &Claimed, ending: &Ending) -> Result<Verdict, Strin
 }
 
 /// Leave `body` on issue `number`, saying on stderr if that failed — there is
-/// nowhere else left to say it.
-pub(super) fn tell_issue(tracker: &Tracker, repo: &std::path::Path, number: u64, body: &str) {
-    if let Err(why) = tracker.comment_blocking(repo, number, body) {
-        eprintln!("onehand: could not comment on issue #{number}: {why}");
+/// nowhere else left to say it. Whether the comment got there.
+pub(super) fn tell_issue(
+    tracker: &Tracker,
+    repo: &std::path::Path,
+    number: u64,
+    body: &str,
+) -> bool {
+    match tracker.comment_blocking(repo, number, body) {
+        Ok(_) => true,
+        Err(why) => {
+            eprintln!("onehand: could not comment on issue #{number}: {why}");
+            false
+        }
     }
 }

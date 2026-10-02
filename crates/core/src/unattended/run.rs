@@ -636,6 +636,10 @@ pub struct Record {
     pub by_hand: bool,
     pub phase: Phase,
     pub progress: Progress,
+    /// How the run ended, while the issue has still to be told: the run is
+    /// over, and the file stays only until the telling gets through.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub report: Option<String>,
 }
 
 /// `<config_dir>/onehand/runs/`, one file per run that has not ended.

@@ -90,7 +90,7 @@ fn every_title_makes_a_valid_branch() {
         "émoji 🚀 ünïcode",
         "a.lock",
     ] {
-        let branch = branch_for(&issue(7, title));
+        let branch = branch_for(&forge(), &issue(7, title));
         assert!(
             crate::worktree::validate_branch(&branch).is_ok(),
             "{title:?} gave {branch:?}"
@@ -99,10 +99,10 @@ fn every_title_makes_a_valid_branch() {
         assert!(branch.len() <= "onehand/issue-7-".len() + 40);
     }
     assert_eq!(
-        branch_for(&issue(3, "Fix the rail!")),
+        branch_for(&forge(), &issue(3, "Fix the rail!")),
         "onehand/issue-3-fix-the-rail"
     );
-    assert_eq!(branch_for(&issue(3, "!!!")), "onehand/issue-3");
+    assert_eq!(branch_for(&forge(), &issue(3, "!!!")), "onehand/issue-3");
 }
 
 #[test]
@@ -531,8 +531,16 @@ fn an_issue_a_run_is_still_on_is_passed_over() {
 #[test]
 fn a_branch_keeps_its_issue_prefix_whatever_the_title() {
     for title in ["Fix the rail", "!!!", ""] {
-        assert!(branch_for(&issue(12, title)).starts_with(&issue_prefix(12)));
+        assert!(branch_for(&forge(), &issue(12, title)).starts_with(&issue_prefix(&forge(), 12)));
     }
+}
+
+#[test]
+fn an_issue_kept_here_never_shares_a_branch_prefix_with_the_forges_of_its_number() {
+    let kept = Tracker::Local("/r/issues.json".into());
+    let (here, there) = (issue_prefix(&kept, 1), issue_prefix(&forge(), 1));
+    assert!(!here.starts_with(&there) && !there.starts_with(&here));
+    assert!(branch_for(&kept, &issue(1, "Fix it")).starts_with(&here));
 }
 
 #[test]

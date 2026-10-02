@@ -262,6 +262,40 @@ pub fn boot(cfg: &UnattendedConfig, cx: &mut App) {
     carry_on_runs(cx);
 }
 
+/// Tell each issue whose run ended without it hearing how, and let go of the
+/// run's file once it has.
+///
+/// One at a time: a tick asked for by hand can land while a scheduled one's
+/// tellings are still out, and two of them would comment twice.
+fn retry_reports(cx: &App) {
+    use std::sync::atomic::{AtomicBool, Ordering};
+    static TELLING: AtomicBool = AtomicBool::new(false);
+    if TELLING.swap(true, Ordering::SeqCst) {
+        return;
+    }
+    cx.background_executor()
+        .spawn(async move {
+            for (file, read) in core::load_records_blocking(&core::runs_dir()) {
+                let Ok(record) = read else { continue };
+                let Some(said) = record.report.clone() else {
+                    continue;
+                };
+                let Some(claimed) = Claimed::from_record(file, record.clone()) else {
+                    continue;
+                };
+                launch::report_blocking(
+                    &claimed.tracker,
+                    &claimed.repo,
+                    claimed.issue.number,
+                    said,
+                    Some((claimed.file, record)),
+                );
+            }
+            TELLING.store(false, Ordering::SeqCst);
+        })
+        .detach();
+}
+
 /// Read back every run a previous onehand left unfinished, and park them:
 /// those waiting on checks go on waiting, those that were working get a
 /// session once a window holding their project is open.
@@ -286,6 +320,11 @@ fn carry_on_runs(cx: &mut App) {
                         continue;
                     }
                 };
+                // Over already, and only waiting for its issue to hear how:
+                // the tick says it, and the run is not started again.
+                if record.report.is_some() {
+                    continue;
+                }
                 let (phase, mut progress) = (record.phase, record.progress.clone());
                 let Some(claimed) = Claimed::from_record(file, record) else {
                     eprintln!("onehand: an unattended run names a connector this onehand lacks");
@@ -479,7 +518,7 @@ fn apply_polls(polled: Vec<(PathBuf, Polled)>, cx: &mut App) {
                 })
                 .flatten();
                 if let Some(parked) = parked {
-                    turn::conclude(parked.claimed, ending, None, cx);
+                    turn::conclude(parked.claimed, parked.progress, ending, None, cx);
                 }
             }
             Polled::Repair { start, failing } => {
@@ -497,7 +536,7 @@ fn apply_polls(polled: Vec<(PathBuf, Polled)>, cx: &mut App) {
                 })
                 .flatten();
                 if let Some(record) = record {
-                    save_record(file, record, cx);
+                    save_record(file, record);
                 }
             }
         }
@@ -814,7 +853,7 @@ fn unpark_plan(repo: &Path, number: u64, step: Step, revise: Option<String>, cx:
     let Some((file, record, tracker)) = found else {
         return;
     };
-    save_record(file, record, cx);
+    save_record(file, record);
     let said = format!("Step: {}", step.label());
     cx.background_executor()
         .spawn(async move {
@@ -848,6 +887,7 @@ fn expire_approvals(cx: &mut App) {
     for parked in gone {
         turn::conclude(
             parked.claimed,
+            parked.progress,
             Ending::Exhausted(Spent::Unapproved(timeout)),
             None,
             cx,
@@ -907,6 +947,7 @@ fn with<R>(cx: &mut App, act: impl FnOnce(&mut Unattended) -> R) -> Option<R> {
 /// them as old as the run was long — and left an account signed in on screen after it
 /// had been signed out.
 fn tick(asked_from: Option<gpui::AnyWindowHandle>, cx: &mut App) {
+    retry_reports(cx);
     expire_approvals(cx);
     let roots = opted_in_roots(cx);
     let (awaiting, timeout, repairs) = with(cx, |u| {

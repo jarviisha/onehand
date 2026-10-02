@@ -354,8 +354,12 @@ a deliberate one, not a list of whatever was once approved by hand.
    A restart reads every file back: a run waiting on checks goes on waiting, and
    one that was working gets a new session on its worktree once a window holds
    its project, told to look at what is already there. The file goes when the
-   issue has been told the outcome. This used to be "no file at all"; it changed
-   once a run outlived one turn, and a restart lost the run.
+   issue has been told the outcome: a comment that fails leaves the file holding
+   it (`Record::report`), every tick tries it again, and a restart never starts
+   such a run again. Every write and removal of a run's file goes through one
+   thread in the order asked (`launch::write`), so an older record never lands
+   over a newer one, nor a save after the removal. This used to be "no file at
+   all"; it changed once a run outlived one turn, and a restart lost the run.
 4. **One timeout per attempt, counting working time, and it cancels.** An agent
    that neither finishes nor asks is the expensive failure, and it is the one
    nobody is watching for. The timeout is per run rather than per turn because a
@@ -385,7 +389,9 @@ a deliberate one, not a list of whatever was once approved by hand.
      the `timeout` ends it as `Exhausted`.
    - **Implement** passes on a clean worktree and a commit made since the step
      started, so the commits an earlier attempt left, or a session cut short by
-     a restart, do not pass it for a turn that only read the code. A repair
+     a restart, do not pass it for a turn that only read the code. Where the
+     step started is kept in the file, so a session resumed after a restart
+     still counts the commits made before it. A repair
      counts from the base instead: it is told to leave the code alone when a
      failure is not its change's. The agent is told not to push.
    - **Verify** is onehand running the project's check command itself
@@ -411,7 +417,9 @@ a deliberate one, not a list of whatever was once approved by hand.
    anywhere but the run itself — the composer, or
    a chat on the remote bridge that `/use`d it, since which channel it came
    through changes nothing about who is now driving — the run stops watching:
-   no cancel, no close, and comments `TakenOver`. From then on it is an ordinary
+   no cancel, no close, and comments `TakenOver`. A *Stop* pressed on the
+   run's turn is a take-over too: judged, a plan cut short would pass as the
+   plan. From then on it is an ordinary
    session, and whatever it produces is that person's, not the run's. **Its root
    is saved into the workspace at that moment**, the one write a run's root ever
    gets: a root kept off disk was transient because the run would drop it, and
@@ -444,7 +452,9 @@ run whose project no open window holds waits without holding up the search.
 
 **A review is answered by putting the label back.** The next claim of an issue
 looks for the newest branch under `onehand/issue-<N>` — found by its prefix,
-so a title edited since still finds it. Like a fresh one, the attempt starts
+so a title edited since still finds it. An issue kept in onehand, synced or
+not, uses `onehand/local-issue-<N>`: its number is the key it is filed under
+here, so the forge's issue of the same number is another issue. Like a fresh one, the attempt starts
 with a plan. With an open pull request the attempt
 answers its review: the prompt names the pull request and how to read the
 review, and the work is counted from the commit the attempt starts at, so a

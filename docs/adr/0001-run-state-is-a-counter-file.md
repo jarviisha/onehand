@@ -7,7 +7,8 @@ branch, the worktree, the commits, the pull request and its checks are read from
 forge whenever they are needed, and they are always asked for before anything is pushed or a
 pull request is created, so a response lost in a crash cannot lead to a duplicate. The file is
 deleted when the run ends. The next attempt finds its branch by the stable
-`onehand/issue-<N>` prefix, and finds its pull request through the forge.
+`onehand/issue-<N>` prefix (`onehand/local-issue-<N>` for an issue kept in onehand), and finds
+its pull request through the forge.
 
 ## Considered options
 

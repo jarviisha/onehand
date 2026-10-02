@@ -11,6 +11,7 @@ use onehand_core::unattended::{
 use onehand_core::worktree;
 use std::path::Path;
 use std::path::PathBuf;
+use std::sync::{LazyLock, mpsc};
 use std::time::{Duration, Instant};
 
 /// A claimed issue and the worktree made for it.
@@ -61,6 +62,7 @@ impl Claimed {
             by_hand: self.by_hand,
             phase,
             progress: progress.clone(),
+            report: None,
         }
     }
 
@@ -94,19 +96,84 @@ impl Claimed {
 
 /// Write the run's file in the background, saying on stderr if that failed:
 /// the run goes on, it only cannot be carried on after a restart.
-pub(super) fn save(claimed: &Claimed, phase: Phase, progress: &Progress, cx: &App) {
-    save_record(claimed.file.clone(), claimed.record(phase, progress), cx);
+pub(super) fn save(claimed: &Claimed, phase: Phase, progress: &Progress) {
+    save_record(claimed.file.clone(), claimed.record(phase, progress));
 }
 
 /// [`save`], for a caller that took the record while it held the state.
-pub(super) fn save_record(file: PathBuf, record: Record, cx: &App) {
-    cx.background_executor()
-        .spawn(async move {
-            if let Err(why) = core::save_record_blocking(&file, &record) {
-                eprintln!("onehand: could not save an unattended run: {why}");
-            }
-        })
-        .detach();
+pub(super) fn save_record(file: PathBuf, record: Record) {
+    write(FileOp::Save(file, Box::new(record)));
+}
+
+/// What the writer of run files is asked to do.
+enum FileOp {
+    Save(PathBuf, Box<Record>),
+    Remove(PathBuf),
+}
+
+/// Hand `op` to the one thread that writes and removes run files, which does
+/// them in the order they were asked for.
+///
+/// **One thread, not a task per write**: tasks land in any order, so an older
+/// record could land over a newer one, or a save land after the run's file
+/// was removed and bring a finished run back at the next launch.
+fn write(op: FileOp) {
+    static WRITER: LazyLock<mpsc::Sender<FileOp>> = LazyLock::new(|| {
+        let (tx, rx) = mpsc::channel::<FileOp>();
+        let spawned = std::thread::Builder::new()
+            .name("onehand-runs".to_string())
+            .spawn(move || {
+                for op in rx {
+                    let done = match &op {
+                        FileOp::Save(file, record) => core::save_record_blocking(file, record),
+                        FileOp::Remove(file) => match std::fs::remove_file(file) {
+                            Err(why) if why.kind() != std::io::ErrorKind::NotFound => {
+                                Err(why.to_string())
+                            }
+                            _ => Ok(()),
+                        },
+                    };
+                    if let Err(why) = done {
+                        eprintln!("onehand: could not write an unattended run's file: {why}");
+                    }
+                }
+            });
+        if let Err(why) = spawned {
+            eprintln!("onehand: no thread to write unattended runs' files: {why}");
+        }
+        tx
+    });
+    if WRITER.send(op).is_err() {
+        eprintln!("onehand: an unattended run's file was not written: its writer is gone");
+    }
+}
+
+/// Tell issue `number` `said`, how its run ended, then let go of the run's
+/// file — or, if the issue could not be told, keep the file holding what to
+/// say, for a later tick to say it. Blocking.
+///
+/// **The file goes only once the issue has heard.** The claim took the
+/// trigger label off, so with the file gone too nothing would be left to say
+/// how the run ended.
+pub(super) fn report_blocking(
+    tracker: &Tracker,
+    repo: &Path,
+    number: u64,
+    said: String,
+    record: Option<(PathBuf, Record)>,
+) {
+    let told = tell_issue(tracker, repo, number, &said);
+    match (record, told) {
+        (Some((file, _)), true) => write(FileOp::Remove(file)),
+        (Some((file, record)), false) => save_record(
+            file,
+            Record {
+                report: Some(said),
+                ..record
+            },
+        ),
+        (None, _) => {}
+    }
 }
 
 /// An issue that was claimed and then could not be started, and where to say
@@ -116,8 +183,8 @@ pub(super) struct Unstarted {
     tracker: Tracker,
     number: u64,
     why: String,
-    /// The run's file, once it has one.
-    file: Option<PathBuf>,
+    /// The run's file and what it holds, once it has one.
+    record: Option<Box<(PathBuf, Record)>>,
 }
 
 /// Find an issue, claim it and make its worktree. Blocking.
@@ -201,7 +268,8 @@ fn prepare_blocking(
             None => worktree::current_branch_blocking(&repo)?,
         };
         let top = worktree::repo_top_blocking(&repo).unwrap_or_else(|| repo.clone());
-        let earlier = worktree::newest_branch_blocking(&top, &core::issue_prefix(issue.number));
+        let earlier =
+            worktree::newest_branch_blocking(&top, &core::issue_prefix(&tracker, issue.number));
         let start = match (&earlier, forge) {
             (Some(branch), Some(forge)) => match forge.pull_request_for_blocking(&repo, branch)? {
                 Some(pr) if pr.state == PrState::Open => Some(Start::Review {
@@ -234,7 +302,7 @@ fn prepare_blocking(
                 (branch, dir, start)
             }
             _ => {
-                let branch = core::free_branch_blocking(&top, &core::branch_for(&issue));
+                let branch = core::free_branch_blocking(&top, &core::branch_for(&tracker, &issue));
                 let dir = worktree::worktree_dir(&top, &branch);
                 let dir = worktree::branch_off_blocking(&top, &branch, &dir, &base)?;
                 (branch, dir, Start::Fresh)
@@ -274,7 +342,7 @@ fn prepare_blocking(
             tracker,
             number: issue.number,
             why,
-            file: None,
+            record: None,
         }),
     }
 }
@@ -541,7 +609,7 @@ pub(super) fn landed(
 }
 
 /// Say on the issue that its run could not start, and let go of the run's
-/// file.
+/// file once it has heard.
 pub(super) fn tell_unstarted(unstarted: Unstarted, cx: &App) {
     // A run that never started left nothing, whichever kind of nothing.
     let said = core::report(
@@ -549,13 +617,15 @@ pub(super) fn tell_unstarted(unstarted: Unstarted, cx: &App) {
         &Ok(Verdict::NoPullRequest),
         "",
     );
+    let Unstarted {
+        repo,
+        tracker,
+        number,
+        record,
+        ..
+    } = unstarted;
     cx.background_executor()
-        .spawn(async move {
-            tell_issue(&unstarted.tracker, &unstarted.repo, unstarted.number, &said);
-            if let Some(file) = unstarted.file {
-                let _ = std::fs::remove_file(file);
-            }
-        })
+        .spawn(async move { report_blocking(&tracker, &repo, number, said, record.map(|r| *r)) })
         .detach();
 }
 
@@ -565,10 +635,10 @@ pub(super) fn tell_unstarted(unstarted: Unstarted, cx: &App) {
 pub(super) fn start(claimed: Claimed, progress: Progress, cx: &mut App) -> Result<(), Unstarted> {
     let (agent, timeout) = match with(cx, |u| (u.agent.clone(), u.timeout)) {
         Some(settings) => settings,
-        None => return Err(unstarted(claimed, "unattended runs are off")),
+        None => return Err(unstarted(claimed, &progress, "unattended runs are off")),
     };
     let Some(spec) = spec_for(agent.as_deref(), cx) else {
-        return Err(unstarted(claimed, "no agent is configured"));
+        return Err(unstarted(claimed, &progress, "no agent is configured"));
     };
     // The window it was picked in when that one holds the project, so the
     // session comes up in front of the person who asked for it.
@@ -590,6 +660,7 @@ pub(super) fn start(claimed: Claimed, progress: Progress, cx: &mut App) -> Resul
     else {
         return Err(unstarted(
             claimed,
+            &progress,
             "the project was closed before the run could start",
         ));
     };
@@ -599,6 +670,7 @@ pub(super) fn start(claimed: Claimed, progress: Progress, cx: &mut App) -> Resul
     else {
         return Err(unstarted(
             claimed,
+            &progress,
             "the worktree is already open as a project",
         ));
     };
@@ -675,13 +747,14 @@ pub(super) fn start(claimed: Claimed, progress: Progress, cx: &mut App) -> Resul
 }
 
 /// `claimed` could not be started, for `why`.
-fn unstarted(claimed: Claimed, why: &str) -> Unstarted {
+fn unstarted(claimed: Claimed, progress: &Progress, why: &str) -> Unstarted {
+    let record = claimed.record(Phase::Working, progress);
     Unstarted {
         repo: claimed.repo,
         tracker: claimed.tracker,
         number: claimed.issue.number,
         why: why.to_string(),
-        file: Some(claimed.file),
+        record: Some(Box::new((claimed.file, record))),
     }
 }
 

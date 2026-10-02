@@ -296,6 +296,7 @@ fn a_run_file_reads_back_as_it_was_written() {
             Some("abc".into()),
             Some("keep it small".into()),
         ),
+        report: None,
     };
     let mut approval = record.clone();
     approval.phase = Phase::AwaitingApproval { since: 9 };
@@ -312,7 +313,13 @@ fn a_run_file_reads_back_as_it_was_written() {
         "an unreadable file is said, not skipped"
     );
     save_record_blocking(&file, &approval).unwrap();
-    assert_eq!(load_records_blocking(&dir)[0].1, Ok(approval));
+    assert_eq!(load_records_blocking(&dir)[0].1, Ok(approval.clone()));
+    let unreported = Record {
+        report: Some("It ended.".into()),
+        ..approval
+    };
+    save_record_blocking(&file, &unreported).unwrap();
+    assert_eq!(load_records_blocking(&dir)[0].1, Ok(unreported));
     let _ = std::fs::remove_dir_all(&dir);
 }
 

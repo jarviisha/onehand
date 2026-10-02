@@ -441,21 +441,30 @@ fn spoken(d: Duration) -> String {
     }
 }
 
-/// The branch a run on `issue` works on: `onehand/issue-<n>-<title words>`.
+/// The branch a run on `issue`, living in `tracker`, works on:
+/// `onehand/issue-<n>-<title words>` for a forge's issue.
 ///
 /// Built only from lowercase ASCII letters, digits and single dashes, so it is
 /// a valid branch whatever the title holds — a title of nothing but
 /// punctuation leaves the number alone, and a long one is cut at a word
 /// boundary's worth of characters rather than carried whole into a folder name.
-pub fn branch_for(issue: &Issue) -> String {
-    branch_words(&issue.title, &issue_prefix(issue.number))
+pub fn branch_for(tracker: &Tracker, issue: &Issue) -> String {
+    branch_words(&issue.title, &issue_prefix(tracker, issue.number))
 }
 
-/// What every branch a run on issue `number` works on starts with, whatever
-/// its title says now: a title edited since the last attempt still finds that
-/// attempt's branch.
-pub fn issue_prefix(number: u64) -> String {
-    format!("onehand/issue-{number}")
+/// What every branch a run on issue `number` of `tracker` works on starts
+/// with, whatever its title says now: a title edited since the last attempt
+/// still finds that attempt's branch.
+///
+/// **An issue kept in onehand has a prefix of its own.** Its number is the
+/// key it is filed under here, synced or not, so issue 1 kept here and the
+/// forge's issue 1 are two issues; on one prefix a run on either would take
+/// up the other's branch and push to its pull request.
+pub fn issue_prefix(tracker: &Tracker, number: u64) -> String {
+    match tracker {
+        Tracker::Forge(_) => format!("onehand/issue-{number}"),
+        Tracker::Local(_) | Tracker::Synced { .. } => format!("onehand/local-issue-{number}"),
+    }
 }
 
 /// `prefix`, then the first forty characters of `title` as lowercase words
