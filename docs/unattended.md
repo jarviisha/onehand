@@ -229,6 +229,14 @@ Picking one runs the same path as a found issue, with four differences:
 - a mode the agent does not offer, once learned, refuses the pick *before* the
   claim, rather than claiming an issue for a run that would fail at its prompt.
 
+**A run can also be started from the Issues mode's *Work*.** *In a new
+worktree…* with *Work in steps* checked is a run picked by hand on that issue,
+the same path as *Work an issue…*, so the branch, the claim, the timeout and
+everything after are a run's. The modal's box is then *Extra instructions*:
+whatever is typed there goes into every step's prompt, and is kept in the run's
+file so a resumed run still has it. A refusal (a run is working, the issue is
+busy, the mode is not offered) is said in a notification.
+
 A run is started only while none is working, for picked and found alike, and a
 pick while one is working is refused with the issue it is waiting on. A run
 waiting on a card does not count. Beside *Check again* in Settings,

@@ -186,6 +186,12 @@ Listed because a missing feature nobody wrote down reads as a bug in the ones th
   the forge's issue and the run waits until the `timeout` ends it unapproved. The workspace page
   lists it under *Waiting on you* and says it has nowhere to be approved. Turn approval off for
   such a project, or keep it in step with its forge.
+- **A checkout worked in steps lives only as long as the app.** It has no record, so a restart
+  leaves an ordinary session; work it on by hand. Its plan cannot be approved from the remote
+  bridge, only by *Continue* in its session, and its plan is a note on the issue here, never a
+  comment on a forge. *Stop* reads as a turn that ended, and the step carries on: type a message
+  to take the session over instead. An edit inside a file that was already untracked is not seen
+  by its gate.
 - **A plan's gate cannot see edits on top of a worktree that was already dirty.** The plan is
   measured from where its session found the worktree, by its head and whether anything was
   uncommitted; an earlier attempt that left uncommitted work hides further edits to it. A content

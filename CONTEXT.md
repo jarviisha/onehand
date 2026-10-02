@@ -7,7 +7,8 @@ particular to onehand; general programming terms are left out.
 
 **Run**:
 All of the work onehand does on one issue, from the claim until the issue's pull request is
-ready for review or the run stops. An issue has at most one active run.
+ready for review or the run stops. An issue has at most one active run. Working an issue in a
+new worktree in steps, from the Issues mode's *Work*, is a run.
 _Avoid_: job, task, queue entry, controller, worker
 
 **Attempt**:
@@ -16,8 +17,9 @@ and pull request.
 _Avoid_: retry run, second run
 
 **Step**:
-A named stretch of an attempt with its own prompt and a condition the app checks itself before
-moving on: Plan, Implement, Verify, Open PR.
+A named stretch of an attempt, or of a session working an issue by hand in steps, with its own
+prompt and a condition the app checks itself before moving on: Plan, Implement, Verify, Open PR.
+A checkout worked in steps has no Open PR.
 _Avoid_: stage, phase, task
 
 **Repair**:

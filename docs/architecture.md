@@ -961,14 +961,28 @@ see the rail, below.
   (`issue-<n>-<title words>`, the first free name after it, off the checkout's HEAD), kept apart from
   a run's `onehand/` branches so a run never takes it for an earlier attempt. It is added to the
   workspace as a project like one from *New worktree…* and stays after the session, and the prompt
-  tells the agent to commit there and push nothing. Either way it is not a run. The prompt waits for
+  tells the agent to commit there and push nothing. Either way it is not a run. **Work in steps**
+  is a checkbox above the box, off by default; checked, the box empties and becomes *Extra
+  instructions (optional)*, and `Request::WorkIssue { steps: true }` carries them, empty or not.
+  The shell routes on `(steps, branch)`: in a new worktree it is a run
+  (`Shell::work_issue_as_run`, which reads the issue with `unattended::kept_issue_blocking` and
+  hands it to `start_picked` with the instructions); in the checkout
+  (`Shell::work_issue_in_steps`) a driver in `shell/issue_work/steps.rs`, kept by session uid in
+  the `HandSteps` global, takes the session through Plan, Implement and Verify with
+  `step_prompt(.., Place::Checkout)` and `next` under `Gate { committed: false, .. }`. A
+  checkout's step is judged by `worktree::work_digest_blocking`, a digest of its uncommitted work
+  taken as the plan and the change start, so a checkout that was already dirty is measured fairly;
+  a commit is sent back (`Missing::Committed`). The plan is a local note on the issue; with *Approve
+  plans before work* the session waits, and *Continue* / *Revise…* on its step strip go on. A
+  prompt the driver did not send takes the session over and the steps stop. The prompt waits for
   the adapter and is not sent if somebody typed into the session first; the issue hears which
   session took it once the agent has named it, on the project it is kept in. **An issue a live session is on is not offered *Work*:**
   the shell tells the Workbench which conversations have a live session in the window
   (`Request::LiveConversations`, sent from the pane observer only when the set changes), and an issue
   whose history names one of them shows *Open session* in its place and *working* on its row. An
 unattended run on an issue kept here is told the same way (`Request::IssueRuns`, from the shell
-observing `Shared` and comparing with what it last sent): its row shows its step in place of
+observing `Shared` and `HandSteps` and comparing with what it last sent, a checkout in steps
+listed with `in_session`): its row shows its step in place of
 *working*, and one whose plan waits shows *approve plan* and, in the detail, *Approve plan* and
 *Revise…*, the latter a modal like *Work*'s.
   Unattended runs work these issues too — see *Unattended runs*. No shortcut yet, and no

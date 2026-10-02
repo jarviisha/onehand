@@ -289,7 +289,13 @@ One window hosts exactly one workspace. The frame is a navigation **rail** plus 
   plan* on its row in the warning ink, the way *decide* is drawn, and its
   detail puts *Revise…* (ghost) and *Approve plan* (primary, with a check icon)
   where *Work* would be. *Revise…* opens a modal with a textarea, *Cancel* and
-  *Send back*, shaped like *Work*'s. An issue a run is working shows the step's
+  *Send back*, shaped like *Work*'s. *Work*'s modal has a *Work in steps* checkbox above its
+  textarea, off by default, inside a box that shows the pointer; checked, the textarea empties,
+  an *Extra instructions (optional)* line sits over it, and the muted line says what the steps
+  are for the place picked. A checkout worked in steps carries the same strip under its header,
+  *Issue #N* then *Plan*, *Implement*, *Verify*; while its plan waits, *Revise…* (ghost) and
+  *Continue* (primary, with a check icon) sit at the strip's right end, and its row in the Issues
+  mode says *waiting* in the warning ink. An issue a run is working shows the step's
   name where *working* would be.
 - **A switch that is on while nothing can happen says so on the row.** That is
   the one state that looks exactly like working. So when something stops every
