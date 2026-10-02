@@ -368,7 +368,7 @@ impl Default for UnattendedConfig {
             label: "auto".to_string(),
             every: "30m".to_string(),
             timeout: "45m".to_string(),
-            mode: "acceptEdits".to_string(),
+            mode: "auto".to_string(),
             agent: None,
             turns: 3,
             repairs: 2,

@@ -125,7 +125,7 @@ The rest of the vocabulary, one meaning each:
 label = "auto"           # the trigger label (the default); empty picks nothing
 every = "30m"            # how often to look
 timeout = "45m"          # a run that neither finishes nor asks is cancelled
-mode = "acceptEdits"     # the ACP session mode a run starts in
+mode = "auto"            # the ACP session mode a run starts in
 agent = "Claude Code"    # which agent spec; the default agent when unset
 turns = 3                # turns one session may take before the run stops unfinished
 repairs = 2              # repairs one attempt may start on failing checks
@@ -259,19 +259,22 @@ word of its own onto a moving set. An id the agent does not offer is complained
 about once and the run does not start — a run that silently fell back to the
 mode that asks questions would park on the first write.
 
-**`acceptEdits` covers file edits and nothing else.** Under it Claude Code still
-asks before every command — `cargo test`, `git commit`, `gh pr create` — so with
-rule 1 below every run would stop at the first check it tried to run and wait
-for somebody to allow it. What a run may execute is therefore the **repository's own permission
-allowlist** (`.claude/settings.json`: the build, the tests, `git`, `gh`), which
-the adapter reads on `session/new`. That keeps the list next to the code it
-builds, reviewed like the code, and keeps rule 1 meaningful: a command outside
-the list is exactly the thing that should wait for a person.
-`bypassPermissions` would also work and is not the recommendation — under it
-rule 1 never fires, and "unattended" becomes "unsupervised with full rights".
-A root with no allowlist is not refused up front; its first run parks on the
-first command and waits for somebody to allow it, which says what to add.
-**The project list is not the whole grant**: the adapter also reads the user's
+**`auto` is the default, because a run has nobody to ask.** Under it Claude
+judges each command itself and stops only the ones that look risky, so a run
+gets through its build, its tests, `git` and `gh` without waiting on anybody.
+The default used to be `acceptEdits`, which covers file edits and nothing else:
+Claude Code still asked before every command, so with rule 1 below every run
+stopped at the first check it tried to run, in any repository whose allowlist
+was thin. What `auto` gives up is a list that can be read ahead of time — what
+a run may do is decided command by command — which is why the search still
+takes only issues the user wrote, since the issue body is the prompt.
+`bypassPermissions` is still not the recommendation: under it rule 1 never
+fires, and "unattended" becomes "unsupervised with full rights". Setting
+`mode = "acceptEdits"` puts back the old contract, where the **repository's own
+permission allowlist** (`.claude/settings.json`) is what a run may execute and
+a command outside it waits for a person. An agent that offers no `auto` mode
+stops the feature as any missing mode does, and says which modes it offers.
+**Where an allowlist applies, the project list is not the whole grant**: the adapter also reads the user's
 own `~/.claude/settings.json`, so what a run may do is the union of the two.
 That is stated rather than worked around — a second, app-supplied list would be
 one more place a permission can hide — and it is why the project list should be
