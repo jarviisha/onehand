@@ -938,11 +938,11 @@ see the rail, below.
   live session holding it, else finds the saved one by its id (`chat::find_conversation`) and
   reopens it on the project it ran in, adding that folder back when it has left the workspace — an
   unattended run's worktree does when the run ends — and saying so when the folder is gone.
-  **Work…** opens a form in the detail's place: a switch between *This checkout* and *New
-  worktree*, and the first message, written by `issues::work_prompt` for the place picked and
-  editable before it goes. Flipping the switch writes the prompt again only while it is still the
-  one written for the other place, so changed words are kept. *Start session* sends
-  `Request::WorkIssue`. In the checkout (`Shell::work_issue_here`) it is an ordinary session:
+  **Work** is a dropdown, *In this checkout…* or *In a new worktree…*, and either opens a modal
+  (`IssuesView::open_work`) holding the first message, written by `issues::work_prompt` for the
+  place picked and editable before it goes, with the new branch named for a worktree. The modal
+  holds the project it was opened on, so a switch behind it cannot start another project's issue.
+  An empty message is refused with a notification. *Start session* sends `Request::WorkIssue`. In the checkout (`Shell::work_issue_here`) it is an ordinary session:
   no worktree, no branch, no claim, no timeout, and the prompt tells the agent to leave its changes
   uncommitted, since this is somebody's working copy. In a worktree
   (`Shell::work_issue_in_worktree`) git makes one on `issues::worktree_branch`

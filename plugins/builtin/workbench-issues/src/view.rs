@@ -11,13 +11,16 @@ use gpui::{
     Task, Window, div,
 };
 use gpui_component::WindowExt as _;
+use gpui_component::button::ButtonVariants as _;
 use gpui_component::dialog::DialogButtonProps;
-use gpui_component::input::{InputState, TextareaState};
+use gpui_component::input::{InputState, Textarea, TextareaState};
 use gpui_component::text::TextViewState;
-use gpui_component::{StyledExt, h_resizable, resizable_panel};
+use gpui_component::{
+    ActiveTheme as _, Icon, IconName, Sizable as _, StyledExt, h_resizable, resizable_panel,
+};
 use onehand_core::connector::{self, Connector};
 use onehand_core::issues::{self, Draft, Issues, LocalIssue, sync};
-use onehand_plugin_host::{Ask, Request, hint, status_line};
+use onehand_plugin_host::{Ask, Request, action, hint, status_line};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
@@ -25,7 +28,7 @@ use std::time::Duration;
 mod detail;
 mod list;
 mod mentions;
-use detail::{form_view, issue_view, work_view};
+use detail::{form_view, issue_view};
 use list::Showing;
 
 /// How often a project kept in step with its forge is synced while it is the
@@ -108,8 +111,6 @@ struct RootIssues {
     issues: Option<Issues>,
     selected: Option<u64>,
     form: Option<Form>,
-    /// The selected issue about to be worked: where, and its first message.
-    work: Option<Work>,
     /// The selected issue's body, parsed — so it is parsed again when the
     /// issue changes and never on a frame when it has not.
     body: Option<Body>,
@@ -131,7 +132,6 @@ impl RootIssues {
     fn show(&mut self, number: u64) {
         self.selected = Some(number);
         self.form = None;
-        self.work = None;
     }
 
     /// Take a read that has landed. Only the issues move: what is selected
@@ -163,16 +163,6 @@ struct Form {
     title: Entity<InputState>,
     labels: Entity<InputState>,
     body: Entity<TextareaState>,
-}
-
-/// Where an issue is about to be worked, and the session's first message —
-/// the prompt written for that place, open to be changed before it goes.
-struct Work {
-    number: u64,
-    /// In a worktree of its own rather than in the checkout the project is
-    /// open on.
-    worktree: bool,
-    prompt: Entity<TextareaState>,
 }
 
 impl IssuesView {
@@ -533,7 +523,6 @@ impl IssuesView {
         form.title.update(cx, |input, cx| input.focus(window, cx));
         if let Some(state) = self.state_mut() {
             state.form = Some(form);
-            state.work = None;
         }
         self.status = None;
         cx.notify();
@@ -743,13 +732,6 @@ impl IssuesView {
         let Some(issue) = state.selected.and_then(|n| issues.get(n)).cloned() else {
             return hint("Pick an issue, or start a new one", cx);
         };
-        if let Some(work) = state
-            .work
-            .as_ref()
-            .filter(|work| work.number == issue.number)
-        {
-            return work_view(&issue, work, cx);
-        }
         // Publishing is offered where it can land: a project kept in step with
         // a forge, on an issue not already there.
         let publish_to = state
@@ -779,86 +761,117 @@ impl IssuesView {
         window.defer(cx, move |window, cx| put(&ask, &root, window, cx));
     }
 
-    /// Open the form that starts a session on issue `number`: in the checkout
-    /// to begin with, its prompt written and ready to be changed.
-    fn open_work(&mut self, number: u64, window: &mut Window, cx: &mut Context<Self>) {
-        let Some(prompt) = self
-            .state_mut()
-            .and_then(|state| state.issues.as_ref()?.get(number))
-            .map(|issue| issues::work_prompt(issue, false))
-        else {
+    /// Put up the window that starts a session on issue `number`, in the
+    /// checkout or (`worktree`) a worktree of its own, with the prompt written
+    /// for that place ready to be changed before it goes.
+    ///
+    /// The project is held for the reason the close confirmation holds it: a
+    /// window left open across a switch starts the issue it was opened for.
+    fn open_work(
+        &mut self,
+        number: u64,
+        worktree: bool,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let (Some(root), Some(state)) = (self.root.clone(), self.state_mut()) else {
             return;
         };
-        let prompt = cx.new(|cx| TextareaState::new(window, cx).default_value(prompt));
+        let Some(issue) = state.issues.as_ref().and_then(|kept| kept.get(number)) else {
+            return;
+        };
+        let named = issue.reference().unwrap_or("Draft").to_string();
+        let branch = worktree.then(|| issues::worktree_branch(issue));
+        let written = issues::work_prompt(issue, worktree);
+        let prompt = cx.new(|cx| TextareaState::new(window, cx).default_value(written));
         prompt.update(cx, |input, cx| input.focus(window, cx));
-        if let Some(state) = self.state_mut() {
-            state.form = None;
-            state.work = Some(Work {
-                number,
-                worktree: false,
-                prompt,
-            });
-        }
-        cx.notify();
+        let (title, explained) = match &branch {
+            Some(branch) => (
+                format!("Work {named} in a new worktree"),
+                format!(
+                    "A worktree on a new branch, {branch}, added as a project. The session \
+                     commits there and pushes nothing."
+                ),
+            ),
+            None => (
+                format!("Work {named} in this checkout"),
+                "The branch checked out here, alongside whatever else is going on in it. \
+                 Changes are left uncommitted."
+                    .to_string(),
+            ),
+        };
+        let view = cx.entity();
+        window.open_dialog(cx, move |dialog, _, cx| {
+            let start = {
+                let (view, prompt, root, branch) =
+                    (view.clone(), prompt.clone(), root.clone(), branch.clone());
+                move |_: &gpui::ClickEvent, window: &mut Window, cx: &mut App| {
+                    let text = prompt.read(cx).value().trim().to_string();
+                    if text.is_empty() {
+                        window.push_notification("A session needs a first message", cx);
+                        return;
+                    }
+                    window.close_dialog(cx);
+                    let (root, branch) = (root.clone(), branch.clone());
+                    view.update(cx, |view, cx| {
+                        view.start_work(root, number, text, branch, window, cx)
+                    });
+                }
+            };
+            dialog
+                .title(title.clone())
+                .child(
+                    div()
+                        .v_flex()
+                        .gap_2()
+                        .child(
+                            div()
+                                .text_xs()
+                                .text_color(cx.theme().muted_foreground)
+                                .child(explained.clone()),
+                        )
+                        .child(Textarea::new(&prompt).h(gpui::rems(18.))),
+                )
+                .footer(
+                    div()
+                        .h_flex()
+                        .gap_2()
+                        .w_full()
+                        .justify_end()
+                        .child(
+                            action("issue-work-cancel")
+                                .small()
+                                .ghost()
+                                .label("Cancel")
+                                .on_click(|_, window, cx| window.close_dialog(cx)),
+                        )
+                        .child(
+                            action("issue-work-start")
+                                .small()
+                                .primary()
+                                .icon(Icon::new(IconName::Bot))
+                                .label("Start session")
+                                .on_click(start),
+                        ),
+                )
+        });
     }
 
-    /// Work the issue in a worktree of its own, or in the checkout. The prompt
-    /// is written again for the new place only while it is still the one
-    /// written for the old: words somebody changed are theirs to keep.
-    fn place_work(&mut self, worktree: bool, window: &mut Window, cx: &mut Context<Self>) {
-        let Some(state) = self.state_mut() else {
-            return;
-        };
-        let (Some(work), Some(issues)) = (state.work.as_mut(), state.issues.as_ref()) else {
-            return;
-        };
-        let Some(issue) = issues
-            .get(work.number)
-            .filter(|_| work.worktree != worktree)
-        else {
-            return;
-        };
-        if work.prompt.read(cx).value() == issues::work_prompt(issue, work.worktree) {
-            let written = issues::work_prompt(issue, worktree);
-            work.prompt
-                .update(cx, |input, cx| input.set_value(written, window, cx));
-        }
-        work.worktree = worktree;
-        cx.notify();
-    }
-
-    fn cancel_work(&mut self, cx: &mut Context<Self>) {
-        if let Some(state) = self.state_mut() {
-            state.work = None;
-            cx.notify();
-        }
-    }
-
-    /// Start the session the form describes, on the project on screen.
-    fn start_work(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let Some(state) = self.state_mut() else {
-            return;
-        };
-        let (Some(work), Some(issues)) = (state.work.as_ref(), state.issues.as_ref()) else {
-            return;
-        };
-        let prompt = work.prompt.read(cx).value().trim().to_string();
-        let number = work.number;
-        let branch = work
-            .worktree
-            .then(|| issues.get(number).map(issues::worktree_branch))
-            .flatten();
-        if prompt.is_empty() {
-            self.status = Some("A session needs a first message".to_string());
-            cx.notify();
-            return;
-        }
-        state.work = None;
-        self.status = None;
-        cx.notify();
-        self.ask_later(window, cx, move |ask, root, window, cx| {
+    /// Ask for a session on issue `number` of project `root`, once this view
+    /// is no longer being updated, for the reason [`Self::ask_later`] waits.
+    fn start_work(
+        &mut self,
+        root: PathBuf,
+        number: u64,
+        prompt: String,
+        branch: Option<String>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let ask = self.ask.clone();
+        window.defer(cx, move |window, cx| {
             let request = Request::WorkIssue {
-                root,
+                root: &root,
                 number,
                 prompt: &prompt,
                 branch: branch.as_deref(),
