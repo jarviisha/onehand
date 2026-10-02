@@ -114,6 +114,12 @@ pub const COMMANDS: &[Command] = &[
         CloseSession
     ),
     command!(
+        "run_pipeline",
+        "Run a pipeline on the current project",
+        [],
+        RunPipeline
+    ),
+    command!(
         "maximize",
         "Maximize focused panel / restore",
         ["ctrl-shift-k"],

@@ -22,6 +22,7 @@ mod dialogs;
 mod guards;
 mod icons;
 mod keymap;
+mod pipeline;
 mod plugins;
 mod rail;
 mod remote;

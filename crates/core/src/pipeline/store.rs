@@ -105,7 +105,7 @@ pub fn delete_blocking(path: &Path) -> Result<(), String> {
 
 /// A file name from a template's name: lowercase ASCII letters, digits and
 /// single dashes, `pipeline` when nothing of the name survives.
-fn slug(name: &str) -> String {
+pub(crate) fn slug(name: &str) -> String {
     let mut slug = String::new();
     for ch in name.chars() {
         if ch.is_ascii_alphanumeric() {

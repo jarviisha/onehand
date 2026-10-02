@@ -19,6 +19,7 @@ mod boot;
 mod docks;
 mod drafts;
 mod issue_work;
+mod pipelines;
 mod remote_runs;
 mod render;
 mod roots;
@@ -27,6 +28,7 @@ mod settings_dialog;
 mod storage;
 pub use boot::{boot, open_or_focus, seed_workspace};
 pub use drafts::{BranchDraft, Draft, WorktreeDraft};
+pub use pipelines::PipelineLauncher;
 
 gpui::actions!(
     onehand,
@@ -53,7 +55,8 @@ gpui::actions!(
         CompletionPrev,
         CompletionAccept,
         PasteHere,
-        CycleMode
+        CycleMode,
+        RunPipeline
     ]
 );
 
@@ -236,6 +239,9 @@ pub struct Shell {
     /// menu, which is gone by the time the list arrives, so this being `Some`
     /// is what puts the dialog up — like the rename and the worktree forms.
     issue_picker: Option<IssuePicker>,
+    /// The pipeline launcher, while it is on screen. Opened from a menu entry
+    /// or a key, so this being `Some` is what puts it up.
+    pipeline_launcher: Option<PipelineLauncher>,
     /// The field the new branch name is typed into.
     branch_input: Entity<InputState>,
     /// The new branch's name field.

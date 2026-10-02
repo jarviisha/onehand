@@ -25,5 +25,11 @@ pub use run::{Action, Brief, Marks, Outcome, PipelineRun, Setup, Stop, Transitio
 pub use template::{GateKind, Place, StepKind, StepSpec, Template, SCHEMA_VERSION};
 pub use validate::{validate, Problem};
 
+/// The branch a run on a worktree works on: `pipeline/<title words>`, built
+/// only from characters a branch name may hold.
+pub fn branch_for(title: &str) -> String {
+    format!("pipeline/{}", store::slug(title))
+}
+
 #[cfg(test)]
 mod tests;

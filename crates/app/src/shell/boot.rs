@@ -171,6 +171,25 @@ impl Shell {
                     // is minted on that, but not shown: showing it would
                     // connect the session it was last on, which nobody asked
                     // for. The new session's own arrival shows the project.
+                    // Deferred: the run reaches into its session, which may
+                    // be what is announcing this.
+                    E::ContinuePipeline(uid) => {
+                        let uid = *uid;
+                        cx.defer(move |cx| crate::pipeline::approve(uid, cx));
+                    }
+                    E::RevisePipeline { uid, note } => {
+                        let (uid, note) = (*uid, note.clone());
+                        cx.defer(move |cx| crate::pipeline::revise(uid, note, cx));
+                    }
+                    E::StopPipeline(uid) => {
+                        let uid = *uid;
+                        cx.defer(move |cx| crate::pipeline::stop(uid, cx));
+                    }
+                    E::ResumePipeline(id) => shell.resume_pipeline(id, window, cx),
+                    E::DiscardPipeline(id) => {
+                        let id = id.clone();
+                        cx.defer(move |cx| crate::pipeline::discard(&id, cx));
+                    }
                     E::ResumeIn {
                         root,
                         agent,
@@ -405,6 +424,7 @@ impl Shell {
             worktree_draft: None,
             branch_draft: None,
             issue_picker: None,
+            pipeline_launcher: None,
             branch_input,
             worktree_branch,
             dock,
@@ -546,6 +566,7 @@ pub fn boot(cx: &mut App) {
     // already been asked by the time there is anything to announce.
     crate::remote::boot(&remote, cx);
     crate::unattended::boot(&unattended, cx);
+    crate::pipeline::boot(cx);
     // Before a mode is chosen, because choosing one applies whichever of the
     // two configs this installs.
     crate::theme::install(cx);
