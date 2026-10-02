@@ -112,11 +112,13 @@ impl Workbench {
                 number,
                 prompt,
                 branch,
+                steps,
             } => cx.emit(WorkbenchEvent::WorkIssue {
                 root: root.to_path_buf(),
                 number: *number,
                 prompt: prompt.to_string(),
                 branch: branch.map(str::to_string),
+                steps: *steps,
             }),
             Request::OpenConversation(session) => {
                 cx.emit(WorkbenchEvent::OpenConversation(session.to_string()))
@@ -383,12 +385,14 @@ pub enum WorkbenchEvent {
     RestartAgent,
     /// Work issue `number` of project `root`, with `prompt` as the new
     /// session's first message: in the checkout it is open on, or in a
-    /// worktree of its own on `branch`.
+    /// worktree of its own on `branch`. With `steps`, `prompt` is what is
+    /// asked of every step instead.
     WorkIssue {
         root: std::path::PathBuf,
         number: u64,
         prompt: String,
         branch: Option<String>,
+        steps: bool,
     },
     /// Show the conversation the agent named `session`, live or saved.
     OpenConversation(String),

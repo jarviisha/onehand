@@ -315,7 +315,9 @@ impl Shell {
             return;
         };
         let handle = window.window_handle();
-        if let Err(why) = crate::unattended::start_picked(picker.root, tracker, row, handle, cx) {
+        if let Err(why) =
+            crate::unattended::start_picked(picker.root, tracker, row, None, handle, cx)
+        {
             window.push_notification(Notification::warning(why), cx);
         }
     }

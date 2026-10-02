@@ -28,7 +28,8 @@ pub use onehand_plugin_host::IssueRun;
 mod launch;
 mod turn;
 use launch::{Claimed, begin_blocking, landed, save_record, tell_unstarted};
-pub use launch::{Pickable, look_now, pickable_blocking, start_picked};
+pub use launch::{Pickable, kept_issue_blocking, look_now, pickable_blocking, start_picked};
+pub(crate) use turn::{note, plan_passed, prompted_by_someone_else, turn_answer};
 
 /// How long a cancelled turn is given to wind down before the run is settled
 /// anyway. Cancelling asks the adapter to end the turn, and the turn ending is
@@ -776,6 +777,7 @@ pub fn runs_by_issue(cx: &App) -> Vec<IssueRun> {
             number: c.issue.number,
             step,
             awaiting,
+            in_session: false,
         })
         .collect()
 }
@@ -871,6 +873,15 @@ pub fn set_mode(mode: String, cx: &mut App) {
         u.mode_refused = None;
     });
     cx.refresh_windows();
+}
+
+/// How many turns of one session may fail their step's gate: a run's, and a
+/// session working an issue in steps in its checkout.
+pub fn turns(cx: &App) -> u32 {
+    Shared::global(cx)
+        .unattended
+        .as_ref()
+        .map_or(UnattendedConfig::default().turns, |u| u.turns)
 }
 
 /// The label that asks for a run, for the places that tell the user which

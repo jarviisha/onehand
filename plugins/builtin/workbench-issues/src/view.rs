@@ -6,12 +6,14 @@
 //! forge. What is here is the half that needs a window: the list, the reading,
 //! the form, and when a sync runs.
 
+use gpui::prelude::FluentBuilder as _;
 use gpui::{
     AnyElement, App, AppContext as _, Context, Entity, IntoElement, ParentElement, Render, Styled,
     Task, Window, div,
 };
 use gpui_component::WindowExt as _;
 use gpui_component::button::ButtonVariants as _;
+use gpui_component::checkbox::Checkbox;
 use gpui_component::dialog::DialogButtonProps;
 use gpui_component::input::{InputState, Textarea, TextareaState};
 use gpui_component::text::TextViewState;
@@ -788,7 +790,10 @@ impl IssuesView {
             .filter(|_| issue.link.is_none())
             .map(|forge| forge.name());
         let body = self.parsed_body(root, &issue, cx);
-        let run = self.run_on(issue.number).map(|run| run.awaiting);
+        // A plan approved in its own session is not this panel's to approve.
+        let run = self
+            .run_on(issue.number)
+            .map(|run| run.awaiting && !run.in_session);
         let held = match (run, working_in(&issue, &self.live)) {
             (Some(true), _) => Some(Held::Plan),
             (_, Some(session)) => Some(Held::Session(session.to_string())),
@@ -819,6 +824,11 @@ impl IssuesView {
     /// checkout or (`worktree`) a worktree of its own, with the prompt written
     /// for that place ready to be changed before it goes.
     ///
+    /// *Work in steps* hands the issue to onehand's steps instead, and the box
+    /// becomes what is asked of every step, empty to begin with. Turned off
+    /// again, the written prompt comes back only into a box still empty, so
+    /// nothing typed is thrown away.
+    ///
     /// The project is held for the reason the close confirmation holds it: a
     /// window left open across a switch starts the issue it was opened for.
     fn open_work(
@@ -837,53 +847,111 @@ impl IssuesView {
         let named = issue.reference().unwrap_or("Draft").to_string();
         let branch = worktree.then(|| issues::worktree_branch(issue));
         let written = issues::work_prompt(issue, worktree);
-        let prompt = cx.new(|cx| TextareaState::new(window, cx).default_value(written));
+        let prompt = cx.new(|cx| TextareaState::new(window, cx).default_value(written.clone()));
         prompt.update(cx, |input, cx| input.focus(window, cx));
-        let (title, explained) = match &branch {
-            Some(branch) => (
-                format!("Work {named} in a new worktree"),
-                format!(
+        let title = match &branch {
+            Some(_) => format!("Work {named} in a new worktree"),
+            None => format!("Work {named} in this checkout"),
+        };
+        let explain = {
+            let branch = branch.clone();
+            move |steps: bool| match (&branch, steps) {
+                (Some(branch), false) => format!(
                     "A worktree on a new branch, {branch}, added as a project. The session \
                      commits there and pushes nothing."
                 ),
-            ),
-            None => (
-                format!("Work {named} in this checkout"),
-                "The branch checked out here, alongside whatever else is going on in it. \
-                 Changes are left uncommitted."
+                (None, false) => "The branch checked out here, alongside whatever else is \
+                     going on in it. Changes are left uncommitted."
                     .to_string(),
-            ),
+                (Some(_), true) => "An unattended run: the issue is claimed, and a worktree \
+                     on a branch of the run's own is cut from the default branch. A plan, the \
+                     change, the project's check and a draft pull request, each checked by \
+                     onehand before the next."
+                    .to_string(),
+                (None, true) => "The branch checked out here: a plan, the change and the \
+                     project's check, each checked by onehand before the next. Nothing is \
+                     committed. If the project approves plans, the session waits after the \
+                     plan for Continue under its header."
+                    .to_string(),
+            }
         };
+        let steps = std::rc::Rc::new(std::cell::Cell::new(false));
         let view = cx.entity();
         window.open_dialog(cx, move |dialog, _, cx| {
             let start = {
-                let (view, prompt, root, branch) =
-                    (view.clone(), prompt.clone(), root.clone(), branch.clone());
+                let (view, prompt, root, branch, steps) = (
+                    view.clone(),
+                    prompt.clone(),
+                    root.clone(),
+                    branch.clone(),
+                    steps.clone(),
+                );
                 move |_: &gpui::ClickEvent, window: &mut Window, cx: &mut App| {
                     let text = prompt.read(cx).value().trim().to_string();
-                    if text.is_empty() {
+                    let steps = steps.get();
+                    if text.is_empty() && !steps {
                         window.push_notification("A session needs a first message", cx);
                         return;
                     }
                     window.close_dialog(cx);
                     let (root, branch) = (root.clone(), branch.clone());
                     view.update(cx, |view, cx| {
-                        view.start_work(root, number, text, branch, window, cx)
+                        view.start_work(root, number, text, branch, steps, window, cx)
                     });
                 }
             };
+            let toggle = {
+                let (prompt, steps, written) = (prompt.clone(), steps.clone(), written.clone());
+                move |on: &bool, window: &mut Window, cx: &mut App| {
+                    let on = *on;
+                    steps.set(on);
+                    prompt.update(cx, |input, cx| {
+                        let untouched = input.value().trim().is_empty();
+                        if on {
+                            input.set_value("", window, cx);
+                            input.set_placeholder(
+                                "Asked of every step, beside the issue",
+                                window,
+                                cx,
+                            );
+                        } else {
+                            if untouched {
+                                input.set_value(written.clone(), window, cx);
+                            }
+                            input.set_placeholder("", window, cx);
+                        }
+                    });
+                    window.refresh();
+                }
+            };
+            let on = steps.get();
             dialog
                 .title(title.clone())
                 .child(
                     div()
                         .v_flex()
                         .gap_2()
+                        // The checkbox sets no cursor of its own; held to its
+                        // own width, so the space beside it is not a target.
+                        .child(
+                            div().h_flex().child(
+                                div().flex_none().cursor_pointer().child(
+                                    Checkbox::new("issue-work-steps")
+                                        .checked(on)
+                                        .label("Work in steps")
+                                        .on_click(toggle),
+                                ),
+                            ),
+                        )
                         .child(
                             div()
                                 .text_xs()
                                 .text_color(cx.theme().muted_foreground)
-                                .child(explained.clone()),
+                                .child(explain(on)),
                         )
+                        .when(on, |body| {
+                            body.child(div().text_xs().child("Extra instructions (optional)"))
+                        })
                         .child(Textarea::new(&prompt).h(gpui::rems(18.))),
                 )
                 .footer(
@@ -991,12 +1059,14 @@ impl IssuesView {
 
     /// Ask for a session on issue `number` of project `root`, once this view
     /// is no longer being updated, for the reason [`Self::ask_later`] waits.
+    #[allow(clippy::too_many_arguments)]
     fn start_work(
         &mut self,
         root: PathBuf,
         number: u64,
         prompt: String,
         branch: Option<String>,
+        steps: bool,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
@@ -1007,6 +1077,7 @@ impl IssuesView {
                 number,
                 prompt: &prompt,
                 branch: branch.as_deref(),
+                steps,
             };
             ask(&request, window, cx)
         });

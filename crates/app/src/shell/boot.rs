@@ -228,14 +228,12 @@ impl Shell {
         // Which step each run is at, for the Issues panel. Guarded for the
         // reason the live conversations are: the global moves for far more
         // than the runs.
-        cx.observe_global::<Shared>(|shell: &mut Self, cx| {
-            let runs = crate::unattended::runs_by_issue(cx);
-            if runs != shell.issue_runs {
-                shell
-                    .workbench
-                    .update(cx, |panel, cx| panel.issue_runs(&runs, cx));
-                shell.issue_runs = runs;
-            }
+        // Sessions working an issue in steps in their checkout are listed
+        // with them, and kept apart from the runs' global.
+        cx.observe_global::<Shared>(|shell: &mut Self, cx| shell.sync_issue_runs(cx))
+            .detach();
+        cx.observe_global::<super::hand_steps::HandSteps>(|shell: &mut Self, cx| {
+            shell.sync_issue_runs(cx)
         })
         .detach();
 
@@ -288,14 +286,21 @@ impl Shell {
                         root,
                         number,
                         prompt,
-                        branch: None,
-                    } => shell.work_issue_here(root, *number, prompt, window, cx),
-                    E::WorkIssue {
-                        root,
-                        number,
-                        prompt,
-                        branch: Some(branch),
-                    } => shell.work_issue_in_worktree(root, *number, prompt, branch, window, cx),
+                        branch,
+                        steps,
+                    } => match (steps, branch) {
+                        (false, None) => shell.work_issue_here(root, *number, prompt, window, cx),
+                        (false, Some(branch)) => {
+                            shell.work_issue_in_worktree(root, *number, prompt, branch, window, cx)
+                        }
+                        // The run path names and cuts its own branch.
+                        (true, Some(_)) => {
+                            shell.work_issue_as_run(root, *number, prompt, window, cx)
+                        }
+                        (true, None) => {
+                            shell.work_issue_in_steps(root, *number, prompt, window, cx)
+                        }
+                    },
                     E::OpenConversation(session) => shell.open_conversation(session, window, cx),
                     // Deferred: a run given its session reaches back into
                     // this shell to add the session.

@@ -1,5 +1,7 @@
-//! An issue worked by hand in the checkout its project is open on, and the
-//! conversation an issue names opened again.
+//! An issue worked by hand in the checkout its project is open on, or in
+//! steps, and the conversation an issue names opened again.
+
+pub(crate) mod steps;
 
 use super::Shell;
 use crate::chat::session::ChatEvent;
@@ -9,6 +11,14 @@ use gpui_component::notification::Notification;
 use onehand_core::chat::Link;
 use onehand_core::worktree;
 use std::path::{Path, PathBuf};
+
+/// What a session working an issue in steps in its checkout needs beyond
+/// the session itself.
+struct Steps {
+    root: PathBuf,
+    tracker: onehand_core::unattended::Tracker,
+    issue: onehand_core::unattended::Issue,
+}
 
 impl Shell {
     /// Start a session on project `root` with `prompt` as its first message,
@@ -34,7 +44,105 @@ impl Shell {
             return;
         };
         let note = "Taken up by a session on this checkout".to_string();
-        self.start_issue_session(idx, file, number, prompt.to_string(), note, window, cx);
+        self.start_issue_session(
+            idx,
+            file,
+            number,
+            prompt.to_string(),
+            note,
+            None,
+            window,
+            cx,
+        );
+    }
+
+    /// Work issue `number` of project `root` in steps in a new worktree,
+    /// which is an unattended run picked by hand: claimed, on a branch of the
+    /// run's own, timed, checked and taken to a pull request. `extra` is what
+    /// the person asks of every step.
+    pub(super) fn work_issue_as_run(
+        &mut self,
+        root: &Path,
+        number: u64,
+        extra: &str,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(file) = self.issues_file(root) else {
+            return;
+        };
+        let (root, extra) = (root.to_path_buf(), extra.to_string());
+        let handle = window.window_handle();
+        cx.spawn_in(window, async move |_, cx| {
+            let read = {
+                let root = root.clone();
+                cx.background_executor()
+                    .spawn(
+                        async move { crate::unattended::kept_issue_blocking(&root, file, number) },
+                    )
+                    .await
+            };
+            let _ = cx.update(|window, cx| {
+                let started = read.and_then(|(tracker, row)| {
+                    crate::unattended::start_picked(root, tracker, row, Some(extra), handle, cx)
+                });
+                if let Err(why) = started {
+                    window.push_notification(Notification::warning(why), cx);
+                }
+            });
+        })
+        .detach();
+    }
+
+    /// Work issue `number` of project `root` in steps in the checkout it is
+    /// open on: a plan, the change and the project's check, judged by onehand
+    /// one by one, with the change left uncommitted. `extra` is what the
+    /// person asks of every step.
+    pub(super) fn work_issue_in_steps(
+        &mut self,
+        root: &Path,
+        number: u64,
+        extra: &str,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(file) = self.issues_file(root) else {
+            return;
+        };
+        let (root, extra) = (root.to_path_buf(), extra.to_string());
+        cx.spawn_in(window, async move |shell, cx| {
+            let read = {
+                let (root, file) = (root.clone(), file.clone());
+                cx.background_executor()
+                    .spawn(
+                        async move { crate::unattended::kept_issue_blocking(&root, file, number) },
+                    )
+                    .await
+            };
+            let _ = shell.update_in(cx, |shell, window, cx| {
+                let (tracker, row) = match read {
+                    Ok(read) => read,
+                    Err(why) => {
+                        window.push_notification(
+                            Notification::warning(format!("This issue cannot be worked: {why}")),
+                            cx,
+                        );
+                        return;
+                    }
+                };
+                let Some(idx) = shell.root_index(&root) else {
+                    return;
+                };
+                let note = "Taken up by a session on this checkout, in steps".to_string();
+                let steps = Steps {
+                    root,
+                    tracker,
+                    issue: row.issue,
+                };
+                shell.start_issue_session(idx, file, number, extra, note, Some(steps), window, cx);
+            });
+        })
+        .detach();
     }
 
     /// Make a worktree of project `root` on `branch` (or the first free name
@@ -89,7 +197,7 @@ impl Shell {
                 shell.refresh_git(cx);
                 shell.save_workspace(window, cx);
                 let note = format!("Taken up by a session in a worktree on {branch}");
-                shell.start_issue_session(idx, file, number, prompt, note, window, cx);
+                shell.start_issue_session(idx, file, number, prompt, note, None, window, cx);
             });
         })
         .detach();
@@ -97,7 +205,8 @@ impl Shell {
 
     /// Start a session on project `idx` that sends `prompt` once the agent is
     /// up, and writes `note` on issue `number` of `file` once the agent has
-    /// named the conversation.
+    /// named the conversation. Given `steps`, the session works the issue in
+    /// them instead, and `prompt` is what is asked of every step.
     #[allow(clippy::too_many_arguments)]
     fn start_issue_session(
         &mut self,
@@ -106,6 +215,7 @@ impl Shell {
         number: u64,
         prompt: String,
         note: String,
+        steps: Option<Steps>,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
@@ -120,13 +230,35 @@ impl Shell {
             );
             return;
         };
+        let in_steps = steps.is_some();
+        if let Some(Steps {
+            root,
+            tracker,
+            issue,
+        }) = steps
+        {
+            let shell = cx.entity().downgrade();
+            steps::watch(
+                uid,
+                &session,
+                shell,
+                root,
+                tracker,
+                issue,
+                Some(prompt.clone()),
+                cx,
+            );
+        }
         let workbench = self.workbench.downgrade();
         let (mut sent, mut told) = (false, false);
         cx.subscribe(&session, move |_, session, _: &ChatEvent, cx| {
             let chat = &session.read(cx).chat;
             if !sent && chat.link == Link::Connected {
                 sent = true;
-                if !chat.busy && chat.prompts_sent == 0 && chat.queued.is_none() {
+                let untouched = !chat.busy && chat.prompts_sent == 0 && chat.queued.is_none();
+                if untouched && in_steps {
+                    steps::begin(uid, &session, cx);
+                } else if untouched {
                     // The mode chosen for an issue's sessions, when the agent
                     // offers it; otherwise the session keeps the one it opened
                     // in, since a person is at the window to answer it.
@@ -159,6 +291,18 @@ impl Shell {
             .detach();
         })
         .detach();
+    }
+
+    /// Tell the Workbench which step each run and each session working in
+    /// steps is at, when that changed.
+    pub(super) fn sync_issue_runs(&mut self, cx: &mut Context<Self>) {
+        let mut runs = crate::unattended::runs_by_issue(cx);
+        runs.extend(steps::by_issue(cx));
+        if runs != self.issue_runs {
+            self.workbench
+                .update(cx, |panel, cx| panel.issue_runs(&runs, cx));
+            self.issue_runs = runs;
+        }
     }
 
     /// Put the conversation the agent named `session` on screen: the live

@@ -506,7 +506,7 @@ impl IssuesView {
         // person, in the warning ink "decide" wears for the same reason.
         let run = self
             .run_on(number)
-            .map(|run| (run.awaiting, run.step.label()));
+            .map(|run| (run.awaiting, run.in_session, run.step.label()));
         let meta = div()
             .h_flex()
             .items_center()
@@ -534,7 +534,11 @@ impl IssuesView {
                 meta.child("·")
                     .child(div().text_color(status_ink(cx).warning).child("decide"))
             })
-            .when_some(run, |meta, (awaiting, step)| match awaiting {
+            .when_some(run, |meta, (awaiting, in_session, step)| match awaiting {
+                // Approved in its own session, so nothing here to press.
+                true if in_session => meta
+                    .child("·")
+                    .child(div().text_color(status_ink(cx).warning).child("waiting")),
                 true => meta.child("·").child(
                     div()
                         .text_color(status_ink(cx).warning)

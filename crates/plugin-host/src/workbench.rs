@@ -168,11 +168,16 @@ pub enum Request<'a> {
     /// `branch`, in a worktree of its own on that branch (or the first free
     /// name after it), added to the workspace as a project. Only ever travels
     /// **upward**, for the reason [`Self::RestartAgent`] does.
+    ///
+    /// With `steps`, the session works in steps that onehand checks one by
+    /// one, and `prompt` is what the person asked of every step, possibly
+    /// nothing. In a new worktree that is an unattended run on the issue.
     WorkIssue {
         root: &'a Path,
         number: u64,
         prompt: &'a str,
         branch: Option<&'a str>,
+        steps: bool,
     },
     /// Put the conversation the agent named `session` on screen: the live
     /// session holding it, or the saved one reopened on the project it ran
@@ -204,6 +209,9 @@ pub struct IssueRun {
     pub step: Step,
     /// It waits for a person to approve its plan.
     pub awaiting: bool,
+    /// Its plan is approved in its own session rather than here: a session
+    /// working the issue in steps in the checkout it was started in.
+    pub in_session: bool,
 }
 
 /// How a mode reaches back into the panel.

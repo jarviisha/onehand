@@ -122,22 +122,37 @@ impl ChatPane {
     /// edge, so the outermost control moves the outermost panel. The dots are
     /// the row's one menu mark, and everything behind them is something done
     /// to the conversation the name beside them is.
-    /// Where the unattended run this session belongs to stands: every step in
-    /// order, the ones behind it checked off and the one it is at in full ink.
-    /// `None` for a session no run owns.
+    /// Where the unattended run this session belongs to stands, or the steps
+    /// it works an issue in from its checkout: every step in order, the ones
+    /// behind it checked off and the one it is at in full ink. `None` for a
+    /// session working in no steps.
     ///
     /// The transcript says each step as it starts, but a line scrolled past is
-    /// not an answer to "how far along is it", and a run's steps are few
-    /// enough to be read in one glance.
+    /// not an answer to "how far along is it", and the steps are few enough to
+    /// be read in one glance. A checkout's plan waiting for approval is
+    /// approved here, in its own session, so *Continue* and *Revise…* follow.
     pub(super) fn run_steps(&self, cx: &App) -> Option<impl IntoElement + use<>> {
         let uid = self.active?;
-        let run = crate::unattended::live_runs(cx)
+        let (named, at_step, steps, awaiting) = match crate::unattended::live_runs(cx)
             .into_iter()
-            .find(|run| run.uid == uid)?;
+            .find(|run| run.uid == uid)
+        {
+            Some(run) => (format!("Run {}", run.name), run.step, &Step::ALL[..], false),
+            None => {
+                let hand = crate::shell::hand_steps::shown(uid, cx)?;
+                let steps = &crate::shell::hand_steps::STEPS[..];
+                (
+                    format!("Issue {}", hand.name),
+                    hand.step,
+                    steps,
+                    hand.awaiting,
+                )
+            }
+        };
         let muted = cx.theme().muted_foreground;
         let foreground = cx.theme().foreground;
-        let steps = Step::ALL.into_iter().enumerate().map(|(i, step)| {
-            let at = step.cmp(&run.step);
+        let steps = steps.iter().enumerate().map(|(i, step)| {
+            let at = step.cmp(&at_step);
             div()
                 .h_flex()
                 .items_center()
@@ -164,8 +179,34 @@ impl ChatPane {
                 .px_4()
                 .text_xs()
                 .text_color(muted)
-                .child(div().mr_1().child(format!("Run {}", run.name)))
-                .children(steps),
+                .child(div().mr_1().child(named))
+                .children(steps)
+                .when(awaiting, |strip| {
+                    strip.child(
+                        div()
+                            .h_flex()
+                            .ml_auto()
+                            .gap_1()
+                            .child(
+                                crate::controls::action("hand-steps-revise")
+                                    .xsmall()
+                                    .ghost()
+                                    .label("Revise…")
+                                    .on_click(move |_, window, cx| open_revise(uid, window, cx)),
+                            )
+                            .child(
+                                crate::controls::action("hand-steps-continue")
+                                    .xsmall()
+                                    .primary()
+                                    .icon(Icon::new(IconName::Check))
+                                    .label("Continue")
+                                    .tooltip("Go on from the plan to the change")
+                                    .on_click(move |_, _, cx| {
+                                        crate::shell::hand_steps::approve(uid, cx)
+                                    }),
+                            ),
+                    )
+                }),
         )
     }
 
@@ -874,4 +915,68 @@ struct HistoryRow {
     open: bool,
     agent: SharedString,
     dir: PathBuf,
+}
+
+/// Put up the window that sends session `uid`'s plan back to be written
+/// again, with what to change in it.
+fn open_revise(uid: u64, window: &mut Window, cx: &mut App) {
+    use gpui::AppContext as _;
+    use gpui_component::WindowExt as _;
+    use gpui_component::input::{Textarea, TextareaState};
+    let note = cx.new(|cx| {
+        TextareaState::new(window, cx).placeholder("What should the plan do differently?")
+    });
+    note.update(cx, |input, cx| input.focus(window, cx));
+    window.open_dialog(cx, move |dialog, _, cx| {
+        let send = {
+            let note = note.clone();
+            move |_: &gpui::ClickEvent, window: &mut Window, cx: &mut App| {
+                let text = note.read(cx).value().trim().to_string();
+                if text.is_empty() {
+                    window.push_notification("Say what to change in the plan", cx);
+                    return;
+                }
+                window.close_dialog(cx);
+                crate::shell::hand_steps::revise(uid, text, cx);
+            }
+        };
+        dialog
+            .title("Revise the plan")
+            .child(
+                div()
+                    .v_flex()
+                    .gap_2()
+                    .child(
+                        div()
+                            .text_xs()
+                            .text_color(cx.theme().muted_foreground)
+                            .child(
+                                "The session writes its plan again, with this note and the \
+                                 plan it wrote before.",
+                            ),
+                    )
+                    .child(Textarea::new(&note).h(rems(10.))),
+            )
+            .footer(
+                div()
+                    .h_flex()
+                    .gap_2()
+                    .w_full()
+                    .justify_end()
+                    .child(
+                        crate::controls::action("hand-revise-cancel")
+                            .small()
+                            .ghost()
+                            .label("Cancel")
+                            .on_click(|_, window, cx| window.close_dialog(cx)),
+                    )
+                    .child(
+                        crate::controls::action("hand-revise-send")
+                            .small()
+                            .primary()
+                            .label("Send back")
+                            .on_click(send),
+                    ),
+            )
+    });
 }

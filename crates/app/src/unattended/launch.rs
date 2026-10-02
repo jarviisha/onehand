@@ -161,7 +161,7 @@ pub(super) fn begin_blocking(
         eprintln!("onehand: could not claim issue #{}: {why}", issue.number);
         return None;
     }
-    Some(prepare_blocking(repo, tracker, forge, issue, None))
+    Some(prepare_blocking(repo, tracker, forge, issue, None, None))
 }
 
 /// Cut or find the worktree for a claimed issue, and say what the run's first
@@ -181,12 +181,15 @@ pub(super) fn begin_blocking(
 /// Caught as well as everything around it: by now the issue has been claimed,
 /// so a panic has to become a comment on the issue, or it is left claimed with
 /// nothing saying what happened.
+///
+/// `extra` is what the person who picked it asked of every step.
 fn prepare_blocking(
     repo: PathBuf,
     tracker: Tracker,
     forge: Option<&'static dyn Connector>,
     issue: Issue,
     picked_in: Option<gpui::AnyWindowHandle>,
+    extra: Option<String>,
 ) -> Result<(Claimed, Progress), Unstarted> {
     let made = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         let base = match forge {
@@ -243,7 +246,7 @@ fn prepare_blocking(
             Start::Review { .. } => Some(worktree::head_blocking(&dir)?),
             Start::Fresh | Start::Earlier | Start::Repair { .. } => None,
         };
-        Ok::<_, String>((base, branch, dir, Progress::new(start, since)))
+        Ok::<_, String>((base, branch, dir, Progress::new(start, since, extra)))
     }))
     .unwrap_or_else(|_| Err("onehand panicked while preparing the worktree".to_string()));
     match made {
@@ -312,6 +315,28 @@ pub fn pickable_blocking(root: &Path, issues: Option<PathBuf>) -> Result<Pickabl
     }
 }
 
+/// Issue `number`, kept in `file` for project `root`, as a run reads it and
+/// with where it lives: kept in step with the project's forge, or here only.
+/// Blocking.
+pub fn kept_issue_blocking(
+    root: &Path,
+    file: PathBuf,
+    number: u64,
+) -> Result<(Tracker, IssueRow), String> {
+    let kept = onehand_core::issues::load_blocking(&file)?;
+    let issue = kept
+        .get(number)
+        .ok_or_else(|| format!("issue #{number} is not kept here any more"))?;
+    let row = IssueRow {
+        issue: Issue::from_local(issue),
+        author: String::new(),
+        labels: issue.labels.clone(),
+    };
+    // Given a file, the first is always the file's own.
+    let tracker = trackers_blocking(Some(file), connector_for(root).ok()).remove(0);
+    Ok((tracker, row))
+}
+
 /// Where a project's issues are looked for, in the order they are searched.
 ///
 /// A project kept in step with its forge is looked for **here only**, since
@@ -345,11 +370,13 @@ fn trackers_blocking(
 /// refusal names the issue already being worked so the person knows what they
 /// are waiting on. Anything that stops it before
 /// the claim — a claim refused where the issue lives — is said in the window it
-/// was picked from; after the claim, on the issue as well.
+/// was picked from; after the claim, on the issue as well. `extra` is what
+/// the person asks of every step beyond the issue.
 pub fn start_picked(
     repo: PathBuf,
     tracker: Tracker,
     row: IssueRow,
+    extra: Option<String>,
     window: gpui::AnyWindowHandle,
     cx: &mut App,
 ) -> Result<(), String> {
@@ -411,6 +438,7 @@ pub fn start_picked(
                         forge,
                         row.issue,
                         Some(window),
+                        extra,
                     ))
                 }))
                 .unwrap_or_else(|_| Err("onehand panicked while claiming the issue".to_string()))

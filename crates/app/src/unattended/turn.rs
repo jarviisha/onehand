@@ -6,7 +6,8 @@ use gpui::{App, Entity, Task, WeakEntity};
 use onehand_core::chat::UserAsk;
 use onehand_core::chat::{ChatItem, TranscriptItemId};
 use onehand_core::unattended::{
-    self as core, Ending, Facts, Gate, Missing, Next, Phase, Spent, Start, Step, Tracker, Verdict,
+    self as core, Ending, Facts, Gate, Missing, Next, Phase, Place, Spent, Start, Step, Tracker,
+    Verdict,
 };
 use onehand_core::worktree;
 use std::time::{Duration, Instant};
@@ -122,7 +123,7 @@ pub(super) fn pending_ending(run: &Run) -> Option<Ending> {
 const PLAN_MAX: usize = 20_000;
 
 /// The whole of the last turn's answer, cut at [`PLAN_MAX`] characters.
-fn turn_answer(session: &Entity<ChatSession>, cx: &App) -> String {
+pub(crate) fn turn_answer(session: &Entity<ChatSession>, cx: &App) -> String {
     let chat = &session.read(cx).chat;
     let last = chat.items.len().saturating_sub(1);
     let prose = chat.turn_prose(TranscriptItemId::Live(last));
@@ -204,6 +205,7 @@ fn after_turn(uid: u64, session: &Entity<ChatSession>, cx: &mut App) {
                         (None, _) => true,
                     };
                     let gate = Gate {
+                        committed: true,
                         forge: forge.is_some(),
                         approve_plans: project.as_ref().is_some_and(|p| p.approve_plans),
                         check: project.as_ref().is_some_and(|p| p.check.is_some()),
@@ -289,7 +291,7 @@ fn dispatch(
 }
 
 /// Whether the plan step's gate let the plan through.
-fn plan_passed(next: &Next) -> bool {
+pub(crate) fn plan_passed(next: &Next) -> bool {
     match next {
         Next::Advance(_) | Next::AwaitApproval => true,
         Next::CarryOn(_) | Next::RunCheck | Next::AwaitChecks | Next::Settle | Next::Exhausted => {
@@ -359,6 +361,7 @@ fn advance(
             c.forge,
             &run.progress,
             failed,
+            Place::Branch,
         );
         Some((text, c.file.clone(), record))
     })
@@ -495,7 +498,12 @@ fn carry_on(
         run.sent += 1;
         run.missed += 1;
         let record = enter_step(run);
-        let text = core::carry_on(&missing, run.progress.step, run.claimed.forge);
+        let text = core::carry_on(
+            &missing,
+            run.progress.step,
+            run.claimed.forge,
+            Place::Branch,
+        );
         Some((text, run.missed, run.claimed.file.clone(), record))
     })
     .flatten() else {
@@ -510,6 +518,8 @@ fn carry_on(
         Missing::NoPlan => "no plan",
         Missing::PlanTouchedCode => "a plan that changed code",
         Missing::CheckFailed(_) => "a failing check",
+        Missing::Committed => "a commit",
+        Missing::Unchanged => "no change",
     };
     if session.update(cx, |session, cx| session.submit(&text, &[], cx)) {
         note(
@@ -718,6 +728,7 @@ fn first_prompt(
             c.forge,
             &run.progress,
             failed,
+            Place::Branch,
         );
         Some((text, moved.map(|record| (c.file.clone(), record))))
     })
@@ -822,7 +833,7 @@ pub(super) fn start_notes(claimed: &Claimed, start: &Start) -> Vec<String> {
 }
 
 /// Add a line about the run to its session's transcript.
-pub(super) fn note(session: &Entity<ChatSession>, text: String, cx: &mut App) {
+pub(crate) fn note(session: &Entity<ChatSession>, text: String, cx: &mut App) {
     session.update(cx, |session, cx| {
         session.chat.items.push(ChatItem::notice(text));
         cx.emit(ChatEvent::Appended);
@@ -838,7 +849,11 @@ pub(super) fn note(session: &Entity<ChatSession>, text: String, cx: &mut App) {
 /// from what was *sent*, not from the user rows in the transcript: an adapter
 /// delivers user chunks of its own mid-turn, and reading those as prompts took
 /// runs over that nobody had touched.
-fn prompted_by_someone_else(session: &Entity<ChatSession>, sent: usize, cx: &App) -> bool {
+pub(crate) fn prompted_by_someone_else(
+    session: &Entity<ChatSession>,
+    sent: usize,
+    cx: &App,
+) -> bool {
     let chat = &session.read(cx).chat;
     chat.queued.is_some() || chat.prompts_sent > sent
 }

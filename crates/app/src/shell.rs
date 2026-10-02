@@ -19,6 +19,7 @@ mod boot;
 mod docks;
 mod drafts;
 mod issue_work;
+pub(crate) use issue_work::steps as hand_steps;
 mod remote_runs;
 mod render;
 mod roots;
