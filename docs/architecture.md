@@ -951,7 +951,7 @@ see the rail, below.
   workspace as a project like one from *New worktree…* and stays after the session, and the prompt
   tells the agent to commit there and push nothing. Either way it is not a run. The prompt waits for
   the adapter and is not sent if somebody typed into the session first; the issue hears which
-  session took it once the agent has named it, on the project it is kept in. **An issue a live session is on is not offered *Work…*:**
+  session took it once the agent has named it, on the project it is kept in. **An issue a live session is on is not offered *Work*:**
   the shell tells the Workbench which conversations have a live session in the window
   (`Request::LiveConversations`, sent from the pane observer only when the set changes), and an issue
   whose history names one of them shows *Open session* in its place and *working* on its row.
