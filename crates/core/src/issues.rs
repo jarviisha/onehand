@@ -539,32 +539,57 @@ fn save_blocking(file: &Path, issues: &Issues) -> Result<(), String> {
         .map_err(|err| format!("{} could not be written: {err}", file.display()))
 }
 
-/// The prompt that works `issue` in the checkout the project is open on, with
-/// no branch or worktree of its own, and leaves what it changed for a person
-/// to read before anything is committed — the checkout is somebody's working
-/// copy, with whatever else they had going in it.
-pub fn work_here_prompt(issue: &LocalIssue) -> String {
+/// The prompt that works `issue` by hand: in the checkout the project is open
+/// on, or (`worktree`) in a worktree made for it on a branch of its own.
+///
+/// In the checkout nothing is committed: it is somebody's working copy, with
+/// whatever else they had going in it, so what changed is left for a person to
+/// read. A worktree holds nothing but this issue, so the work is committed on
+/// its branch; it still goes nowhere, because pushing is for the person to do.
+pub fn work_prompt(issue: &LocalIssue, worktree: bool) -> String {
     let named = match &issue.link {
         Some(link) => format!("{} issue {}", link.connector, link.reference),
         None => "this issue, which is kept in onehand rather than on a forge".to_string(),
     };
+    let (place, stay, leave) = if worktree {
+        (
+            "in this worktree, made for it on a branch of its own",
+            "Work on the branch this worktree has checked out, in this directory.\n\n\
+             1. Do not create another branch or worktree, and do not switch branches.\n",
+            "4. Commit your work on this branch once the checks pass. Do not push or open a \
+             pull request.\n",
+        )
+    } else {
+        (
+            "in this checkout",
+            "Work on the branch that is checked out, in this directory.\n\n\
+             1. Do not create a branch or a worktree, and do not switch branches.\n",
+            "4. Leave your changes uncommitted for review: do not commit, push or open a \
+             pull request.\n",
+        )
+    };
     format!(
-        "Work {named} in this checkout.\n\n\
+        "Work {named} {place}.\n\n\
          Title: {title}\n\n\
          {body}\n\n\
          ---\n\n\
-         Work on the branch that is checked out, in this directory.\n\n\
-         1. Do not create a branch or a worktree, and do not switch branches.\n\
+         {stay}\
          2. Read the repository's own agent instructions, and whatever they point at, \
          and follow its conventions.\n\
          3. Run the repository's checks.\n\
-         4. Leave your changes uncommitted for review: do not commit, push or open a \
-         pull request.\n\
+         {leave}\
          5. If the issue needs a decision from a person, ask it with your tool for \
          asking the user a question. Do not guess.\n",
         title = issue.title,
         body = issue.body.trim(),
     )
+}
+
+/// The branch a worktree made by hand for `issue` takes:
+/// `issue-<n>-<title words>`. Kept apart from the `onehand/` branches a run
+/// works on, so a later run does not take it for an earlier attempt of its own.
+pub fn worktree_branch(issue: &LocalIssue) -> String {
+    crate::unattended::branch_words(&issue.title, &format!("issue-{}", issue.number))
 }
 
 /// Say on the issue `number` kept in `file` that the conversation `session`
@@ -681,10 +706,22 @@ mod tests {
     fn working_here_keeps_to_the_checkout_and_commits_nothing() {
         let mut issue = Issues::default();
         let n = issue.create(draft("Fix the footer"), 1).unwrap();
-        let prompt = work_here_prompt(issue.get(n).unwrap());
+        let prompt = work_prompt(issue.get(n).unwrap(), false);
         assert!(prompt.contains("Title: Fix the footer"));
         assert!(prompt.contains("Do not create a branch or a worktree"));
         assert!(prompt.contains("do not commit, push or open a pull request"));
+    }
+
+    #[test]
+    fn a_worktree_of_its_own_commits_on_its_branch_and_pushes_nothing() {
+        let mut issues = Issues::default();
+        let n = issues.create(draft("Fix the footer"), 1).unwrap();
+        let issue = issues.get(n).unwrap();
+        let prompt = work_prompt(issue, true);
+        assert!(prompt.contains("in this worktree"));
+        assert!(prompt.contains("Commit your work on this branch"));
+        assert!(prompt.contains("Do not push"));
+        assert_eq!(worktree_branch(issue), format!("issue-{n}-fix-the-footer"));
     }
 
     #[test]

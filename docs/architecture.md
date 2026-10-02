@@ -938,12 +938,20 @@ see the rail, below.
   live session holding it, else finds the saved one by its id (`chat::find_conversation`) and
   reopens it on the project it ran in, adding that folder back when it has left the workspace — an
   unattended run's worktree does when the run ends — and saying so when the folder is gone.
-  **Work here** starts an ordinary session on the project's own checkout with
-  `issues::work_here_prompt` as its first message (`Request::WorkIssueHere`,
-  `Shell::work_issue_here`): no worktree, no branch, no claim, no timeout, and the prompt tells the
-  agent to leave its changes uncommitted, since this is somebody's working copy. The prompt waits for
+  **Work…** opens a form in the detail's place: a switch between *This checkout* and *New
+  worktree*, and the first message, written by `issues::work_prompt` for the place picked and
+  editable before it goes. Flipping the switch writes the prompt again only while it is still the
+  one written for the other place, so changed words are kept. *Start session* sends
+  `Request::WorkIssue`. In the checkout (`Shell::work_issue_here`) it is an ordinary session:
+  no worktree, no branch, no claim, no timeout, and the prompt tells the agent to leave its changes
+  uncommitted, since this is somebody's working copy. In a worktree
+  (`Shell::work_issue_in_worktree`) git makes one on `issues::worktree_branch`
+  (`issue-<n>-<title words>`, the first free name after it, off the checkout's HEAD), kept apart from
+  a run's `onehand/` branches so a run never takes it for an earlier attempt. It is added to the
+  workspace as a project like one from *New worktree…* and stays after the session, and the prompt
+  tells the agent to commit there and push nothing. Either way it is not a run. The prompt waits for
   the adapter and is not sent if somebody typed into the session first; the issue hears which
-  session took it once the agent has named it. **An issue a live session is on is not offered *Work here*:**
+  session took it once the agent has named it, on the project it is kept in. **An issue a live session is on is not offered *Work…*:**
   the shell tells the Workbench which conversations have a live session in the window
   (`Request::LiveConversations`, sent from the pane observer only when the set changes), and an issue
   whose history names one of them shows *Open session* in its place and *working* on its row.

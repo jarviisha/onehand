@@ -377,7 +377,7 @@ fn spoken(d: Duration) -> String {
 /// punctuation leaves the number alone, and a long one is cut at a word
 /// boundary's worth of characters rather than carried whole into a folder name.
 pub fn branch_for(issue: &Issue) -> String {
-    branch_words(issue, &issue_prefix(issue.number))
+    branch_words(&issue.title, &issue_prefix(issue.number))
 }
 
 /// What every branch a run on issue `number` works on starts with, whatever
@@ -387,10 +387,12 @@ pub fn issue_prefix(number: u64) -> String {
     format!("onehand/issue-{number}")
 }
 
-fn branch_words(issue: &Issue, prefix: &str) -> String {
+/// `prefix`, then the first forty characters of `title` as lowercase words
+/// joined by dashes.
+pub(crate) fn branch_words(title: &str, prefix: &str) -> String {
     const WORDS_MAX: usize = 40;
     let mut words = String::new();
-    for ch in issue.title.chars() {
+    for ch in title.chars() {
         if ch.is_ascii_alphanumeric() {
             words.push(ch.to_ascii_lowercase());
         } else if !words.is_empty() && !words.ends_with('-') {

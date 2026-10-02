@@ -107,14 +107,16 @@ impl Workbench {
         match request {
             Request::OpenFile(path) => self.open_file(path, window, cx),
             Request::RestartAgent => cx.emit(WorkbenchEvent::RestartAgent),
-            Request::WorkIssueHere {
+            Request::WorkIssue {
                 root,
                 number,
                 prompt,
-            } => cx.emit(WorkbenchEvent::WorkIssueHere {
+                branch,
+            } => cx.emit(WorkbenchEvent::WorkIssue {
                 root: root.to_path_buf(),
                 number: *number,
                 prompt: prompt.to_string(),
+                branch: branch.map(str::to_string),
             }),
             Request::OpenConversation(session) => {
                 cx.emit(WorkbenchEvent::OpenConversation(session.to_string()))
@@ -365,12 +367,14 @@ pub enum WorkbenchEvent {
     /// A mode changed something the agent reads only when it starts, and the
     /// user asked for it to start again.
     RestartAgent,
-    /// Work issue `number` of project `root` in the checkout it is open on,
-    /// with `prompt` as the new session's first message.
-    WorkIssueHere {
+    /// Work issue `number` of project `root`, with `prompt` as the new
+    /// session's first message: in the checkout it is open on, or in a
+    /// worktree of its own on `branch`.
+    WorkIssue {
         root: std::path::PathBuf,
         number: u64,
         prompt: String,
+        branch: Option<String>,
     },
     /// Show the conversation the agent named `session`, live or saved.
     OpenConversation(String),

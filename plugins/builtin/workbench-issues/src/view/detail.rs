@@ -1,6 +1,6 @@
 use super::list::{chip, identity};
 use super::mentions::FILE_LINK;
-use super::{FILES_SHOWN, Form, HISTORY_SHOWN, IssuesView};
+use super::{FILES_SHOWN, Form, HISTORY_SHOWN, IssuesView, Work};
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
     AnyElement, App, ClickEvent, ClipboardItem, Context, Entity, HighlightStyle,
@@ -11,9 +11,9 @@ use gpui_component::button::ButtonVariants as _;
 use gpui_component::input::{Input, Textarea};
 use gpui_component::text::{TextView, TextViewState, TextViewStyle};
 use gpui_component::tooltip::Tooltip;
-use gpui_component::{ActiveTheme, Icon, IconName, Sizable as _, StyledExt};
+use gpui_component::{ActiveTheme, Icon, IconName, Sizable as _, Size, StyledExt};
 use onehand_core::issues::{LocalIssue, sync};
-use onehand_plugin_host::{action, menu_below, menu_item, status_ink};
+use onehand_plugin_host::{action, menu_below, menu_item, status_ink, switch};
 use std::path::Path;
 
 /// One issue, read: how it is named and its title with what can be done to it,
@@ -80,17 +80,17 @@ pub(super) fn issue_view(
                                 })),
                         ),
                         None if open => actions.child(
-                            action("issue-work-here")
+                            action("issue-work")
                                 .xsmall()
                                 .ghost()
                                 .icon(Icon::new(IconName::Bot))
-                                .label("Work here")
+                                .label("Work…")
                                 .tooltip(
-                                    "Start a session on this checkout with the issue as its \
-                                     prompt. No branch or worktree; changes are left uncommitted",
+                                    "Start a session on this issue, in this checkout or in a \
+                                     worktree of its own, with a first message you can change",
                                 )
                                 .on_click(cx.listener(move |view, _: &ClickEvent, window, cx| {
-                                    view.work_here(number, window, cx)
+                                    view.open_work(number, window, cx)
                                 })),
                         ),
                         None => actions,
@@ -512,6 +512,83 @@ pub(super) fn form_view(form: &Form, cx: &mut Context<IssuesView>) -> AnyElement
                             None => "Create issue",
                         })
                         .on_click(cx.listener(|view, _: &ClickEvent, _, cx| view.save_form(cx))),
+                ),
+        )
+        .into_any_element()
+}
+
+/// The form an issue is started from: where the session works it, and its
+/// first message, in the place and shape of the issue form.
+pub(super) fn work_view(
+    issue: &LocalIssue,
+    work: &Work,
+    cx: &mut Context<IssuesView>,
+) -> AnyElement {
+    let view = cx.entity();
+    let muted = cx.theme().muted_foreground;
+    let named = issue.reference().unwrap_or("Draft");
+    let explained = if work.worktree {
+        "A new branch and worktree, added as a project. The session commits there and \
+         pushes nothing."
+    } else {
+        "The branch checked out here, alongside whatever else is going on in it. Changes \
+         are left uncommitted."
+    };
+    div()
+        .flex_1()
+        .min_w_0()
+        .h_full()
+        .v_flex()
+        .gap_2()
+        .p_2()
+        .child(
+            div()
+                .text_xs()
+                .text_color(muted)
+                .truncate()
+                .child(format!("Work {named}: {}", issue.title)),
+        )
+        .child(switch(
+            "issue-work-place",
+            &[
+                SharedString::from("This checkout"),
+                SharedString::from("New worktree"),
+            ],
+            usize::from(work.worktree),
+            Size::Small,
+            move |picked, window, cx| {
+                view.update(cx, |view, cx| view.place_work(*picked == 1, window, cx))
+            },
+            cx,
+        ))
+        .child(div().text_xs().text_color(muted).child(explained))
+        .child(
+            div()
+                .flex_1()
+                .min_h_0()
+                .child(Textarea::new(&work.prompt).h_full()),
+        )
+        .child(
+            div()
+                .h_flex()
+                .gap_2()
+                .justify_end()
+                .child(
+                    action("issue-work-cancel")
+                        .small()
+                        .ghost()
+                        .label("Cancel")
+                        .on_click(cx.listener(|view, _: &ClickEvent, _, cx| view.cancel_work(cx))),
+                )
+                .child(
+                    action("issue-work-start")
+                        .small()
+                        .primary()
+                        .icon(Icon::new(IconName::Bot))
+                        .label("Start session")
+                        .on_click(cx.listener(|view, _: &ClickEvent, window, cx| {
+                            view.start_work(window, cx)
+                        })),
                 ),
         )
         .into_any_element()
