@@ -125,7 +125,7 @@ The rest of the vocabulary, one meaning each:
 label = "auto"           # the trigger label (the default); empty picks nothing
 every = "30m"            # how often to look
 timeout = "45m"          # a run that neither finishes nor asks is cancelled
-mode = "auto"            # the ACP session mode a run starts in
+mode = "auto"            # the ACP session mode; also chosen in Settings ▸ Workspace
 agent = "Claude Code"    # which agent spec; the default agent when unset
 turns = 3                # turns one session may take before the run stops unfinished
 repairs = 2              # repairs one attempt may start on failing checks
@@ -498,10 +498,20 @@ and the run's own timeout already bounds that.
 **A mode the agent does not offer pauses the feature**, not just the run. Every
 later run would fail the same way on a fresh issue, each one spending a claim
 to say so, so the first says it on the issue and on stderr and the tick stops
-until the config is fixed and the app restarted. **That first issue is spent**:
-modes are only known once the adapter is up, which is after the claim, so the
-check cannot run before one is made. Its comment names the mode and what was
-offered, and re-adding the label once the config is fixed is the retry.
+until another mode is chosen in Settings ▸ Workspace, which lifts the pause at
+once. **That first issue is spent**: modes are only known once the adapter is
+up, which is after the claim, so the check cannot run before one is made. Its
+comment names the mode and what was offered, and re-adding the label once the
+mode is fixed is the retry.
+
+**One mode for every session that works an issue.** The *Mode* picker in
+Settings ▸ Workspace sets `unattended.mode`, live and in the config, and a
+session started on an issue from its Issues tab takes it as well — there it is
+set only when the agent offers it, since a person is at the window to answer
+whatever the session's own mode asks. The picker offers Auto, Accept edits, Ask
+and Bypass (`unattended::MODES`), with what Bypass gives away said beside it in
+the warning ink; an id written into the config by hand shows as a choice of its
+own.
 
 ## Outcome
 

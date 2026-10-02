@@ -685,6 +685,26 @@ pub fn live_runs(cx: &App) -> Vec<LiveRun> {
         .unwrap_or_default()
 }
 
+/// The session mode an issue's sessions start in: a run's, and one started on
+/// an issue from its Issues tab.
+pub fn mode(cx: &App) -> String {
+    Shared::global(cx)
+        .unattended
+        .as_ref()
+        .map(|u| u.mode.clone())
+        .unwrap_or_default()
+}
+
+/// Start the next issue's sessions in `mode`. A mode the agent refused no
+/// longer stops the runs: the next one finds out whether this one is offered.
+pub fn set_mode(mode: String, cx: &mut App) {
+    with(cx, |u| {
+        u.mode = mode;
+        u.mode_refused = None;
+    });
+    cx.refresh_windows();
+}
+
 /// The label that asks for a run, for the places that tell the user which
 /// label to put on an issue.
 pub fn label(cx: &App) -> String {

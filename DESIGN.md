@@ -297,8 +297,12 @@ One window hosts exactly one workspace. The frame is a navigation **rail** plus 
   Connections: a row per connector reading *Signed in as …* in the success ink,
   or saying in the warning ink what is wrong and what to run about it, with
   *Check again* under the list. Settings ▸ Workspace keeps *Look for an issue
-  now* above the switches, which runs the search at once and always answers with a
-  notification — including when nothing is switched on, a run is already going,
+  now* above the switches, then *Mode*: a segmented picker — Auto, Accept
+  edits, Ask, Bypass — for the session mode every session that works an issue
+  starts in, unattended or started from the Issues tab. Its explanation says
+  what the choice lets the agent do, and turns to the warning ink on Bypass,
+  the one choice that asks nobody anything. *Look for an issue now* runs the
+  search at once and always answers with a notification — including when nothing is switched on, a run is already going,
   something blocks every run, or no labelled issue was found — because a button
   that sometimes does nothing visible reads as broken. When the config
   stops every run, a warning line under the explanation says so before any

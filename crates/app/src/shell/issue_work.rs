@@ -50,7 +50,16 @@ impl Shell {
             if !sent && chat.link == Link::Connected {
                 sent = true;
                 if !chat.busy && chat.prompts_sent == 0 && chat.queued.is_none() {
-                    session.update(cx, |session, cx| session.submit(&prompt, &[], cx));
+                    // The mode chosen for an issue's sessions, when the agent
+                    // offers it; otherwise the session keeps the one it opened
+                    // in, since a person is at the window to answer it.
+                    let mode = crate::unattended::mode(cx);
+                    session.update(cx, |session, cx| {
+                        if session.chat.modes.iter().any(|m| m.id == mode) {
+                            session.chat.set_mode(&mode);
+                        }
+                        session.submit(&prompt, &[], cx)
+                    });
                 }
             }
             let Some(id) = session.read(cx).chat.session_id.clone().filter(|_| !told) else {

@@ -266,6 +266,32 @@ impl Tracker {
     }
 }
 
+/// The session modes offered for the sessions that work an issue, as the
+/// adapter's id and what a person calls it, least asking first.
+///
+/// `bypassPermissions` is among them because a person may want it and should
+/// not have to edit a file to say so; what it gives away is said beside it.
+pub const MODES: [(&str, &str); 4] = [
+    ("auto", "Auto"),
+    ("acceptEdits", "Accept edits"),
+    ("default", "Ask"),
+    ("bypassPermissions", "Bypass"),
+];
+
+/// [`MODES`], plus `current` at the end when it is none of them — an id
+/// written into the config by hand is still the one in force, and a picker
+/// that showed none of its choices pressed would say otherwise.
+pub fn mode_choices(current: &str) -> Vec<(String, String)> {
+    let mut choices: Vec<(String, String)> = MODES
+        .iter()
+        .map(|(id, name)| (id.to_string(), name.to_string()))
+        .collect();
+    if !choices.iter().any(|(id, _)| id == current) {
+        choices.push((current.to_string(), current.to_string()));
+    }
+    choices
+}
+
 /// How many open issues the picker lists. A repository with more than this
 /// open is one to narrow down where it lives, and the list says it was cut.
 pub const ISSUES_SHOWN: usize = 100;

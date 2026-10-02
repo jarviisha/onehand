@@ -517,3 +517,13 @@ fn a_budget_carried_into_a_later_session_keeps_what_was_spent() {
     assert_eq!(budget.left(now), Duration::from_secs(10));
     assert_eq!(budget.spent(now), Duration::from_secs(50));
 }
+
+#[test]
+fn a_mode_written_by_hand_is_still_offered_as_the_one_in_force() {
+    assert_eq!(mode_choices("auto").len(), MODES.len());
+    let choices = mode_choices("dontAsk");
+    assert_eq!(
+        choices.last(),
+        Some(&("dontAsk".to_string(), "dontAsk".to_string()))
+    );
+}

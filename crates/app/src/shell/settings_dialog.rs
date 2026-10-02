@@ -309,6 +309,19 @@ impl Shell {
         cx.notify();
     }
 
+    /// Start the sessions that work an issue in `mode` from now on, and keep
+    /// it in the config.
+    pub fn set_issue_mode(&mut self, mode: String, window: &mut Window, cx: &mut Context<Self>) {
+        if crate::unattended::mode(cx) == mode {
+            return;
+        }
+        crate::unattended::set_mode(mode.clone(), cx);
+        let path = Shared::global(cx).config_path.clone();
+        let saved = AppConfig::update_in_place(&path, |cfg| cfg.unattended.mode = mode);
+        self.report_write("Issue sessions", saved, true, window, cx);
+        cx.notify();
+    }
+
     /// Write the agent list back to the file the config was loaded from,
     /// preserving every other section.
     fn persist_agents(&mut self, window: &mut Window, cx: &mut Context<Self>) {

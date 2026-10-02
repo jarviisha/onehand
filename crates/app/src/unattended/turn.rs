@@ -315,7 +315,7 @@ fn prompt(uid: u64, session: &Entity<ChatSession>, cx: &mut App) {
         // stops here rather than working through the backlog to say it.
         let why = format!(
             "the agent offers no mode `{mode}` (it offers: {}). Unattended runs are paused \
-             until unattended.mode is fixed and onehand restarted.",
+             until another mode is chosen in Settings, under Workspace.",
             offered.join(", ")
         );
         with(cx, |u| u.mode_refused = Some(why.clone()));

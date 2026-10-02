@@ -268,6 +268,51 @@ pub(super) fn connections_page(cx: &App) -> AnyElement {
         .into_any_element()
 }
 
+/// The mode an issue's sessions start in, as one value with a few answers.
+///
+/// A button group for the reason the theme picker is one: one choice, one
+/// pressed. An id put into the config by hand is shown as a choice of its own
+/// rather than as none pressed.
+fn mode_picker(shell: &Entity<Shell>, current: &str) -> impl IntoElement + use<> {
+    let shell = shell.clone();
+    let choices = onehand_core::unattended::mode_choices(current);
+    let ids: Vec<String> = choices.iter().map(|(id, _)| id.clone()).collect();
+    ButtonGroup::new("issue-mode")
+        .outline()
+        .children(choices.into_iter().enumerate().map(|(i, (id, name))| {
+            crate::controls::action(("issue-mode", i))
+                .label(name)
+                .selected(id == current)
+        }))
+        .on_click(
+            move |clicked: &Vec<usize>, window: &mut Window, cx: &mut App| {
+                let Some(mode) = clicked.first().and_then(|i| ids.get(*i)).cloned() else {
+                    return;
+                };
+                shell.update(cx, |shell, cx| shell.set_issue_mode(mode, window, cx));
+            },
+        )
+}
+
+/// What the chosen mode lets an agent do. Bypass is said in the warning ink:
+/// it is the one choice that hands the agent everything, with nobody asked.
+fn mode_about(current: &str, cx: &App) -> AnyElement {
+    match current {
+        "bypassPermissions" => div()
+            .text_color(crate::theme::status_ink(cx).warning)
+            .child(
+                "Bypass runs every command without asking, with your credentials. Nothing \
+                 stops a mistake, or an instruction written into an issue.",
+            )
+            .into_any_element(),
+        _ => "For unattended runs and for a session started on an issue from its Issues tab. \
+              Auto lets Claude judge each command itself; Accept edits asks before every \
+              command; Ask asks before every edit as well. A question about what the issue \
+              wants is asked whatever the mode."
+            .into_any_element(),
+    }
+}
+
 /// The per-project switch for unattended runs, as a list.
 ///
 /// The same switch the project's own menu carries, gathered in one place so
@@ -276,6 +321,7 @@ pub(super) fn connections_page(cx: &App) -> AnyElement {
 /// the one thing a user has to put on an issue and it lives in the config file.
 fn unattended_section(handle: &Entity<Shell>, cx: &App) -> AnyElement {
     let label = crate::unattended::label(cx);
+    let mode = crate::unattended::mode(cx);
     let choices = handle.read(cx).unattended_choices();
     let ink = crate::theme::status_ink(cx);
     let empty = choices.is_empty();
@@ -287,8 +333,8 @@ fn unattended_section(handle: &Entity<Shell>, cx: &App) -> AnyElement {
              Issues tab — in a project switched on here is picked up by an agent, worked in \
              a worktree of its own, and answered with a pull request, or with commits on its \
              branch where the project has no forge. The switches are this workspace's; the \
-             label and how often to look are the app's, set in onehand.toml, and so is \
-             the agent a run uses — the default agent unless onehand.toml names another."
+             mode below is the app's, and so are the label, how often to look and the agent \
+             a run uses, set in onehand.toml — the default agent unless it names another."
         ))),
         cx,
     )
@@ -309,6 +355,12 @@ fn unattended_section(handle: &Entity<Shell>, cx: &App) -> AnyElement {
                     crate::unattended::look_now(window.window_handle(), cx);
                 }),
         ),
+        cx,
+    ))
+    .child(field(
+        "Mode",
+        Some(mode_about(&mode, cx)),
+        mode_picker(handle, &mode),
         cx,
     ))
     // Whatever stops every run, said above the switches in the warning ink:
