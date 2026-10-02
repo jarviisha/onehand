@@ -1701,8 +1701,6 @@ fn a_turn_ending_settles_what_it_left_running() {
     );
 }
 
-/// Whether the last turn was cancelled is kept, so something driving the
-/// session can tell a Stop from a turn that finished.
 /// A prompt beyond the ones a run sent, or one waiting behind the turn, is
 /// somebody else driving the session.
 #[test]
@@ -1717,6 +1715,8 @@ fn a_prompt_beyond_the_ones_sent_is_somebody_elses() {
     assert!(chat.prompted_beyond(1));
 }
 
+/// Whether the last turn was cancelled is kept, so something driving the
+/// session can tell a Stop from a turn that finished.
 #[test]
 fn a_cancelled_turn_is_told_from_a_finished_one() {
     let (mut chat, _rx) = chat_with_tx();

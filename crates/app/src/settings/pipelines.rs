@@ -690,9 +690,10 @@ fn step_box(
                 .into_any_element()
         }
         kind @ (Kind::Command | Kind::Approval) => {
-            let (title, needs_keep) = match kind {
-                Kind::Command => ("On failure, back to", false),
-                Kind::Agent | Kind::Approval => ("Approves the answer of", true),
+            let needs_keep = kind == Kind::Approval;
+            let title = match needs_keep {
+                true => "Approves the answer of",
+                false => "On failure, back to",
             };
             let choices: Vec<String> = earlier
                 .iter()

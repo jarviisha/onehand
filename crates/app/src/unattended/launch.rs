@@ -1,6 +1,7 @@
-use super::turn::{clock, note, on_event, pending_ending, resume, settle, start_notes, tell_issue};
+use super::turn::{clock, on_event, pending_ending, resume, settle, start_notes, tell_issue};
 use super::{Project, Run, Served, connector_for, label, opted_in_roots, tick, with};
 use crate::chat::session::ChatEvent;
+use crate::chat::session::note;
 use crate::state::Shared;
 use gpui::App;
 use onehand_core::config::AgentSpec;
