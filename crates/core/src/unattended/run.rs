@@ -53,8 +53,41 @@ impl Facts {
     }
 }
 
+/// A named stretch of an attempt, with its own prompt and a condition onehand
+/// checks itself before the run moves on.
+///
+/// **The order is fixed**: a plan, then the change, then the project's check,
+/// then the pull request. Planning first is what keeps an agent from changing
+/// code it has not read; the check is run by onehand, so "the checks pass" is
+/// never the agent's word.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+pub enum Step {
+    /// Read the code and say what will be done, changing nothing.
+    Plan,
+    /// Make the change and commit it. A record written before steps existed
+    /// reads as this, which is what its session was doing.
+    #[default]
+    Implement,
+    /// The project's check command failed: fix what it reports.
+    Verify,
+    /// Push the branch and open the draft pull request.
+    OpenPr,
+}
+
+impl Step {
+    /// What a person calls it.
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Plan => "Plan",
+            Self::Implement => "Implement",
+            Self::Verify => "Verify",
+            Self::OpenPr => "Open PR",
+        }
+    }
+}
+
 /// What a turn left undone.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Missing {
     /// Work sits in the worktree that no commit holds.
     Uncommitted,
@@ -64,26 +97,57 @@ pub enum Missing {
     NoPullRequest,
     /// The pull request is behind the branch.
     Unpushed,
+    /// A plan turn ended with no answer to read as the plan.
+    NoPlan,
+    /// A plan turn changed the code, which is the next step's to do.
+    PlanTouchedCode,
+    /// The project's check command failed, ending on this.
+    CheckFailed(String),
 }
 
 /// What a run does once a turn has ended.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Next {
     /// Prompt the same session again, saying what is missing.
     CarryOn(Missing),
+    /// The step is done: go on to this one in the same session.
+    Advance(Step),
+    /// The change is committed: run the project's check command.
+    RunCheck,
+    /// The plan is written and the project wants a person to approve it:
+    /// post it, close the session and wait.
+    AwaitApproval,
     /// Everything is pushed to an open pull request: close the session and
     /// wait for its checks.
     AwaitChecks,
     /// The run is over as it stands: work left on a branch with no forge, or
     /// a pull request somebody already closed or merged.
     Settle,
-    /// Something is still missing and the session has no turns left.
+    /// Something is still missing and the attempt has no turns left.
     Exhausted,
 }
 
-/// What comes after a turn, given what was read, whether the project has a
-/// forge, and how many more turns the session may take.
-pub fn after_turn(facts: &Facts, forge: bool, turns_left: u32) -> Next {
+/// What a step's gate needs to know beyond the branch.
+#[derive(Debug, Clone, Copy)]
+pub struct Gate<'a> {
+    /// The project has a forge the work goes to.
+    pub forge: bool,
+    /// The project wants a person to approve a plan before work starts.
+    pub approve_plans: bool,
+    /// The project has a check command for onehand to run.
+    pub check: bool,
+    /// How many more turns may fail their gate before the attempt is spent.
+    pub turns_left: u32,
+    /// What the turn answered, which is the plan in the plan step.
+    pub answer: &'a str,
+}
+
+/// What comes after a turn of `step`, given what was read.
+///
+/// **Only a turn that fails its gate costs a turn.** Four steps each take at
+/// least one, so counting every turn would spend a budget of three on a run
+/// that never put a foot wrong.
+pub fn next(step: Step, facts: &Facts, gate: &Gate) -> Next {
     if facts
         .pr
         .as_ref()
@@ -91,36 +155,58 @@ pub fn after_turn(facts: &Facts, forge: bool, turns_left: u32) -> Next {
     {
         return Next::Settle;
     }
-    let missing = if facts.dirty {
-        Some(Missing::Uncommitted)
+    let committed = if facts.dirty {
+        Err(Missing::Uncommitted)
     } else if facts.commits == 0 {
-        Some(Missing::NoCommits)
-    } else if !forge {
-        None
+        Err(Missing::NoCommits)
     } else {
-        match &facts.pr {
-            None => Some(Missing::NoPullRequest),
-            Some(pr) if pr.head != facts.head => Some(Missing::Unpushed),
-            Some(_) => None,
-        }
+        Ok(())
     };
-    match missing {
-        None if forge => Next::AwaitChecks,
-        None => Next::Settle,
-        Some(_) if turns_left == 0 => Next::Exhausted,
-        Some(missing) => Next::CarryOn(missing),
+    let passed = match step {
+        Step::Plan if gate.answer.trim().is_empty() => Err(Missing::NoPlan),
+        Step::Plan if facts.dirty || facts.commits > 0 => Err(Missing::PlanTouchedCode),
+        Step::Plan if gate.approve_plans => Ok(Next::AwaitApproval),
+        Step::Plan => Ok(Next::Advance(Step::Implement)),
+        Step::Implement | Step::Verify => committed.map(|()| match (gate.check, gate.forge) {
+            (true, _) => Next::RunCheck,
+            (false, true) => Next::Advance(Step::OpenPr),
+            (false, false) => Next::Settle,
+        }),
+        Step::OpenPr if !gate.forge => committed.map(|()| Next::Settle),
+        Step::OpenPr => committed.and_then(|()| match &facts.pr {
+            None => Err(Missing::NoPullRequest),
+            Some(pr) if pr.head != facts.head => Err(Missing::Unpushed),
+            Some(_) => Ok(Next::AwaitChecks),
+        }),
+    };
+    match passed {
+        Ok(next) => next,
+        Err(_) if gate.turns_left == 0 => Next::Exhausted,
+        Err(missing) => Next::CarryOn(missing),
     }
 }
 
-/// The prompt that sends a session back to work, naming what is missing.
-pub fn carry_on(missing: Missing, forge: Option<&dyn Connector>) -> String {
+/// What comes after the project's check command ran: on to the pull request,
+/// or back to work on what it reported.
+pub fn after_check(ran: Result<(), String>, turns_left: u32, forge: bool) -> Next {
+    match ran {
+        Ok(()) if forge => Next::Advance(Step::OpenPr),
+        Ok(()) => Next::Settle,
+        Err(_) if turns_left == 0 => Next::Exhausted,
+        Err(tail) => Next::CarryOn(Missing::CheckFailed(tail)),
+    }
+}
+
+/// The prompt that sends a session back to work in `step`, naming what is
+/// missing.
+pub fn carry_on(missing: &Missing, step: Step, forge: Option<&dyn Connector>) -> String {
     let finish = match forge {
-        Some(forge) => format!(
+        Some(forge) if step == Step::OpenPr => format!(
             "commit it, push the branch, and open the draft pull request with {} if it \
              has none yet",
             forge.open_pull_request_with()
         ),
-        None => "commit it on this branch".to_string(),
+        _ => "commit it on this branch".to_string(),
     };
     let said = match missing {
         Missing::Uncommitted => {
@@ -138,6 +224,17 @@ pub fn carry_on(missing: Missing, forge: Option<&dyn Connector>) -> String {
         Missing::Unpushed => {
             "the branch has commits its pull request does not. Push them.".to_string()
         }
+        Missing::NoPlan => "that turn gave no plan. Answer with the plan itself, and change \
+             nothing."
+            .to_string(),
+        Missing::PlanTouchedCode => "that turn changed the code, and this step is only the \
+             plan. Put the worktree and the branch back as they were, then answer with the \
+             plan alone."
+            .to_string(),
+        Missing::CheckFailed(tail) => format!(
+            "the project's check failed. Fix what it reports, then commit.\n\n```\n{}\n```",
+            tail.trim()
+        ),
     };
     format!("onehand checked the branch after that turn: {said}")
 }
@@ -168,21 +265,26 @@ pub enum Checked {
 /// Why a run stopped short of a pull request ready for review.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Spent {
-    /// The session took this many turns and something was still missing.
-    Turns(u32),
+    /// This many turns failed their gate, the last in this step.
+    Turns(u32, Step),
     /// The checks still fail after this many repairs.
     Repairs(u32),
     /// These checks failed again right after a repair aimed at them.
     FailedAgain(Vec<String>),
     /// The checks were still running after this long.
     ChecksPending(Duration),
+    /// Its plan waited this long and nobody approved it.
+    Unapproved(Duration),
 }
 
 impl Spent {
     /// What happened, as a sentence.
     pub fn said(&self) -> String {
         match self {
-            Self::Turns(n) => format!("It used up its {n} turns with the work unfinished."),
+            Self::Turns(n, step) => format!(
+                "It used up its {n} turns with the work unfinished, stuck at its {} step.",
+                step.label()
+            ),
             Self::Repairs(n) => format!("Its checks still fail after {n} repairs."),
             Self::FailedAgain(names) => format!(
                 "The same checks failed again after a repair: {}.",
@@ -190,6 +292,9 @@ impl Spent {
             ),
             Self::ChecksPending(d) => {
                 format!("Its checks were still running after {}.", spoken(*d))
+            }
+            Self::Unapproved(d) => {
+                format!("Its plan waited {} and nobody approved it.", spoken(*d))
             }
         }
     }
@@ -341,11 +446,29 @@ pub struct Progress {
     /// The commit this attempt's work is counted from, when that is not the
     /// base: an answer to a review counts only what it adds.
     pub since: Option<String>,
+    /// The step the run is in. Each field from here on defaults, because a
+    /// record written before it existed must still read.
+    #[serde(default)]
+    pub step: Step,
+    /// The plan last written, carried into a later session of the attempt.
+    #[serde(default)]
+    pub plan: Option<String>,
+    /// What a person asked to change in that plan.
+    #[serde(default)]
+    pub revise: Option<String>,
 }
 
 impl Progress {
+    /// A repair starts at the change, since what to do is in the failing
+    /// checks; every other attempt starts with a plan.
     pub fn new(start: Start, since: Option<String>) -> Self {
         Self {
+            step: match start {
+                Start::Repair { .. } => Step::Implement,
+                Start::Fresh | Start::Earlier | Start::Review { .. } => Step::Plan,
+            },
+            plan: None,
+            revise: None,
             start,
             repairs: 0,
             failed_before: Vec::new(),
@@ -363,6 +486,9 @@ pub enum Phase {
     /// Everything is pushed and the run waits on checks, with no session,
     /// since this many seconds past the epoch.
     AwaitingChecks { since: u64 },
+    /// Its plan is written and waits for a person to approve it, with no
+    /// session, since this many seconds past the epoch.
+    AwaitingApproval { since: u64 },
 }
 
 /// Where an issue lives, as a file can hold it: connectors by name.

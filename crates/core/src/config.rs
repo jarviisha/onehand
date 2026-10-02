@@ -544,6 +544,11 @@ pub struct WorkspaceConfig {
     /// Roots whose labelled issues may be worked unattended, by path for the
     /// reason pins are.
     pub unattended: Vec<PathBuf>,
+    /// Roots whose runs wait for a person to approve their plan before they
+    /// change any code, by path.
+    pub approve_plans: Vec<PathBuf>,
+    /// The command a run's work must pass before it goes further, by root.
+    pub checks: std::collections::BTreeMap<PathBuf, String>,
 }
 
 /// The window's panel arrangement, as far as anything outside the front end

@@ -29,50 +29,141 @@ fn facts(commits: u64, dirty: bool, pr: Option<PullRequest>) -> Facts {
     }
 }
 
+fn gate(forge: bool, turns_left: u32) -> Gate<'static> {
+    Gate {
+        forge,
+        approve_plans: false,
+        check: false,
+        turns_left,
+        answer: "",
+    }
+}
+
+fn open_pr(facts: &Facts) -> Next {
+    next(Step::OpenPr, facts, &gate(true, 2))
+}
+
 #[test]
 fn a_turn_is_judged_by_the_branch_not_by_what_the_agent_said() {
     // Only analysis: nothing committed, so the session carries on.
     assert_eq!(
-        after_turn(&facts(0, false, None), true, 2),
+        open_pr(&facts(0, false, None)),
         Next::CarryOn(Missing::NoCommits)
     );
     assert_eq!(
-        after_turn(&facts(2, true, None), true, 2),
+        open_pr(&facts(2, true, None)),
         Next::CarryOn(Missing::Uncommitted)
     );
     // An agent claiming a pull request it never opened is still missing one.
     assert_eq!(
-        after_turn(&facts(2, false, None), true, 2),
+        open_pr(&facts(2, false, None)),
         Next::CarryOn(Missing::NoPullRequest)
     );
     assert_eq!(
-        after_turn(&facts(2, false, Some(pr("h0", &[]))), true, 2),
+        open_pr(&facts(2, false, Some(pr("h0", &[])))),
         Next::CarryOn(Missing::Unpushed)
     );
     assert_eq!(
-        after_turn(&facts(2, false, Some(pr("h1", &[]))), true, 2),
+        open_pr(&facts(2, false, Some(pr("h1", &[])))),
         Next::AwaitChecks
     );
 }
 
 #[test]
 fn a_turn_with_no_turns_left_exhausts_and_a_closed_pull_request_settles() {
-    assert_eq!(after_turn(&facts(0, false, None), true, 0), Next::Exhausted);
+    assert_eq!(
+        next(Step::OpenPr, &facts(0, false, None), &gate(true, 0)),
+        Next::Exhausted
+    );
     let mut closed = pr("h0", &[]);
     closed.state = PrState::Closed;
-    assert_eq!(
-        after_turn(&facts(0, false, Some(closed)), true, 2),
-        Next::Settle
-    );
+    assert_eq!(open_pr(&facts(0, false, Some(closed))), Next::Settle);
 }
 
 #[test]
 fn a_project_with_no_forge_settles_on_its_commits() {
-    assert_eq!(after_turn(&facts(1, false, None), false, 2), Next::Settle);
+    let implement = |f: &Facts| next(Step::Implement, f, &gate(false, 2));
+    assert_eq!(implement(&facts(1, false, None)), Next::Settle);
     assert_eq!(
-        after_turn(&facts(0, false, None), false, 2),
+        implement(&facts(0, false, None)),
         Next::CarryOn(Missing::NoCommits)
     );
+}
+
+#[test]
+fn a_plan_is_an_answer_that_changed_nothing() {
+    let plan = |f: &Facts, answer: &'static str, approve_plans: bool| {
+        next(
+            Step::Plan,
+            f,
+            &Gate {
+                answer,
+                approve_plans,
+                ..gate(true, 2)
+            },
+        )
+    };
+    let clean = facts(0, false, None);
+    assert_eq!(plan(&clean, "  ", false), Next::CarryOn(Missing::NoPlan));
+    assert_eq!(
+        plan(&facts(1, false, None), "the plan", false),
+        Next::CarryOn(Missing::PlanTouchedCode)
+    );
+    assert_eq!(
+        plan(&facts(0, true, None), "the plan", false),
+        Next::CarryOn(Missing::PlanTouchedCode)
+    );
+    assert_eq!(
+        plan(&clean, "the plan", false),
+        Next::Advance(Step::Implement)
+    );
+    assert_eq!(plan(&clean, "the plan", true), Next::AwaitApproval);
+}
+
+#[test]
+fn a_committed_change_goes_to_the_check_then_the_pull_request() {
+    let done = facts(1, false, None);
+    let with_check = Gate {
+        check: true,
+        ..gate(true, 2)
+    };
+    assert_eq!(next(Step::Implement, &done, &with_check), Next::RunCheck);
+    assert_eq!(next(Step::Verify, &done, &with_check), Next::RunCheck);
+    assert_eq!(
+        next(Step::Implement, &done, &gate(true, 2)),
+        Next::Advance(Step::OpenPr),
+        "no check command skips the check"
+    );
+    assert_eq!(
+        next(Step::Verify, &facts(1, true, None), &with_check),
+        Next::CarryOn(Missing::Uncommitted)
+    );
+}
+
+#[test]
+fn a_check_passing_moves_on_and_one_failing_is_handed_back() {
+    assert_eq!(after_check(Ok(()), 2, true), Next::Advance(Step::OpenPr));
+    assert_eq!(after_check(Ok(()), 2, false), Next::Settle);
+    assert_eq!(
+        after_check(Err("boom".into()), 1, true),
+        Next::CarryOn(Missing::CheckFailed("boom".into()))
+    );
+    assert_eq!(after_check(Err("boom".into()), 0, true), Next::Exhausted);
+    let said = carry_on(
+        &Missing::CheckFailed("error: boom".into()),
+        Step::Verify,
+        None,
+    );
+    assert!(said.contains("```\nerror: boom\n```"), "{said}");
+}
+
+#[test]
+fn only_the_pull_request_step_is_told_to_push() {
+    let forge = &crate::connector::fake::Fake::SERVING;
+    let implement = carry_on(&Missing::Uncommitted, Step::Implement, Some(forge));
+    assert!(!implement.contains("push"), "{implement}");
+    let open = carry_on(&Missing::Uncommitted, Step::OpenPr, Some(forge));
+    assert!(open.contains("push"), "{open}");
 }
 
 const HOUR: Duration = Duration::from_secs(3600);
@@ -192,15 +283,36 @@ fn a_run_file_reads_back_as_it_was_written() {
             Some("abc".into()),
         ),
     };
+    let mut approval = record.clone();
+    approval.phase = Phase::AwaitingApproval { since: 9 };
+    approval.progress.plan = Some("the plan".into());
+    approval.progress.revise = Some("smaller".into());
     let file = dir.join("1-4.json");
     save_record_blocking(&file, &record).unwrap();
     std::fs::write(dir.join("2-5.json"), "{").unwrap();
     let found = load_records_blocking(&dir);
     assert_eq!(found.len(), 2);
-    assert_eq!(found[0], (file, Ok(record)));
+    assert_eq!(found[0], (file.clone(), Ok(record)));
     assert!(
         found[1].1.is_err(),
         "an unreadable file is said, not skipped"
     );
+    save_record_blocking(&file, &approval).unwrap();
+    assert_eq!(load_records_blocking(&dir)[0].1, Ok(approval));
     let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn a_record_from_before_steps_reads_as_the_change() {
+    let old = r#"{"start":"Fresh","repairs":0,"failed_before":[],"spent_secs":5,"since":null}"#;
+    let progress: Progress = serde_json::from_str(old).unwrap();
+    assert_eq!(progress.step, Step::Implement);
+    assert_eq!(progress.plan, None);
+    assert_eq!(Progress::new(Start::Fresh, None).step, Step::Plan);
+    let repair = Start::Repair {
+        pr: "u".into(),
+        conflicting: true,
+        failing: Vec::new(),
+    };
+    assert_eq!(Progress::new(repair, None).step, Step::Implement);
 }

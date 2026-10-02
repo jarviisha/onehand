@@ -12,9 +12,9 @@ use std::time::{Duration, Instant};
 
 mod run;
 pub use run::{
-    after_checks, after_turn, carry_on, load_records_blocking, new_record_file, runs_dir,
-    save_record_blocking, Checked, Facts, Failure, Kept, Missing, Next, Phase, Progress, Record,
-    Spent, Start, CHECKS_GRACE,
+    after_check, after_checks, carry_on, load_records_blocking, new_record_file, next, runs_dir,
+    save_record_blocking, Checked, Facts, Failure, Gate, Kept, Missing, Next, Phase, Progress,
+    Record, Spent, Start, Step, CHECKS_GRACE,
 };
 
 /// An issue a run can take.
@@ -264,6 +264,58 @@ impl Tracker {
             }
         }
     }
+
+    /// Leave `body` on issue `number` where only this app shows it: a note on
+    /// an issue kept in onehand, nothing on one that lives on a forge. For
+    /// what is worth a line on the issue but not a comment somebody is told
+    /// about, such as a run moving on to its next step.
+    pub fn note_blocking(&self, number: u64, body: &str) -> Result<(), String> {
+        match self {
+            Self::Forge(_) => Ok(()),
+            Self::Local(file) | Self::Synced { file, .. } => {
+                issues::update_blocking(file, |kept| kept.note(number, body, issues::now()))
+                    .map(drop)
+            }
+        }
+    }
+}
+
+/// How long a project's check command may run before it counts as failed.
+pub const VERIFY_LIMIT: Duration = Duration::from_secs(15 * 60);
+
+/// How many lines of a failed check's output the agent is handed. The end is
+/// where a build or a test run says what went wrong.
+const VERIFY_LINES: usize = 200;
+
+/// Run the project's check `command` in `dir`. `Err` holds how its output
+/// ended, or why it did not finish. Blocking.
+///
+/// Through `sh`, because a check is often a chain (`make fmt && cargo test`),
+/// with stderr folded into stdout first so the two stay in the order they were
+/// written. It builds into the runs' shared target directory, as the agent
+/// does.
+pub fn verify_blocking(dir: &Path, command: &str) -> Result<(), String> {
+    let mut cmd = std::process::Command::new("sh");
+    cmd.arg("-c")
+        .arg(format!("exec 2>&1\n{command}"))
+        .current_dir(dir);
+    if let Some(target) = target_dir() {
+        cmd.env("CARGO_TARGET_DIR", target);
+    }
+    let out = crate::process::output_within(&mut cmd, VERIFY_LIMIT).map_err(|why| match why {
+        crate::process::Failure::TimedOut(limit) => format!("timed out after {}", spoken(limit)),
+        why => format!("the check's shell {why}"),
+    })?;
+    if out.status.success() {
+        return Ok(());
+    }
+    let text = String::from_utf8_lossy(&out.stdout);
+    let lines: Vec<&str> = text.lines().collect();
+    let tail = lines[lines.len().saturating_sub(VERIFY_LINES)..].join("\n");
+    Err(match tail.trim() {
+        "" => format!("it exited with {} and printed nothing", out.status),
+        _ => tail,
+    })
 }
 
 /// The session modes offered for the sessions that work an issue, as the
@@ -432,53 +484,95 @@ pub fn target_dir() -> Option<std::path::PathBuf> {
     dirs::cache_dir().map(|dir| dir.join("onehand").join("unattended-target"))
 }
 
-/// The first prompt of a run's session.
+/// The prompt that starts `step` of a run: what the issue is, where the work
+/// happens, and what this step is to do and not do.
 ///
 /// It does not restate the repository's conventions — the commit format, the
 /// test commands, the pull-request shape. Those are in the repository's own
 /// instructions, which the agent reads anyway, and a second copy here is a copy
 /// that goes stale without anybody noticing.
 ///
-/// Three shapes, by where the issue lives and whether the project has a forge.
 /// An issue on the forge is referenced from its pull request. An issue kept in
 /// onehand is **not** — `#N` in a pull request names the forge's issue N, which
 /// is some other issue. And a project on no forge is told to leave its work on
 /// the branch, since there is nowhere to push it and the branch is the result.
 ///
-/// `start` says what this session is for beyond the issue: carrying on an
-/// earlier attempt, answering a review, repairing checks. A session with a
-/// pull request already open pushes to it and never opens a second.
-pub fn prompt_for(
+/// `progress` says what the attempt is for beyond the issue — carrying on an
+/// earlier attempt, answering a review, repairing checks — and carries the
+/// plan and a person's note on it. `failed` is how the project's check ended,
+/// for a session that starts by fixing it.
+pub fn step_prompt(
+    step: Step,
     issue: &Issue,
     branch: &str,
     tracker: &Tracker,
     forge: Option<&dyn Connector>,
-    start: &Start,
+    progress: &Progress,
+    failed: Option<&str>,
 ) -> String {
-    let finish = match (forge, tracker, issue.forge_ref()) {
-        (Some(_), _, _) if start.has_pull_request() => "Commit, and push the branch: its \
-             pull request is already open, so do not open another."
-            .to_string(),
-        (Some(forge), Tracker::Forge(_), _) => format!(
-            "Commit, push the branch, and open the pull request yourself with {}, \
-             referencing #{}.",
-            forge.open_pull_request_with(),
-            issue.number
+    let start = &progress.start;
+    let plan = progress
+        .plan
+        .as_deref()
+        .map(|plan| format!("\n\nThe plan:\n\n{}", quoted(plan.trim())))
+        .unwrap_or_default();
+    let rules = match step {
+        Step::Plan => {
+            let revise = match &progress.revise {
+                Some(note) => format!(
+                    "\n\nA person read the last plan and asked for changes:\n\n{}{plan}",
+                    quoted(note.trim())
+                ),
+                None => String::new(),
+            };
+            format!(
+                "This step is the plan. Read the code the issue touches and answer with a \
+                 plan: what you will change, where, and how you will know it works. Do not \
+                 edit any file, commit or push: onehand checks the branch, and a plan that \
+                 changed code is sent back.{revise}"
+            )
+        }
+        Step::Implement => {
+            let push = match forge {
+                Some(_) => "Do not push: the pull request is the step after this one.",
+                None => "Do not push: this project has no forge, and the branch is the result.",
+            };
+            format!(
+                "This step is the change. Follow the plan, run the repository's checks, and \
+                 commit your work on this branch. {push}{plan}"
+            )
+        }
+        Step::Verify => format!(
+            "This step is the check. The project's check command failed on this branch. \
+             Fix what it reports, then commit. Do not push.\n\n```\n{}\n```",
+            failed.unwrap_or("(no output)").trim()
         ),
-        (Some(forge), Tracker::Synced { .. }, Some(reference)) => format!(
-            "Commit, push the branch, and open the pull request yourself with {}, \
-             referencing {reference}.",
-            forge.open_pull_request_with(),
-        ),
-        (Some(forge), Tracker::Local(_) | Tracker::Synced { .. }, _) => format!(
-            "Commit, push the branch, and open the pull request yourself with {}. Do \
-             not reference #{} in it: that number is onehand's, not the forge's.",
-            forge.open_pull_request_with(),
-            issue.number
-        ),
-        (None, _, _) => "Commit your work on this branch. Do not push it: this project \
-                      has no forge, and the branch is the result."
-            .to_string(),
+        Step::OpenPr => match (forge, tracker, issue.forge_ref()) {
+            (Some(_), _, _) if start.has_pull_request() => "This step is the pull request. \
+                 Push the branch: its pull request is already open, so do not open another."
+                .to_string(),
+            (Some(forge), Tracker::Forge(_), _) => format!(
+                "This step is the pull request. Push the branch, and open the draft pull \
+                 request yourself with {}, referencing #{}.",
+                forge.open_pull_request_with(),
+                issue.number
+            ),
+            (Some(forge), Tracker::Synced { .. }, Some(reference)) => format!(
+                "This step is the pull request. Push the branch, and open the draft pull \
+                 request yourself with {}, referencing {reference}.",
+                forge.open_pull_request_with(),
+            ),
+            (Some(forge), Tracker::Local(_) | Tracker::Synced { .. }, _) => format!(
+                "This step is the pull request. Push the branch, and open the draft pull \
+                 request yourself with {}. Do not reference #{} in it: that number is \
+                 onehand's, not the forge's.",
+                forge.open_pull_request_with(),
+                issue.number
+            ),
+            (None, _, _) => "This step is the result. Commit your work on this branch. Do not \
+                 push it: this project has no forge, and the branch is the result."
+                .to_string(),
+        },
     };
     format!(
         "Work {named} in this repository, unattended — nobody is watching this \
@@ -488,15 +582,13 @@ pub fn prompt_for(
          ---\n\n\
          You are on branch `{branch}`, in a worktree of its own.\n\n\
          {context}\
-         1. Read the repository's own agent instructions, and whatever they point \
-         at, and follow its conventions.\n\
-         2. Run the repository's checks before committing.\n\
-         3. {finish}\n\
-         4. Decide whatever the code, the tests and the documentation let you \
-         infer, and list the assumptions that mattered {listed}. Only a decision \
-         they cannot settle, about what the product should do, is for a person: \
-         ask it with your tool for asking the user a question, not in your answer, \
-         and carry on once it is answered. Do not guess at those.\n",
+         Read the repository's own agent instructions, and whatever they point at, and \
+         follow its conventions. Decide whatever the code, the tests and the documentation \
+         let you infer, and list the assumptions that mattered {listed}. Only a decision \
+         they cannot settle, about what the product should do, is for a person: ask it \
+         with your tool for asking the user a question, not in your answer, and carry on \
+         once it is answered. Do not guess at those.\n\n\
+         {rules}\n",
         named = tracker.names(issue),
         title = issue.title,
         body = issue.body.trim(),

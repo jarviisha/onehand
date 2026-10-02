@@ -44,6 +44,12 @@ pub struct ProjectRoot {
     /// pull requests against, and the second is a permission worth giving one
     /// project at a time.
     pub unattended: bool,
+    /// Whether a run here waits for a person to approve its plan before it
+    /// changes any code.
+    pub approve_plans: bool,
+    /// The command a run's work here must pass before it goes further: the
+    /// app runs it itself rather than taking the agent's word for it.
+    pub check: Option<String>,
 }
 
 impl ProjectRoot {
@@ -57,6 +63,8 @@ impl ProjectRoot {
             pinned: false,
             transient: false,
             unattended: false,
+            approve_plans: false,
+            check: None,
         }
     }
 
@@ -197,9 +205,20 @@ impl Workspace {
         // different project.
         let pinned: Vec<PathBuf> = cfg.pinned.into_iter().map(normalize_root).collect();
         let unattended: Vec<PathBuf> = cfg.unattended.into_iter().map(normalize_root).collect();
+        let approve: Vec<PathBuf> = cfg.approve_plans.into_iter().map(normalize_root).collect();
+        let checks: Vec<(PathBuf, String)> = cfg
+            .checks
+            .into_iter()
+            .map(|(path, check)| (normalize_root(path), check))
+            .collect();
         for root in &mut roots {
             root.pinned = pinned.contains(&root.path);
             root.unattended = unattended.contains(&root.path);
+            root.approve_plans = approve.contains(&root.path);
+            root.check = checks
+                .iter()
+                .find(|(path, _)| *path == root.path)
+                .map(|(_, check)| check.clone());
         }
         let active_root = active_path
             .and_then(|p| roots.iter().position(|r| r.path == p))
@@ -245,6 +264,15 @@ impl Workspace {
                 .filter(|root| root.unattended)
                 .map(|root| root.path.clone())
                 .collect(),
+            approve_plans: kept
+                .iter()
+                .filter(|root| root.approve_plans)
+                .map(|root| root.path.clone())
+                .collect(),
+            checks: kept
+                .iter()
+                .filter_map(|root| Some((root.path.clone(), root.check.clone()?)))
+                .collect(),
         }
     }
 
@@ -264,6 +292,13 @@ impl Workspace {
     pub fn toggle_unattended(&mut self, idx: usize) {
         if let Some(root) = self.roots.get_mut(idx) {
             root.unattended = !root.unattended;
+        }
+    }
+
+    /// Turn approving plans before work on or off for a root.
+    pub fn toggle_approve_plans(&mut self, idx: usize) {
+        if let Some(root) = self.roots.get_mut(idx) {
+            root.approve_plans = !root.approve_plans;
         }
     }
 
@@ -517,6 +552,27 @@ mod tests {
     }
 
     #[test]
+    fn approving_plans_and_the_check_command_are_kept_by_path() {
+        let mut ws = Workspace::seeded("/a");
+        ws.add_root("/b");
+        ws.toggle_approve_plans(1);
+        ws.roots[1].check = Some("cargo test".into());
+        let cfg = ws.to_config();
+        assert_eq!(cfg.approve_plans, [PathBuf::from("/b")]);
+        assert_eq!(cfg.checks.len(), 1);
+        let back = Workspace::from_config(
+            WorkspaceConfig {
+                roots: vec!["/new".into(), "/a".into(), "/b".into()],
+                ..cfg
+            },
+            PathBuf::from("/store"),
+        );
+        assert!(!back.roots[1].approve_plans && back.roots[1].check.is_none());
+        assert!(back.roots[2].approve_plans);
+        assert_eq!(back.roots[2].check.as_deref(), Some("cargo test"));
+    }
+
+    #[test]
     fn a_run_root_arrives_with_its_session_and_moves_nothing() {
         let mut ws = Workspace::seeded("/a");
         ws.add_root("/b");
@@ -732,6 +788,8 @@ mod tests {
             layout: PanelLayout::default(),
             pinned: Vec::new(),
             unattended: Vec::new(),
+            approve_plans: Vec::new(),
+            checks: Default::default(),
         };
         let ws = Workspace::from_config(cfg, PathBuf::from("/store"));
         assert_eq!(ws.roots.len(), 2);
@@ -783,6 +841,8 @@ mod tests {
             },
             pinned: Vec::new(),
             unattended: Vec::new(),
+            approve_plans: Vec::new(),
+            checks: Default::default(),
         };
         let ws = Workspace::from_config(cfg, PathBuf::from("/store"));
         assert!(ws.layout.workbench_w >= 120.0);
@@ -819,6 +879,8 @@ mod tests {
             layout: PanelLayout::default(),
             pinned: Vec::new(),
             unattended: Vec::new(),
+            approve_plans: Vec::new(),
+            checks: Default::default(),
         };
         let ws = Workspace::from_config(cfg, PathBuf::from("/store"));
         assert_eq!(ws.active_root, 0);

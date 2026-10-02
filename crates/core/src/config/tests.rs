@@ -213,6 +213,8 @@ fn workspace_config_roundtrips() {
         layout: PanelLayout::default(),
         pinned: Vec::new(),
         unattended: Vec::new(),
+        approve_plans: Vec::new(),
+        checks: Default::default(),
     };
     let text = toml::to_string_pretty(&cfg).unwrap();
     let back: WorkspaceConfig = toml::from_str(&text).unwrap();
@@ -229,6 +231,8 @@ fn workspace_config_save_load_to_dir() {
         layout: PanelLayout::default(),
         pinned: Vec::new(),
         unattended: Vec::new(),
+        approve_plans: Vec::new(),
+        checks: Default::default(),
     };
     cfg.save_to(&dir).unwrap();
     assert_eq!(WorkspaceConfig::load_from(&dir), WorkspaceLoad::Found(cfg));

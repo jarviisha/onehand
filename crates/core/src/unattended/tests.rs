@@ -6,6 +6,23 @@ fn forge() -> Tracker {
     Tracker::Forge(&Fake::SERVING)
 }
 
+/// A fresh attempt's progress.
+fn fresh() -> Progress {
+    Progress::new(Start::Fresh, None)
+}
+
+/// [`step_prompt`] on branch `b` with no check output.
+fn prompt(
+    step: Step,
+    issue: &Issue,
+    tracker: &Tracker,
+    forge: Option<&dyn Connector>,
+    progress: &Progress,
+) -> String {
+    let branch = if issue.number == 42 { "onehand/issue-42" } else { "b" };
+    step_prompt(step, issue, branch, tracker, forge, progress, None)
+}
+
 /// A tracker over a scratch issue file of its own, holding `issues`.
 fn local(name: &str, issues: &[(&str, &[&str])]) -> (Tracker, PathBuf) {
     let dir = std::env::temp_dir().join(format!("onehand-local-{name}-{}", std::process::id()));
@@ -82,13 +99,7 @@ fn the_prompt_names_the_issue_and_the_branch_and_keeps_the_body_whole() {
         body: body.to_string(),
         ..issue(42, "Crash on open")
     };
-    let prompt = prompt_for(
-        &issue,
-        "onehand/issue-42",
-        &forge(),
-        Some(&Fake::SERVING),
-        &Start::Fresh,
-    );
+    let prompt = prompt(Step::OpenPr, &issue, &forge(), Some(&Fake::SERVING), &fresh());
     assert!(prompt.contains("#42"));
     assert!(prompt.contains("`onehand/issue-42`"));
     assert!(prompt.contains(body));
@@ -118,7 +129,8 @@ fn every_ending_has_a_sentence_with_and_without_a_pr() {
         Ending::Failed("git refused".into()),
         Ending::Ready { checks_ran: true },
         Ending::Ready { checks_ran: false },
-        Ending::Exhausted(Spent::Turns(3)),
+        Ending::Exhausted(Spent::Turns(3, Step::Plan)),
+        Ending::Exhausted(Spent::Unapproved(Duration::from_secs(3600))),
         Ending::Exhausted(Spent::FailedAgain(vec!["Clippy".into()])),
         Ending::PullRequestGone,
     ];
@@ -297,11 +309,11 @@ fn a_local_issue_is_found_by_its_label_and_claimed_in_its_own_file() {
 fn a_local_issue_is_never_referenced_from_a_pull_request() {
     let (tracker, dir) = local("prompt", &[]);
     let issue = issue(3, "Fix it");
-    let on_forge = prompt_for(&issue, "b", &tracker, Some(&Fake::SERVING), &Start::Fresh);
+    let on_forge = prompt(Step::OpenPr, &issue, &tracker, Some(&Fake::SERVING), &fresh());
     assert!(on_forge.contains("`forge pr`"), "{on_forge}");
     assert!(on_forge.contains("Do not reference #3"), "{on_forge}");
     assert!(!on_forge.contains("referencing #3"), "{on_forge}");
-    let no_forge = prompt_for(&issue, "b", &tracker, None, &Start::Fresh);
+    let no_forge = prompt(Step::OpenPr, &issue, &tracker, None, &fresh());
     assert!(no_forge.contains("Do not push"), "{no_forge}");
     assert!(!no_forge.contains("pull request"), "{no_forge}");
     let _ = std::fs::remove_dir_all(dir);
@@ -383,7 +395,7 @@ fn a_synced_project_runs_only_what_the_user_wrote_and_claims_it_on_both_sides() 
     assert!(comments[0].1.contains("started"));
 
     // And its pull request names the forge's number, not onehand's.
-    let prompt = prompt_for(&second, "b", &tracker, Some(forge), &Start::Fresh);
+    let prompt = prompt(Step::OpenPr, &second, &tracker, Some(forge), &fresh());
     assert!(prompt.contains("referencing #7"), "{prompt}");
     assert!(prompt.contains("Forge issue #7"), "{prompt}");
     let _ = std::fs::remove_dir_all(dir);
@@ -504,7 +516,8 @@ fn a_session_on_an_open_pull_request_pushes_to_it_rather_than_opening_another() 
         pr: "https://x/pull/2".into(),
         number: 2,
     };
-    let said = prompt_for(&issue(4, "t"), "b", &forge(), Some(&Fake::SERVING), &start);
+    let progress = Progress::new(start, None);
+    let said = prompt(Step::OpenPr, &issue(4, "t"), &forge(), Some(&Fake::SERVING), &progress);
     assert!(said.contains("`forge review 2`"), "{said}");
     assert!(said.contains("do not open another"), "{said}");
     assert!(!said.contains("`forge pr`"), "{said}");
@@ -526,4 +539,60 @@ fn a_mode_written_by_hand_is_still_offered_as_the_one_in_force() {
         choices.last(),
         Some(&("dontAsk".to_string(), "dontAsk".to_string()))
     );
+}
+
+#[test]
+fn each_step_prompt_names_its_own_rules() {
+    let issue = issue(5, "t");
+    let tracker = forge();
+    let forge = Some(&Fake::SERVING as &dyn Connector);
+    let mut progress = fresh();
+    let plan = prompt(Step::Plan, &issue, &tracker, forge, &progress);
+    assert!(plan.contains("Do not edit any file"), "{plan}");
+    progress.plan = Some("Change the rail.".into());
+    progress.revise = Some("Smaller, please.".into());
+    let revised = prompt(Step::Plan, &issue, &tracker, forge, &progress);
+    assert!(revised.contains("> Smaller, please."), "{revised}");
+    assert!(revised.contains("> Change the rail."), "{revised}");
+    let implement = prompt(Step::Implement, &issue, &tracker, forge, &progress);
+    assert!(implement.contains("> Change the rail."), "{implement}");
+    assert!(implement.contains("Do not push"), "{implement}");
+    let verify = step_prompt(
+        Step::Verify,
+        &issue,
+        "b",
+        &tracker,
+        forge,
+        &progress,
+        Some("error: boom"),
+    );
+    assert!(verify.contains("```\nerror: boom\n```"), "{verify}");
+    let open = prompt(Step::OpenPr, &issue, &tracker, forge, &progress);
+    assert!(open.contains("`forge pr`") && open.contains("#5"), "{open}");
+}
+
+#[test]
+fn a_check_passes_fails_and_hands_back_only_its_last_lines() {
+    let dir = std::env::temp_dir();
+    assert_eq!(verify_blocking(&dir, "true"), Ok(()));
+    let failed = verify_blocking(&dir, "echo out; echo err >&2; false").unwrap_err();
+    assert_eq!(failed, "out\nerr");
+    let long = verify_blocking(&dir, "seq 1 500; exit 3").unwrap_err();
+    assert_eq!(long.lines().count(), VERIFY_LINES);
+    assert!(long.starts_with("301\n") && long.ends_with("500"), "{long}");
+    let silent = verify_blocking(&dir, "false").unwrap_err();
+    assert!(silent.contains("printed nothing"), "{silent}");
+}
+
+#[test]
+fn a_step_note_stays_in_onehand() {
+    let (tracker, dir) = local("note", &[("Fix it", &[])]);
+    tracker.note_blocking(1, "Step: Implement").unwrap();
+    let Tracker::Local(file) = &tracker else {
+        unreachable!()
+    };
+    let kept = crate::issues::load_blocking(file).unwrap();
+    assert_eq!(kept.get(1).unwrap().notes[0].text, "Step: Implement");
+    assert_eq!(forge().note_blocking(1, "Step: Plan"), Ok(()));
+    let _ = std::fs::remove_dir_all(dir);
 }
