@@ -135,32 +135,39 @@ impl Shell {
         Some(onehand_core::issues::file_for(storage, root))
     }
 
-    /// Add `dir` as a transient project and start `spec` on it, off screen.
+    /// Add `dir` as a transient project and start `spec` on it, off screen,
+    /// answering with the session and whether the run added the project.
     ///
     /// **Nothing the user is looking at moves.** The root is added without
     /// being selected and the pane connects the session without showing it.
     /// The root is transient, so the workspace file never holds it.
     ///
-    /// `None` when `dir` is already a project here: marking a root the user
-    /// added as transient would quietly drop it from their workspace.
+    /// When `dir` is already a project here — a run's worktree a person kept,
+    /// coming back for a repair — the session is added to it and the project
+    /// is left as it is: marking a root somebody kept as transient would
+    /// quietly drop it from their workspace.
     pub fn run_unattended(
         &mut self,
         dir: PathBuf,
         spec: AgentSpec,
         cx: &mut Context<Self>,
-    ) -> Option<(u64, Entity<crate::chat::session::ChatSession>)> {
+    ) -> Option<(u64, Entity<crate::chat::session::ChatSession>, bool)> {
         let uid = cx.update_global::<Shared, _>(|shared, _| shared.next_uid());
-        let idx = self
-            .window
-            .workspace
-            .add_transient_root(dir, spec.clone(), uid)?;
+        let workspace = &mut self.window.workspace;
+        let (idx, owns_root) = match workspace.add_transient_root(dir.clone(), spec.clone(), uid) {
+            Some(idx) => (idx, true),
+            None => (
+                workspace.add_unshown_session(dir, spec.clone(), uid)?,
+                false,
+            ),
+        };
         let root = self.window.workspace.roots[idx].path.clone();
         let session = self
             .chat
             .update(cx, |pane, cx| pane.open_unshown(uid, root, &spec, cx));
         self.refresh_git(cx);
         cx.notify();
-        Some((uid, session?))
+        Some((uid, session?, owns_root))
     }
 
     /// End a run's session and drop its project.

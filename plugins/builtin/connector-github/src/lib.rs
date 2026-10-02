@@ -10,7 +10,9 @@
 // a working feature.
 #![warn(unreachable_pub)]
 
-use onehand_core::connector::{Connector, RemoteIssue, SyncListing};
+use onehand_core::connector::{
+    Check, CheckState, Connector, PrState, PullRequest, RemoteIssue, SyncListing,
+};
 use onehand_core::issues::Snapshot;
 use onehand_core::unattended::{Issue, IssueRow};
 use serde::Deserialize;
@@ -116,20 +118,60 @@ impl Connector for GitHub {
         &self,
         root: &Path,
         branch: &str,
-    ) -> Result<Option<String>, String> {
+    ) -> Result<Option<PullRequest>, String> {
         // `--state all`, because a PR merged or closed before the run is
-        // settled is still the answer to "did it open one".
-        let url = gh(
+        // settled is still the answer to "did it open one". The checks come in
+        // the same call, so they are always the checks on the head it reports.
+        let json = gh(
             root,
             &[
-                "pr", "list", "--head", branch, "--state", "all", "--json", "url", "-q", ".[0].url",
+                "pr",
+                "list",
+                "--head",
+                branch,
+                "--state",
+                "all",
+                "--limit",
+                "1",
+                "--json",
+                "url,number,state,isDraft,headRefOid,mergeable,statusCheckRollup",
             ],
         )?;
-        Ok((!url.is_empty()).then_some(url))
+        pull_request(&json)
+    }
+
+    fn mark_ready_blocking(&self, root: &Path, number: u64) -> Result<(), String> {
+        gh(root, &["pr", "ready", &number.to_string()]).map(drop)
+    }
+
+    /// The failed steps' log of an Actions job, its last lines only: the
+    /// failure is at the end, and a whole log is more than any prompt should
+    /// carry. A check that is not an Actions job has no log `gh` can read.
+    fn check_log_blocking(&self, root: &Path, check: &Check) -> Result<String, String> {
+        let job = check
+            .link
+            .as_deref()
+            .and_then(|link| link.rsplit_once("/job/"))
+            .map(|(_, job)| job.split(['?', '#', '/']).next().unwrap_or(job))
+            .filter(|job| !job.is_empty() && job.bytes().all(|b| b.is_ascii_digit()))
+            .ok_or_else(|| {
+                format!(
+                    "{} is not an Actions job, so it has no log here.",
+                    check.name
+                )
+            })?;
+        let log = gh(root, &["run", "view", "--job", job, "--log-failed"])?;
+        Ok(last_lines(&log, LOG_LINES))
+    }
+
+    fn read_review_with(&self, number: u64) -> String {
+        format!(
+            "`gh pr view {number} --comments` and `gh api repos/{{owner}}/{{repo}}/pulls/{number}/comments`"
+        )
     }
 
     fn open_pull_request_with(&self) -> &'static str {
-        "`gh pr create`"
+        "`gh pr create --draft`"
     }
 
     fn issue_url_blocking(&self, root: &Path, key: &str) -> Result<String, String> {
@@ -298,6 +340,97 @@ impl From<GhIssue> for Issue {
     fn from(gh: GhIssue) -> Self {
         Issue::new(gh.number, gh.title, gh.body)
     }
+}
+
+/// How many lines of a failed job's log an agent is handed.
+const LOG_LINES: usize = 80;
+
+/// The last `n` lines of `text`.
+fn last_lines(text: &str, n: usize) -> String {
+    let lines: Vec<&str> = text.lines().collect();
+    lines[lines.len().saturating_sub(n)..].join("\n")
+}
+
+/// `gh pr list --json url,number,state,isDraft,headRefOid,mergeable,statusCheckRollup`
+/// as the first pull request in it, if any.
+///
+/// A rollup holds two kinds of entry: an Actions check run, which has a
+/// status and, once completed, a conclusion; and a commit status, which has a
+/// state alone. Only success, neutral and skipped pass — a cancelled or timed
+/// out check is no evidence the change works.
+fn pull_request(json: &str) -> Result<Option<PullRequest>, String> {
+    #[derive(Deserialize)]
+    #[serde(rename_all = "camelCase")]
+    struct Entry {
+        #[serde(default)]
+        name: Option<String>,
+        #[serde(default)]
+        context: Option<String>,
+        #[serde(default)]
+        status: Option<String>,
+        #[serde(default)]
+        conclusion: Option<String>,
+        #[serde(default)]
+        state: Option<String>,
+        #[serde(default)]
+        details_url: Option<String>,
+        #[serde(default)]
+        target_url: Option<String>,
+    }
+    #[derive(Deserialize)]
+    #[serde(rename_all = "camelCase")]
+    struct Row {
+        url: String,
+        number: u64,
+        state: String,
+        is_draft: bool,
+        head_ref_oid: String,
+        #[serde(default)]
+        mergeable: String,
+        #[serde(default)]
+        status_check_rollup: Vec<Entry>,
+    }
+    let rows: Vec<Row> = serde_json::from_str(json)
+        .map_err(|err| format!("gh printed something unreadable: {err}"))?;
+    let Some(row) = rows.into_iter().next() else {
+        return Ok(None);
+    };
+    let checks = row
+        .status_check_rollup
+        .into_iter()
+        .map(|e| {
+            let state = match (
+                e.status.as_deref(),
+                e.conclusion.as_deref(),
+                e.state.as_deref(),
+            ) {
+                (Some(status), _, _) if status != "COMPLETED" => CheckState::Pending,
+                (Some(_), Some("SUCCESS" | "NEUTRAL" | "SKIPPED"), _) => CheckState::Passed,
+                (Some(_), _, _) => CheckState::Failed,
+                (None, _, Some("SUCCESS")) => CheckState::Passed,
+                (None, _, Some("PENDING" | "EXPECTED") | None) => CheckState::Pending,
+                (None, _, Some(_)) => CheckState::Failed,
+            };
+            Check {
+                name: e.name.or(e.context).unwrap_or_default(),
+                state,
+                link: e.details_url.or(e.target_url).filter(|l| !l.is_empty()),
+            }
+        })
+        .collect();
+    Ok(Some(PullRequest {
+        url: row.url,
+        number: row.number,
+        state: match row.state.as_str() {
+            "MERGED" => PrState::Merged,
+            "CLOSED" => PrState::Closed,
+            _ => PrState::Open,
+        },
+        draft: row.is_draft,
+        head: row.head_ref_oid,
+        conflicting: row.mergeable == "CONFLICTING",
+        checks,
+    }))
 }
 
 /// What a sync reads of an issue.
@@ -654,6 +787,38 @@ fn ssh_resolve_blocking(alias: &str) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_rollup_reads_as_checks_that_pass_only_on_success() {
+        let json = r#"[{"url":"u","number":7,"state":"OPEN","isDraft":true,"headRefOid":"abc",
+            "mergeable":"CONFLICTING","statusCheckRollup":[
+            {"__typename":"CheckRun","name":"Build","status":"COMPLETED","conclusion":"SUCCESS",
+             "detailsUrl":"https://github.com/o/r/actions/runs/1/job/42"},
+            {"__typename":"CheckRun","name":"Lint","status":"COMPLETED","conclusion":"CANCELLED"},
+            {"__typename":"CheckRun","name":"Test","status":"IN_PROGRESS","conclusion":""},
+            {"__typename":"StatusContext","context":"ci/ext","state":"PENDING","targetUrl":""},
+            {"__typename":"StatusContext","context":"ci/old","state":"ERROR"}]}]"#;
+        let pr = pull_request(json).unwrap().unwrap();
+        assert_eq!((pr.number, pr.state, pr.draft), (7, PrState::Open, true));
+        assert!(pr.conflicting);
+        let states: Vec<_> = pr
+            .checks
+            .iter()
+            .map(|c| (c.name.as_str(), c.state))
+            .collect();
+        assert_eq!(
+            states,
+            [
+                ("Build", CheckState::Passed),
+                ("Lint", CheckState::Failed),
+                ("Test", CheckState::Pending),
+                ("ci/ext", CheckState::Pending),
+                ("ci/old", CheckState::Failed),
+            ]
+        );
+        assert_eq!(pr.checks[3].link, None, "an empty link is no link");
+        assert_eq!(pull_request("[]").unwrap(), None);
+    }
 
     #[test]
     fn an_ssh_origin_is_fetched_over_https_from_the_host_ssh_would_reach() {

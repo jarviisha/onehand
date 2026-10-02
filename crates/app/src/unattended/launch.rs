@@ -4,12 +4,14 @@ use crate::chat::session::ChatEvent;
 use crate::state::Shared;
 use gpui::App;
 use onehand_core::config::AgentSpec;
-use onehand_core::connector::Connector;
-use onehand_core::unattended::{self as core, Budget, Ending, Issue, IssueRow, Tracker, Verdict};
+use onehand_core::connector::{Connector, PrState};
+use onehand_core::unattended::{
+    self as core, Budget, Ending, Issue, IssueRow, Phase, Progress, Record, Start, Tracker, Verdict,
+};
 use onehand_core::worktree;
 use std::path::Path;
 use std::path::PathBuf;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 /// A claimed issue and the worktree made for it.
 pub(super) struct Claimed {
@@ -29,17 +31,82 @@ pub(super) struct Claimed {
     pub(super) base: String,
     /// The worktree the run made, and the project root it is added as.
     pub(super) dir: PathBuf,
-    /// The window a person picked it in, rather than the search finding it.
-    /// Such a run is put on screen there as it starts and stays when it ends —
-    /// somebody asked for it and is watching — so a card it parks is theirs.
+    /// The run's own file, which is what a restart carries on from.
+    pub(super) file: PathBuf,
+    /// A person picked it rather than the search finding it. Such a run is put
+    /// on screen as it starts and stays when it ends — somebody asked for it
+    /// and is watching — so a card it parks is theirs.
+    by_hand: bool,
+    /// The window it was picked in, while that is still the window it was
+    /// picked in: a restart forgets it.
     picked_in: Option<gpui::AnyWindowHandle>,
 }
 
 impl Claimed {
     /// Whether a person picked this run rather than the search finding it.
     pub(super) fn picked_by_hand(&self) -> bool {
-        self.picked_in.is_some()
+        self.by_hand
     }
+
+    /// The run as its file holds it.
+    pub(super) fn record(&self, phase: Phase, progress: &Progress) -> Record {
+        Record {
+            repo: self.repo.clone(),
+            kept: self.tracker.kept(),
+            forge: self.forge.map(|f| f.name().to_string()),
+            issue: self.issue.clone(),
+            branch: self.branch.clone(),
+            base: self.base.clone(),
+            dir: self.dir.clone(),
+            by_hand: self.by_hand,
+            phase,
+            progress: progress.clone(),
+        }
+    }
+
+    /// A run read back from `file`; `None` if a connector it names is not
+    /// built into this onehand any more.
+    pub(super) fn from_record(file: PathBuf, record: Record) -> Option<Self> {
+        let named = |name: &str| {
+            crate::plugins::connectors()
+                .iter()
+                .copied()
+                .find(|c| c.name() == name)
+        };
+        let forge = match &record.forge {
+            Some(name) => Some(named(name)?),
+            None => None,
+        };
+        Some(Self {
+            repo: record.repo,
+            tracker: record.kept.tracker(named)?,
+            forge,
+            issue: record.issue,
+            branch: record.branch,
+            base: record.base,
+            dir: record.dir,
+            file,
+            by_hand: record.by_hand,
+            picked_in: None,
+        })
+    }
+}
+
+/// Write the run's file in the background, saying on stderr if that failed:
+/// the run goes on, it only cannot be carried on after a restart.
+pub(super) fn save(claimed: &Claimed, phase: Phase, progress: &Progress, cx: &App) {
+    save_record(claimed.file.clone(), claimed.record(phase, progress), cx);
+}
+
+/// [`save`], for a caller that took the record while it held the state.
+pub(super) fn save_record(file: PathBuf, record: Record, cx: &App) {
+    cx.background_executor()
+        .spawn(async move {
+            if let Err(why) = core::save_record_blocking(&file, &record) {
+                eprintln!("onehand: could not save an unattended run: {why}");
+            }
+        })
+        .detach();
 }
 
 /// An issue that was claimed and then could not be started, and where to say
@@ -49,6 +116,8 @@ pub(super) struct Unstarted {
     tracker: Tracker,
     number: u64,
     why: String,
+    /// The run's file, once it has one.
+    file: Option<PathBuf>,
 }
 
 /// Find an issue, claim it and make its worktree. Blocking.
@@ -62,14 +131,22 @@ pub(super) struct Unstarted {
 /// row says why rather than showing it as workable.
 /// Within a project the issues it keeps itself are searched before its forge's:
 /// they are the ones written for onehand to work.
+///
+/// `busy` is every issue a run is still on, by project; none of them is taken.
 pub(super) fn begin_blocking(
     roots: &[(Project, Option<&'static dyn Connector>)],
     label: &str,
+    busy: &[(PathBuf, u64)],
     checked: &mut Vec<(PathBuf, Served)>,
-) -> Option<Result<Claimed, Unstarted>> {
+) -> Option<Result<(Claimed, Progress), Unstarted>> {
     let (repo, tracker, forge, issue) = roots.iter().find_map(|(project, forge)| {
+        let busy: Vec<u64> = busy
+            .iter()
+            .filter(|(repo, _)| *repo == project.root)
+            .map(|(_, number)| *number)
+            .collect();
         for tracker in trackers_blocking(project.issues.clone(), *forge) {
-            match core::candidate_blocking(&tracker, &project.root, label) {
+            match core::candidate_blocking(&tracker, &project.root, label, &busy) {
                 Ok(Some(issue)) => return Some((project.root.clone(), tracker, *forge, issue)),
                 Ok(None) => {}
                 Err(why) => {
@@ -87,9 +164,19 @@ pub(super) fn begin_blocking(
     Some(prepare_blocking(repo, tracker, forge, issue, None))
 }
 
-/// Cut a worktree for a claimed issue: off the remote's default branch, fetched
-/// first, on a project with a forge; off the branch checked out on one without,
-/// since there is no remote to ask.
+/// Cut or find the worktree for a claimed issue, and say what the run's first
+/// session is for.
+///
+/// **An issue worked before goes back to its branch.** The newest branch
+/// under the issue's prefix is looked at: with an open pull request the run
+/// answers its review, with none it carries on the work there, and with a
+/// merged one it starts again on a branch of its own. A pull request closed
+/// without being merged refuses the run — somebody decided against it, and
+/// opening another would undo that decision.
+///
+/// A new branch is cut off the remote's default branch, fetched first, on a
+/// project with a forge; off the branch checked out on one without, since
+/// there is no remote to ask.
 ///
 /// Caught as well as everything around it: by now the issue has been claimed,
 /// so a panic has to become a comment on the issue, or it is left claimed with
@@ -100,7 +187,7 @@ fn prepare_blocking(
     forge: Option<&'static dyn Connector>,
     issue: Issue,
     picked_in: Option<gpui::AnyWindowHandle>,
-) -> Result<Claimed, Unstarted> {
+) -> Result<(Claimed, Progress), Unstarted> {
     let made = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         let base = match forge {
             Some(forge) => {
@@ -111,28 +198,80 @@ fn prepare_blocking(
             None => worktree::current_branch_blocking(&repo)?,
         };
         let top = worktree::repo_top_blocking(&repo).unwrap_or_else(|| repo.clone());
-        let branch = core::free_branch_blocking(&top, &core::branch_for(&issue));
-        let dir = worktree::worktree_dir(&top, &branch);
-        let dir = worktree::branch_off_blocking(&top, &branch, &dir, &base)?;
-        Ok::<_, String>((base, branch, dir))
+        let earlier = worktree::newest_branch_blocking(&top, &core::issue_prefix(issue.number));
+        let start = match (&earlier, forge) {
+            (Some(branch), Some(forge)) => match forge.pull_request_for_blocking(&repo, branch)? {
+                Some(pr) if pr.state == PrState::Open => Some(Start::Review {
+                    pr: pr.url,
+                    number: pr.number,
+                }),
+                Some(pr) if pr.state == PrState::Closed => {
+                    return Err(format!(
+                        "its pull request {} was closed without being merged, and onehand \
+                         does not open another. Delete the branch `{branch}` to start over.",
+                        pr.url
+                    ));
+                }
+                Some(_) => None,
+                None => Some(Start::Earlier),
+            },
+            (Some(_), None) => Some(Start::Earlier),
+            (None, _) => None,
+        };
+        let (branch, dir, start) = match (earlier, start) {
+            (Some(branch), Some(start)) => {
+                let dir = match worktree::worktree_of_blocking(&top, &branch) {
+                    Some(dir) => dir,
+                    None => worktree::add_blocking(
+                        &top,
+                        &branch,
+                        &worktree::worktree_dir(&top, &branch),
+                    )?,
+                };
+                (branch, dir, start)
+            }
+            _ => {
+                let branch = core::free_branch_blocking(&top, &core::branch_for(&issue));
+                let dir = worktree::worktree_dir(&top, &branch);
+                let dir = worktree::branch_off_blocking(&top, &branch, &dir, &base)?;
+                (branch, dir, Start::Fresh)
+            }
+        };
+        // An answer to a review is measured by what it adds, not by the work
+        // the pull request already holds.
+        let since = match start {
+            Start::Review { .. } => Some(worktree::head_blocking(&dir)?),
+            Start::Fresh | Start::Earlier | Start::Repair { .. } => None,
+        };
+        Ok::<_, String>((base, branch, dir, Progress::new(start, since)))
     }))
     .unwrap_or_else(|_| Err("onehand panicked while preparing the worktree".to_string()));
     match made {
-        Ok((base, branch, dir)) => Ok(Claimed {
-            repo,
-            tracker,
-            forge,
-            issue,
-            branch,
-            base,
-            dir,
-            picked_in,
-        }),
+        Ok((base, branch, dir, progress)) => {
+            let claimed = Claimed {
+                repo,
+                tracker,
+                forge,
+                file: core::new_record_file(issue.number),
+                issue,
+                branch,
+                base,
+                dir,
+                by_hand: picked_in.is_some(),
+                picked_in,
+            };
+            let record = claimed.record(Phase::Working, &progress);
+            if let Err(why) = core::save_record_blocking(&claimed.file, &record) {
+                eprintln!("onehand: could not save an unattended run: {why}");
+            }
+            Ok((claimed, progress))
+        }
         Err(why) => Err(Unstarted {
             repo,
             tracker,
             number: issue.number,
             why,
+            file: None,
         }),
     }
 }
@@ -223,6 +362,13 @@ pub fn start_picked(
         }
         if u.claiming {
             return Err("An unattended run is starting — one at a time.".to_string());
+        }
+        if u.busy().contains(&(repo.clone(), row.issue.number)) {
+            return Err(format!(
+                "A run on issue #{} has not ended yet: it is waiting on its pull request's \
+                 checks.",
+                row.issue.number
+            ));
         }
         // Refused before the claim: the run would fail at its prompt, and the
         // issue would be claimed and commented on for nothing.
@@ -324,7 +470,7 @@ pub fn look_now(window: gpui::AnyWindowHandle, cx: &mut App) {
 
 /// The claim came back: start the session, or say why not.
 pub(super) fn landed(
-    begun: Option<Result<Claimed, Unstarted>>,
+    begun: Option<Result<(Claimed, Progress), Unstarted>>,
     asked_from: Option<gpui::AnyWindowHandle>,
     cx: &mut App,
 ) {
@@ -346,11 +492,17 @@ pub(super) fn landed(
             return;
         }
         Some(Err(unstarted)) => unstarted,
-        Some(Ok(claimed)) => match start(claimed, cx) {
+        Some(Ok((claimed, progress))) => match start(claimed, progress, cx) {
             Ok(()) => return,
             Err(unstarted) => unstarted,
         },
     };
+    tell_unstarted(unstarted, cx);
+}
+
+/// Say on the issue that its run could not start, and let go of the run's
+/// file.
+pub(super) fn tell_unstarted(unstarted: Unstarted, cx: &App) {
     // A run that never started left nothing, whichever kind of nothing.
     let said = core::report(
         &Ending::Failed(unstarted.why),
@@ -358,15 +510,19 @@ pub(super) fn landed(
         "",
     );
     cx.background_executor()
-        .spawn(
-            async move { tell_issue(&unstarted.tracker, &unstarted.repo, unstarted.number, &said) },
-        )
+        .spawn(async move {
+            tell_issue(&unstarted.tracker, &unstarted.repo, unstarted.number, &said);
+            if let Some(file) = unstarted.file {
+                let _ = std::fs::remove_file(file);
+            }
+        })
         .detach();
 }
 
-/// Mint the run's session in the window holding its project, and start
-/// watching it.
-fn start(claimed: Claimed, cx: &mut App) -> Result<(), Unstarted> {
+/// Mint a session of the run in the window holding its project, and start
+/// watching it. `progress` says what the session is for and how much of the
+/// timeout earlier sessions of this attempt already spent.
+pub(super) fn start(claimed: Claimed, progress: Progress, cx: &mut App) -> Result<(), Unstarted> {
     let (agent, timeout) = match with(cx, |u| (u.agent.clone(), u.timeout)) {
         Some(settings) => settings,
         None => return Err(unstarted(claimed, "unattended runs are off")),
@@ -397,7 +553,7 @@ fn start(claimed: Claimed, cx: &mut App) -> Result<(), Unstarted> {
             "the project was closed before the run could start",
         ));
     };
-    let Some((uid, session)) = shell
+    let Some((uid, session, owns_root)) = shell
         .upgrade()
         .and_then(|s| s.update(cx, |s, cx| s.run_unattended(claimed.dir.clone(), spec, cx)))
     else {
@@ -430,10 +586,15 @@ fn start(claimed: Claimed, cx: &mut App) -> Result<(), Unstarted> {
             resume(uid, &session, cx);
         }
     });
-    let clock = clock(uid, timeout, timeout, cx);
+    let budget = Budget::resumed(
+        timeout,
+        Duration::from_secs(progress.spent_secs),
+        Instant::now(),
+    );
+    let clock = clock(uid, budget.left(Instant::now()), timeout, cx);
     let (by_hand, opening, shown_in) = (
         claimed.picked_by_hand(),
-        start_notes(&claimed),
+        start_notes(&claimed, &progress.start),
         shell.clone(),
     );
     with(cx, |u| {
@@ -443,9 +604,12 @@ fn start(claimed: Claimed, cx: &mut App) -> Result<(), Unstarted> {
             session: session.downgrade(),
             window,
             shell,
-            prompted: false,
+            owns_root,
+            sent: 0,
+            turns: 0,
+            progress,
             waiting: None,
-            budget: Budget::start(timeout, Instant::now()),
+            budget,
             ending: None,
             _watch: watch,
             _answered: answered,
@@ -476,6 +640,7 @@ fn unstarted(claimed: Claimed, why: &str) -> Unstarted {
         tracker: claimed.tracker,
         number: claimed.issue.number,
         why: why.to_string(),
+        file: Some(claimed.file),
     }
 }
 

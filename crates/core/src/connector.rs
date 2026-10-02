@@ -28,6 +28,48 @@ pub struct RemoteIssue {
     pub snapshot: Snapshot,
 }
 
+/// A pull request as a forge holds it now: where it is, whether it is still
+/// open, what commit it is at, and what its checks say about that commit.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PullRequest {
+    pub url: String,
+    pub number: u64,
+    pub state: PrState,
+    pub draft: bool,
+    /// The commit the pull request is at, as the forge last saw it pushed.
+    pub head: String,
+    /// The forge says it cannot be merged as it stands: it conflicts with its
+    /// base.
+    pub conflicting: bool,
+    /// Every check reported on `head`, required or not.
+    pub checks: Vec<Check>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PrState {
+    Open,
+    Closed,
+    Merged,
+}
+
+/// One check a forge ran, or is running, on a pull request's head.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Check {
+    pub name: String,
+    pub state: CheckState,
+    /// Where the forge shows it, which is also how its log is found.
+    pub link: Option<String>,
+}
+
+/// What a check says. Cancelled, timed out and anything else that did not
+/// pass are all `Failed`: none of them is evidence the change works.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CheckState {
+    Pending,
+    Passed,
+    Failed,
+}
+
 /// What a forge lists for a sync. Two lists because they answer different
 /// questions: a cut in `open` only means fewer imports, while a cut in
 /// `changed` means a change may be missing, and the sync has to ask about
@@ -81,7 +123,19 @@ pub trait Connector: Send + Sync + 'static {
         &self,
         root: &Path,
         branch: &str,
-    ) -> Result<Option<String>, String>;
+    ) -> Result<Option<PullRequest>, String>;
+
+    /// Take pull request `number` out of draft, so its reviewers are asked.
+    fn mark_ready_blocking(&self, root: &Path, number: u64) -> Result<(), String>;
+
+    /// The end of a failed check's log, for an agent repairing it.
+    fn check_log_blocking(&self, _root: &Path, check: &Check) -> Result<String, String> {
+        Err(format!("{} gives no log for {}.", self.name(), check.name))
+    }
+
+    /// How an agent reads the review left on pull request `number`, inline
+    /// comments included, as the words it is told to use.
+    fn read_review_with(&self, number: u64) -> String;
 
     /// What a sync needs to see, at most `limit` in each list; `changed` is
     /// asked for from `since`.
@@ -109,8 +163,8 @@ pub trait Connector: Send + Sync + 'static {
         to: &Snapshot,
     ) -> Result<(), String>;
 
-    /// How an agent opens a pull request here, as the words it is told to use:
-    /// "`gh pr create`".
+    /// How an agent opens a draft pull request here, as the words it is told
+    /// to use: "`gh pr create --draft`".
     fn open_pull_request_with(&self) -> &'static str;
 
     /// The web address of issue `key`, for a person to open or share.
@@ -202,8 +256,18 @@ pub(crate) mod fake {
         fn default_branch_blocking(&self, _: &Path) -> Result<String, String> {
             unreachable!()
         }
-        fn pull_request_for_blocking(&self, _: &Path, _: &str) -> Result<Option<String>, String> {
+        fn pull_request_for_blocking(
+            &self,
+            _: &Path,
+            _: &str,
+        ) -> Result<Option<PullRequest>, String> {
             unreachable!()
+        }
+        fn mark_ready_blocking(&self, _: &Path, _: u64) -> Result<(), String> {
+            unreachable!()
+        }
+        fn read_review_with(&self, number: u64) -> String {
+            format!("`forge review {number}`")
         }
         fn open_pull_request_with(&self) -> &'static str {
             "`forge pr`"
@@ -334,8 +398,18 @@ pub(crate) mod memory {
         fn default_branch_blocking(&self, _: &Path) -> Result<String, String> {
             unreachable!()
         }
-        fn pull_request_for_blocking(&self, _: &Path, _: &str) -> Result<Option<String>, String> {
+        fn pull_request_for_blocking(
+            &self,
+            _: &Path,
+            _: &str,
+        ) -> Result<Option<PullRequest>, String> {
             unreachable!()
+        }
+        fn mark_ready_blocking(&self, _: &Path, _: u64) -> Result<(), String> {
+            unreachable!()
+        }
+        fn read_review_with(&self, number: u64) -> String {
+            format!("`forge review {number}`")
         }
         fn open_pull_request_with(&self) -> &'static str {
             "`forge pr`"

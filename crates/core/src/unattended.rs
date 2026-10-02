@@ -10,8 +10,15 @@ use crate::issues;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
+mod run;
+pub use run::{
+    after_checks, after_turn, carry_on, load_records_blocking, new_record_file, runs_dir,
+    save_record_blocking, Checked, Facts, Failure, Kept, Missing, Phase, Progress, Record, Spent,
+    Start, Step, CHECKS_GRACE,
+};
+
 /// An issue a run can take.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct Issue {
     pub number: u64,
     title: String,
@@ -344,6 +351,17 @@ fn spoken(d: Duration) -> String {
 /// punctuation leaves the number alone, and a long one is cut at a word
 /// boundary's worth of characters rather than carried whole into a folder name.
 pub fn branch_for(issue: &Issue) -> String {
+    branch_words(issue, &issue_prefix(issue.number))
+}
+
+/// What every branch a run on issue `number` works on starts with, whatever
+/// its title says now: a title edited since the last attempt still finds that
+/// attempt's branch.
+pub fn issue_prefix(number: u64) -> String {
+    format!("onehand/issue-{number}")
+}
+
+fn branch_words(issue: &Issue, prefix: &str) -> String {
     const WORDS_MAX: usize = 40;
     let mut words = String::new();
     for ch in issue.title.chars() {
@@ -356,9 +374,9 @@ pub fn branch_for(issue: &Issue) -> String {
     words.truncate(WORDS_MAX);
     let words = words.trim_matches('-');
     if words.is_empty() {
-        format!("onehand/issue-{}", issue.number)
+        prefix.to_string()
     } else {
-        format!("onehand/issue-{}-{words}", issue.number)
+        format!("{prefix}-{words}")
     }
 }
 
@@ -386,7 +404,7 @@ pub fn target_dir() -> Option<std::path::PathBuf> {
     dirs::cache_dir().map(|dir| dir.join("onehand").join("unattended-target"))
 }
 
-/// The one prompt a run sends.
+/// The first prompt of a run's session.
 ///
 /// It does not restate the repository's conventions — the commit format, the
 /// test commands, the pull-request shape. Those are in the repository's own
@@ -398,13 +416,21 @@ pub fn target_dir() -> Option<std::path::PathBuf> {
 /// onehand is **not** — `#N` in a pull request names the forge's issue N, which
 /// is some other issue. And a project on no forge is told to leave its work on
 /// the branch, since there is nowhere to push it and the branch is the result.
+///
+/// `start` says what this session is for beyond the issue: carrying on an
+/// earlier attempt, answering a review, repairing checks. A session with a
+/// pull request already open pushes to it and never opens a second.
 pub fn prompt_for(
     issue: &Issue,
     branch: &str,
     tracker: &Tracker,
     forge: Option<&dyn Connector>,
+    start: &Start,
 ) -> String {
     let finish = match (forge, tracker, issue.forge_ref()) {
+        (Some(_), _, _) if start.has_pull_request() => "Commit, and push the branch: its \
+             pull request is already open, so do not open another."
+            .to_string(),
         (Some(forge), Tracker::Forge(_), _) => format!(
             "Commit, push the branch, and open the pull request yourself with {}, \
              referencing #{}.",
@@ -433,16 +459,27 @@ pub fn prompt_for(
          {body}\n\n\
          ---\n\n\
          You are on branch `{branch}`, in a worktree of its own.\n\n\
+         {context}\
          1. Read the repository's own agent instructions, and whatever they point \
          at, and follow its conventions.\n\
          2. Run the repository's checks before committing.\n\
          3. {finish}\n\
-         4. If the issue turns out to need a decision from a person, ask it with \
-         your tool for asking the user a question, not in your answer, and carry on \
-         once it is answered. A person will see it and reply. Do not guess.\n",
+         4. Decide whatever the code, the tests and the documentation let you \
+         infer, and list the assumptions that mattered {listed}. Only a decision \
+         they cannot settle, about what the product should do, is for a person: \
+         ask it with your tool for asking the user a question, not in your answer, \
+         and carry on once it is answered. Do not guess at those.\n",
         named = tracker.names(issue),
         title = issue.title,
         body = issue.body.trim(),
+        context = start
+            .said(forge)
+            .map(|said| format!("{said}\n\n"))
+            .unwrap_or_default(),
+        listed = match forge {
+            Some(_) => "in the pull request's description",
+            None => "in your last answer",
+        },
     )
 }
 
@@ -481,13 +518,31 @@ pub enum Ending {
     TakenOver,
     /// The run never got as far as a prompt.
     Failed(String),
+    /// The pull request's checks passed on its head, or none ran, and it is
+    /// marked ready for review.
+    Ready { checks_ran: bool },
+    /// The run used up what it was given before its pull request was ready.
+    Exhausted(Spent),
+    /// The pull request was closed or merged while its checks were awaited.
+    PullRequestGone,
 }
 
 impl Ending {
     /// Whether the run's work is worth looking for. A run that never started
     /// cannot have done any.
     pub fn may_have_work(&self) -> bool {
-        !matches!(self, Self::Failed(_))
+        match self {
+            Self::Failed(_) => false,
+            Self::TurnEnded { .. }
+            | Self::Asked(_)
+            | Self::LinkLost
+            | Self::Closed
+            | Self::TimedOut(_)
+            | Self::TakenOver
+            | Self::Ready { .. }
+            | Self::Exhausted(_)
+            | Self::PullRequestGone => true,
+        }
     }
 }
 
@@ -510,11 +565,25 @@ pub struct Budget {
 impl Budget {
     /// A budget of `limit`, running from `now`.
     pub fn start(limit: Duration, now: Instant) -> Self {
+        Self::resumed(limit, Duration::ZERO, now)
+    }
+
+    /// A budget of `limit` with `spent` of it already gone, running from `now`:
+    /// a later session of the same attempt.
+    pub fn resumed(limit: Duration, spent: Duration, now: Instant) -> Self {
         Self {
             limit,
-            spent: Duration::ZERO,
+            spent,
             since: Some(now),
         }
+    }
+
+    /// How much of the limit is spent at `now`.
+    pub fn spent(&self, now: Instant) -> Duration {
+        let running = self
+            .since
+            .map_or(Duration::ZERO, |since| now.saturating_duration_since(since));
+        self.spent + running
     }
 
     /// Stop counting: the run is waiting on a person. Pausing twice is once.
@@ -536,10 +605,7 @@ impl Budget {
 
     /// What is left of the limit at `now`.
     pub fn left(&self, now: Instant) -> Duration {
-        let running = self
-            .since
-            .map_or(Duration::ZERO, |since| now.saturating_duration_since(since));
-        self.limit.saturating_sub(self.spent + running)
+        self.limit.saturating_sub(self.spent(now))
     }
 }
 
@@ -617,6 +683,9 @@ pub fn outcome_line(ending: &Ending, found: &Result<Verdict, String>) -> String 
                 Ending::TimedOut(_) => "it timed out",
                 Ending::TakenOver => "it was taken over by hand",
                 Ending::Failed(_) => "it could not start",
+                Ending::Ready { .. } => "its checks passed",
+                Ending::Exhausted(_) => "it ran out of what it was given",
+                Ending::PullRequestGone => "its pull request was closed",
             };
             format!(
                 "Run over with {}: {why}; see the issue",
@@ -644,6 +713,17 @@ fn stopped(ending: &Ending) -> Option<String> {
         Ending::TimedOut(d) => Some(format!("The run hit its {} timeout.", spoken(*d))),
         Ending::TakenOver => Some("It was taken over by hand.".to_string()),
         Ending::Failed(why) => Some(why.clone()),
+        Ending::Ready { checks_ran: true } => Some(
+            "Its checks passed on its latest commit, and it is marked ready for review."
+                .to_string(),
+        ),
+        Ending::Ready { checks_ran: false } => {
+            Some("No checks ran on its latest commit; it is marked ready for review.".to_string())
+        }
+        Ending::Exhausted(spent) => Some(spent.said()),
+        Ending::PullRequestGone => Some(
+            "It was closed or merged before its checks settled, so the run stopped.".to_string(),
+        ),
     }
 }
 
@@ -679,6 +759,13 @@ fn nothing_found(ending: &Ending, branch: &str, missing: &str) -> String {
             format!("Taken over by hand; the run stopped watching `{branch}`.")
         }
         Ending::Failed(why) => format!("onehand could not start the run: {why}"),
+        Ending::Ready { .. } | Ending::PullRequestGone => {
+            format!("The run ended with {missing} on `{branch}`.")
+        }
+        Ending::Exhausted(spent) => format!(
+            "{} There is {missing} on `{branch}`; its work stays there.",
+            spent.said()
+        ),
     }
 }
 
@@ -709,10 +796,15 @@ fn quoted(text: &str) -> String {
 /// and the agent runs with the user's credentials; a label is
 /// something anybody with triage rights can apply, to an issue anybody at all
 /// may have written.
+///
+/// **An issue in `busy` is passed over**: a run on it has not ended, and a
+/// second would work the same branch. Its label stays on, so it is taken once
+/// that run ends.
 pub fn candidate_blocking(
     tracker: &Tracker,
     root: &Path,
     label: &str,
+    busy: &[u64],
 ) -> Result<Option<Issue>, String> {
     if label.trim().is_empty() {
         return Ok(None);
@@ -720,6 +812,7 @@ pub fn candidate_blocking(
     Ok(tracker
         .labelled_blocking(root, label)?
         .into_iter()
+        .filter(|issue| !busy.contains(&issue.number))
         .min_by_key(|issue| issue.number))
 }
 

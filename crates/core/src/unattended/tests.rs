@@ -82,7 +82,13 @@ fn the_prompt_names_the_issue_and_the_branch_and_keeps_the_body_whole() {
         body: body.to_string(),
         ..issue(42, "Crash on open")
     };
-    let prompt = prompt_for(&issue, "onehand/issue-42", &forge(), Some(&Fake::SERVING));
+    let prompt = prompt_for(
+        &issue,
+        "onehand/issue-42",
+        &forge(),
+        Some(&Fake::SERVING),
+        &Start::Fresh,
+    );
     assert!(prompt.contains("#42"));
     assert!(prompt.contains("`onehand/issue-42`"));
     assert!(prompt.contains(body));
@@ -110,6 +116,11 @@ fn every_ending_has_a_sentence_with_and_without_a_pr() {
         Ending::TimedOut(Duration::from_secs(2700)),
         Ending::TakenOver,
         Ending::Failed("git refused".into()),
+        Ending::Ready { checks_ran: true },
+        Ending::Ready { checks_ran: false },
+        Ending::Exhausted(Spent::Turns(3)),
+        Ending::Exhausted(Spent::FailedAgain(vec!["Clippy".into()])),
+        Ending::PullRequestGone,
     ];
     for ending in &endings {
         // Exhaustive on purpose: a new ending cannot be added without being
@@ -121,7 +132,10 @@ fn every_ending_has_a_sentence_with_and_without_a_pr() {
             | Ending::Closed
             | Ending::TimedOut(_)
             | Ending::TakenOver
-            | Ending::Failed(_) => {}
+            | Ending::Failed(_)
+            | Ending::Ready { .. }
+            | Ending::Exhausted(_)
+            | Ending::PullRequestGone => {}
         }
         let without = report(ending, &Ok(Verdict::NoPullRequest), "onehand/issue-1");
         assert!(!without.is_empty());
@@ -212,13 +226,13 @@ fn a_question_in_prose_reaches_the_issue() {
 #[test]
 fn an_empty_label_picks_nothing_without_asking() {
     let nowhere = std::env::temp_dir();
-    assert_eq!(candidate_blocking(&forge(), &nowhere, ""), Ok(None));
-    assert_eq!(candidate_blocking(&forge(), &nowhere, "   "), Ok(None));
+    assert_eq!(candidate_blocking(&forge(), &nowhere, "", &[]), Ok(None));
+    assert_eq!(candidate_blocking(&forge(), &nowhere, "   ", &[]), Ok(None));
 }
 
 #[test]
 fn the_oldest_issue_is_taken_first() {
-    let found = candidate_blocking(&forge(), &std::env::temp_dir(), "auto").unwrap();
+    let found = candidate_blocking(&forge(), &std::env::temp_dir(), "auto", &[]).unwrap();
     assert_eq!(found.map(|i| i.number), Some(4));
     static NONE_LABELLED: Fake = Fake {
         labelled: &[],
@@ -228,7 +242,8 @@ fn the_oldest_issue_is_taken_first() {
         candidate_blocking(
             &Tracker::Forge(&NONE_LABELLED),
             &std::env::temp_dir(),
-            "auto"
+            "auto",
+            &[]
         ),
         Ok(None)
     );
@@ -254,7 +269,7 @@ fn a_local_issue_is_found_by_its_label_and_claimed_in_its_own_file() {
         ],
     );
     let root = std::env::temp_dir();
-    let found = candidate_blocking(&tracker, &root, "auto")
+    let found = candidate_blocking(&tracker, &root, "auto", &[])
         .unwrap()
         .unwrap();
     assert_eq!(found.number, 1, "the oldest labelled issue goes first");
@@ -267,7 +282,7 @@ fn a_local_issue_is_found_by_its_label_and_claimed_in_its_own_file() {
     assert!(claimed.labels.is_empty(), "the label is the claim");
     assert!(claimed.notes[0].text.contains("started"));
     assert_eq!(
-        candidate_blocking(&tracker, &root, "auto")
+        candidate_blocking(&tracker, &root, "auto", &[])
             .unwrap()
             .map(|i| i.number),
         Some(2)
@@ -282,11 +297,11 @@ fn a_local_issue_is_found_by_its_label_and_claimed_in_its_own_file() {
 fn a_local_issue_is_never_referenced_from_a_pull_request() {
     let (tracker, dir) = local("prompt", &[]);
     let issue = issue(3, "Fix it");
-    let on_forge = prompt_for(&issue, "b", &tracker, Some(&Fake::SERVING));
+    let on_forge = prompt_for(&issue, "b", &tracker, Some(&Fake::SERVING), &Start::Fresh);
     assert!(on_forge.contains("`forge pr`"), "{on_forge}");
     assert!(on_forge.contains("Do not reference #3"), "{on_forge}");
     assert!(!on_forge.contains("referencing #3"), "{on_forge}");
-    let no_forge = prompt_for(&issue, "b", &tracker, None);
+    let no_forge = prompt_for(&issue, "b", &tracker, None, &Start::Fresh);
     assert!(no_forge.contains("Do not push"), "{no_forge}");
     assert!(!no_forge.contains("pull request"), "{no_forge}");
     let _ = std::fs::remove_dir_all(dir);
@@ -345,17 +360,20 @@ fn a_synced_project_runs_only_what_the_user_wrote_and_claims_it_on_both_sides() 
 
     // The draft written here first, then the user's own forge issue —
     // never the one somebody else wrote, whatever label it carries.
-    let first = candidate_blocking(&tracker, &root, "auto")
+    let first = candidate_blocking(&tracker, &root, "auto", &[])
         .unwrap()
         .unwrap();
     assert_eq!((first.number, first.forge_ref()), (1, None));
     claim_blocking(&tracker, &root, 1, "auto").unwrap();
-    let second = candidate_blocking(&tracker, &root, "auto")
+    let second = candidate_blocking(&tracker, &root, "auto", &[])
         .unwrap()
         .unwrap();
     assert_eq!(second.forge_ref(), Some("#7"));
     claim_blocking(&tracker, &root, second.number, "auto").unwrap();
-    assert_eq!(candidate_blocking(&tracker, &root, "auto").unwrap(), None);
+    assert_eq!(
+        candidate_blocking(&tracker, &root, "auto", &[]).unwrap(),
+        None
+    );
 
     // The claim reached the forge: the label came off and it was told.
     assert!(forge.said("7").labels.is_empty());
@@ -365,7 +383,7 @@ fn a_synced_project_runs_only_what_the_user_wrote_and_claims_it_on_both_sides() 
     assert!(comments[0].1.contains("started"));
 
     // And its pull request names the forge's number, not onehand's.
-    let prompt = prompt_for(&second, "b", &tracker, Some(forge));
+    let prompt = prompt_for(&second, "b", &tracker, Some(forge), &Start::Fresh);
     assert!(prompt.contains("referencing #7"), "{prompt}");
     assert!(prompt.contains("Forge issue #7"), "{prompt}");
     let _ = std::fs::remove_dir_all(dir);
@@ -397,13 +415,13 @@ fn an_issue_brought_in_from_a_forge_is_never_run_as_the_users_own() {
     };
     let root = std::env::temp_dir();
     // Not while synced, and not once the sync is switched off either.
-    assert_eq!(candidate_blocking(&synced, &root, "auto"), Ok(None));
-    assert_eq!(candidate_blocking(&local, &root, "auto"), Ok(None));
+    assert_eq!(candidate_blocking(&synced, &root, "auto", &[]), Ok(None));
+    assert_eq!(candidate_blocking(&local, &root, "auto", &[]), Ok(None));
     // Nor once the forge has lost it and it is kept here unlinked.
     forge.issues.lock().unwrap().clear();
     crate::issues::sync::sync_blocking(&file, &root, forge, 2).unwrap();
-    assert_eq!(candidate_blocking(&synced, &root, "auto"), Ok(None));
-    assert_eq!(candidate_blocking(&local, &root, "auto"), Ok(None));
+    assert_eq!(candidate_blocking(&synced, &root, "auto", &[]), Ok(None));
+    assert_eq!(candidate_blocking(&local, &root, "auto", &[]), Ok(None));
     let _ = std::fs::remove_dir_all(dir);
 }
 
@@ -465,4 +483,37 @@ fn an_issue_is_shown_by_its_forge_number_and_a_kept_one_as_a_draft() {
     // Kept here and in step with the forge: the forge's number, never ours.
     assert_eq!(kept.shown(&issue(3, "a").at("#41".into())), "#41");
     let _ = std::fs::remove_dir_all(dir);
+}
+
+#[test]
+fn an_issue_a_run_is_still_on_is_passed_over() {
+    let found = candidate_blocking(&forge(), &std::env::temp_dir(), "auto", &[4]).unwrap();
+    assert_eq!(found.map(|i| i.number), Some(9));
+}
+
+#[test]
+fn a_branch_keeps_its_issue_prefix_whatever_the_title() {
+    for title in ["Fix the rail", "!!!", ""] {
+        assert!(branch_for(&issue(12, title)).starts_with(&issue_prefix(12)));
+    }
+}
+
+#[test]
+fn a_session_on_an_open_pull_request_pushes_to_it_rather_than_opening_another() {
+    let start = Start::Review {
+        pr: "https://x/pull/2".into(),
+        number: 2,
+    };
+    let said = prompt_for(&issue(4, "t"), "b", &forge(), Some(&Fake::SERVING), &start);
+    assert!(said.contains("`forge review 2`"), "{said}");
+    assert!(said.contains("do not open another"), "{said}");
+    assert!(!said.contains("`forge pr`"), "{said}");
+}
+
+#[test]
+fn a_budget_carried_into_a_later_session_keeps_what_was_spent() {
+    let now = Instant::now();
+    let budget = Budget::resumed(Duration::from_secs(60), Duration::from_secs(50), now);
+    assert_eq!(budget.left(now), Duration::from_secs(10));
+    assert_eq!(budget.spent(now), Duration::from_secs(50));
 }

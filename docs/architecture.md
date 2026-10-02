@@ -592,7 +592,12 @@ once. Every run writes its own log into its transcript as notices (`unattended::
 the prompt going out, a cancel, and the words the issue was told at the end. A run the search finds claims its issue by removing the label,
 branches a worktree off `origin/<default>` and mints a session there. **Neither step moves anything on
 screen**: `ChatPane::open_unshown` connects without showing, and the worktree's root is
-`ProjectRoot::transient`, which `to_config` never writes. One prompt, one turn. The pull request the forge
+`ProjectRoot::transient`, which `to_config` never writes. **A turn ending is read, not believed**:
+`unattended::after_turn` looks at the branch and the pull request and either sends the same session
+back with what is missing, or parks the run with no session while its checks run; each tick then
+judges the checks on the pull request's head (`after_checks`) and starts a repair session, marks it
+ready, or stops. A run keeps one file of counters (`unattended::Record`) so a restart carries it on;
+everything else is read again from git and the forge. The pull request the forge
 finds — or, with no forge, the commits on the branch — is the verdict, on every ending. **A parked
 ask waits for a person and is never answered by the run**: the card stays up, announced like any
 other, and answering it from anywhere lets the turn carry on — answering is not taking over. While it

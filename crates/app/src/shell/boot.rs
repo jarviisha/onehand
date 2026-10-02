@@ -527,6 +527,9 @@ fn open_window(workspace: Workspace, cx: &mut App) {
             // not from the first tick, half an hour in. After the push, because
             // the look finds projects through this registry.
             crate::unattended::recheck(cx);
+            // A run a previous onehand left working carries on once a window
+            // holds its project, which this one may.
+            crate::unattended::resume_parked(cx);
         });
     })
     .detach();

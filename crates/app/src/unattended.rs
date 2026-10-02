@@ -13,8 +13,11 @@ use crate::chat::session::ChatSession;
 use crate::state::Shared;
 use gpui::{App, BorrowAppContext as _, Subscription, Task, WeakEntity};
 use onehand_core::config::UnattendedConfig;
+use onehand_core::connector::PullRequest;
 use onehand_core::connector::{self, Connector};
-use onehand_core::unattended::{self as core, Budget, Ending};
+use onehand_core::unattended::{
+    self as core, Budget, Checked, Ending, Failure, Phase, Progress, Start,
+};
 use std::collections::HashMap;
 use std::path::Path;
 use std::path::PathBuf;
@@ -22,7 +25,7 @@ use std::time::Duration;
 
 mod launch;
 mod turn;
-use launch::{Claimed, begin_blocking, landed};
+use launch::{Claimed, begin_blocking, landed, save_record, tell_unstarted};
 pub use launch::{Pickable, look_now, pickable_blocking, start_picked};
 
 /// How long a cancelled turn is given to wind down before the run is settled
@@ -37,6 +40,10 @@ pub struct Unattended {
     timeout: Duration,
     mode: String,
     agent: Option<String>,
+    /// How many turns one session may take.
+    turns: u32,
+    /// How many repairs one attempt may start.
+    repairs: u32,
     /// A claim is on its way to the connector and the worktree is being made. A tick
     /// landing now must not start a second.
     claiming: bool,
@@ -60,6 +67,10 @@ pub struct Unattended {
     // ponytail: waiting runs are not capped; each keeps an adapter alive. Cap
     // them when a pile of unanswered runs is seen to cost something.
     runs: Vec<Run>,
+    /// Runs with no session: waiting on their pull request's checks, or due a
+    /// session — a repair, or one carried on after a restart — once the slot
+    /// is free.
+    parked: Vec<Parked>,
     /// What each connector last said about its account, for the lines in
     /// Settings. `None` until the first answer lands.
     accounts: Option<Accounts>,
@@ -117,7 +128,15 @@ struct Run {
     session: WeakEntity<ChatSession>,
     window: gpui::AnyWindowHandle,
     shell: WeakEntity<crate::shell::Shell>,
-    prompted: bool,
+    /// The run added the project the session is on, and drops it again.
+    owns_root: bool,
+    /// How many prompts the run itself has sent the session: any more, and a
+    /// person is driving.
+    sent: usize,
+    /// Turns the session has ended.
+    turns: u32,
+    /// What the session is for and what the attempt has used.
+    progress: Progress,
     /// The question a parked card is asking, while the run waits for a person
     /// to answer it. The run never answers a card itself.
     waiting: Option<String>,
@@ -141,7 +160,23 @@ struct Run {
     _clock: Task<()>,
 }
 
+/// A run with no session.
+struct Parked {
+    claimed: Claimed,
+    phase: Phase,
+    progress: Progress,
+}
+
 impl Unattended {
+    /// Every issue a run has not ended on, by project.
+    fn busy(&self) -> Vec<(PathBuf, u64)> {
+        let runs = self.runs.iter().map(|run| &run.claimed);
+        let parked = self.parked.iter().map(|p| &p.claimed);
+        runs.chain(parked)
+            .map(|c| (c.repo.clone(), c.issue.number))
+            .collect()
+    }
+
     /// The run on session `uid`, if it has not ended.
     fn run_mut(&mut self, uid: u64) -> Option<&mut Run> {
         self.runs.iter_mut().find(|run| run.uid == uid)
@@ -200,10 +235,13 @@ pub fn boot(cfg: &UnattendedConfig, cx: &mut App) {
                 .unwrap_or(Duration::from_secs(2700)),
             mode: cfg.mode.clone(),
             agent: cfg.agent.clone(),
+            turns: cfg.turns.max(1),
+            repairs: cfg.repairs,
             claiming: false,
             blocked,
             mode_refused: None,
             runs: Vec::new(),
+            parked: Vec::new(),
             accounts: None,
             checked_at: None,
             checks_out: 0,
@@ -211,6 +249,241 @@ pub fn boot(cfg: &UnattendedConfig, cx: &mut App) {
             _tick: tick,
         });
     });
+    carry_on_runs(cx);
+}
+
+/// Read back every run a previous onehand left unfinished, and park them:
+/// those waiting on checks go on waiting, those that were working get a
+/// session once a window holding their project is open.
+///
+/// **A run is never read back twice**: its file is the run, and is only
+/// removed once the issue has been told how it ended.
+fn carry_on_runs(cx: &mut App) {
+    cx.spawn(async move |cx| {
+        let found = cx
+            .background_executor()
+            .spawn(async move { core::load_records_blocking(&core::runs_dir()) })
+            .await;
+        cx.update(|cx| {
+            for (file, read) in found {
+                let record = match read {
+                    Ok(record) => record,
+                    Err(why) => {
+                        eprintln!(
+                            "onehand: an unattended run's file {} is unreadable: {why}",
+                            file.display()
+                        );
+                        continue;
+                    }
+                };
+                let (phase, mut progress) = (record.phase, record.progress.clone());
+                let Some(claimed) = Claimed::from_record(file, record) else {
+                    eprintln!("onehand: an unattended run names a connector this onehand lacks");
+                    continue;
+                };
+                // A session cut short leaves whatever it did on the branch,
+                // perhaps uncommitted; the next one is told to look first.
+                if progress.start == Start::Fresh {
+                    progress.start = Start::Earlier;
+                }
+                with(cx, |u| {
+                    u.parked.push(Parked {
+                        claimed,
+                        phase,
+                        progress,
+                    })
+                });
+            }
+            resume_parked(cx);
+        });
+    })
+    .detach();
+}
+
+/// Give the next parked run that is due a session one, if the slot is free and
+/// a window holds its project. One that cannot start is told so on its issue.
+pub fn resume_parked(cx: &mut App) {
+    let held: Vec<PathBuf> = with(cx, |u| {
+        u.parked
+            .iter()
+            .filter(|p| p.phase == Phase::Working)
+            .map(|p| p.claimed.repo.clone())
+            .collect()
+    })
+    .unwrap_or_default();
+    let held: Vec<PathBuf> = held
+        .into_iter()
+        .filter(|repo| {
+            Shared::global(cx).windows.iter().any(|w| {
+                w.shell
+                    .upgrade()
+                    .is_some_and(|s| s.read(cx).holds_root(repo))
+            })
+        })
+        .collect();
+    let next = with(cx, |u| {
+        let free =
+            !u.claiming && u.blocked.is_none() && u.mode_refused.is_none() && u.working().is_none();
+        let at = u
+            .parked
+            .iter()
+            .position(|p| p.phase == Phase::Working && held.contains(&p.claimed.repo))
+            .filter(|_| free)?;
+        Some(u.parked.remove(at))
+    })
+    .flatten();
+    if let Some(Parked {
+        claimed, progress, ..
+    }) = next
+        && let Err(unstarted) = launch::start(claimed, progress, cx)
+    {
+        tell_unstarted(unstarted, cx);
+    }
+}
+
+/// A run waiting on its pull request's checks, as the tick looks at it.
+struct Awaiting {
+    file: PathBuf,
+    repo: PathBuf,
+    branch: String,
+    forge: &'static dyn Connector,
+    since: u64,
+    repairs: u32,
+    failed_before: Vec<String>,
+}
+
+/// What a look at a waiting run's pull request found.
+enum Polled {
+    Wait,
+    End(Ending),
+    /// Start a repair session for this, failing these checks.
+    Repair {
+        start: Start,
+        failing: Vec<String>,
+    },
+}
+
+/// How many failed checks' logs a repair is handed. The rest are named.
+const LOGS_MAX: usize = 3;
+
+/// Look at each waiting run's pull request and decide. Blocking.
+///
+/// A run whose pull request could not be read waits for the next tick: one
+/// failed call to the forge is not a verdict on the run.
+fn poll_blocking(
+    awaiting: Vec<Awaiting>,
+    timeout: Duration,
+    repairs: u32,
+) -> Vec<(PathBuf, Polled)> {
+    awaiting
+        .into_iter()
+        .map(|a| {
+            let pr = match a.forge.pull_request_for_blocking(&a.repo, &a.branch) {
+                Ok(pr) => pr,
+                Err(why) => {
+                    eprintln!(
+                        "onehand: could not look at {}'s pull request: {why}",
+                        a.branch
+                    );
+                    return (a.file, Polled::Wait);
+                }
+            };
+            let waited =
+                Duration::from_secs(onehand_core::chat::store::now_secs().saturating_sub(a.since));
+            let checked = core::after_checks(
+                pr.as_ref(),
+                waited,
+                timeout,
+                repairs.saturating_sub(a.repairs),
+                a.repairs,
+                &a.failed_before,
+            );
+            let polled = match (checked, pr) {
+                (Checked::Wait, _) => Polled::Wait,
+                (Checked::Gone, _) => Polled::End(Ending::PullRequestGone),
+                (Checked::Exhausted(spent), _) => Polled::End(Ending::Exhausted(spent)),
+                (Checked::Ready { ran }, pr) => ready_blocking(&a, pr.as_ref(), ran),
+                (
+                    Checked::Repair {
+                        failing,
+                        conflicting,
+                    },
+                    Some(pr),
+                ) => Polled::Repair {
+                    start: Start::Repair {
+                        failing: logs_blocking(&a, &pr, &failing),
+                        pr: pr.url,
+                        conflicting,
+                    },
+                    failing,
+                },
+                (Checked::Repair { .. }, None) => Polled::Wait,
+            };
+            (a.file, polled)
+        })
+        .collect()
+}
+
+/// Take a pull request whose checks passed out of draft. One the forge would
+/// not take out waits for the next look rather than being called ready.
+fn ready_blocking(a: &Awaiting, pr: Option<&PullRequest>, ran: bool) -> Polled {
+    if let Some(pr) = pr.filter(|pr| pr.draft)
+        && let Err(why) = a.forge.mark_ready_blocking(&a.repo, pr.number)
+    {
+        eprintln!("onehand: could not mark {} ready for review: {why}", pr.url);
+        return Polled::Wait;
+    }
+    Polled::End(Ending::Ready { checks_ran: ran })
+}
+
+/// The end of each failing check's log, or why there is none.
+fn logs_blocking(a: &Awaiting, pr: &PullRequest, failing: &[String]) -> Vec<Failure> {
+    pr.checks
+        .iter()
+        .filter(|c| failing.contains(&c.name))
+        .take(LOGS_MAX)
+        .map(|c| Failure {
+            check: c.name.clone(),
+            log: a
+                .forge
+                .check_log_blocking(&a.repo, c)
+                .unwrap_or_else(|why| format!("(no log: {why})")),
+        })
+        .collect()
+}
+
+/// Act on what the looks found: end the runs that are over, and mark the ones
+/// due a repair as wanting a session.
+fn apply_polls(polled: Vec<(PathBuf, Polled)>, cx: &mut App) {
+    for (file, polled) in polled {
+        match polled {
+            Polled::Wait => {}
+            Polled::End(ending) => {
+                let parked = with(cx, |u| {
+                    let at = u.parked.iter().position(|p| p.claimed.file == file)?;
+                    Some(u.parked.remove(at))
+                })
+                .flatten();
+                if let Some(parked) = parked {
+                    turn::conclude(parked.claimed, ending, None, cx);
+                }
+            }
+            Polled::Repair { start, failing } => {
+                let record = with(cx, |u| {
+                    let p = u.parked.iter_mut().find(|p| p.claimed.file == file)?;
+                    p.phase = Phase::Working;
+                    p.progress.start = start;
+                    p.progress.repairs += 1;
+                    p.progress.failed_before = failing;
+                    Some(p.claimed.record(p.phase, &p.progress))
+                })
+                .flatten();
+                if let Some(record) = record {
+                    save_record(file, record, cx);
+                }
+            }
+        }
+    }
 }
 
 /// Why no run can start at all, if something stops every one.
@@ -436,18 +709,45 @@ fn with<R>(cx: &mut App, act: impl FnOnce(&mut Unattended) -> R) -> Option<R> {
 /// had been signed out.
 fn tick(asked_from: Option<gpui::AnyWindowHandle>, cx: &mut App) {
     let roots = opted_in_roots(cx);
-    // Nothing switched on is nothing to look at and nothing to search, so a
-    // tick asks no connector anything at all — the feature costs nobody who has not
+    let (awaiting, timeout, repairs) = with(cx, |u| {
+        let awaiting: Vec<Awaiting> = u
+            .parked
+            .iter()
+            .filter_map(|p| {
+                let Phase::AwaitingChecks { since } = p.phase else {
+                    return None;
+                };
+                Some(Awaiting {
+                    file: p.claimed.file.clone(),
+                    repo: p.claimed.repo.clone(),
+                    branch: p.claimed.branch.clone(),
+                    forge: p.claimed.forge?,
+                    since,
+                    repairs: p.progress.repairs,
+                    failed_before: p.progress.failed_before.clone(),
+                })
+            })
+            .collect();
+        (awaiting, u.timeout, u.repairs)
+    })
+    .unwrap_or_default();
+    // Nothing switched on and nothing waiting is nothing to look at, so a tick
+    // asks no connector anything at all — the feature costs nobody who has not
     // switched a project on.
-    if roots.is_empty() {
+    if roots.is_empty() && awaiting.is_empty() {
+        resume_parked(cx);
         return;
     }
+    // A run due a session goes before any new issue.
     let search = with(cx, |u| {
-        let idle =
-            !u.claiming && u.blocked.is_none() && u.mode_refused.is_none() && u.working().is_none();
+        let idle = !u.claiming
+            && u.blocked.is_none()
+            && u.mode_refused.is_none()
+            && u.working().is_none()
+            && u.parked.iter().all(|p| p.phase != Phase::Working);
         idle.then(|| {
             u.claiming = true;
-            u.label.clone()
+            (u.label.clone(), u.busy())
         })
     })
     .flatten();
@@ -456,10 +756,15 @@ fn tick(asked_from: Option<gpui::AnyWindowHandle>, cx: &mut App) {
         // A panic in there would otherwise leave `claiming` set for the life of
         // the process, and no issue would be looked for again. Said and treated
         // as nothing found.
-        let (accounts, checked, begun) = cx
+        let (accounts, checked, polled, begun) = cx
             .background_executor()
             .spawn(async move {
                 std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                    let polled = poll_blocking(awaiting, timeout, repairs);
+                    let repairing = polled.iter().any(|(_, p)| match p {
+                        Polled::Repair { .. } => true,
+                        Polled::Wait | Polled::End(_) => false,
+                    });
                     let (accounts, mut checked) = look_blocking(roots.clone());
                     // Only the projects that passed the look are searched, each
                     // with the forge the look found for it, if any.
@@ -472,15 +777,17 @@ fn tick(asked_from: Option<gpui::AnyWindowHandle>, cx: &mut App) {
                             Some((project, forge))
                         })
                         .collect();
-                    let begun =
-                        search.and_then(|label| begin_blocking(&workable, &label, &mut checked));
-                    (Some(accounts), checked, begun)
+                    // A repair due now takes the slot this tick, not a new issue.
+                    let begun = search.filter(|_| !repairing).and_then(|(label, busy)| {
+                        begin_blocking(&workable, &label, &busy, &mut checked)
+                    });
+                    (Some(accounts), checked, polled, begun)
                 }))
                 .unwrap_or_else(|_| {
                     // The look, the search and the claim are all in here, and
                     // none of them has taken a label unless it finished.
                     eprintln!("onehand: looking for an unattended run panicked");
-                    (None, Vec::new(), None)
+                    (None, Vec::new(), Vec::new(), None)
                 })
             })
             .await;
@@ -489,9 +796,11 @@ fn tick(asked_from: Option<gpui::AnyWindowHandle>, cx: &mut App) {
                 file_accounts(accounts, cx);
                 record(checked, true, cx);
             }
+            apply_polls(polled, cx);
             if searching {
                 landed(begun, asked_from, cx);
             }
+            resume_parked(cx);
         });
     })
     .detach();

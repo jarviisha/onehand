@@ -413,6 +413,21 @@ impl Workspace {
         Some(self.roots.len() - 1)
     }
 
+    /// Add a session to the root at `path`, if there is one, without
+    /// selecting either: a later session of an unattended run whose project a
+    /// person kept. The root is left as it is, transient or not.
+    pub fn add_unshown_session(
+        &mut self,
+        path: impl Into<PathBuf>,
+        spec: AgentSpec,
+        uid: u64,
+    ) -> Option<usize> {
+        let path = normalize_root(path.into());
+        let at = self.roots.iter().position(|r| r.path == path)?;
+        self.roots[at].sessions.push(Session::new(spec, uid));
+        Some(at)
+    }
+
     pub fn select_root(&mut self, idx: usize) {
         if idx < self.roots.len() {
             self.active_root = idx;

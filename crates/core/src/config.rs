@@ -353,6 +353,13 @@ pub struct UnattendedConfig {
     pub mode: String,
     /// Which configured agent runs it; the default agent when unset.
     pub agent: Option<String>,
+    /// How many turns one session of a run may take before it is stopped with
+    /// its work unfinished. Each turn after the first is onehand saying what
+    /// the branch still lacks.
+    pub turns: u32,
+    /// How many times a run may go back to repair its pull request's failing
+    /// checks or a conflict before it stops.
+    pub repairs: u32,
 }
 
 impl Default for UnattendedConfig {
@@ -363,6 +370,8 @@ impl Default for UnattendedConfig {
             timeout: "45m".to_string(),
             mode: "acceptEdits".to_string(),
             agent: None,
+            turns: 3,
+            repairs: 2,
         }
     }
 }

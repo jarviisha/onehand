@@ -1,42 +1,33 @@
-use super::launch::Claimed;
-use super::{Run, WIND_DOWN, tick, with};
+use super::launch::{Claimed, save, save_record};
+use super::{Parked, Run, WIND_DOWN, tick, with};
 use crate::chat::session::{ChatEvent, ChatSession};
-use gpui::{App, Entity, Task};
+use gpui::{App, Entity, Task, WeakEntity};
 use onehand_core::chat::ChatItem;
 use onehand_core::chat::UserAsk;
-use onehand_core::unattended::{self as core, Ending, Tracker, Verdict};
+use onehand_core::unattended::{
+    self as core, Ending, Facts, Missing, Phase, Spent, Start, Step, Tracker, Verdict,
+};
 use onehand_core::worktree;
 use std::time::{Duration, Instant};
 
 /// One event from the run's session.
 pub(super) fn on_event(uid: u64, session: &Entity<ChatSession>, event: &ChatEvent, cx: &mut App) {
-    let Some((prompted, cancelling, waiting, shell)) = with(cx, |u| {
-        u.run_mut(uid).map(|run| {
-            (
-                run.prompted,
-                run.ending.is_some(),
-                run.waiting.clone(),
-                run.shell.clone(),
-            )
-        })
+    let Some((sent, cancelling, waiting)) = with(cx, |u| {
+        u.run_mut(uid)
+            .map(|run| (run.sent, run.ending.is_some(), run.waiting.clone()))
     })
     .flatten() else {
         return;
     };
     match event {
-        ChatEvent::Appended if !prompted => prompt(uid, session, cx),
+        ChatEvent::Appended if sent == 0 => prompt(uid, session, cx),
         ChatEvent::Appended => {
-            if prompted_by_someone_else(session, true, cx) {
+            if prompted_by_someone_else(session, sent, cx) {
                 settle(uid, Ending::TakenOver, cx);
             }
         }
         ChatEvent::TurnEnded if cancelling => settle_pending(uid, cx),
-        ChatEvent::TurnEnded => {
-            let tail = shell
-                .upgrade()
-                .and_then(|s| s.read(cx).answer_tail(uid, cx));
-            settle(uid, Ending::TurnEnded { tail }, cx);
-        }
+        ChatEvent::TurnEnded => after_turn(uid, session, cx),
         // **The card is left up for a person**, wherever they answer it from —
         // this window, the desktop notification, a chat on the remote bridge.
         // The run never answers a card itself, and it no longer throws one
@@ -124,7 +115,161 @@ pub(super) fn pending_ending(run: &Run) -> Option<Ending> {
         .or_else(|| run.waiting.clone().map(Ending::Asked))
 }
 
-/// Send the run's one prompt, once the adapter is up.
+/// A turn ended by itself: read what the branch holds, then carry on, wait
+/// for checks, or end.
+///
+/// **The branch is the judge, not the answer.** A turn that only analysed, or
+/// that says it opened a pull request it never opened, is sent back to work
+/// with what is missing named; only commits pushed to an open pull request
+/// move the run on.
+fn after_turn(uid: u64, session: &Entity<ChatSession>, cx: &mut App) {
+    let shell = with(cx, |u| u.run_mut(uid).map(|run| run.shell.clone())).flatten();
+    let tail = shell
+        .and_then(|s| s.upgrade())
+        .and_then(|s| s.read(cx).answer_tail(uid, cx));
+    let Some((dir, since, repo, branch, forge, turns, max)) = with(cx, |u| {
+        let max = u.turns;
+        let run = u.run_mut(uid)?;
+        run.turns += 1;
+        let c = &run.claimed;
+        Some((
+            c.dir.clone(),
+            run.progress.since.clone().unwrap_or_else(|| c.base.clone()),
+            c.repo.clone(),
+            c.branch.clone(),
+            c.forge,
+            run.turns,
+            max,
+        ))
+    })
+    .flatten() else {
+        return;
+    };
+    let session = session.downgrade();
+    cx.spawn(async move |cx| {
+        let facts = cx
+            .background_executor()
+            .spawn(async move { Facts::read_blocking(&dir, &since, &repo, &branch, forge) })
+            .await;
+        cx.update(|cx| {
+            // Taken over, cancelled or gone while the branch was read: that
+            // has already decided how the run ends.
+            let going = with(cx, |u| u.run_mut(uid).map(|run| run.ending.is_none())).flatten();
+            let Some(session) = session.upgrade().filter(|_| going == Some(true)) else {
+                return;
+            };
+            let step = match facts {
+                Ok(facts) => core::after_turn(&facts, forge.is_some(), max.saturating_sub(turns)),
+                Err(why) => {
+                    eprintln!("onehand: could not read what a run left: {why}");
+                    Step::Settle
+                }
+            };
+            match step {
+                Step::CarryOn(missing) => carry_on(uid, &session, missing, tail, cx),
+                Step::AwaitChecks => park(uid, cx),
+                Step::Settle => settle(uid, Ending::TurnEnded { tail }, cx),
+                Step::Exhausted => settle(uid, Ending::Exhausted(Spent::Turns(max)), cx),
+            }
+        });
+    })
+    .detach();
+}
+
+/// Send the session back to work, saying what the branch still lacks.
+fn carry_on(
+    uid: u64,
+    session: &Entity<ChatSession>,
+    missing: Missing,
+    tail: Option<String>,
+    cx: &mut App,
+) {
+    // Somebody typed while the branch was read: the session is theirs.
+    let sent = with(cx, |u| u.run_mut(uid).map(|run| run.sent)).flatten();
+    if sent.is_none_or(|sent| prompted_by_someone_else(session, sent, cx)) {
+        settle(uid, Ending::TakenOver, cx);
+        return;
+    }
+    let Some((text, turns, file, record)) = with(cx, |u| {
+        let run = u.run_mut(uid)?;
+        // Counted before it goes, so the prompt is never mistaken for a
+        // person's when its own events arrive.
+        run.sent += 1;
+        run.progress.spent_secs = run.budget.spent(Instant::now()).as_secs();
+        let record = run.claimed.record(Phase::Working, &run.progress);
+        let text = core::carry_on(missing, run.claimed.forge);
+        Some((text, run.turns, run.claimed.file.clone(), record))
+    })
+    .flatten() else {
+        return;
+    };
+    save_record(file, record, cx);
+    let lacking = match missing {
+        Missing::Uncommitted => "uncommitted changes",
+        Missing::NoCommits => "no commit",
+        Missing::NoPullRequest => "no pull request",
+        Missing::Unpushed => "commits not pushed",
+    };
+    if session.update(cx, |session, cx| session.submit(&text, &[], cx)) {
+        note(
+            session,
+            format!("Turn {turns} left {lacking}; asked to carry on"),
+            cx,
+        );
+    } else {
+        settle(uid, Ending::TurnEnded { tail }, cx);
+    }
+}
+
+/// Everything is pushed to an open pull request: close the session, give up
+/// the slot, and leave the checks to the tick.
+///
+/// **Deferred**, like [`settle`], because this is reached from inside the
+/// session's own event.
+fn park(uid: u64, cx: &mut App) {
+    cx.defer(move |cx| {
+        let Some(run) = with(cx, |u| {
+            let at = u.runs.iter().position(|run| run.uid == uid)?;
+            Some(u.runs.remove(at))
+        })
+        .flatten() else {
+            return;
+        };
+        let owns_root = run.owns_root;
+        let Run {
+            claimed,
+            mut progress,
+            budget,
+            session,
+            window,
+            shell,
+            ..
+        } = run;
+        progress.spent_secs = budget.spent(Instant::now()).as_secs();
+        let phase = Phase::AwaitingChecks {
+            since: onehand_core::chat::store::now_secs(),
+        };
+        save(&claimed, phase, &progress, cx);
+        if let Some(session) = session.upgrade() {
+            note(
+                &session,
+                "Pushed to its pull request; waiting for its checks".to_string(),
+                cx,
+            );
+        }
+        take_down(&claimed, false, owns_root, window, &shell, cx);
+        with(cx, |u| {
+            u.parked.push(Parked {
+                claimed,
+                phase,
+                progress,
+            })
+        });
+        cx.refresh_windows();
+    });
+}
+
+/// Send the session's first prompt, once the adapter is up.
 ///
 /// Not before: setting the mode and submitting both need the request channel
 /// the handshake installs. The modes arrive ahead of that same event, so by
@@ -136,14 +281,14 @@ fn prompt(uid: u64, session: &Entity<ChatSession>, cx: &mut App) {
     // Somebody got there first: a prompt typed between the adapter coming up
     // and this one going out makes the session theirs, and the run's own
     // prompt would either be refused as busy or land on top of their work.
-    if session.read(cx).chat.busy || prompted_by_someone_else(session, false, cx) {
+    if session.read(cx).chat.busy || prompted_by_someone_else(session, 0, cx) {
         settle(uid, Ending::TakenOver, cx);
         return;
     }
     let Some((mode, text)) = with(cx, |u| {
         let mode = u.mode.clone();
         let run = u.run_mut(uid)?;
-        run.prompted = true;
+        run.sent = 1;
         Some((
             mode,
             core::prompt_for(
@@ -151,6 +296,7 @@ fn prompt(uid: u64, session: &Entity<ChatSession>, cx: &mut App) {
                 &run.claimed.branch,
                 &run.claimed.tracker,
                 run.claimed.forge,
+                &run.progress.start,
             ),
         ))
     })
@@ -242,13 +388,19 @@ fn name_session(uid: u64, session: &Entity<ChatSession>, cx: &mut App) {
 /// **Short lines, one fact each.** A remark in the transcript is one line down
 /// the middle of the column and is cut where the column ends, so a sentence
 /// carrying the issue, the folder and the branch lost all but the first.
-pub(super) fn start_notes(claimed: &Claimed) -> Vec<String> {
+pub(super) fn start_notes(claimed: &Claimed, start: &Start) -> Vec<String> {
     let folder = claimed
         .dir
         .file_name()
         .map(|name| name.to_string_lossy().into_owned())
         .unwrap_or_else(|| claimed.dir.display().to_string());
-    vec![
+    let what = match start {
+        Start::Fresh => None,
+        Start::Earlier => Some("Carrying on from an earlier attempt".to_string()),
+        Start::Review { pr, .. } => Some(format!("Answering the review on {pr}")),
+        Start::Repair { pr, .. } => Some(format!("Repairing {pr}")),
+    };
+    let mut notes = vec![
         format!(
             "Unattended run on issue #{}, {}",
             claimed.issue.number,
@@ -260,7 +412,9 @@ pub(super) fn start_notes(claimed: &Claimed) -> Vec<String> {
         ),
         format!("Branch {} from {}", claimed.branch, claimed.base),
         format!("Working in {folder}"),
-    ]
+    ];
+    notes.extend(what);
+    notes
 }
 
 /// Add a line about the run to its session's transcript.
@@ -273,16 +427,16 @@ pub(super) fn note(session: &Entity<ChatSession>, text: String, cx: &mut App) {
 }
 
 /// Whether somebody other than the run has put a prompt into the session,
-/// given whether the run has sent its own one yet.
+/// given how many the run has sent itself.
 ///
 /// Any other prompt sent, or one waiting behind the turn, came from the
 /// composer or the remote bridge — and either way a person is driving. Counted
 /// from what was *sent*, not from the user rows in the transcript: an adapter
 /// delivers user chunks of its own mid-turn, and reading those as prompts took
 /// runs over that nobody had touched.
-fn prompted_by_someone_else(session: &Entity<ChatSession>, run_prompted: bool, cx: &App) -> bool {
+fn prompted_by_someone_else(session: &Entity<ChatSession>, sent: usize, cx: &App) -> bool {
     let chat = &session.read(cx).chat;
-    chat.queued.is_some() || chat.prompts_sent > usize::from(run_prompted)
+    chat.queued.is_some() || chat.prompts_sent > sent
 }
 
 /// What the parked card asks, in its own words.
@@ -365,6 +519,7 @@ pub(super) fn settle(uid: u64, ending: Ending, cx: &mut App) {
             return;
         };
         cx.refresh_windows();
+        let owns_root = run.owns_root;
         let Run {
             claimed,
             window,
@@ -377,36 +532,80 @@ pub(super) fn settle(uid: u64, ending: Ending, cx: &mut App) {
         // watched it end may well carry on in it, and a project that vanished
         // at the next launch would take their place in it too. Only a found
         // run is taken down.
-        let keep = matches!(ending, Ending::TakenOver) || claimed.picked_by_hand();
-        if let Some(shell) = shell.upgrade() {
-            let _ = window.update(cx, |_, window, cx| {
-                shell.update(cx, |shell, cx| match keep {
-                    true => shell.adopt_unattended(&claimed.dir, window, cx),
-                    false => shell.end_unattended(&claimed.dir, window, cx),
-                })
-            });
-        }
-        cx.spawn(async move |cx| {
-            let line = cx
-                .background_executor()
-                .spawn(async move {
-                    let found = verdict_blocking(&claimed, &ending);
-                    let said = core::report(&ending, &found, &claimed.branch);
-                    tell_issue(&claimed.tracker, &claimed.repo, claimed.issue.number, &said);
-                    core::outcome_line(&ending, &found)
-                })
-                .await;
-            // How it ended, in the one line a remark gets, as the transcript's
-            // last — where the session is still there to carry it. The whole
-            // account is the comment on the issue.
-            cx.update(|cx| {
-                if let Some(session) = session.upgrade() {
-                    note(&session, line, cx);
-                }
-            });
-        })
-        .detach();
+        take_down(
+            &claimed,
+            ending == Ending::TakenOver,
+            owns_root,
+            window,
+            &shell,
+            cx,
+        );
+        conclude(claimed, ending, Some(session), cx);
     });
+}
+
+/// Keep the run's project for good, or drop it. A project the run did not
+/// add itself — a worktree somebody kept from an earlier attempt — is
+/// somebody's, and is never dropped.
+fn take_down(
+    claimed: &Claimed,
+    keep: bool,
+    owns_root: bool,
+    window: gpui::AnyWindowHandle,
+    shell: &WeakEntity<crate::shell::Shell>,
+    cx: &mut App,
+) {
+    let keep = keep || claimed.picked_by_hand();
+    let Some(shell) = shell.upgrade() else {
+        return;
+    };
+    let _ = window.update(cx, |_, window, cx| {
+        shell.update(cx, |shell, cx| match (keep, owns_root) {
+            (true, _) => shell.adopt_unattended(&claimed.dir, window, cx),
+            (false, true) => shell.end_unattended(&claimed.dir, window, cx),
+            (false, false) => {}
+        })
+    });
+}
+
+/// Tell the issue how the run ended, let go of its file, and put the outcome
+/// as the last line of `session`'s transcript, if there is one.
+pub(super) fn conclude(
+    claimed: Claimed,
+    ending: Ending,
+    session: Option<WeakEntity<ChatSession>>,
+    cx: &mut App,
+) {
+    cx.spawn(async move |cx| {
+        let line = cx
+            .background_executor()
+            .spawn(async move {
+                let found = verdict_blocking(&claimed, &ending);
+                let said = core::report(&ending, &found, &claimed.branch);
+                tell_issue(&claimed.tracker, &claimed.repo, claimed.issue.number, &said);
+                // ponytail: removed after the forge calls above, which leaves a
+                // save of the same file queued just before them seconds to
+                // land first. A save landing after this would bring the run
+                // back at the next launch; a per-run write queue is the fix if
+                // that is ever seen.
+                if let Err(why) = std::fs::remove_file(&claimed.file)
+                    && why.kind() != std::io::ErrorKind::NotFound
+                {
+                    eprintln!("onehand: could not remove a finished run's file: {why}");
+                }
+                core::outcome_line(&ending, &found)
+            })
+            .await;
+        // How it ended, in the one line a remark gets, as the transcript's
+        // last — where the session is still there to carry it. The whole
+        // account is the comment on the issue.
+        cx.update(|cx| {
+            if let Some(session) = session.and_then(|s| s.upgrade()) {
+                note(&session, line, cx);
+            }
+        });
+    })
+    .detach();
 }
 
 /// What the run left: the pull request on its branch where the project has a
@@ -421,7 +620,7 @@ fn verdict_blocking(claimed: &Claimed, ending: &Ending) -> Result<Verdict, Strin
     match claimed.forge {
         Some(forge) => forge
             .pull_request_for_blocking(&claimed.repo, &claimed.branch)
-            .map(|pr| pr.map_or(Verdict::NoPullRequest, Verdict::PullRequest)),
+            .map(|pr| pr.map_or(Verdict::NoPullRequest, |pr| Verdict::PullRequest(pr.url))),
         None => worktree::commits_since_blocking(&claimed.dir, &claimed.base).map(|n| match n {
             0 => Verdict::NoCommits,
             n => Verdict::Commits(n),

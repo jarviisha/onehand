@@ -1,13 +1,15 @@
 # Unattended runs
 
-**One small issue, one session, one pull request, nobody watching.**
+**One small issue, one branch, one pull request ready for review, nobody watching.**
 
 An audit leaves behind more issues than anyone wants to work by hand, and the
 obvious reflex — paste them all into one session — is the one thing that cannot
 work: a session that holds twenty unrelated fixes runs out of context window
 before it runs out of issues. So the unit of work is one issue, the unit of
-context is one session, and the session is thrown away when the issue is done.
-A run is worth having only because it is *disposable*.
+context is one session, and a session is thrown away when its part is done.
+A run may take several sessions — the first, a repair when its checks fail, an
+answer to a review — but each starts clean, from the branch and the issue, and
+none depends on what an earlier one remembered.
 
 This describes what is built. Where the build settled something the design left
 open, the section says so.
@@ -22,14 +24,20 @@ tick (every N minutes, one process, one run started while none is working)
         └─ with a forge:    git fetch; git worktree add -b <branch> ../<dir> origin/<default>
            without a forge: git worktree add -b <branch> ../<dir> <the branch checked out>
            └─ add it as a project root, mint a session on it *without showing it*, set the mode
-              └─ one prompt: the issue, the rules, open the PR yourself — or, with no
-                 forge, commit and do not push
+              └─ first prompt: the issue, the rules, open a draft PR yourself — or,
+                 with no forge, commit and do not push
                  └─ watch: turn ended · adapter lost · timed out · taken over
                     (a parked ask waits for a person, and gives up the slot while it does)
-                    └─ verdict: gh pr list --head <branch> → PR or none; with no forge,
-                       git rev-list --count <start>..HEAD → commits or none
-                       └─ close the session, drop the root, tell the issue the outcome
-                          (except when taken over: the session and root stay)
+                    └─ turn ended: read the branch (commits, uncommitted work, the PR's head)
+                       ├─ something missing, turns left → say what, same session
+                       ├─ no forge, commits → the outcome is the commits
+                       └─ pushed to an open PR → close the session, wait on its checks
+                          └─ each tick: gh pr list --head <branch> with its check rollup
+                             ├─ pending → wait
+                             ├─ failed or conflicting → a repair: a new session
+                             └─ all passed (or none ran) → gh pr ready → Ready
+                                └─ tell the issue the outcome, drop the run's file
+                                   (taken over, or picked by hand: the session and root stay)
 ```
 
 Every arrow is a state a run can die in, and each one ends the same way: a
@@ -68,12 +76,13 @@ background executor, one interval in the config, no cron expressions.
 | File | What |
 |---|---|
 | `crates/core/src/unattended.rs` | `Issue`, the claim and search over a connector, `branch_for`, `prompt_for`, `claim_comment`, `Ending` and `report`, `parse_every`, `target_dir` |
+| `crates/core/src/unattended/run.rs` | `Facts` and `after_turn`, `carry_on`, `after_checks`, `Start`, `Progress`, and the run's file (`Record`) |
 | `crates/core/src/connector.rs` | `Connector`, what a run asks of the system a project lives on, and `serving`, which picks the first one that takes a project |
 | `plugins/builtin/connector-github/src/lib.rs` | the `gh` calls, the `origin` and ssh-alias check, and the account check |
 | `crates/core/src/process.rs` | `output_within`: a command with a limit on its exit *and* its output, stopped with its whole process group |
-| `crates/app/src/unattended.rs` | the tick and the live `Run` |
+| `crates/app/src/unattended.rs` | the tick, the live `Run`, the parked runs, the look at their checks, and carrying on after a restart |
 | `crates/app/src/unattended/launch.rs` | claiming an issue, cutting its worktree and starting the run |
-| `crates/app/src/unattended/turn.rs` | the subscription, the timeout, the wind-down, the teardown |
+| `crates/app/src/unattended/turn.rs` | the subscription, what follows a turn, parking, the timeout, the wind-down, the teardown |
 | `crates/core/src/config.rs` | `UnattendedConfig` |
 | `crates/core/src/workspace.rs` | `ProjectRoot::transient`, left out by `to_config`, and `add_transient_root`, which adds one with its session without selecting it |
 | `crates/core/src/worktree.rs` | `branch_off_blocking`, a new branch from a named start, and `fetch_blocking`; `worktree add` and the fetch both bounded and never prompting |
@@ -100,8 +109,11 @@ The rest of the vocabulary, one meaning each:
 - **tick** — one look for work, every `every`; does nothing while a run is live.
 - **trigger label** — the label (`label`) whose presence on an issue asks for a
   run. Its removal is the claim.
-- **claim** — removing the trigger label and commenting that a run started. The
-  only state a run keeps.
+- **claim** — removing the trigger label and commenting that a run started.
+- **attempt** — one go at a run, from a claim to an outcome. Putting the label
+  back starts another attempt on the same branch and pull request.
+- **repair** — a session started to fix checks that failed on the pull
+  request's head, or a conflict with its base.
 - **outcome** — how a run ended, one of a closed set, always commented.
 - **take over** — a person acting inside a run's session. The run stops watching
   and the session becomes an ordinary one.
@@ -115,6 +127,8 @@ every = "30m"            # how often to look
 timeout = "45m"          # a run that neither finishes nor asks is cancelled
 mode = "acceptEdits"     # the ACP session mode a run starts in
 agent = "Claude Code"    # which agent spec; the default agent when unset
+turns = 3                # turns one session may take before the run stops unfinished
+repairs = 2              # repairs one attempt may start on failing checks
 ```
 
 **The switch is per project, and there is none in this table.** Every project
@@ -291,16 +305,26 @@ a deliberate one, not a list of whatever was once approved by hand.
    working in, while they are working in it, is not a risk worth the ten lines
    this saves — and `worktree::add_blocking` already exists. It is branched off
    the remote's default branch and never off the user's HEAD; see *Base branch*.
-3. **Claim by removing the trigger label, before the prompt goes in.** That is
-   the whole of the state: no local queue file, no sqlite, nothing to reconcile
-   after a crash. A run interrupted by a quit or a panic leaves an issue with no
-   trigger label and the claim comment, which is written to read correctly when
-   orphaned: *"onehand started an unattended run on this issue. If no outcome
-   follows, the run was interrupted — re-add `<label>` to retry."* The comment's
-   own timestamp says when, so the sentence carries no time. It never says a run *is*
-   happening, since that is the one sentence a crash makes false. It also makes a loop impossible by construction — the label
-   that would cause a second pick is gone before any work begins.
-4. **One timeout per run, counting working time, and it cancels.** An agent
+3. **Claim by removing the trigger label, before the prompt goes in.** A run
+   interrupted by a quit or a panic between the claim and its first file leaves
+   an issue with no trigger label and the claim comment, which is written to
+   read correctly when orphaned: *"onehand started an unattended run on this
+   issue. If no outcome follows, the run was interrupted — re-add `<label>` to
+   retry."* The comment's own timestamp says when, so the sentence carries no
+   time. It never says a run *is* happening, since that is the one sentence a
+   crash makes false. It also makes a loop impossible by construction — the
+   label that would cause a second pick is gone before any work begins.
+   **Past the claim, a run keeps one small file** (`unattended::Record`, under
+   `<config_dir>/onehand/runs/`): the phase it is in and what it has used of its
+   budget, nothing else. The branch, its commits, the pull request and its
+   checks are read again whenever they are needed, so the file cannot disagree
+   with them, and the forge is always asked before anything is pushed or opened.
+   A restart reads every file back: a run waiting on checks goes on waiting, and
+   one that was working gets a new session on its worktree once a window holds
+   its project, told to look at what is already there. The file goes when the
+   issue has been told the outcome. This used to be "no file at all"; it changed
+   once a run outlived one turn, and a restart lost the run.
+4. **One timeout per attempt, counting working time, and it cancels.** An agent
    that neither finishes nor asks is the expensive failure, and it is the one
    nobody is watching for. The timeout is per run rather than per turn because a
    turn that ends is progress and a run is what is being bounded. **Time spent
@@ -309,18 +333,25 @@ a deliberate one, not a list of whatever was once approved by hand.
    and one that ran through the wait would cancel a run for a slow reply.
 5. **The verdict is a PR, not the agent's word.** "I opened a pull request" is a
    sentence in a transcript. `gh pr list --head <branch>` is a fact, and it is
-   one blocking call. The comment on the issue says which of the two happened.
+   one blocking call, which also carries the checks on the head it reports.
+   The comment on the issue says which of the two happened.
    **It is asked on every ending**, not only a turn ending: an agent can open the
    PR and then time out, park or lose its adapter while tidying up, and a
    comment saying "no pull request" beside a pull request is the worst answer
    available. A PR found makes the outcome `Opened`, with why the run stopped as
    a note under it.
-6. **A run is one turn.** The first `TurnEnded` ends it. The prompt tells the
-   agent to ask through its question tool rather than in prose, so a question
-   becomes a card that waits. One asked in prose ("should I do A or B?") anyway
-   slips past rule 1, so a `NoPr` comment carries the end of the agent's answer
-   (`Chat::answer_tail`) — which is where that question is — and a person
-   reading the issue sees it without opening the transcript.
+6. **A turn ending is an observation, not an outcome.** After each turn the
+   branch is read — commits past the start, work no commit holds, the pull
+   request and the commit it is at — and `after_turn` decides. Something
+   missing sends the same session back with a prompt naming it (`carry_on`),
+   up to `turns` turns, then the run stops as `Exhausted`. Everything pushed
+   to an open pull request closes the session and gives up the slot while the
+   checks run. With no forge, commits are the outcome, as before. What the
+   agent said about its work is never consulted, so "I opened a pull request"
+   with none on the branch is sent back to open one. The prompt still tells the
+   agent to ask through its question tool rather than in prose, and an ending
+   with no pull request still carries the end of its answer
+   (`Chat::answer_tail`), which is where a question asked in prose would be.
 7. **A person acting in the session takes it over.** The run's session is in the
    rail and can be opened and typed into. The moment a prompt comes from
    anywhere but the run itself — the composer, or
@@ -332,6 +363,42 @@ a deliberate one, not a list of whatever was once approved by hand.
    gets: a root kept off disk was transient because the run would drop it, and
    the run no longer will — left unsaved, the work somebody just took on would
    vanish from the rail at the next launch.
+
+## Checks, repairs and reviews
+
+**A pull request is ready when its checks pass on its head.** Each tick looks at
+every parked run's pull request, checks included (`after_checks`). Every check
+must pass, required or not; one cancelled or timed out counts as failed, since
+none of those is evidence the change works. Pending checks wait, up to the
+`timeout`, then the run stops as `Exhausted`. **A pull request with no checks at
+all** is ready too, and the issue says *no checks ran* — but only after
+`CHECKS_GRACE`, since a forge registers its checks a little after the push and
+a look straight after it would read "not yet" as "none". Ready takes the pull
+request out of draft (`gh pr ready`), which is what asks its reviewers.
+
+**A failure starts a repair**: a new session on the same worktree, whose prompt
+carries the pull request, the failing checks' names and the end of each one's
+log (`Connector::check_log_blocking`, the first three), and tells the agent to
+say so and leave the code alone when the failure is not its change's. A
+conflict with the base is repaired the same way. Failures are not classified
+first: telling a broken test from a dead runner means reading the log, which
+the agent does better. The bound is `repairs` per attempt, and **the same check
+failing again right after a repair aimed at it stops the run** — that is the
+agent being unable to fix it, or the failure not being its to fix, and another
+round would only spend time. A due repair goes before any new issue.
+
+**A review is answered by putting the label back.** The next claim of an issue
+looks for the newest branch under `onehand/issue-<N>` — found by its prefix,
+so a title edited since still finds it. With an open pull request the attempt
+answers its review: the prompt names the pull request and how to read the
+review, and the work is counted from the commit the attempt starts at, so a
+turn that adds nothing is sent back. With no pull request it carries on the
+work there. With a merged one it starts over on a branch of its own. **A pull
+request closed without being merged refuses the claim**: somebody decided
+against it, and opening another would undo that.
+
+**An issue a run is still on is not claimed again.** Its label stays on, so it
+is taken once that run ends, and a pick by hand says what it is waiting on.
 
 ## A run does not take the window
 
@@ -403,12 +470,16 @@ POSIX-only, which is marked where it is done.
 
 ## The prompt
 
-One prompt per run, built by `prompt_for(&Issue)`: the issue's number, title and
-body, the branch it is on, and four instructions — read the repository's own
-CLAUDE.md for conventions, run the repo's checks before committing, open the pull
-request with `gh pr create`, and if the issue turns out to need a decision, ask
-it through the agent's question tool and carry on once it is answered, rather
-than guessing.
+Every session's first prompt is built by `prompt_for`: the issue's number,
+title and body, the branch it is on, what this session is for beyond the issue
+(`Start`: carrying on an earlier attempt, answering a review, repairing
+checks), and four instructions — read the repository's own CLAUDE.md for
+conventions, run the repo's checks before committing, open a draft pull request
+with `gh pr create --draft` (or push to the one already open), and decide what
+the code, the tests and the docs let it infer, listing the assumptions that
+mattered in the pull request; only a decision about what the product should do
+is asked, through the agent's question tool. Later turns of the same session
+get only `carry_on`'s one sentence about what the branch still lacks.
 
 It deliberately does **not** restate the commit convention, the test commands or
 the PR format. Those are in the repository's own instructions, which the agent
@@ -444,7 +515,14 @@ Closed          → "The run's session was closed before it finished; there is n
 TimedOut        → "No pull request after <timeout>; the run was cancelled."
 TakenOver       → "Taken over by hand; the run stopped watching <branch>."
 Failed(why)     → "onehand could not start the run: <why>"
+Exhausted(why)  → "<why>. There is no pull request on <branch>; its work stays there."
+                  (turns used up, repairs used up, the same check failing again,
+                  checks still running after the timeout)
 ```
+
+With a pull request, two more: **`Ready`** — its checks passed on its latest
+commit, or none ran, and it is marked ready for review — and
+**`PullRequestGone`**, closed or merged while its checks were awaited.
 
 `Failed` is the one the design did not have: everything between the claim and
 the prompt — the default branch, the fetch, the worktree, a window to put the
@@ -453,7 +531,7 @@ about, since the claim has already taken its label.
 
 **A cancel winds down before the session closes.** A timeout cancels
 the turn, and it is the turn ending that writes its transcript — closing the
-session on the spot would lose the one turn the run was about. So the run waits
+session on the spot would lose the turn it was cancelling. So the run waits
 for that turn to end, or thirty seconds, whichever is first.
 
 **A pull request that could not be looked for is said as that.** A failed
@@ -489,8 +567,8 @@ Answering a card is not: it is what the run is waiting for.
 as every card does — and a run's session is new, so by default nobody does.
 The desktop notification is the one that always goes.
 
-All of them are commented on the issue, and all of them leave the trigger label
-off.
+All of them are commented on the issue, all of them leave the trigger label
+off, and all of them remove the run's file.
 Re-arming is a human putting the label back, which is the same gesture as asking
 for the run in the first place. The worktree and its branch are **left on disk**
 in every case: a run that got half way has work in it, and removing a worktree to
@@ -526,8 +604,16 @@ accumulate one row per issue ever worked.
   set with no wildcard arm, so a fourth kind of news is a decision about what the
   badge, the desktop and the chat each do with it. The issue comment is the
   report for now. Add when the report is wanted on a phone.
-- **Retry.** A failed run is commented and left. Add when the same issue is seen
-  to fail transiently.
+- **Retrying a failed call by itself.** A forge that does not answer one look
+  at the checks is looked at again next tick; anything else that fails ends the
+  attempt and is commented. Putting the label back is the retry, and it carries
+  on the same branch.
+- **A run waiting on its checks, on screen.** A parked run has no session, so
+  the rail shows nothing for it; the issue comment is where it ends. Add when
+  waiting runs are wanted at a glance.
+- **Running with the app closed.** A run pauses with the app and carries on
+  when it is next opened. Add a worker of its own when runs are wanted overnight
+  with the window shut.
 - **An in-app queue view.** The rail shows the live run; GitHub shows the rest.
 - **Anything but GitHub.** `gh` is the whole API layer. A second forge is a
   second set of five functions, not an abstraction to write first.
@@ -546,6 +632,12 @@ Core, pure, no fixtures:
 - `report`, one case per `Ending` with and without a PR, matched exhaustively so
   an ending cannot be added without a sentence being checked for it.
 - a PR found on an ending that was not a turn ending still reads `Opened`.
+- `after_turn`: an analysis-only turn carries on, a claimed but missing pull
+  request is still missing, only commits pushed to an open one wait on checks.
+- `after_checks`: only every check passing is ready; no checks waits out the
+  grace first; the same check failing again, no repairs left, or checks that
+  never finish stop the run; a conflict is repaired.
+- the run's file reads back as written, and an unreadable one is said.
 - the branch name a run derives passes `validate_branch` for a title that is
   nothing but punctuation, and for one that is 300 characters long.
 

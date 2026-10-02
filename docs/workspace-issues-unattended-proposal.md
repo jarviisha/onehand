@@ -28,8 +28,8 @@ single-user desktop app with one execution slot can use, and to reversing
 | Rule in *Unattended runs* | Decision |
 |---|---|
 | 1. A parked ask ends the run | **Reversed.** The card waits for a person |
-| 3. The claim is the whole of the state | Kept. No run store, no recovery |
-| 6. A run is one turn | Kept. No multi-turn controller, no CI loop |
+| 3. The claim is the whole of the state | Kept here; reversed since by a file of counters per run |
+| 6. A run is one turn | Kept here; reversed since: turns carry on, and failing checks are repaired |
 
 **A waiting run gives up the slot.** It keeps its issue and its session, but
 the search may start the next issue, so one unanswered question does not stop
@@ -100,8 +100,8 @@ The page goes through the design contract before it is built.
 
 | Deferred | Reopen when |
 |---|---|
-| Nudging a run whose turn ended without a pull request; a CI fix loop | Runs are seen ending early often enough to matter (reverses rule 6) |
-| A run store, recovery after a restart, an outbox for forge updates | A run history is wanted on the page, or restarts are seen losing runs (reverses rule 3) |
+| Nudging a run whose turn ended without a pull request; a CI fix loop | Built since |
+| A run store, recovery after a restart, an outbox for forge updates | Recovery built since, from one file of counters per run; no store and no outbox |
 | Priority, dependencies, parent/child issues | The queue is ever longer than a handful |
 | Fairness between projects | There is more than one slot |
 | Agent-assisted triage | Issues are seen arriving underspecified |

@@ -311,6 +311,58 @@ pub fn commits_since_blocking(dir: &Path, base: &str) -> Result<u64, String> {
         .map_err(|err| format!("git printed an unreadable count: {err}"))
 }
 
+/// `git -C <dir> <args>`, answering with what it printed, trimmed.
+fn read_blocking(dir: &Path, args: &[&str]) -> Result<String, String> {
+    let out =
+        output_within(git(dir).args(args), LOCAL_LIMIT).map_err(|err| format!("git {err}"))?;
+    if !out.status.success() {
+        return Err(git_message(&out.stderr));
+    }
+    Ok(String::from_utf8_lossy(&out.stdout).trim().to_string())
+}
+
+/// The commit checked out at `dir`.
+pub fn head_blocking(dir: &Path) -> Result<String, String> {
+    read_blocking(dir, &["rev-parse", "HEAD"])
+}
+
+/// Whether the checkout at `dir` holds anything not committed, a new file
+/// nobody added included: work that would be lost to everyone but this
+/// folder.
+pub fn dirty_blocking(dir: &Path) -> Result<bool, String> {
+    read_blocking(dir, &["status", "--porcelain"]).map(|out| !out.is_empty())
+}
+
+/// The local branch under `prefix` with the newest commit, if any: `prefix`
+/// itself, or one starting `prefix-`.
+pub fn newest_branch_blocking(root: &Path, prefix: &str) -> Option<String> {
+    let listed = read_blocking(
+        root,
+        &[
+            "for-each-ref",
+            "--sort=-committerdate",
+            "--format=%(refname:short)",
+            &format!("refs/heads/{prefix}"),
+            &format!("refs/heads/{prefix}-*"),
+        ],
+    )
+    .ok()?;
+    listed.lines().next().map(str::to_string)
+}
+
+/// Where `branch` is checked out among `root`'s worktrees, if anywhere that
+/// still exists.
+pub fn worktree_of_blocking(root: &Path, branch: &str) -> Option<PathBuf> {
+    let listed = read_blocking(root, &["worktree", "list", "--porcelain"]).ok()?;
+    let wanted = format!("branch refs/heads/{branch}");
+    listed
+        .split("\n\n")
+        .find(|entry| entry.lines().any(|line| line == wanted))
+        .and_then(|entry| entry.lines().find_map(|l| l.strip_prefix("worktree ")))
+        .map(PathBuf::from)
+        .filter(|dir| dir.is_dir())
+}
+
 /// `git -C <root>`, with every way git has of asking a person for something
 /// switched off.
 fn git(root: &Path) -> std::process::Command {
