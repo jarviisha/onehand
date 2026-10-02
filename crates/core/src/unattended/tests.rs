@@ -19,7 +19,11 @@ fn prompt(
     forge: Option<&dyn Connector>,
     progress: &Progress,
 ) -> String {
-    let branch = if issue.number == 42 { "onehand/issue-42" } else { "b" };
+    let branch = if issue.number == 42 {
+        "onehand/issue-42"
+    } else {
+        "b"
+    };
     step_prompt(step, issue, branch, tracker, forge, progress, None)
 }
 
@@ -99,7 +103,13 @@ fn the_prompt_names_the_issue_and_the_branch_and_keeps_the_body_whole() {
         body: body.to_string(),
         ..issue(42, "Crash on open")
     };
-    let prompt = prompt(Step::OpenPr, &issue, &forge(), Some(&Fake::SERVING), &fresh());
+    let prompt = prompt(
+        Step::OpenPr,
+        &issue,
+        &forge(),
+        Some(&Fake::SERVING),
+        &fresh(),
+    );
     assert!(prompt.contains("#42"));
     assert!(prompt.contains("`onehand/issue-42`"));
     assert!(prompt.contains(body));
@@ -309,7 +319,13 @@ fn a_local_issue_is_found_by_its_label_and_claimed_in_its_own_file() {
 fn a_local_issue_is_never_referenced_from_a_pull_request() {
     let (tracker, dir) = local("prompt", &[]);
     let issue = issue(3, "Fix it");
-    let on_forge = prompt(Step::OpenPr, &issue, &tracker, Some(&Fake::SERVING), &fresh());
+    let on_forge = prompt(
+        Step::OpenPr,
+        &issue,
+        &tracker,
+        Some(&Fake::SERVING),
+        &fresh(),
+    );
     assert!(on_forge.contains("`forge pr`"), "{on_forge}");
     assert!(on_forge.contains("Do not reference #3"), "{on_forge}");
     assert!(!on_forge.contains("referencing #3"), "{on_forge}");
@@ -517,7 +533,13 @@ fn a_session_on_an_open_pull_request_pushes_to_it_rather_than_opening_another() 
         number: 2,
     };
     let progress = Progress::new(start, None);
-    let said = prompt(Step::OpenPr, &issue(4, "t"), &forge(), Some(&Fake::SERVING), &progress);
+    let said = prompt(
+        Step::OpenPr,
+        &issue(4, "t"),
+        &forge(),
+        Some(&Fake::SERVING),
+        &progress,
+    );
     assert!(said.contains("`forge review 2`"), "{said}");
     assert!(said.contains("do not open another"), "{said}");
     assert!(!said.contains("`forge pr`"), "{said}");

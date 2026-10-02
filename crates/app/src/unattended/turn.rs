@@ -1,13 +1,12 @@
 use super::launch::{Claimed, save, save_record};
 use super::{Parked, Run, WIND_DOWN, tick, with};
-use crate::state::Shared;
 use crate::chat::session::{ChatEvent, ChatSession};
+use crate::state::Shared;
 use gpui::{App, Entity, Task, WeakEntity};
-use onehand_core::chat::{ChatItem, TranscriptItemId};
 use onehand_core::chat::UserAsk;
+use onehand_core::chat::{ChatItem, TranscriptItemId};
 use onehand_core::unattended::{
-    self as core, Ending, Facts, Gate, Missing, Next, Phase, Spent, Start, Step, Tracker,
-    Verdict,
+    self as core, Ending, Facts, Gate, Missing, Next, Phase, Spent, Start, Step, Tracker, Verdict,
 };
 use onehand_core::worktree;
 use std::time::{Duration, Instant};
@@ -285,11 +284,9 @@ fn dispatch(
 fn plan_passed(next: &Next) -> bool {
     match next {
         Next::Advance(_) | Next::AwaitApproval => true,
-        Next::CarryOn(_)
-        | Next::RunCheck
-        | Next::AwaitChecks
-        | Next::Settle
-        | Next::Exhausted => false,
+        Next::CarryOn(_) | Next::RunCheck | Next::AwaitChecks | Next::Settle | Next::Exhausted => {
+            false
+        }
     }
 }
 
@@ -430,8 +427,7 @@ fn run_check(uid: u64, session: &Entity<ChatSession>, tail: Option<String>, cx: 
             };
             let Some(turns_left) = with(cx, |u| {
                 let max = u.turns;
-                u.run_mut(uid)
-                    .map(|run| max.saturating_sub(run.missed + 1))
+                u.run_mut(uid).map(|run| max.saturating_sub(run.missed + 1))
             })
             .flatten() else {
                 return;
@@ -601,7 +597,11 @@ fn prompt(uid: u64, session: &Entity<ChatSession>, cx: &mut App) {
         Step::Plan | Step::Implement | Step::OpenPr => None,
     };
     if check.is_some() {
-        note(session, "Resuming at the check; running it first".to_string(), cx);
+        note(
+            session,
+            "Resuming at the check; running it first".to_string(),
+            cx,
+        );
     }
     let weak = session.downgrade();
     cx.spawn(async move |cx| {
@@ -691,7 +691,10 @@ fn first_prompt(
     if session.update(cx, |session, cx| session.submit(&text, &[], cx)) {
         note(
             session,
-            format!("Mode {mode} set; issue sent as the prompt, at its {} step", step.label()),
+            format!(
+                "Mode {mode} set; issue sent as the prompt, at its {} step",
+                step.label()
+            ),
             cx,
         );
         name_session(uid, session, cx);
