@@ -180,3 +180,15 @@ Listed because a missing feature nobody wrote down reads as a bug in the ones th
   popularity and no filter by kind. And the title row of a submenu (*Change scope ▸*, *Turn on for
   ▸*) draws the arrow cursor: the menu row that answers the pointer can only reach what goes inside
   a row, and a submenu's row is the library's own.
+- **A pipeline runs its steps in a straight line.** There is no branching on a step's answer, no
+  step that runs only sometimes, and no two steps at once; a command's failure going back to an
+  earlier step is the only way back, besides a revision. One session carries every step, so a step
+  cannot use a different agent from the rest.
+- **One window holds a pipeline run, and runs do not queue.** Starting a second run on a project
+  while one works there is allowed and nothing stops the two from editing the same checkout.
+- **A pipeline ends at the branch.** There is no step that pushes, opens a pull request or waits on
+  CI, and a person typing the brief is the only source: an issue is not yet one. `verified_at` is
+  recorded so that a push step can later require the commit it pushes to be the one the check
+  passed on.
+- **A worktree a pipeline made is never removed by it**, nor its branch, whatever the outcome; the
+  folder stays as a project until a person removes it.

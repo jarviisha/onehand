@@ -607,6 +607,25 @@ issue. A prompt of anybody else's is a **take-over**: the run stops watching, wh
 `Shell::forget_root`, never `remove_root`, because that one re-shows the active session and takes the
 caret with it. The rules that decide are core's (`onehand_core::unattended`); the calls are the connector's.
 
+### Pipelines
+
+[docs/pipelines.md](pipelines.md) is the whole account; this is the part a change elsewhere can
+break. **The engine decides, the driver does.** `onehand_core::pipeline::PipelineRun` is pure state
+that takes a report and answers with the next `Action`; `crate::pipeline::driver` is the only code
+that turns session events into reports, so a Stop, a take-over, the timeout, a lost adapter and a
+closed session all reach the engine as `stopped`, which never judges the turn under way. Two drivers
+holding their own copy of that logic is how a Stop once passed a cut-short plan as finished.
+**A run snapshots its template** at the start, so editing or deleting a template never reaches a run
+under way. **Its file is written in order by one thread** (`pipeline::files::Writer`), and kept
+only for a run whose agent stopped or whose session went — those wait on the project page to be
+resumed, and nothing resumes one by itself. The strip under the conversation header reads
+`pipeline::shown`; its *Continue*, *Revise…* and *Stop* are `ChatPaneEvent`s the shell defers to the
+driver, because the driver reaches into the session that may be announcing them. A project's check
+command is `ProjectRoot::check`, kept by path in the workspace file like a pin. `Chat::cancelled`
+is what tells a Stop from a finished turn: set by `cancel_turn` or a `cancelled` stop reason, and
+cleared by the next prompt, since an adapter that answers a cancel with an error still ends the turn
+as `end_turn`.
+
 ### The chat pane
 
 [crates/app/src/chat/](../crates/app/src/chat/):
