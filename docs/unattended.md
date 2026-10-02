@@ -253,6 +253,9 @@ issue N of that project, `auto · #N waiting` while that run waits on a card, an
 `auto · #N · plan` while its plan waits to be approved — a working run is named
 ahead of a waiting one on the same project. The run's own session is on a worktree's row of its own, so
 without the pill the project the issue belongs to would say nothing about it.
+The run's session shows every step in a strip under its header, the ones behind
+it checked off and the one it is at in full ink, and the workspace page's
+*Working* row names the step after the project.
 
 **Only issues you opened.** The issue body goes into the prompt word for word,
 and the agent it goes to may run `git` and `gh` with your credentials. Anybody

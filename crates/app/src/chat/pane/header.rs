@@ -8,6 +8,7 @@ use gpui_component::button::ButtonVariants as _;
 use gpui_component::menu::{DropdownMenu as _, PopupMenuItem};
 use gpui_component::{ActiveTheme, Icon, IconName, Sizable as _, StyledExt};
 use onehand_core::chat::{Chat, ConvMeta};
+use onehand_core::unattended::Step;
 use std::path::PathBuf;
 
 /// The conversation header, which is the one row in the panel that never
@@ -121,6 +122,53 @@ impl ChatPane {
     /// edge, so the outermost control moves the outermost panel. The dots are
     /// the row's one menu mark, and everything behind them is something done
     /// to the conversation the name beside them is.
+    /// Where the unattended run this session belongs to stands: every step in
+    /// order, the ones behind it checked off and the one it is at in full ink.
+    /// `None` for a session no run owns.
+    ///
+    /// The transcript says each step as it starts, but a line scrolled past is
+    /// not an answer to "how far along is it", and a run's steps are few
+    /// enough to be read in one glance.
+    pub(super) fn run_steps(&self, cx: &App) -> Option<impl IntoElement + use<>> {
+        let uid = self.active?;
+        let run = crate::unattended::live_runs(cx)
+            .into_iter()
+            .find(|run| run.uid == uid)?;
+        let muted = cx.theme().muted_foreground;
+        let foreground = cx.theme().foreground;
+        let steps = Step::ALL.into_iter().enumerate().map(|(i, step)| {
+            let at = step.cmp(&run.step);
+            div()
+                .h_flex()
+                .items_center()
+                .gap_1()
+                .when(i > 0, |row| {
+                    row.child(Icon::new(IconName::ChevronRight).size_3().text_color(muted))
+                })
+                .when(at.is_lt(), |row| {
+                    row.child(Icon::new(IconName::CircleCheck).size_3().text_color(muted))
+                })
+                .child(
+                    div()
+                        .child(step.label())
+                        .text_color(if at.is_eq() { foreground } else { muted })
+                        .when(at.is_eq(), |label| label.font_semibold()),
+                )
+        });
+        Some(
+            div()
+                .h_flex()
+                .flex_none()
+                .items_center()
+                .gap_1()
+                .px_4()
+                .text_xs()
+                .text_color(muted)
+                .child(div().mr_1().child(format!("Run {}", run.name)))
+                .children(steps),
+        )
+    }
+
     pub(super) fn header(&self, cx: &mut Context<Self>) -> impl IntoElement + use<> {
         let chat = self.active_chat(cx);
         let title = chat.and_then(Chat::conversation_title).unwrap_or_else(|| {

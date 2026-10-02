@@ -355,3 +355,11 @@ fn only_a_failed_gate_spends_a_turn() {
     assert_eq!(turns_left(3, 2), 0);
     assert_eq!(turns_left(3, 5), 0);
 }
+
+#[test]
+fn steps_are_listed_in_the_order_a_run_takes_them() {
+    // What is behind a run's step is read by comparing steps, so the order
+    // they compare in has to be the order they are taken in.
+    assert!(Step::ALL.is_sorted());
+    assert!(Step::Plan < Step::OpenPr);
+}

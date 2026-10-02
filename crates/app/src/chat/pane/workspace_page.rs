@@ -261,12 +261,18 @@ impl ChatPane {
         for run in crate::unattended::live_runs(cx) {
             let (uid, window) = (run.uid, run.window);
             let waits = run.waiting.is_some();
+            // A working run names the step it is at after its project, which
+            // is how far along it is without opening it.
+            let place = match waits {
+                true => page.label_of(&run.repo),
+                false => format!("{} · {}", page.label_of(&run.repo), run.step.label()),
+            };
             let row = crate::dialogs::issue_row(
                 ("workspace-run", uid as usize),
                 run.name,
                 run.waiting.unwrap_or(run.title),
                 &[],
-                page.label_of(&run.repo),
+                place,
                 cx,
             )
             .on_click(cx.listener(move |_: &mut Self, _, _, cx| {

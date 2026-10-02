@@ -60,7 +60,7 @@ impl Facts {
 /// then the pull request. Planning first is what keeps an agent from changing
 /// code it has not read; the check is run by onehand, so "the checks pass" is
 /// never the agent's word.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Default, Serialize, Deserialize)]
 pub enum Step {
     /// Read the code and say what will be done, changing nothing.
     Plan,
@@ -75,6 +75,9 @@ pub enum Step {
 }
 
 impl Step {
+    /// Every step, in the order a run takes them.
+    pub const ALL: [Self; 4] = [Self::Plan, Self::Implement, Self::Verify, Self::OpenPr];
+
     /// What a person calls it.
     pub fn label(self) -> &'static str {
         match self {

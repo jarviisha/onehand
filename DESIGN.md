@@ -118,6 +118,13 @@ One window hosts exactly one workspace. The frame is a navigation **rail** plus 
   visibility shortcuts. No panel in the window
   keeps a tab group; the Workbench's mode strip and the
   terminal's shell strip are each that panel's own chrome.
+- **A run's session shows where the run stands, under the header.** A session
+  an unattended run owns carries one muted strip between the header and the
+  transcript: *Run #N*, then every step in order (*Plan*, *Implement*,
+  *Verify*, *Open PR*) joined by chevrons, each step behind the run's with a
+  check icon before it, and the one it is at in full ink and semibold. Not in
+  the header, whose one full-ink thing is the conversation's name; not a line
+  in the transcript, which scrolls away. A session no run owns draws no strip.
 - **Standing state sits under the composer, outside its card.** A bare strip
   with no chrome of its own carries the project's branch on the left and the
   turn's permission mode on the right. The card is the message being written and
@@ -204,7 +211,7 @@ One window hosts exactly one workspace. The frame is a navigation **rail** plus 
     that lives only on a forge cannot be approved there; its row says so and
     leads nowhere.
   - **Working**: every other run, with the issue's title in place of a
-    question, and every session with a turn in flight, drawn the same way.
+    question and the step it is at after the project, and every session with a turn in flight, drawn the same way.
   - **Projects**: one tile per project, a bordered box taking the hover fill:
     a folder icon, the name in bold and, at the far end, the most urgent rail
     mark among its sessions; under it the branch and changed count (or *Not a

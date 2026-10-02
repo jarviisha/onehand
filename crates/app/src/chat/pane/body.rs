@@ -414,6 +414,7 @@ impl ChatPane {
             .size_full()
             .v_flex()
             .child(self.header(cx))
+            .children(self.run_steps(cx))
             .child(
                 div()
                     .relative()
