@@ -345,8 +345,12 @@ fn add_menu(cx: &mut Context<Composer>) -> impl IntoElement + use<> {
             .item(
                 crate::controls::menu_item("Run a pipeline…")
                     .icon(Icon::new(IconName::Play))
+                    // Once the menu has gone, so the action starts from the
+                    // focus it hands back, inside the window's shell.
                     .on_click(move |_, window: &mut Window, cx: &mut gpui::App| {
-                        window.dispatch_action(Box::new(crate::shell::RunPipeline), cx);
+                        window.defer(cx, |window, cx| {
+                            window.dispatch_action(Box::new(crate::shell::RunPipeline), cx)
+                        });
                     }),
             )
         })
