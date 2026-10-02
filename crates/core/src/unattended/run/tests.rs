@@ -34,44 +34,44 @@ fn a_turn_is_judged_by_the_branch_not_by_what_the_agent_said() {
     // Only analysis: nothing committed, so the session carries on.
     assert_eq!(
         after_turn(&facts(0, false, None), true, 2),
-        Step::CarryOn(Missing::NoCommits)
+        Next::CarryOn(Missing::NoCommits)
     );
     assert_eq!(
         after_turn(&facts(2, true, None), true, 2),
-        Step::CarryOn(Missing::Uncommitted)
+        Next::CarryOn(Missing::Uncommitted)
     );
     // An agent claiming a pull request it never opened is still missing one.
     assert_eq!(
         after_turn(&facts(2, false, None), true, 2),
-        Step::CarryOn(Missing::NoPullRequest)
+        Next::CarryOn(Missing::NoPullRequest)
     );
     assert_eq!(
         after_turn(&facts(2, false, Some(pr("h0", &[]))), true, 2),
-        Step::CarryOn(Missing::Unpushed)
+        Next::CarryOn(Missing::Unpushed)
     );
     assert_eq!(
         after_turn(&facts(2, false, Some(pr("h1", &[]))), true, 2),
-        Step::AwaitChecks
+        Next::AwaitChecks
     );
 }
 
 #[test]
 fn a_turn_with_no_turns_left_exhausts_and_a_closed_pull_request_settles() {
-    assert_eq!(after_turn(&facts(0, false, None), true, 0), Step::Exhausted);
+    assert_eq!(after_turn(&facts(0, false, None), true, 0), Next::Exhausted);
     let mut closed = pr("h0", &[]);
     closed.state = PrState::Closed;
     assert_eq!(
         after_turn(&facts(0, false, Some(closed)), true, 2),
-        Step::Settle
+        Next::Settle
     );
 }
 
 #[test]
 fn a_project_with_no_forge_settles_on_its_commits() {
-    assert_eq!(after_turn(&facts(1, false, None), false, 2), Step::Settle);
+    assert_eq!(after_turn(&facts(1, false, None), false, 2), Next::Settle);
     assert_eq!(
         after_turn(&facts(0, false, None), false, 2),
-        Step::CarryOn(Missing::NoCommits)
+        Next::CarryOn(Missing::NoCommits)
     );
 }
 

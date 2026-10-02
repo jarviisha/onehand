@@ -68,7 +68,7 @@ pub enum Missing {
 
 /// What a run does once a turn has ended.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Step {
+pub enum Next {
     /// Prompt the same session again, saying what is missing.
     CarryOn(Missing),
     /// Everything is pushed to an open pull request: close the session and
@@ -81,15 +81,15 @@ pub enum Step {
     Exhausted,
 }
 
-/// The step after a turn, given what was read, whether the project has a
+/// What comes after a turn, given what was read, whether the project has a
 /// forge, and how many more turns the session may take.
-pub fn after_turn(facts: &Facts, forge: bool, turns_left: u32) -> Step {
+pub fn after_turn(facts: &Facts, forge: bool, turns_left: u32) -> Next {
     if facts
         .pr
         .as_ref()
         .is_some_and(|pr| pr.state != PrState::Open)
     {
-        return Step::Settle;
+        return Next::Settle;
     }
     let missing = if facts.dirty {
         Some(Missing::Uncommitted)
@@ -105,10 +105,10 @@ pub fn after_turn(facts: &Facts, forge: bool, turns_left: u32) -> Step {
         }
     };
     match missing {
-        None if forge => Step::AwaitChecks,
-        None => Step::Settle,
-        Some(_) if turns_left == 0 => Step::Exhausted,
-        Some(missing) => Step::CarryOn(missing),
+        None if forge => Next::AwaitChecks,
+        None => Next::Settle,
+        Some(_) if turns_left == 0 => Next::Exhausted,
+        Some(missing) => Next::CarryOn(missing),
     }
 }
 

@@ -5,7 +5,7 @@ use gpui::{App, Entity, Task, WeakEntity};
 use onehand_core::chat::ChatItem;
 use onehand_core::chat::UserAsk;
 use onehand_core::unattended::{
-    self as core, Ending, Facts, Missing, Phase, Spent, Start, Step, Tracker, Verdict,
+    self as core, Ending, Facts, Missing, Next, Phase, Spent, Start, Tracker, Verdict,
 };
 use onehand_core::worktree;
 use std::time::{Duration, Instant};
@@ -158,18 +158,18 @@ fn after_turn(uid: u64, session: &Entity<ChatSession>, cx: &mut App) {
             let Some(session) = session.upgrade().filter(|_| going == Some(true)) else {
                 return;
             };
-            let step = match facts {
+            let next = match facts {
                 Ok(facts) => core::after_turn(&facts, forge.is_some(), max.saturating_sub(turns)),
                 Err(why) => {
                     eprintln!("onehand: could not read what a run left: {why}");
-                    Step::Settle
+                    Next::Settle
                 }
             };
-            match step {
-                Step::CarryOn(missing) => carry_on(uid, &session, missing, tail, cx),
-                Step::AwaitChecks => park(uid, cx),
-                Step::Settle => settle(uid, Ending::TurnEnded { tail }, cx),
-                Step::Exhausted => settle(uid, Ending::Exhausted(Spent::Turns(max)), cx),
+            match next {
+                Next::CarryOn(missing) => carry_on(uid, &session, missing, tail, cx),
+                Next::AwaitChecks => park(uid, cx),
+                Next::Settle => settle(uid, Ending::TurnEnded { tail }, cx),
+                Next::Exhausted => settle(uid, Ending::Exhausted(Spent::Turns(max)), cx),
             }
         });
     })

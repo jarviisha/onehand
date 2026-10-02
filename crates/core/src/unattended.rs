@@ -13,8 +13,8 @@ use std::time::{Duration, Instant};
 mod run;
 pub use run::{
     after_checks, after_turn, carry_on, load_records_blocking, new_record_file, runs_dir,
-    save_record_blocking, Checked, Facts, Failure, Kept, Missing, Phase, Progress, Record, Spent,
-    Start, Step, CHECKS_GRACE,
+    save_record_blocking, Checked, Facts, Failure, Kept, Missing, Next, Phase, Progress, Record,
+    Spent, Start, CHECKS_GRACE,
 };
 
 /// An issue a run can take.
