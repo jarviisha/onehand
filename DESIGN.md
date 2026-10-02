@@ -198,7 +198,11 @@ One window hosts exactly one workspace. The frame is a navigation **rail** plus 
     *lost*, *waiting for you* or *finished* (head the rail's own mark, then the
     conversation's name, then the project and the state in the rail's word).
     Pressing a run or session opens it; a run in another window brings that
-    window forward.
+    window forward. A run whose plan waits to be approved is listed here too,
+    *Plan to approve:* and the title after its head, and pressing it opens the
+    Issues mode on that issue, as an open issue's row does. One on an issue
+    that lives only on a forge cannot be approved there; its row says so and
+    leads nowhere.
   - **Working**: every other run, with the issue's title in place of a
     question, and every session with a turn in flight, drawn the same way.
   - **Projects**: one tile per project, a bordered box taking the hover fill:
@@ -263,12 +267,23 @@ One window hosts exactly one workspace. The frame is a navigation **rail** plus 
   project's ••• menu (the rail's and the project page's), and a list of
   switches under Settings ▸ Workspace, where every project's answer can be read
   at once. While on, the row carries a pill in the change count's style reading
-  **`auto`**, and **`auto · #N`** while a run is working an issue of that
-  project, the issue as shown everywhere: the forge's number, or *Draft*. It is a word and not a glyph, because the pill already reads as a
+  **`auto`**, **`auto · #N · <Step>`** while a run is working an issue of that
+  project, at the step it is at (*Plan*, *Implement*, *Verify*, *Open PR*),
+  and **`auto · #N · plan`** while its plan waits to be approved, with the hover
+  *Waiting for its plan to be approved*. The issue is as shown everywhere: the
+  forge's number, or *Draft*. It is a word and not a glyph, because the pill already reads as a
   fact about the project and an icon would be one more shape to learn. It never
   gives way to width, because a permission to push is the worst thing the row
   could quietly hide. The hover says it in full: which label is looked for, or
   which issue is being worked.
+- **A project says whether its runs' plans wait for a person**: a checked
+  *Approve plans before work* entry right under *Work labelled issues* in both
+  project menus. In the Issues mode an issue whose run waits shows *approve
+  plan* on its row in the warning ink, the way *decide* is drawn, and its
+  detail puts *Revise…* (ghost) and *Approve plan* (primary, with a check icon)
+  where *Work* would be. *Revise…* opens a modal with a textarea, *Cancel* and
+  *Send back*, shaped like *Work*'s. An issue a run is working shows the step's
+  name where *working* would be.
 - **A switch that is on while nothing can happen says so on the row.** That is
   the one state that looks exactly like working. So when something stops every
   run, or the last look at the project failed, the pill keeps its word and takes
@@ -307,7 +322,9 @@ One window hosts exactly one workspace. The frame is a navigation **rail** plus 
   that sometimes does nothing visible reads as broken. When the config
   stops every run, a warning line under the explanation says so before any
   switch is read. Each switch takes the pointer across its own width only, not
-  across the empty column beside its name. The servers page lists only the
+  across the empty column beside its name. Under each project's switch, indented,
+  sit an *Approve plans before work* switch and a *Check command* field with a
+  muted caption; an empty field reads *None: the check step is skipped*. The servers page lists only the
   connectors the build carries — GitHub alone today — since a row for one
   nothing can use would read as a promise.
 - **Everything else is a dock panel**, and the arrangement persists as **five

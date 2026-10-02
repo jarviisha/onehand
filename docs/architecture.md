@@ -592,9 +592,15 @@ once. Every run writes its own log into its transcript as notices (`unattended::
 the prompt going out, a cancel, and the words the issue was told at the end. A run the search finds claims its issue by removing the label,
 branches a worktree off `origin/<default>` and mints a session there. **Neither step moves anything on
 screen**: `ChatPane::open_unshown` connects without showing, and the worktree's root is
-`ProjectRoot::transient`, which `to_config` never writes. **A turn ending is read, not believed**:
-`unattended::after_turn` looks at the branch and the pull request and either sends the same session
-back with what is missing, or parks the run with no session while its checks run; each tick then
+`ProjectRoot::transient`, which `to_config` never writes. **An attempt goes in steps**
+(`unattended::Step`: Plan, Implement, Verify, Open PR; a repair starts at Implement), each with its
+own prompt (`step_prompt`) and a gate. **A turn ending is read, not believed**: `unattended::next`
+judges the step on the branch and the pull request and sends the same session back with what is
+missing, moves it on in the same session, runs the project's check command (`verify_blocking`, from
+`ProjectRoot::check`), parks it for a person to approve its plan (`Phase::AwaitingApproval`, when
+`ProjectRoot::approve_plans`; the Issues mode's *Approve plan* and *Revise…* reach
+`unattended::approve` / `revise` through `Request::ApprovePlan` / `RevisePlan`), or parks it with no
+session while its checks run. Only a failed gate costs one of `turns`. Each tick then
 judges the checks on the pull request's head (`after_checks`) and starts a repair session, marks it
 ready, or stops. A run keeps one file of counters (`unattended::Record`) so a restart carries it on;
 everything else is read again from git and the forge. The pull request the forge
@@ -746,7 +752,8 @@ caret with it. The rules that decide are core's (`onehand_core::unattended`); th
 
 - **The workspace page** (`ChatPane::show_workspace`, reached from the rail's *Workspace
   overview*) answers across every project what the project page answers for one: **waiting on
-  you** (an unattended run on a parked card, and every session whose `ChatPane::signal` is lost,
+  you** (an unattended run on a parked card or waiting for its plan to be approved, which opens the
+  Issues mode on its issue, and every session whose `ChatPane::signal` is lost,
   awaiting the user or unseen) and **working** (the other runs, and every busy session), then
   **projects** (one row each: `GitStatus::label`, session count, open issue count), **recent
   conversations** (`chat::list_across`, core, tested: one read of the store for every project,
@@ -959,7 +966,11 @@ see the rail, below.
   session took it once the agent has named it, on the project it is kept in. **An issue a live session is on is not offered *Work*:**
   the shell tells the Workbench which conversations have a live session in the window
   (`Request::LiveConversations`, sent from the pane observer only when the set changes), and an issue
-  whose history names one of them shows *Open session* in its place and *working* on its row.
+  whose history names one of them shows *Open session* in its place and *working* on its row. An
+unattended run on an issue kept here is told the same way (`Request::IssueRuns`, from the shell
+observing `Shared` and comparing with what it last sent): its row shows its step in place of
+*working*, and one whose plan waits shows *approve plan* and, in the detail, *Approve plan* and
+*Revise…*, the latter a modal like *Work*'s.
   Unattended runs work these issues too — see *Unattended runs*. No shortcut yet, and no
   deletion — closing is the way an issue leaves the work, from the detail's ⋯ menu (beside *Open on
   GitHub* and *Copy link*, whose address `Connector::issue_url_blocking` asks the forge for) and

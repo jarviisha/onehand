@@ -15,6 +15,11 @@ One go at a run. A retry is a new attempt of the same run: it keeps the same bra
 and pull request.
 _Avoid_: retry run, second run
 
+**Step**:
+A named stretch of an attempt with its own prompt and a condition the app checks itself before
+moving on: Plan, Implement, Verify, Open PR.
+_Avoid_: stage, phase, task
+
 **Repair**:
 A session started on a run's worktree to fix checks that failed on its pull request's current
 head. A repair belongs to the attempt that is running when the checks fail.

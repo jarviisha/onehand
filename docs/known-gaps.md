@@ -180,3 +180,13 @@ Listed because a missing feature nobody wrote down reads as a bug in the ones th
   popularity and no filter by kind. And the title row of a submenu (*Change scope ▸*, *Turn on for
   ▸*) draws the arrow cursor: the menu row that answers the pointer can only reach what goes inside
   a row, and a submenu's row is the library's own.
+- **A plan can only be approved on an issue kept in onehand.** *Approve plan* and *Revise…* live
+  in the Issues mode, which lists the project's own issues, so a run on an issue that lives only on
+  a forge (a project not kept in step with it) has nowhere to be approved: its plan is posted on
+  the forge's issue and the run waits until the `timeout` ends it unapproved. The workspace page
+  lists it under *Waiting on you* and says it has nowhere to be approved. Turn approval off for
+  such a project, or keep it in step with its forge.
+- **A plan's gate cannot see edits on top of a worktree that was already dirty.** The plan is
+  measured from where its session found the worktree, by its head and whether anything was
+  uncommitted; an earlier attempt that left uncommitted work hides further edits to it. A content
+  hash of the worktree would close it.

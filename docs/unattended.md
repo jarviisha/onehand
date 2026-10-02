@@ -24,14 +24,20 @@ tick (every N minutes, one process, one run started while none is working)
         └─ with a forge:    git fetch; git worktree add -b <branch> ../<dir> origin/<default>
            without a forge: git worktree add -b <branch> ../<dir> <the branch checked out>
            └─ add it as a project root, mint a session on it *without showing it*, set the mode
-              └─ first prompt: the issue, the rules, open a draft PR yourself — or,
-                 with no forge, commit and do not push
+              └─ first prompt: the issue, then the rules of the step the run is at
                  └─ watch: turn ended · adapter lost · timed out · taken over
                     (a parked ask waits for a person, and gives up the slot while it does)
-                    └─ turn ended: read the branch (commits, uncommitted work, the PR's head)
-                       ├─ something missing, turns left → say what, same session
+                    └─ turn ended: read the branch, judge the step's gate
+                       ├─ gate failed, turns left → say what, same session
+                       ├─ Plan: an answer, nothing changed → post the plan on the issue
+                       │   ├─ project approves plans → close the session, wait for a person
+                       │   │   (Approve → Implement, Revise… → Plan, each in a new session)
+                       │   └─ otherwise → Implement, same session
+                       ├─ Implement: committed, clean → the project's check command
+                       │   (Verify: onehand runs it; a failure goes back to the agent)
+                       │   └─ none, or it passed → Open PR, same session
                        ├─ no forge, commits → the outcome is the commits
-                       └─ pushed to an open PR → close the session, wait on its checks
+                       └─ Open PR: pushed to an open PR → close the session, wait on its checks
                           └─ each tick: gh pr list --head <branch> with its check rollup
                              ├─ pending → wait
                              ├─ failed or conflicting → a repair: a new session
@@ -127,7 +133,7 @@ every = "30m"            # how often to look
 timeout = "45m"          # a run that neither finishes nor asks is cancelled
 mode = "auto"            # the ACP session mode; also chosen in Settings ▸ Workspace
 agent = "Claude Code"    # which agent spec; the default agent when unset
-turns = 3                # turns one session may take before the run stops unfinished
+turns = 3                # turns of one session that may fail their step's gate
 repairs = 2              # repairs one attempt may start on failing checks
 ```
 
@@ -142,6 +148,15 @@ carrying the old global `enabled` key keeps loading; the key is ignored. An
 **empty `label` still picks nothing at all**, and the project's hover and the
 Settings list both say so, since a switch that is on while nothing can happen is
 the one state that looks exactly like working.
+
+**Two more per-project settings gate a run's steps**, from the same two places
+the switch is, beside it: *Approve plans before work*, a checked entry in both
+project menus and a switch in Settings ▸ Workspace, and a *Check command*, a
+field under the same switch. Both are kept in the workspace file by path
+(`approve_plans`, `checks`) and both are read at the moment a run needs them,
+so a change counts from the next plan or the next check. Neither needs the
+project switched on: a run picked by hand is gated the same way. A project
+with no check command skips Verify.
 
 **Two places an issue can live, and a project with no forge is still worked.**
 An issue is either on the project's forge — GitHub today, through its connector
@@ -233,9 +248,10 @@ its last line is only read by somebody who opened it in time; the issue comment
 is the record that stays.
 
 **The rail says what is switched on and what is running.** A switched-on project
-row carries a pill reading `auto`, `auto · #N` while a run is working issue N of
-that project, and `auto · #N waiting` while that run waits on a card — a working
-run is named ahead of a waiting one on the same project. The run's own session is on a worktree's row of its own, so
+row carries a pill reading `auto`, `auto · #N · <Step>` while a run is working
+issue N of that project, `auto · #N waiting` while that run waits on a card, and
+`auto · #N · plan` while its plan waits to be approved — a working run is named
+ahead of a waiting one on the same project. The run's own session is on a worktree's row of its own, so
 without the pill the project the issue belongs to would say nothing about it.
 
 **Only issues you opened.** The issue body goes into the prompt word for word,
@@ -318,8 +334,10 @@ a deliberate one, not a list of whatever was once approved by hand.
    crash makes false. It also makes a loop impossible by construction — the
    label that would cause a second pick is gone before any work begins.
    **Past the claim, a run keeps one small file** (`unattended::Record`, under
-   `<config_dir>/onehand/runs/`): the phase it is in and what it has used of its
-   budget, nothing else. The branch, its commits, the pull request and its
+   `<config_dir>/onehand/runs/`): the phase it is in, the step, the plan and
+   a person's note on it, and what it has used of its budget, nothing else.
+   A restart resumes at the start of the step; a file from before steps
+   existed reads as Implement. The branch, its commits, the pull request and its
    checks are read again whenever they are needed, so the file cannot disagree
    with them, and the forge is always asked before anything is pushed or opened.
    A restart reads every file back: a run waiting on checks goes on waiting, and
@@ -343,15 +361,34 @@ a deliberate one, not a list of whatever was once approved by hand.
    comment saying "no pull request" beside a pull request is the worst answer
    available. A PR found makes the outcome `Opened`, with why the run stopped as
    a note under it.
-6. **A turn ending is an observation, not an outcome.** After each turn the
-   branch is read — commits past the start, work no commit holds, the pull
-   request and the commit it is at — and `after_turn` decides. Something
-   missing sends the same session back with a prompt naming it (`carry_on`),
-   up to `turns` turns, then the run stops as `Exhausted`. Everything pushed
-   to an open pull request closes the session and gives up the slot while the
-   checks run. With no forge, commits are the outcome, as before. What the
-   agent said about its work is never consulted, so "I opened a pull request"
-   with none on the branch is sent back to open one. The prompt still tells the
+6. **A turn ending is an observation, not an outcome, and each step has its
+   own gate.** An attempt goes Plan → Implement → Verify → Open PR
+   (`unattended::Step`), in one session; a repair starts at Implement. After
+   each turn the branch is read — commits, work no commit holds, the pull
+   request and the commit it is at — and `next` judges the step:
+   - **Plan** passes on a non-empty answer that changed nothing, measured from
+     where the session found the worktree. The plan is posted on the issue
+     and kept in the run's file. A project that approves plans then parks the
+     run with no session (`Phase::AwaitingApproval`), giving up the slot,
+     until the Issues panel's *Approve plan* or *Revise…*; a wait longer than
+     the `timeout` ends it as `Exhausted`.
+   - **Implement** passes on commits and a clean worktree. The agent is told
+     not to push.
+   - **Verify** is onehand running the project's check command itself
+     (`verify_blocking`: `sh -c`, fifteen minutes, the shared target
+     directory). A failure goes back to the same session with the last 200
+     lines of its output.
+   - **Open PR** passes when everything is pushed to an open pull request,
+     which closes the session and gives up the slot while the checks run.
+     With no forge there is no Open PR: commits are the outcome.
+
+   A failed gate sends the same session back with a prompt naming what is
+   missing (`carry_on`). **Only a failed gate costs a turn**, since four steps
+   each take one; after `turns` of them the run stops as `Exhausted`, naming
+   the step it was stuck at. Each step change is noted on an issue kept in
+   onehand, and in the transcript; a forge's issue hears only the plan and
+   the outcome. What the agent said about its work is never consulted, so "I
+   opened a pull request" with none on the branch is sent back to open one. The prompt still tells the
    agent to ask through its question tool rather than in prose, and an ending
    with no pull request still carries the end of its answer
    (`Chat::answer_tail`), which is where a question asked in prose would be.
@@ -379,7 +416,7 @@ all** is ready too, and the issue says *no checks ran* — but only after
 a look straight after it would read "not yet" as "none". Ready takes the pull
 request out of draft (`gh pr ready`), which is what asks its reviewers.
 
-**A failure starts a repair**: a new session on the same worktree, whose prompt
+**A failure starts a repair**, at the Implement step: a new session on the same worktree, whose prompt
 carries the pull request, the failing checks' names and the end of each one's
 log (`Connector::check_log_blocking`, the first three), and tells the agent to
 say so and leave the code alone when the failure is not its change's. A
@@ -392,7 +429,8 @@ round would only spend time. A due repair goes before any new issue.
 
 **A review is answered by putting the label back.** The next claim of an issue
 looks for the newest branch under `onehand/issue-<N>` — found by its prefix,
-so a title edited since still finds it. With an open pull request the attempt
+so a title edited since still finds it. Like a fresh one, the attempt starts
+with a plan. With an open pull request the attempt
 answers its review: the prompt names the pull request and how to read the
 review, and the work is counted from the commit the attempt starts at, so a
 turn that adds nothing is sent back. With no pull request it carries on the
@@ -473,16 +511,25 @@ POSIX-only, which is marked where it is done.
 
 ## The prompt
 
-Every session's first prompt is built by `prompt_for`: the issue's number,
-title and body, the branch it is on, what this session is for beyond the issue
-(`Start`: carrying on an earlier attempt, answering a review, repairing
-checks), and four instructions — read the repository's own CLAUDE.md for
-conventions, run the repo's checks before committing, open a draft pull request
-with `gh pr create --draft` (or push to the one already open), and decide what
-the code, the tests and the docs let it infer, listing the assumptions that
-mattered in the pull request; only a decision about what the product should do
-is asked, through the agent's question tool. Later turns of the same session
-get only `carry_on`'s one sentence about what the branch still lacks.
+Every step's prompt is built by `step_prompt`: the issue's number, title and
+body, the branch it is on, what this attempt is for beyond the issue (`Start`:
+carrying on an earlier attempt, answering a review, repairing checks), two
+standing instructions — read the repository's own CLAUDE.md for conventions,
+and decide what the code, the tests and the docs let it infer, listing the
+assumptions that mattered; only a decision about what the product should do is
+asked, through the agent's question tool — then the step's own rules:
+- **Plan**: read the code and answer with a plan; do not edit, commit or push.
+  A person's note on the last plan comes with that plan.
+- **Implement**: follow the plan, which is included, run the repo's checks and
+  commit; do not push.
+- **Verify**: the end of the check command's output; fix it and commit. Only a
+  session resumed at Verify gets this; within a session a failed check comes
+  back as a `carry_on`.
+- **Open PR**: push and open the draft pull request with `gh pr create
+  --draft`, or push to the one already open.
+
+A session moving on to the next step is sent that step's prompt. A failed gate
+gets only `carry_on`'s one sentence about what is still missing.
 
 It deliberately does **not** restate the commit convention, the test commands or
 the PR format. Those are in the repository's own instructions, which the agent
@@ -529,8 +576,9 @@ TimedOut        → "No pull request after <timeout>; the run was cancelled."
 TakenOver       → "Taken over by hand; the run stopped watching <branch>."
 Failed(why)     → "onehand could not start the run: <why>"
 Exhausted(why)  → "<why>. There is no pull request on <branch>; its work stays there."
-                  (turns used up, repairs used up, the same check failing again,
-                  checks still running after the timeout)
+                  (turns used up, at the step it was stuck at; repairs used up;
+                  the same check failing again; checks still running after
+                  the timeout; a plan nobody approved within the timeout)
 ```
 
 With a pull request, two more: **`Ready`** — its checks passed on its latest
@@ -638,19 +686,23 @@ accumulate one row per issue ever worked.
 Core, pure, no fixtures:
 
 - `parse_every` — `"30m"`, `"2h"`, `"90s"`, and a refusal for `"soon"`.
-- `prompt_for` — the issue number and branch appear; the body is not truncated
+- `step_prompt` — the issue number and branch appear; the body is not truncated
   into the middle of a code fence.
 - an empty `label` yields no candidate issue; no project is switched on by
   default, and the switch survives the workspace file by path.
 - `report`, one case per `Ending` with and without a PR, matched exhaustively so
   an ending cannot be added without a sentence being checked for it.
 - a PR found on an ending that was not a turn ending still reads `Opened`.
-- `after_turn`: an analysis-only turn carries on, a claimed but missing pull
-  request is still missing, only commits pushed to an open one wait on checks.
+- `next`: each step's gate — a plan that touched code or said nothing, a
+  change with no commits, a claimed but missing pull request — with and
+  without approval, a check command or a forge; `after_check`.
+- `step_prompt`, one case per step; `verify_blocking` with a passing, a failing
+  and a long command.
 - `after_checks`: only every check passing is ready; no checks waits out the
   grace first; the same check failing again, no repairs left, or checks that
   never finish stop the run; a conflict is repaired.
-- the run's file reads back as written, and an unreadable one is said.
+- the run's file reads back as written, waiting for approval included; one
+  from before steps reads as Implement; an unreadable one is said.
 - the branch name a run derives passes `validate_branch` for a title that is
   nothing but punctuation, and for one that is 300 characters long.
 
