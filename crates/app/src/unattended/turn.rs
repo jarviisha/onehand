@@ -163,16 +163,20 @@ fn after_turn(uid: u64, session: &Entity<ChatSession>, cx: &mut App) {
         // A plan is measured from where its session found the worktree, so
         // work an earlier attempt left there is not taken for the plan's.
         let from = run.plan_from.clone().filter(|_| step == Step::Plan);
-        let since = match &from {
-            Some((head, _)) => head.clone(),
-            None => run.progress.since.clone().unwrap_or_else(|| c.base.clone()),
+        // A plan whose starting point could not be read is judged on its
+        // answer alone: measured from the base instead, an earlier attempt's
+        // commits would fail every plan turn until the run was spent.
+        let since = match (&from, step) {
+            (Some((head, _)), _) => head.clone(),
+            (None, Step::Plan) => "HEAD".to_string(),
+            (None, _) => run.progress.since.clone().unwrap_or_else(|| c.base.clone()),
         };
         Some((
             c.dir.clone(),
             since,
             c.branch.clone(),
             c.forge,
-            max.saturating_sub(run.missed + 1),
+            core::turns_left(max, run.missed),
             from,
         ))
     })
@@ -194,7 +198,11 @@ fn after_turn(uid: u64, session: &Entity<ChatSession>, cx: &mut App) {
                     // ponytail: a worktree already dirty when the plan began
                     // cannot tell the plan's edits from the earlier ones; a
                     // content hash of the worktree would.
-                    facts.dirty &= !from.is_some_and(|(_, dirty)| dirty);
+                    facts.dirty &= match (&from, step) {
+                        (Some((_, dirty)), _) => !dirty,
+                        (None, Step::Plan) => false,
+                        (None, _) => true,
+                    };
                     let gate = Gate {
                         forge: forge.is_some(),
                         approve_plans: project.as_ref().is_some_and(|p| p.approve_plans),
@@ -427,7 +435,7 @@ fn run_check(uid: u64, session: &Entity<ChatSession>, tail: Option<String>, cx: 
             };
             let Some(turns_left) = with(cx, |u| {
                 let max = u.turns;
-                u.run_mut(uid).map(|run| max.saturating_sub(run.missed + 1))
+                u.run_mut(uid).map(|run| core::turns_left(max, run.missed))
             })
             .flatten() else {
                 return;

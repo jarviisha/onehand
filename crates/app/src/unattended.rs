@@ -16,7 +16,7 @@ use onehand_core::config::UnattendedConfig;
 use onehand_core::connector::PullRequest;
 use onehand_core::connector::{self, Connector};
 use onehand_core::unattended::{
-    self as core, Budget, Checked, Ending, Failure, Phase, Progress, Spent, Start, Step, Tracker,
+    self as core, Budget, Checked, Ending, Failure, Phase, Progress, Spent, Start, Step,
 };
 use std::collections::HashMap;
 use std::path::Path;
@@ -733,10 +733,7 @@ pub fn awaiting_approval(cx: &App) -> Vec<Approval> {
                         name: c.tracker.shown(&c.issue),
                         title: c.issue.title_text().to_string(),
                         number: c.issue.number,
-                        kept_here: match c.tracker {
-                            Tracker::Local(_) | Tracker::Synced { .. } => true,
-                            Tracker::Forge(_) => false,
-                        },
+                        kept_here: c.tracker.kept_here(),
                     }
                 })
                 .collect()
@@ -769,10 +766,7 @@ pub fn runs_by_issue(cx: &App) -> Vec<IssueRun> {
     // Only issues kept here: the Issues panel lists those, by the number
     // onehand files them under, which a forge's issue does not share.
     live.chain(parked)
-        .filter(|(c, ..)| match c.tracker {
-            Tracker::Local(_) | Tracker::Synced { .. } => true,
-            Tracker::Forge(_) => false,
-        })
+        .filter(|(c, ..)| c.tracker.kept_here())
         .map(|(c, step, awaiting)| IssueRun {
             repo: c.repo.clone(),
             number: c.issue.number,

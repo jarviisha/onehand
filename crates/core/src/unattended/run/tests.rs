@@ -316,3 +316,42 @@ fn a_record_from_before_steps_reads_as_the_change() {
     };
     assert_eq!(Progress::new(repair, None).step, Step::Implement);
 }
+
+#[test]
+fn only_a_failed_gate_spends_a_turn() {
+    // A budget of one turn: the first miss is already the last.
+    let max = 1;
+    assert_eq!(turns_left(max, 0), 0);
+    // Yet a run that never misses goes through every step on it.
+    let last = |step, f: &Facts| {
+        next(
+            step,
+            f,
+            &Gate {
+                answer: "the plan",
+                check: true,
+                ..gate(true, turns_left(max, 0))
+            },
+        )
+    };
+    assert_eq!(
+        last(Step::Plan, &facts(0, false, None)),
+        Next::Advance(Step::Implement)
+    );
+    assert_eq!(
+        last(Step::Implement, &facts(1, false, None)),
+        Next::RunCheck
+    );
+    assert_eq!(
+        after_check(Ok(()), turns_left(max, 0), true),
+        Next::Advance(Step::OpenPr)
+    );
+    assert_eq!(
+        last(Step::OpenPr, &facts(1, false, Some(pr("h1", &[])))),
+        Next::AwaitChecks
+    );
+    // With three, two misses carry on and the third exhausts.
+    assert_eq!(turns_left(3, 1), 1);
+    assert_eq!(turns_left(3, 2), 0);
+    assert_eq!(turns_left(3, 5), 0);
+}

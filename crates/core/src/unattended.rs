@@ -13,8 +13,8 @@ use std::time::{Duration, Instant};
 mod run;
 pub use run::{
     after_check, after_checks, carry_on, load_records_blocking, new_record_file, next, runs_dir,
-    save_record_blocking, Checked, Facts, Failure, Gate, Kept, Missing, Next, Phase, Progress,
-    Record, Spent, Start, Step, CHECKS_GRACE,
+    save_record_blocking, turns_left, Checked, Facts, Failure, Gate, Kept, Missing, Next, Phase,
+    Progress, Record, Spent, Start, Step, CHECKS_GRACE,
 };
 
 /// An issue a run can take.
@@ -265,6 +265,15 @@ impl Tracker {
         }
     }
 
+    /// Whether the issue is kept in onehand, and so listed in its Issues tab
+    /// by the number it is filed under there.
+    pub fn kept_here(&self) -> bool {
+        match self {
+            Self::Local(_) | Self::Synced { .. } => true,
+            Self::Forge(_) => false,
+        }
+    }
+
     /// Leave `body` on issue `number` where only this app shows it: a note on
     /// an issue kept in onehand, nothing on one that lives on a forge. For
     /// what is worth a line on the issue but not a comment somebody is told
@@ -281,7 +290,7 @@ impl Tracker {
 }
 
 /// How long a project's check command may run before it counts as failed.
-pub const VERIFY_LIMIT: Duration = Duration::from_secs(15 * 60);
+const VERIFY_LIMIT: Duration = Duration::from_secs(15 * 60);
 
 /// How many lines of a failed check's output the agent is handed. The end is
 /// where a build or a test run says what went wrong.

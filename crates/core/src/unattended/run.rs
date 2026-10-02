@@ -142,6 +142,12 @@ pub struct Gate<'a> {
     pub answer: &'a str,
 }
 
+/// How many more turns may fail their gate, for a session allowed `max` that
+/// has missed `missed` so far, counting the turn being judged as one more.
+pub fn turns_left(max: u32, missed: u32) -> u32 {
+    max.saturating_sub(missed + 1)
+}
+
 /// What comes after a turn of `step`, given what was read.
 ///
 /// **Only a turn that fails its gate costs a turn.** Four steps each take at
