@@ -191,6 +191,11 @@ pub struct Shell {
     rail_split: Entity<ResizableState>,
     /// The agent add/edit form.
     agent_draft: AgentDraft,
+    /// The pipeline template form, while one is open.
+    pipeline_draft: Option<crate::settings::PipelineDraft>,
+    /// Each project's check command field in Settings, by root, made as
+    /// Settings opens.
+    check_inputs: HashMap<PathBuf, Entity<InputState>>,
     /// Which page the Settings dialog is showing.
     ///
     /// On the shell rather than inside the dialog because a triggered dialog is

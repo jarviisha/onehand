@@ -424,6 +424,8 @@ impl Shell {
             worktree_draft: None,
             branch_draft: None,
             issue_picker: None,
+            pipeline_draft: None,
+            check_inputs: HashMap::new(),
             pipeline_launcher: None,
             branch_input,
             worktree_branch,
