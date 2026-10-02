@@ -16,12 +16,14 @@ use onehand_core::config::UnattendedConfig;
 use onehand_core::connector::PullRequest;
 use onehand_core::connector::{self, Connector};
 use onehand_core::unattended::{
-    self as core, Budget, Checked, Ending, Failure, Phase, Progress, Start,
+    self as core, Budget, Checked, Ending, Failure, Phase, Progress, Spent, Start, Step, Tracker,
 };
 use std::collections::HashMap;
 use std::path::Path;
 use std::path::PathBuf;
 use std::time::Duration;
+
+pub use onehand_plugin_host::IssueRun;
 
 mod launch;
 mod turn;
@@ -40,7 +42,7 @@ pub struct Unattended {
     timeout: Duration,
     mode: String,
     agent: Option<String>,
-    /// How many turns one session may take.
+    /// How many turns of one session may fail their step's gate.
     turns: u32,
     /// How many repairs one attempt may start.
     repairs: u32,
@@ -105,6 +107,10 @@ pub type Accounts = Vec<(&'static dyn Connector, Result<String, String>)>;
 pub struct Project {
     pub root: PathBuf,
     pub issues: Option<PathBuf>,
+    /// Its runs wait for a person to approve their plan.
+    pub approve_plans: bool,
+    /// The command its runs' work must pass, run by onehand.
+    pub check: Option<String>,
 }
 
 /// What a look at one project found: the forge its work goes to, or `None` for
@@ -133,8 +139,11 @@ struct Run {
     /// How many prompts the run itself has sent the session: any more, and a
     /// person is driving.
     sent: usize,
-    /// Turns the session has ended.
-    turns: u32,
+    /// Turns of the session that failed their step's gate.
+    missed: u32,
+    /// Where the worktree stood when the plan's session began, as its head
+    /// and whether it was dirty, so the plan's gate measures only the plan.
+    plan_from: Option<(String, bool)>,
     /// What the session is for and what the attempt has used.
     progress: Progress,
     /// The question a parked card is asking, while the run waits for a person
@@ -473,6 +482,10 @@ fn apply_polls(polled: Vec<(PathBuf, Polled)>, cx: &mut App) {
                     let p = u.parked.iter_mut().find(|p| p.claimed.file == file)?;
                     p.phase = Phase::Working;
                     p.progress.start = start;
+                    // What to fix is in the failing checks, so a repair has
+                    // no plan to make or follow.
+                    p.progress.step = Step::Implement;
+                    p.progress.plan = None;
                     p.progress.repairs += 1;
                     p.progress.failed_before = failing;
                     Some(p.claimed.record(p.phase, &p.progress))
@@ -657,6 +670,8 @@ pub struct LiveRun {
     pub window: gpui::AnyWindowHandle,
     /// The question a parked card is asking, while the run waits on it.
     pub waiting: Option<String>,
+    /// The step the run is in.
+    pub step: Step,
 }
 
 /// Every run that has not ended, oldest first.
@@ -679,10 +694,147 @@ pub fn live_runs(cx: &App) -> Vec<LiveRun> {
                     uid: run.uid,
                     window: run.window,
                     waiting: run.waiting.clone(),
+                    step: run.progress.step,
                 })
                 .collect()
         })
         .unwrap_or_default()
+}
+
+/// Every run waiting for a person to approve its plan, oldest first, as
+/// `(repo, name, title)`: they have no session, so [`live_runs`] does not list
+/// them.
+pub fn awaiting_approval(cx: &App) -> Vec<(PathBuf, String, String, u64)> {
+    Shared::global(cx)
+        .unattended
+        .as_ref()
+        .map(|u| {
+            u.parked
+                .iter()
+                .filter(|p| matches_approval(p.phase))
+                .map(|p| {
+                    let c = &p.claimed;
+                    (
+                        c.repo.clone(),
+                        c.tracker.shown(&c.issue),
+                        c.issue.title_text().to_string(),
+                        c.issue.number,
+                    )
+                })
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+/// Whether a run in `phase` waits for its plan to be approved.
+fn matches_approval(phase: Phase) -> bool {
+    match phase {
+        Phase::AwaitingApproval { .. } => true,
+        Phase::Working | Phase::AwaitingChecks { .. } => false,
+    }
+}
+
+/// Every run that has not ended on an issue kept here, for the Issues panel:
+/// working, waiting on a card, on its checks or on approval.
+pub fn runs_by_issue(cx: &App) -> Vec<IssueRun> {
+    let Some(u) = Shared::global(cx).unattended.as_ref() else {
+        return Vec::new();
+    };
+    let live = u
+        .runs
+        .iter()
+        .map(|run| (&run.claimed, run.progress.step, false));
+    let parked = u
+        .parked
+        .iter()
+        .map(|p| (&p.claimed, p.progress.step, matches_approval(p.phase)));
+    // Only issues kept here: the Issues panel lists those, by the number
+    // onehand files them under, which a forge's issue does not share.
+    live.chain(parked)
+        .filter(|(c, ..)| match c.tracker {
+            Tracker::Local(_) | Tracker::Synced { .. } => true,
+            Tracker::Forge(_) => false,
+        })
+        .map(|(c, step, awaiting)| IssueRun {
+            repo: c.repo.clone(),
+            number: c.issue.number,
+            step,
+            awaiting,
+        })
+        .collect()
+}
+
+/// Approve the plan of the run on issue `number` in `repo`: it goes on to the
+/// change in a session of its own, carrying the plan.
+pub fn approve(repo: &Path, number: u64, cx: &mut App) {
+    unpark_plan(repo, number, Step::Implement, None, cx);
+}
+
+/// Send the plan of the run on issue `number` in `repo` back to be written
+/// again, with what a person asked to change in it.
+pub fn revise(repo: &Path, number: u64, note: String, cx: &mut App) {
+    unpark_plan(repo, number, Step::Plan, Some(note), cx);
+}
+
+/// Make the run on issue `number` waiting for approval due a session again, at
+/// `step`, and give it one if the slot is free.
+fn unpark_plan(repo: &Path, number: u64, step: Step, revise: Option<String>, cx: &mut App) {
+    let found = with(cx, |u| {
+        let p = u.parked.iter_mut().find(|p| {
+            p.claimed.repo == repo && p.claimed.issue.number == number && matches_approval(p.phase)
+        })?;
+        p.phase = Phase::Working;
+        p.progress.step = step;
+        p.progress.revise = revise;
+        Some((
+            p.claimed.file.clone(),
+            p.claimed.record(p.phase, &p.progress),
+            p.claimed.tracker.clone(),
+        ))
+    })
+    .flatten();
+    let Some((file, record, tracker)) = found else {
+        return;
+    };
+    save_record(file, record, cx);
+    let said = format!("Step: {}", step.label());
+    cx.background_executor()
+        .spawn(async move {
+            if let Err(why) = tracker.note_blocking(number, &said) {
+                eprintln!("onehand: could not note a step on issue #{number}: {why}");
+            }
+        })
+        .detach();
+    cx.refresh_windows();
+    resume_parked(cx);
+}
+
+/// End every run whose plan has waited for approval longer than the timeout.
+fn expire_approvals(cx: &mut App) {
+    let now = onehand_core::chat::store::now_secs();
+    let expired = with(cx, |u| {
+        let timeout = u.timeout;
+        let (gone, kept): (Vec<Parked>, Vec<Parked>) =
+            std::mem::take(&mut u.parked).into_iter().partition(|p| {
+                let Phase::AwaitingApproval { since } = p.phase else {
+                    return false;
+                };
+                Duration::from_secs(now.saturating_sub(since)) >= timeout
+            });
+        u.parked = kept;
+        (gone, timeout)
+    });
+    let Some((gone, timeout)) = expired else {
+        return;
+    };
+    for parked in gone {
+        turn::conclude(
+            parked.claimed,
+            Ending::Exhausted(Spent::Unapproved(timeout)),
+            None,
+            cx,
+        );
+    }
 }
 
 /// The session mode an issue's sessions start in: a run's, and one started on
@@ -728,6 +880,7 @@ fn with<R>(cx: &mut App, act: impl FnOnce(&mut Unattended) -> R) -> Option<R> {
 /// them as old as the run was long — and left an account signed in on screen after it
 /// had been signed out.
 fn tick(asked_from: Option<gpui::AnyWindowHandle>, cx: &mut App) {
+    expire_approvals(cx);
     let roots = opted_in_roots(cx);
     let (awaiting, timeout, repairs) = with(cx, |u| {
         let awaiting: Vec<Awaiting> = u

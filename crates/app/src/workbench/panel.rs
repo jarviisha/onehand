@@ -121,6 +121,15 @@ impl Workbench {
             Request::OpenConversation(session) => {
                 cx.emit(WorkbenchEvent::OpenConversation(session.to_string()))
             }
+            Request::ApprovePlan { root, number } => cx.emit(WorkbenchEvent::ApprovePlan {
+                root: root.to_path_buf(),
+                number: *number,
+            }),
+            Request::RevisePlan { root, number, note } => cx.emit(WorkbenchEvent::RevisePlan {
+                root: root.to_path_buf(),
+                number: *number,
+                note: note.to_string(),
+            }),
             // The caret is the panel's half of reaping: a view dropped while it
             // holds focus leaves the window pointing at an element no frame
             // contains, and GPUI resolves a key along the path down to the
@@ -293,6 +302,11 @@ impl Workbench {
         self.broadcast(&Request::LiveConversations(ids), cx);
     }
 
+    /// Tell the modes which unattended runs have not ended, and at what step.
+    pub fn issue_runs(&mut self, runs: &[onehand_plugin_host::IssueRun], cx: &mut Context<Self>) {
+        self.broadcast(&Request::IssueRuns(runs), cx);
+    }
+
     /// Tell the modes when the agent on screen started, or that none is.
     pub fn agent_started(&mut self, since: Option<std::time::Instant>, cx: &mut Context<Self>) {
         self.broadcast(&Request::AgentStarted(since), cx);
@@ -378,6 +392,17 @@ pub enum WorkbenchEvent {
     },
     /// Show the conversation the agent named `session`, live or saved.
     OpenConversation(String),
+    /// Approve the plan of the run on issue `number` of project `root`.
+    ApprovePlan {
+        root: std::path::PathBuf,
+        number: u64,
+    },
+    /// Send that plan back to be written again, with `note`.
+    RevisePlan {
+        root: std::path::PathBuf,
+        number: u64,
+        note: String,
+    },
 }
 
 impl EventEmitter<WorkbenchEvent> for Workbench {}

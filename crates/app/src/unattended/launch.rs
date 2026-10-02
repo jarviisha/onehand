@@ -364,9 +364,21 @@ pub fn start_picked(
             return Err("An unattended run is starting — one at a time.".to_string());
         }
         if u.busy().contains(&(repo.clone(), row.issue.number)) {
+            let phase = u
+                .parked
+                .iter()
+                .find(|p| p.claimed.repo == repo && p.claimed.issue.number == row.issue.number)
+                .map(|p| p.phase);
+            let doing = match phase {
+                Some(Phase::AwaitingChecks { .. }) => "it is waiting on its pull request's checks",
+                Some(Phase::AwaitingApproval { .. }) => {
+                    "its plan is waiting to be approved, in the Issues panel"
+                }
+                Some(Phase::Working) => "it is due a session once the slot is free",
+                None => "it is waiting on an answer to a question it asked",
+            };
             return Err(format!(
-                "A run on issue #{} has not ended yet: it is waiting on its pull request's \
-                 checks.",
+                "A run on issue #{} has not ended yet: {doing}.",
                 row.issue.number
             ));
         }
@@ -606,7 +618,8 @@ pub(super) fn start(claimed: Claimed, progress: Progress, cx: &mut App) -> Resul
             shell,
             owns_root,
             sent: 0,
-            turns: 0,
+            missed: 0,
+            plan_from: None,
             progress,
             waiting: None,
             budget,

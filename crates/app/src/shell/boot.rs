@@ -222,6 +222,20 @@ impl Shell {
         })
         .detach();
 
+        // Which step each run is at, for the Issues panel. Guarded for the
+        // reason the live conversations are: the global moves for far more
+        // than the runs.
+        cx.observe_global::<Shared>(|shell: &mut Self, cx| {
+            let runs = crate::unattended::runs_by_issue(cx);
+            if runs != shell.issue_runs {
+                shell
+                    .workbench
+                    .update(cx, |panel, cx| panel.issue_runs(&runs, cx));
+                shell.issue_runs = runs;
+            }
+        })
+        .detach();
+
         // The conversation header's terminal dot is a fact the docks have no
         // idea anyone outside them wants. Guarded the same way and for the same
         // reason as the rail's rows above -- more so for the terminal, which
@@ -280,6 +294,16 @@ impl Shell {
                         branch: Some(branch),
                     } => shell.work_issue_in_worktree(root, *number, prompt, branch, window, cx),
                     E::OpenConversation(session) => shell.open_conversation(session, window, cx),
+                    // Deferred: a run given its session reaches back into
+                    // this shell to add the session.
+                    E::ApprovePlan { root, number } => {
+                        let (root, number) = (root.clone(), *number);
+                        cx.defer(move |cx| crate::unattended::approve(&root, number, cx));
+                    }
+                    E::RevisePlan { root, number, note } => {
+                        let (root, number, note) = (root.clone(), *number, note.clone());
+                        cx.defer(move |cx| crate::unattended::revise(&root, number, note, cx));
+                    }
                     E::ToggleMaximize => {
                         shell.toggle_maximize_panel(FocusedPanel::Workbench, window, cx);
                     }
@@ -423,6 +447,7 @@ impl Shell {
             git_generation: 0,
             rail_sessions: Vec::new(),
             live_conversations: Vec::new(),
+            issue_runs: Vec::new(),
             rail_tab: crate::rail::RailTab::Projects,
             folds: HashMap::new(),
             last_panel: FocusedPanel::Chat,

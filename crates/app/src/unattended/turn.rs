@@ -1,11 +1,13 @@
 use super::launch::{Claimed, save, save_record};
 use super::{Parked, Run, WIND_DOWN, tick, with};
+use crate::state::Shared;
 use crate::chat::session::{ChatEvent, ChatSession};
 use gpui::{App, Entity, Task, WeakEntity};
-use onehand_core::chat::ChatItem;
+use onehand_core::chat::{ChatItem, TranscriptItemId};
 use onehand_core::chat::UserAsk;
 use onehand_core::unattended::{
-    self as core, Ending, Facts, Missing, Next, Phase, Spent, Start, Tracker, Verdict,
+    self as core, Ending, Facts, Gate, Missing, Next, Phase, Spent, Start, Step, Tracker,
+    Verdict,
 };
 use onehand_core::worktree;
 use std::time::{Duration, Instant};
@@ -115,31 +117,64 @@ pub(super) fn pending_ending(run: &Run) -> Option<Ending> {
         .or_else(|| run.waiting.clone().map(Ending::Asked))
 }
 
-/// A turn ended by itself: read what the branch holds, then carry on, wait
-/// for checks, or end.
+/// The longest plan read from a turn's answer. A plan is a few paragraphs; an
+/// answer the length of a book is cut rather than carried whole into the
+/// record and onto the issue.
+const PLAN_MAX: usize = 20_000;
+
+/// The whole of the last turn's answer, cut at [`PLAN_MAX`] characters.
+fn turn_answer(session: &Entity<ChatSession>, cx: &App) -> String {
+    let chat = &session.read(cx).chat;
+    let last = chat.items.len().saturating_sub(1);
+    let prose = chat.turn_prose(TranscriptItemId::Live(last));
+    match prose.char_indices().nth(PLAN_MAX) {
+        Some((cut, _)) => format!("{}\n\n(cut at {PLAN_MAX} characters)", &prose[..cut]),
+        None => prose,
+    }
+}
+
+/// A turn ended by itself: read what the branch holds, then judge the step
+/// the run is in.
 ///
 /// **The branch is the judge, not the answer.** A turn that only analysed, or
 /// that says it opened a pull request it never opened, is sent back to work
-/// with what is missing named; only commits pushed to an open pull request
-/// move the run on.
+/// with what is missing named. The one thing read from the answer is the
+/// plan, which is nowhere else.
 fn after_turn(uid: u64, session: &Entity<ChatSession>, cx: &mut App) {
     let shell = with(cx, |u| u.run_mut(uid).map(|run| run.shell.clone())).flatten();
     let tail = shell
         .and_then(|s| s.upgrade())
         .and_then(|s| s.read(cx).answer_tail(uid, cx));
-    let Some((dir, since, repo, branch, forge, turns, max)) = with(cx, |u| {
+    let Some((repo, step)) = with(cx, |u| {
+        u.run_mut(uid)
+            .map(|run| (run.claimed.repo.clone(), run.progress.step))
+    })
+    .flatten() else {
+        return;
+    };
+    let answer = match step {
+        Step::Plan => turn_answer(session, cx),
+        Step::Implement | Step::Verify | Step::OpenPr => String::new(),
+    };
+    let project = project_of(&repo, cx);
+    let Some((dir, since, branch, forge, turns_left, from)) = with(cx, |u| {
         let max = u.turns;
         let run = u.run_mut(uid)?;
-        run.turns += 1;
         let c = &run.claimed;
+        // A plan is measured from where its session found the worktree, so
+        // work an earlier attempt left there is not taken for the plan's.
+        let from = run.plan_from.clone().filter(|_| step == Step::Plan);
+        let since = match &from {
+            Some((head, _)) => head.clone(),
+            None => run.progress.since.clone().unwrap_or_else(|| c.base.clone()),
+        };
         Some((
             c.dir.clone(),
-            run.progress.since.clone().unwrap_or_else(|| c.base.clone()),
-            c.repo.clone(),
+            since,
             c.branch.clone(),
             c.forge,
-            run.turns,
-            max,
+            max.saturating_sub(run.missed + 1),
+            from,
         ))
     })
     .flatten() else {
@@ -152,31 +187,269 @@ fn after_turn(uid: u64, session: &Entity<ChatSession>, cx: &mut App) {
             .spawn(async move { Facts::read_blocking(&dir, &since, &repo, &branch, forge) })
             .await;
         cx.update(|cx| {
-            // Taken over, cancelled or gone while the branch was read: that
-            // has already decided how the run ends.
-            let going = with(cx, |u| u.run_mut(uid).map(|run| run.ending.is_none())).flatten();
-            let Some(session) = session.upgrade().filter(|_| going == Some(true)) else {
+            let Some(session) = still_going(uid, &session, cx) else {
                 return;
             };
             let next = match facts {
-                Ok(facts) => core::after_turn(&facts, forge.is_some(), max.saturating_sub(turns)),
+                Ok(mut facts) => {
+                    // ponytail: a worktree already dirty when the plan began
+                    // cannot tell the plan's edits from the earlier ones; a
+                    // content hash of the worktree would.
+                    facts.dirty &= !from.is_some_and(|(_, dirty)| dirty);
+                    let gate = Gate {
+                        forge: forge.is_some(),
+                        approve_plans: project.as_ref().is_some_and(|p| p.approve_plans),
+                        check: project.as_ref().is_some_and(|p| p.check.is_some()),
+                        turns_left,
+                        answer: &answer,
+                    };
+                    core::next(step, &facts, &gate)
+                }
                 Err(why) => {
                     eprintln!("onehand: could not read what a run left: {why}");
                     Next::Settle
                 }
             };
-            match next {
-                Next::CarryOn(missing) => carry_on(uid, &session, missing, tail, cx),
-                Next::AwaitChecks => park(uid, cx),
-                Next::Settle => settle(uid, Ending::TurnEnded { tail }, cx),
-                Next::Exhausted => settle(uid, Ending::Exhausted(Spent::Turns(max)), cx),
-            }
+            dispatch(uid, &session, next, tail, answer, cx);
         });
     })
     .detach();
 }
 
-/// Send the session back to work, saying what the branch still lacks.
+/// The run's session, if the run is still going: taken over, cancelled or
+/// gone while something was read has already decided how it ends.
+fn still_going(
+    uid: u64,
+    session: &WeakEntity<ChatSession>,
+    cx: &mut App,
+) -> Option<Entity<ChatSession>> {
+    let going = with(cx, |u| u.run_mut(uid).map(|run| run.ending.is_none())).flatten();
+    session.upgrade().filter(|_| going == Some(true))
+}
+
+/// The project `repo` as a window holding it sees it, for how its runs are
+/// gated: read at each turn, so a switch flipped mid-run counts from then.
+fn project_of(repo: &std::path::Path, cx: &App) -> Option<super::Project> {
+    Shared::global(cx)
+        .windows
+        .iter()
+        .filter_map(|w| w.shell.upgrade())
+        .find(|s| s.read(cx).holds_root(repo))
+        .map(|s| s.read(cx).project_for_runs(repo))
+}
+
+/// Do what a step's gate or the check decided. `answer` is the plan when the
+/// step was the plan.
+fn dispatch(
+    uid: u64,
+    session: &Entity<ChatSession>,
+    next: Next,
+    tail: Option<String>,
+    answer: String,
+    cx: &mut App,
+) {
+    let step = with(cx, |u| u.run_mut(uid).map(|run| run.progress.step)).flatten();
+    if step == Some(Step::Plan) && plan_passed(&next) {
+        keep_plan(uid, answer, next == Next::AwaitApproval, cx);
+    }
+    match next {
+        Next::CarryOn(missing) => carry_on(uid, session, missing, tail, cx),
+        Next::Advance(step) => advance(uid, session, step, None, tail, cx),
+        Next::RunCheck => run_check(uid, session, tail, cx),
+        Next::AwaitApproval => park(
+            uid,
+            Phase::AwaitingApproval {
+                since: onehand_core::chat::store::now_secs(),
+            },
+            "Plan written; waiting for it to be approved",
+            cx,
+        ),
+        Next::AwaitChecks => park(
+            uid,
+            Phase::AwaitingChecks {
+                since: onehand_core::chat::store::now_secs(),
+            },
+            "Pushed to its pull request; waiting for its checks",
+            cx,
+        ),
+        Next::Settle => settle(uid, Ending::TurnEnded { tail }, cx),
+        Next::Exhausted => {
+            let max = with(cx, |u| u.turns).unwrap_or_default();
+            let step = step.unwrap_or_default();
+            settle(uid, Ending::Exhausted(Spent::Turns(max, step)), cx)
+        }
+    }
+}
+
+/// Whether the plan step's gate let the plan through.
+fn plan_passed(next: &Next) -> bool {
+    match next {
+        Next::Advance(_) | Next::AwaitApproval => true,
+        Next::CarryOn(_)
+        | Next::RunCheck
+        | Next::AwaitChecks
+        | Next::Settle
+        | Next::Exhausted => false,
+    }
+}
+
+/// Keep the plan that passed, for a later session of the attempt, and post it
+/// on the issue whether or not it waits for approval: it is what the work is
+/// about to be.
+fn keep_plan(uid: u64, plan: String, awaiting: bool, cx: &mut App) {
+    let Some((tracker, repo, number)) = with(cx, |u| {
+        let run = u.run_mut(uid)?;
+        run.progress.plan = Some(plan.clone());
+        run.progress.revise = None;
+        let c = &run.claimed;
+        Some((c.tracker.clone(), c.repo.clone(), c.issue.number))
+    })
+    .flatten() else {
+        return;
+    };
+    let after = match awaiting {
+        true => "\n\nIt waits for approval in onehand's Issues panel before any code changes.",
+        false => "",
+    };
+    let said = format!("onehand's run wrote this plan:\n\n{plan}{after}");
+    cx.background_executor()
+        .spawn(async move { tell_issue(&tracker, &repo, number, &said) })
+        .detach();
+}
+
+/// Move the run on to `step` in the same session, saying so in its record, on
+/// the issue and in the transcript. `failed` is the check's output, for a
+/// session that starts by fixing it.
+fn advance(
+    uid: u64,
+    session: &Entity<ChatSession>,
+    step: Step,
+    failed: Option<&str>,
+    tail: Option<String>,
+    cx: &mut App,
+) {
+    let sent = with(cx, |u| u.run_mut(uid).map(|run| run.sent)).flatten();
+    if sent.is_none_or(|sent| prompted_by_someone_else(session, sent, cx)) {
+        settle(uid, Ending::TakenOver, cx);
+        return;
+    }
+    let Some((text, file, record)) = with(cx, |u| {
+        let run = u.run_mut(uid)?;
+        run.sent += 1;
+        run.progress.step = step;
+        let record = enter_step(run);
+        let c = &run.claimed;
+        let text = core::step_prompt(
+            step,
+            &c.issue,
+            &c.branch,
+            &c.tracker,
+            c.forge,
+            &run.progress,
+            failed,
+        );
+        Some((text, c.file.clone(), record))
+    })
+    .flatten() else {
+        return;
+    };
+    save_record(file, record, cx);
+    note_step(uid, session, step, cx);
+    if !session.update(cx, |session, cx| session.submit(&text, &[], cx)) {
+        settle(uid, Ending::TurnEnded { tail }, cx);
+    }
+}
+
+/// The run's record as it stands, with the time spent so far counted in.
+fn enter_step(run: &mut Run) -> onehand_core::unattended::Record {
+    run.progress.spent_secs = run.budget.spent(Instant::now()).as_secs();
+    run.claimed.record(Phase::Working, &run.progress)
+}
+
+/// Say that the run is now in `step`: in its transcript, and on an issue kept
+/// in onehand. A forge's issue is not told, because a comment per step is
+/// noise to whoever watches it there.
+fn note_step(uid: u64, session: &Entity<ChatSession>, step: Step, cx: &mut App) {
+    note(session, format!("Step: {}", step.label()), cx);
+    if let Some((tracker, number)) = with(cx, |u| {
+        u.run_mut(uid)
+            .map(|run| (run.claimed.tracker.clone(), run.claimed.issue.number))
+    })
+    .flatten()
+    {
+        let said = format!("Step: {}", step.label());
+        cx.background_executor()
+            .spawn(async move {
+                if let Err(why) = tracker.note_blocking(number, &said) {
+                    eprintln!("onehand: could not note a step on issue #{number}: {why}");
+                }
+            })
+            .detach();
+    }
+    // The rail and the Issues panel show the step.
+    cx.refresh_windows();
+}
+
+/// Run the project's check command on the run's worktree, then move on or
+/// hand what it said back to the session.
+fn run_check(uid: u64, session: &Entity<ChatSession>, tail: Option<String>, cx: &mut App) {
+    let Some((dir, repo, forge, file, record)) = with(cx, |u| {
+        let run = u.run_mut(uid)?;
+        run.progress.step = Step::Verify;
+        let record = enter_step(run);
+        let c = &run.claimed;
+        Some((
+            c.dir.clone(),
+            c.repo.clone(),
+            c.forge.is_some(),
+            c.file.clone(),
+            record,
+        ))
+    })
+    .flatten() else {
+        return;
+    };
+    save_record(file, record, cx);
+    note_step(uid, session, Step::Verify, cx);
+    let Some(command) = project_of(&repo, cx).and_then(|p| p.check) else {
+        // Switched off since the gate read it: nothing to run.
+        let next = core::after_check(Ok(()), 0, forge);
+        dispatch(uid, session, next, tail, String::new(), cx);
+        return;
+    };
+    note(session, format!("Running the check: {command}"), cx);
+    let weak = session.downgrade();
+    cx.spawn(async move |cx| {
+        let ran = cx
+            .background_executor()
+            .spawn(async move { core::verify_blocking(&dir, &command) })
+            .await;
+        cx.update(|cx| {
+            let Some(session) = still_going(uid, &weak, cx) else {
+                return;
+            };
+            let Some(turns_left) = with(cx, |u| {
+                let max = u.turns;
+                u.run_mut(uid)
+                    .map(|run| max.saturating_sub(run.missed + 1))
+            })
+            .flatten() else {
+                return;
+            };
+            let said = match &ran {
+                Ok(()) => "The check passed".to_string(),
+                Err(_) => "The check failed".to_string(),
+            };
+            note(&session, said, cx);
+            let next = core::after_check(ran, turns_left, forge);
+            dispatch(uid, &session, next, tail, String::new(), cx);
+        });
+    })
+    .detach();
+}
+
+/// Send the session back to work, saying what the branch still lacks. Costs
+/// the run one of its turns.
 fn carry_on(
     uid: u64,
     session: &Entity<ChatSession>,
@@ -190,15 +463,15 @@ fn carry_on(
         settle(uid, Ending::TakenOver, cx);
         return;
     }
-    let Some((text, turns, file, record)) = with(cx, |u| {
+    let Some((text, missed, file, record)) = with(cx, |u| {
         let run = u.run_mut(uid)?;
         // Counted before it goes, so the prompt is never mistaken for a
         // person's when its own events arrive.
         run.sent += 1;
-        run.progress.spent_secs = run.budget.spent(Instant::now()).as_secs();
-        let record = run.claimed.record(Phase::Working, &run.progress);
-        let text = core::carry_on(missing, run.claimed.forge);
-        Some((text, run.turns, run.claimed.file.clone(), record))
+        run.missed += 1;
+        let record = enter_step(run);
+        let text = core::carry_on(&missing, run.progress.step, run.claimed.forge);
+        Some((text, run.missed, run.claimed.file.clone(), record))
     })
     .flatten() else {
         return;
@@ -209,11 +482,14 @@ fn carry_on(
         Missing::NoCommits => "no commit",
         Missing::NoPullRequest => "no pull request",
         Missing::Unpushed => "commits not pushed",
+        Missing::NoPlan => "no plan",
+        Missing::PlanTouchedCode => "a plan that changed code",
+        Missing::CheckFailed(_) => "a failing check",
     };
     if session.update(cx, |session, cx| session.submit(&text, &[], cx)) {
         note(
             session,
-            format!("Turn {turns} left {lacking}; asked to carry on"),
+            format!("Turn left {lacking}; asked to carry on ({missed} missed)"),
             cx,
         );
     } else {
@@ -221,12 +497,12 @@ fn carry_on(
     }
 }
 
-/// Everything is pushed to an open pull request: close the session, give up
-/// the slot, and leave the checks to the tick.
+/// Close the session, give up the slot, and wait in `phase`: on the pull
+/// request's checks, which the tick polls, or on a person approving the plan.
 ///
 /// **Deferred**, like [`settle`], because this is reached from inside the
 /// session's own event.
-fn park(uid: u64, cx: &mut App) {
+fn park(uid: u64, phase: Phase, said: &'static str, cx: &mut App) {
     cx.defer(move |cx| {
         let Some(run) = with(cx, |u| {
             let at = u.runs.iter().position(|run| run.uid == uid)?;
@@ -246,16 +522,9 @@ fn park(uid: u64, cx: &mut App) {
             ..
         } = run;
         progress.spent_secs = budget.spent(Instant::now()).as_secs();
-        let phase = Phase::AwaitingChecks {
-            since: onehand_core::chat::store::now_secs(),
-        };
         save(&claimed, phase, &progress, cx);
         if let Some(session) = session.upgrade() {
-            note(
-                &session,
-                "Pushed to its pull request; waiting for its checks".to_string(),
-                cx,
-            );
+            note(&session, said.to_string(), cx);
         }
         take_down(&claimed, false, owns_root, window, &shell, cx);
         with(cx, |u| {
@@ -274,6 +543,10 @@ fn park(uid: u64, cx: &mut App) {
 /// Not before: setting the mode and submitting both need the request channel
 /// the handshake installs. The modes arrive ahead of that same event, so by
 /// the time the link is up the mode can be checked against what is offered.
+///
+/// A plan first notes where the worktree stands, so its gate can tell what
+/// the plan changed; a session resumed at the check runs the check first, and
+/// starts on what it reported or moves straight on.
 fn prompt(uid: u64, session: &Entity<ChatSession>, cx: &mut App) {
     if session.read(cx).chat.link != onehand_core::chat::Link::Connected {
         return;
@@ -285,19 +558,17 @@ fn prompt(uid: u64, session: &Entity<ChatSession>, cx: &mut App) {
         settle(uid, Ending::TakenOver, cx);
         return;
     }
-    let Some((mode, text)) = with(cx, |u| {
+    let Some((mode, step, dir, repo)) = with(cx, |u| {
         let mode = u.mode.clone();
         let run = u.run_mut(uid)?;
+        // Taken now, so the events that arrive while the worktree is read are
+        // not taken for the adapter coming up again.
         run.sent = 1;
         Some((
             mode,
-            core::prompt_for(
-                &run.claimed.issue,
-                &run.claimed.branch,
-                &run.claimed.tracker,
-                run.claimed.forge,
-                &run.progress.start,
-            ),
+            run.progress.step,
+            run.claimed.dir.clone(),
+            run.claimed.repo.clone(),
         ))
     })
     .flatten() else {
@@ -323,14 +594,104 @@ fn prompt(uid: u64, session: &Entity<ChatSession>, cx: &mut App) {
         settle(uid, Ending::Failed(why), cx);
         return;
     }
-    let sent = session.update(cx, |session, cx| {
-        session.chat.set_mode(&mode);
-        session.submit(&text, &[], cx)
-    });
-    if sent {
+    session.update(cx, |session, _| session.chat.set_mode(&mode));
+    // A check command removed since the run stopped leaves nothing to fail.
+    let check = match step {
+        Step::Verify => Some(project_of(&repo, cx).and_then(|p| p.check)),
+        Step::Plan | Step::Implement | Step::OpenPr => None,
+    };
+    if check.is_some() {
+        note(session, "Resuming at the check; running it first".to_string(), cx);
+    }
+    let weak = session.downgrade();
+    cx.spawn(async move |cx| {
+        let (from, ran) = cx
+            .background_executor()
+            .spawn(async move {
+                let from = (step == Step::Plan)
+                    .then(|| {
+                        Some((
+                            worktree::head_blocking(&dir).ok()?,
+                            worktree::dirty_blocking(&dir).ok()?,
+                        ))
+                    })
+                    .flatten();
+                let ran = check.map(|command| {
+                    command.map_or(Ok(()), |command| core::verify_blocking(&dir, &command))
+                });
+                (from, ran)
+            })
+            .await;
+        cx.update(|cx| {
+            let Some(session) = still_going(uid, &weak, cx) else {
+                return;
+            };
+            if prompted_by_someone_else(&session, 0, cx) {
+                settle(uid, Ending::TakenOver, cx);
+                return;
+            }
+            let forge = with(cx, |u| {
+                let run = u.run_mut(uid)?;
+                run.plan_from = from;
+                Some(run.claimed.forge.is_some())
+            })
+            .flatten()
+            .unwrap_or_default();
+            let (step, failed) = match ran {
+                None => (step, None),
+                Some(Err(tail)) => (Step::Verify, Some(tail)),
+                Some(Ok(())) if forge => (Step::OpenPr, None),
+                // Nothing left to do: the change is committed and checked,
+                // and with no forge the branch is the result.
+                Some(Ok(())) => {
+                    settle(uid, Ending::TurnEnded { tail: None }, cx);
+                    return;
+                }
+            };
+            first_prompt(uid, &session, step, failed.as_deref(), &mode, cx);
+        });
+    })
+    .detach();
+}
+
+/// Submit the session's first prompt, for `step`.
+fn first_prompt(
+    uid: u64,
+    session: &Entity<ChatSession>,
+    step: Step,
+    failed: Option<&str>,
+    mode: &str,
+    cx: &mut App,
+) {
+    let Some((text, moved)) = with(cx, |u| {
+        let run = u.run_mut(uid)?;
+        let moved = (run.progress.step != step).then(|| {
+            run.progress.step = step;
+            enter_step(run)
+        });
+        let c = &run.claimed;
+        let text = core::step_prompt(
+            step,
+            &c.issue,
+            &c.branch,
+            &c.tracker,
+            c.forge,
+            &run.progress,
+            failed,
+        );
+        Some((text, moved.map(|record| (c.file.clone(), record))))
+    })
+    .flatten() else {
+        return;
+    };
+    if let Some((file, record)) = moved {
+        save_record(file, record, cx);
+        note_step(uid, session, step, cx);
+    }
+    if session.update(cx, |session, cx| session.submit(&text, &[], cx)) {
         note(
             session,
-            format!("Mode {mode} set; issue sent as the prompt"),
+            format!("Mode {mode} set; issue sent as the prompt, at its {} step", step.label()),
             cx,
         );
         name_session(uid, session, cx);

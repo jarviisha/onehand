@@ -537,9 +537,14 @@ pub fn step_prompt(
                 Some(_) => "Do not push: the pull request is the step after this one.",
                 None => "Do not push: this project has no forge, and the branch is the result.",
             };
+            // A repair has no plan: what to do is in the failing checks.
+            let what = match progress.plan {
+                Some(_) => "Follow the plan",
+                None => "Make the change",
+            };
             format!(
-                "This step is the change. Follow the plan, run the repository's checks, and \
-                 commit your work on this branch. {push}{plan}"
+                "This step is the change. {what}, run the repository's checks, and commit \
+                 your work on this branch. {push}{plan}"
             )
         }
         Step::Verify => format!(

@@ -11,6 +11,7 @@
 
 use gpui::{AnyView, App, Pixels, Window};
 use onehand_core::gitstat::GitStatus;
+use onehand_core::unattended::Step;
 use onehand_plugin_api::WorkbenchModeSpec;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -177,6 +178,32 @@ pub enum Request<'a> {
     /// session holding it, or the saved one reopened on the project it ran
     /// in. Only ever travels **upward**.
     OpenConversation(&'a str),
+    /// The unattended runs that have not ended, on issues kept in onehand.
+    /// Broadcast whenever they change, so a mode listing issues can say which
+    /// step each run is at and which waits for its plan to be approved.
+    IssueRuns(&'a [IssueRun]),
+    /// Approve the plan of the run on issue `number` of project `root`, so it
+    /// goes on to the change. Only ever travels **upward**.
+    ApprovePlan { root: &'a Path, number: u64 },
+    /// Send that plan back to be written again, with what to change in it.
+    /// Only ever travels **upward**.
+    RevisePlan {
+        root: &'a Path,
+        number: u64,
+        note: &'a str,
+    },
+}
+
+/// An unattended run that has not ended, on an issue kept in onehand.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct IssueRun {
+    /// The project the issue was found in.
+    pub repo: PathBuf,
+    pub number: u64,
+    /// The step the run is at.
+    pub step: Step,
+    /// It waits for a person to approve its plan.
+    pub awaiting: bool,
 }
 
 /// How a mode reaches back into the panel.

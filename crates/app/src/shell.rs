@@ -256,6 +256,9 @@ pub struct Shell {
     /// The conversations with a live session here, as the Workbench was last
     /// told them.
     live_conversations: Vec<String>,
+    /// The unattended runs on issues kept here, as the Workbench was last told
+    /// them.
+    issue_runs: Vec<crate::unattended::IssueRun>,
     /// Which of the rail's two lists is showing.
     ///
     /// Not persisted: it is where the user is looking right now, and a launch

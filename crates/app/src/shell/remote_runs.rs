@@ -120,12 +120,15 @@ impl Shell {
             .collect()
     }
 
-    /// `root` as unattended runs see it: the project, and the file its own
-    /// issues are kept in, if this workspace keeps any.
+    /// `root` as unattended runs see it: the project, the file its own issues
+    /// are kept in if this workspace keeps any, and how its runs are gated.
     pub fn project_for_runs(&self, root: &Path) -> crate::unattended::Project {
+        let held = self.window.workspace.roots.iter().find(|r| r.path == root);
         crate::unattended::Project {
             root: root.to_path_buf(),
             issues: self.issues_file(root),
+            approve_plans: held.is_some_and(|r| r.approve_plans),
+            check: held.and_then(|r| r.check.clone()),
         }
     }
 
