@@ -2,8 +2,8 @@ use super::{ChatPane, ChatPaneEvent, ProjectAction, ProjectFacts, rel_time};
 use crate::chat::conversation::{Conversation, SessionPhase};
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
-    App, AppContext as _, Context, Entity, IntoElement, ParentElement, Rems, SharedString, Styled,
-    Window, div, rems,
+    App, AppContext as _, Context, Entity, InteractiveElement as _, IntoElement, ParentElement,
+    Rems, SharedString, StatefulInteractiveElement as _, Styled, Window, div, rems,
 };
 use gpui_component::WindowExt as _;
 use gpui_component::button::ButtonVariants as _;
@@ -160,8 +160,18 @@ impl ChatPane {
                         .flex_none()
                         .ml_auto()
                         .gap_1()
-                        .when(shown.awaiting, |row| {
+                        .when_some(shown.review, |row, (of, answer)| {
                             row.child(
+                                crate::controls::action("pipeline-review")
+                                    .xsmall()
+                                    .ghost()
+                                    .label("Review…")
+                                    .tooltip("Read what is waiting for approval")
+                                    .on_click(cx.listener(move |_, _, window, cx| {
+                                        open_review(uid, of.clone(), answer.clone(), window, cx)
+                                    })),
+                            )
+                            .child(
                                 crate::controls::action("pipeline-revise")
                                     .xsmall()
                                     .ghost()
@@ -920,6 +930,72 @@ struct HistoryRow {
     open: bool,
     agent: SharedString,
     dir: PathBuf,
+}
+
+/// Put up what session `uid`'s run waits on approval for: `answer`, the
+/// answer step `of` kept, as the markdown it was written in.
+///
+/// Read from the run rather than the transcript: a run resumed in a new
+/// session has no transcript holding it, and its approval would otherwise be
+/// asked for blind.
+fn open_review(
+    uid: u64,
+    of: SharedString,
+    answer: SharedString,
+    window: &mut Window,
+    cx: &mut Context<ChatPane>,
+) {
+    let pane = cx.entity().downgrade();
+    window.open_dialog(cx, move |dialog, _, cx| {
+        let pane = pane.clone();
+        let body = match answer.trim().is_empty() {
+            true => div()
+                .text_color(cx.theme().muted_foreground)
+                .child("The step kept no answer.")
+                .into_any_element(),
+            false => {
+                gpui_component::text::TextView::markdown("pipeline-review-body", answer.clone())
+                    .selectable(true)
+                    .into_any_element()
+            }
+        };
+        dialog
+            .title(format!("{of}: waiting for approval"))
+            .child(
+                div()
+                    .id("pipeline-review-scroll")
+                    .max_h(rems(28.))
+                    .overflow_y_scroll()
+                    .child(body),
+            )
+            .footer(
+                div()
+                    .h_flex()
+                    .gap_2()
+                    .w_full()
+                    .justify_end()
+                    .child(
+                        crate::controls::action("pipeline-review-close")
+                            .small()
+                            .ghost()
+                            .label("Close")
+                            .on_click(|_, window, cx| window.close_dialog(cx)),
+                    )
+                    .child(
+                        crate::controls::action("pipeline-review-continue")
+                            .small()
+                            .primary()
+                            .icon(Icon::new(IconName::Check))
+                            .label("Continue")
+                            .on_click(move |_, window: &mut Window, cx: &mut App| {
+                                window.close_dialog(cx);
+                                let _ = pane.update(cx, |_, cx| {
+                                    cx.emit(ChatPaneEvent::ContinuePipeline(uid))
+                                });
+                            }),
+                    ),
+            )
+    });
 }
 
 /// Put up the window that sends what session `uid`'s run waits on back to

@@ -229,6 +229,20 @@ impl PipelineRun {
         self.awaiting == Await::Approval
     }
 
+    /// What a person is asked to approve, while they are: the step that
+    /// answered, and the answer it kept. Kept in the run, not read off a
+    /// transcript, so a run resumed in a new session still shows it.
+    pub fn under_review(&self) -> Option<(&StepSpec, &str)> {
+        if !self.awaiting_approval() {
+            return None;
+        }
+        let Some(StepKind::Approval { of }) = self.current().map(|step| &step.kind) else {
+            return None;
+        };
+        let step = self.template.steps.iter().find(|step| &step.id == of)?;
+        Some((step, self.outputs.get(of).map_or("", String::as_str)))
+    }
+
     /// A turn the run sent is what it waits for.
     pub fn awaiting_turn(&self) -> bool {
         self.awaiting == Await::Turn

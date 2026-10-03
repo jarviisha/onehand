@@ -72,23 +72,29 @@ const COMMAND_LIMIT: Duration = Duration::from_secs(15 * 60);
 /// build or a test run says what went wrong.
 const COMMAND_LINES: usize = 200;
 
-/// Run `command` in `dir`. `Err` holds how its output ended, or why it did
-/// not finish. Blocking.
+/// Run `command` in `dir`, stopping it and all it started once `cancel` is
+/// set. `Err` holds how its output ended, or why it did not finish.
+/// Blocking: it returns only once nothing of the command is left running.
 ///
 /// Through `sh`, because a check is often a chain (`make fmt && cargo test`),
 /// with stderr folded into stdout first so the two stay in the order they
 /// were written.
-pub fn run_command_blocking(dir: &Path, command: &str) -> Result<(), String> {
+pub fn run_command_blocking(
+    dir: &Path,
+    command: &str,
+    cancel: &std::sync::atomic::AtomicBool,
+) -> Result<(), String> {
     let mut cmd = std::process::Command::new("sh");
     cmd.arg("-c")
         .arg(format!("exec 2>&1\n{command}"))
         .current_dir(dir);
-    let out = crate::process::output_within(&mut cmd, COMMAND_LIMIT).map_err(|why| match why {
-        crate::process::Failure::TimedOut(limit) => {
-            format!("timed out after {}m", limit.as_secs() / 60)
-        }
-        why => format!("the command's shell {why}"),
-    })?;
+    let out =
+        crate::process::output_until(&mut cmd, COMMAND_LIMIT, cancel).map_err(|why| match why {
+            crate::process::Failure::TimedOut(limit) => {
+                format!("timed out after {}m", limit.as_secs() / 60)
+            }
+            why => format!("the command's shell {why}"),
+        })?;
     if out.status.success() {
         return Ok(());
     }

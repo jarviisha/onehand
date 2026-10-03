@@ -151,8 +151,9 @@ pub(crate) struct Shown {
     pub(crate) name: SharedString,
     pub(crate) steps: Vec<SharedString>,
     pub(crate) at: usize,
-    /// It waits for *Continue* or *Revise…*.
-    pub(crate) awaiting: bool,
+    /// What it waits on *Continue* or *Revise…* for: the label of the step
+    /// that answered, and its answer.
+    pub(crate) review: Option<(SharedString, SharedString)>,
 }
 
 /// Where the run on session `uid` stands, if one drives it.
@@ -167,7 +168,9 @@ pub(crate) fn shown(uid: u64, cx: &App) -> Option<Shown> {
             .map(|step| step.label.clone().into())
             .collect(),
         at: run.step,
-        awaiting: run.awaiting_approval(),
+        review: run
+            .under_review()
+            .map(|(step, answer)| (step.label.clone().into(), answer.to_string().into())),
     })
 }
 

@@ -60,7 +60,9 @@ on_fail = "implement"
 
 onehand ships two, read-only: *Work in checkout* (Plan → Approve → Implement → Verify, in the
 checkout, left uncommitted) and *Implement on a branch* (Plan → Implement → Verify, on a new
-`pipeline/<title>` branch in a worktree beside the project, committed). The person's own are in
+`pipeline/<title>` branch in a worktree beside the project's repository, committed; a project that
+is a folder inside its repository works in the same folder of the new checkout, as a worktree made
+from the project menu does). The person's own are in
 `<config_dir>/onehand/pipelines/<slug>.toml`, made by duplicating a shipped one or from *New
 template* in Settings ▸ Pipelines.
 
@@ -129,6 +131,12 @@ subscribes to the session and maps its events onto the engine:
 | *Stop* on the strip | the turn is cancelled, then `stopped(ByPerson)` |
 | The timeout runs out | the turn is cancelled, then `stopped(TimedOut)` |
 
+**Every one of these goes through one `end`, and a step's command is stopped first.** While a
+command runs, the run holds the flag that calls it off (`process::output_until`): ending sets it,
+the command's whole process group is killed, and the run is said to be stopped only once the
+command has exited, so a stopped run never leaves a build or a test writing to the work. The first
+reason given is the one the run ends with.
+
 A prompt asked for before the adapter is up waits for the link. The clock is
 `unattended::Budget`: it pauses while a card or an approval waits on a person, and its timer looks
 again when it fires rather than being re-armed at every pause.
@@ -145,7 +153,13 @@ last save or its file's removal is not lost when the process exits with its last
 counted from where the transcript stood when the prompt went), so a turn that said nothing answers
 nothing rather than passing an `answered` gate with the turn before it. The work a checkout holds
 uncommitted is fingerprinted with FNV-1a, never std's hasher, because the fingerprint is kept in
-the run's file and compared after a restart, possibly by a build made with another Rust.
+the run's file and compared after a restart, possibly by a build made with another Rust. An
+untracked file counts by its contents, not only its name: the step after a failed check often fixes
+the very file the change before it created.
+
+**What waits for approval is shown from the run**, not the transcript (`PipelineRun::under_review`):
+the strip's *Review…* opens the kept answer, so a run resumed in a new session is not approved
+blind.
 
 ## Starting and resuming
 

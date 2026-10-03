@@ -17,6 +17,8 @@ use onehand_core::pipeline::{
 use onehand_core::unattended::Budget;
 use onehand_core::worktree;
 use std::path::PathBuf;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 
 /// A run under way on one session.
@@ -41,6 +43,10 @@ pub(super) struct Driven {
     spent_before: u64,
     /// The agent parked a card nobody has answered yet.
     card: bool,
+    /// Set to call off the step's command, while one is running.
+    command: Option<Arc<AtomicBool>>,
+    /// How the run ends once its called-off command has exited.
+    stopping: Option<Stop>,
     _watch: Subscription,
     _answered: Subscription,
     _release: Subscription,
@@ -91,7 +97,7 @@ pub(crate) fn start(
     // The session went with the run still going: its window or the session
     // was closed. The run is kept to be resumed, not ended.
     let release = cx.observe_release(session, move |_, cx| {
-        cx.defer(move |cx| advance(uid, cx, |run| run.stopped(Stop::Closed)));
+        cx.defer(move |cx| end(uid, Stop::Closed, cx));
     });
     let limit = onehand_core::unattended::parse_every(&run.template.timeout)
         .unwrap_or(TIMEOUT_FALLBACK)
@@ -107,6 +113,8 @@ pub(crate) fn start(
         noted: None,
         budget: Budget::start(limit, Instant::now()),
         card: false,
+        command: None,
+        stopping: None,
         _watch: watch,
         _answered: answered,
         _release: release,
@@ -131,7 +139,7 @@ pub(crate) fn revise(uid: u64, note: String, cx: &mut App) {
 /// A person pressed Stop: the turn is cancelled and the run ends.
 pub(crate) fn stop(uid: u64, cx: &mut App) {
     cancel_turn(uid, cx);
-    advance(uid, cx, |run| run.stopped(Stop::ByPerson));
+    end(uid, Stop::ByPerson, cx);
 }
 
 /// Read the run on session `uid`. Apart from [`with`] because every event the
@@ -146,6 +154,23 @@ fn with<R>(uid: u64, cx: &mut App, act: impl FnOnce(&mut Driven) -> R) -> Option
         return None;
     }
     cx.update_global::<Pipelines, _>(|p, _| p.runs.get_mut(&uid).map(act))
+}
+
+/// End the run as `stop` — at once, or, while the step's command runs, once
+/// that command and everything it started have been stopped and have exited.
+/// A run said to be stopped never leaves a build or a test writing to the
+/// work behind it. The first reason given is the one the run ends with.
+fn end(uid: u64, stop: Stop, cx: &mut App) {
+    let running = with(uid, cx, |d| {
+        let cancel = d.command.as_ref()?;
+        cancel.store(true, Ordering::SeqCst);
+        d.stopping.get_or_insert(stop);
+        Some(())
+    })
+    .flatten();
+    if running.is_none() {
+        advance(uid, cx, move |run| run.stopped(stop));
+    }
 }
 
 /// Report to the run's engine, then do what it says.
@@ -170,14 +195,12 @@ fn on_event(uid: u64, session: &Entity<ChatSession>, event: &ChatEvent, cx: &mut
     match event {
         ChatEvent::Appended => {
             if session.read(cx).chat.prompted_beyond(sent) {
-                advance(uid, cx, |run| run.stopped(Stop::TakenOver));
+                end(uid, Stop::TakenOver, cx);
             }
         }
         // A Stop pressed in the composer, or from the remote bridge: the
         // person's word that this is not to go on.
-        ChatEvent::TurnEnded if session.read(cx).chat.cancelled => {
-            advance(uid, cx, |run| run.stopped(Stop::ByPerson))
-        }
+        ChatEvent::TurnEnded if session.read(cx).chat.cancelled => end(uid, Stop::ByPerson, cx),
         ChatEvent::TurnEnded if awaiting_turn => after_turn(uid, session, cx),
         ChatEvent::TurnEnded => {}
         // A person answers the card; the clock waits for them.
@@ -187,7 +210,7 @@ fn on_event(uid: u64, session: &Entity<ChatSession>, event: &ChatEvent, cx: &mut
                 d.budget.pause(Instant::now());
             });
         }
-        ChatEvent::Disconnected => advance(uid, cx, |run| run.stopped(Stop::LinkLost)),
+        ChatEvent::Disconnected => end(uid, Stop::LinkLost, cx),
         ChatEvent::OpenFile(_) => {}
     }
 }
@@ -306,7 +329,7 @@ fn send(uid: u64, session: &Entity<ChatSession>, text: String, cx: &mut App) {
         .chat
         .prompted_beyond(read(uid, cx, |d| d.sent).unwrap_or(0))
     {
-        advance(uid, cx, |run| run.stopped(Stop::TakenOver));
+        end(uid, Stop::TakenOver, cx);
         return;
     }
     let answer_from = session.read(cx).chat.items.len();
@@ -364,7 +387,11 @@ fn turn_answer(session: &Entity<ChatSession>, from: usize, cx: &App) -> String {
 /// Run the step's command in the work, then report how it went with the
 /// commit it ran on.
 fn run_command(uid: u64, session: &Entity<ChatSession>, command: String, cx: &mut App) {
-    let Some(dir) = read(uid, cx, |d| d.run.setup.dir.clone()) else {
+    let cancel = Arc::new(AtomicBool::new(false));
+    let Some(dir) = with(uid, cx, |d| {
+        d.command = Some(cancel.clone());
+        d.run.setup.dir.clone()
+    }) else {
         return;
     };
     note(session, format!("Running: {command}"), cx);
@@ -373,11 +400,20 @@ fn run_command(uid: u64, session: &Entity<ChatSession>, command: String, cx: &mu
         let ran = cx
             .background_executor()
             .spawn(async move {
-                run_command_blocking(&dir, &command)?;
+                run_command_blocking(&dir, &command, &cancel)?;
                 worktree::head_blocking(&dir)
             })
             .await;
         cx.update(|cx| {
+            // Called off: the command has exited by now, so the run can end.
+            let stopping = with(uid, cx, |d| {
+                d.command = None;
+                d.stopping.take()
+            })
+            .flatten();
+            if let Some(stop) = stopping {
+                return advance(uid, cx, move |run| run.stopped(stop));
+            }
             if let Some(session) = weak.upgrade().filter(|_| read(uid, cx, |_| ()).is_some()) {
                 let said = match &ran {
                     Ok(_) => "The command passed",
@@ -402,7 +438,7 @@ fn clock(uid: u64, left: Duration, cx: &mut App) -> Task<()> {
             };
             if left.is_zero() {
                 cancel_turn(uid, cx);
-                advance(uid, cx, |run| run.stopped(Stop::TimedOut));
+                end(uid, Stop::TimedOut, cx);
             } else {
                 let next = clock(uid, left, cx);
                 with(uid, cx, |d| d._clock = next);

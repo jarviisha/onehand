@@ -124,13 +124,22 @@ impl Shell {
                     let made = cx
                         .background_executor()
                         .spawn(async move {
+                            // Git checks out repositories, not folders: the
+                            // worktree is of the repository the project sits
+                            // in, put beside it, and the run works in the same
+                            // folder of it the project is.
+                            let top = worktree::repo_top_blocking(&root).ok_or_else(|| {
+                                format!("{} is not in a git repository", root.display())
+                            })?;
                             let branch = onehand_core::unattended::free_branch_blocking(
-                                &root,
+                                &top,
                                 &core::branch_for(&title),
                             );
-                            let dir = worktree::worktree_dir(&root, &branch);
-                            worktree::branch_off_blocking(&root, &branch, &dir, "HEAD")
-                                .map(|made| (made, branch))
+                            let dir = worktree::worktree_dir(&top, &branch);
+                            let made = worktree::branch_off_blocking(&top, &branch, &dir, "HEAD")?;
+                            let subtree = worktree::subtree_in(&made, &top, &root);
+                            let dir = if subtree.is_dir() { subtree } else { made };
+                            Ok::<_, String>((dir, branch))
                         })
                         .await;
                     let _ = shell.update_in(cx, |shell: &mut Self, window, cx| match made {

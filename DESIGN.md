@@ -122,8 +122,12 @@ One window hosts exactly one workspace. The frame is a navigation **rail** plus 
   a pipeline run drives the session on screen. Left to right: the template's
   name muted, then every step's label in order, a chevron between each, the
   steps behind it marked with a muted check, the one it is at in full ink and
-  weight; at the far end *Stop*, always, and before it *Revise…* (ghost) and
-  *Continue* (primary, with a check) while the run waits for approval. The
+  weight; at the far end *Stop*, always, and before it *Review…* and *Revise…*
+  (ghost) and *Continue* (primary, with a check) while the run waits for
+  approval. *Review…* opens a modal with the answer being approved, rendered as
+  markdown and scrolling, with *Close* and *Continue*: the answer is read from
+  the run, not the transcript, so a run resumed in a new session is never
+  approved blind. The
   transcript says each step as a notice when it starts, but a line scrolled past
   does not answer "how far along is it", and a template's steps are few enough
   to read in one glance. Approving happens here, in the run's own session,

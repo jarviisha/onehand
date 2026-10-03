@@ -336,9 +336,14 @@ pub(crate) fn dirty_blocking(dir: &Path) -> Result<bool, String> {
 /// A fingerprint of the work in the checkout at `dir` that no commit holds:
 /// equal before and after a turn exactly when the turn left it as it was, so
 /// a checkout that was already dirty is measured by what the turn changed.
-// ponytail: an edit inside a file that was already untracked is not seen,
-// since only its name is in the status; hash those files' contents if that
-// ever lets a turn through.
+///
+/// **An untracked file counts by its contents**, not only its name, which is
+/// all the status and the diff carry of it: the step after a failed check
+/// often fixes the very file the change before it created, and by name alone
+/// that fix reads as no change at all.
+// ponytail: every untracked file is read whole at each measure; a checkout
+// with a large tree nobody ignores pays for it. Hash by size and mtime first
+// if that is ever felt.
 ///
 /// **FNV-1a, not std's hasher**: the digest is kept in a run's file and
 /// compared after a restart, and std makes no promise that its hasher gives
@@ -357,6 +362,25 @@ pub(crate) fn work_digest_blocking(dir: &Path) -> Result<String, String> {
         // The length first, so where one output ends is part of the digest.
         work.extend_from_slice(&(out.stdout.len() as u64).to_le_bytes());
         work.extend_from_slice(&out.stdout);
+    }
+    let untracked = output_within(
+        git(dir).args(["ls-files", "--others", "--exclude-standard", "-z"]),
+        LOCAL_LIMIT,
+    )
+    .map_err(|err| format!("git {err}"))?;
+    if !untracked.status.success() {
+        return Err(git_message(&untracked.stderr));
+    }
+    for name in untracked
+        .stdout
+        .split(|b| *b == 0)
+        .filter(|n| !n.is_empty())
+    {
+        // A file gone since it was listed reads as empty; the next measure
+        // sees it gone from the status.
+        let contents =
+            std::fs::read(dir.join(String::from_utf8_lossy(name).as_ref())).unwrap_or_default();
+        work.extend_from_slice(&crate::chat::store::fnv1a(&contents).to_le_bytes());
     }
     Ok(format!("{:016x}", crate::chat::store::fnv1a(&work)))
 }
@@ -740,7 +764,15 @@ mod tests {
         std::fs::write(repo.join("a.txt"), "x").unwrap();
         assert_eq!(clean, work_digest_blocking(&repo).unwrap());
         std::fs::write(repo.join("new.txt"), "n").unwrap();
-        assert_ne!(clean, work_digest_blocking(&repo).unwrap(), "a new file");
+        let created = work_digest_blocking(&repo).unwrap();
+        assert_ne!(clean, created, "a new file");
+        // The fix a failed check asks for, made to the file the change created.
+        std::fs::write(repo.join("new.txt"), "fixed").unwrap();
+        assert_ne!(
+            created,
+            work_digest_blocking(&repo).unwrap(),
+            "an edit inside an untracked file"
+        );
 
         let _ = std::fs::remove_dir_all(&repo);
     }

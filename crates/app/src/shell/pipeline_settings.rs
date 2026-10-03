@@ -135,6 +135,9 @@ impl Shell {
             return;
         }
         let file = draft.file.clone();
+        // Which form this save is for: each form is made anew, with inputs of
+        // its own, so its name input says which one it is.
+        let form = draft.name.entity_id();
         let same = |entry: &crate::pipeline::Entry| file.is_some() && entry.file == file;
         let clash = crate::pipeline::templates(cx)
             .iter()
@@ -156,7 +159,14 @@ impl Shell {
             let _ = shell.update_in(cx, |shell: &mut Self, window, cx| {
                 match saved {
                     Ok(path) => {
-                        if let Some(draft) = shell.pipeline_draft.as_mut() {
+                        // Only the form that was saved learns its file: one
+                        // opened on another template meanwhile would otherwise
+                        // take this file, and its next save overwrite it.
+                        if let Some(draft) = shell
+                            .pipeline_draft
+                            .as_mut()
+                            .filter(|d| d.name.entity_id() == form)
+                        {
                             draft.file = Some(path);
                             draft.original = template;
                         }

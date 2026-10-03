@@ -309,6 +309,11 @@ fn resume_keeps_where_the_step_started() {
     let mut waiting: PipelineRun =
         serde_json::from_str(&serde_json::to_string(&at_approval()).unwrap()).unwrap();
     assert_eq!(waiting.resume(), Action::AwaitApproval);
+    // What it waits on comes back with it, for the new session to show.
+    let (step, answer) = waiting.under_review().unwrap();
+    assert_eq!((step.id.as_str(), answer), ("plan", "The plan."));
+    waiting.approved();
+    assert!(waiting.under_review().is_none());
     let (fresh, _) = PipelineRun::begin("1".into(), checkout(), brief(), setup(None));
     let mut fresh: PipelineRun =
         serde_json::from_str(&serde_json::to_string(&fresh).unwrap()).unwrap();
