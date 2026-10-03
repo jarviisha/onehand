@@ -189,9 +189,12 @@ args = ["/absolute/path/to/onehand-gpui/crates/core/examples/mock_pipeline_agent
 ```
 
 It reads what a step wants from the gate rules onehand appends to the prompt, not from the
-template's wording, so an edited template still drives it. Its orders come from the brief: `miss`
-does nothing every turn, `fail-check` makes the first change fail the check and the next one pass,
-and `fast` answers at once instead of over about six seconds.
+template's wording, so an edited template still drives it. Its orders are whole words in the
+brief's title: `miss` does nothing every turn, `fail-check` makes the session's first change fail
+the check and every later one pass, and `fast` answers at once instead of over about six seconds.
+It walks the cases below; it never edits during a plan or commits in a checkout, so the
+`code_unchanged` and `uncommitted` carry-ons are reached only by a person changing the work
+mid-step.
 
 A run takes the first agent in the list, so put *Mock pipeline* first. Set up a scratch repository
 with one commit, open it as a project, and set the project's check command (Settings ▸ Pipelines) to:
@@ -207,7 +210,7 @@ change (`git checkout . && git clean -fd`).
 |---|---|---|
 | Done | Brief `go`. *Continue* at the approval | Plan, Approve, Implement, Verify; *Pipeline done*. `mock-pipeline.txt` is left uncommitted. On *Implement on a branch*, a new branch holds one commit |
 | Stop while a command runs | Brief `go fast`, *Continue*, then *Stop* during Verify's `sleep 5` | The run ends *stopped by hand* only once the command has exited: no `sleep` is left (`pgrep -f 'sleep 5'`) |
-| Exhausted | Brief `miss` | The template allows three misses, so the plan misses `answered` four times; the fourth ends the run with *too many misses at the plan step*. The run's file is removed |
+| Exhausted | Brief `miss` | The template allows three misses, so the plan misses `answered` four times; the fourth ends the run with *too many misses at the Plan step*. The run's file is removed |
 | A failed command goes back | Brief `fail-check`, *Continue* | Verify fails, Implement runs again with the check's output in its prompt, Verify passes; *Pipeline done* |
 | Approve and Revise | Brief `go`. *Revise…* with a note, then *Continue* | The plan runs again, its prompt carrying the note and the earlier answer; no miss is counted. *Review…* shows the kept answer |
 | A restart mid-step, then Resume | Brief `go`, *Continue*, quit while Implement's turn is still answering | At the next start the project page lists the run. *Resume* starts a new session at Implement, with its mark kept, and the run carries on to *Pipeline done* |

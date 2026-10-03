@@ -1,6 +1,6 @@
-// A mock ACP agent that plays its part in a pipeline run, so every path the
-// driver can take is walked in seconds, without an API key, against a real
-// checkout.
+// A mock ACP agent that plays its part in a pipeline run, so the paths a run
+// takes when an agent does its work, misses a gate or breaks the check are
+// walked in seconds, without an API key, against a real checkout.
 //
 //   [[agents]]
 //   name = "Mock pipeline"
@@ -8,18 +8,23 @@
 //   args = ["/absolute/path/to/onehand-gpui/crates/core/examples/mock_pipeline_agent.js"]
 //
 // **It reads what a step wants from the rules onehand appends to the prompt**,
-// never from the template's own wording, so an edited template still drives
+// not from the template's own wording, so an edited template still drives
 // it: "Do not edit any file" is a plan, "has to change the code" is a change,
 // "Commit your work" asks for a commit. A carry-on prompt is answered the
-// same way, from what onehand says the last turn missed.
+// same way, from what onehand says the last turn missed. Those phrases are
+// `rule` and `carry_on` in crates/core/src/pipeline/prompt.rs, word for word:
+// reword one there and change it here, or the mock answers every step with a
+// plan.
 //
-// Its orders come from the brief, as `fast` does for the UI mock:
+// Its orders are whole words in the brief's title (the `Title:` line), as
+// `fast` is for the UI mock, so a word that only contains one (`dismiss`,
+// `breakfast`) or a check's output saying `missing` is not an order:
 //
 //   * `miss` — every turn does nothing and says nothing, so the step's gates
 //     miss until the run is exhausted;
-//   * `fail-check` — the first change writes `check: fail` into
-//     `mock-pipeline.txt`; the change after a failed check writes
-//     `check: pass`. Pair it with a check command such as
+//   * `fail-check` — the session's first change writes `check: fail` into
+//     `mock-pipeline.txt`, and every change after it `check: pass`. Pair it
+//     with a check command such as
 //     `sleep 5 && grep -q 'check: pass' mock-pipeline.txt`;
 //   * `fast` — answer at once instead of over about six seconds, which is
 //     what leaves room to press Stop or quit mid-step.
@@ -45,16 +50,17 @@ const say = (session, text) =>
 // **Every session has an id and a state of its own**: one id shared by every
 // session would file their transcripts under one name.
 //
-// A session's state: where it works, its turn under way, and the brief's
-// orders, kept for the carry-on prompts that do not repeat them. A step's
-// prompt carries the brief above onehand's `---`; only that part is read.
-const sessions = new Map(); // id → { id, cwd, turn: { id, timers } | null, orders }
+// A session's state: where it works, its turn under way, how many changes it
+// has made, and the brief's orders, kept for the carry-on prompts that do not
+// repeat the brief.
+const sessions = new Map(); // id → { id, cwd, turn: { id, timers } | null, changes, orders: Set }
 
 // What the prompt asks of this turn, and what the turn does about it.
 function play(session, prompt) {
-  if (prompt.includes('\n---\n')) session.orders = prompt.split('\n---\n')[0].toLowerCase();
+  const title = prompt.match(/^Title: (.*)$/m);
+  if (title) session.orders = new Set(title[1].toLowerCase().split(/[^a-z0-9-]+/));
   const { orders, cwd } = session;
-  if (orders.includes('miss')) return { lines: [], act: () => {} };
+  if (orders.has('miss')) return { lines: [], act: () => {} };
 
   const change =
     prompt.includes('The turn has to change the code.') || prompt.includes('that turn changed nothing');
@@ -63,7 +69,6 @@ function play(session, prompt) {
     prompt.includes('commit it on this branch') ||
     prompt.includes('no commit has') ||
     prompt.includes('no new commit');
-  const failed = prompt.includes('The check failed:');
 
   if (!change && !commit) {
     return {
@@ -76,11 +81,13 @@ function play(session, prompt) {
       act: () => {},
     };
   }
-  const verdict = orders.includes('fail-check') && !failed ? 'fail' : 'pass';
+  // Counted rather than read off the prompt, because a template that places
+  // `{check_output}` itself never carries onehand's "The check failed:" line.
+  const verdict = orders.has('fail-check') && change && session.changes++ === 0 ? 'fail' : 'pass';
   return {
     lines: ['Writing `mock-pipeline.txt`. ', commit && 'Committing it. ', `Done (check: ${verdict}).`].filter(Boolean),
     act: () => {
-      if (change || failed) {
+      if (change) {
         fs.writeFileSync(path.join(cwd, 'mock-pipeline.txt'), `check: ${verdict}\n${Date.now()}\n`);
       }
       if (commit) {
@@ -112,7 +119,7 @@ rl.on('line', (line) => {
       return send({ jsonrpc: '2.0', id: m.id, result: { protocolVersion: 1, agentCapabilities: {} } });
     case 'session/new': {
       const id = `mock-pipeline-${process.pid}-${Date.now()}-${sessions.size}`;
-      sessions.set(id, { id, cwd: m.params?.cwd ?? process.cwd(), turn: null, orders: '' });
+      sessions.set(id, { id, cwd: m.params?.cwd ?? process.cwd(), turn: null, changes: 0, orders: new Set() });
       return send({ jsonrpc: '2.0', id: m.id, result: { sessionId: id } });
     }
     case 'session/cancel':
@@ -125,7 +132,7 @@ rl.on('line', (line) => {
       end(session, 'cancelled');
       const prompt = (m.params?.prompt ?? []).map((b) => b?.text ?? '').join('\n');
       const { lines, act } = play(session, prompt);
-      const pace = session.orders.includes('fast') ? 0 : 6000 / (lines.length + 1);
+      const pace = session.orders.has('fast') ? 0 : 6000 / (lines.length + 1);
       const turn = (session.turn = { id: m.id, timers: [] });
       lines.forEach((text, i) => turn.timers.push(setTimeout(() => say(session, text), pace * i)));
       turn.timers.push(
