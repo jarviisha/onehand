@@ -3,6 +3,30 @@
 A desktop host for AI coding agents. This glossary holds the words whose meaning is
 particular to onehand; general programming terms are left out.
 
+## Workspace
+
+**Workspace**:
+What one window holds: the projects it groups, and their sessions.
+_Avoid_: solution, folder set
+
+**Project**:
+A folder in a workspace, usually a repository or a worktree of one, with the sessions started on it.
+_Avoid_: repo (a project can be a folder inside one), root
+
+**Session**:
+One conversation with one agent on one project, carried over the Agent Client Protocol.
+_Avoid_: chat, thread, tab
+
+**Card**:
+A permission or a question an agent parked in its session, waiting for a person to answer.
+_Avoid_: prompt, dialog, popup
+
+**Take over**:
+A person putting a prompt of their own into the session of a pipeline run or an unattended run; the
+run stops and the session becomes an ordinary one. Answering a card the run's agent parked is not
+taking over.
+_Avoid_: hijack, adopt
+
 ## Pipelines
 
 **Pipeline template**:
@@ -13,8 +37,8 @@ _Avoid_: workflow, recipe, playbook
 
 **Pipeline run**:
 One pass of a pipeline template over a brief: a snapshot of the template as it was when the run
-began, the step it is at, its marks, what its steps kept, and the history of its transitions. Kept
-in a file until it ends, so a restart can offer to resume it.
+began, the step it is at, its marks, what its steps kept, and the history of its transitions. Its
+file is kept only while it can still be resumed.
 _Avoid_: job, execution, instance
 
 **Step**:
@@ -48,43 +72,34 @@ Where a pipeline's work happens: the checkout the project is open on, left uncom
 branch in a worktree of its own, committed there.
 _Avoid_: mode, target
 
-**Source**:
-Where a brief comes from. A person typing it into the launcher is the only source in this build; an
-issue is meant to be another, and nothing about a pipeline run depends on which.
-_Avoid_: input, origin, trigger
-
 **Check command**:
 A project's own command for "the work is sound", run by onehand in a command step that names no
 command of its own.
 _Avoid_: test command, CI
 
-## Runs
-
-**Run**:
-The agent, the session and the resources that carry out work on onehand's behalf: the worktree it
-works in, the clock that times it out. A pipeline run is carried out by a run; so is an unattended
-run on an issue. An issue has at most one active run.
-_Avoid_: job, task, queue entry, controller, worker
-
-**Take over**:
-A person putting a prompt of their own into a run's session; the run stops and the session becomes
-an ordinary one. Answering a card the run's agent parked is not taking over.
-_Avoid_: hijack, adopt
-
 **Outcome**:
-How a pipeline run or an unattended run ended, from a closed set.
+How a pipeline run ended: done, stopped (and why), exhausted at a step, or failed.
 _Avoid_: result, status
+
+**Resume**:
+Carrying on a pipeline run whose agent stopped or whose session went, from the step it was at, with
+its marks kept. Nothing resumes a run by itself.
+_Avoid_: restart, retry
 
 ## Unattended runs
 
-**Attempt**:
-One go at an unattended run. A retry is a new attempt of the same run: it keeps the same branch,
-worktree and pull request.
-_Avoid_: retry run, second run
+**Unattended run**:
+One issue worked by one session, in a worktree of its own, with one prompt and nobody watching,
+ending in a pull request or commits.
+_Avoid_: job, task, batch, auto run
 
-**Repair**:
-A session started on a run's worktree to fix checks that failed on its pull request's current head.
-_Avoid_: fix-up run, rerun
+**Tracker**:
+Where an issue lives: on a forge, kept by onehand, or kept by onehand in step with a forge.
+_Avoid_: backend, provider
+
+**Connector**:
+What onehand reaches a forge through: its account, its issues, labels, comments and pull requests.
+_Avoid_: integration, adapter (that is an agent's)
 
 **Tick**:
 One look for work, made every configured interval; it starts nothing while a run is working.
@@ -95,10 +110,21 @@ The label whose presence on an issue asks for an unattended run.
 _Avoid_: tag, auto label
 
 **Claim**:
-Removing the trigger label from an issue and commenting that a run started on it.
+Removing the trigger label from an issue and commenting that a run started on it. Adding the label
+back is how a person asks for the issue to be tried again.
 _Avoid_: lock, lease
 
-**Ready for review**:
-A run's pull request is open, every commit is pushed, its required checks have passed on the current
-head and it has no conflicts. Whether the change meets the issue is for the reviewer to judge.
-_Avoid_: done, delivered, complete
+**Slot**:
+The one place a working unattended run holds. A run waiting on a card gives it up, so the next tick
+can start another.
+_Avoid_: lock, worker
+
+**Ending**:
+How an unattended run stopped: its turn ended, a card was left unanswered, the adapter went, the
+session closed, it timed out, it was taken over, or it never got as far as a prompt.
+_Avoid_: outcome (a pipeline run's), status
+
+**Verdict**:
+What an unattended run left behind, judged by onehand rather than the agent: a pull request or
+none, or, without a forge, commits on its branch or none.
+_Avoid_: result, review

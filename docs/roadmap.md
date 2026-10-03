@@ -5,6 +5,8 @@ Where the work goes after the configurable pipelines landed (#72). The goal of t
 person, and what has finished. Automating issues and pull requests comes back after that, on the
 new foundation, rather than first.
 
+[tasks.md](tasks.md) describes the feature and its architecture as one picture.
+
 The order is fixed. Each milestone is its own pull request with its docs, and each one rests on the
 milestone before it.
 
@@ -56,16 +58,17 @@ One pull request, landed as commits in this order:
    the docs. Behaviour does not change.
 2. **The task model and its store.**
    - A **Task** is the work.
-   - A **Run** is one execution of it. Run absorbs today's *Pipeline run* and the unattended
-     *Attempt*.
+   - A **Run** is one execution of it. Run absorbs today's *Pipeline run* now, and the unattended
+     run in milestone 5. Until then unattended runs are shown on the page through a thin
+     conversion, with their data and code left as they are.
    - A task records its source, its runs, the session each run used, and its outcome.
    - Stored through `pipeline::files::Writer`, with what is in `pipeline-runs/` migrated.
    - Finished tasks are kept as history: the most recent N per project (around 200). The page says
      when that cap has cut something.
-3. **A snapshot of the work at each step's start and end.** A commit object made with
-   `git stash create`, kept in the run, so that milestone 3 can show diffs for every run from now
-   on. A digest can compare two states but cannot rebuild a diff, and a checkout's work is left
-   uncommitted.
+3. **A mark at each step's start and end that can rebuild a diff.** Each mark carries a commit
+   object made from a temporary index and pinned under `refs/onehand/` (see the decisions below),
+   so that milestone 3 can show diffs for every run from now on. A digest can compare two states
+   but cannot rebuild a diff, and a checkout's work is left uncommitted.
 4. **One running run per checkout or worktree, with a queue behind it.** A run started where one is
    already working waits as *Queued* and starts when the place is free.
 5. **The Tasks page**, in the agent pane beside the workspace overview.
@@ -81,8 +84,7 @@ One pull request, landed as commits in this order:
 
 ### 3. Task detail
 
-- Each run's step timeline, with each step's output and its diff, taken from the snapshots of
-  1+2.
+- Each run's step timeline, with each step's output and its diff, taken from the marks of 1+2.
 - What waits for approval.
 - The runs before this one.
 - Stop, Resume, Retry and Open session.
@@ -117,8 +119,7 @@ The rename is already done by 1+2.
 - **A workflow is optional.** A task is anything with a lifecycle and an outcome: a workflow run,
   an unattended run, or a single command.
   - An unattended run shows read-only until milestone 5.
-  - A plain agent session is not a task. It appears under *Needs attention* only while a card it
-    parked waits for an answer.
+  - A plain agent session is not a task, and it does not appear on the Tasks page.
 - **A run keeps a snapshot of its configuration.** Editing a template never changes a run that
   already started.
 - **Retry reuses the previous run's snapshot by default.** If the template has changed since, the
@@ -129,11 +130,54 @@ The rename is already done by 1+2.
 - **Resume is not retry.** Resume carries on the same run, with its marks kept.
 - **Needs attention is explicit, and every entry comes with an action.** It holds:
   - a run waiting for approval;
-  - a card waiting for an answer;
-  - a failed, exhausted or interrupted run.
+  - a card a task's session parked, waiting for an answer;
+  - a failed, exhausted, timed out or interrupted run.
 
   A failed task stays there until a person retries, resumes or dismisses it. Dismissing moves it to
   *Finished* with its outcome kept.
+- **The place belongs to the task.** Every run of a task works in the same checkout or worktree
+  and on the same branch, so a retry sees the work the earlier run left.
+- **A workflow is the template.** `PipelineRun` becomes a run of a task; there is no "workflow
+  run", and "pipeline" leaves the code and the screen.
+- **A mark records the work, not a second snapshot.** "Snapshot" names only the configuration a
+  run keeps. The work at a step's start and end is a mark that also carries a commit object.
+- **That commit object is made from a temporary index, not `git stash create`.** `stash create`
+  leaves untracked files out and makes a commit nothing points at, which `git gc` prunes. The
+  index is filled with `git add -A`, and the commit is pinned under `refs/onehand/`. The ref is
+  deleted when its task falls out of the history cap.
+- **A task's outcome is its last run's outcome**, in one enum shared with unattended runs, plus
+  *Dismissed*.
+- **Which outcomes need attention:** exhausted, failed, timed out, and interrupted (the agent
+  stopped or the session went). Stopped by a person and taken over go straight to *Finished*,
+  because a person already acted. Resume is offered only for an interrupted run.
+- **The Tasks page holds tasks only.** A card parked by a plain session is signalled on the rail,
+  as it is today.
+- **The glossary describes the code as it stands.** It is brought up to date now; the task terms
+  go in with the code that brings them.
+- **Every task holds its place's lock, a single command included**, so a check waits behind a
+  workflow that is still editing. A plain session holds no lock, and starting a task beside one
+  gives no warning.
+- **A queued task survives a restart as interrupted.** It waits under *Needs attention* for
+  Resume, because nothing starts an agent by itself after a restart.
+- **A retry takes the newer template only if the step it stopped at, and every step before it,
+  are still there under the same ids.** Otherwise the person picks the step to start from, and
+  outputs that no longer match are dropped.
+- **onehand never removes a task's worktree.** Removing it could lose unpushed commits. The
+  merged pull request of milestone 5 is the first clear signal to clean up.
+- **The history cap counts tasks against the project they were started from**, never a worktree
+  added as a project. A task pushed out of the cap is deleted with its refs, and the page says
+  how many were removed.
+- **Finished is read-only on the Tasks page.** Retrying a finished task is milestone 3's, from
+  the task detail.
+- **The Tasks page has a rail row beside the overview**, with the count of *Needs attention*
+  (hidden at zero), and a keymap command with no default key.
+- **The page covers the window's workspace**, filtered by project.
+- **A single command is the project's check command**, nothing else, until there is a real need.
+- **Moving `pipelines/` and `pipeline-runs/` happens once at boot, with no way back.** This is a
+  pre-release build; the release notes say so.
+- **The pipeline mock agent takes its orders from the brief** (`miss`, `fail-check`), as
+  `mock_ui_agent.js` takes `fast`. The manual checklist is a section of the pipelines doc and
+  moves with it when it is renamed.
 - **The per-checkout lock comes before any cap on concurrency.** Two runs editing one checkout is
   the failure possible today. A workspace-wide cap arrives with milestone 5, before issues are
   taken up automatically.
