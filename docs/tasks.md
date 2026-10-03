@@ -17,13 +17,15 @@ running, what needs me, and what has finished.
 
   | Group | Holds | Row actions |
   |---|---|---|
-  | *Needs attention* | a run waiting for approval; a card a task's session parked; a run that ended exhausted, failed, timed out or interrupted | Open session, Resume (interrupted only), Retry, Dismiss |
+  | *Needs attention*, waiting | a live run waiting for approval, or on a card its session parked; it keeps its place | Open session, Stop |
+  | *Needs attention*, ended | a run that ended exhausted, failed, timed out or interrupted; its place is free | Resume (interrupted only), Retry, Dismiss |
   | *Running* | the one run working in each place | Open session, Stop |
   | *Queued* | tasks waiting for their place to be free | Open session, Stop |
   | *Finished* | done, stopped by a person, taken over, dismissed | none on this page |
 
 - **Every entry in *Needs attention* comes with an action**, and it stays until a person takes one.
-  Dismiss moves it to *Finished* and keeps its outcome.
+  A waiting run is answered in its session; an ended one is resumed, retried or dismissed. Dismiss
+  moves it to *Finished* and keeps its outcome.
 - **The project page's list of unfinished runs becomes a link to this page**, so two lists can never
   disagree.
 - **History is bounded:** the most recent 200 finished tasks per project. The page says how many
@@ -36,9 +38,10 @@ diff, what waits for approval, the earlier runs, and Retry for a finished task.
 
 ```
 Task ──< Run ──< Step visit
- │        │
+ │        │        ├─ visit id, step id, started and ended at
+ │        │        ├─ marks at its start and end ── refs/onehand/… in the repository
+ │        │        └─ what it answered or printed, and how it came out
  │        ├─ snapshot of the workflow (frozen when the run starts)
- │        ├─ marks at each step's start and end ── refs/onehand/… in the repository
  │        ├─ session it used
  │        └─ outcome
  ├─ source (the launcher, a project's check, later an issue)
@@ -64,21 +67,35 @@ Task ──< Run ──< Step visit
 
 ```mermaid
 stateDiagram-v2
-    [*] --> Queued: started where a run is working
-    [*] --> Running: started where the place is free
-    Queued --> Running: place frees up
-    Queued --> Attention: app restarts (interrupted)
-    Running --> Attention: approval or card waits
-    Attention --> Running: approved / answered
-    Running --> Attention: exhausted, failed, timed out, interrupted
+    [*] --> Queued: started
+    Queued --> Running: its place is free
+    Running --> Waiting: approval or card waits
+    Waiting --> Running: approved / answered
+    Running --> Ended: exhausted, failed, timed out, interrupted
     Running --> Finished: done, stopped by a person, taken over
-    Attention --> Running: Resume (same run) / Retry (new run)
-    Attention --> Finished: Dismiss
-    Finished --> Running: Retry from the task detail (milestone 3)
+    Waiting --> Finished: stopped by a person, taken over
+    Waiting --> Ended: interrupted
+    Queued --> Ended: app restarts (interrupted)
+    Queued --> Finished: Stop before its first step ran
+    Queued --> Ended: Stop on a resume or retry (back as it was)
+    Ended --> Queued: Resume (same run) / Retry (new run)
+    Ended --> Finished: Dismiss
+    Finished --> Queued: Retry from the task detail (milestone 3)
 ```
 
-*Attention* is the *Needs attention* group. Which group a task sits in is never stored: it is
-worked out from the task's last run, so the page and the rail count cannot drift apart.
+*Waiting* and *Ended* are the two halves of *Needs attention*. **Every start goes through the
+queue**, Resume and Retry included: a task resumed while another works in its place waits as
+*Queued*. *Queued* that finds the place free moves straight on, so a person never sees it.
+**Stop on a queued row calls off that start only**: a resume or retry goes back to *Ended* with its
+earlier run untouched, and a task that never ran a step goes to *Finished*, stopped by a person,
+with no empty run recorded.
+
+**Queued, Running and Waiting hold the place; Ended and Finished do not.** A run gives its place up
+only once its agent's turn is over and its command's process group has exited, never when Stop is
+pressed, so the next task cannot start on work still being written.
+
+Which group a task sits in is never stored: it is worked out from the task's last run, so the page
+and the rail count cannot drift apart.
 
 ### Retry and Resume
 
@@ -87,12 +104,24 @@ worked out from the task's last run, so the page and the rail count cannot drift
 | Run | the same one | a new one |
 | Offered for | an interrupted run only (the agent stopped or the session went: `Outcome::resumable`) | every outcome under *Needs attention*, and *Finished* from the detail |
 | Workflow | the run's own snapshot | the previous run's snapshot; the newer template is offered if it changed |
-| Starts at | where it was, marks kept | the step the previous run stopped at, with the outputs of the steps before it; an earlier step can be picked |
+| Starts at | where it was, marks kept | the first step that cannot be carried over (below); an earlier step can be picked |
 | Misses | as they were | from zero |
+| Place | through the queue | through the queue |
 
-The newer template is offered only when the step the run stopped at, and every step before it,
-still exist under the same ids. Otherwise the person picks the step to start from, and outputs that
-no longer match are dropped.
+**What a retry carries over is decided step by step, from the first.** A step's output, and an
+approval of it, carry over only while that step's configuration is the same in the workflow the
+retry uses as in the one the previous run used, and so is everything it reads: the steps its
+prompt names, the step it approves, its `on_fail`. The first step that differs, and everything
+after it, runs again, approvals included. A step id kept with a new prompt is a different step.
+With the previous run's own snapshot, nothing differs, so a retry starts where that run stopped.
+
+**The work is compared with where the previous run left it**, its last visit's end mark:
+
+- **Another branch checked out** refuses the retry, naming the branch to check out again: marks and
+  outputs read against another branch would be wrong.
+- **The work changed** (another head, or other uncommitted changes) is said in the retry dialog,
+  and the retry still carries outputs over, since a person fixing something by hand is the usual
+  reason to retry. The new run's first mark records the work as it now is.
 
 ## The architecture
 
@@ -122,21 +151,31 @@ unattended      (as it is; a thin         Tasks page in the agent pane, rail row
 - **`Task`** holds its id, source, brief or command, place, project, the list of its runs, and
   whether it was dismissed. Its outcome and its group are functions of that state, written once in
   core, as `GitStatus::label` is, never per call site.
-- **The queue rule is pure.** Given the tasks and a place, it answers whether a new task runs now or
+- **The queue rule is pure.** Given the tasks and a place, it answers whether a start runs now or
   queues, and which queued task goes next when a place frees up (first in, first out). Every task
   holds its place's lock, a single command included, so a check waits behind a workflow that is
   still editing. A plain session holds no lock.
+- **A place is the checkout git sees, not the path a project was opened at.** The lock is keyed by
+  the canonical path of the worktree's top level (`git rev-parse --show-toplevel`, symlinks
+  resolved), so two projects that are folders of one checkout, or one checkout reached through a
+  symlink, share one lock. A folder outside git is keyed by its own canonical path.
+- **A run is a list of step visits.** Going back to a step, after a failed command or a revision,
+  is a new visit, never a rewrite of the last one: `implement → verify (fails) → implement` is three
+  visits. Each keeps its own id, times, marks, output and result, which is what milestone 3's
+  timeline is drawn from.
 - **Marks carry a commit object.** Today a `Mark` is a head and a fingerprint of the uncommitted
-  work, enough to tell whether two states differ but not to rebuild a diff. Each step gets a mark at
-  its start and its end, and each mark gains a commit made like this:
+  work, enough to tell whether two states differ but not to rebuild a diff. Each visit gets a mark
+  at its start and its end, and each mark gains a commit made like this:
 
   ```
   GIT_INDEX_FILE=<temp> git read-tree HEAD
   GIT_INDEX_FILE=<temp> git add -A
   tree=$(GIT_INDEX_FILE=<temp> git write-tree)
   commit=$(git commit-tree $tree -p HEAD -m "onehand mark")
-  git update-ref refs/onehand/tasks/<task>/<run>/<step>-<start|end> $commit
+  git update-ref refs/onehand/tasks/<task>/<run>/<visit>/<start|end> $commit
   ```
+
+  The visit id is in the path, so a step visited twice keeps both pairs.
 
   It is not `git stash create`, which leaves untracked files out and makes a commit nothing points
   at, so `git gc` prunes it within weeks. The temporary index leaves the person's own index alone.
@@ -149,14 +188,34 @@ unattended      (as it is; a thin         Tasks page in the agent pane, rail row
 
 ```
 <config_dir>/onehand/
-  workflows/<slug>.toml      was pipelines/, moved once at boot
+  workflows/<slug>.toml      was pipelines/, moved at boot
   tasks/<id>.json            one per task, unfinished or in the history; replaces pipeline-runs/
 ```
 
-The move happens once, at the first boot of the build that brings it: `pipelines/` is renamed and
-every `pipeline-runs/*.json` becomes a task with one interrupted run. There is no way back to an
-older build, which this pre-release accepts. `schema_version` keeps its rule: a file this build
-cannot read is listed as unreadable and never written over.
+The move runs at every boot until there is nothing left to move, and **is safe to stop at any
+point and run again**:
+
+- **Each file moves on its own:** the new file is written in full (to a temporary name, then
+  renamed into place), and only then is the old one removed. A crash between the two leaves both,
+  and the next boot finishes the job.
+- **Ids are stable.** A migrated task takes the old run's id, so a file found in both places
+  becomes one task, never two. A template already in `workflows/` under the same slug is kept, and
+  the old copy is removed.
+- **A file this build cannot read is left where it is**, untouched, and listed as unreadable, the
+  rule `schema_version` already keeps.
+- **An old directory is removed only once it is empty.**
+
+Every old run becomes a task with one interrupted run. There is no way back to an older build,
+which this pre-release accepts; that does not excuse a move that can lose a file.
+
+### One instance
+
+**Only one onehand runs on a config directory.** At boot it takes `File::lock` on
+`<config_dir>/onehand/instance.lock` and holds it for its life; the kernel lets go if the process
+dies. A second instance says that onehand is already running and exits. Without it, two processes
+would each hold their own place locks, both run the migration and both write `tasks/`, and the one
+ordered writer would be two. More windows open in the one process, as now. It lands with the first
+pull request, before the migration it protects.
 
 ### The app
 
@@ -178,15 +237,15 @@ cannot read is listed as unreadable and never written over.
 
 ## What changes where
 
-| Commit in 1+2 | Core | App |
+Milestone 1+2 lands as three pull requests in a row, each with its docs.
+
+| Pull request | Core | App |
 |---|---|---|
-| 1. Rename | `pipeline` → `workflow`, `PipelineRun` → `Run`, config dir moved | every module, type and string; Settings ▸ Workflows |
-| 2. Task model and store | `task`, `task::files`; `pipeline-runs/` migrated | `Pipelines` → `Tasks` global |
-| 3. Marks that rebuild a diff | `Mark` gains a commit; `task::marks` makes and drops refs | driver marks each step's end |
-| 4. Lock and queue | `task::queue` | starting a task asks the queue; ending one releases its place |
-| 5. Tasks page | group rule, history cap | page, rail row and count, project filter; the project page links here |
-| 6. Check as a task, Retry | a one-step run with no agent; retry's start step | Retry from *Needs attention* |
-| 7. Docs | glossary terms | this file becomes the account of the code |
+| 1. Rename and migration | `pipeline` → `workflow`, `PipelineRun` → `Run`; the restartable move of `pipelines/` | the one-instance lock; every module, type and string; Settings ▸ Workflows |
+| 2. Tasks, history, visits and the queue | `task`, `task::files` and the move of `pipeline-runs/`; step visits; `task::marks`; `task::queue` keyed by the real checkout | `Pipelines` → `Tasks` global; the driver records visits and marks their end; every start asks the queue, and a place is given up only once the work has stopped |
+| 3. The Tasks page, the check as a task, and Retry | group rule, history cap; a one-step run with no agent; what a retry carries over | page, rail row and count, project filter; the project page links here; Retry from *Needs attention* |
+
+Each one brings its glossary terms and turns its part of this file into the account of the code.
 
 ## Not in this design
 

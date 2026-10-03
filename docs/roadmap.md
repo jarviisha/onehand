@@ -7,8 +7,9 @@ new foundation, rather than first.
 
 [tasks.md](tasks.md) describes the feature and its architecture as one picture.
 
-The order is fixed. Each milestone is its own pull request with its docs, and each one rests on the
-milestone before it.
+The order is fixed. Each milestone rests on the one before it, and each pull request carries its
+docs. Milestone 1+2 is one milestone for a person but three pull requests in a row, because the
+rename, the task store and the page each carry risks of their own.
 
 ## Where things stand
 
@@ -18,7 +19,10 @@ run keeps a snapshot of its template, its file is written in order by one thread
 run can be resumed after a restart.
 
 Not there yet:
-- No one has tested Stop, retry, approval and restart in the running app.
+- A pass with a mock ACP agent has walked Stop, approval, a restart at an approval and the loop
+  back after a failed command. That mock and a checklist are not in the repository, and Revise, an
+  exhausted run, a restart mid-step and a template edited under a run have not been walked. That
+  loop back is a miss inside one run, not the Retry designed below, which starts a new run.
 - There is no task model, and a run's record is deleted when it finishes, so there is no history.
 - Runs do not queue, and two runs can edit the same checkout at once.
 - An issue or a pull request cannot be the source of a run. The unattended run on `main` is still
@@ -29,7 +33,7 @@ Not there yet:
 | # | Pull request | Scope | What a person gets |
 |---|---|---|---|
 | 0 | Engine check (small) | A mock agent for pipelines and a manual test checklist | Proof that a pipeline runs and stops as it should |
-| 1+2 | Tasks (large) | The task model, history, the per-checkout queue, the Tasks page, the rename to Workflows | One place showing what runs, what needs them, and what finished |
+| 1+2 | Tasks (three pull requests) | The rename to Workflows; the task model, history, step visits and the per-checkout queue; the Tasks page, the check as a task and Retry | One place showing what runs, what needs them, and what finished |
 | 3 | Task detail (medium) | Step timeline, outputs, diffs, what awaits approval, retries | Understanding a task and stepping in from it |
 | 4 | Workflow library (medium) | Template versions, import and export, a preview of the run's configuration | Managing and reusing many workflows |
 | 5 | Issues and pull requests (large) | An issue as a source; integration steps; reports that retry | Unattended work on issues, rebuilt on the new foundation |
@@ -51,7 +55,9 @@ This goes first so that driver bugs are found before a UI depends on the states 
 
 ### 1+2. Tasks
 
-One pull request, landed as commits in this order:
+Three pull requests, in this order: **1** is the one-instance lock, the rename and its migration; **2** is items 2 to 4,
+the tasks, their history, visits and marks, and the queue; **3** is items 5 and 6, the page, the
+check as a task and Retry. Item 7 is spread over all three, each bringing its own docs.
 
 1. **Rename Pipelines to Workflows**, in the code as well as on screen. That covers modules, types,
    the config directory (`pipelines/` → `workflows/`, with its data moved over), the glossary and
@@ -65,12 +71,14 @@ One pull request, landed as commits in this order:
    - Stored through `pipeline::files::Writer`, with what is in `pipeline-runs/` migrated.
    - Finished tasks are kept as history: the most recent N per project (around 200). The page says
      when that cap has cut something.
-3. **A mark at each step's start and end that can rebuild a diff.** Each mark carries a commit
+3. **A run as a list of step visits, with a mark at each visit's start and end that can rebuild a
+   diff.** Going back to a step is a new visit, so nothing is written over. Each mark carries a commit
    object made from a temporary index and pinned under `refs/onehand/` (see the decisions below),
    so that milestone 3 can show diffs for every run from now on. A digest can compare two states
    but cannot rebuild a diff, and a checkout's work is left uncommitted.
 4. **One running run per checkout or worktree, with a queue behind it.** A run started where one is
-   already working waits as *Queued* and starts when the place is free.
+   already working waits as *Queued* and starts when the place is free. Resume and Retry are
+   starts too.
 5. **The Tasks page**, in the agent pane beside the workspace overview.
    - Groups: *Needs attention*, *Running*, *Queued*, *Finished*.
    - A filter by project.
@@ -128,19 +136,23 @@ The rename is already done by 1+2.
     it, such as an approved plan.
   - An earlier step can be chosen instead.
 - **Resume is not retry.** Resume carries on the same run, with its marks kept.
-- **Needs attention is explicit, and every entry comes with an action.** It holds:
-  - a run waiting for approval;
-  - a card a task's session parked, waiting for an answer;
-  - a failed, exhausted, timed out or interrupted run.
+- **Needs attention is explicit, and every entry comes with an action.** It holds two kinds, with
+  different actions:
+  - **waiting**: a live run waiting for approval, or on a card its session parked. It keeps its
+    place, and offers Open session and Stop;
+  - **ended**: a failed, exhausted, timed out or interrupted run. Its place is free, and it offers
+    Resume (interrupted only), Retry and Dismiss.
 
-  A failed task stays there until a person retries, resumes or dismisses it. Dismissing moves it to
+  An ended task stays there until a person retries, resumes or dismisses it. Dismissing moves it to
   *Finished* with its outcome kept.
 - **The place belongs to the task.** Every run of a task works in the same checkout or worktree
   and on the same branch, so a retry sees the work the earlier run left.
 - **A workflow is the template.** `PipelineRun` becomes a run of a task; there is no "workflow
   run", and "pipeline" leaves the code and the screen.
 - **A mark records the work, not a second snapshot.** "Snapshot" names only the configuration a
-  run keeps. The work at a step's start and end is a mark that also carries a commit object.
+  run keeps. The work at a step visit's start and end is a mark that also carries a commit object.
+- **A run records step visits, not steps.** A step reached twice is two visits, each with its own
+  id, times, marks, output and result; its refs are `refs/onehand/tasks/<task>/<run>/<visit>/…`.
 - **That commit object is made from a temporary index, not `git stash create`.** `stash create`
   leaves untracked files out and makes a commit nothing points at, which `git gc` prunes. The
   index is filled with `git add -A`, and the commit is pinned under `refs/onehand/`. The ref is
@@ -159,9 +171,25 @@ The rename is already done by 1+2.
   gives no warning.
 - **A queued task survives a restart as interrupted.** It waits under *Needs attention* for
   Resume, because nothing starts an agent by itself after a restart.
-- **A retry takes the newer template only if the step it stopped at, and every step before it,
-  are still there under the same ids.** Otherwise the person picks the step to start from, and
-  outputs that no longer match are dropped.
+- **A retry carries a step over only while its configuration, and everything it reads, is
+  unchanged.** Going from the first step, a step's output and its approval carry over while the
+  step and the steps it names, approves or falls back to are the same in both workflows. The first
+  that differs, and everything after it, runs again, approvals included. A kept id with a new
+  prompt is a different step.
+- **Every start goes through the queue, Resume and Retry included.** A place is held while a run
+  is queued, running or waiting, and given up only once its agent's turn is over and its command
+  has exited, never at the press of Stop.
+- **Only one onehand runs on a config directory.** A lock on a file in it is taken at boot; a
+  second instance says so and exits. It covers the place locks, the migration and the ordered
+  writer at once, which are all one process's today, and it comes before the migration.
+- **A retry checks the work against the previous run's last mark.** Another branch checked out
+  refuses it, naming the branch; changed work is said in the dialog and outputs still carry over.
+- **Stop on a queued row calls off that start only.** A resume or retry goes back to ended, its
+  earlier run untouched; a task that never ran a step finishes as stopped by a person, with no
+  empty run.
+- **A place is the checkout git sees.** The lock is keyed by the canonical top level of the
+  worktree, so projects that are folders of one checkout, and a checkout reached through a
+  symlink, share one lock.
 - **onehand never removes a task's worktree.** Removing it could lose unpushed commits. The
   merged pull request of milestone 5 is the first clear signal to clean up.
 - **The history cap counts tasks against the project they were started from**, never a worktree
@@ -173,8 +201,11 @@ The rename is already done by 1+2.
   (hidden at zero), and a keymap command with no default key.
 - **The page covers the window's workspace**, filtered by project.
 - **A single command is the project's check command**, nothing else, until there is a real need.
-- **Moving `pipelines/` and `pipeline-runs/` happens once at boot, with no way back.** This is a
-  pre-release build; the release notes say so.
+- **Moving `pipelines/` and `pipeline-runs/` can be stopped at any point and run again.** It runs
+  at every boot until nothing is left to move. Each file is written in full before its old copy is
+  removed, a migrated task keeps the old run's id so a file found twice is one task, a file this
+  build cannot read is left untouched, and an old directory goes only once it is empty. There is no
+  way back to an older build, which this pre-release accepts; the release notes say so.
 - **The pipeline mock agent takes its orders from the brief** (`miss`, `fail-check`), as
   `mock_ui_agent.js` takes `fast`. The manual checklist is a section of the pipelines doc and
   moves with it when it is renamed.
