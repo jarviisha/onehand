@@ -5,7 +5,7 @@
 //   [[agents]]
 //   name = "Mock pipeline"
 //   command = "node"
-//   args = ["crates/core/examples/mock_pipeline_agent.js"]
+//   args = ["/absolute/path/to/onehand-gpui/crates/core/examples/mock_pipeline_agent.js"]
 //
 // **It reads what a step wants from the rules onehand appends to the prompt**,
 // never from the template's own wording, so an edited template still drives
@@ -32,28 +32,28 @@ const { execFileSync } = require('child_process');
 
 const rl = readline.createInterface({ input: process.stdin });
 const send = (o) => process.stdout.write(JSON.stringify(o) + '\n');
-const SESSION = 'mock-pipeline';
-const say = (text) =>
+const say = (session, text) =>
   send({
     jsonrpc: '2.0',
     method: 'session/update',
     params: {
-      sessionId: SESSION,
+      sessionId: session.id,
       update: { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text } },
     },
   });
 
-let cwd = process.cwd();
-let turn = null; // { id, timers }
-// The brief's orders, kept for the carry-on prompts that do not repeat it. A
-// step's prompt carries the brief above onehand's `---`; only that part is read.
-let orders = '';
-
-const git = (...args) => execFileSync('git', args, { cwd, stdio: 'pipe' });
+// **Every session has an id and a state of its own**: one id shared by every
+// session would file their transcripts under one name.
+//
+// A session's state: where it works, its turn under way, and the brief's
+// orders, kept for the carry-on prompts that do not repeat them. A step's
+// prompt carries the brief above onehand's `---`; only that part is read.
+const sessions = new Map(); // id → { id, cwd, turn: { id, timers } | null, orders }
 
 // What the prompt asks of this turn, and what the turn does about it.
-function play(prompt) {
-  if (prompt.includes('\n---\n')) orders = prompt.split('\n---\n')[0].toLowerCase();
+function play(session, prompt) {
+  if (prompt.includes('\n---\n')) session.orders = prompt.split('\n---\n')[0].toLowerCase();
+  const { orders, cwd } = session;
   if (orders.includes('miss')) return { lines: [], act: () => {} };
 
   const change =
@@ -84,6 +84,7 @@ function play(prompt) {
         fs.writeFileSync(path.join(cwd, 'mock-pipeline.txt'), `check: ${verdict}\n${Date.now()}\n`);
       }
       if (commit) {
+        const git = (...args) => execFileSync('git', args, { cwd, stdio: 'pipe' });
         git('add', '-A');
         git('commit', '-q', '-m', 'mock pipeline change');
       }
@@ -91,11 +92,11 @@ function play(prompt) {
   };
 }
 
-function end(stopReason) {
-  if (!turn) return;
-  turn.timers.forEach(clearTimeout);
-  send({ jsonrpc: '2.0', id: turn.id, result: { stopReason } });
-  turn = null;
+function end(session, stopReason) {
+  if (!session?.turn) return;
+  session.turn.timers.forEach(clearTimeout);
+  send({ jsonrpc: '2.0', id: session.turn.id, result: { stopReason } });
+  session.turn = null;
 }
 
 rl.on('line', (line) => {
@@ -109,26 +110,32 @@ rl.on('line', (line) => {
   switch (m.method) {
     case 'initialize':
       return send({ jsonrpc: '2.0', id: m.id, result: { protocolVersion: 1, agentCapabilities: {} } });
-    case 'session/new':
-      cwd = m.params?.cwd ?? cwd;
-      return send({ jsonrpc: '2.0', id: m.id, result: { sessionId: SESSION } });
+    case 'session/new': {
+      const id = `mock-pipeline-${process.pid}-${Date.now()}-${sessions.size}`;
+      sessions.set(id, { id, cwd: m.params?.cwd ?? process.cwd(), turn: null, orders: '' });
+      return send({ jsonrpc: '2.0', id: m.id, result: { sessionId: id } });
+    }
     case 'session/cancel':
-      return end('cancelled');
+      return end(sessions.get(m.params?.sessionId), 'cancelled');
     case 'session/prompt': {
-      end('cancelled');
+      const session = sessions.get(m.params?.sessionId);
+      if (!session) {
+        return send({ jsonrpc: '2.0', id: m.id, error: { code: -32602, message: 'unknown session' } });
+      }
+      end(session, 'cancelled');
       const prompt = (m.params?.prompt ?? []).map((b) => b?.text ?? '').join('\n');
-      const { lines, act } = play(prompt);
-      const pace = orders.includes('fast') ? 0 : 6000 / (lines.length + 1);
-      turn = { id: m.id, timers: [] };
-      lines.forEach((text, i) => turn.timers.push(setTimeout(() => say(text), pace * i)));
+      const { lines, act } = play(session, prompt);
+      const pace = session.orders.includes('fast') ? 0 : 6000 / (lines.length + 1);
+      const turn = (session.turn = { id: m.id, timers: [] });
+      lines.forEach((text, i) => turn.timers.push(setTimeout(() => say(session, text), pace * i)));
       turn.timers.push(
         setTimeout(() => {
           try {
             act();
           } catch (e) {
-            say(`\n\nThe mock could not touch the work: ${e.message}`);
+            say(session, `\n\nThe mock could not touch the work: ${e.message}`);
           }
-          end('end_turn');
+          end(session, 'end_turn');
         }, pace * (lines.length + 1)),
       );
       return;

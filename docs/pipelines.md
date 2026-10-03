@@ -177,13 +177,15 @@ it left the workspace, starts a session on the agent the run used, and calls `re
 ## Checking it by hand
 
 The pipeline mock agent plays an agent's part in a run, so every path below is walked in seconds
-without an API key. Add it in Settings ▸ Agents or `onehand.toml`:
+without an API key. Add it in Settings ▸ Agents or `onehand.toml`, with the script's absolute
+path: the agent starts in the scratch project, where a relative path finds nothing
+(`MODULE_NOT_FOUND`).
 
 ```toml
 [[agents]]
 name = "Mock pipeline"
 command = "node"
-args = ["crates/core/examples/mock_pipeline_agent.js"]
+args = ["/absolute/path/to/onehand-gpui/crates/core/examples/mock_pipeline_agent.js"]
 ```
 
 It reads what a step wants from the gate rules onehand appends to the prompt, not from the
@@ -205,7 +207,7 @@ change (`git checkout . && git clean -fd`).
 |---|---|---|
 | Done | Brief `go`. *Continue* at the approval | Plan, Approve, Implement, Verify; *Pipeline done*. `mock-pipeline.txt` is left uncommitted. On *Implement on a branch*, a new branch holds one commit |
 | Stop while a command runs | Brief `go fast`, *Continue*, then *Stop* during Verify's `sleep 5` | The run ends *stopped by hand* only once the command has exited: no `sleep` is left (`pgrep -f 'sleep 5'`) |
-| Exhausted | Brief `miss` | The plan misses `answered` three times; *too many misses at the plan step*. The run's file is removed |
+| Exhausted | Brief `miss` | The template allows three misses, so the plan misses `answered` four times; the fourth ends the run with *too many misses at the plan step*. The run's file is removed |
 | A failed command goes back | Brief `fail-check`, *Continue* | Verify fails, Implement runs again with the check's output in its prompt, Verify passes; *Pipeline done* |
 | Approve and Revise | Brief `go`. *Revise…* with a note, then *Continue* | The plan runs again, its prompt carrying the note and the earlier answer; no miss is counted. *Review…* shows the kept answer |
 | A restart mid-step, then Resume | Brief `go`, *Continue*, quit while Implement's turn is still answering | At the next start the project page lists the run. *Resume* starts a new session at Implement, with its mark kept, and the run carries on to *Pipeline done* |
