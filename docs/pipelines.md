@@ -173,3 +173,41 @@ At boot every `<config_dir>/onehand/pipeline-runs/*.json` is read into the unfin
 project page shows the unfinished runs started from it or working in it, with *Resume* and
 *Discard*. Nothing restarts an agent by itself. *Resume* adds the run's folder back as a project if
 it left the workspace, starts a session on the agent the run used, and calls `resume`.
+
+## Checking it by hand
+
+The pipeline mock agent plays an agent's part in a run, so every path below is walked in seconds
+without an API key. Add it in Settings ▸ Agents or `onehand.toml`:
+
+```toml
+[[agents]]
+name = "Mock pipeline"
+command = "node"
+args = ["crates/core/examples/mock_pipeline_agent.js"]
+```
+
+It reads what a step wants from the gate rules onehand appends to the prompt, not from the
+template's wording, so an edited template still drives it. Its orders come from the brief: `miss`
+does nothing every turn, `fail-check` makes the first change fail the check and the next one pass,
+and `fast` answers at once instead of over about six seconds.
+
+A run takes the first agent in the list, so put *Mock pipeline* first. Set up a scratch repository
+with one commit, open it as a project, and set the project's check command (Settings ▸ Pipelines) to:
+
+```sh
+sleep 5 && grep -q 'check: pass' mock-pipeline.txt
+```
+
+Then walk each case, with *Work in checkout* unless it says otherwise. Between cases, discard the
+change (`git checkout . && git clean -fd`).
+
+| Case | Do | Expect |
+|---|---|---|
+| Done | Brief `go`. *Continue* at the approval | Plan, Approve, Implement, Verify; *Pipeline done*. `mock-pipeline.txt` is left uncommitted. On *Implement on a branch*, a new branch holds one commit |
+| Stop while a command runs | Brief `go fast`, *Continue*, then *Stop* during Verify's `sleep 5` | The run ends *stopped by hand* only once the command has exited: no `sleep` is left (`pgrep -f 'sleep 5'`) |
+| Exhausted | Brief `miss` | The plan misses `answered` three times; *too many misses at the plan step*. The run's file is removed |
+| A failed command goes back | Brief `fail-check`, *Continue* | Verify fails, Implement runs again with the check's output in its prompt, Verify passes; *Pipeline done* |
+| Approve and Revise | Brief `go`. *Revise…* with a note, then *Continue* | The plan runs again, its prompt carrying the note and the earlier answer; no miss is counted. *Review…* shows the kept answer |
+| A restart mid-step, then Resume | Brief `go`, *Continue*, quit while Implement's turn is still answering | At the next start the project page lists the run. *Resume* starts a new session at Implement, with its mark kept, and the run carries on to *Pipeline done* |
+| A restart at an approval, then Resume | Brief `go`, quit while the run waits for approval | *Resume* waits for approval again; *Review…* shows the plan |
+| A template edited under a run | Duplicate *Work in checkout*, start a run on the copy with brief `go`, then while the run waits for approval delete its Verify step and save | The run still reaches Verify: it uses the snapshot it started with |

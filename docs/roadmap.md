@@ -19,10 +19,11 @@ run keeps a snapshot of its template, its file is written in order by one thread
 run can be resumed after a restart.
 
 Not there yet:
-- A pass with a mock ACP agent has walked Stop, approval, a restart at an approval and the loop
-  back after a failed command. That mock and a checklist are not in the repository, and Revise, an
-  exhausted run, a restart mid-step and a template edited under a run have not been walked. That
-  loop back is a miss inside one run, not the Retry designed below, which starts a new run.
+- The pipeline mock agent (`crates/core/examples/mock_pipeline_agent.js`) and the checklist in
+  [pipelines.md](pipelines.md#checking-it-by-hand) are in the repository; a full pass of the
+  checklist is still owed before the Tasks page depends on the states the driver reports. The loop
+  back after a failed command is a miss inside one run, not the Retry designed below, which starts a
+  new run.
 - There is no task model, and a run's record is deleted when it finishes, so there is no history.
 - Runs do not queue, and two runs can edit the same checkout at once.
 - An issue or a pull request cannot be the source of a run. The unattended run on `main` is still
