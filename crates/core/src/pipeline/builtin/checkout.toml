@@ -1,0 +1,49 @@
+schema_version = 1
+name = "Work in checkout"
+description = "Plan, have the plan approved, change the code and pass the project's check, in the checkout the project is open on. The change is left uncommitted."
+place = "checkout"
+misses = 3
+timeout = "45m"
+
+[[steps]]
+id = "plan"
+label = "Plan"
+kind = "agent"
+gates = ["answered", "code_unchanged"]
+keep_answer = true
+prompt = """
+Work on this in the repository:
+
+{brief}
+
+This step is the plan. Read the code this touches and answer with a plan: what you will change, where, and how you will know it works.
+"""
+
+[[steps]]
+id = "approve"
+label = "Approve"
+kind = "approval"
+of = "plan"
+
+[[steps]]
+id = "implement"
+label = "Implement"
+kind = "agent"
+gates = ["code_changed", "uncommitted"]
+prompt = """
+Work on this in the repository:
+
+{brief}
+
+This step is the change. Follow the approved plan, and run the repository's checks.
+
+The plan:
+
+{output.plan}
+"""
+
+[[steps]]
+id = "verify"
+label = "Verify"
+kind = "command"
+on_fail = "implement"

@@ -1,7 +1,7 @@
 use super::{
     CloseSession, FocusComposer, NewSession, NextSession, OpenNeovim, OpenSettings, PrevSession,
-    RestartSession, SaveFile, ToggleMarkdown, ToggleMaximize, ToggleRail, ToggleTerminal,
-    ToggleWorkbench, ToggleWorkbenchVisibility, ZoomIn, ZoomOut, ZoomReset,
+    RestartSession, RunPipeline, SaveFile, ToggleMarkdown, ToggleMaximize, ToggleRail,
+    ToggleTerminal, ToggleWorkbench, ToggleWorkbenchVisibility, ZoomIn, ZoomOut, ZoomReset,
 };
 use super::{FocusedPanel, SelectSession, Shell, ZoomStep};
 use crate::state::Shared;
@@ -163,6 +163,11 @@ impl Render for Shell {
                 }),
             )
             .on_action(
+                cx.listener(|shell: &mut Self, _: &RunPipeline, window, cx| {
+                    shell.begin_pipeline(window, cx);
+                }),
+            )
+            .on_action(
                 cx.listener(|shell: &mut Self, _: &ToggleMaximize, window, cx| {
                     shell.toggle_maximize(window, cx);
                 }),
@@ -223,6 +228,12 @@ impl Render for Shell {
                 self.issue_picker
                     .is_some()
                     .then(|| crate::dialogs::pick_issue(self, cx)),
+            )
+            // And the pipeline launcher, opened from a menu entry or a key.
+            .children(
+                self.pipeline_launcher
+                    .is_some()
+                    .then(|| crate::dialogs::run_pipeline(self, cx)),
             )
             .children(
                 self.settings_open

@@ -132,6 +132,10 @@ pub struct Chat {
     /// actually goes out, which is what anything asking "has somebody else
     /// prompted this session" needs.
     pub prompts_sent: usize,
+    /// The turn was cancelled — a Stop, here or from the remote bridge —
+    /// rather than finished by the agent: asked for during it, or said by
+    /// its stop reason. Holds until the next prompt goes out.
+    pub cancelled: bool,
     pub(crate) resumed: bool,
 
     // ── composer sources (Phase 3B) ──

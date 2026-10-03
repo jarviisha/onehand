@@ -3,6 +3,7 @@
 
 use std::io::Read;
 use std::process::{Command, Output, Stdio};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc;
 use std::time::{Duration, Instant};
 
@@ -19,6 +20,8 @@ pub enum Failure {
     Unstarted(std::io::Error),
     /// It ran past its limit and was stopped.
     TimedOut(Duration),
+    /// It was called off before it finished, and was stopped.
+    Cancelled,
 }
 
 impl std::fmt::Display for Failure {
@@ -31,6 +34,7 @@ impl std::fmt::Display for Failure {
                 "did not finish within {}s and was stopped",
                 limit.as_secs()
             ),
+            Self::Cancelled => f.write_str("was called off and stopped"),
         }
     }
 }
@@ -53,6 +57,18 @@ impl std::fmt::Display for Failure {
 /// On Unix the command runs in a process group of its own, and stopping it
 /// stops the whole group, so what it started goes with it.
 pub fn output_within(cmd: &mut Command, limit: Duration) -> Result<Output, Failure> {
+    output_until(cmd, limit, &AtomicBool::new(false))
+}
+
+/// [`output_within`], also stopped as soon as `cancel` is set. Only once the
+/// command and its process group have been stopped does it return, so a
+/// caller that hears [`Failure::Cancelled`] knows nothing of it is left
+/// running.
+pub fn output_until(
+    cmd: &mut Command,
+    limit: Duration,
+    cancel: &AtomicBool,
+) -> Result<Output, Failure> {
     #[cfg(unix)]
     std::os::unix::process::CommandExt::process_group(cmd, 0);
     let mut child = cmd
@@ -74,6 +90,10 @@ pub fn output_within(cmd: &mut Command, limit: Duration) -> Result<Output, Failu
             None if Instant::now() >= deadline => {
                 stop(&mut child);
                 return Err(Failure::TimedOut(limit));
+            }
+            None if cancel.load(Ordering::SeqCst) => {
+                stop(&mut child);
+                return Err(Failure::Cancelled);
             }
             None => std::thread::sleep(Duration::from_millis(50)),
         }
@@ -128,6 +148,32 @@ mod tests {
         let out = output_within(Command::new("sleep").arg("5"), Duration::from_millis(200));
         assert!(out.unwrap_err().to_string().contains("did not finish"));
         assert!(started.elapsed() < Duration::from_secs(3));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_called_off_command_returns_only_once_its_whole_group_is_gone() {
+        let marker = std::env::temp_dir().join(format!("onehand-cancel-{}", std::process::id()));
+        let _ = std::fs::remove_file(&marker);
+        let cancel = std::sync::Arc::new(AtomicBool::new(false));
+        let calling_off = cancel.clone();
+        std::thread::spawn(move || {
+            std::thread::sleep(Duration::from_millis(200));
+            calling_off.store(true, Ordering::SeqCst);
+        });
+        let started = Instant::now();
+        // A child that would write to the work a second later, the way a
+        // build left running by a stopped run would.
+        let script = format!("(sleep 1; touch {}) & sleep 30", marker.display());
+        let out = output_until(
+            Command::new("sh").args(["-c", &script]),
+            Duration::from_secs(60),
+            &cancel,
+        );
+        assert!(matches!(out, Err(Failure::Cancelled)));
+        assert!(started.elapsed() < Duration::from_secs(3));
+        std::thread::sleep(Duration::from_millis(1500));
+        assert!(!marker.exists(), "a child of the stopped command still ran");
     }
 
     #[test]

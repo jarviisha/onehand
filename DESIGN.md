@@ -118,6 +118,36 @@ One window hosts exactly one workspace. The frame is a navigation **rail** plus 
   visibility shortcuts. No panel in the window
   keeps a tab group; the Workbench's mode strip and the
   terminal's shell strip are each that panel's own chrome.
+- **A pipeline run's steps sit on a strip under the header**, drawn only while
+  a pipeline run drives the session on screen. Left to right: the template's
+  name muted, then every step's label in order, a chevron between each, the
+  steps behind it marked with a muted check, the one it is at in full ink and
+  weight; at the far end *Stop*, always, and before it *Review…* and *Revise…*
+  (ghost) and *Continue* (primary, with a check) while the run waits for
+  approval. *Review…* opens a modal with the answer being approved, rendered as
+  markdown and scrolling, with *Close* and *Continue*: the answer is read from
+  the run, not the transcript, so a run resumed in a new session is never
+  approved blind. The
+  transcript says each step as a notice when it starts, but a line scrolled past
+  does not answer "how far along is it", and a template's steps are few enough
+  to read in one glance. Approving happens here, in the run's own session,
+  because that is where its answer was read; *Revise…* opens a modal with one
+  textarea for what to change, and *Send back* refuses an empty note. The step
+  labels give way to width and the controls never do, since *Stop* is the one
+  thing on the strip a person may need at once. No hairline: like the header,
+  the strip is part of the reading surface.
+- **A pipeline is started from the composer's `+` menu**, as its last entry
+  *Run a pipeline…* below a separator (it is a run of prompts, not something put
+  into this one), or from the keymap's *Run a pipeline on the current project*,
+  which has no default key. Both open one modal: a template picker as a small
+  outline menu control (shipped templates marked *built in*), a muted line
+  saying what the template does **and where it works** — this checkout, or a new
+  branch in a worktree of its own — then *Title*, *Details* and *Instructions*.
+  A template that cannot run, a missing title or a project with no check command
+  for a template that needs one is said in the danger ink above the footer, and
+  *Run* starts nothing. While a worktree is being made *Run* reads *Making the
+  worktree…* and is spent, and *Cancel* with it, since the folder cannot be
+  called back.
 - **Standing state sits under the composer, outside its card.** A bare strip
   with no chrome of its own carries the project's branch on the left and the
   turn's permission mode on the right. The card is the message being written and
@@ -167,6 +197,14 @@ One window hosts exactly one workspace. The frame is a navigation **rail** plus 
   filed away behind it. The row's own delete is offered here and nowhere else —
   this page is what shows when a project has no session on it, so every row on
   it is a conversation nothing is writing to.
+  **Unfinished pipeline runs come first**, under *New session* and above the
+  conversations, under a muted *Unfinished pipelines*: a pipeline run whose agent
+  stopped or whose session was closed, in this process or before a restart, is
+  work left half done. Each is a hairline card carrying the run's title, then
+  the template and the step it stopped at muted, and two words at its end:
+  *Discard* (ghost) and *Resume*. Nothing restarts an agent by itself; *Resume*
+  is the only way back, and it opens a new session that carries on from that
+  step. The list is capped and says how many more it left out.
 - **The workspace has a page too**, for the question no project page can
   answer: what needs me, and what is there to do, across every project at once.
   It is reached from a muted row in the rail's header, *Workspace overview*,
@@ -422,6 +460,25 @@ One window hosts exactly one workspace. The frame is a navigation **rail** plus 
   one surface: no border beside the nav, no header bar, no box around a group
   — a group is a heading with a hairline above it, and a setting stacks its
   name, a line about it and a full-width control.
+  **Settings ▸ Pipelines** lists every template as a row: its name, its
+  description (or why its file cannot be read, in the warning ink), and at the
+  end a *Built in* tag on the shipped ones, *Duplicate* on every readable one,
+  and the edit and delete icons on the person's own only — the shipped ones are
+  read-only. *New template* sits under the list. The form below it is the agent
+  form's shape: name, description, *Where it works* as the segmented switch,
+  *Misses allowed* and *Timeout* side by side, a muted line naming the prompt
+  variables, then one hairline box per step — its number, its kind as a small
+  menu control, move up, move down and remove; *Id* and *Label*; then, by kind,
+  the prompt textarea, the gates as switches (only those that can hold where
+  the template works, plus any already on) and *Keep its answer*; or the command
+  and *On failure, back to*; or *Approves the answer of*. A step is pointed at
+  through a menu of the earlier steps that fit. Every problem with the template
+  is listed in the danger ink above *Save*, which is spent while any remains;
+  closing Settings, or opening another template, with the form changed asks
+  first. *Check commands* closes the page: one field per project of this
+  workspace, saved as it is typed. The template list, the launcher's template
+  menu and the check command fields are each capped and say how many more
+  they left out.
 - **No status bar either.** There was one — a row under the rail and the dock
   reading out the project, its branch, the running agent, unsaved buffers and any
   panel left off 100% — and it is gone. Every fact on it was either already said

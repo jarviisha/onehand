@@ -34,6 +34,7 @@ pub mod diff;
 pub mod editor;
 pub mod gitstat;
 pub mod issues;
+pub mod pipeline;
 pub mod process;
 pub mod remote;
 pub mod tree;

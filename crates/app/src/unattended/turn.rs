@@ -1,8 +1,8 @@
 use super::launch::Claimed;
 use super::{Run, WIND_DOWN, tick, with};
+pub(super) use crate::chat::session::note;
 use crate::chat::session::{ChatEvent, ChatSession};
 use gpui::{App, Entity, Task};
-use onehand_core::chat::ChatItem;
 use onehand_core::chat::UserAsk;
 use onehand_core::unattended::{self as core, Ending, Tracker, Verdict};
 use onehand_core::worktree;
@@ -263,15 +263,6 @@ pub(super) fn start_notes(claimed: &Claimed) -> Vec<String> {
     ]
 }
 
-/// Add a line about the run to its session's transcript.
-pub(super) fn note(session: &Entity<ChatSession>, text: String, cx: &mut App) {
-    session.update(cx, |session, cx| {
-        session.chat.items.push(ChatItem::notice(text));
-        cx.emit(ChatEvent::Appended);
-        cx.notify();
-    });
-}
-
 /// Whether somebody other than the run has put a prompt into the session,
 /// given whether the run has sent its own one yet.
 ///
@@ -281,8 +272,10 @@ pub(super) fn note(session: &Entity<ChatSession>, text: String, cx: &mut App) {
 /// delivers user chunks of its own mid-turn, and reading those as prompts took
 /// runs over that nobody had touched.
 fn prompted_by_someone_else(session: &Entity<ChatSession>, run_prompted: bool, cx: &App) -> bool {
-    let chat = &session.read(cx).chat;
-    chat.queued.is_some() || chat.prompts_sent > usize::from(run_prompted)
+    session
+        .read(cx)
+        .chat
+        .prompted_beyond(usize::from(run_prompted))
 }
 
 /// What the parked card asks, in its own words.

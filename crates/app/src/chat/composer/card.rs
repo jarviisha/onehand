@@ -311,7 +311,7 @@ fn add_menu(cx: &mut Context<Composer>) -> impl IntoElement + use<> {
     let composer = cx.entity();
     chip("add", false, cx)
         .child(Icon::new(crate::icons::Icon::PlusLight).size(ACTION_ICON))
-        .tooltip("Attach a file, mention one, or run a slash command")
+        .tooltip("Attach a file, mention one, run a slash command or a pipeline")
         .dropdown_menu_with_anchor(gpui::Anchor::BottomLeft, move |menu, _, _| {
             let (attach, mention, command) = (composer.clone(), composer.clone(), composer.clone());
             menu.item(
@@ -336,6 +336,20 @@ fn add_menu(cx: &mut Context<Composer>) -> impl IntoElement + use<> {
                     .on_click(move |_, window: &mut Window, cx: &mut gpui::App| {
                         command.update(cx, |composer: &mut Composer, cx| {
                             composer.insert_trigger('/', window, cx);
+                        });
+                    }),
+            )
+            // Not something put into this prompt but a run of prompts, so it
+            // goes up to the window, which owns runs, as its key does.
+            .separator()
+            .item(
+                crate::controls::menu_item("Run a pipeline…")
+                    .icon(Icon::new(IconName::Play))
+                    // Once the menu has gone, so the action starts from the
+                    // focus it hands back, inside the window's shell.
+                    .on_click(move |_, window: &mut Window, cx: &mut gpui::App| {
+                        window.defer(cx, |window, cx| {
+                            window.dispatch_action(Box::new(crate::shell::RunPipeline), cx)
                         });
                     }),
             )

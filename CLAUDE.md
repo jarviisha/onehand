@@ -22,6 +22,8 @@ Read the relevant one **before** changing the area it covers:
   **binding** UI contracts, structure and behaviour only. The `design-contract` skill triggers on
   any visible change.
 - [docs/unattended.md](docs/unattended.md): unattended runs end to end.
+- [docs/pipelines.md](docs/pipelines.md): pipeline templates, the run engine and its one driver.
+- [CONTEXT.md](CONTEXT.md): the glossary; use its terms and never the words it says to avoid.
 
 ## Commands
 

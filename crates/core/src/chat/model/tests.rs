@@ -1701,6 +1701,48 @@ fn a_turn_ending_settles_what_it_left_running() {
     );
 }
 
+/// A prompt beyond the ones a run sent, or one waiting behind the turn, is
+/// somebody else driving the session.
+#[test]
+fn a_prompt_beyond_the_ones_sent_is_somebody_elses() {
+    let (mut chat, _rx) = chat_with_tx();
+    assert!(!chat.prompted_beyond(0));
+    assert!(chat.submit("the run's", &[]));
+    assert!(!chat.prompted_beyond(1));
+    assert!(chat.prompted_beyond(0));
+    chat.busy = true;
+    assert!(chat.queue("a person's, queued behind the turn", &[]));
+    assert!(chat.prompted_beyond(1));
+}
+
+/// Whether the last turn was cancelled is kept, so something driving the
+/// session can tell a Stop from a turn that finished.
+#[test]
+fn a_cancelled_turn_is_told_from_a_finished_one() {
+    let (mut chat, _rx) = chat_with_tx();
+    assert!(!chat.cancelled);
+    chat.apply(AcpEvent::TurnEnded {
+        stop_reason: "cancelled".into(),
+    });
+    assert!(chat.cancelled);
+    assert!(chat.submit("next", &[]));
+    chat.apply(AcpEvent::TurnEnded {
+        stop_reason: "end_turn".into(),
+    });
+    assert!(!chat.cancelled);
+
+    // A Stop the adapter answers with an error still ends a turn as
+    // "end_turn"; the cancel asked for is what counts, until the next prompt.
+    chat.busy = true;
+    chat.cancel_turn();
+    chat.apply(AcpEvent::TurnEnded {
+        stop_reason: "end_turn".into(),
+    });
+    assert!(chat.cancelled);
+    assert!(chat.submit("again", &[]));
+    assert!(!chat.cancelled);
+}
+
 #[test]
 fn the_turn_ending_is_reported_once() {
     let (mut chat, _rx) = chat_with_tx();
@@ -1761,4 +1803,19 @@ fn each_ask_names_itself_and_the_agent() {
         UserAsk::Question.headline("Claude Code"),
         "Claude Code has a question for you"
     );
+}
+
+#[test]
+fn a_turn_that_said_nothing_answers_nothing_rather_than_the_turn_before() {
+    let mut chat = Chat::default();
+    chat.items.push(ChatItem::User(UserMsg::text("plan it")));
+    chat.items.push(ChatItem::Agent(Md::parse("the plan")));
+    let from = chat.items.len();
+    chat.items
+        .push(ChatItem::User(UserMsg::text("now change it")));
+    chat.items.push(ChatItem::notice("a tool ran"));
+    assert_eq!(chat.prose_since(from), "");
+    chat.items.push(ChatItem::Agent(Md::parse("changed")));
+    assert_eq!(chat.prose_since(from), "changed");
+    assert_eq!(chat.prose_since(from + 10), "");
 }

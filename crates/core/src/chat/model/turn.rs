@@ -163,6 +163,7 @@ impl Chat {
     /// exactly the kind of thing a second front end gets wrong, so it lives
     /// here rather than in either one.
     pub fn cancel_turn(&mut self) {
+        self.cancelled = true;
         self.cancel_pending_permissions();
         if let Some(tx) = &self.tx {
             let _ = tx.send(AcpRequest::Cancel);
@@ -400,6 +401,7 @@ impl Chat {
             return false;
         }
         self.prompts_sent += 1;
+        self.cancelled = false;
 
         self.push_user(
             text.to_string(),
@@ -531,12 +533,40 @@ impl Chat {
             .join("\n\n")
     }
 
+    /// What the agent said in the items from `from` on, joined: the answer to
+    /// a prompt sent when the transcript held `from` items.
+    ///
+    /// Counted from where the prompt went rather than back from the last
+    /// item, so a turn that said nothing answers nothing instead of reading
+    /// as the turn before it.
+    pub fn prose_since(&self, from: usize) -> String {
+        self.items
+            .get(from..)
+            .unwrap_or_default()
+            .iter()
+            .filter_map(|it| match it {
+                ChatItem::Agent(md) => Some(md.source.as_str()),
+                _ => None,
+            })
+            .collect::<Vec<_>>()
+            .join("\n\n")
+    }
+
     /// Toggle a thought's expanded reasoning — in the live items or, for a
     /// resumed transcript's read-only history, in `history`.
     pub fn toggle_thought(&mut self, target: TranscriptItemId) {
         if let Some(ChatItem::Thought(th)) = self.list_mut(target).get_mut(target.index()) {
             th.expanded = !th.expanded;
         }
+    }
+
+    /// Whether somebody other than whatever sent `sent` prompts has put one
+    /// into this session: any more went out, or one waits behind the turn.
+    /// Either came from the composer or the remote bridge, so a person is
+    /// driving. Counted from what was *sent*, not from the user rows in the
+    /// transcript: an adapter delivers user chunks of its own mid-turn.
+    pub fn prompted_beyond(&self, sent: usize) -> bool {
+        self.queued.is_some() || self.prompts_sent > sent
     }
 
     /// A parked permission prompt is waiting for the user's answer (it blocks
