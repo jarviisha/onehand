@@ -1804,3 +1804,18 @@ fn each_ask_names_itself_and_the_agent() {
         "Claude Code has a question for you"
     );
 }
+
+#[test]
+fn a_turn_that_said_nothing_answers_nothing_rather_than_the_turn_before() {
+    let mut chat = Chat::default();
+    chat.items.push(ChatItem::User(UserMsg::text("plan it")));
+    chat.items.push(ChatItem::Agent(Md::parse("the plan")));
+    let from = chat.items.len();
+    chat.items
+        .push(ChatItem::User(UserMsg::text("now change it")));
+    chat.items.push(ChatItem::notice("a tool ran"));
+    assert_eq!(chat.prose_since(from), "");
+    chat.items.push(ChatItem::Agent(Md::parse("changed")));
+    assert_eq!(chat.prose_since(from), "changed");
+    assert_eq!(chat.prose_since(from + 10), "");
+}

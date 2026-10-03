@@ -533,6 +533,25 @@ impl Chat {
             .join("\n\n")
     }
 
+    /// What the agent said in the items from `from` on, joined: the answer to
+    /// a prompt sent when the transcript held `from` items.
+    ///
+    /// Counted from where the prompt went rather than back from the last
+    /// item, so a turn that said nothing answers nothing instead of reading
+    /// as the turn before it.
+    pub fn prose_since(&self, from: usize) -> String {
+        self.items
+            .get(from..)
+            .unwrap_or_default()
+            .iter()
+            .filter_map(|it| match it {
+                ChatItem::Agent(md) => Some(md.source.as_str()),
+                _ => None,
+            })
+            .collect::<Vec<_>>()
+            .join("\n\n")
+    }
+
     /// Toggle a thought's expanded reasoning — in the live items or, for a
     /// resumed transcript's read-only history, in `history`.
     pub fn toggle_thought(&mut self, target: TranscriptItemId) {

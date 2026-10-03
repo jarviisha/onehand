@@ -10,7 +10,7 @@
 use super::Pipelines;
 use crate::chat::session::{ChatEvent, ChatSession, note};
 use gpui::{App, BorrowAppContext as _, Entity, Subscription, Task, WeakEntity};
-use onehand_core::chat::{Link, TranscriptItemId};
+use onehand_core::chat::Link;
 use onehand_core::pipeline::{
     Action, Facts, Mark, Outcome, PipelineRun, Stop, files, run_command_blocking,
 };
@@ -27,6 +27,9 @@ pub(super) struct Driven {
     /// How many prompts the run has sent its session: any more, and a person
     /// is driving.
     sent: usize,
+    /// How many transcript items there were when the run's last prompt went:
+    /// the turn's answer is what the agent said after that.
+    answer_from: usize,
     /// A prompt waiting for the agent to come up.
     pending: Option<String>,
     /// The step the transcript was last told of.
@@ -99,6 +102,7 @@ pub(crate) fn start(
         run,
         session: session.downgrade(),
         sent: 0,
+        answer_from: 0,
         pending: None,
         noted: None,
         budget: Budget::start(limit, Instant::now()),
@@ -305,7 +309,11 @@ fn send(uid: u64, session: &Entity<ChatSession>, text: String, cx: &mut App) {
         advance(uid, cx, |run| run.stopped(Stop::TakenOver));
         return;
     }
-    with(uid, cx, |d| d.sent += 1);
+    let answer_from = session.read(cx).chat.items.len();
+    with(uid, cx, |d| {
+        d.sent += 1;
+        d.answer_from = answer_from;
+    });
     if !session.update(cx, |session, cx| session.submit(&text, &[], cx)) {
         advance(uid, cx, |run| {
             run.failed("the agent did not take the prompt".to_string())
@@ -315,15 +323,19 @@ fn send(uid: u64, session: &Entity<ChatSession>, text: String, cx: &mut App) {
 
 /// A turn the run sent ended: read the work, then let the engine judge it.
 fn after_turn(uid: u64, session: &Entity<ChatSession>, cx: &mut App) {
-    let Some((dir, from)) = read(uid, cx, |d| {
-        (d.run.setup.dir.clone(), d.run.marks.step_from.clone())
+    let Some((dir, from, answer_from)) = read(uid, cx, |d| {
+        (
+            d.run.setup.dir.clone(),
+            d.run.marks.step_from.clone(),
+            d.answer_from,
+        )
     }) else {
         return;
     };
     let Some(from) = from else {
         return;
     };
-    let answer = turn_answer(session, cx);
+    let answer = turn_answer(session, answer_from, cx);
     cx.spawn(async move |cx| {
         let facts = cx
             .background_executor()
@@ -339,11 +351,10 @@ fn after_turn(uid: u64, session: &Entity<ChatSession>, cx: &mut App) {
     .detach();
 }
 
-/// The whole of the last turn's answer, cut at [`ANSWER_MAX`] characters.
-fn turn_answer(session: &Entity<ChatSession>, cx: &App) -> String {
-    let chat = &session.read(cx).chat;
-    let last = chat.items.len().saturating_sub(1);
-    let prose = chat.turn_prose(TranscriptItemId::Live(last));
+/// The whole of the answer to the prompt sent at `from` items, cut at
+/// [`ANSWER_MAX`] characters.
+fn turn_answer(session: &Entity<ChatSession>, from: usize, cx: &App) -> String {
+    let prose = session.read(cx).chat.prose_since(from);
     match prose.char_indices().nth(ANSWER_MAX) {
         Some((cut, _)) => format!("{}\n\n(cut at {ANSWER_MAX} characters)", &prose[..cut]),
         None => prose,

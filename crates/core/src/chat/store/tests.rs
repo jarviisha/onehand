@@ -406,3 +406,10 @@ fn two_writers_in_one_process_do_not_interleave() {
     }
     let _ = std::fs::remove_dir_all(&store);
 }
+
+#[test]
+fn fnv1a_gives_the_published_values_so_a_saved_digest_survives_any_rebuild() {
+    assert_eq!(fnv1a(b""), 0xcbf2_9ce4_8422_2325);
+    assert_eq!(fnv1a(b"a"), 0xaf63_dc4c_8601_ec8c);
+    assert_eq!(fnv1a(b"foobar"), 0x8594_4171_f739_67e8);
+}

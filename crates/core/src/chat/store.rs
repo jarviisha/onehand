@@ -104,9 +104,9 @@ fn sanitize(s: &str) -> String {
     format!("{safe}-{:08x}", fnv1a(s.as_bytes()))
 }
 
-/// FNV-1a — tiny, dependency-free, and stable across runs, which is all either
-/// caller needs of it.
-fn fnv1a(bytes: &[u8]) -> u64 {
+/// FNV-1a — tiny, dependency-free, and stable across runs and Rust releases,
+/// which is all any caller needs of it.
+pub(crate) fn fnv1a(bytes: &[u8]) -> u64 {
     let mut h: u64 = 0xcbf29ce484222325;
     for b in bytes {
         h ^= u64::from(*b);

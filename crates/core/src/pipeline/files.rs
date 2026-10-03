@@ -34,45 +34,56 @@ pub enum FileOp {
     Remove(PathBuf),
 }
 
+/// What the writer's thread is handed: a write, or a mark to answer once
+/// every write handed over before it has landed.
+enum Job {
+    Write(FileOp),
+    Mark(mpsc::Sender<()>),
+}
+
 /// A thread that carries out [`FileOp`]s one at a time, in the order sent.
+/// A clone hands work to the same thread, which ends with the last clone.
+#[derive(Clone)]
 pub struct Writer {
-    tx: Option<mpsc::Sender<FileOp>>,
-    thread: Option<std::thread::JoinHandle<()>>,
+    tx: mpsc::Sender<Job>,
 }
 
 impl Writer {
     pub fn spawn() -> Self {
-        let (tx, rx) = mpsc::channel::<FileOp>();
-        let thread = std::thread::Builder::new()
+        let (tx, rx) = mpsc::channel::<Job>();
+        std::thread::Builder::new()
             .name("onehand-pipeline-runs".to_string())
             .spawn(move || {
-                for op in rx {
-                    if let Err(why) = carry_out(&op) {
-                        eprintln!("onehand: could not write a pipeline run's file: {why}");
+                for job in rx {
+                    match job {
+                        Job::Write(op) => {
+                            if let Err(why) = carry_out(&op) {
+                                eprintln!("onehand: could not write a pipeline run's file: {why}");
+                            }
+                        }
+                        Job::Mark(landed) => {
+                            let _ = landed.send(());
+                        }
                     }
                 }
             })
             .inspect_err(|why| eprintln!("onehand: no thread to write pipeline runs: {why}"))
             .ok();
-        Self {
-            tx: Some(tx),
-            thread,
-        }
+        Self { tx }
     }
 
     pub fn send(&self, op: FileOp) {
-        let sent = self.tx.as_ref().is_some_and(|tx| tx.send(op).is_ok());
-        if !sent {
+        if self.tx.send(Job::Write(op)).is_err() {
             eprintln!("onehand: a pipeline run's file was not written: its writer is gone");
         }
     }
 
-    /// Wait for every write sent so far to land.
-    pub fn finish(mut self) {
-        drop(self.tx.take());
-        if let Some(thread) = self.thread.take() {
-            let _ = thread.join();
-        }
+    /// Wait up to `within` for every write sent so far to land: what a
+    /// process about to exit does last, or a run's last save and its file's
+    /// removal die with it. Whether they all landed. Blocking.
+    pub fn flush(&self, within: std::time::Duration) -> bool {
+        let (mark, landed) = mpsc::channel();
+        self.tx.send(Job::Mark(mark)).is_ok() && landed.recv_timeout(within).is_ok()
     }
 }
 

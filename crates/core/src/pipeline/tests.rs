@@ -444,12 +444,12 @@ fn the_writer_never_brings_a_removed_run_back() {
         writer.send(files::FileOp::Save(file.clone(), Box::new(run.clone())));
     }
     writer.send(files::FileOp::Remove(file.clone()));
-    writer.finish();
+    assert!(writer.flush(std::time::Duration::from_secs(10)));
     assert!(!file.exists());
 
     let writer = files::Writer::spawn();
     writer.send(files::FileOp::Save(file.clone(), Box::new(run.clone())));
-    writer.finish();
+    assert!(writer.flush(std::time::Duration::from_secs(10)));
     let loaded = files::load_all_blocking(&dir);
     assert_eq!(loaded.len(), 1);
     let json = |run: &PipelineRun| serde_json::to_value(run).unwrap();

@@ -339,9 +339,12 @@ pub(crate) fn dirty_blocking(dir: &Path) -> Result<bool, String> {
 // ponytail: an edit inside a file that was already untracked is not seen,
 // since only its name is in the status; hash those files' contents if that
 // ever lets a turn through.
+///
+/// **FNV-1a, not std's hasher**: the digest is kept in a run's file and
+/// compared after a restart, and std makes no promise that its hasher gives
+/// the same answer from one Rust release to the next.
 pub(crate) fn work_digest_blocking(dir: &Path) -> Result<String, String> {
-    use std::hash::{Hash as _, Hasher as _};
-    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    let mut work = Vec::new();
     for args in [
         &["status", "--porcelain=v1", "-z", "--untracked-files=all"][..],
         &["diff", "HEAD", "--binary"][..],
@@ -351,9 +354,11 @@ pub(crate) fn work_digest_blocking(dir: &Path) -> Result<String, String> {
         if !out.status.success() {
             return Err(git_message(&out.stderr));
         }
-        out.stdout.hash(&mut hasher);
+        // The length first, so where one output ends is part of the digest.
+        work.extend_from_slice(&(out.stdout.len() as u64).to_le_bytes());
+        work.extend_from_slice(&out.stdout);
     }
-    Ok(format!("{:016x}", hasher.finish()))
+    Ok(format!("{:016x}", crate::chat::store::fnv1a(&work)))
 }
 
 /// `git -C <root>`, with every way git has of asking a person for something

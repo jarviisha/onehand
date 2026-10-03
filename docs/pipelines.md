@@ -138,7 +138,14 @@ carrying out saves and removals in the order sent, so a late save can never brin
 file was removed. A run that ends on its own outcome — done, exhausted, failed, stopped by a person,
 taken over, timed out — removes its file. **A run whose agent stopped or whose session went keeps
 it** and is put on the unfinished list: neither is the run's own outcome, and app shutdown can look
-like either.
+like either. Quitting waits, briefly, for the writes still queued (`Writer::flush`), so a run's
+last save or its file's removal is not lost when the process exits with its last window.
+
+**A turn's answer is what the agent said after the run's own prompt** (`Chat::prose_since`,
+counted from where the transcript stood when the prompt went), so a turn that said nothing answers
+nothing rather than passing an `answered` gate with the turn before it. The work a checkout holds
+uncommitted is fingerprinted with FNV-1a, never std's hasher, because the fingerprint is kept in
+the run's file and compared after a restart, possibly by a build made with another Rust.
 
 ## Starting and resuming
 

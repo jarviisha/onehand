@@ -38,6 +38,9 @@ impl Default for Pipelines {
 
 impl Global for Pipelines {}
 
+/// How long quitting waits for the run files still being written.
+const QUIT_WAIT: std::time::Duration = std::time::Duration::from_secs(2);
+
 /// A template on offer: one onehand ships, or one of the person's own files,
 /// read or why it could not be.
 #[derive(Clone)]
@@ -63,6 +66,21 @@ impl Entry {
 /// Read the templates and the unfinished runs, off the UI thread.
 pub(crate) fn boot(cx: &mut App) {
     cx.default_global::<Pipelines>();
+    // The process exits right after its last window closes, and a run's last
+    // save or its file's removal still queued would die with it: a finished
+    // run offered for resuming at the next launch. The wait is in the future,
+    // which runs once the windows are gone and their sessions have let go of
+    // their runs, so those last writes are already queued ahead of it.
+    let writer = cx.global::<Pipelines>().writer.clone();
+    cx.on_app_quit(move |_| {
+        let writer = writer.clone();
+        async move {
+            if !writer.flush(QUIT_WAIT) {
+                eprintln!("onehand: a pipeline run's last write may not have landed");
+            }
+        }
+    })
+    .detach();
     reload_templates(cx);
     cx.spawn(async move |cx| {
         let found = cx
