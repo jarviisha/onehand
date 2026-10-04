@@ -293,18 +293,45 @@ impl Run {
             .unwrap_or(template.steps.len())
     }
 
-    /// A new run of the task `prev` was a run of, on `template`, starting at
-    /// [`Run::retry_start`], or earlier at step `from` when `template` has
-    /// it. What the steps before the start kept is carried over with them.
-    pub(crate) fn retry_of(prev: &Run, id: String, template: Template, from: Option<&str>) -> Self {
-        let start = Run::retry_start(prev, &template);
+    /// The step a retry of `prev` on `template` is offered from: where it
+    /// would start, or the first step when the last run got to the end,
+    /// since a retry that starts past the last step runs nothing.
+    pub fn retry_offered(prev: &Run, template: &Template) -> usize {
+        match Run::retry_start(prev, template) {
+            at if at >= template.steps.len() => 0,
+            at => at,
+        }
+    }
+
+    /// Where a retry of `prev` on `template` starts, [`Run::retry_start`] or
+    /// earlier at step `from` when `template` has it, and how many answers
+    /// of the steps before that it carries over.
+    pub fn retry_plan(prev: &Run, template: &Template, from: Option<&str>) -> (usize, usize) {
+        let start = Run::retry_start(prev, template);
         let start = from
             .and_then(|step| template.index_of(step))
             .map_or(start, |at| at.min(start));
-        let outputs = template.steps[..start]
+        let carried = Run::carried(prev, template, start).count();
+        (start, carried)
+    }
+
+    /// The answers `prev` kept for the steps of `template` before `start`.
+    fn carried<'a>(
+        prev: &'a Run,
+        template: &'a Template,
+        start: usize,
+    ) -> impl Iterator<Item = (String, String)> + 'a {
+        template.steps[..start]
             .iter()
             .filter_map(|step| Some((step.id.clone(), prev.outputs.get(&step.id)?.clone())))
-            .collect();
+    }
+
+    /// A new run of the task `prev` was a run of, on `template`, starting
+    /// where [`Run::retry_plan`] says, with what the steps before the start
+    /// kept carried over.
+    pub(crate) fn retry_of(prev: &Run, id: String, template: Template, from: Option<&str>) -> Self {
+        let (start, _) = Run::retry_plan(prev, &template, from);
+        let outputs = Run::carried(prev, &template, start).collect();
         let mut run = Run::new(id, template, prev.brief.clone(), prev.setup.clone());
         run.step = start;
         run.furthest = start;

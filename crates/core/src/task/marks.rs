@@ -102,8 +102,7 @@ pub fn drop_blocking(dir: &Path, task: &str) -> Result<(), String> {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Change {
     pub path: String,
-    pub added: Option<u32>,
-    pub removed: Option<u32>,
+    pub lines: Option<(u32, u32)>,
 }
 
 /// Every file that differs between the marks `from` and `to` in the
@@ -121,8 +120,7 @@ pub fn changes_blocking(dir: &Path, from: &str, to: &str) -> Result<Vec<Change>,
             let (added, removed, path) = (parts.next()?, parts.next()?, parts.next()?);
             Some(Change {
                 path: path.to_string(),
-                added: added.parse().ok(),
-                removed: removed.parse().ok(),
+                lines: added.parse().ok().zip(removed.parse().ok()),
             })
         })
         .collect())
@@ -137,6 +135,14 @@ pub fn file_diff_blocking(
     path: &str,
 ) -> Result<Vec<crate::diff::Row>, String> {
     let blob = |at: &str| {
+        // The mark itself must be there: only a file missing from it reads
+        // as empty, never a mark git cannot find.
+        run(
+            dir,
+            None,
+            &["rev-parse", "--verify", "-q", &format!("{at}^{{commit}}")],
+        )
+        .map_err(|_| format!("the mark {at} is not in the repository"))?;
         let spec = format!("{at}:{path}");
         match run(dir, None, &["cat-file", "-e", &spec]) {
             Ok(_) => run_raw(dir, &["show", &spec]),

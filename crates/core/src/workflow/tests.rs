@@ -740,12 +740,28 @@ fn a_retry_ignores_a_step_it_lacks_or_one_past_its_start() {
 }
 
 #[test]
-fn a_done_run_retries_from_past_its_last_step() {
+fn a_done_run_retries_from_past_its_last_step_and_offers_the_first() {
     let mut prev = exhausted_at_implement();
     prev.step = prev.template.steps.len();
     assert_eq!(
         Run::retry_start(&prev, &prev.template),
         prev.template.steps.len()
+    );
+    assert_eq!(Run::retry_offered(&prev, &prev.template), 0);
+}
+
+#[test]
+fn a_retry_plan_says_where_it_starts_and_what_it_carries() {
+    let prev = exhausted_at_implement();
+    let t = &prev.template;
+    assert_eq!(Run::retry_offered(&prev, t), 2);
+    assert_eq!(Run::retry_plan(&prev, t, None), (2, 1));
+    assert_eq!(Run::retry_plan(&prev, t, Some("plan")), (0, 0));
+    assert_eq!(Run::retry_plan(&prev, t, Some("nope")), (2, 1));
+    let next = Run::retry_of(&prev, "2".into(), t.clone(), Some("plan"));
+    assert_eq!(
+        (next.step, next.outputs.len()),
+        Run::retry_plan(&prev, t, Some("plan"))
     );
 }
 

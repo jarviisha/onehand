@@ -686,7 +686,7 @@ pub(super) fn activity_row(
 /// what forces: a zero set in the ink that means "this went" is the colour of a
 /// loss that did not happen. The text size is the caller's, since the three
 /// rows it lands on are not all at one size.
-pub(super) fn line_counts(added: usize, removed: usize, cx: &App) -> Option<gpui::Div> {
+pub(in crate::chat) fn line_counts(added: usize, removed: usize, cx: &App) -> Option<gpui::Div> {
     if added == 0 && removed == 0 {
         return None;
     }

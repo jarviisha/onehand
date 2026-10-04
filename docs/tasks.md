@@ -51,8 +51,8 @@ row opens nothing: it has no task to show), with *All tasks* to go back. It show
   Pressing a file shows its line diff in the transcript's diff renderer, cut at 400 lines. A visit
   still open says *In progress*; one with a mark missing says *No marks were pinned for this
   visit.* The timeline draws the newest 100 visits and a visit lists 100 files, each cap said;
-- **Earlier runs**, newest first: the run's number, how it ended and when, each opening onto the
-  same timeline.
+- **Earlier runs**, newest first and the newest 20 of them: the run's number, how it ended and
+  when, each opening onto the same timeline.
 
 What a visit changed and a file's diff are read off the UI thread when opened, from the run's
 worktree, or from its project once the worktree is gone; while they are read the detail says so.
@@ -156,9 +156,11 @@ says where the pick starts and how many answers it carries; only the steps befor
 pick goes to both *Retry* and *Retry with the newer workflow*, and a newer workflow without that
 step ignores it.
 
-In code: `Run::retry_start` (`crates/core/src/workflow/run.rs`) says where a retry would start, and
-`Run::retry_of` builds the new run with `step` and `furthest` at that start, or at the step `from`
-when that is earlier and the template has it, and the outputs of the steps before it. A step
+In code: `Run::retry_start` (`crates/core/src/workflow/run.rs`) says where a retry would start,
+`Run::retry_offered` which step the dialog offers first, and `Run::retry_plan` where a retry from a
+picked step starts and how many answers it carries, which is what the dialog says. `Run::retry_of`
+builds the new run from that plan, with `step` and `furthest` at its start and the outputs of the
+steps before it. A step
 counts as passed by where it stood in the last run's own template, so dropping an earlier step
 never moves a failed one into the past. `Task::retry` pushes it and clears `dismissed`, so a task
 let go comes back live and a failure lands under *Needs attention* again. A check is retried from

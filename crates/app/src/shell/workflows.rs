@@ -395,9 +395,7 @@ impl Shell {
         let same = last.template.clone();
         let steps = same.steps.clone();
         let start = Run::retry_start(&last, &same);
-        // A run that got to the end starts over; any other carries on where
-        // it cannot carry over, or earlier, as picked.
-        let picked = Rc::new(Cell::new(if start >= steps.len() { 0 } else { start }));
+        let picked = Rc::new(Cell::new(Run::retry_offered(&last, &same)));
         let choices: Vec<SharedString> = steps
             .iter()
             .take(start + 1)
@@ -405,23 +403,13 @@ impl Shell {
             .collect();
         // Where a retry on `template` from step `from` starts, and how many
         // answers it carries.
-        let starts = {
-            let last = last.clone();
-            move |template: &Template, from: Option<&str>| {
-                let at = from
-                    .and_then(|from| template.index_of(from))
-                    .unwrap_or(usize::MAX)
-                    .min(Run::retry_start(&last, template));
-                let step = template.steps.get(at).map_or_else(
-                    || "the end".to_string(),
-                    |s| format!("the {} step", s.label),
-                );
-                let carried = template.steps[..at.min(template.steps.len())]
-                    .iter()
-                    .filter(|s| last.outputs.contains_key(&s.id))
-                    .count();
-                (step, carried)
-            }
+        let starts = move |template: &Template, from: Option<&str>| {
+            let (at, carried) = Run::retry_plan(&last, template, from);
+            let step = template.steps.get(at).map_or_else(
+                || "the end".to_string(),
+                |s| format!("the {} step", s.label),
+            );
+            (step, carried)
         };
         let changed = against == Some(Against::Changed);
         let (id, title) = (task.id.clone(), task.brief.title.clone());

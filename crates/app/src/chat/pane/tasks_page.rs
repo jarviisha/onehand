@@ -7,6 +7,7 @@ use gpui::{
 };
 use gpui_component::button::ButtonVariants as _;
 use gpui_component::{ActiveTheme, Icon, IconName, Sizable as _, StyledExt};
+use onehand_core::chat::now_secs;
 use onehand_core::diff::Row as DiffRow;
 use onehand_core::task::Group;
 use onehand_core::task::marks::{self, Change};
@@ -30,6 +31,9 @@ const OUTPUT_LINES: usize = 60;
 
 /// How many lines of one file's diff are drawn.
 const DIFF_LINES: usize = 400;
+
+/// How many earlier runs a task's detail lists, its newest ones.
+const EARLIER_SHOWN: usize = 20;
 
 /// Something read off the UI thread: `None` while it is being read.
 type Loaded<T> = Option<Result<T, String>>;
@@ -140,7 +144,12 @@ impl ChatPane {
         };
         if !detail.expanded.remove(&key) {
             detail.expanded.insert(key);
-            if let Some(pair) = pinned.filter(|pair| !detail.changes.contains_key(pair)) {
+            // Read again unless it is under way or landed: a failed read is
+            // tried again on the next opening.
+            let held = |pair: &(String, String)| {
+                matches!(detail.changes.get(pair), Some(None | Some(Ok(_))))
+            };
+            if let Some(pair) = pinned.filter(|pair| !held(pair)) {
                 detail.changes.insert(pair.clone(), None);
                 let (from, to) = pair.clone();
                 self.read_marks(
@@ -458,11 +467,7 @@ fn row_actions(
             .small()
             .label(label)
     };
-    let open = row.session.map(|(uid, window)| {
-        button("open", "Open session").on_click(cx.listener(move |_: &mut ChatPane, _, _, cx| {
-            cx.emit(ChatPaneEvent::ShowSession { uid, window });
-        }))
-    });
+    let open = open_session(&format!("{key}-open"), row, cx);
     let retry = |cx: &mut Context<ChatPane>| {
         button("retry", "Retry")
             .tooltip("Run it again in a new run")
@@ -547,16 +552,7 @@ fn task_detail(
         return out;
     };
     if let Some((step, answer)) = last.under_review() {
-        let open = row.session.map(|(uid, window)| {
-            crate::controls::action("task-review-open")
-                .ghost()
-                .small()
-                .label("Open session")
-                .on_click(cx.listener(move |_: &mut ChatPane, _, _, cx| {
-                    cx.emit(ChatPaneEvent::ShowSession { uid, window });
-                }))
-                .into_any_element()
-        });
+        let open = open_session("task-review-open", row, cx).map(IntoElement::into_any_element);
         let said = match answer.trim().is_empty() {
             true => vec![muted_line("The step kept no answer.", cx)],
             false => mono_well(answer, cx),
@@ -578,9 +574,9 @@ fn task_detail(
             .into_any_element(),
     );
     if !earlier.is_empty() {
-        let now = now();
+        let now = now_secs();
         let mut card = page_card("Earlier runs", Some(earlier.len()), None, cx);
-        for (n, run) in earlier.iter().enumerate().rev() {
+        for (n, run) in earlier.iter().enumerate().rev().take(EARLIER_SHOWN) {
             let open = detail.earlier_open.contains(&run.id);
             let ended = match &run.outcome {
                 Some(outcome) => outcome.said(),
@@ -616,6 +612,10 @@ fn task_detail(
                 );
             }
         }
+        let hidden = earlier.len().saturating_sub(EARLIER_SHOWN);
+        if hidden > 0 {
+            card = card.child(muted_line(&format!("{hidden} older runs not shown"), cx));
+        }
         out.push(card.into_any_element());
     }
     out
@@ -630,7 +630,7 @@ fn timeline(detail: &TaskDetail, run: &Run, cx: &mut Context<ChatPane>) -> Vec<g
         return vec![muted_line("It has not started.", cx)];
     }
     let hidden = visits.len().saturating_sub(VISITS_SHOWN);
-    let now = now();
+    let now = now_secs();
     let mut out: Vec<gpui::AnyElement> = Vec::new();
     if hidden > 0 {
         out.push(muted_line(
@@ -659,7 +659,7 @@ fn timeline(detail: &TaskDetail, run: &Run, cx: &mut Context<ChatPane>) -> Vec<g
             .clone()
             .unwrap_or_else(|| "In progress".to_string());
         let pinned = visit.start.clone().zip(visit.end.clone());
-        let dirs = (run.setup.dir.clone(), run.setup.repo.clone());
+        let dirs = dirs(run);
         out.push(
             div()
                 .id(SharedString::from(format!(
@@ -736,24 +736,17 @@ fn visit_body(
     if changes.is_empty() {
         out.push(muted_line("No files changed.", cx));
     }
-    let (muted, status) = (cx.theme().muted_foreground, crate::theme::status_ink(cx));
+    let muted = cx.theme().muted_foreground;
     for (i, change) in changes.iter().take(FILES_SHOWN).enumerate() {
         let key = (from.clone(), to.clone(), change.path.clone());
         let opened = detail.files.get(&key);
-        let counts: Vec<gpui::AnyElement> = match (change.added, change.removed) {
-            (Some(added), Some(removed)) => vec![
-                div()
-                    .text_color(status.success)
-                    .child(format!("+{added}"))
-                    .into_any_element(),
-                div()
-                    .text_color(status.danger)
-                    .child(format!("−{removed}"))
-                    .into_any_element(),
-            ],
-            _ => vec![div().text_color(muted).child("binary").into_any_element()],
+        let counts = match change.lines {
+            Some((added, removed)) => {
+                crate::chat::transcript::line_counts(added as usize, removed as usize, cx)
+            }
+            None => Some(div().text_color(muted).child("binary")),
         };
-        let dirs = (run.setup.dir.clone(), run.setup.repo.clone());
+        let dirs = dirs(run);
         out.push(
             div()
                 .id(SharedString::from(format!(
@@ -781,7 +774,7 @@ fn visit_body(
                         .text_xs()
                         .child(change.path.clone()),
                 )
-                .child(div().h_flex().gap_1().text_xs().children(counts))
+                .children(counts.map(|counts| counts.text_xs()))
                 .into_any_element(),
         );
         match opened {
@@ -861,11 +854,27 @@ fn chevron(open: bool) -> IconName {
     }
 }
 
-/// Seconds past the epoch.
-fn now() -> u64 {
-    std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map_or(0, |d| d.as_secs())
+/// *Open session* on the session `row` runs in, if it has one.
+fn open_session(
+    id: &str,
+    row: &Row,
+    cx: &mut Context<ChatPane>,
+) -> Option<gpui_component::button::Button> {
+    let (uid, window) = row.session?;
+    Some(
+        crate::controls::action(SharedString::from(id.to_string()))
+            .ghost()
+            .small()
+            .label("Open session")
+            .on_click(cx.listener(move |_: &mut ChatPane, _, _, cx| {
+                cx.emit(ChatPaneEvent::ShowSession { uid, window });
+            })),
+    )
+}
+
+/// Where `run`'s marks are read.
+fn dirs(run: &Run) -> Dirs {
+    (run.setup.dir.clone(), run.setup.repo.clone())
 }
 
 /// A press that announces `event` about task `id`.

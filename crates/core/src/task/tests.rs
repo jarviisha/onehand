@@ -438,16 +438,14 @@ fn a_visits_changes_and_a_files_diff_read_between_two_marks() {
     std::fs::remove_file(repo.join("gone.txt")).unwrap();
     let to = marks::pin_blocking(&repo, &[]).unwrap();
     let changes = marks::changes_blocking(&repo, &from, &to).unwrap();
-    let said: Vec<(&str, Option<u32>, Option<u32>)> = changes
-        .iter()
-        .map(|c| (c.path.as_str(), c.added, c.removed))
-        .collect();
+    let said: Vec<(&str, Option<(u32, u32)>)> =
+        changes.iter().map(|c| (c.path.as_str(), c.lines)).collect();
     assert_eq!(
         said,
         [
-            ("a.txt", Some(2), Some(1)),
-            ("gone.txt", Some(0), Some(1)),
-            ("new.txt", Some(1), Some(0)),
+            ("a.txt", Some((2, 1))),
+            ("gone.txt", Some((0, 1))),
+            ("new.txt", Some((1, 0))),
         ]
     );
     assert_eq!(
@@ -457,6 +455,10 @@ fn a_visits_changes_and_a_files_diff_read_between_two_marks() {
     assert_eq!(
         marks::file_diff_blocking(&repo, &from, &to, "gone.txt").unwrap(),
         [D::Removed("x".into())]
+    );
+    assert!(
+        marks::file_diff_blocking(&repo, "0000000", &to, "a.txt").is_err(),
+        "a mark that is not there is not an empty file"
     );
     let _ = std::fs::remove_dir_all(&repo);
 }
