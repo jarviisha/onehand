@@ -104,6 +104,17 @@ impl Outcome {
         }
     }
 
+    /// Whether a person should look at how the run ended: it did not get
+    /// there, and nobody chose that.
+    pub fn needs_attention(&self) -> bool {
+        match self {
+            Self::Exhausted { .. }
+            | Self::Failed(_)
+            | Self::Stopped(Stop::TimedOut | Stop::LinkLost | Stop::Closed) => true,
+            Self::Done | Self::Stopped(Stop::ByPerson | Stop::TakenOver) => false,
+        }
+    }
+
     /// What happened, as a line for the transcript.
     pub fn said(&self) -> String {
         match self {
@@ -247,6 +258,44 @@ impl Run {
         }
     }
 
+    /// A new run of the task `prev` was a run of, on `template`, starting at
+    /// the first step it cannot carry over: one the last run had not passed,
+    /// or one that differs in `template`, or reads a step that does. What
+    /// the steps before it kept is carried over with them.
+    pub(crate) fn retry_of(prev: &Run, id: String, template: Template) -> Self {
+        let same = |step: &str| {
+            let find = |t: &Template| t.steps.iter().find(|s| s.id == step).cloned();
+            find(&template).is_some_and(|s| Some(s) == find(&prev.template))
+        };
+        let start = template
+            .steps
+            .iter()
+            .enumerate()
+            .position(|(i, step)| {
+                let reads: Vec<&str> = match &step.kind {
+                    StepKind::Agent { prompt, .. } => prompt::refs(prompt)
+                        .into_iter()
+                        .filter_map(|name| name.strip_prefix("output."))
+                        .collect(),
+                    StepKind::Approval { of } => vec![of.as_str()],
+                    StepKind::Command { on_fail, .. } => vec![on_fail.as_str()],
+                };
+                i >= prev.step
+                    || !same(&step.id)
+                    || reads.iter().any(|read| !read.is_empty() && !same(read))
+            })
+            .unwrap_or(template.steps.len());
+        let outputs = template.steps[..start]
+            .iter()
+            .filter_map(|step| Some((step.id.clone(), prev.outputs.get(&step.id)?.clone())))
+            .collect();
+        let mut run = Run::new(id, template, prev.brief.clone(), prev.setup.clone());
+        run.step = start;
+        run.furthest = start;
+        run.outputs = outputs;
+        run
+    }
+
     /// The step the run is at.
     pub fn current(&self) -> Option<&StepSpec> {
         self.template.steps.get(self.step)
@@ -279,6 +328,12 @@ impl Run {
     /// The run has taken a step: it was started, not only made.
     pub fn begun(&self) -> bool {
         !self.history.is_empty()
+    }
+
+    /// The mark pinned where the run's last visit left the work, once it
+    /// has one.
+    pub fn last_end(&self) -> Option<&str> {
+        self.visits.last()?.end.as_deref()
     }
 
     /// The run has ended.
@@ -501,7 +556,7 @@ impl Run {
         }
         self.outcome = None;
         if !self.begun() {
-            return self.enter(0, "started");
+            return self.enter(self.step, "started");
         }
         self.close_visit("interrupted");
         if let Some(step) = self.current().map(|step| step.id.clone()) {

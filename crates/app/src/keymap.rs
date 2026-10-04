@@ -119,6 +119,7 @@ pub const COMMANDS: &[Command] = &[
         [],
         RunWorkflow
     ),
+    command!("show_tasks", "Show the Tasks page", [], ShowTasks),
     command!(
         "maximize",
         "Maximize focused panel / restore",

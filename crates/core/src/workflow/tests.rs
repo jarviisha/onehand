@@ -672,3 +672,132 @@ fn an_old_directory_that_cannot_be_read_is_reported() {
     assert!(old.exists());
     let _ = std::fs::remove_dir_all(&root);
 }
+
+#[test]
+fn only_an_ending_nobody_chose_needs_attention() {
+    for (outcome, needs) in [
+        (Outcome::Done, false),
+        (Outcome::Stopped(Stop::ByPerson), false),
+        (Outcome::Stopped(Stop::TakenOver), false),
+        (Outcome::Stopped(Stop::TimedOut), true),
+        (Outcome::Stopped(Stop::LinkLost), true),
+        (Outcome::Stopped(Stop::Closed), true),
+        (Outcome::Exhausted { step: "x".into() }, true),
+        (Outcome::Failed("x".into()), true),
+    ] {
+        assert_eq!(outcome.needs_attention(), needs, "{outcome:?}");
+    }
+}
+
+/// A checkout run that passed its plan and its approval, then ran out of
+/// misses at the change.
+fn exhausted_at_implement() -> Run {
+    let mut run = at_approval();
+    run.approved();
+    prompt_of(run.measured(mark("a", "d0")));
+    for _ in 0..4 {
+        run.turn_ended(&facts("a", false, 0, "d0"), "");
+    }
+    assert!(matches!(run.outcome, Some(Outcome::Exhausted { .. })));
+    assert_eq!(run.current().unwrap().id, "implement");
+    run
+}
+
+#[test]
+fn a_retry_on_the_same_template_starts_where_the_last_run_stopped() {
+    let prev = exhausted_at_implement();
+    let mut next = Run::retry_of(&prev, "2".into(), prev.template.clone());
+    assert_eq!((next.step, next.misses), (2, 0));
+    assert_eq!(
+        next.outputs.get("plan").map(String::as_str),
+        Some("The plan.")
+    );
+    assert_eq!(next.resume(), Action::Measure);
+    assert_eq!(next.current().unwrap().id, "implement");
+    let text = prompt_of(next.measured(mark("a", "d0")));
+    assert!(
+        text.contains("The plan."),
+        "the plan it carried is filled in"
+    );
+}
+
+/// A checkout run that passed its plan, its approval and its change, then
+/// ran out of misses at the check.
+fn exhausted_at_verify() -> Run {
+    let mut run = at_approval();
+    run.approved();
+    prompt_of(run.measured(mark("a", "d0")));
+    for n in 0..4 {
+        let digest = format!("d{}", n + 1);
+        run.turn_ended(&facts("a", true, 0, &digest), "");
+        if let Action::Measure = run.command_finished(Err("again".into())) {
+            prompt_of(run.measured(mark("a", &digest)));
+        }
+    }
+    assert!(matches!(run.outcome, Some(Outcome::Exhausted { .. })));
+    assert_eq!(run.current().unwrap().id, "verify");
+    run
+}
+
+#[test]
+fn a_retry_starts_at_the_first_step_whose_prompt_changed() {
+    let prev = exhausted_at_verify();
+    let mut changed = prev.template.clone();
+    if let StepKind::Agent { prompt, .. } = &mut changed.steps[2].kind {
+        prompt.push_str("\nAnd more.");
+    }
+    let next = Run::retry_of(&prev, "2".into(), changed);
+    assert_eq!(
+        next.step, 2,
+        "the change runs again; plan and approval carry"
+    );
+    assert_eq!(next.outputs.len(), 1);
+    // The plan's prompt changed: everything from it on runs again.
+    let mut changed = prev.template.clone();
+    if let StepKind::Agent { prompt, .. } = &mut changed.steps[0].kind {
+        prompt.push_str("\nAnd more.");
+    }
+    let next = Run::retry_of(&prev, "2".into(), changed);
+    assert_eq!(next.step, 0);
+    assert!(next.outputs.is_empty());
+}
+
+#[test]
+fn a_retry_does_not_carry_an_approval_whose_of_changed() {
+    let prev = exhausted_at_implement();
+    let mut changed = prev.template.clone();
+    changed.steps[1].kind = StepKind::Approval {
+        of: "implement".into(),
+    };
+    let next = Run::retry_of(&prev, "2".into(), changed);
+    assert_eq!(next.step, 1);
+    assert_eq!(next.outputs.len(), 1, "the plan before it still carries");
+}
+
+/// A step the same in both templates still runs again when a step it reads
+/// is not: here the plan the approval approves is gone.
+#[test]
+fn a_retry_does_not_carry_a_step_that_reads_one_that_changed() {
+    let prev = exhausted_at_implement();
+    let mut changed = prev.template.clone();
+    changed.steps.remove(0);
+    assert_eq!(
+        changed.steps[0], prev.template.steps[1],
+        "the approval is unchanged"
+    );
+    let next = Run::retry_of(&prev, "2".into(), changed);
+    assert_eq!(next.step, 0);
+    assert!(next.outputs.is_empty());
+}
+
+#[test]
+fn a_retry_counts_its_misses_from_zero() {
+    let prev = exhausted_at_implement();
+    assert!(prev.misses > 0);
+    let mut next = Run::retry_of(&prev, "2".into(), prev.template.clone());
+    next.resume();
+    prompt_of(next.measured(mark("a", "d0")));
+    // One miss is under the allowance again.
+    prompt_of(next.turn_ended(&facts("a", false, 0, "d0"), ""));
+    assert_eq!((next.misses, next.outcome.clone()), (1, None));
+}

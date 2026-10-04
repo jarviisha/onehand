@@ -14,10 +14,11 @@ pub fn dir() -> PathBuf {
     crate::config::config_dir().join("tasks")
 }
 
-/// What the writer's thread is handed: a task to save, or a mark to answer
-/// once every save handed over before it has landed.
+/// What the writer's thread is handed: a task to save or remove, or a mark
+/// to answer once every save handed over before it has landed.
 enum Op {
     Save(Box<Task>),
+    Remove(String),
     Mark(mpsc::Sender<()>),
 }
 
@@ -42,6 +43,17 @@ impl Writer {
                                 eprintln!("onehand: could not write a task's file: {why}");
                             }
                         }
+                        Op::Remove(id) => {
+                            let file = dir.join(format!("{id}.json"));
+                            if let Err(why) =
+                                std::fs::remove_file(&file).or_else(|err| match err.kind() {
+                                    std::io::ErrorKind::NotFound => Ok(()),
+                                    _ => Err(err),
+                                })
+                            {
+                                eprintln!("onehand: could not remove {}: {why}", file.display());
+                            }
+                        }
                         Op::Mark(landed) => {
                             let _ = landed.send(());
                         }
@@ -56,6 +68,14 @@ impl Writer {
     pub fn save(&self, task: Task) {
         if self.tx.send(Op::Save(Box::new(task))).is_err() {
             eprintln!("onehand: a task's file was not written: its writer is gone");
+        }
+    }
+
+    /// Remove task `id`'s file, after every save sent before it: one still
+    /// queued cannot bring it back.
+    pub fn remove(&self, id: String) {
+        if self.tx.send(Op::Remove(id)).is_err() {
+            eprintln!("onehand: a task's file was not removed: its writer is gone");
         }
     }
 
@@ -118,6 +138,7 @@ pub(crate) fn migrate_blocking(old: &Path, new: &Path) -> Vec<String> {
                 setup: run.setup.clone(),
                 runs: vec![run],
                 dismissed: false,
+                source: super::Source::Workflow,
             };
             serde_json::to_string_pretty(&task).map_err(|err| err.to_string())
         },

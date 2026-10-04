@@ -1,7 +1,8 @@
 # Tasks
 
-**Status: partly built.** Pull requests 1 (the rename) and 2 (tasks, history, step visits, marks
-and the queue) are built; the Tasks page, Retry and the history cap are design. This is where
+**Status: milestone 1+2 is built.** Pull requests 1 (the rename), 2 (tasks, history, step visits,
+marks and the queue) and 3 (the Tasks page, the check as a task, Retry and the history cap) are
+built; the task detail and the earlier-step picker are milestone 3's design. This is where
 milestones 1+2 and 3 of [roadmap.md](roadmap.md) are headed, and the decisions behind it are listed
 there. Where the code has landed, this file is its account, with [workflows.md](workflows.md)
 holding the engine and the driver.
@@ -22,16 +23,20 @@ running, what needs me, and what has finished.
   | *Needs attention*, waiting | a live run waiting for approval, or on a card its session parked; it keeps its place | Open session, Stop |
   | *Needs attention*, ended | a run that ended exhausted, failed, timed out or interrupted; its place is free | Resume (interrupted only), Retry, Dismiss |
   | *Running* | the one run working in each place | Open session, Stop |
-  | *Queued* | tasks waiting for their place to be free | Open session, Stop |
+  | *Queued* | tasks waiting for their place to be free | Stop |
   | *Finished* | done, stopped by a person, taken over, dismissed | none on this page |
 
 - **Every entry in *Needs attention* comes with an action**, and it stays until a person takes one.
   A waiting run is answered in its session; an ended one is resumed, retried or dismissed. Dismiss
   moves it to *Finished* and keeps its outcome.
-- **The project page's list of unfinished runs becomes a link to this page**, so two lists can never
-  disagree.
+- **The project page links to this page** with one line, e.g. *2 tasks need attention · 1 queued*,
+  drawn only when a task of the project needs attention, runs or waits, so two lists can never
+  disagree. Beside *New session* it offers **Run check** when the project has a check command.
+- **Unattended runs are listed read-only**, as waiting when a card is parked and running otherwise,
+  with *Open session* only. Only live runs exist, so no other group holds one.
 - **History is bounded:** the most recent 200 finished tasks per project. The page says how many
-  older ones were removed.
+  older ones were removed since onehand started.
+- **Every card is capped at 50 rows** and says how many more it left out.
 
 Milestone 3 adds the task detail behind each row: each run's step timeline, each step's output and
 diff, what waits for approval, the earlier runs, and Retry for a finished task.
@@ -106,7 +111,7 @@ and the rail count cannot drift apart.
 | Run | the same one | a new one |
 | Offered for | an interrupted run only (the agent stopped or the session went: `Outcome::resumable`) | every outcome under *Needs attention*, and *Finished* from the detail |
 | Workflow | the run's own snapshot | the previous run's snapshot; the newer template is offered if it changed |
-| Starts at | where it was, marks kept | the first step that cannot be carried over (below); an earlier step can be picked |
+| Starts at | where it was, marks kept | the first step that cannot be carried over (below); picking an earlier step is milestone 3's |
 | Misses | as they were | from zero |
 | Place | through the queue | through the queue |
 
@@ -124,6 +129,17 @@ With the previous run's own snapshot, nothing differs, so a retry starts where t
 - **The work changed** (another head, or other uncommitted changes) is said in the retry dialog,
   and the retry still carries outputs over, since a person fixing something by hand is the usual
   reason to retry. The new run's first mark records the work as it now is.
+
+A retry with no end mark to compare against, or whose comparison fails, skips this check. **A
+check task is retried at once**, with no dialog: it is a fresh run of its one step.
+
+In code: `Run::retry_of` (`crates/core/src/workflow/run.rs`) builds the new run with `step` and
+`furthest` at the start step and the outputs of the steps before it; `Task::retry` pushes it.
+`Run::resume` enters the run's own step on its first start, which is step 0 for a fresh run.
+`task::marks::against_blocking` answers `Same`, `Changed` or `OtherBranch`, and
+`Shell::begin_retry` (`crates/app/src/shell/workflows.rs`) asks the question. The dialog shows
+*Retry with the newer workflow* when the workflows on offer hold one of the same name that differs
+from the run's snapshot and validates, and it says where that one would start.
 
 ## The architecture
 
@@ -155,8 +171,15 @@ unattended      (as it is; a thin         Tasks page in the agent pane, rail row
   on the task as well as on each run, so a task called off before its run started still says what
   it was. `Task::outcome` is the last run's, or stopped by a person with no run; `Task::resumable`
   is not dismissed and that outcome unset or resumable. Both are written once in core, as
-  `GitStatus::label` is, never per call site. The source and the group rule arrive with pull
-  request 3, as fields an older file reads without.
+  `GitStatus::label` is, never per call site. `Task::source` is `Workflow` or `Check`, and a file
+  from before it reads as `Workflow`.
+- **The group rule is pure** (`Task::group`). The app passes what only it knows, `Working::Queued`,
+  `Running` or `Waiting`, which maps straight to its group. Otherwise a task not dismissed whose
+  outcome is unset (cut off) or `Outcome::needs_attention` (exhausted, failed, timed out, agent or
+  session gone) is *Ended*, and everything else is *Finished*.
+- **The history cap is pure** (`task::history::over_cap`): the ids of the *Finished* tasks past the
+  newest `KEPT` (200) of each project a task was started from (`setup.repo`, never a worktree).
+  Recency is the latest move across a task's runs, then its id, which is the nanos it was made at.
 - **The queue rule is pure** (`task::queue::Queue`). Given a place, it answers whether a start runs
   now or queues, and which queued task goes next when a place frees up (first in, first out). Every task
   holds its place's lock, a single command included, so a check waits behind a workflow that is
@@ -184,17 +207,22 @@ unattended      (as it is; a thin         Tasks page in the agent pane, rail row
   git update-ref refs/onehand/tasks/<task>/<run>/<visit>/<start|end> $commit
   ```
 
-  The visit id is in the path, so a step visited twice keeps both pairs. `task::marks::pin_blocking`
+  The visit id is in the path, so a step visited twice keeps both pairs. The commit's message also
+  carries `Branch: <name>`, the branch checked out when it was pinned, so a retry can tell the work
+  moved to another branch without the run's schema changing; a mark from before it names none, and
+  the branch check is skipped for it. `task::marks::pin_blocking`
   does this with onehand's own author and committer, so a repository with no identity set still
   gets its marks, and reads an empty tree on an unborn `HEAD`. One commit serves a visit's end and
   the next visit's start (`Run::boundaries`, `Run::pinned`).
 
   It is not `git stash create`, which leaves untracked files out and makes a commit nothing points
   at, so `git gc` prunes it within weeks. The temporary index leaves the person's own index alone.
-  The refs are deleted when their task falls out of the history cap.
+  The refs are deleted when their task falls out of the history cap
+  (`task::marks::drop_blocking`, every ref under `refs/onehand/tasks/<task>/`).
 - **One writer, in order.** `task::files::Writer` is the task store's writer: one thread, saves
-  carried out in the order sent, `flush` on quit. A finished task's file is kept as history; nothing
-  removes one until the history cap.
+  carried out in the order sent, `flush` on quit. A finished task's file is kept as history until the
+  history cap removes it through the same thread (`Writer::remove`), so a save still queued cannot
+  bring a removed file back.
 
 ### On disk
 
@@ -243,10 +271,28 @@ pull request, before the migration it protects.
   (or its agent or session goes), pins the last end mark, then releases the place and starts the
   next task in the window it was asked from; one whose window or folder is gone stays interrupted,
   and the place passes on.
-- **Until the Tasks page**, the project page lists the interrupted tasks (*Dismiss*, *Resume*) and
-  the queued ones (*Stop*) under *Unfinished tasks*.
-- **The check command as a task** is a run with one command step and no agent. It goes through the
-  same queue and the same writer, and its outcome lands on the page like any other.
+- **The page reads its rows per frame** from `task::rows`, the window's tasks (by `setup.repo` or
+  `setup.dir`) plus the unattended runs converted read-only, sorted by `task::sort_listed`
+  (core): by group, finished rows by when they last moved, newest first, every other group by
+  when the task was made, oldest first. The rail's count is `task::attention`, counted from the same
+  rows. `Tasks::working` says what a task does: queued, waiting (an approval or an unanswered card
+  on its live driver), or running (a live driver, a place held, a check running).
+- **Stop goes through `task::stop_task`**, whatever the task does: a queued one is called off, a
+  live driver is stopped, and a running check has its command called off. A task that ended but
+  still holds its place, its session's turn not yet over, has nothing to stop, and its row offers
+  no *Stop*.
+- **The check command as a task** (`Task::check`) is a run of a template named *Check* with one
+  command step whose `on_fail` is empty, so a failure ends the run failed. The template is made on
+  the spot and never saved or validated. *Run check* on the project page keeps the task and asks
+  for its place like any other. With no session to watch, the driver is not involved:
+  `task::drive_check` pins the start mark, runs the command on the background executor with a
+  cancel flag, reports `command_finished` (or `stopped` by a person when called off), says *Check
+  passed in <project>* or *Check failed in <project>* in the window it was asked from, then pins the end mark
+  and gives the place up.
+- **The history cap runs** once the tasks are read at boot and whenever a task lets go of its
+  place, is dismissed or is called off. Each task past the cap has its file removed, leaves the
+  global, and has its marks dropped off the UI thread; a failure is logged. How many went is counted
+  per project since boot only.
 - **Unattended runs are read through a conversion** that turns what `onehand_core::unattended`
   already knows into rows. Their data and code are left alone until milestone 5 replaces the
   one-turn run, when an unattended run becomes a run of a task for real.
@@ -263,7 +309,7 @@ Milestone 1+2 lands as three pull requests in a row, each with its docs.
 |---|---|---|
 | 1. Rename and migration (landed) | `workflow` (was `pipeline`), `workflow::Run` (was `PipelineRun`); `workflow::store::migrate_old_dir_blocking` moves `pipelines/` to `workflows/`, restartably; `instance::hold_lock` | `boot` takes the lock, then runs the move; every module, type and string renamed, the `Workflows` global and Settings ▸ Workflows; a `run_pipeline` keymap override is read as `run_workflow` |
 | 2. Tasks, history, visits and the queue (landed) | `task`, `task::files` and the move of `pipeline-runs/`; step visits; `task::marks`; `task::queue` keyed by the real checkout | `Workflows` → `Tasks` global; the driver records visits and marks their end; every start asks the queue, and a place is given up only once the work has stopped |
-| 3. The Tasks page, the check as a task, and Retry | group rule, history cap; a one-step run with no agent; what a retry carries over | page, rail row and count, project filter; the project page links here; Retry from *Needs attention* |
+| 3. The Tasks page, the check as a task, and Retry (landed) | group rule, history cap; a one-step run with no agent; what a retry carries over | page, rail row and count, project filter; the project page links here; Retry from *Needs attention* |
 
 Each one brings its glossary terms and turns its part of this file into the account of the code.
 

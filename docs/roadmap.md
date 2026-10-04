@@ -26,17 +26,23 @@ Pull request 2 has landed as well: every run belongs to a **Task** kept in `task
 whatever its outcome, and `pipeline-runs/` moves there at start. A run records its step visits, each
 pinned at its start and end as a commit under `refs/onehand/tasks/…`. Every start, Resume included,
 goes through one queue keyed by the checkout git sees, and a place is freed only once the work has
-stopped. Until the Tasks page, the project page lists interrupted tasks (*Resume*, *Dismiss*) and
-queued ones (*Stop*); a task that ended any other way is kept on disk only.
+stopped.
+
+Pull request 3 has landed too: the **Tasks page** lists every task of the window's projects under
+*Needs attention*, *Running*, *Queued* and *Finished*, with a project filter, a rail row with the
+count of those needing attention, and the unattended runs read-only. The project page links there
+in one line and offers *Run check*, which runs the check command as a task of its own. **Retry**
+starts a new run at the default step, carrying over what it can, and says when the work changed or
+refuses when another branch is checked out. Finished tasks past the newest 200 of a project are
+removed with their mark refs.
 
 Not there yet:
 - The workflow mock agent (`crates/core/examples/mock_workflow_agent.js`) and the checklist in
   [workflows.md](workflows.md#checking-it-by-hand) are in the repository; a full pass of the
-  checklist is still owed before the Tasks page depends on the states the driver reports. The loop
-  back after a failed command is a miss inside one run, not the Retry designed below, which starts a
-  new run.
-- There is no Tasks page, no history cap and no deletion of mark refs, so `tasks/` and
-  `refs/onehand/` grow until pull request 3.
+  checklist, the Tasks page rows included, is still owed.
+- Retry starts at the default step; picking an earlier one comes with milestone 3's task detail, as
+  does Retry on a finished task.
+- How many old tasks the cap removed is counted since onehand started, not kept across restarts.
 - An issue or a pull request cannot be the source of a run. The unattended run on `main` is still
   the older one-turn kind.
 

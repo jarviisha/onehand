@@ -197,7 +197,7 @@ Settings ▸ Workflows and kept in the workspace file (`WorkspaceConfig::checks`
 checkout git sees: the canonical top level of the repository, or a folder's own canonical path
 outside git (`task::queue::place_blocking`), so two projects that are folders of one checkout share
 one place. One task works in a place at a time; a start that finds its place taken waits, first
-in, first out, says so in a notification and shows as *Queued* on the project page, where *Stop*
+in, first out, says so in a notification and shows under *Queued* on the Tasks page, where *Stop*
 calls it off. A task called off before its run took a step drops that empty run and reads as
 stopped by a person; a resume called off goes back to how it was. **A place is given up only once
 the work has stopped**: a run that ends while its session's turn is still going keeps it until
@@ -208,12 +208,13 @@ it never waits.
 
 The launcher keeps the new task before asking for its place, so one waiting survives a restart.
 After a restart nothing is running or queued: a task whose last run has no outcome reads as
-interrupted. A project page lists, under *Unfinished tasks*, the interrupted tasks started from it
-or working in it, with *Dismiss* (kept as history, never offered again) and *Resume*, and the
-queued ones with *Stop*. Nothing restarts an agent by itself. *Resume* adds the task's folder back
-as a project if it left the workspace, starts a session on the agent the run used, and calls
-`Run::resume`, which also starts a run that never took a step. A task that ended exhausted,
-failed, timed out, done or stopped is kept on disk and not listed yet.
+interrupted. The Tasks page lists it under *Needs attention*, with *Resume*, *Retry* and *Dismiss*
+(kept as history, never offered again), beside the tasks that ended exhausted, failed or timed
+out; a project page links there with one line saying what its tasks need. Nothing restarts an
+agent by itself. *Resume* adds the task's folder back as a project if it left the workspace,
+starts a session on the agent the run used, and calls `Run::resume`, which also starts a run that
+never took a step. *Retry* starts a new run instead; [tasks.md](tasks.md#retry-and-resume) holds
+what it carries over.
 
 At boot, behind the instance lock and right after the templates move, every run a build from
 before tasks kept in `<config_dir>/onehand/pipeline-runs/` becomes a task of the same id in
@@ -258,14 +259,16 @@ change (`git checkout . && git clean -fd`).
 |---|---|---|
 | Done | Brief `go`. *Continue* at the approval | Plan, Approve, Implement, Verify; *Workflow done*. `mock-workflow.txt` is left uncommitted. On *Implement on a branch*, a new branch holds one commit |
 | Stop while a command runs | Brief `go fast`, *Continue*, then *Stop* during Verify's `sleep 5` | The run ends *stopped by hand* only once the command has exited: no `sleep` is left (`pgrep -f 'sleep 5'`) |
-| Exhausted | Brief `miss` | The workflow allows three misses, so the plan misses `answered` four times; the fourth ends the run with *too many misses at the Plan step*. The task stays in `tasks/` and is not listed on the project page |
+| Exhausted | Brief `miss` | The workflow allows three misses, so the plan misses `answered` four times; the fourth ends the run with *too many misses at the Plan step*. The task is listed under *Needs attention* on the Tasks page, and the rail's *Tasks* row counts it. *Retry* says it starts at Plan; *Retry* runs it again in a new run |
 | A failed command goes back | Brief `fail-check`, *Continue* | Verify fails, Implement runs again with the check's output in its prompt, Verify passes; *Workflow done* |
 | Approve and Revise | Brief `go`. *Revise…* with a note, then *Continue* | The plan runs again, its prompt carrying the note and the earlier answer; no miss is counted. *Review…* shows the kept answer |
-| A restart mid-step, then Resume | Brief `go`, *Continue*, quit while Implement's turn is still answering | At the next start the project page lists the task under *Unfinished tasks*. *Resume* starts a new session at Implement, with its mark kept, and the run carries on to *Workflow done* |
+| A restart mid-step, then Resume | Brief `go`, *Continue*, quit while Implement's turn is still answering | At the next start the Tasks page lists the task under *Needs attention*, cut off at Implement. *Resume* starts a new session at Implement, with its mark kept, and the run carries on to *Workflow done* |
 | A restart at an approval, then Resume | Brief `go`, quit while the run waits for approval | *Resume* waits for approval again; *Review…* shows the plan |
 | A workflow edited under a run | Duplicate *Work in checkout*, start a run on the copy with brief `go`, then while the run waits for approval delete its Verify step and save | The run still reaches Verify: it uses the snapshot it started with |
-| Two tasks in one checkout | Brief `go`, then while it runs start a second with brief `go fast` | A notification says the second is queued; the project page lists it as *Queued*. It starts by itself once the first ends, in a session of its own |
-| Stop on a queued task | As above, then *Stop* on the queued row | The row goes; the first run carries on. The task's file keeps no run |
-| Dismiss | Quit mid-run, then *Dismiss* on the row at the next start | The row goes; the task's file is kept with `"dismissed": true` |
+| Two tasks in one checkout | Brief `go`, then while it runs start a second with brief `go fast` | A notification says the second is queued; the Tasks page lists it under *Queued*. It starts by itself once the first ends, in a session of its own |
+| Stop on a queued task | As above, then *Stop* on the queued row | The row moves to *Finished*; the first run carries on. The task's file keeps no run |
+| Dismiss | Quit mid-run, then *Dismiss* on the row at the next start | The row moves to *Finished*; the task's file is kept with `"dismissed": true` |
+| Run check | Set a check command, then *Run check* on the project page, once with a command that passes and once with `false` | A notification says *Check passed in <project>*, or *Check failed in <project>*; the task is under *Finished*, or under *Needs attention* with *Retry* |
+| Stop on a running row | *Stop* on a running task's row on the Tasks page | The run ends *stopped by hand* and moves to *Finished* |
 | Marks | After any run, `git for-each-ref refs/onehand` | A `start` and an `end` ref per visit, under `refs/onehand/tasks/<task>/<run>/<visit>/`; `git show` on one includes `mock-workflow.txt` while it is untracked |
 | Runs from an older build | Put a run file from before tasks in `<config_dir>/onehand/pipeline-runs/` and start onehand | It is in `tasks/` under the same name, listed as interrupted, and `pipeline-runs/` is gone |

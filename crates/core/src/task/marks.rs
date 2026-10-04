@@ -28,23 +28,96 @@ pub fn refs_from(task: &str, run: &Run, from: usize) -> Vec<String> {
 }
 
 /// Commit the work at `dir` as it stands, tracked or not and ignored files
-/// left out, and point each of `refs` at it. The commit, or why not.
-/// Blocking.
+/// left out, and point each of `refs` at it. The commit, or why not. Its
+/// message names the branch checked out, so a retry can tell the work has
+/// moved to another. Blocking.
 pub fn pin_blocking(dir: &Path, refs: &[String]) -> Result<String, String> {
-    static SEQ: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
-    let seq = SEQ.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-    let index =
-        std::env::temp_dir().join(format!("onehand-mark-{}-{seq}.index", std::process::id()));
-    let made = commit(dir, &index);
-    let _ = std::fs::remove_file(&index);
-    let commit = made?;
+    let (tree, head) = with_index(|index| tree(dir, index))?;
+    let message = match branch(dir) {
+        Some(branch) => format!("onehand mark\n\nBranch: {branch}"),
+        None => "onehand mark".to_string(),
+    };
+    let mut args = vec!["commit-tree", "--no-gpg-sign", tree.as_str()];
+    if let Some(head) = &head {
+        args.extend(["-p", head]);
+    }
+    args.extend(["-m", &message]);
+    let commit = run(dir, None, &args)?;
     for name in refs {
         run(dir, None, &["update-ref", name, &commit])?;
     }
     Ok(commit)
 }
 
-fn commit(dir: &Path, index: &Path) -> Result<String, String> {
+/// How the work at `dir` stands against the mark `commit`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Against {
+    /// As the mark pinned it.
+    Same,
+    /// On the same branch, but the commit or the files moved since.
+    Changed,
+    /// Another branch is checked out than the one the mark was pinned on.
+    OtherBranch(String),
+}
+
+/// How the work at `dir` stands against the mark `commit`: the branch it
+/// was pinned on, then the commit under it and its files. A mark that names
+/// no branch skips the first. Blocking.
+pub fn against_blocking(dir: &Path, commit: &str) -> Result<Against, String> {
+    let message = run(dir, None, &["log", "-1", "--format=%B", commit])?;
+    let pinned_on = message
+        .lines()
+        .find_map(|line| line.strip_prefix("Branch: "))
+        .map(str::to_string);
+    if let Some(pinned_on) = pinned_on.filter(|on| branch(dir).as_ref() != Some(on)) {
+        return Ok(Against::OtherBranch(pinned_on));
+    }
+    let parent = run(
+        dir,
+        None,
+        &["rev-parse", "-q", "--verify", &format!("{commit}^")],
+    )
+    .ok();
+    let mark_tree = run(dir, None, &["rev-parse", &format!("{commit}^{{tree}}")])?;
+    let (tree, head) = with_index(|index| tree(dir, index))?;
+    Ok(match parent == head && tree == mark_tree {
+        true => Against::Same,
+        false => Against::Changed,
+    })
+}
+
+/// Delete every mark task `task` pinned in the repository at `dir`.
+/// Blocking.
+pub fn drop_blocking(dir: &Path, task: &str) -> Result<(), String> {
+    let prefix = format!("refs/onehand/tasks/{task}/");
+    let refs = run(dir, None, &["for-each-ref", "--format=%(refname)", &prefix])?;
+    for name in refs.lines().filter(|name| !name.is_empty()) {
+        run(dir, None, &["update-ref", "-d", name])?;
+    }
+    Ok(())
+}
+
+/// The branch checked out at `dir`, or `None` on a detached HEAD.
+fn branch(dir: &Path) -> Option<String> {
+    run(dir, None, &["symbolic-ref", "--short", "-q", "HEAD"])
+        .ok()
+        .filter(|name| !name.is_empty())
+}
+
+/// Do `then` with a temporary index of its own, removed after.
+fn with_index<R>(then: impl FnOnce(&Path) -> R) -> R {
+    static SEQ: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    let seq = SEQ.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let index =
+        std::env::temp_dir().join(format!("onehand-mark-{}-{seq}.index", std::process::id()));
+    let made = then(&index);
+    let _ = std::fs::remove_file(&index);
+    made
+}
+
+/// The tree of the work at `dir` as it stands, built on `index`, with the
+/// commit checked out, if any.
+fn tree(dir: &Path, index: &Path) -> Result<(String, Option<String>), String> {
     let head = run(dir, None, &["rev-parse", "--verify", "-q", "HEAD^{commit}"]).ok();
     // ponytail: an index read from a tree has no file stats, so `add -A`
     // hashes every file again; seed from a copy of the real index if marks
@@ -55,12 +128,7 @@ fn commit(dir: &Path, index: &Path) -> Result<String, String> {
     };
     run(dir, Some(index), &["add", "-A"])?;
     let tree = run(dir, Some(index), &["write-tree"])?;
-    let mut args = vec!["commit-tree", "--no-gpg-sign", tree.as_str()];
-    if let Some(head) = &head {
-        args.extend(["-p", head]);
-    }
-    args.extend(["-m", "onehand mark"]);
-    run(dir, None, &args)
+    Ok((tree, head))
 }
 
 /// `git <args>` in `dir`, on `index` when given, as onehand: a mark needs no

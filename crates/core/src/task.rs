@@ -5,14 +5,75 @@
 //! - [`queue`] says which task may work in a place, one at a time;
 //! - [`marks`] pins the work at each step visit's start and end as a commit
 //!   the repository keeps;
-//! - [`files`] keeps every task, one file each, written in order.
+//! - [`files`] keeps every task, one file each, written in order;
+//! - [`history`] says which finished tasks are old enough to let go.
 
 pub mod files;
+pub mod history;
 pub mod marks;
 pub mod queue;
 
-use crate::workflow::{Brief, Outcome, Run, Setup, Stop, Template};
+use crate::workflow::{Brief, Outcome, Run, Setup, StepKind, StepSpec, Stop, Template};
 use serde::{Deserialize, Serialize};
+
+/// What a task runs: a workflow a person picked, or the project's check
+/// command on its own, which needs no session.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub enum Source {
+    #[default]
+    Workflow,
+    Check,
+}
+
+/// What a task is doing right now, which only the app driving it knows.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Working {
+    /// Waiting for its place.
+    Queued,
+    Running,
+    /// Waiting on a person: an approval or a card.
+    Waiting,
+}
+
+/// Where a task is listed, in the order a list of them reads.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub enum Group {
+    /// Waiting on a person.
+    Waiting,
+    /// Over, and a person should look: cut off, or ended on something nobody
+    /// chose.
+    Ended,
+    Running,
+    Queued,
+    /// History: done, stopped by a person, or let go.
+    Finished,
+}
+
+impl Group {
+    /// Whether a person should act on a task listed here: one waiting on
+    /// them, or one that ended on something nobody chose.
+    pub fn needs_attention(self) -> bool {
+        match self {
+            Self::Waiting | Self::Ended => true,
+            Self::Running | Self::Queued | Self::Finished => false,
+        }
+    }
+}
+
+/// Sort `rows` as a list of tasks reads: by group, finished ones newest
+/// first, every other group oldest first. `of` gives a row's group and its
+/// task, if it has one; a row with none comes first in its group.
+pub fn sort_listed<T>(rows: &mut [T], of: impl Fn(&T) -> (Group, Option<&Task>)) {
+    rows.sort_by(|a, b| {
+        let ((group, a), (other, b)) = (of(a), of(b));
+        group.cmp(&other).then_with(|| match group {
+            Group::Finished => b.map(Task::recency).cmp(&a.map(Task::recency)),
+            Group::Waiting | Group::Ended | Group::Running | Group::Queued => {
+                a.map(Task::created).cmp(&b.map(Task::created))
+            }
+        })
+    });
+}
 
 /// One piece of work and every run of it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -28,6 +89,9 @@ pub struct Task {
     /// A person let it go: it is history, never offered again.
     #[serde(default)]
     pub dismissed: bool,
+    /// A file from before checks were tasks reads as a workflow's.
+    #[serde(default)]
+    pub source: Source,
 }
 
 impl Task {
@@ -39,12 +103,79 @@ impl Task {
             brief,
             setup,
             dismissed: false,
+            source: Source::Workflow,
         }
+    }
+
+    /// A task that runs the project's check `command` once: one command step
+    /// that ends the run failed when it fails. Its template is made here,
+    /// never saved, and needs no validating.
+    pub fn check(id: String, command: String, setup: Setup) -> Self {
+        let mut template = Template::blank("Check");
+        template.steps.push(StepSpec {
+            id: "check".to_string(),
+            label: "Check".to_string(),
+            kind: StepKind::Command {
+                command: Some(command.clone()),
+                on_fail: String::new(),
+            },
+        });
+        let brief = Brief {
+            title: "Check".to_string(),
+            body: command,
+            instructions: None,
+        };
+        Self {
+            source: Source::Check,
+            ..Self::new(id, template, brief, setup)
+        }
+    }
+
+    /// Where it is listed, given what the app says it is doing.
+    pub fn group(&self, working: Option<Working>) -> Group {
+        match working {
+            Some(Working::Queued) => Group::Queued,
+            Some(Working::Running) => Group::Running,
+            Some(Working::Waiting) => Group::Waiting,
+            None if !self.dismissed
+                && self
+                    .outcome()
+                    .is_none_or(|outcome| outcome.needs_attention()) =>
+            {
+                Group::Ended
+            }
+            None => Group::Finished,
+        }
+    }
+
+    /// When it was made: its id is the nanos it was made at.
+    fn created(&self) -> u128 {
+        self.id.parse().unwrap_or(0)
+    }
+
+    /// When it last moved, then when it was made.
+    pub(crate) fn recency(&self) -> (u64, u128) {
+        let moved = self
+            .runs
+            .iter()
+            .filter_map(|run| run.history.last().map(|t| t.at))
+            .max()
+            .unwrap_or(0);
+        (moved, self.created())
+    }
+
+    /// Run it again on `template`, as run `id`, from the first step its last
+    /// run cannot carry over. The new run, not started; `None` with no run
+    /// to retry.
+    pub fn retry(&mut self, id: String, template: Template) -> Option<&Run> {
+        let next = Run::retry_of(self.runs.last()?, id, template);
+        self.runs.push(next);
+        self.runs.last()
     }
 
     /// How it stands: its last run's outcome, `None` while that run has not
     /// ended, or stopped by a person when it was called off before any run.
-    pub(crate) fn outcome(&self) -> Option<Outcome> {
+    pub fn outcome(&self) -> Option<Outcome> {
         match self.runs.last() {
             Some(run) => run.outcome.clone(),
             None => Some(Outcome::Stopped(Stop::ByPerson)),

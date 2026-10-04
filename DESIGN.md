@@ -197,27 +197,27 @@ One window hosts exactly one workspace. The frame is a navigation **rail** plus 
   filed away behind it. The row's own delete is offered here and nowhere else —
   this page is what shows when a project has no session on it, so every row on
   it is a conversation nothing is writing to.
-  **Unfinished tasks come first**, under *New session* and above the
-  conversations, under a muted *Unfinished tasks*. Two kinds of row are listed.
-  A task whose agent stopped or whose session was closed, in this process or
-  before a restart, is work left half done: its hairline card carries the task's
-  title, then the workflow and the step it stopped at muted, and two words at
-  its end: *Dismiss* (ghost) and *Resume*. *Dismiss* lets it go but keeps it as
-  history; nothing is deleted. Nothing restarts an agent by itself; *Resume* is
-  the only way back, and it opens a new session that carries on from that step.
-  A task waiting for its place, because another task is working in the same
-  checkout, carries a muted *Queued* and *Stop* (ghost), which calls that start
-  off; its muted line says where it starts, or where it resumes for a task that
-  ran before, and stopping a resume leaves the task as it was. Starting a task
-  that has to wait says so in a notification, naming the checkout it waits for.
-  A task that has ended but still holds its place, its session's turn not yet
-  over, is not listed until it lets go. The list is capped and says how many
-  more it left out.
+  **Run check** sits beside *New session*, plain rather than primary, drawn only
+  when the project has a check command. It runs that command as a task of its
+  own, through the same queue as every task, and says *Check passed in X* or
+  *Check failed in X* in a notification when it ends.
+  **What the project's tasks need is one line, not a list**, under the buttons
+  and above the conversations: a small ghost control with the inbox icon that
+  reads e.g. *2 tasks need attention · 1 queued*, counting tasks that need
+  attention, are running and are queued, and leaving out any part at zero. It is
+  not drawn when all three are zero. Pressing it opens the Tasks page narrowed to
+  this project. The tasks themselves are listed on that page only, so there are
+  never two lists that could disagree.
 - **The workspace has a page too**, for the question no project page can
   answer: what needs me, and what is there to do, across every project at once.
   It is reached from a muted row in the rail's header, *Workspace overview*,
   between *Add project…* and *New session*, and that row takes the selected
-  fill while the page shows. No project or session row is marked meanwhile,
+  fill while the page shows. Right under it is a second muted row, *Tasks*,
+  with the inbox icon, leading to the Tasks page and marked the same way while
+  that page shows. At its far end it carries a count pill drawn like a project
+  row's change count: how many tasks need attention, waiting on a person or
+  ended on something nobody chose. At zero there is no pill, so a pill is
+  always news. No project or session row is marked meanwhile,
   since the page is about none of them. Any other rail click leaves it, since each one is
   a choice of project or session. **The header stays**, for the way back to a
   hidden rail, but **without the terminal and Workbench buttons**: both docks
@@ -280,6 +280,45 @@ One window hosts exactly one workspace. The frame is a navigation **rail** plus 
   workspace bound to no storage keeps no issues, and the group says so in the
   Issues mode's words rather than offering an empty list. A file that cannot be
   read is named in the warning ink above the rows the others gave.
+- **The Tasks page** lists every task of the window's projects by what it needs.
+  It is the third page the centre can show, beside a session and the
+  workspace page, and the two pages exclude each other. It is left the same way
+  as the workspace page, with the same header (the fixed word *Tasks*, no dots
+  menu, no dock buttons) and with both docks put away. It also uses the same
+  column width and the same hairline cards, here **one column** of four cards,
+  top to bottom:
+  - **Needs attention**: tasks waiting on a person (an approval or a parked
+    card), then tasks that ended on something nobody chose: cut off,
+    exhausted, failed, timed out, or their agent or session gone. Its title row
+    carries the project filter, the workspace page's *All projects* menu, and
+    the filter narrows every card.
+  - **Running** and **Queued**: tasks working, and tasks waiting for their place.
+  - **Finished**: done, stopped by a person, or dismissed. Newest first. Every
+    other card lists the oldest first.
+  Each card has a muted count beside its title and says what it holds when it
+  holds nothing (*Nothing needs you.*, *Nothing is running.*, *Nothing is
+  queued.*, *Nothing has finished yet.*). Each draws at most fifty rows and says
+  *N more not shown* past that. *Finished* also says *N older tasks were
+  removed.* once the history cap has let some go.
+  A row is a hairline card: the task's title, then a muted line with the
+  workflow, the step it is at or how it ended, and the project. Its actions sit
+  at its end, all ghost and small:
+  - waiting on a person: *Open session*, *Stop*;
+  - ended: *Resume* (only when it can carry on where it was), *Retry*,
+    *Dismiss*;
+  - running or queued: *Open session* (when it has one), *Stop* (left off a
+    task that has ended but still holds its place until its session's turn is
+    over, since nothing is left to stop);
+  - an unattended run, listed read-only as waiting or running: *Open session*
+    only;
+  - finished: nothing.
+  *Retry* asks first in a modal that says where the new run starts and how many
+  answers it carries over, and adds that the work changed since the last run
+  stopped when it did. Its footer is *Cancel* (ghost), *Retry with the newer
+  workflow, from …* (only when a newer version of the workflow exists) and
+  *Retry* (primary). A retry whose last run worked on another branch is refused
+  in a warning notification naming that branch. A check is retried at once,
+  with no modal.
 - The **rail** is app chrome, not a panel: it lives outside the dock, so the dock
   cannot swallow it and a layout restore cannot lose it. `Ctrl+Shift+B` **hides
   it entirely** — it is never narrowed to an icon column, because at that width

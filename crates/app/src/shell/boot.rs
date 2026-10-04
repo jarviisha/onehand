@@ -183,7 +183,18 @@ impl Shell {
                     }
                     E::ResumeTask(id) => crate::task::request(id.clone(), window, cx),
                     E::DismissTask(id) => crate::task::dismiss(id, cx),
-                    E::StopQueuedTask(id) => crate::task::stop_queued(id, cx),
+                    E::RetryTask(id) => shell.begin_retry(id.clone(), window, cx),
+                    E::StopTask(id) => {
+                        let id = id.clone();
+                        cx.defer(move |cx| crate::task::stop_task(&id, cx));
+                    }
+                    E::ShowTasks(filter) => shell.show_tasks(filter.clone(), window, cx),
+                    E::RunCheck => {
+                        if let Some(root) = shell.window.workspace.active_root() {
+                            let root = root.path.clone();
+                            shell.run_check(root, window, cx);
+                        }
+                    }
                     // Its project made the active one first, since a session
                     // is minted on that, but not shown: showing it would
                     // connect the session it was last on, which nobody asked

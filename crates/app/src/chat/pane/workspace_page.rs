@@ -1,5 +1,5 @@
 use super::project_page::count_of;
-use super::{ChatPane, ChatPaneEvent, SessionSignal, rel_time};
+use super::{ChatPane, ChatPaneEvent, Page, SessionSignal, rel_time};
 use gpui::{
     App, Context, Div, InteractiveElement, IntoElement, ParentElement, SharedString,
     StatefulInteractiveElement, Styled, Window, div, rems,
@@ -34,7 +34,7 @@ pub(super) const PAGE_COLUMN: f32 = 560.;
 
 /// The widest the workspace page grows, in rems: room for two cards side by
 /// side and a few project tiles to a row, without lines too long to read.
-const PAGE_WIDE: f32 = 64.;
+pub(super) const PAGE_WIDE: f32 = 64.;
 
 /// The width a workspace page card starts from before it grows into its row,
 /// in rems. Two fit side by side within the page, and a narrower panel wraps
@@ -54,8 +54,9 @@ const PAGE_ISSUES_H: f32 = 24.;
 /// The height of a workspace page card's title row, in rems.
 const PAGE_TITLE_H: f32 = 1.75;
 
-/// What the issue filter reads while it is not narrowing the list at all.
-const ALL_PROJECTS: &str = "All projects";
+/// What a project filter reads while it is not narrowing the list at all:
+/// the workspace page's issues, or the Tasks page.
+pub(super) const ALL_PROJECTS: &str = "All projects";
 
 /// One project as the workspace page lists it.
 pub struct PageProject {
@@ -139,12 +140,12 @@ impl ChatPane {
         cx: &mut Context<Self>,
     ) {
         // A filter survives the page being shown again, while its project does.
-        let filter = self
-            .workspace
-            .take()
-            .and_then(|page| page.filter)
-            .filter(|only| projects.iter().any(|project| &project.root == only));
-        self.workspace = Some(WorkspacePage {
+        let filter = match self.page.take() {
+            Some(Page::Workspace(page)) => page.filter,
+            Some(Page::Tasks(_)) | None => None,
+        }
+        .filter(|only| projects.iter().any(|project| &project.root == only));
+        self.page = Some(Page::Workspace(WorkspacePage {
             projects,
             filter,
             read: None,
@@ -152,7 +153,7 @@ impl ChatPane {
             shown: Default::default(),
             recent: None,
             _load: None,
-        });
+        }));
         self.leave_shown_session(window, cx);
         self.active = None;
         self.empty = None;
@@ -164,7 +165,7 @@ impl ChatPane {
     /// What is on screen stays until the new read lands, so a reload does not
     /// blank a list that already had something in it.
     pub fn reload_workspace(&mut self, cx: &mut Context<Self>) {
-        let Some(page) = self.workspace.as_mut() else {
+        let Some(Page::Workspace(page)) = self.page.as_mut() else {
             return;
         };
         let files: Vec<(PathBuf, PathBuf)> = page
@@ -192,7 +193,7 @@ impl ChatPane {
                 })
                 .await;
             let _ = pane.update(cx, |pane: &mut Self, cx| {
-                let Some(page) = pane.workspace.as_mut() else {
+                let Some(Page::Workspace(page)) = pane.page.as_mut() else {
                     return;
                 };
                 page.read = Some(read);
@@ -204,32 +205,56 @@ impl ChatPane {
         }));
     }
 
-    /// Replace the workspace page's projects with a fresher listing, keeping
+    /// Replace the page's projects with a fresher listing, keeping
     /// everything it has read. A filter on a project no longer listed goes.
     pub fn set_page_projects(&mut self, projects: Vec<PageProject>, cx: &mut Context<Self>) {
-        let Some(page) = self.workspace.as_mut() else {
-            return;
+        let gone = |only: &Option<PathBuf>| {
+            only.as_ref()
+                .is_some_and(|only| !projects.iter().any(|project| &project.root == only))
         };
-        if page
-            .filter
-            .as_ref()
-            .is_some_and(|only| !projects.iter().any(|project| &project.root == only))
-        {
-            page.filter = None;
-            page.refilter();
+        match self.page.as_mut() {
+            Some(Page::Workspace(page)) => {
+                if gone(&page.filter) {
+                    page.filter = None;
+                    page.refilter();
+                }
+                page.projects = projects;
+            }
+            Some(Page::Tasks(page)) => {
+                if gone(&page.filter) {
+                    page.filter = None;
+                }
+                page.projects = projects;
+            }
+            None => return,
         }
-        page.projects = projects;
         cx.notify();
     }
 
     /// Whether the workspace page is what the pane shows.
     pub fn showing_workspace(&self) -> bool {
-        self.workspace.is_some()
+        match self.page {
+            Some(Page::Workspace(_)) => true,
+            Some(Page::Tasks(_)) | None => false,
+        }
+    }
+
+    /// Whether the Tasks page is what the pane shows.
+    pub fn showing_tasks(&self) -> bool {
+        match self.page {
+            Some(Page::Tasks(_)) => true,
+            Some(Page::Workspace(_)) | None => false,
+        }
+    }
+
+    /// Whether a page about more than one project is what the pane shows.
+    pub fn showing_page(&self) -> bool {
+        self.page.is_some()
     }
 
     /// Narrow the workspace page's issue list to one project, or `None` for all.
     fn filter_workspace(&mut self, only: Option<PathBuf>, cx: &mut Context<Self>) {
-        if let Some(page) = self.workspace.as_mut() {
+        if let Some(Page::Workspace(page)) = self.page.as_mut() {
             page.filter = only;
             page.refilter();
             cx.notify();
@@ -244,7 +269,7 @@ impl ChatPane {
     /// starting, parking or ending already refreshes every window, and a
     /// session's signal is the same query the rail draws its dots from.
     pub(super) fn workspace_page(&self, cx: &mut Context<Self>) -> gpui::AnyElement {
-        let Some(page) = self.workspace.as_ref() else {
+        let Some(Page::Workspace(page)) = self.page.as_ref() else {
             return div().into_any_element();
         };
         let muted = cx.theme().muted_foreground;
@@ -623,10 +648,10 @@ impl ChatPane {
     }
 }
 
-/// A card on the workspace page: a bordered box, its title in bold with a
+/// A card on the workspace page or the Tasks page: a bordered box, its title in bold with a
 /// muted count beside it, an optional control at the far end, and whatever it
 /// holds below.
-fn page_card(
+pub(super) fn page_card(
     title: &'static str,
     count: Option<usize>,
     control: Option<gpui::AnyElement>,
@@ -635,9 +660,9 @@ fn page_card(
     card_box(cx).child(card_title(title, count, control, cx))
 }
 
-/// The hairline box every card on the workspace page is drawn in, a project
-/// tile included.
-fn card_box(cx: &App) -> Div {
+/// The hairline box every card on the workspace page and the Tasks page is
+/// drawn in, a project tile and a task's row included.
+pub(super) fn card_box(cx: &App) -> Div {
     div()
         .v_flex()
         .gap_2()

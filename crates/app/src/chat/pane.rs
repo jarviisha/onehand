@@ -29,11 +29,19 @@ mod header;
 mod project_page;
 mod runs;
 mod sessions;
+mod tasks_page;
 mod workspace_page;
 use header::Archives;
 use project_page::EmptyProject;
+use tasks_page::TasksPage;
 pub use workspace_page::PageProject;
 use workspace_page::WorkspacePage;
+
+/// A page drawn in place of a conversation, about more than one project.
+enum Page {
+    Workspace(WorkspacePage),
+    Tasks(TasksPage),
+}
 
 /// The rest the transcript comes to above the composer.
 ///
@@ -184,6 +192,8 @@ pub struct ProjectFacts {
     /// switch is not offered at all, which is a run's own worktree: not a
     /// project anybody chose, and one no run ever searches.
     pub unattended: Option<bool>,
+    /// It has a check command, so its page offers to run it.
+    pub check: bool,
 }
 
 impl ProjectFacts {
@@ -196,6 +206,7 @@ impl ProjectFacts {
             pinned: root.pinned,
             is_repo,
             unattended: (!root.transient).then_some(root.unattended),
+            check: root.check.is_some(),
         }
     }
 }
@@ -239,10 +250,10 @@ pub struct ChatPane {
     ///
     /// Only ever read while no session is showing.
     empty: Option<EmptyProject>,
-    /// The workspace page, while it is what the pane shows. Set only with no
-    /// session showing, and cleared by anything that shows a session or a
-    /// project.
-    workspace: Option<WorkspacePage>,
+    /// The workspace page or the Tasks page, while one is what the pane
+    /// shows. Set only with no session showing, and cleared by anything that
+    /// shows a session or a project.
+    page: Option<Page>,
     /// The past conversations of the project that *is* showing, for the
     /// header's menu. Separate from `empty` above, which is the same listing for
     /// the opposite state — that one is the body of the page shown when a
@@ -382,7 +393,7 @@ impl ChatPane {
                 window: window.window_handle(),
                 handle: cx.entity().downgrade(),
                 empty: None,
-                workspace: None,
+                page: None,
                 archives: None,
                 pending_resume: None,
                 rail_hidden: false,
@@ -816,12 +827,18 @@ pub enum ChatPaneEvent {
     },
     /// Stop the run on session `uid`.
     StopWorkflow(u64),
-    /// Resume the interrupted task `id` — a row of the project page.
+    /// Resume the interrupted task `id` — a row of the Tasks page.
     ResumeTask(String),
-    /// Let the interrupted task `id` go; it is kept as history.
+    /// Let the ended task `id` go; it is kept as history.
     DismissTask(String),
-    /// Call off the queued task `id`.
-    StopQueuedTask(String),
+    /// Run task `id` again, asking first where from.
+    RetryTask(String),
+    /// Stop task `id`, queued or running.
+    StopTask(String),
+    /// Show the Tasks page, narrowed to one project or not.
+    ShowTasks(Option<PathBuf>),
+    /// Run the check command of the project on screen, as a task.
+    RunCheck,
 }
 
 impl EventEmitter<ChatPaneEvent> for ChatPane {}

@@ -109,7 +109,7 @@ impl Shell {
         // Opened as a dock and not through `show_workbench`, which would take
         // the caret: the arrival has just given it to the conversation, and
         // whoever left the page for a session wants to type there.
-        if !self.workspace_shown(cx)
+        if !self.page_shown(cx)
             && std::mem::take(&mut self.workbench_aside)
             && !self.dock.read(cx).is_dock_open(DockPlacement::Right, cx)
         {
@@ -477,7 +477,7 @@ impl Shell {
                         .workbench
                         .update(cx, |panel, cx| panel.set_git(git, cx));
                     // The workspace page's project tiles name each branch.
-                    if shell.workspace_shown(cx) {
+                    if shell.page_shown(cx) {
                         let projects = shell.page_projects();
                         shell
                             .chat

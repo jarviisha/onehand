@@ -619,7 +619,12 @@ holding their own copy of that logic is how a Stop once passed a cut-short plan 
 under way. **Every run belongs to a task** (`onehand_core::task::Task`), kept in
 `tasks/<id>.json` whatever its outcome and written in order by one thread (`task::files::Writer`).
 A task whose run was cut off (its agent stopped, its session went, or the app quit) waits on the
-project page to be resumed, and nothing resumes one by itself. **Every start goes through one
+**Tasks page** (`chat/pane/tasks_page.rs`, reached from the rail's *Tasks* row or the project
+page's one-line link) to be resumed, retried or dismissed, and nothing resumes one by itself. The
+page's groups come from `Task::group` (core), its rows from `crate::task::rows`, and the rail's
+count from the same rows. Finished tasks past the newest 200 of a project are removed with their
+mark refs (`task::history`). The project's check command runs as a task of its own, with no
+session (`crate::task::drive_check`). **Every start goes through one
 queue** (`crate::task::request`, over `onehand_core::task::queue::Queue`), keyed by the checkout
 git sees, so one task at a time works in a checkout; the place is given up only once the session's
 turn is over and the command's process group has exited, and the next task starts in the window
@@ -795,7 +800,7 @@ back to an older build: it would find no workflows or runs of the person's.
   less any conversation already open in a session), and every project's **open issues**, most
   recently changed first, with a project filter and a line counting the closed ones
   left out. It is a third thing the centre can show, beside a session and the project page:
-  `active` is `None` and `workspace` is `Some`, and both `show` and `clear_active` clear it —
+  `active` is `None` and `page` is `Some(Page::Workspace)`, and both `show` and `clear_active` clear it —
   `clear_active` counts it in its "unchanged" check, or clicking the project the user came from
   would leave them on the page. **Both docks go away while it shows** (`Shell::show_workspace`): the
   terminal's open state is filed under its root and `terminal_root` cleared, so the next arrival is

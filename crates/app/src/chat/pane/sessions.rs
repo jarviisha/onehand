@@ -59,7 +59,7 @@ impl ChatPane {
             self.leave_shown_session(window, cx);
             self.restore_draft(uid, window, cx);
         }
-        self.workspace = None;
+        self.page = None;
         self.active = Some(uid);
         // The header's menu is about the project, so it follows the project
         // rather than the session: switching between two sessions of one root
@@ -451,12 +451,12 @@ impl ChatPane {
     ) {
         let standing_in = self.empty.as_ref().map(|project| &project.path);
         let unchanged = self.active.is_none()
-            && self.workspace.is_none()
+            && self.page.is_none()
             && standing_in == root.as_ref().map(|(_, path)| path);
         if unchanged {
             return;
         }
-        self.workspace = None;
+        self.page = None;
         self.empty = root.map(|(label, path)| EmptyProject {
             label,
             path,

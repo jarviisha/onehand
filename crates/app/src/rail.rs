@@ -231,6 +231,38 @@ pub fn rail(
                         },
                     )),
                 )
+                // Right under the overview: every task of the window's
+                // projects, with a count of those that need a person.
+                .child({
+                    let (id, icon, label) = ("rail-tasks", IconName::Inbox, "Tasks");
+                    let count = attention_pill(crate::task::attention(
+                        &window_state_shell.page_roots(),
+                        cx,
+                    ));
+                    match window_state_shell.tasks_shown(cx) {
+                        true => rail_row_marked(id, icon, label, cx),
+                        false => {
+                            rail_row(id, icon, label, cx).text_color(cx.theme().muted_foreground)
+                        }
+                    }
+                    .children(count.map(|count| {
+                        div()
+                            .flex_none()
+                            .px_1()
+                            .rounded(cx.theme().radius)
+                            .bg(cx.theme().secondary)
+                            .text_color(cx.theme().secondary_foreground)
+                            .child(count)
+                    }))
+                    .tooltip(|window, cx| {
+                        Tooltip::new("Every task, and what each needs").build(window, cx)
+                    })
+                    .on_click(cx.listener(
+                        |shell: &mut Shell, _: &ClickEvent, window, cx| {
+                            shell.show_tasks(None, window, cx);
+                        },
+                    ))
+                })
                 .child(new_session_block(window_state_shell, window_state, cx))
                 // The hairline is where the header stops being about the
                 // workspace and starts being about the list: everything above
@@ -287,6 +319,12 @@ fn tab_bar(active: RailTab, cx: &mut Context<Shell>) -> impl IntoElement + use<>
         }),
         cx,
     )
+}
+
+/// What the Tasks row's pill reads for `n` tasks needing a person: nothing
+/// at zero, so a pill is always news.
+fn attention_pill(n: usize) -> Option<String> {
+    (n > 0).then(|| n.to_string())
 }
 
 #[cfg(test)]
