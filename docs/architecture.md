@@ -638,10 +638,11 @@ moves each `*.toml` from there to `workflows/`, at every start, and can be cut s
 and run again: a file this build cannot read stays where it was and is reported; a name already in
 `workflows/` keeps that copy, and the old one is removed only when it is the same text (otherwise it
 stays and is reported, since an older build may have saved an edit there); any other is written
-whole (temp file and rename) before the old one goes. Anything that is not a template is left alone,
-and `pipelines/` goes once empty. Run files still live in `pipeline-runs/`, the name on disk, until
-they move with the task store. There is no way back to an older build: it would find no workflows of
-the person's.
+whole (temp file and rename), and its directory waited on to reach the disk, before the old one
+goes. A `pipelines/` that is there but cannot be listed is reported, not taken for empty. Anything
+that is not a template is left alone, and `pipelines/` goes once empty. Run files still live in
+`pipeline-runs/`, the name on disk, until they move with the task store. There is no way back to an
+older build: it would find no workflows of the person's.
 
 ### The chat pane
 

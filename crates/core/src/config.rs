@@ -673,6 +673,17 @@ pub(crate) fn write_synced(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
     file.sync_all()
 }
 
+/// Wait until the entries of `dir` (a rename into it, say) are on disk, for
+/// a caller about to remove the only other copy. Windows cannot open a
+/// directory to wait on, and there it does nothing.
+pub(crate) fn sync_dir(dir: &Path) -> std::io::Result<()> {
+    #[cfg(unix)]
+    std::fs::File::open(dir)?.sync_all()?;
+    #[cfg(not(unix))]
+    let _ = dir;
+    Ok(())
+}
+
 /// Write `text` to `path` so a reader never sees half of it.
 ///
 /// Write-then-rename, with the temp waited for before it is promoted: the

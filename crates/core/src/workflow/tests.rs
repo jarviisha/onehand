@@ -569,3 +569,15 @@ fn a_template_this_build_cannot_read_stays_where_it_is() {
     );
     let _ = std::fs::remove_dir_all(&root);
 }
+
+#[test]
+fn an_old_directory_that_cannot_be_read_is_reported() {
+    let root = temp_dir("migrate-unlistable");
+    // Something is at `old`, but it cannot be listed.
+    let (old, new) = (root.join("old"), root.join("new"));
+    std::fs::write(&old, "not a directory").unwrap();
+    let problems = store::migrate_blocking(&old, &new);
+    assert_eq!(problems.len(), 1, "{problems:?}");
+    assert!(old.exists());
+    let _ = std::fs::remove_dir_all(&root);
+}
