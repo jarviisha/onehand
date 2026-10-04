@@ -472,6 +472,22 @@ fn one_commit_pins_a_visits_end_and_the_next_ones_start() {
     assert_eq!(run.visits[1].end, None);
 }
 
+/// A mark lost when the app quit before it landed is pinned again on resume,
+/// never counted as made.
+#[test]
+fn a_boundary_counts_as_pinned_only_up_to_the_last_one_that_landed() {
+    let (mut run, _) = begin("1".into(), checkout(), brief(), setup(None));
+    assert_eq!(run.pinned_count(), 0);
+    run.pinned("c1", 0);
+    assert_eq!(run.pinned_count(), 1);
+    prompt_of(run.measured(mark("a", "d0")));
+    run.stopped(Stop::Closed);
+    assert_eq!(run.boundaries().len(), 2);
+    assert_eq!(run.pinned_count(), 1, "the end mark never landed");
+    run.pinned("c2", 1);
+    assert_eq!(run.pinned_count(), 2);
+}
+
 #[test]
 fn the_outcome_is_kept_and_an_old_run_without_it_still_loads() {
     let mut run = at_approval();

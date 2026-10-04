@@ -165,7 +165,11 @@ index so the person's own index is untouched, and kept under
 `refs/onehand/tasks/<task>/<run>/<visit>/<start|end>` so `git gc` keeps it. The driver pins before
 it carries out a step's first action, so the start mark lands before the prompt or command touches
 the work; one commit serves a visit's end and the next one's start. A mark that cannot be pinned is
-logged and left out, and never stops a run: gates read `Mark` and `Facts`, not the pinned commits.
+logged and left out, and never stops a run: gates read `Mark` and `Facts`, not the pinned commits. While a mark is
+being pinned, an approval, a revision, a Stop and every other ending wait for it and for the action
+it holds back, so nothing moves the run on under that action and no ending races the pin. A driver
+taking a run up counts as pinned only the marks up to the last one that landed
+(`Run::pinned_count`), so a mark the app quit before pinning is pinned on resume.
 
 **A turn's answer is what the agent said after the run's own prompt** (`Chat::prose_since`,
 counted from where the transcript stood when the prompt went), so a turn that said nothing answers

@@ -19,6 +19,9 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 
+/// A call held until a mark is pinned.
+type Later = Box<dyn FnOnce(&mut App)>;
+
 /// A run under way on one session.
 pub(super) struct Driven {
     /// The task the run is of.
@@ -26,9 +29,13 @@ pub(super) struct Driven {
     pub(super) run: Run,
     /// How many of the run's boundaries have had their mark pinned, or tried.
     pinned: usize,
-    /// A mark is being pinned, and the action the engine asked for waits on
-    /// it: a turn ending meanwhile is not the one that action will send.
-    pinning: bool,
+    /// `Some` while a mark is being pinned and the action the engine asked
+    /// for waits on it, holding what a person or an event asked meanwhile.
+    /// Done at once, an approval or a Stop would move the run on under the
+    /// waiting action, which would then be carried out stale; held, each
+    /// runs once that action has. A turn ending meanwhile is not the one the
+    /// action will send.
+    held: Option<Vec<Later>>,
     session: WeakEntity<ChatSession>,
     /// How many prompts the run has sent its session: any more, and a person
     /// is driving.
@@ -114,7 +121,7 @@ pub(crate) fn start(
         spent_before: run.spent_secs,
         run,
         pinned,
-        pinning: false,
+        held: None,
         session: session.downgrade(),
         sent: 0,
         answer_from: 0,
@@ -133,20 +140,43 @@ pub(crate) fn start(
     act(uid, first, cx);
 }
 
+/// Hold `then` while a mark is being pinned for the run on session `uid`:
+/// whether it was held.
+fn held(uid: u64, cx: &mut App, then: impl FnOnce(&mut App) + 'static) -> bool {
+    with(uid, cx, |d| match &mut d.held {
+        Some(held) => {
+            held.push(Box::new(then));
+            true
+        }
+        None => false,
+    })
+    .unwrap_or(false)
+}
+
 /// A person approved what the run waits on.
 pub(crate) fn approve(uid: u64, cx: &mut App) {
+    if held(uid, cx, move |cx| approve(uid, cx)) {
+        return;
+    }
     with(uid, cx, |d| d.budget.resume(Instant::now()));
     advance(uid, cx, Run::approved);
 }
 
 /// A person sent it back with `note`.
 pub(crate) fn revise(uid: u64, note: String, cx: &mut App) {
+    let later = note.clone();
+    if held(uid, cx, move |cx| revise(uid, later, cx)) {
+        return;
+    }
     with(uid, cx, |d| d.budget.resume(Instant::now()));
     advance(uid, cx, move |run| run.revised(note));
 }
 
 /// A person pressed Stop: the turn is cancelled and the run ends.
 pub(crate) fn stop(uid: u64, cx: &mut App) {
+    if held(uid, cx, move |cx| stop(uid, cx)) {
+        return;
+    }
     cancel_turn(uid, cx);
     end(uid, Stop::ByPerson, cx);
 }
@@ -170,6 +200,9 @@ fn with<R>(uid: u64, cx: &mut App, act: impl FnOnce(&mut Driven) -> R) -> Option
 /// A run said to be stopped never leaves a build or a test writing to the
 /// work behind it. The first reason given is the one the run ends with.
 fn end(uid: u64, stop: Stop, cx: &mut App) {
+    if held(uid, cx, move |cx| end(uid, stop, cx)) {
+        return;
+    }
     let running = with(uid, cx, |d| {
         let cancel = d.command.as_ref()?;
         cancel.store(true, Ordering::SeqCst);
@@ -195,7 +228,7 @@ fn on_event(uid: u64, session: &Entity<ChatSession>, event: &ChatEvent, cx: &mut
         (
             d.sent,
             d.pending.is_some(),
-            d.run.awaiting_turn() && !d.pinning,
+            d.run.awaiting_turn() && d.held.is_none(),
         )
     }) else {
         return;
@@ -239,8 +272,11 @@ fn act(uid: u64, action: Action, cx: &mut App) {
     }
     let unpinned = with(uid, cx, |d| {
         let refs = marks::refs_from(&d.task, &d.run, d.pinned);
-        d.pinning = !refs.is_empty();
-        d.pinning.then(|| (d.run.setup.dir.clone(), refs, d.pinned))
+        if refs.is_empty() {
+            return None;
+        }
+        d.held = Some(Vec::new());
+        Some((d.run.setup.dir.clone(), refs, d.pinned))
     })
     .flatten();
     let Some((dir, refs, from)) = unpinned else {
@@ -253,17 +289,21 @@ fn act(uid: u64, action: Action, cx: &mut App) {
             .spawn(async move { marks::pin_blocking(&dir, &refs) })
             .await;
         cx.update(|cx| {
-            let live = with(uid, cx, |d| {
+            let held = with(uid, cx, |d| {
                 match &pinned {
                     Ok(commit) => d.run.pinned(commit, from),
                     Err(why) => eprintln!("onehand: a step's mark was not pinned: {why}"),
                 }
                 d.pinned = total;
-                d.pinning = false;
+                d.held.take().unwrap_or_default()
             });
-            // Ended while the mark was being made: nothing is left to do.
-            if live.is_some() {
-                carry_out(uid, action, cx);
+            let Some(held) = held else {
+                return;
+            };
+            carry_out(uid, action, cx);
+            // In the order asked; one that starts another pin holds the rest.
+            for then in held {
+                then(cx);
             }
         });
     })

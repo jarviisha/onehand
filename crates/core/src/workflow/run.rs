@@ -298,6 +298,21 @@ impl Run {
             .collect()
     }
 
+    /// How many boundaries count as pinned: every one up to the last whose
+    /// mark landed. One after it, a mark that failed or that the app quit
+    /// before it landed, is pinned again by the next driver.
+    pub fn pinned_count(&self) -> usize {
+        let landed: Vec<bool> = self
+            .visits
+            .iter()
+            .flat_map(|visit| {
+                std::iter::once(visit.start.is_some())
+                    .chain(visit.ended_at.map(|_| visit.end.is_some()))
+            })
+            .collect();
+        landed.iter().rposition(|&at| at).map_or(0, |at| at + 1)
+    }
+
     /// `commit` is the work at every boundary from the `from`th on: one
     /// commit serves a visit's end and the next one's start.
     pub fn pinned(&mut self, commit: &str, from: usize) {

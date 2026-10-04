@@ -277,7 +277,9 @@ impl Shell {
         let Some((uid, session)) = session else {
             return refused("The task's session did not start".to_string(), window, cx);
         };
-        let pinned = run.boundaries().len();
+        // Counted from what landed, so a mark the app quit before pinning is
+        // pinned now rather than taken as made.
+        let pinned = run.pinned_count();
         let first = run.resume();
         // Deferred: the driver reaches into the session and the global the
         // shell is reading from while this runs.
