@@ -22,27 +22,27 @@ A permission or a question an agent parked in its session, waiting for a person 
 _Avoid_: prompt, dialog, popup
 
 **Take over**:
-A person putting a prompt of their own into the session of a pipeline run or an unattended run; the
+A person putting a prompt of their own into the session of a run or an unattended run; the
 run stops and the session becomes an ordinary one. Answering a card the run's agent parked is not
 taking over.
 _Avoid_: hijack, adopt
 
-## Pipelines
+## Workflows
 
-**Pipeline template**:
-The steps a pipeline takes, in order, with each step's prompt, gates, command or approval, and the
-template's place, allowance of misses and timeout. Kept as one TOML file each; the ones onehand
+**Workflow**:
+The steps a run takes, in order, with each step's prompt, gates, command or approval, and the
+workflow's place, allowance of misses and timeout. Kept as one TOML file each; the ones onehand
 ships are read-only and are duplicated to be changed.
-_Avoid_: workflow, recipe, playbook
+_Avoid_: pipeline, template on its own, recipe, playbook
 
-**Pipeline run**:
-One pass of a pipeline template over a brief: a snapshot of the template as it was when the run
-began, the step it is at, its marks, what its steps kept, and the history of its transitions. Its
-file is kept only while it can still be resumed.
-_Avoid_: job, execution, instance
+**Run**:
+One pass of a workflow over a brief: a snapshot of the workflow as it was when the run began, the
+step it is at, its marks, what its steps kept, and the history of its transitions. Its file is kept
+only while it can still be resumed.
+_Avoid_: workflow run, pipeline run, job, execution, instance
 
 **Step**:
-A named stretch of a pipeline run. An agent step prompts the session and is judged by its gates; a
+A named stretch of a run. An agent step prompts the session and is judged by its gates; a
 command step runs a command in the work, onehand itself; an approval step waits for a person to
 approve what an earlier step answered, or to send it back with a note.
 _Avoid_: stage, phase, task
@@ -54,12 +54,12 @@ uncommitted. A turn that fails one is a miss.
 _Avoid_: check (that is the project's command), assertion, guard
 
 **Miss**:
-A turn that failed a gate, or a command that failed. Past the template's allowance in one stretch of
+A turn that failed a gate, or a command that failed. Past the workflow's allowance in one stretch of
 steps, the run ends exhausted.
 _Avoid_: retry, failure
 
 **Brief**:
-What a pipeline run is asked to do: a title, the details, and instructions asked of every step.
+What a run is asked to do: a title, the details, and instructions asked of every step.
 _Avoid_: task, ticket, prompt
 
 **Mark**:
@@ -68,7 +68,7 @@ fingerprint of the uncommitted work), and the commit a command last passed on.
 _Avoid_: baseline, checkpoint, snapshot
 
 **Place**:
-Where a pipeline's work happens: the checkout the project is open on, left uncommitted, or a new
+Where a run's work happens: the checkout the project is open on, left uncommitted, or a new
 branch in a worktree of its own, committed there.
 _Avoid_: mode, target
 
@@ -78,11 +78,11 @@ command of its own.
 _Avoid_: test command, CI
 
 **Outcome**:
-How a pipeline run ended: done, stopped (and why), exhausted at a step, or failed.
+How a run ended: done, stopped (and why), exhausted at a step, or failed.
 _Avoid_: result, status
 
 **Resume**:
-Carrying on a pipeline run whose agent stopped or whose session went, from the step it was at, with
+Carrying on a run whose agent stopped or whose session went, from the step it was at, with
 its marks kept. Nothing resumes a run by itself.
 _Avoid_: restart, retry
 
@@ -122,7 +122,7 @@ _Avoid_: lock, worker
 **Ending**:
 How an unattended run stopped: its turn ended, a card was left unanswered, the adapter went, the
 session closed, it timed out, it was taken over, or it never got as far as a prompt.
-_Avoid_: outcome (a pipeline run's), status
+_Avoid_: outcome (a run's), status
 
 **Verdict**:
 What an unattended run left behind, judged by onehand rather than the agent: a pull request or

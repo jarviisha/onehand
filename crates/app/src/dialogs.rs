@@ -1,5 +1,5 @@
 //! The modal windows: the conversation rename, the worktree split, the branch
-//! rename, the issue picker and the pipeline launcher.
+//! rename, the issue picker and the workflow launcher.
 //!
 //! The component library owns overlays, focus traps and Escape handling.
 
@@ -190,7 +190,7 @@ pub fn pick_issue(shell: &Shell, cx: &mut Context<Shell>) -> Dialog {
         }))
 }
 
-/// The pipeline launcher: which template, what to do, and what to ask of
+/// The workflow launcher: which template, what to do, and what to ask of
 /// every step.
 ///
 /// **No trigger**, for the rename's reason: it is opened from a menu entry or
@@ -198,13 +198,13 @@ pub fn pick_issue(shell: &Shell, cx: &mut Context<Shell>) -> Dialog {
 ///
 /// Where the run works is the template's to say, and said under its name, so
 /// nobody presses *Run* expecting a checkout and gets a new worktree.
-pub fn run_pipeline(shell: &Shell, cx: &mut Context<Shell>) -> Dialog {
-    let Some(launcher) = shell.pipeline_launcher() else {
+pub fn run_workflow(shell: &Shell, cx: &mut Context<Shell>) -> Dialog {
+    let Some(launcher) = shell.workflow_launcher() else {
         return Dialog::new(cx);
     };
-    let entries = crate::pipeline::templates(cx);
+    let entries = crate::workflow::templates(cx);
     let picked = entries.get(launcher.template).cloned();
-    let heading = format!("Run a pipeline on {}", launcher.project);
+    let heading = format!("Run a workflow on {}", launcher.project);
     let (title, body, instructions) = (
         launcher.title.clone(),
         launcher.body.clone(),
@@ -220,27 +220,27 @@ pub fn run_pipeline(shell: &Shell, cx: &mut Context<Shell>) -> Dialog {
             "{} {}.",
             template.description.trim(),
             match template.place {
-                onehand_core::pipeline::Place::Checkout => "It works in this checkout",
-                onehand_core::pipeline::Place::Worktree => {
+                onehand_core::workflow::Place::Checkout => "It works in this checkout",
+                onehand_core::workflow::Place::Worktree => {
                     "It works on a new branch, in a worktree of its own"
                 }
             }
         ),
-        Some(Err(why)) => format!("This template cannot be read: {why}"),
-        None => "No template is on offer yet.".to_string(),
+        Some(Err(why)) => format!("This workflow cannot be read: {why}"),
+        None => "No workflow is on offer yet.".to_string(),
     };
     let handle = cx.entity();
     let left_out = entries
         .len()
-        .saturating_sub(crate::pipeline::TEMPLATES_SHOWN);
+        .saturating_sub(crate::workflow::TEMPLATES_SHOWN);
     let names: Vec<(usize, String, bool)> = entries
         .iter()
-        .take(crate::pipeline::TEMPLATES_SHOWN)
+        .take(crate::workflow::TEMPLATES_SHOWN)
         .enumerate()
         .map(|(at, entry)| (at, entry.name(), entry.file.is_none()))
         .collect();
     let current = launcher.template;
-    let picker_name = picked.map_or_else(|| "Pick a template".to_string(), |e| e.name());
+    let picker_name = picked.map_or_else(|| "Pick a workflow".to_string(), |e| e.name());
 
     Dialog::new(cx)
         .close_button(false)
@@ -248,8 +248,8 @@ pub fn run_pipeline(shell: &Shell, cx: &mut Context<Shell>) -> Dialog {
             let handle = handle.clone();
             let names = names.clone();
             let picker = crate::controls::menu_below(
-                "pipeline-template",
-                crate::controls::action("pipeline-template-trigger")
+                "workflow-template",
+                crate::controls::action("workflow-template-trigger")
                     .outline()
                     .small()
                     .label(picker_name.clone())
@@ -266,13 +266,13 @@ pub fn run_pipeline(shell: &Shell, cx: &mut Context<Shell>) -> Dialog {
                                 .checked(at == current)
                                 .on_click(move |_, _, cx: &mut App| {
                                     handle.update(cx, |shell: &mut Shell, cx| {
-                                        shell.pick_pipeline_template(at, cx)
+                                        shell.pick_workflow_template(at, cx)
                                     });
                                 }),
                         );
                     }
                     if left_out > 0 {
-                        menu = menu.label(format!("{left_out} more templates not shown"));
+                        menu = menu.label(format!("{left_out} more workflows not shown"));
                     }
                     menu
                 },
@@ -283,7 +283,7 @@ pub fn run_pipeline(shell: &Shell, cx: &mut Context<Shell>) -> Dialog {
                     .v_flex()
                     .gap_2()
                     .w_full()
-                    .child(label("Template"))
+                    .child(label("Workflow"))
                     .child(div().h_flex().child(picker))
                     .child(div().text_xs().text_color(muted).child(about.clone()))
                     .child(label("Title"))
@@ -304,16 +304,16 @@ pub fn run_pipeline(shell: &Shell, cx: &mut Context<Shell>) -> Dialog {
                 .justify_end()
                 .w_full()
                 .child(
-                    crate::controls::action("cancel-pipeline")
+                    crate::controls::action("cancel-workflow")
                         .ghost()
                         .label("Cancel")
                         .refuses(busy)
                         .on_click(cx.listener(|shell: &mut Shell, _: &ClickEvent, _, cx| {
-                            shell.cancel_pipeline(cx);
+                            shell.cancel_workflow(cx);
                         })),
                 )
                 .child({
-                    let run = crate::controls::action("run-pipeline")
+                    let run = crate::controls::action("run-workflow")
                         .primary()
                         .label(if busy {
                             "Making the worktree…"
@@ -324,7 +324,7 @@ pub fn run_pipeline(shell: &Shell, cx: &mut Context<Shell>) -> Dialog {
                         true => crate::controls::resting(run).disabled(true),
                         false => run.on_click(cx.listener(
                             |shell: &mut Shell, _: &ClickEvent, window, cx| {
-                                shell.commit_pipeline(window, cx);
+                                shell.commit_workflow(window, cx);
                             },
                         )),
                     }
@@ -333,7 +333,7 @@ pub fn run_pipeline(shell: &Shell, cx: &mut Context<Shell>) -> Dialog {
         // Esc and the close button have to clear what is putting this on
         // screen, or it renders straight back.
         .on_close(cx.listener(|shell: &mut Shell, _, _, cx| {
-            shell.cancel_pipeline(cx);
+            shell.cancel_workflow(cx);
         }))
 }
 

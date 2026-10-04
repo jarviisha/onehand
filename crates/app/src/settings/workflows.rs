@@ -11,7 +11,7 @@ use gpui_component::input::{Input, InputState, Textarea, TextareaState};
 use gpui_component::switch::Switch;
 use gpui_component::tag::Tag;
 use gpui_component::{ActiveTheme, Icon, IconName, Sizable as _, StyledExt};
-use onehand_core::pipeline::{self as core, GateKind, Place, StepKind, StepSpec, Template};
+use onehand_core::workflow::{self as core, GateKind, Place, StepKind, StepSpec, Template};
 use std::path::PathBuf;
 
 /// The template form's fields.
@@ -19,7 +19,7 @@ use std::path::PathBuf;
 /// `file` is the template being changed, or `None` for a new one or a
 /// duplicate; `original` is what it was when the form opened or was last
 /// saved, which is what "not saved" is measured against.
-pub struct PipelineDraft {
+pub struct WorkflowDraft {
     pub file: Option<PathBuf>,
     pub original: Template,
     pub name: Entity<InputState>,
@@ -136,7 +136,7 @@ impl StepDraft {
     }
 }
 
-impl PipelineDraft {
+impl WorkflowDraft {
     /// A form on `template`, kept in `file`.
     pub fn load(
         template: &Template,
@@ -239,20 +239,20 @@ impl PipelineDraft {
     }
 }
 
-/// The pipelines page: the templates on offer, the form that edits one, and
+/// The workflows page: the templates on offer, the form that edits one, and
 /// each project's check command.
-pub(super) fn pipelines_page(handle: &Entity<Shell>, cx: &App) -> AnyElement {
+pub(super) fn workflows_page(handle: &Entity<Shell>, cx: &App) -> AnyElement {
     let shell = handle.read(cx);
-    let entries = crate::pipeline::templates(cx);
+    let entries = crate::workflow::templates(cx);
     let muted = cx.theme().muted_foreground;
     let warning = crate::theme::status_ink(cx).warning;
 
     let left_out = entries
         .len()
-        .saturating_sub(crate::pipeline::TEMPLATES_SHOWN);
+        .saturating_sub(crate::workflow::TEMPLATES_SHOWN);
     let rows = entries
         .iter()
-        .take(crate::pipeline::TEMPLATES_SHOWN)
+        .take(crate::workflow::TEMPLATES_SHOWN)
         .enumerate()
         .map(|(i, entry)| {
             let shipped = entry.file.is_none();
@@ -281,24 +281,24 @@ pub(super) fn pipelines_page(handle: &Entity<Shell>, cx: &App) -> AnyElement {
                     .when(readable, |row| {
                         row.child(row_action(
                             handle,
-                            ("duplicate-pipeline", i),
+                            ("duplicate-workflow", i),
                             "Duplicate",
-                            move |shell, window, cx| shell.duplicate_pipeline(i, window, cx),
+                            move |shell, window, cx| shell.duplicate_workflow(i, window, cx),
                         ))
                     })
                     .when(readable && !shipped, |row| {
                         row.child(
-                            row_icon(("edit-pipeline", i), crate::icons::Icon::SquarePen, "Edit")
+                            row_icon(("edit-workflow", i), crate::icons::Icon::SquarePen, "Edit")
                                 .on_click(click(handle, move |shell, window, cx| {
-                                    shell.edit_pipeline(i, window, cx)
+                                    shell.edit_workflow(i, window, cx)
                                 })),
                         )
                     })
                     .when(!shipped, |row| {
                         row.child(
-                            row_icon(("delete-pipeline", i), crate::icons::Icon::Trash, "Delete")
+                            row_icon(("delete-workflow", i), crate::icons::Icon::Trash, "Delete")
                                 .on_click(click(handle, move |shell, window, cx| {
-                                    shell.confirm_delete_pipeline(i, window, cx)
+                                    shell.confirm_delete_workflow(i, window, cx)
                                 })),
                         )
                     }),
@@ -313,7 +313,7 @@ pub(super) fn pipelines_page(handle: &Entity<Shell>, cx: &App) -> AnyElement {
         .children(rows)
         .when(left_out > 0, |list| {
             list.child(div().text_sm().text_color(muted).child(format!(
-                "{left_out} more templates not shown; remove some from {}",
+                "{left_out} more workflows not shown; remove some from {}",
                 core::store::dir().display()
             )))
         })
@@ -322,17 +322,17 @@ pub(super) fn pipelines_page(handle: &Entity<Shell>, cx: &App) -> AnyElement {
                 div()
                     .text_sm()
                     .text_color(muted)
-                    .child("Reading the templates…"),
+                    .child("Reading the workflows…"),
             )
         })
         .child(
             div().h_flex().child(
-                crate::controls::action("new-pipeline")
+                crate::controls::action("new-workflow")
                     .ghost()
                     .icon(Icon::new(IconName::Plus))
-                    .label("New template")
+                    .label("New workflow")
                     .on_click(click(handle, |shell, window, cx| {
-                        shell.new_pipeline(window, cx)
+                        shell.new_workflow(window, cx)
                     })),
             ),
         );
@@ -342,14 +342,14 @@ pub(super) fn pipelines_page(handle: &Entity<Shell>, cx: &App) -> AnyElement {
         .gap_6()
         .w_full()
         .child(page_head(
-            "Pipelines",
-            "The templates a pipeline run starts from, shared by every workspace. The ones \
+            "Workflows",
+            "The workflows a run starts from, shared by every workspace. The ones \
              onehand ships are read-only: duplicate one to change it.",
             APP,
             cx,
         ))
         .child(list)
-        .children(shell.pipeline_draft().map(|draft| form(handle, draft, cx)))
+        .children(shell.workflow_draft().map(|draft| form(handle, draft, cx)))
         .child(checks_section(handle, cx))
         .into_any_element()
 }
@@ -390,7 +390,7 @@ fn row_icon(
 
 /// The form: the template's own fields, its steps, what is wrong with it,
 /// and Save.
-fn form(handle: &Entity<Shell>, draft: &crate::settings::PipelineDraft, cx: &App) -> AnyElement {
+fn form(handle: &Entity<Shell>, draft: &crate::settings::WorkflowDraft, cx: &App) -> AnyElement {
     let problems = draft.problems(cx);
     let danger = crate::theme::status_ink(cx).danger;
     let muted = cx.theme().muted_foreground;
@@ -403,7 +403,7 @@ fn form(handle: &Entity<Shell>, draft: &crate::settings::PipelineDraft, cx: &App
         move |at: &usize, window: &mut Window, cx: &mut App| {
             let place = Place::ALL[*at];
             handle.update(cx, |shell, cx| {
-                shell.edit_pipeline_draft(window, cx, |d, _, _| d.place = place)
+                shell.edit_workflow_draft(window, cx, |d, _, _| d.place = place)
             });
         }
     };
@@ -428,9 +428,9 @@ fn form(handle: &Entity<Shell>, draft: &crate::settings::PipelineDraft, cx: &App
 
     section(
         Some(if editing {
-            "Edit template"
+            "Edit workflow"
         } else {
-            "New template"
+            "New workflow"
         }),
         None,
         cx,
@@ -454,7 +454,7 @@ fn form(handle: &Entity<Shell>, draft: &crate::settings::PipelineDraft, cx: &App
              branch of its own, and the work is committed there.",
         ),
         onehand_plugin_host::switch(
-            "pipeline-place",
+            "workflow-place",
             &places,
             place_at,
             gpui_component::Size::Small,
@@ -496,7 +496,7 @@ fn form(handle: &Entity<Shell>, draft: &crate::settings::PipelineDraft, cx: &App
                     .icon(Icon::new(IconName::Plus))
                     .label(format!("{} step", kind.label()))
                     .on_click(click(handle, move |shell, window, cx| {
-                        shell.edit_pipeline_draft(window, cx, |d, window, cx| {
+                        shell.edit_workflow_draft(window, cx, |d, window, cx| {
                             d.add_step(kind, window, cx)
                         });
                     }))
@@ -512,19 +512,19 @@ fn form(handle: &Entity<Shell>, draft: &crate::settings::PipelineDraft, cx: &App
             .h_flex()
             .gap_2()
             .child(
-                crate::controls::action("save-pipeline")
+                crate::controls::action("save-workflow")
                     .primary()
                     .refuses(!problems.is_empty())
                     .label("Save")
                     .on_click(click(handle, |shell, window, cx| {
-                        shell.save_pipeline_draft(window, cx)
+                        shell.save_workflow_draft(window, cx)
                     })),
             )
             .child(
-                crate::controls::action("clear-pipeline")
+                crate::controls::action("clear-workflow")
                     .ghost()
                     .label("Cancel")
-                    .on_click(click(handle, |shell, _, cx| shell.clear_pipeline_draft(cx))),
+                    .on_click(click(handle, |shell, _, cx| shell.clear_workflow_draft(cx))),
             ),
     )
     .into_any_element()
@@ -561,7 +561,7 @@ fn step_box(
                     menu = menu.item(crate::controls::menu_item(kind.label()).on_click(
                         move |_, window: &mut Window, cx: &mut App| {
                             handle.update(cx, |shell, cx| {
-                                shell.edit_pipeline_draft(window, cx, |d, _, _| {
+                                shell.edit_workflow_draft(window, cx, |d, _, _| {
                                     d.steps[i].kind = kind
                                 })
                             });
@@ -588,7 +588,7 @@ fn step_box(
             row_icon(("step-up", i), IconName::ArrowUp, "Move up").on_click(click(
                 handle,
                 move |shell, window, cx| {
-                    shell.edit_pipeline_draft(window, cx, |d, _, _| d.move_step(i, true))
+                    shell.edit_workflow_draft(window, cx, |d, _, _| d.move_step(i, true))
                 },
             )),
         )
@@ -596,7 +596,7 @@ fn step_box(
             row_icon(("step-down", i), IconName::ArrowDown, "Move down").on_click(click(
                 handle,
                 move |shell, window, cx| {
-                    shell.edit_pipeline_draft(window, cx, |d, _, _| d.move_step(i, false))
+                    shell.edit_workflow_draft(window, cx, |d, _, _| d.move_step(i, false))
                 },
             )),
         )
@@ -604,7 +604,7 @@ fn step_box(
             row_icon(("step-delete", i), crate::icons::Icon::Trash, "Remove step").on_click(click(
                 handle,
                 move |shell, window, cx| {
-                    shell.edit_pipeline_draft(window, cx, |d, _, _| {
+                    shell.edit_workflow_draft(window, cx, |d, _, _| {
                         d.steps.remove(i);
                     })
                 },
@@ -640,7 +640,7 @@ fn step_box(
                             .label(gate.label())
                             .on_click(move |_: &bool, window: &mut Window, cx: &mut App| {
                                 handle.update(cx, |shell, cx| {
-                                    shell.edit_pipeline_draft(window, cx, |d, _, _| {
+                                    shell.edit_workflow_draft(window, cx, |d, _, _| {
                                         let gates = &mut d.steps[i].gates;
                                         match gates.iter().position(|g| *g == gate) {
                                             Some(at) => {
@@ -663,7 +663,7 @@ fn step_box(
                         .label("Keep its answer")
                         .on_click(move |_: &bool, window: &mut Window, cx: &mut App| {
                             handle.update(cx, |shell, cx| {
-                                shell.edit_pipeline_draft(window, cx, |d, _, _| {
+                                shell.edit_workflow_draft(window, cx, |d, _, _| {
                                     d.steps[i].keep_answer = !d.steps[i].keep_answer
                                 })
                             });
@@ -723,7 +723,7 @@ fn step_box(
                                     .on_click(move |_, window: &mut Window, cx: &mut App| {
                                         let id = id.clone();
                                         handle.update(cx, |shell, cx| {
-                                            shell.edit_pipeline_draft(window, cx, move |d, _, _| {
+                                            shell.edit_workflow_draft(window, cx, move |d, _, _| {
                                                 d.steps[i].target = id
                                             })
                                         });

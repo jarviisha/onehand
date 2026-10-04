@@ -535,7 +535,7 @@ pub struct WorkspaceConfig {
     /// Roots whose labelled issues may be worked unattended, by path for the
     /// reason pins are.
     pub unattended: Vec<PathBuf>,
-    /// The command a pipeline's work must pass before it goes further, by
+    /// The command a workflow's work must pass before it goes further, by
     /// root: onehand runs it itself rather than taking the agent's word.
     pub checks: std::collections::BTreeMap<PathBuf, String>,
 }
@@ -671,6 +671,17 @@ pub(crate) fn write_synced(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
     let mut file = std::fs::File::create(path)?;
     file.write_all(bytes)?;
     file.sync_all()
+}
+
+/// Wait until the entries of `dir` (a rename into it, say) are on disk, for
+/// a caller about to remove the only other copy. Windows cannot open a
+/// directory to wait on, and there it does nothing.
+pub(crate) fn sync_dir(dir: &Path) -> std::io::Result<()> {
+    #[cfg(unix)]
+    std::fs::File::open(dir)?.sync_all()?;
+    #[cfg(not(unix))]
+    let _ = dir;
+    Ok(())
 }
 
 /// Write `text` to `path` so a reader never sees half of it.

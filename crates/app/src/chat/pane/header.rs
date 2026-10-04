@@ -98,7 +98,7 @@ impl ChatPane {
         .detach();
     }
 
-    /// Where the pipeline run driving this session stands: its template's
+    /// Where the run driving this session stands: its template's
     /// name, then every step in order, the ones behind it checked off and the
     /// one it is at in full ink, and *Stop* at the far end. `None` for a
     /// session no run drives.
@@ -107,12 +107,12 @@ impl ChatPane {
     /// not an answer to "how far along is it", and the steps are few enough to
     /// be read in one glance. A run waiting for approval is approved here, in
     /// its own session, so *Revise…* and *Continue* come before *Stop*.
-    pub(super) fn pipeline_strip(
+    pub(super) fn workflow_strip(
         &self,
         cx: &mut Context<Self>,
     ) -> Option<impl IntoElement + use<>> {
         let uid = self.active?;
-        let shown = crate::pipeline::shown(uid, cx)?;
+        let shown = crate::workflow::shown(uid, cx)?;
         let muted = cx.theme().muted_foreground;
         let foreground = cx.theme().foreground;
         let at_step = shown.at;
@@ -162,7 +162,7 @@ impl ChatPane {
                         .gap_1()
                         .when_some(shown.review, |row, (of, answer)| {
                             row.child(
-                                crate::controls::action("pipeline-review")
+                                crate::controls::action("workflow-review")
                                     .xsmall()
                                     .ghost()
                                     .label("Review…")
@@ -172,7 +172,7 @@ impl ChatPane {
                                     })),
                             )
                             .child(
-                                crate::controls::action("pipeline-revise")
+                                crate::controls::action("workflow-revise")
                                     .xsmall()
                                     .ghost()
                                     .label("Revise…")
@@ -181,25 +181,25 @@ impl ChatPane {
                                     })),
                             )
                             .child(
-                                crate::controls::action("pipeline-continue")
+                                crate::controls::action("workflow-continue")
                                     .xsmall()
                                     .primary()
                                     .icon(Icon::new(IconName::Check))
                                     .label("Continue")
                                     .tooltip("Approve it and go on to the next step")
                                     .on_click(cx.listener(move |_, _, _, cx| {
-                                        cx.emit(ChatPaneEvent::ContinuePipeline(uid))
+                                        cx.emit(ChatPaneEvent::ContinueWorkflow(uid))
                                     })),
                             )
                         })
                         .child(
-                            crate::controls::action("pipeline-stop")
+                            crate::controls::action("workflow-stop")
                                 .xsmall()
                                 .ghost()
                                 .label("Stop")
-                                .tooltip("Cancel the turn and end the pipeline here")
+                                .tooltip("Cancel the turn and end the run here")
                                 .on_click(cx.listener(move |_, _, _, cx| {
-                                    cx.emit(ChatPaneEvent::StopPipeline(uid))
+                                    cx.emit(ChatPaneEvent::StopWorkflow(uid))
                                 })),
                         ),
                 ),
@@ -954,7 +954,7 @@ fn open_review(
                 .child("The step kept no answer.")
                 .into_any_element(),
             false => {
-                gpui_component::text::TextView::markdown("pipeline-review-body", answer.clone())
+                gpui_component::text::TextView::markdown("workflow-review-body", answer.clone())
                     .selectable(true)
                     .into_any_element()
             }
@@ -963,7 +963,7 @@ fn open_review(
             .title(format!("{of}: waiting for approval"))
             .child(
                 div()
-                    .id("pipeline-review-scroll")
+                    .id("workflow-review-scroll")
                     .max_h(rems(28.))
                     .overflow_y_scroll()
                     .child(body),
@@ -975,14 +975,14 @@ fn open_review(
                     .w_full()
                     .justify_end()
                     .child(
-                        crate::controls::action("pipeline-review-close")
+                        crate::controls::action("workflow-review-close")
                             .small()
                             .ghost()
                             .label("Close")
                             .on_click(|_, window, cx| window.close_dialog(cx)),
                     )
                     .child(
-                        crate::controls::action("pipeline-review-continue")
+                        crate::controls::action("workflow-review-continue")
                             .small()
                             .primary()
                             .icon(Icon::new(IconName::Check))
@@ -990,7 +990,7 @@ fn open_review(
                             .on_click(move |_, window: &mut Window, cx: &mut App| {
                                 window.close_dialog(cx);
                                 let _ = pane.update(cx, |_, cx| {
-                                    cx.emit(ChatPaneEvent::ContinuePipeline(uid))
+                                    cx.emit(ChatPaneEvent::ContinueWorkflow(uid))
                                 });
                             }),
                     ),
@@ -1016,7 +1016,7 @@ fn open_revise(uid: u64, window: &mut Window, cx: &mut Context<ChatPane>) {
                 }
                 window.close_dialog(cx);
                 let _ = pane.update(cx, |_, cx| {
-                    cx.emit(ChatPaneEvent::RevisePipeline { uid, note: text })
+                    cx.emit(ChatPaneEvent::ReviseWorkflow { uid, note: text })
                 });
             }
         };
@@ -1044,14 +1044,14 @@ fn open_revise(uid: u64, window: &mut Window, cx: &mut Context<ChatPane>) {
                     .w_full()
                     .justify_end()
                     .child(
-                        crate::controls::action("pipeline-revise-cancel")
+                        crate::controls::action("workflow-revise-cancel")
                             .small()
                             .ghost()
                             .label("Cancel")
                             .on_click(|_, window, cx| window.close_dialog(cx)),
                     )
                     .child(
-                        crate::controls::action("pipeline-revise-send")
+                        crate::controls::action("workflow-revise-send")
                             .small()
                             .primary()
                             .label("Send back")

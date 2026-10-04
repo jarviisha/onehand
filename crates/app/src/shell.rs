@@ -19,17 +19,17 @@ mod boot;
 mod docks;
 mod drafts;
 mod issue_work;
-mod pipeline_settings;
-mod pipelines;
 mod remote_runs;
 mod render;
 mod roots;
 mod sessions;
 mod settings_dialog;
 mod storage;
+mod workflow_settings;
+mod workflows;
 pub use boot::{boot, open_or_focus, seed_workspace};
 pub use drafts::{BranchDraft, Draft, WorktreeDraft};
-pub use pipelines::PipelineLauncher;
+pub use workflows::WorkflowLauncher;
 
 gpui::actions!(
     onehand,
@@ -57,7 +57,7 @@ gpui::actions!(
         CompletionAccept,
         PasteHere,
         CycleMode,
-        RunPipeline
+        RunWorkflow
     ]
 );
 
@@ -192,8 +192,8 @@ pub struct Shell {
     rail_split: Entity<ResizableState>,
     /// The agent add/edit form.
     agent_draft: AgentDraft,
-    /// The pipeline template form, while one is open.
-    pipeline_draft: Option<crate::settings::PipelineDraft>,
+    /// The workflow form, while one is open.
+    workflow_draft: Option<crate::settings::WorkflowDraft>,
     /// Each project's check command field in Settings, by root, made as
     /// Settings opens.
     check_inputs: HashMap<PathBuf, Entity<InputState>>,
@@ -245,9 +245,9 @@ pub struct Shell {
     /// menu, which is gone by the time the list arrives, so this being `Some`
     /// is what puts the dialog up — like the rename and the worktree forms.
     issue_picker: Option<IssuePicker>,
-    /// The pipeline launcher, while it is on screen. Opened from a menu entry
+    /// The workflow launcher, while it is on screen. Opened from a menu entry
     /// or a key, so this being `Some` is what puts it up.
-    pipeline_launcher: Option<PipelineLauncher>,
+    workflow_launcher: Option<WorkflowLauncher>,
     /// The field the new branch name is typed into.
     branch_input: Entity<InputState>,
     /// The new branch's name field.

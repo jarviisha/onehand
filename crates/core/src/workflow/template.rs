@@ -1,4 +1,4 @@
-//! A pipeline template: the steps a pipeline run takes, what each one asks
+//! A workflow: the steps a run takes, what each one asks
 //! and what onehand checks before it moves on. Kept as TOML, one file each.
 
 use serde::{Deserialize, Serialize};
@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 /// read with whatever this build happens to understand of it.
 pub const SCHEMA_VERSION: u32 = 1;
 
-/// The steps of a pipeline, in the order a run takes them.
+/// The steps of a workflow, in the order a run takes them.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Template {
     pub schema_version: u32,

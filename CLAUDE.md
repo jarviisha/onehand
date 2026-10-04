@@ -22,10 +22,10 @@ Read the relevant one **before** changing the area it covers:
   **binding** UI contracts, structure and behaviour only. The `design-contract` skill triggers on
   any visible change.
 - [docs/unattended.md](docs/unattended.md): unattended runs end to end.
-- [docs/pipelines.md](docs/pipelines.md): pipeline templates, the run engine and its one driver.
+- [docs/workflows.md](docs/workflows.md): workflows, the run engine and its one driver.
 - [docs/tasks.md](docs/tasks.md): the Tasks page and the task model behind it, as designed.
 - [CONTEXT.md](CONTEXT.md): the glossary; use its terms and never the words it says to avoid.
-- [docs/roadmap.md](docs/roadmap.md): the milestones from the pipeline engine to Tasks and
+- [docs/roadmap.md](docs/roadmap.md): the milestones from the workflow engine to Tasks and
   issue/PR integration, and the decisions already taken for them.
 
 ## Commands

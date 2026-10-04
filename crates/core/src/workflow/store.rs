@@ -1,5 +1,5 @@
 //! The person's own templates: one TOML file each in
-//! `<config_dir>/onehand/pipelines/`.
+//! `<config_dir>/onehand/workflows/`.
 //!
 //! **A file this build cannot read is never written over.** One carrying a
 //! newer schema was written by a newer onehand, and one that does not parse
@@ -10,9 +10,9 @@ use serde::Deserialize;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
-/// `<config_dir>/onehand/pipelines/`.
+/// `<config_dir>/onehand/workflows/`.
 pub fn dir() -> PathBuf {
-    crate::config::config_dir().join("pipelines")
+    crate::config::config_dir().join("workflows")
 }
 
 /// Read a template from its file's text.
@@ -103,8 +103,72 @@ pub fn delete_blocking(path: &Path) -> Result<(), String> {
     }
 }
 
+/// Move the templates a build from before the rename kept in `pipelines/`
+/// to [`dir`], and say what was left behind. Blocking.
+pub fn migrate_old_dir_blocking() -> Vec<String> {
+    migrate_blocking(&crate::config::config_dir().join("pipelines"), &dir())
+}
+
+/// Move every template file from `old` to `new`, and say what was left
+/// behind. Blocking.
+///
+/// Safe to run at every start and again after a crash part way: a file this
+/// build cannot read stays where it is, a name already in `new` keeps the
+/// copy there (the old one goes only when it is the same text, as a crash
+/// between the write and the removal leaves it), and each file is written in
+/// full before its old one goes.
+/// Anything that is not a template is left alone, and `old` goes once empty.
+/// Only a missing `old` is nothing to report: one that cannot be listed is
+/// somebody's templates out of sight.
+pub(crate) fn migrate_blocking(old: &Path, new: &Path) -> Vec<String> {
+    let mut problems = Vec::new();
+    let entries = match std::fs::read_dir(old) {
+        Ok(entries) => entries,
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => return problems,
+        Err(err) => {
+            problems.push(format!("{} could not be read: {err}", old.display()));
+            return problems;
+        }
+    };
+    for entry in entries {
+        let path = match entry {
+            Ok(entry) => entry.path(),
+            Err(err) => {
+                problems.push(format!("{} could not be read: {err}", old.display()));
+                continue;
+            }
+        };
+        if path.extension().is_none_or(|x| x != "toml") {
+            continue;
+        }
+        let Some(name) = path.file_name() else {
+            continue;
+        };
+        let to = new.join(name);
+        let moved = std::fs::read_to_string(&path)
+            .map_err(|err| err.to_string())
+            .and_then(|text| parse(&text).map(|_| text))
+            .and_then(|text| match std::fs::read_to_string(&to) {
+                Ok(there) if there == text => Ok(()),
+                Ok(_) => Err(format!("{} differs from it", to.display())),
+                Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
+                    crate::config::write_atomic(&to, &text).map_err(|e| e.to_string())
+                }
+                Err(err) => Err(err.to_string()),
+            })
+            // The copy in `new` must be on disk before the only other one goes.
+            .and_then(|()| crate::config::sync_dir(new).map_err(|e| e.to_string()))
+            .and_then(|()| std::fs::remove_file(&path).map_err(|e| e.to_string()));
+        if let Err(why) = moved {
+            problems.push(format!("{} was not moved: {why}", path.display()));
+        }
+    }
+    let _ = std::fs::remove_dir(old);
+    problems
+}
+
 /// A file name from a template's name: lowercase ASCII letters, digits and
-/// single dashes, `pipeline` when nothing of the name survives.
+/// single dashes, `workflow` when nothing of the name survives.
 pub(crate) fn slug(name: &str) -> String {
     let mut slug = String::new();
     for ch in name.chars() {
@@ -116,7 +180,7 @@ pub(crate) fn slug(name: &str) -> String {
     }
     let slug = slug.trim_matches('-');
     match slug.is_empty() {
-        true => "pipeline".to_string(),
+        true => "workflow".to_string(),
         false => slug.to_string(),
     }
 }

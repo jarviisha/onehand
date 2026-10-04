@@ -1,6 +1,6 @@
-# Pipelines
+# Workflows
 
-A pipeline run takes a brief through the steps of a pipeline template: an agent step prompts the
+A run takes a brief through the steps of a workflow: an agent step prompts the
 session and is judged by gates onehand checks itself, a command step runs a command in the work, and
 an approval step waits for a person. The words are defined in [CONTEXT.md](../CONTEXT.md).
 
@@ -8,22 +8,22 @@ an approval step waits for a person. The words are defined in [CONTEXT.md](../CO
 
 | Part | Where |
 |---|---|
-| Template types and serde | [crates/core/src/pipeline/template.rs](../crates/core/src/pipeline/template.rs) |
-| What stops a template being saved or run | [crates/core/src/pipeline/validate.rs](../crates/core/src/pipeline/validate.rs) |
-| Prompt variables, onehand's additions, carry-on prompts | [crates/core/src/pipeline/prompt.rs](../crates/core/src/pipeline/prompt.rs) |
-| The two shipped templates | [crates/core/src/pipeline/builtin/](../crates/core/src/pipeline/builtin/) |
-| The person's templates on disk | [crates/core/src/pipeline/store.rs](../crates/core/src/pipeline/store.rs) |
-| The engine: one run as pure state | [crates/core/src/pipeline/run.rs](../crates/core/src/pipeline/run.rs) |
-| Marks, facts, gates, the command runner | [crates/core/src/pipeline/facts.rs](../crates/core/src/pipeline/facts.rs) |
-| Run files and their ordered writer | [crates/core/src/pipeline/files.rs](../crates/core/src/pipeline/files.rs) |
-| The one driver | [crates/app/src/pipeline/driver.rs](../crates/app/src/pipeline/driver.rs) |
-| Templates on offer, unfinished runs | [crates/app/src/pipeline.rs](../crates/app/src/pipeline.rs) |
-| Launcher and resume | [crates/app/src/shell/pipelines.rs](../crates/app/src/shell/pipelines.rs) |
-| Settings ▸ Pipelines | [crates/app/src/settings/pipelines.rs](../crates/app/src/settings/pipelines.rs) |
+| Workflow types and serde | [crates/core/src/workflow/template.rs](../crates/core/src/workflow/template.rs) |
+| What stops a workflow being saved or run | [crates/core/src/workflow/validate.rs](../crates/core/src/workflow/validate.rs) |
+| Prompt variables, onehand's additions, carry-on prompts | [crates/core/src/workflow/prompt.rs](../crates/core/src/workflow/prompt.rs) |
+| The two shipped workflows | [crates/core/src/workflow/builtin/](../crates/core/src/workflow/builtin/) |
+| The person's workflows on disk | [crates/core/src/workflow/store.rs](../crates/core/src/workflow/store.rs) |
+| The engine: one run as pure state | [crates/core/src/workflow/run.rs](../crates/core/src/workflow/run.rs) |
+| Marks, facts, gates, the command runner | [crates/core/src/workflow/facts.rs](../crates/core/src/workflow/facts.rs) |
+| Run files and their ordered writer | [crates/core/src/workflow/files.rs](../crates/core/src/workflow/files.rs) |
+| The one driver | [crates/app/src/workflow/driver.rs](../crates/app/src/workflow/driver.rs) |
+| Workflows on offer, unfinished runs | [crates/app/src/workflow.rs](../crates/app/src/workflow.rs) |
+| Launcher and resume | [crates/app/src/shell/workflows.rs](../crates/app/src/shell/workflows.rs) |
+| Settings ▸ Workflows | [crates/app/src/settings/workflows.rs](../crates/app/src/settings/workflows.rs) |
 
-## Templates
+## Workflows
 
-A template is a TOML file:
+A workflow is a TOML file:
 
 ```toml
 schema_version = 1
@@ -60,24 +60,26 @@ on_fail = "implement"
 
 onehand ships two, read-only: *Work in checkout* (Plan → Approve → Implement → Verify, in the
 checkout, left uncommitted) and *Implement on a branch* (Plan → Implement → Verify, on a new
-`pipeline/<title>` branch in a worktree beside the project's repository, committed; a project that
+`workflow/<title>` branch in a worktree beside the project's repository, committed; a project that
 is a folder inside its repository works in the same folder of the new checkout, as a worktree made
 from the project menu does). The person's own are in
-`<config_dir>/onehand/pipelines/<slug>.toml`, made by duplicating a shipped one or from *New
-template* in Settings ▸ Pipelines.
+`<config_dir>/onehand/workflows/<slug>.toml`, made by duplicating a shipped one or from *New
+workflow* in Settings ▸ Workflows. A build from before the rename kept them in `pipelines/`;
+they move here at start, behind the one-instance lock, by the rules in
+[architecture.md](architecture.md#workflows).
 
 **A file this build cannot read is never written over.** A `schema_version` above
-`pipeline::SCHEMA_VERSION` was written by a newer onehand; it is listed as unreadable, and a save
-aimed at it is refused. Every read-check-write of a template goes through one lock.
+`workflow::SCHEMA_VERSION` was written by a newer onehand; it is listed as unreadable, and a save
+aimed at it is refused. Every read-check-write of a workflow goes through one lock.
 
 ### Validation
 
-`pipeline::validate` is run on every keystroke of the form, before Save, and before a run starts.
+`workflow::validate` is run on every keystroke of the form, before Save, and before a run starts.
 It refuses: no name, no steps, an unreadable timeout, an unsupported schema; a step id that is not
 lowercase letters, digits, `-` and `_`, or is used twice; an empty label or prompt; a prompt
 variable that is not one; `{output.<id>}` naming anything but an earlier agent step that keeps its
 answer; `on_fail` naming anything but an earlier agent step; an approval of anything but an earlier
-agent step that keeps its answer; a gate that cannot hold where the template works (`committed` in
+agent step that keeps its answer; a gate that cannot hold where the workflow works (`committed` in
 a checkout, `uncommitted` on a worktree); and `code_changed` beside `code_unchanged`.
 
 ### Prompts
@@ -94,7 +96,7 @@ one line per gate saying what onehand will check.
 
 ## The engine
 
-`PipelineRun` is the only place a transition is decided. The driver reports what happened —
+`workflow::Run` is the only place a transition is decided. The driver reports what happened —
 `measured`, `turn_ended`, `command_finished`, `approved`, `revised`, `stopped`, `failed`, `resume` —
 and gets back the next `Action`: `Measure`, `Prompt`, `RunCommand`, `AwaitApproval`, `Finish` or
 `Idle` (the report did not fit what the run waits for). Each report also appends a `Transition` to
@@ -118,7 +120,7 @@ the run's history, capped at 200.
 
 ## The driver
 
-One global, `crate::pipeline::Pipelines`, holds every run by its session's uid. The driver
+One global, `crate::workflow::Workflows`, holds every run by its session's uid. The driver
 subscribes to the session and maps its events onto the engine:
 
 | Event | Report |
@@ -141,7 +143,7 @@ A prompt asked for before the adapter is up waits for the link. The clock is
 `unattended::Budget`: it pauses while a card or an approval waits on a person, and its timer looks
 again when it fires rather than being re-armed at every pause.
 
-**The run's file is written after every action**, through `pipeline::files::Writer`, one thread
+**The run's file is written after every action**, through `workflow::files::Writer`, one thread
 carrying out saves and removals in the order sent, so a late save can never bring back a run whose
 file was removed. A run that ends on its own outcome — done, exhausted, failed, stopped by a person,
 taken over, timed out — removes its file. **A run whose agent stopped or whose session went keeps
@@ -157,50 +159,51 @@ the run's file and compared after a restart, possibly by a build made with anoth
 untracked file counts by its contents, not only its name: the step after a failed check often fixes
 the very file the change before it created.
 
-**What waits for approval is shown from the run**, not the transcript (`PipelineRun::under_review`):
+**What waits for approval is shown from the run**, not the transcript (`Run::under_review`):
 the strip's *Review…* opens the kept answer, so a run resumed in a new session is not approved
 blind.
 
 ## Starting and resuming
 
-The composer's `+` menu and the keymap's `run_pipeline` (no default key) open the launcher on the
-project on screen. A checkout template starts a session there; a worktree template first cuts
-`pipeline/<title>` (or the first free `-N`) off `HEAD` beside the project and adds it as a project.
-A template with a command step that names no command needs the project's check command, set under
-Settings ▸ Pipelines and kept in the workspace file (`WorkspaceConfig::checks`).
+The composer's `+` menu and the keymap's `run_workflow` (no default key) open the launcher on the
+project on screen. A checkout workflow starts a session there; a worktree workflow first cuts
+`workflow/<title>` (or the first free `-N`) off `HEAD` beside the project and adds it as a project.
+A workflow with a command step that names no command needs the project's check command, set under
+Settings ▸ Workflows and kept in the workspace file (`WorkspaceConfig::checks`).
 
-At boot every `<config_dir>/onehand/pipeline-runs/*.json` is read into the unfinished list. A
+At boot every `<config_dir>/onehand/pipeline-runs/*.json` (the name on disk from before the
+rename) is read into the unfinished list. A
 project page shows the unfinished runs started from it or working in it, with *Resume* and
 *Discard*. Nothing restarts an agent by itself. *Resume* adds the run's folder back as a project if
 it left the workspace, starts a session on the agent the run used, and calls `resume`.
 
 ## Checking it by hand
 
-The pipeline mock agent plays an agent's part in a run, so every path below is walked in seconds
+The workflow mock agent plays an agent's part in a run, so every path below is walked in seconds
 without an API key. Add it in Settings ▸ Agents or `onehand.toml`, with the script's absolute
 path: the agent starts in the scratch project, where a relative path finds nothing
 (`MODULE_NOT_FOUND`).
 
 ```toml
 [[agents]]
-name = "Mock pipeline"
+name = "Mock workflow"
 command = "node"
-args = ["/absolute/path/to/onehand-gpui/crates/core/examples/mock_pipeline_agent.js"]
+args = ["/absolute/path/to/onehand-gpui/crates/core/examples/mock_workflow_agent.js"]
 ```
 
 It reads what a step wants from the gate rules onehand appends to the prompt, not from the
-template's wording, so an edited template still drives it. Its orders are whole words in the
+workflow's wording, so an edited workflow still drives it. Its orders are whole words in the
 brief's title: `miss` does nothing every turn, `fail-check` makes the session's first change fail
 the check and every later one pass, and `fast` answers at once instead of over about six seconds.
 It walks the cases below; it never edits during a plan or commits in a checkout, so the
 `code_unchanged` and `uncommitted` carry-ons are reached only by a person changing the work
 mid-step.
 
-A run takes the first agent in the list, so put *Mock pipeline* first. Set up a scratch repository
-with one commit, open it as a project, and set the project's check command (Settings ▸ Pipelines) to:
+A run takes the first agent in the list, so put *Mock workflow* first. Set up a scratch repository
+with one commit, open it as a project, and set the project's check command (Settings ▸ Workflows) to:
 
 ```sh
-sleep 5 && grep -q 'check: pass' mock-pipeline.txt
+sleep 5 && grep -q 'check: pass' mock-workflow.txt
 ```
 
 Then walk each case, with *Work in checkout* unless it says otherwise. Between cases, discard the
@@ -208,11 +211,11 @@ change (`git checkout . && git clean -fd`).
 
 | Case | Do | Expect |
 |---|---|---|
-| Done | Brief `go`. *Continue* at the approval | Plan, Approve, Implement, Verify; *Pipeline done*. `mock-pipeline.txt` is left uncommitted. On *Implement on a branch*, a new branch holds one commit |
+| Done | Brief `go`. *Continue* at the approval | Plan, Approve, Implement, Verify; *Workflow done*. `mock-workflow.txt` is left uncommitted. On *Implement on a branch*, a new branch holds one commit |
 | Stop while a command runs | Brief `go fast`, *Continue*, then *Stop* during Verify's `sleep 5` | The run ends *stopped by hand* only once the command has exited: no `sleep` is left (`pgrep -f 'sleep 5'`) |
-| Exhausted | Brief `miss` | The template allows three misses, so the plan misses `answered` four times; the fourth ends the run with *too many misses at the Plan step*. The run's file is removed |
-| A failed command goes back | Brief `fail-check`, *Continue* | Verify fails, Implement runs again with the check's output in its prompt, Verify passes; *Pipeline done* |
+| Exhausted | Brief `miss` | The workflow allows three misses, so the plan misses `answered` four times; the fourth ends the run with *too many misses at the Plan step*. The run's file is removed |
+| A failed command goes back | Brief `fail-check`, *Continue* | Verify fails, Implement runs again with the check's output in its prompt, Verify passes; *Workflow done* |
 | Approve and Revise | Brief `go`. *Revise…* with a note, then *Continue* | The plan runs again, its prompt carrying the note and the earlier answer; no miss is counted. *Review…* shows the kept answer |
-| A restart mid-step, then Resume | Brief `go`, *Continue*, quit while Implement's turn is still answering | At the next start the project page lists the run. *Resume* starts a new session at Implement, with its mark kept, and the run carries on to *Pipeline done* |
+| A restart mid-step, then Resume | Brief `go`, *Continue*, quit while Implement's turn is still answering | At the next start the project page lists the run. *Resume* starts a new session at Implement, with its mark kept, and the run carries on to *Workflow done* |
 | A restart at an approval, then Resume | Brief `go`, quit while the run waits for approval | *Resume* waits for approval again; *Review…* shows the plan |
-| A template edited under a run | Duplicate *Work in checkout*, start a run on the copy with brief `go`, then while the run waits for approval delete its Verify step and save | The run still reaches Verify: it uses the snapshot it started with |
+| A workflow edited under a run | Duplicate *Work in checkout*, start a run on the copy with brief `go`, then while the run waits for approval delete its Verify step and save | The run still reaches Verify: it uses the snapshot it started with |

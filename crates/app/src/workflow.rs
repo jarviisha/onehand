@@ -1,19 +1,19 @@
-//! Pipeline runs, as the app drives them: the templates on offer, the runs
+//! Runs, as the app drives them: the templates on offer, the runs
 //! under way, and the runs a previous session left unfinished.
 //!
-//! Everything a run decides is `onehand_core::pipeline`'s; what is here is
+//! Everything a run decides is `onehand_core::workflow`'s; what is here is
 //! what needs a session, a timer or a window.
 
 use gpui::{App, BorrowAppContext as _, Global, SharedString};
-use onehand_core::pipeline::{self as core, PipelineRun, Template, files};
+use onehand_core::workflow::{self as core, Run, Template, files};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 mod driver;
 pub(crate) use driver::{approve, revise, start, stop};
 
-/// Every pipeline run in this process, and the templates they start from.
-pub(crate) struct Pipelines {
+/// Every run in this process, and the templates they start from.
+pub(crate) struct Workflows {
     /// The templates on offer, shipped first. Empty until the boot read lands.
     templates: Vec<Entry>,
     /// Runs under way, by the uid of the session they drive.
@@ -21,11 +21,11 @@ pub(crate) struct Pipelines {
     /// Runs that ended short of a step's own outcome — their agent stopped or
     /// their session went, this process or a previous one — and wait for a
     /// person to resume or discard them.
-    unfinished: Vec<PipelineRun>,
+    unfinished: Vec<Run>,
     writer: files::Writer,
 }
 
-impl Default for Pipelines {
+impl Default for Workflows {
     fn default() -> Self {
         Self {
             templates: Vec::new(),
@@ -36,7 +36,7 @@ impl Default for Pipelines {
     }
 }
 
-impl Global for Pipelines {}
+impl Global for Workflows {}
 
 /// How long quitting waits for the run files still being written.
 const QUIT_WAIT: std::time::Duration = std::time::Duration::from_secs(2);
@@ -65,18 +65,18 @@ impl Entry {
 
 /// Read the templates and the unfinished runs, off the UI thread.
 pub(crate) fn boot(cx: &mut App) {
-    cx.default_global::<Pipelines>();
+    cx.default_global::<Workflows>();
     // The process exits right after its last window closes, and a run's last
     // save or its file's removal still queued would die with it: a finished
     // run offered for resuming at the next launch. The wait is in the future,
     // which runs once the windows are gone and their sessions have let go of
     // their runs, so those last writes are already queued ahead of it.
-    let writer = cx.global::<Pipelines>().writer.clone();
+    let writer = cx.global::<Workflows>().writer.clone();
     cx.on_app_quit(move |_| {
         let writer = writer.clone();
         async move {
             if !writer.flush(QUIT_WAIT) {
-                eprintln!("onehand: a pipeline run's last write may not have landed");
+                eprintln!("onehand: a run's last write may not have landed");
             }
         }
     })
@@ -88,19 +88,16 @@ pub(crate) fn boot(cx: &mut App) {
             .spawn(async { files::load_all_blocking(&files::runs_dir()) })
             .await;
         cx.update(|cx| {
-            let runs: Vec<PipelineRun> = found
+            let runs: Vec<Run> = found
                 .into_iter()
                 .filter_map(|(path, read)| {
                     read.inspect_err(|why| {
-                        eprintln!(
-                            "onehand: a pipeline run in {} was not read: {why}",
-                            path.display()
-                        )
+                        eprintln!("onehand: a run in {} was not read: {why}", path.display())
                     })
                     .ok()
                 })
                 .collect();
-            cx.update_global::<Pipelines, _>(|p, _| p.unfinished.extend(runs));
+            cx.update_global::<Workflows, _>(|p, _| p.unfinished.extend(runs));
             cx.refresh_windows();
         });
     })
@@ -127,7 +124,7 @@ pub(crate) fn reload_templates(cx: &mut App) {
                     file: Some(file),
                 }))
                 .collect();
-            cx.update_global::<Pipelines, _>(|p, _| p.templates = templates);
+            cx.update_global::<Workflows, _>(|p, _| p.templates = templates);
             cx.refresh_windows();
         });
     })
@@ -141,7 +138,7 @@ pub(crate) const TEMPLATES_SHOWN: usize = 50;
 
 /// The templates on offer, shipped first.
 pub(crate) fn templates(cx: &App) -> Vec<Entry> {
-    cx.try_global::<Pipelines>()
+    cx.try_global::<Workflows>()
         .map(|p| p.templates.clone())
         .unwrap_or_default()
 }
@@ -158,7 +155,7 @@ pub(crate) struct Shown {
 
 /// Where the run on session `uid` stands, if one drives it.
 pub(crate) fn shown(uid: u64, cx: &App) -> Option<Shown> {
-    let run = &cx.try_global::<Pipelines>()?.runs.get(&uid)?.run;
+    let run = &cx.try_global::<Workflows>()?.runs.get(&uid)?.run;
     Some(Shown {
         name: run.template.name.clone().into(),
         steps: run
@@ -185,7 +182,7 @@ pub(crate) struct Unfinished {
 
 /// The unfinished runs started from, or working in, the project at `root`.
 pub(crate) fn unfinished_in(root: &Path, cx: &App) -> Vec<Unfinished> {
-    let Some(p) = cx.try_global::<Pipelines>() else {
+    let Some(p) = cx.try_global::<Workflows>() else {
         return Vec::new();
     };
     p.unfinished
@@ -203,8 +200,8 @@ pub(crate) fn unfinished_in(root: &Path, cx: &App) -> Vec<Unfinished> {
 }
 
 /// Take the unfinished run `id` off the list, to resume it.
-pub(crate) fn take_unfinished(id: &str, cx: &mut App) -> Option<PipelineRun> {
-    let taken = cx.update_global::<Pipelines, _>(|p, _| {
+pub(crate) fn take_unfinished(id: &str, cx: &mut App) -> Option<Run> {
+    let taken = cx.update_global::<Workflows, _>(|p, _| {
         let at = p.unfinished.iter().position(|run| run.id == id)?;
         Some(p.unfinished.remove(at))
     });
@@ -213,9 +210,9 @@ pub(crate) fn take_unfinished(id: &str, cx: &mut App) -> Option<PipelineRun> {
 }
 
 /// Put a run back on the unfinished list, its file kept.
-pub(crate) fn park(run: PipelineRun, cx: &mut App) {
+pub(crate) fn park(run: Run, cx: &mut App) {
     let file = files::run_file(&files::runs_dir(), &run.id);
-    cx.update_global::<Pipelines, _>(|p, _| {
+    cx.update_global::<Workflows, _>(|p, _| {
         p.writer
             .send(files::FileOp::Save(file, Box::new(run.clone())));
         p.unfinished.push(run);
@@ -227,6 +224,6 @@ pub(crate) fn park(run: PipelineRun, cx: &mut App) {
 pub(crate) fn discard(id: &str, cx: &mut App) {
     if take_unfinished(id, cx).is_some() {
         let file = files::run_file(&files::runs_dir(), id);
-        cx.update_global::<Pipelines, _>(|p, _| p.writer.send(files::FileOp::Remove(file)));
+        cx.update_global::<Workflows, _>(|p, _| p.writer.send(files::FileOp::Remove(file)));
     }
 }

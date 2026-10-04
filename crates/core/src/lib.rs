@@ -33,12 +33,13 @@ pub mod connector;
 pub mod diff;
 pub mod editor;
 pub mod gitstat;
+pub mod instance;
 pub mod issues;
-pub mod pipeline;
 pub mod process;
 pub mod remote;
 pub mod tree;
 pub mod unattended;
+pub mod workflow;
 pub mod workspace;
 pub mod worktree;
 

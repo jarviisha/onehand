@@ -1,4 +1,4 @@
-//! A pipeline run as pure state: where it is in its template, what it has
+//! A run as pure state: where it is in its template, what it has
 //! kept, and what happens next. Nothing here touches a process, a file or a
 //! clock beyond reading the time for its history; whoever drives the run
 //! does what each [`Action`] says and reports back through the method named
@@ -61,12 +61,12 @@ pub struct Transition {
 /// What the driver of a run does next.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Action {
-    /// Read the [`Mark`] of the work and report it to [`PipelineRun::measured`].
+    /// Read the [`Mark`] of the work and report it to [`Run::measured`].
     Measure,
     /// Send this prompt to the run's session.
     Prompt(String),
     /// Run this command in the work and report to
-    /// [`PipelineRun::command_finished`].
+    /// [`Run::command_finished`].
     RunCommand(String),
     /// Wait for a person to approve or revise.
     AwaitApproval,
@@ -107,12 +107,12 @@ impl Outcome {
     /// What happened, as a line for the transcript.
     pub fn said(&self) -> String {
         match self {
-            Self::Done => "Pipeline done: every step passed".to_string(),
-            Self::Stopped(stop) => format!("Pipeline stopped: {}", stop.said()),
+            Self::Done => "Workflow done: every step passed".to_string(),
+            Self::Stopped(stop) => format!("Workflow stopped: {}", stop.said()),
             Self::Exhausted { step } => {
-                format!("Pipeline stopped: too many misses at the {step} step")
+                format!("Workflow stopped: too many misses at the {step} step")
             }
-            Self::Failed(why) => format!("Pipeline stopped: {why}"),
+            Self::Failed(why) => format!("Workflow stopped: {why}"),
         }
     }
 }
@@ -165,9 +165,9 @@ enum Await {
 /// How many transitions a run's history keeps, newest last.
 const HISTORY_MAX: usize = 200;
 
-/// A run of a pipeline, from its first step until it ends.
+/// A run of a workflow, from its first step until it ends.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct PipelineRun {
+pub struct Run {
     pub id: String,
     /// The template as it was when the run began: a later edit does not
     /// reach a run under way.
@@ -196,7 +196,7 @@ pub struct PipelineRun {
     awaiting: Await,
 }
 
-impl PipelineRun {
+impl Run {
     /// A run of `template` on `brief`, at its first step.
     pub fn begin(id: String, template: Template, brief: Brief, setup: Setup) -> (Self, Action) {
         let mut run = Self {
