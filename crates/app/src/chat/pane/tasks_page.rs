@@ -567,10 +567,16 @@ fn task_detail(
                 .into_any_element(),
         );
     }
+    // Only a task at work has a visit under way: an open visit of any other
+    // was cut off, by a quit or a lost session, before it could end.
+    let live = match row.group {
+        Group::Running | Group::Waiting => true,
+        Group::Ended | Group::Queued | Group::Finished => false,
+    };
     let title = format!("Run {}", task.runs.len());
     out.push(
         page_card(title, Some(last.visits().len()), None, cx)
-            .children(timeline(detail, last, cx))
+            .children(timeline(detail, last, live, cx))
             .into_any_element(),
     );
     if !earlier.is_empty() {
@@ -608,7 +614,7 @@ fn task_detail(
                         .v_flex()
                         .gap_2()
                         .pl_4()
-                        .children(timeline(detail, run, cx)),
+                        .children(timeline(detail, run, false, cx)),
                 );
             }
         }
@@ -622,8 +628,14 @@ fn task_detail(
 }
 
 /// `run`'s visits, oldest first, each opening onto what it kept and what
-/// it changed.
-fn timeline(detail: &TaskDetail, run: &Run, cx: &mut Context<ChatPane>) -> Vec<gpui::AnyElement> {
+/// it changed. `live` when the run is at work, so its open visit is under
+/// way rather than cut off.
+fn timeline(
+    detail: &TaskDetail,
+    run: &Run,
+    live: bool,
+    cx: &mut Context<ChatPane>,
+) -> Vec<gpui::AnyElement> {
     let muted = cx.theme().muted_foreground;
     let visits = run.visits();
     if visits.is_empty() {
@@ -647,17 +659,28 @@ fn timeline(detail: &TaskDetail, run: &Run, cx: &mut Context<ChatPane>) -> Vec<g
             .iter()
             .find(|step| step.id == visit.step)
             .map_or_else(|| visit.step.clone(), |step| step.label.clone());
-        let took = crate::chat::transcript::elapsed(
-            visit
-                .ended_at
-                .unwrap_or(now)
-                .saturating_sub(visit.started_at),
-        );
-        let when = format!("{} · {took}", rel_time(now, visit.started_at));
-        let why = visit
-            .why
-            .clone()
-            .unwrap_or_else(|| "In progress".to_string());
+        let started = rel_time(now, visit.started_at);
+        // A cut-off visit has no end to measure to, and its time would grow
+        // for ever.
+        let until = match (visit.ended_at, live) {
+            (Some(at), _) => Some(at),
+            (None, true) => Some(now),
+            (None, false) => None,
+        };
+        let when = match until {
+            Some(at) => format!(
+                "{started} · {}",
+                crate::chat::transcript::elapsed(at.saturating_sub(visit.started_at))
+            ),
+            None => started,
+        };
+        let why = visit.why.clone().unwrap_or_else(|| {
+            match live {
+                true => "In progress",
+                false => "Cut off",
+            }
+            .to_string()
+        });
         let pinned = visit.start.clone().zip(visit.end.clone());
         let dirs = dirs(run);
         out.push(
@@ -693,7 +716,7 @@ fn timeline(detail: &TaskDetail, run: &Run, cx: &mut Context<ChatPane>) -> Vec<g
                     .v_flex()
                     .gap_2()
                     .pl_6()
-                    .children(visit_body(detail, run, visit, cx))
+                    .children(visit_body(detail, run, visit, live, cx))
                     .into_any_element(),
             );
         }
@@ -706,6 +729,7 @@ fn visit_body(
     detail: &TaskDetail,
     run: &Run,
     visit: &Visit,
+    live: bool,
     cx: &mut Context<ChatPane>,
 ) -> Vec<gpui::AnyElement> {
     let mut out = visit
@@ -715,9 +739,10 @@ fn visit_body(
         .map(|output| mono_well(output, cx))
         .unwrap_or_default();
     let (Some(from), Some(to)) = (visit.start.clone(), visit.end.clone()) else {
-        let said = match visit.ended_at {
-            None => "In progress",
-            Some(_) => "No marks were pinned for this visit.",
+        let said = match (visit.ended_at, live) {
+            (None, true) => "In progress",
+            (None, false) => "Cut off before its end was pinned.",
+            (Some(_), _) => "No marks were pinned for this visit.",
         };
         out.push(muted_line(said, cx));
         return out;
@@ -747,15 +772,17 @@ fn visit_body(
             None => Some(div().text_color(muted).child("binary")),
         };
         let dirs = dirs(run);
-        out.push(
-            div()
-                .id(SharedString::from(format!(
-                    "task-file-{}-{}-{i}",
-                    run.id, visit.id
-                )))
-                .h_flex()
-                .items_center()
-                .gap_2()
+        let line = div()
+            .id(SharedString::from(format!(
+                "task-file-{}-{}-{i}",
+                run.id, visit.id
+            )))
+            .h_flex()
+            .items_center()
+            .gap_2();
+        // A binary file has no lines to diff: it is listed, never opened.
+        let line = match change.lines {
+            Some(_) => line
                 .cursor_pointer()
                 .on_click(cx.listener(move |pane: &mut ChatPane, _, _, cx| {
                     pane.toggle_file(key.clone(), dirs.clone(), cx)
@@ -764,18 +791,21 @@ fn visit_body(
                     Icon::new(chevron(opened.is_some()))
                         .small()
                         .text_color(muted),
-                )
-                .child(
-                    div()
-                        .flex_1()
-                        .min_w_0()
-                        .truncate()
-                        .font_family(cx.theme().mono_font_family.clone())
-                        .text_xs()
-                        .child(change.path.clone()),
-                )
-                .children(counts.map(|counts| counts.text_xs()))
-                .into_any_element(),
+                ),
+            None => line.pl_4(),
+        };
+        out.push(
+            line.child(
+                div()
+                    .flex_1()
+                    .min_w_0()
+                    .truncate()
+                    .font_family(cx.theme().mono_font_family.clone())
+                    .text_xs()
+                    .child(change.path.clone()),
+            )
+            .children(counts.map(|counts| counts.text_xs()))
+            .into_any_element(),
         );
         match opened {
             Some(Some(Ok(rows))) => {

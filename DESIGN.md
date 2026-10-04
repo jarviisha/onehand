@@ -334,7 +334,9 @@ One window hosts exactly one workspace. The frame is a navigation **rail** plus 
     why it ended in muted ink, and when it started and how long it took.
     Opened, a visit shows its output in a mono well, then the files it changed,
     each with green `+N` and red `−N` (or *binary*); a file opens onto its diff
-    in the transcript's diff renderer. A visit still open says *In progress*,
+    in the transcript's diff renderer, except a binary one, which has no
+    chevron and does not open. A visit under way says *In progress*; an open
+    visit of a task not at work says *Cut off*, with its start and no duration;
     one missing a mark *No marks were pinned for this visit.*, and a read under
     way says so;
   - **Earlier runs**, newest first, each a line (its number, how it ended,

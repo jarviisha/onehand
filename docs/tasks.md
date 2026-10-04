@@ -48,9 +48,10 @@ row opens nothing: it has no task to show), with *All tasks* to go back. It show
 - **Run N**, the last run's timeline: one line per step visit (the step, why it ended, when it
   started and how long it took), each opening onto what it kept or printed (its last 60 lines) and
   the files it changed between its start and end marks, with their added and removed lines.
-  Pressing a file shows its line diff in the transcript's diff renderer, cut at 400 lines. A visit
-  still open says *In progress*; one with a mark missing says *No marks were pinned for this
-  visit.* The timeline draws the newest 100 visits and a visit lists 100 files, each cap said;
+  Pressing a file shows its line diff in the transcript's diff renderer, cut at 400 lines; a binary
+  file is listed but does not open. A visit under way, on a task at work, says *In progress*; an open
+  visit of any other task was cut off by a quit or a lost session, says *Cut off* and gives no
+  duration; one with a mark missing says *No marks were pinned for this visit.* The timeline draws the newest 100 visits and a visit lists 100 files, each cap said;
 - **Earlier runs**, newest first and the newest 20 of them: the run's number, how it ended and
   when, each opening onto the same timeline.
 
