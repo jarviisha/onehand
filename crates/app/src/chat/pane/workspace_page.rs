@@ -652,7 +652,7 @@ impl ChatPane {
 /// muted count beside it, an optional control at the far end, and whatever it
 /// holds below.
 pub(super) fn page_card(
-    title: &'static str,
+    title: impl Into<SharedString>,
     count: Option<usize>,
     control: Option<gpui::AnyElement>,
     cx: &App,
@@ -676,7 +676,7 @@ pub(super) fn card_box(cx: &App) -> Div {
 /// A workspace page heading: the title in bold, a muted count beside it and an
 /// optional control at the far end.
 fn card_title(
-    title: &'static str,
+    title: impl Into<SharedString>,
     count: Option<usize>,
     control: Option<gpui::AnyElement>,
     cx: &App,
@@ -689,7 +689,7 @@ fn card_title(
         // The control's own height must not change the title row's, or a card
         // with a filter sits taller than the one beside it.
         .h(rems(PAGE_TITLE_H))
-        .child(div().font_semibold().child(title))
+        .child(div().font_semibold().child(title.into()))
         .children(count.map(|n| div().text_xs().text_color(muted).child(n.to_string())))
         .child(div().flex_1())
         .children(control)

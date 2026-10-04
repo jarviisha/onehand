@@ -30,12 +30,13 @@ pub(in crate::chat) use metrics::{
     BLOCK_GAP, CONTENT_COLUMN, TEXT, TIGHT_GAP, TURN_GAP, radius_block, radius_tag,
 };
 use metrics::{FRAME_PAD, LINE_H, MARK_SIZE, MARK_SLOT, PART_GAP, TEXT_PAD_Y};
-pub(in crate::chat) use parts::floating_card;
+pub(in crate::chat) use parts::{elapsed, floating_card, line_counts};
 pub(in crate::chat) use permission::permission;
 use plan::plan;
 use prose::{agent, thought};
 pub(in crate::chat) use strip::turn_summary;
 pub use strip::{Run, activity_group, activity_summary, cluster, rule, runs, section_group};
+pub(in crate::chat) use tool::diff_rows;
 use tool::tool;
 use user::user;
 

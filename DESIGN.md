@@ -311,14 +311,39 @@ One window hosts exactly one workspace. The frame is a navigation **rail** plus 
     over, since nothing is left to stop);
   - an unattended run, listed read-only as waiting or running: *Open session*
     only;
-  - finished: nothing.
+  - finished: nothing on the row; *Retry* in its detail.
   *Retry* asks first in a modal that says where the new run starts and how many
   answers it carries over, and adds that the work changed since the last run
-  stopped when it did. Its footer is *Cancel* (ghost), *Retry with the newer
+  stopped when it did. Under that, a small *From …* menu lists the first step up
+  to where the retry would start, defaulting to that start, or to the first
+  step when the last run got to the end; the description follows the pick. Its footer is *Cancel* (ghost), *Retry with the newer
   workflow, from …* (only when a newer version of the workflow exists) and
   *Retry* (primary). A retry whose last run worked on another branch is refused
   in a warning notification naming that branch. A check is retried at once,
   with no modal.
+  **The task detail.** Pressing a row's text (not an unattended run's) swaps the
+  four cards for that task, in the same column; the filter goes with them. A
+  ghost *All tasks* control with a left chevron leads back. Then, as hairline
+  cards:
+  - a **head**: the title in bold, the row's muted line, and the row's actions
+    at its end, plus *Retry* on a finished task;
+  - **Awaiting approval**, only while the last run waits on one: a muted line
+    naming the step that answered, its answer in a mono well, and *Open
+    session* in the title row. Nothing is approved here;
+  - **Run N** with its visit count: one line per visit, a chevron, the step,
+    why it ended in muted ink, and when it started and how long it took.
+    Opened, a visit shows its output in a mono well, then the files it changed,
+    each with green `+N` and red `−N` (or *binary*); a file opens onto its diff
+    in the transcript's diff renderer, except a binary one, which has no
+    chevron and does not open. A visit under way says *In progress*; an open
+    visit of a task not at work says *Cut off*, with its start and no duration;
+    one missing a mark *No marks were pinned for this visit.*, and a read under
+    way says so;
+  - **Earlier runs**, newest first, each a line (its number, how it ended,
+    when) opening onto the same timeline.
+  Bounded and said: the newest 20 earlier runs, the newest 100 visits per run,
+  100 files per visit, the last 60 lines of an output or answer, 400 lines of a
+  diff. A task let go by the history cap while open leaves the cards on screen.
 - The **rail** is app chrome, not a panel: it lives outside the dock, so the dock
   cannot swallow it and a layout restore cannot lose it. `Ctrl+Shift+B` **hides
   it entirely** — it is never narrowed to an icon column, because at that width

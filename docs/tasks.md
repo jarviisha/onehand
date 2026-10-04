@@ -1,9 +1,9 @@
 # Tasks
 
-**Status: milestone 1+2 is built.** Pull requests 1 (the rename), 2 (tasks, history, step visits,
-marks and the queue) and 3 (the Tasks page, the check as a task, Retry and the history cap) are
-built; the task detail and the earlier-step picker are milestone 3's design. This is where
-milestones 1+2 and 3 of [roadmap.md](roadmap.md) are headed, and the decisions behind it are listed
+**Status: milestone 3 is built.** Milestone 1+2 landed as pull requests 1 (the rename), 2 (tasks,
+history, step visits, marks and the queue) and 3 (the Tasks page, the check as a task, Retry and
+the history cap); milestone 3 added the task detail and the earlier-step picker. This is where
+milestones 1+2 and 3 of [roadmap.md](roadmap.md) went, and the decisions behind it are listed
 there. Where the code has landed, this file is its account, with [workflows.md](workflows.md)
 holding the engine and the driver.
 
@@ -24,7 +24,7 @@ running, what needs me, and what has finished.
   | *Needs attention*, ended | a run that ended exhausted, failed, timed out or interrupted; its place is free | Resume (interrupted only), Retry, Dismiss |
   | *Running* | the one run working in each place | Open session, Stop |
   | *Queued* | tasks waiting for their place to be free | Stop |
-  | *Finished* | done, stopped by a person, taken over, dismissed | none on this page |
+  | *Finished* | done, stopped by a person, taken over, dismissed | none on its row; Retry in its detail |
 
 - **Every entry in *Needs attention* comes with an action**, and it stays until a person takes one.
   A waiting run is answered in its session; an ended one is resumed, retried or dismissed. Dismiss
@@ -38,8 +38,25 @@ running, what needs me, and what has finished.
   older ones were removed since onehand started.
 - **Every card is capped at 50 rows** and says how many more it left out.
 
-Milestone 3 adds the task detail behind each row: each run's step timeline, each step's output and
-diff, what waits for approval, the earlier runs, and Retry for a finished task.
+**The task detail** opens in place of the cards when a row's text is pressed (an unattended run's
+row opens nothing: it has no task to show), with *All tasks* to go back. It shows:
+
+- **a head**: the title, the row's muted line, and the row's actions, plus *Retry* on a finished
+  task;
+- **Awaiting approval**, while the last run waits on one: the step that answered and its answer
+  (its last 60 lines, said when cut), with *Open session*. It is answered in its session, not here;
+- **Run N**, the last run's timeline: one line per step visit (the step, why it ended, when it
+  started and how long it took), each opening onto what it kept or printed (its last 60 lines) and
+  the files it changed between its start and end marks, with their added and removed lines.
+  Pressing a file shows its line diff in the transcript's diff renderer, cut at 400 lines; a binary
+  file is listed but does not open. A visit under way, on a task at work, says *In progress*; an open
+  visit of any other task was cut off by a quit or a lost session, says *Cut off* and gives no
+  duration; one with a mark missing says *No marks were pinned for this visit.* The timeline draws the newest 100 visits and a visit lists 100 files, each cap said;
+- **Earlier runs**, newest first and the newest 20 of them: the run's number, how it ended and
+  when, each opening onto the same timeline.
+
+What a visit changed and a file's diff are read off the UI thread when opened, from the run's
+worktree, or from its project once the worktree is gone; while they are read the detail says so.
 
 ## The model
 
@@ -87,7 +104,7 @@ stateDiagram-v2
     Queued --> Ended: Stop on a resume or retry (back as it was)
     Ended --> Queued: Resume (same run) / Retry (new run)
     Ended --> Finished: Dismiss
-    Finished --> Queued: Retry from the task detail (milestone 3)
+    Finished --> Queued: Retry from the task detail
 ```
 
 *Waiting* and *Ended* are the two halves of *Needs attention*. **Every start goes through the
@@ -109,9 +126,9 @@ and the rail count cannot drift apart.
 | | Resume | Retry |
 |---|---|---|
 | Run | the same one | a new one |
-| Offered for | an interrupted run only (the agent stopped or the session went: `Outcome::resumable`) | every outcome under *Needs attention*, and *Finished* from the detail |
+| Offered for | an interrupted run only (the agent stopped or the session went: `Outcome::resumable`) | every outcome under *Needs attention*, and *Finished* from the detail; a dismissed task retried is live again |
 | Workflow | the run's own snapshot | the previous run's snapshot; the newer template is offered if it changed |
-| Starts at | where it was, marks kept | the first step that cannot be carried over (below); picking an earlier step is milestone 3's |
+| Starts at | where it was, marks kept | the first step that cannot be carried over (below), or an earlier one picked in the dialog; a run that got to the end starts at the first step by default |
 | Misses | as they were | from zero |
 | Place | through the queue | through the queue |
 
@@ -134,9 +151,20 @@ A run cut off before its last visit ended is compared with that visit's start ma
 (`Run::last_mark`). A retry with no mark to compare against, or whose comparison fails, skips this
 check. **A check task is retried at once**, with no dialog: it is a fresh run of its one step.
 
-In code: `Run::retry_of` (`crates/core/src/workflow/run.rs`) builds the new run with `step` and
-`furthest` at the start step. A step counts as passed by where it stood in the last run's own
-template, so dropping an earlier step never moves a failed one into the past and the outputs of the steps before it; `Task::retry` pushes it.
+**The dialog has a step menu**, *From …*, listing the first step up to where the retry would start;
+it defaults to that start, or to the first step when the last run got to the end. The description
+says where the pick starts and how many answers it carries; only the steps before it carry. The
+pick goes to both *Retry* and *Retry with the newer workflow*, and a newer workflow without that
+step ignores it.
+
+In code: `Run::retry_start` (`crates/core/src/workflow/run.rs`) says where a retry would start,
+`Run::retry_offered` which step the dialog offers first, and `Run::retry_plan` where a retry from a
+picked step starts and how many answers it carries, which is what the dialog says. `Run::retry_of`
+builds the new run from that plan, with `step` and `furthest` at its start and the outputs of the
+steps before it. A step counts as passed by where it stood in the last run's own template, so
+dropping an earlier step never moves a failed one into the past. `Task::retry` pushes it and
+clears `dismissed`, so a task let go comes back live and a failure lands under *Needs attention*
+again. A check is retried from its one step, so one that passed runs again.
 `Run::resume` enters the run's own step on its first start, which is step 0 for a fresh run.
 `task::marks::against_blocking` answers `Same`, `Changed` or `OtherBranch`, and
 `Shell::begin_retry` (`crates/app/src/shell/workflows.rs`) asks the question. The dialog shows
@@ -313,6 +341,7 @@ Milestone 1+2 lands as three pull requests in a row, each with its docs.
 | 1. Rename and migration (landed) | `workflow` (was `pipeline`), `workflow::Run` (was `PipelineRun`); `workflow::store::migrate_old_dir_blocking` moves `pipelines/` to `workflows/`, restartably; `instance::hold_lock` | `boot` takes the lock, then runs the move; every module, type and string renamed, the `Workflows` global and Settings ▸ Workflows; a `run_pipeline` keymap override is read as `run_workflow` |
 | 2. Tasks, history, visits and the queue (landed) | `task`, `task::files` and the move of `pipeline-runs/`; step visits; `task::marks`; `task::queue` keyed by the real checkout | `Workflows` → `Tasks` global; the driver records visits and marks their end; every start asks the queue, and a place is given up only once the work has stopped |
 | 3. The Tasks page, the check as a task, and Retry (landed) | group rule, history cap; a one-step run with no agent; what a retry carries over | page, rail row and count, project filter; the project page links here; Retry from *Needs attention* |
+| Milestone 3: the task detail (landed) | `Visit` public; `Run::retry_start`, `retry_of` from an earlier step; `Task::retry` clears `dismissed`; `task::marks::changes_blocking` and `file_diff_blocking` | the detail in `chat/pane/tasks_page.rs`; the retry dialog's step menu |
 
 Each one brings its glossary terms and turns its part of this file into the account of the code.
 

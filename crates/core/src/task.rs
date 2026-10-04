@@ -165,10 +165,12 @@ impl Task {
     }
 
     /// Run it again on `template`, as run `id`, from the first step its last
-    /// run cannot carry over. The new run, not started; `None` with no run
-    /// to retry.
-    pub fn retry(&mut self, id: String, template: Template) -> Option<&Run> {
-        let next = Run::retry_of(self.runs.last()?, id, template);
+    /// run cannot carry over, or from step `from` when that is earlier. The
+    /// new run, not started; `None` with no run to retry. A task let go and
+    /// retried is live again: its new run may need a person like any other.
+    pub fn retry(&mut self, id: String, template: Template, from: Option<&str>) -> Option<&Run> {
+        let next = Run::retry_of(self.runs.last()?, id, template, from);
+        self.dismissed = false;
         self.runs.push(next);
         self.runs.last()
     }

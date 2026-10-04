@@ -51,8 +51,9 @@ _Avoid_: job, ticket, workflow run
 
 **Retry**:
 A new run of a task, after its last run ended. It starts at the first step it cannot carry over
-from the last run, keeping what the steps before it answered, and counts its misses from zero.
-Unlike Resume, which carries the same run on.
+from the last run, or at an earlier one a person picks, keeping what the steps before it answered,
+and counts its misses from zero. A finished or dismissed task can be retried from its detail, and
+is live again. Unlike Resume, which carries the same run on.
 _Avoid_: rerun, restart
 
 **Needs attention**:

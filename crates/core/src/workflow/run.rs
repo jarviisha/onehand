@@ -172,23 +172,23 @@ enum Await {
 /// One stay at a step: going back to a step is a new visit, never a rewrite
 /// of the last one, so a step visited twice keeps both.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub(crate) struct Visit {
+pub struct Visit {
     /// Its number in the run, from 1.
-    pub(crate) id: u32,
+    pub id: u32,
     /// The step's id.
-    pub(crate) step: String,
+    pub step: String,
     /// Seconds past the epoch.
-    pub(crate) started_at: u64,
+    pub started_at: u64,
     /// `None` while the visit is the run's open one.
-    pub(crate) ended_at: Option<u64>,
+    pub ended_at: Option<u64>,
     /// The commit pinned for the work as the visit found it, and as it left
     /// it; `None` until pinned, or when pinning failed.
-    pub(crate) start: Option<String>,
-    pub(crate) end: Option<String>,
+    pub start: Option<String>,
+    pub end: Option<String>,
     /// The answer it kept, or how its failed command's output ended.
-    pub(crate) output: Option<String>,
+    pub output: Option<String>,
     /// Why it ended, as its history says it.
-    pub(crate) why: Option<String>,
+    pub why: Option<String>,
 }
 
 /// How many transitions a run's history keeps, newest last.
@@ -258,14 +258,14 @@ impl Run {
         }
     }
 
-    /// A new run of the task `prev` was a run of, on `template`, starting at
-    /// the first step it cannot carry over: one the last run had not passed,
-    /// or one that differs in `template`, or reads a step that does. What
-    /// the steps before it kept is carried over with them.
-    pub(crate) fn retry_of(prev: &Run, id: String, template: Template) -> Self {
+    /// Where a retry of `prev` on `template` starts: the first step it
+    /// cannot carry over, one the last run had not passed, or one that
+    /// differs in `template`, or reads a step that does. The step count when
+    /// every step carries over.
+    pub fn retry_start(prev: &Run, template: &Template) -> usize {
         let same = |step: &str| {
             let find = |t: &Template| t.steps.iter().find(|s| s.id == step).cloned();
-            find(&template).is_some_and(|s| Some(s) == find(&prev.template))
+            find(template).is_some_and(|s| Some(s) == find(&prev.template))
         };
         // Passed means passed in the last run's own template: a step dropped
         // earlier on in `template` must not move one it failed into the past.
@@ -274,7 +274,7 @@ impl Run {
                 .index_of(step)
                 .is_some_and(|at| at < prev.step)
         };
-        let start = template
+        template
             .steps
             .iter()
             .position(|step| {
@@ -290,16 +290,61 @@ impl Run {
                     || !same(&step.id)
                     || reads.iter().any(|read| !read.is_empty() && !same(read))
             })
-            .unwrap_or(template.steps.len());
-        let outputs = template.steps[..start]
+            .unwrap_or(template.steps.len())
+    }
+
+    /// The step a retry of `prev` on `template` is offered from: where it
+    /// would start, or the first step when the last run got to the end,
+    /// since a retry that starts past the last step runs nothing.
+    pub fn retry_offered(prev: &Run, template: &Template) -> usize {
+        match Run::retry_start(prev, template) {
+            at if at >= template.steps.len() => 0,
+            at => at,
+        }
+    }
+
+    /// Where a retry of `prev` on `template` starts, [`Run::retry_start`] or
+    /// earlier at step `from` when `template` has it, and how many answers
+    /// of the steps before that it carries over.
+    pub fn retry_plan(prev: &Run, template: &Template, from: Option<&str>) -> (usize, usize) {
+        let start = Run::retry_from(prev, template, from);
+        (start, Run::carried(prev, template, start).count())
+    }
+
+    /// [`Run::retry_start`], or step `from` when `template` has it earlier.
+    fn retry_from(prev: &Run, template: &Template, from: Option<&str>) -> usize {
+        let start = Run::retry_start(prev, template);
+        from.and_then(|step| template.index_of(step))
+            .map_or(start, |at| at.min(start))
+    }
+
+    /// The answers `prev` kept for the steps of `template` before `start`.
+    fn carried<'a>(
+        prev: &'a Run,
+        template: &'a Template,
+        start: usize,
+    ) -> impl Iterator<Item = (String, String)> + 'a {
+        template.steps[..start]
             .iter()
             .filter_map(|step| Some((step.id.clone(), prev.outputs.get(&step.id)?.clone())))
-            .collect();
+    }
+
+    /// A new run of the task `prev` was a run of, on `template`, starting
+    /// where [`Run::retry_plan`] says, with what the steps before the start
+    /// kept carried over.
+    pub(crate) fn retry_of(prev: &Run, id: String, template: Template, from: Option<&str>) -> Self {
+        let start = Run::retry_from(prev, &template, from);
+        let outputs = Run::carried(prev, &template, start).collect();
         let mut run = Run::new(id, template, prev.brief.clone(), prev.setup.clone());
         run.step = start;
         run.furthest = start;
         run.outputs = outputs;
         run
+    }
+
+    /// Every stay at a step, oldest first.
+    pub fn visits(&self) -> &[Visit] {
+        &self.visits
     }
 
     /// The step the run is at.

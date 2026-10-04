@@ -686,7 +686,7 @@ pub(super) fn activity_row(
 /// what forces: a zero set in the ink that means "this went" is the colour of a
 /// loss that did not happen. The text size is the caller's, since the three
 /// rows it lands on are not all at one size.
-pub(super) fn line_counts(added: usize, removed: usize, cx: &App) -> Option<gpui::Div> {
+pub(in crate::chat) fn line_counts(added: usize, removed: usize, cx: &App) -> Option<gpui::Div> {
     if added == 0 && removed == 0 {
         return None;
     }
@@ -713,7 +713,7 @@ pub(super) fn line_counts(added: usize, removed: usize, cx: &App) -> Option<gpui
 /// **Seconds up to a minute, then minutes.** A step that took four hundred and
 /// twelve seconds is a step that took seven minutes, and the extra two digits
 /// are two digits the eye has to divide before it means anything.
-pub(super) fn elapsed(secs: u64) -> String {
+pub(in crate::chat) fn elapsed(secs: u64) -> String {
     match secs {
         0..=59 => format!("{secs}s"),
         _ => format!("{}m {}s", secs / 60, secs % 60),
