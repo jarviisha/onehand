@@ -48,6 +48,8 @@ pub(super) struct Driven {
     answer_from: usize,
     /// A prompt waiting for the agent to come up.
     pending: Option<String>,
+    /// The agent has been seen up in this session, and the run's mode set.
+    up: bool,
     /// The step the transcript was last told of.
     noted: Option<usize>,
     /// How much of the timeout is left; it does not run while a card or an
@@ -137,6 +139,7 @@ pub(crate) fn start(
         sent: 0,
         answer_from: 0,
         pending: None,
+        up: false,
         noted: None,
         budget: Budget::start(limit, Instant::now()),
         card: false,
@@ -270,10 +273,14 @@ fn on_event(uid: u64, session: &Entity<ChatSession>, event: &ChatEvent, cx: &mut
         ChatEvent::TurnEnded => {}
         // A person answers the card; the clock waits for them.
         ChatEvent::AwaitingUser(_) => {
-            with(uid, cx, |d| {
+            let task = with(uid, cx, |d| {
                 d.card = true;
                 d.budget.pause(Instant::now());
+                d.task.clone()
             });
+            if let Some(task) = task {
+                crate::unattended::waiting(&task, cx);
+            }
         }
         ChatEvent::Disconnected => end(uid, Stop::LinkLost, cx),
         ChatEvent::OpenFile(_) => {}
@@ -356,12 +363,18 @@ fn carry_out(uid: u64, action: Action, cx: &mut App) {
         Action::Prompt(text) => send(uid, &session, text, cx),
         Action::RunCommand(command) => run_command(uid, &session, command, cx),
         Action::AwaitApproval => {
-            with(uid, cx, |d| d.budget.pause(Instant::now()));
+            let task = with(uid, cx, |d| {
+                d.budget.pause(Instant::now());
+                d.task.clone()
+            });
             note(
                 &session,
                 "Waiting for approval: Continue or Revise… under the header".to_string(),
                 cx,
             );
+            if let Some(task) = task {
+                crate::unattended::waiting(&task, cx);
+            }
         }
         Action::Finish(outcome) => return finish(uid, Some(&session), outcome, cx),
         Action::Idle => return,
@@ -453,6 +466,9 @@ fn send(uid: u64, session: &Entity<ChatSession>, text: String, cx: &mut App) {
         end(uid, Stop::TakenOver, cx);
         return;
     }
+    if !came_up(uid, session, cx) {
+        return;
+    }
     let answer_from = session.read(cx).chat.items.len();
     with(uid, cx, |d| {
         d.sent += 1;
@@ -463,6 +479,45 @@ fn send(uid: u64, session: &Entity<ChatSession>, text: String, cx: &mut App) {
             run.failed("the agent did not take the prompt".to_string())
         });
     }
+}
+
+/// The agent is up, the first time in this session: put it in the run's mode
+/// before its first prompt, and say so to an issue the run works. Whether the
+/// prompt may go: an agent that does not offer the mode fails the run, since
+/// one left in the mode that asks before every edit would park at the first.
+fn came_up(uid: u64, session: &Entity<ChatSession>, cx: &mut App) -> bool {
+    let Some((mode, task)) = with(uid, cx, |d| {
+        let first = !std::mem::replace(&mut d.up, true);
+        first.then(|| (d.run.setup.mode.clone(), d.task.clone()))
+    })
+    .flatten() else {
+        return true;
+    };
+    if let Some(task) = super::task(&task, cx) {
+        crate::unattended::started(&task, session, cx);
+    }
+    let Some(mode) = mode else {
+        return true;
+    };
+    let offered: Vec<String> = session
+        .read(cx)
+        .chat
+        .modes
+        .iter()
+        .map(|m| m.id.clone())
+        .collect();
+    if !offered.contains(&mode) {
+        let why = format!(
+            "the agent offers no mode `{mode}` (it offers: {})",
+            offered.join(", ")
+        );
+        crate::unattended::refuse_mode(&why, cx);
+        advance(uid, cx, move |run| run.failed(why));
+        return false;
+    }
+    session.update(cx, |session, _| session.chat.set_mode(&mode));
+    note(session, format!("Mode {mode} set"), cx);
+    true
 }
 
 /// A turn the run sent ended: read the work, then let the engine judge it.

@@ -37,6 +37,10 @@ pub struct Setup {
     pub agent: Option<String>,
     /// The project's check command, for a command step that names none.
     pub check: Option<String>,
+    /// The session mode the agent is put in before the first prompt, by the
+    /// adapter's own id; left as the agent starts when unset.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mode: Option<String>,
 }
 
 /// The points in the work a run measures from.

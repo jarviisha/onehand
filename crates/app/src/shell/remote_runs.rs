@@ -163,7 +163,7 @@ impl Shell {
         Some((uid, session?))
     }
 
-    /// End a run's session and drop its project.
+    /// End a run's session and drop its project, if the run added it.
     ///
     /// Not `remove_root`, whose two-click guard asks a person whether live
     /// sessions should be lost — the run has already decided — and which puts
@@ -172,7 +172,11 @@ impl Shell {
     /// when the run's own project was the one being looked at is there anything
     /// to show instead. The worktree stays on disk; only the row goes.
     pub fn end_unattended(&mut self, dir: &Path, window: &mut Window, cx: &mut Context<Self>) {
-        let Some(idx) = self.root_index(dir) else {
+        // Only a project the run added itself: one a person has open stays.
+        let Some(idx) = self
+            .root_index(dir)
+            .filter(|&idx| self.window.workspace.roots[idx].transient)
+        else {
             return;
         };
         let was_active = self.window.workspace.active_root == idx;

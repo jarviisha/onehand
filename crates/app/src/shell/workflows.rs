@@ -123,6 +123,7 @@ impl Shell {
             branch: None,
             agent: None,
             check,
+            mode: None,
         };
         match template.place {
             Place::Checkout => {
@@ -209,13 +210,7 @@ impl Shell {
         if brief.title.is_empty() {
             return Err("Say what to do in the title".to_string());
         }
-        let check = self
-            .window
-            .workspace
-            .roots
-            .iter()
-            .find(|root| root.path == launcher.root)
-            .and_then(|root| root.check.clone());
+        let check = self.check_of(&launcher.root);
         if template.needs_check() && check.is_none() {
             return Err(format!(
                 "This template runs the project's check command, and {} has none. Set one \
@@ -269,28 +264,44 @@ impl Shell {
                 cx,
             );
         }
-        let check = crate::task::task(&id, cx).is_some_and(|task| task.source == Source::Check);
-        if check {
+        let Some(task) = crate::task::task(&id, cx) else {
+            return refused("That task has nothing left to run".to_string(), window, cx);
+        };
+        if task.source == Source::Check {
             let handle = window.window_handle();
             // Deferred, as the driver is below: the check reaches into the
             // global the shell may be reading from.
             cx.defer(move |cx| crate::task::drive_check(id, handle, cx));
             return;
         }
-        let idx = match self.root_index(&dir) {
-            Some(idx) => idx,
-            None => {
-                let idx = self.window.workspace.add_root(dir);
-                self.refresh_git(cx);
-                self.save_workspace(window, cx);
-                idx
+        let session = match (task.issue(), self.root_index(&dir)) {
+            // An issue's run comes up off screen, on a project of its own that
+            // the workspace file never holds, so nothing the person is looking
+            // at moves; one they picked by hand is put in front of them.
+            (Some(issue), None) => {
+                let spec = crate::unattended::spec_for(run.setup.agent.as_deref(), cx);
+                let started = spec.and_then(|spec| self.run_unattended(dir, spec, cx));
+                if let Some((uid, session)) = &started {
+                    crate::unattended::opening(&task, session, cx);
+                    if issue.picked {
+                        self.show_session(*uid, window, cx);
+                    }
+                }
+                started
+            }
+            (_, idx) => {
+                let idx = idx.unwrap_or_else(|| {
+                    let idx = self.window.workspace.add_root(dir);
+                    self.refresh_git(cx);
+                    self.save_workspace(window, cx);
+                    idx
+                });
+                self.select_root(idx, window, cx);
+                let agent = run.setup.agent.clone().map(SharedString::from);
+                self.start_session(agent, None, window, cx)
+                    .and_then(|uid| Some((uid, self.chat.read(cx).session_entity(uid)?)))
             }
         };
-        self.select_root(idx, window, cx);
-        let agent = run.setup.agent.clone().map(SharedString::from);
-        let session = self
-            .start_session(agent, None, window, cx)
-            .and_then(|uid| Some((uid, self.chat.read(cx).session_entity(uid)?)));
         let Some((uid, session)) = session else {
             return refused("The task's session did not start".to_string(), window, cx);
         };
@@ -307,14 +318,7 @@ impl Shell {
     /// Run the check command of the project at `root` as a task of its own,
     /// once its place is free.
     pub fn run_check(&mut self, root: PathBuf, window: &mut Window, cx: &mut Context<Self>) {
-        let check = self
-            .window
-            .workspace
-            .roots
-            .iter()
-            .find(|r| r.path == root)
-            .and_then(|r| r.check.clone());
-        let Some(check) = check else {
+        let Some(check) = self.check_of(&root) else {
             window.push_notification(
                 Notification::warning("This project has no check command to run"),
                 cx,
@@ -327,6 +331,7 @@ impl Shell {
             branch: None,
             agent: None,
             check: Some(check.clone()),
+            mode: None,
         };
         let id = onehand_core::task::new_id();
         crate::task::add(Task::check(id.clone(), check, setup), cx);

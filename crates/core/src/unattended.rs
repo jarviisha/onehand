@@ -1,12 +1,15 @@
-//! Unattended runs: one small issue, one session, one pull request.
+//! Unattended runs: an issue worked as a task, one session each, with nobody
+//! watching.
 //!
 //! Everything about a run that can be decided without a window — which issue,
-//! what branch, what the prompt says, what the issue is told afterwards — and
-//! what a run asks of the project's [`Connector`]. The app holds the rest: the
-//! timer, the session, the watching.
+//! what branch, what it is asked, what the issue is told afterwards — and
+//! what a run asks of the project's [`Connector`]. The workflow engine runs
+//! the steps; the app holds the rest: the tick, the session, the teardown.
 
 use crate::connector::Connector;
 use crate::issues;
+use crate::workflow::{Brief, Outcome, Stop};
+use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
@@ -325,40 +328,42 @@ pub fn parse_every(text: &str) -> Option<Duration> {
     (secs > 0).then(|| Duration::from_secs(secs))
 }
 
-/// A duration the way [`parse_every`] reads one, for a sentence about it.
-fn spoken(d: Duration) -> String {
-    let secs = d.as_secs();
-    if secs.is_multiple_of(3600) {
-        format!("{}h", secs / 3600)
-    } else if secs.is_multiple_of(60) {
-        format!("{}m", secs / 60)
-    } else {
-        format!("{secs}s")
-    }
-}
-
-/// The branch a run on `issue` works on: `onehand/issue-<n>-<title words>`.
-///
-/// Built only from lowercase ASCII letters, digits and single dashes, so it is
-/// a valid branch whatever the title holds — a title of nothing but
-/// punctuation leaves the number alone, and a long one is cut at a word
-/// boundary's worth of characters rather than carried whole into a folder name.
-pub fn branch_for(issue: &Issue) -> String {
-    const WORDS_MAX: usize = 40;
+/// `text` as lowercase ASCII letters and digits joined by single dashes, cut
+/// to `max` characters: a valid piece of a branch name whatever `text` holds.
+fn slug(text: &str, max: usize) -> String {
     let mut words = String::new();
-    for ch in issue.title.chars() {
+    for ch in text.chars() {
         if ch.is_ascii_alphanumeric() {
             words.push(ch.to_ascii_lowercase());
         } else if !words.is_empty() && !words.ends_with('-') {
             words.push('-');
         }
     }
-    words.truncate(WORDS_MAX);
-    let words = words.trim_matches('-');
-    if words.is_empty() {
-        format!("onehand/issue-{}", issue.number)
-    } else {
-        format!("onehand/issue-{}-{words}", issue.number)
+    words.truncate(max);
+    words.trim_matches('-').to_string()
+}
+
+/// The branch a run on `issue` works on:
+/// `onehand/<where it lives>-<its number>-<title words>`.
+///
+/// **Where the issue lives leads**, because a number alone names nothing: an
+/// issue kept in onehand and one on the forge can both be 3, and two issues
+/// must never share a branch, a worktree or a pull request. One kept in step
+/// with a forge goes by the forge's name and number, which is what the forge
+/// calls it. Built from lowercase ASCII letters, digits and single dashes, so
+/// a title of nothing but punctuation leaves the number alone, and a long one
+/// is cut rather than carried whole into a folder name.
+pub fn branch_for(tracker: &Tracker, issue: &Issue) -> String {
+    let named = match (tracker, issue.forge_ref()) {
+        (Tracker::Forge(forge), _) => format!("{}-{}", slug(forge.name(), 20), issue.number),
+        (Tracker::Synced { forge, .. }, Some(reference)) => {
+            format!("{}-{}", slug(forge.name(), 20), slug(reference, 20))
+        }
+        (Tracker::Local(_) | Tracker::Synced { .. }, _) => format!("local-{}", issue.number),
+    };
+    match slug(&issue.title, 40) {
+        words if words.is_empty() => format!("onehand/{named}"),
+        words => format!("onehand/{named}-{words}"),
     }
 }
 
@@ -386,64 +391,25 @@ pub fn target_dir() -> Option<std::path::PathBuf> {
     dirs::cache_dir().map(|dir| dir.join("onehand").join("unattended-target"))
 }
 
-/// The one prompt a run sends.
+/// What a run on `issue` is asked: the issue's title and body word for word,
+/// and, asked of every step, how to name the issue and what to do with a
+/// decision nobody is there to make.
 ///
-/// It does not restate the repository's conventions — the commit format, the
-/// test commands, the pull-request shape. Those are in the repository's own
-/// instructions, which the agent reads anyway, and a second copy here is a copy
-/// that goes stale without anybody noticing.
-///
-/// Three shapes, by where the issue lives and whether the project has a forge.
-/// An issue on the forge is referenced from its pull request. An issue kept in
-/// onehand is **not** — `#N` in a pull request names the forge's issue N, which
-/// is some other issue. And a project on no forge is told to leave its work on
-/// the branch, since there is nowhere to push it and the branch is the result.
-pub fn prompt_for(
-    issue: &Issue,
-    branch: &str,
-    tracker: &Tracker,
-    forge: Option<&dyn Connector>,
-) -> String {
-    let finish = match (forge, tracker, issue.forge_ref()) {
-        (Some(forge), Tracker::Forge(_), _) => format!(
-            "Commit, push the branch, and open the pull request yourself with {}, \
-             referencing #{}.",
-            forge.open_pull_request_with(),
-            issue.number
-        ),
-        (Some(forge), Tracker::Synced { .. }, Some(reference)) => format!(
-            "Commit, push the branch, and open the pull request yourself with {}, \
-             referencing {reference}.",
-            forge.open_pull_request_with(),
-        ),
-        (Some(forge), Tracker::Local(_) | Tracker::Synced { .. }, _) => format!(
-            "Commit, push the branch, and open the pull request yourself with {}. Do \
-             not reference #{} in it: that number is onehand's, not the forge's.",
-            forge.open_pull_request_with(),
-            issue.number
-        ),
-        (None, _, _) => "Commit your work on this branch. Do not push it: this project \
-                      has no forge, and the branch is the result."
-            .to_string(),
-    };
-    format!(
-        "Work {named} in this repository, unattended — nobody is watching this \
-         session.\n\n\
-         Title: {title}\n\n\
-         {body}\n\n\
-         ---\n\n\
-         You are on branch `{branch}`, in a worktree of its own.\n\n\
-         1. Read the repository's own agent instructions, and whatever they point \
-         at, and follow its conventions.\n\
-         2. Run the repository's checks before committing.\n\
-         3. {finish}\n\
-         4. If the issue turns out to need a decision from a person, ask it with \
-         your tool for asking the user a question, not in your answer, and carry on \
-         once it is answered. A person will see it and reply. Do not guess.\n",
-        named = tracker.names(issue),
-        title = issue.title,
-        body = issue.body.trim(),
-    )
+/// It does not restate the repository's conventions, the commit format or
+/// the test commands. Those are in the repository's own instructions, which
+/// every step tells the agent to read, and a second copy here would go stale
+/// without anybody noticing.
+pub fn brief_for(tracker: &Tracker, issue: &Issue) -> Brief {
+    Brief {
+        title: issue.title.clone(),
+        body: issue.body.trim().to_string(),
+        instructions: Some(format!(
+            "This is {}. Nobody is watching this session: if the issue turns out to need a \
+             decision from a person, ask it with your tool for asking the user a question, \
+             not in your answer, and carry on once it is answered. Do not guess.",
+            tracker.names(issue)
+        )),
+    }
 }
 
 /// What the issue is told when a run takes it.
@@ -459,36 +425,86 @@ fn claim_comment(label: &str) -> String {
     )
 }
 
-/// How a run stopped, before anybody has looked for a pull request.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum Ending {
-    /// The turn ended by itself. `tail` is how the agent's answer ended, which
-    /// is where a question asked in prose rather than through a card would be.
-    TurnEnded { tail: Option<String> },
-    /// The run ended while a permission or a question the agent parked was
-    /// still waiting for a person — its adapter went, or its session was
-    /// closed, before anybody answered.
-    Asked(String),
-    /// The adapter stopped answering.
-    LinkLost,
-    /// The session went away under the run — its window was closed — before
-    /// the run had finished.
-    Closed,
-    /// The run outlasted its timeout.
-    TimedOut(Duration),
-    /// A person put a prompt of their own into the run's session. Answering a
-    /// card the run parked is not this: the run waits for that answer.
-    TakenOver,
-    /// The run never got as far as a prompt.
-    Failed(String),
+/// What a task keeps of the issue it works: enough to tell the issue how each
+/// run ended, after a restart too. Where it lives is kept by name, since only
+/// the app holds the connectors.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct IssueSource {
+    pub tracker: TrackerRef,
+    pub number: u64,
+    /// How the forge refers to it, for one kept in step with a forge.
+    pub forge_ref: Option<String>,
+    /// The connector the project's work goes to, by name; `None` on a project
+    /// no forge serves, whose work stays on the branch.
+    pub forge: Option<String>,
+    /// What the worktree was cut from, which its commits are counted past.
+    pub base: String,
+    /// A person picked it, rather than the search finding it.
+    pub picked: bool,
+    /// Reports the issue has not been given yet, oldest first. One is dropped
+    /// only once the issue has it, so a report that could not be delivered is
+    /// tried again rather than lost with the run.
+    #[serde(default)]
+    pub unsent: Vec<String>,
 }
 
-impl Ending {
-    /// Whether the run's work is worth looking for. A run that never started
-    /// cannot have done any.
-    pub fn may_have_work(&self) -> bool {
-        !matches!(self, Self::Failed(_))
+impl IssueSource {
+    /// How the issue is shown to a person, as [`Tracker::shown`] says.
+    pub fn shown(&self) -> String {
+        match (&self.tracker, &self.forge_ref) {
+            (TrackerRef::Forge { .. }, _) => format!("#{}", self.number),
+            (_, Some(reference)) => reference.clone(),
+            (_, None) => "Draft".to_string(),
+        }
     }
+}
+
+/// Where an issue lives, as a task keeps it: [`Tracker`] with its connector
+/// named rather than held.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub enum TrackerRef {
+    Forge { connector: String },
+    Local { file: PathBuf },
+    Synced { file: PathBuf, connector: String },
+}
+
+impl TrackerRef {
+    /// The tracker it names, among the connectors in `all`; `None` when its
+    /// connector is not one of them.
+    pub fn resolve(&self, all: &[&'static dyn Connector]) -> Option<Tracker> {
+        let named = |name: &str| all.iter().copied().find(|c| c.name() == name);
+        Some(match self {
+            Self::Forge { connector } => Tracker::Forge(named(connector)?),
+            Self::Local { file } => Tracker::Local(file.clone()),
+            Self::Synced { file, connector } => Tracker::Synced {
+                file: file.clone(),
+                forge: named(connector)?,
+            },
+        })
+    }
+}
+
+impl Tracker {
+    /// The tracker as a task keeps it.
+    pub fn to_ref(&self) -> TrackerRef {
+        match self {
+            Self::Forge(forge) => TrackerRef::Forge {
+                connector: forge.name().to_string(),
+            },
+            Self::Local(file) => TrackerRef::Local { file: file.clone() },
+            Self::Synced { file, forge } => TrackerRef::Synced {
+                file: file.clone(),
+                connector: forge.name().to_string(),
+            },
+        }
+    }
+}
+
+/// Whether another issue may be taken up while `working` are, under the cap
+/// of `at_once` across every window. The caller counts no run that waits on a
+/// person.
+pub fn room(working: usize, at_once: u32) -> bool {
+    working < at_once as usize
 }
 
 /// How much of its timeout a run has left, counting only the time it spent
@@ -543,152 +559,71 @@ impl Budget {
     }
 }
 
-/// What a run left behind: on a project with a forge, a pull request or none;
-/// on a project without one, commits on its branch or none.
+/// What a run left behind: a pull request on its branch, or how many commits
+/// it has past where it was cut.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Verdict {
     PullRequest(String),
-    NoPullRequest,
     Commits(u64),
-    NoCommits,
 }
 
-impl Verdict {
-    /// The missing verdict, as the noun phrase the sentences about it use.
-    fn missing(&self) -> Option<&'static str> {
-        match self {
-            Self::NoPullRequest => Some("no pull request"),
-            Self::NoCommits => Some("no commit"),
-            Self::PullRequest(_) | Self::Commits(_) => None,
-        }
-    }
-}
-
-/// The comment an ending leaves on the issue, given what looking for the run's
-/// work on `branch` found: a pull request or commits, none, or a failure to
-/// look at all.
+/// The comment a run's end leaves on the issue: what looking for its work on
+/// `branch` found, then how the run ended, then what its last step `ended_on`
+/// when it did not get to the end.
 ///
-/// **The work is the verdict, whatever the ending.** An agent can open a pull
-/// request and then time out, park or lose its adapter while tidying up, and a
-/// comment saying "no pull request" beside a pull request is the worst answer
-/// available — so work found makes the comment about the work, with why the run
-/// stopped as a note under it. For the same reason a lookup that *failed* is
-/// said as a failure and never as "none": "no pull request" is a claim, and
-/// one nobody checked is the worst answer by another route.
-pub fn report(ending: &Ending, found: &Result<Verdict, String>, branch: &str) -> String {
+/// **The work leads, whatever the ending.** A run that timed out may still
+/// have left commits, and a comment about the timeout alone would hide them.
+/// A lookup that *failed* is said as a failure and never as "nothing": that is
+/// a claim, and one nobody checked.
+pub fn report(
+    outcome: &Outcome,
+    found: &Result<Verdict, String>,
+    branch: &str,
+    ended_on: Option<&str>,
+) -> String {
     let head = match found {
         Ok(Verdict::PullRequest(url)) => format!("onehand opened {url}."),
+        Ok(Verdict::Commits(0)) => format!("onehand left no commit on `{branch}`."),
         Ok(Verdict::Commits(n)) => format!(
             "onehand left {n} commit{} on `{branch}`.",
             if *n == 1 { "" } else { "s" }
         ),
-        Ok(verdict) => {
-            return nothing_found(ending, branch, verdict.missing().unwrap_or("nothing"))
-        }
-        Err(err) => {
-            format!("onehand could not tell what the run left on `{branch}`: {err}")
-        }
+        Err(err) => format!("onehand could not tell what the run left on `{branch}`: {err}"),
     };
-    match stopped(ending) {
-        Some(why) => format!("{head}\n\n{why}"),
-        None => head,
+    let said = format!("{head}\n\n{}", ended(outcome));
+    match ended_on.map(str::trim).filter(|tail| !tail.is_empty()) {
+        Some(tail) if *outcome != Outcome::Done => {
+            format!("{said}\n\nIts last step ended on:\n\n{}", quoted(tail))
+        }
+        Some(_) | None => said,
     }
 }
 
-/// How a run ended, in one line — for the run's own transcript, where a line is
-/// all a remark gets. The work leads when there is some, because it is the
-/// verdict; the full account is the comment on the issue.
-pub fn outcome_line(ending: &Ending, found: &Result<Verdict, String>) -> String {
-    match found {
-        Ok(Verdict::PullRequest(url)) => format!("Opened {url}"),
-        Ok(Verdict::Commits(n)) => {
-            format!(
-                "Left {n} commit{} on its branch",
-                if *n == 1 { "" } else { "s" }
-            )
+/// How a run ended, as a sentence for the issue.
+fn ended(outcome: &Outcome) -> String {
+    match outcome {
+        Outcome::Done => "Every step of the workflow passed.".to_string(),
+        Outcome::Stopped(Stop::ByPerson) => "The run was stopped by hand.".to_string(),
+        Outcome::Stopped(Stop::TakenOver) => {
+            "The run was taken over by hand, and stopped watching.".to_string()
         }
-        Err(_) => "Run over; could not tell what it left".to_string(),
-        Ok(verdict) => {
-            let why = match ending {
-                Ending::TurnEnded { .. } => "the turn ended",
-                Ending::Asked(_) => "it ended waiting on a decision",
-                Ending::LinkLost => "the agent stopped answering",
-                Ending::Closed => "its session was closed",
-                Ending::TimedOut(_) => "it timed out",
-                Ending::TakenOver => "it was taken over by hand",
-                Ending::Failed(_) => "it could not start",
-            };
-            format!(
-                "Run over with {}: {why}; see the issue",
-                verdict.missing().unwrap_or("nothing")
-            )
+        Outcome::Stopped(Stop::TimedOut) => {
+            "The run hit its timeout and was cancelled.".to_string()
         }
+        Outcome::Stopped(Stop::LinkLost) => "The agent stopped answering.".to_string(),
+        Outcome::Stopped(Stop::Closed) => {
+            "The run's session was closed before it finished.".to_string()
+        }
+        Outcome::Exhausted { step } => {
+            format!("The run stopped after too many misses at the {step} step.")
+        }
+        Outcome::Failed(why) => format!("The run failed: {why}"),
     }
 }
 
-/// Why the run stopped, as a note under a verdict that is about something
-/// else. `None` for the one ending that needs no explaining — the turn ending
-/// by itself — unless it left words worth quoting.
-fn stopped(ending: &Ending) -> Option<String> {
-    match ending {
-        Ending::TurnEnded { tail: None } => None,
-        Ending::TurnEnded { tail: Some(tail) } => {
-            Some(format!("The turn ended on:\n\n{}", quoted(tail)))
-        }
-        Ending::Asked(q) => Some(format!(
-            "It ended waiting on a decision nobody answered:\n\n{}",
-            quoted(q)
-        )),
-        Ending::LinkLost => Some("The agent stopped answering.".to_string()),
-        Ending::Closed => Some("Its session was closed before the run finished.".to_string()),
-        Ending::TimedOut(d) => Some(format!("The run hit its {} timeout.", spoken(*d))),
-        Ending::TakenOver => Some("It was taken over by hand.".to_string()),
-        Ending::Failed(why) => Some(why.clone()),
-    }
-}
-
-/// The comment when it is known the run left nothing — `missing` is what it
-/// did not leave, "no pull request" or "no commit".
-fn nothing_found(ending: &Ending, branch: &str, missing: &str) -> String {
-    match ending {
-        Ending::TurnEnded { tail: Some(tail) } => format!(
-            "The turn ended with {missing} on `{branch}`. It ended on:\n\n{}",
-            quoted(tail)
-        ),
-        Ending::TurnEnded { tail: None } => {
-            format!("The turn ended with {missing} on `{branch}`.")
-        }
-        Ending::Asked(q) => format!(
-            "The run ended waiting on a decision nobody answered; there is {missing} on \
-             `{branch}`.\n\n{}",
-            quoted(q)
-        ),
-        Ending::LinkLost => {
-            format!("The agent stopped answering; there is {missing} on `{branch}`.")
-        }
-        Ending::Closed => format!(
-            "The run's session was closed before it finished; there is {missing} on \
-             `{branch}`."
-        ),
-        Ending::TimedOut(d) => format!(
-            "{} after {}; the run was cancelled. Its work is on `{branch}`.",
-            capitalised(missing),
-            spoken(*d)
-        ),
-        Ending::TakenOver => {
-            format!("Taken over by hand; the run stopped watching `{branch}`.")
-        }
-        Ending::Failed(why) => format!("onehand could not start the run: {why}"),
-    }
-}
-
-/// `text` with its first letter made a capital.
-fn capitalised(text: &str) -> String {
-    let mut chars = text.chars();
-    match chars.next() {
-        Some(first) => first.to_uppercase().chain(chars).collect(),
-        None => String::new(),
-    }
+/// What the issue is told when a run was claimed and then could not start.
+pub fn could_not_start(why: &str) -> String {
+    format!("onehand could not start the run: {why}")
 }
 
 /// `text` as a Markdown quote, every line of it.

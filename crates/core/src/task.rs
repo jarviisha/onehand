@@ -13,16 +13,18 @@ pub mod history;
 pub mod marks;
 pub mod queue;
 
+use crate::unattended::IssueSource;
 use crate::workflow::{Brief, Outcome, Run, Setup, StepKind, StepSpec, Stop, Template};
 use serde::{Deserialize, Serialize};
 
-/// What a task runs: a workflow a person picked, or the project's check
-/// command on its own, which needs no session.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+/// What a task runs: a workflow a person picked, the project's check command
+/// on its own, which needs no session, or an issue worked unattended.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Source {
     #[default]
     Workflow,
     Check,
+    Issue(IssueSource),
 }
 
 /// What a task is doing right now, which only the app driving it knows.
@@ -128,6 +130,14 @@ impl Task {
         Self {
             source: Source::Check,
             ..Self::new(id, template, brief, setup)
+        }
+    }
+
+    /// The issue it works, if it was started from one.
+    pub fn issue(&self) -> Option<&IssueSource> {
+        match &self.source {
+            Source::Issue(issue) => Some(issue),
+            Source::Workflow | Source::Check => None,
         }
     }
 

@@ -1,16 +1,14 @@
-use super::turn::{clock, on_event, pending_ending, resume, settle, start_notes, tell_issue};
-use super::{Project, Run, Served, connector_for, label, opted_in_roots, tick, with};
-use crate::chat::session::ChatEvent;
-use crate::chat::session::note;
+use super::ending::tell_issue;
+use super::{Project, Served, connector_for, full, label, opted_in_roots, refused, tick, with};
 use crate::state::Shared;
 use gpui::App;
-use onehand_core::config::AgentSpec;
 use onehand_core::connector::Connector;
-use onehand_core::unattended::{self as core, Budget, Ending, Issue, IssueRow, Tracker, Verdict};
+use onehand_core::task::{Source, Task};
+use onehand_core::unattended::{self as core, Issue, IssueRow, IssueSource, Tracker};
+use onehand_core::workflow::{self as flow, Setup, Template};
 use onehand_core::worktree;
 use std::path::Path;
 use std::path::PathBuf;
-use std::time::Instant;
 
 /// A claimed issue and the worktree made for it.
 pub(super) struct Claimed {
@@ -112,7 +110,7 @@ fn prepare_blocking(
             None => worktree::current_branch_blocking(&repo)?,
         };
         let top = worktree::repo_top_blocking(&repo).unwrap_or_else(|| repo.clone());
-        let branch = core::free_branch_blocking(&top, &core::branch_for(&issue));
+        let branch = core::free_branch_blocking(&top, &core::branch_for(&tracker, &issue));
         let dir = worktree::worktree_dir(&top, &branch);
         let dir = worktree::branch_off_blocking(&top, &branch, &dir, &base)?;
         Ok::<_, String>((base, branch, dir))
@@ -202,10 +200,9 @@ fn trackers_blocking(
 
 /// Work `row`, picked by hand from a project's open issues, now.
 ///
-/// **Refused while a run is working**: one run at a time is the rule for picked
-/// and found alike — a run waiting on a person does not count — and the
-/// refusal names the issue already being worked so the person knows what they
-/// are waiting on. Anything that stops it before
+/// **Refused while the cap is reached**, the rule for picked and found alike —
+/// a run waiting on a person does not count — and the refusal names the
+/// issues being worked so the person knows what they are waiting on. Anything that stops it before
 /// the claim — a claim refused where the issue lives — is said in the window it
 /// was picked from; after the claim, on the issue as well.
 pub fn start_picked(
@@ -215,19 +212,21 @@ pub fn start_picked(
     window: gpui::AnyWindowHandle,
     cx: &mut App,
 ) -> Result<(), String> {
+    let (full, refused) = Shared::global(cx)
+        .unattended
+        .as_ref()
+        .map(|u| (full(u, cx), refused(u, cx)))
+        .unwrap_or_default();
     let label = with(cx, |u| {
-        if let Some(run) = u.working() {
-            return Err(format!(
-                "An unattended run is already working on issue #{} — one at a time.",
-                run.claimed.issue.number
-            ));
+        if let Some(why) = full {
+            return Err(why);
         }
         if u.claiming {
             return Err("An unattended run is starting — one at a time.".to_string());
         }
-        // Refused before the claim: the run would fail at its prompt, and the
-        // issue would be claimed and commented on for nothing.
-        if let Some(why) = &u.mode_refused {
+        // Refused before the claim: the run would fail, and the issue would
+        // be claimed and commented on for nothing.
+        if let Some(why) = refused {
             return Err(format!("Nothing can be started: {why}"));
         }
         u.claiming = true;
@@ -300,18 +299,20 @@ pub fn look_now(window: gpui::AnyWindowHandle, cx: &mut App) {
     let why_not = if opted_in_roots(cx).is_empty() {
         Some("No project is switched on for unattended runs.".to_string())
     } else {
+        let (full, refused) = Shared::global(cx)
+            .unattended
+            .as_ref()
+            .map(|u| (full(u, cx), refused(u, cx)))
+            .unwrap_or_default();
         with(cx, |u| {
-            if let Some(run) = u.working() {
-                Some(format!(
-                    "A run is already working on issue #{} — one at a time.",
-                    run.claimed.issue.number
-                ))
+            if full.is_some() {
+                full
             } else if u.claiming {
                 Some("A run is already starting.".to_string())
             } else {
                 u.blocked
                     .clone()
-                    .or_else(|| u.mode_refused.clone())
+                    .or(refused)
                     .map(|why| format!("Nothing can be picked up: {why}"))
             }
         })
@@ -352,12 +353,7 @@ pub(super) fn landed(
             Err(unstarted) => unstarted,
         },
     };
-    // A run that never started left nothing, whichever kind of nothing.
-    let said = core::report(
-        &Ending::Failed(unstarted.why),
-        &Ok(Verdict::NoPullRequest),
-        "",
-    );
+    let said = core::could_not_start(&unstarted.why);
     cx.background_executor()
         .spawn(
             async move { tell_issue(&unstarted.tracker, &unstarted.repo, unstarted.number, &said) },
@@ -365,18 +361,31 @@ pub(super) fn landed(
         .detach();
 }
 
-/// Mint the run's session in the window holding its project, and start
-/// watching it.
+/// Keep the claimed issue as a task of the configured workflow, then ask for
+/// its place in the window holding its project: the one it was picked in
+/// when that one does, so its session comes up in front of the person who
+/// asked for it.
 fn start(claimed: Claimed, cx: &mut App) -> Result<(), Unstarted> {
-    let (agent, timeout) = match with(cx, |u| (u.agent.clone(), u.timeout)) {
-        Some(settings) => settings,
-        None => return Err(unstarted(claimed, "unattended runs are off")),
+    let Some((id, mode, agent, timeout)) = with(cx, |u| {
+        (
+            u.workflow.clone(),
+            u.mode.clone(),
+            u.agent.clone(),
+            u.timeout.clone(),
+        )
+    }) else {
+        return Err(unstarted(claimed, "unattended runs are off"));
     };
-    let Some(spec) = spec_for(agent.as_deref(), cx) else {
-        return Err(unstarted(claimed, "no agent is configured"));
+    let template = match workflow(&id, &timeout, cx) {
+        Ok(template) => template,
+        Err(why) => return Err(unstarted(claimed, &why)),
     };
-    // The window it was picked in when that one holds the project, so the
-    // session comes up in front of the person who asked for it.
+    let agent = agent.or_else(|| {
+        Shared::global(cx)
+            .agents
+            .first()
+            .map(|spec| spec.name.clone())
+    });
     let holding: Vec<_> = Shared::global(cx)
         .windows
         .iter()
@@ -398,76 +407,72 @@ fn start(claimed: Claimed, cx: &mut App) -> Result<(), Unstarted> {
             "the project was closed before the run could start",
         ));
     };
-    let Some((uid, session)) = shell
-        .upgrade()
-        .and_then(|s| s.update(cx, |s, cx| s.run_unattended(claimed.dir.clone(), spec, cx)))
-    else {
+    let Some(shell) = shell.upgrade() else {
+        return Err(unstarted(claimed, "the project's window was closed"));
+    };
+    let check = shell.read(cx).check_of(&claimed.repo);
+    if template.needs_check() && check.is_none() {
         return Err(unstarted(
             claimed,
-            "the worktree is already open as a project",
+            &format!(
+                "the workflow `{}` runs the project's check command, and the project has \
+                 none; set one under Settings ▸ Workflows",
+                template.name
+            ),
         ));
+    }
+    let picked = claimed.picked_by_hand();
+    let setup = Setup {
+        repo: claimed.repo.clone(),
+        dir: claimed.dir.clone(),
+        branch: Some(claimed.branch.clone()),
+        agent,
+        check,
+        // Left empty, the agent stays in the mode it starts in, which asks
+        // more rather than less.
+        mode: Some(mode).filter(|mode| !mode.trim().is_empty()),
     };
-
-    let watch = cx.subscribe(&session, move |session, event: &ChatEvent, cx| {
-        on_event(uid, &session, event, cx)
+    let brief = core::brief_for(&claimed.tracker, &claimed.issue);
+    let task_id = onehand_core::task::new_id();
+    let mut task = Task::new(task_id.clone(), template, brief, setup);
+    task.source = Source::Issue(IssueSource {
+        tracker: claimed.tracker.to_ref(),
+        number: claimed.issue.number,
+        forge_ref: claimed.issue.forge_ref().map(str::to_string),
+        forge: claimed.forge.map(|forge| forge.name().to_string()),
+        base: claimed.base.clone(),
+        picked,
+        unsent: Vec::new(),
     });
-    // A cancel already winding down keeps the ending it was heading for, and
-    // a run waiting on a card ends on the question nobody answered; only a
-    // session that went with nothing pending is reported as closed.
-    let release = cx.observe_release(&session, move |_, cx| {
-        let pending = with(cx, |u| u.run_mut(uid).and_then(|run| pending_ending(run))).flatten();
-        settle(uid, pending.unwrap_or(Ending::Closed), cx)
+    // ponytail: the task counts against the cap once its place is asked for,
+    // a moment after this; a tick landing in between could start one more.
+    // Hold `claiming` until then if that is ever seen.
+    crate::task::add(task, cx);
+    let _ = window.update(cx, |_, window, cx| {
+        shell.update(cx, |_, cx| crate::task::request(task_id, window, cx))
     });
-    // Fires on every notify the session makes, a streamed chunk included, so
-    // it reads rather than borrowing the global mutably, and a run that is not
-    // waiting costs one lookup.
-    let answered = cx.observe(&session, move |session, cx| {
-        let waiting = Shared::global(cx)
-            .unattended
-            .as_ref()
-            .and_then(|u| u.runs.iter().find(|run| run.uid == uid))
-            .is_some_and(|run| run.waiting.is_some());
-        if waiting && !session.read(cx).chat.awaiting_permission() {
-            resume(uid, &session, cx);
-        }
-    });
-    let clock = clock(uid, timeout, timeout, cx);
-    let (by_hand, opening, shown_in) = (
-        claimed.picked_by_hand(),
-        start_notes(&claimed),
-        shell.clone(),
-    );
-    with(cx, |u| {
-        u.runs.push(Run {
-            claimed,
-            uid,
-            session: session.downgrade(),
-            window,
-            shell,
-            prompted: false,
-            waiting: None,
-            budget: Budget::start(timeout, Instant::now()),
-            ending: None,
-            _watch: watch,
-            _answered: answered,
-            _release: release,
-            _clock: clock,
-        })
-    });
-    // The rail marks the project a run is working on; nothing it watches
-    // changed, so it has to be told.
-    cx.refresh_windows();
-    for line in opening {
-        note(&session, line, cx);
-    }
-    // Picked by hand is asked for by somebody at the window, so it is put in
-    // front of them; one found by the search never moves what is on screen.
-    if by_hand && let Some(shell) = shown_in.upgrade() {
-        let _ = window.update(cx, |_, window, cx| {
-            shell.update(cx, |shell, cx| shell.show_session(uid, window, cx))
-        });
-    }
     Ok(())
+}
+
+/// The workflow `id` as a run of it starts: its timeout put to the config's,
+/// and validated, or why it cannot run.
+pub(super) fn workflow(id: &str, timeout: &str, cx: &App) -> Result<Template, String> {
+    let mut template = crate::workflow::templates(cx)
+        .into_iter()
+        .filter_map(|entry| entry.template.ok())
+        .find(|template| template.id == id)
+        .ok_or_else(|| format!("there is no workflow `{id}` (unattended.workflow)"))?;
+    template.timeout = timeout.to_string();
+    let problems = flow::validate(&template);
+    if !problems.is_empty() {
+        let said: Vec<String> = problems.iter().map(ToString::to_string).collect();
+        return Err(format!(
+            "the workflow `{}` cannot run: {}",
+            template.name,
+            said.join("; ")
+        ));
+    }
+    Ok(template)
 }
 
 /// `claimed` could not be started, for `why`.
@@ -478,33 +483,4 @@ fn unstarted(claimed: Claimed, why: &str) -> Unstarted {
         number: claimed.issue.number,
         why: why.to_string(),
     }
-}
-
-/// The agent a run starts, with every build it makes pointed at one shared
-/// directory.
-///
-/// Through `env` rather than a new field threaded down to the process spawn,
-/// because the adapter is the one process a run gets to set anything on and
-/// everything the agent runs inherits from it.
-// ponytail: `env` is POSIX; a Windows build would need the variable threaded
-// through the ACP spawn instead.
-fn spec_for(agent: Option<&str>, cx: &App) -> Option<AgentSpec> {
-    let agents = &Shared::global(cx).agents;
-    let base = agent
-        .and_then(|name| agents.iter().find(|spec| spec.name == name))
-        .or_else(|| agents.first())?
-        .clone();
-    let Some(target) = core::target_dir() else {
-        return Some(base);
-    };
-    let mut args = vec![
-        format!("CARGO_TARGET_DIR={}", target.display()),
-        base.command,
-    ];
-    args.extend(base.args);
-    Some(AgentSpec {
-        name: base.name,
-        command: "env".to_string(),
-        args,
-    })
 }

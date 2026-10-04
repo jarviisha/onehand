@@ -20,6 +20,7 @@ fn task(id: &str) -> Task {
             branch: None,
             agent: None,
             check: None,
+            mode: None,
         },
     )
 }
@@ -350,6 +351,44 @@ fn each_project_keeps_its_newest_finished_tasks() {
         ["0", "1"],
         "the two oldest of /a, never /b's or one ended"
     );
+}
+
+/// An issue task of `/a` whose issue still waits for `unsent` reports.
+fn issue_task(id: &str, at: u64, unsent: &[&str]) -> Task {
+    use crate::unattended::{IssueSource, TrackerRef};
+    let mut t = finished(id, "/a", at);
+    t.source = Source::Issue(IssueSource {
+        tracker: TrackerRef::Forge {
+            connector: "Forge".into(),
+        },
+        number: 3,
+        forge_ref: None,
+        forge: Some("Forge".into()),
+        base: "origin/main".into(),
+        picked: false,
+        unsent: unsent.iter().map(|s| s.to_string()).collect(),
+    });
+    t
+}
+
+#[test]
+fn a_task_whose_issue_was_not_told_is_never_let_go() {
+    let mut all: Vec<Task> = (0..history::KEPT)
+        .map(|i| finished(&(i + 10).to_string(), "/a", 100 + i as u64))
+        .collect();
+    all.push(issue_task("waits", 0, &["onehand left 1 commit"]));
+    all.push(issue_task("told", 1, &[]));
+    let listed: Vec<(&Task, Group)> = all.iter().map(|t| (t, t.group(None))).collect();
+    assert_eq!(history::over_cap(&listed), ["told"]);
+}
+
+#[test]
+fn an_issue_task_survives_its_file() {
+    let t = issue_task("1", 5, &["report"]);
+    let json = serde_json::to_string(&t).unwrap();
+    let back: Task = serde_json::from_str(&json).unwrap();
+    assert_eq!(back, t);
+    assert_eq!(back.issue().map(|i| i.shown()), Some("#3".to_string()));
 }
 
 #[test]

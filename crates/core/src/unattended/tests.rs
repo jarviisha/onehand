@@ -43,126 +43,11 @@ fn an_interval_is_a_number_and_a_unit() {
 }
 
 #[test]
-fn a_duration_is_said_the_way_it_is_written() {
-    for text in ["30m", "2h", "90s"] {
-        assert_eq!(spoken(parse_every(text).unwrap()), text);
-    }
-}
-
-#[test]
-fn every_title_makes_a_valid_branch() {
-    let long = "word ".repeat(60);
-    for title in [
-        "Fix the rail",
-        "!!!???",
-        "",
-        &long,
-        "émoji 🚀 ünïcode",
-        "a.lock",
-    ] {
-        let branch = branch_for(&issue(7, title));
-        assert!(
-            crate::worktree::validate_branch(&branch).is_ok(),
-            "{title:?} gave {branch:?}"
-        );
-        assert!(branch.starts_with("onehand/issue-7"));
-        assert!(branch.len() <= "onehand/issue-7-".len() + 40);
-    }
-    assert_eq!(
-        branch_for(&issue(3, "Fix the rail!")),
-        "onehand/issue-3-fix-the-rail"
-    );
-    assert_eq!(branch_for(&issue(3, "!!!")), "onehand/issue-3");
-}
-
-#[test]
-fn the_prompt_names_the_issue_and_the_branch_and_keeps_the_body_whole() {
-    let body = "Steps:\n\n```rust\nfn main() {}\n```\n\nThat is all.";
-    let issue = Issue {
-        body: body.to_string(),
-        ..issue(42, "Crash on open")
-    };
-    let prompt = prompt_for(&issue, "onehand/issue-42", &forge(), Some(&Fake::SERVING));
-    assert!(prompt.contains("#42"));
-    assert!(prompt.contains("`onehand/issue-42`"));
-    assert!(prompt.contains(body));
-    assert!(prompt.contains("Work Forge issue") && prompt.contains("`forge pr`"));
-}
-
-#[test]
 fn the_claim_stays_true_if_nothing_follows_it() {
     let said = claim_comment("auto");
     assert!(said.contains("started"));
     assert!(said.contains("re-add `auto`"));
     assert!(!said.contains("is working"));
-}
-
-#[test]
-fn every_ending_has_a_sentence_with_and_without_a_pr() {
-    let endings = [
-        Ending::TurnEnded {
-            tail: Some("Should I use A or B?".into()),
-        },
-        Ending::TurnEnded { tail: None },
-        Ending::Asked("Run rm -rf target?".into()),
-        Ending::LinkLost,
-        Ending::Closed,
-        Ending::TimedOut(Duration::from_secs(2700)),
-        Ending::TakenOver,
-        Ending::Failed("git refused".into()),
-    ];
-    for ending in &endings {
-        // Exhaustive on purpose: a new ending cannot be added without being
-        // listed above, and so without a sentence being checked for it.
-        match ending {
-            Ending::TurnEnded { .. }
-            | Ending::Asked(_)
-            | Ending::LinkLost
-            | Ending::Closed
-            | Ending::TimedOut(_)
-            | Ending::TakenOver
-            | Ending::Failed(_) => {}
-        }
-        let without = report(ending, &Ok(Verdict::NoPullRequest), "onehand/issue-1");
-        assert!(!without.is_empty());
-        assert!(!without.contains("opened"), "{without}");
-        let with = report(
-            ending,
-            &Ok(Verdict::PullRequest("https://x/pull/2".into())),
-            "onehand/issue-1",
-        );
-        assert!(
-            with.starts_with("onehand opened https://x/pull/2."),
-            "{with}"
-        );
-        let unknown = report(ending, &Err("gh: offline".into()), "onehand/issue-1");
-        assert!(unknown.contains("gh: offline"), "{unknown}");
-    }
-}
-
-#[test]
-fn a_pr_found_after_a_timeout_is_still_the_verdict() {
-    let said = report(
-        &Ending::TimedOut(Duration::from_secs(2700)),
-        &Ok(Verdict::PullRequest("https://x/pull/2".into())),
-        "b",
-    );
-    assert!(said.starts_with("onehand opened https://x/pull/2."));
-    assert!(said.contains("45m timeout"));
-}
-
-#[test]
-fn a_pr_lookup_that_failed_never_reads_as_no_pr() {
-    for ending in [
-        Ending::TurnEnded { tail: None },
-        Ending::LinkLost,
-        Ending::TimedOut(Duration::from_secs(60)),
-        Ending::TakenOver,
-    ] {
-        let said = report(&ending, &Err("rate limited".into()), "b");
-        assert!(!said.contains("no pull request"), "{said}");
-        assert!(said.contains("could not tell"), "{said}");
-    }
 }
 
 #[test]
@@ -173,40 +58,6 @@ fn a_picked_claim_says_how_to_retry_without_a_label() {
         !said.contains("re-add"),
         "a picked issue may never have had the label"
     );
-}
-
-#[test]
-fn the_outcome_fits_on_one_line_and_leads_with_the_pr() {
-    let pr = Ok(Verdict::PullRequest("https://x/pull/2".to_string()));
-    let line = outcome_line(&Ending::TimedOut(Duration::from_secs(60)), &pr);
-    assert!(line.starts_with("Opened https://x/pull/2"), "{line}");
-    let none = outcome_line(
-        &Ending::TurnEnded {
-            tail: Some("long\nanswer".into()),
-        },
-        &Ok(Verdict::NoPullRequest),
-    );
-    assert!(
-        !none.contains('\n') && none.contains("no pull request"),
-        "{none}"
-    );
-    let unknown = outcome_line(&Ending::LinkLost, &Err("offline".into()));
-    assert!(unknown.contains("could not tell"), "{unknown}");
-    for line in [line, none, unknown] {
-        assert!(line.chars().count() <= 80, "{line}");
-    }
-}
-
-#[test]
-fn a_question_in_prose_reaches_the_issue() {
-    let said = report(
-        &Ending::TurnEnded {
-            tail: Some("Should I use A\nor B?".into()),
-        },
-        &Ok(Verdict::NoPullRequest),
-        "b",
-    );
-    assert!(said.contains("> Should I use A\n> or B?"));
 }
 
 #[test]
@@ -279,42 +130,6 @@ fn a_local_issue_is_found_by_its_label_and_claimed_in_its_own_file() {
 }
 
 #[test]
-fn a_local_issue_is_never_referenced_from_a_pull_request() {
-    let (tracker, dir) = local("prompt", &[]);
-    let issue = issue(3, "Fix it");
-    let on_forge = prompt_for(&issue, "b", &tracker, Some(&Fake::SERVING));
-    assert!(on_forge.contains("`forge pr`"), "{on_forge}");
-    assert!(on_forge.contains("Do not reference #3"), "{on_forge}");
-    assert!(!on_forge.contains("referencing #3"), "{on_forge}");
-    let no_forge = prompt_for(&issue, "b", &tracker, None);
-    assert!(no_forge.contains("Do not push"), "{no_forge}");
-    assert!(!no_forge.contains("pull request"), "{no_forge}");
-    let _ = std::fs::remove_dir_all(dir);
-}
-
-#[test]
-fn commits_left_on_a_branch_are_the_verdict_without_a_forge() {
-    let said = report(
-        &Ending::TurnEnded { tail: None },
-        &Ok(Verdict::Commits(2)),
-        "b",
-    );
-    assert_eq!(said, "onehand left 2 commits on `b`.");
-    let one = outcome_line(
-        &Ending::TimedOut(Duration::from_secs(60)),
-        &Ok(Verdict::Commits(1)),
-    );
-    assert_eq!(one, "Left 1 commit on its branch");
-    let none = report(
-        &Ending::TimedOut(Duration::from_secs(60)),
-        &Ok(Verdict::NoCommits),
-        "b",
-    );
-    assert!(none.starts_with("No commit after 1m"), "{none}");
-    assert!(!none.contains("pull request"), "{none}");
-}
-
-#[test]
 fn a_synced_project_runs_only_what_the_user_wrote_and_claims_it_on_both_sides() {
     use crate::connector::memory::Forge;
     use crate::issues::Snapshot;
@@ -364,10 +179,10 @@ fn a_synced_project_runs_only_what_the_user_wrote_and_claims_it_on_both_sides() 
     assert_eq!(comments[0].0, "7");
     assert!(comments[0].1.contains("started"));
 
-    // And its pull request names the forge's number, not onehand's.
-    let prompt = prompt_for(&second, "b", &tracker, Some(forge));
-    assert!(prompt.contains("referencing #7"), "{prompt}");
-    assert!(prompt.contains("Forge issue #7"), "{prompt}");
+    // And the run names it by the forge's number, not onehand's.
+    let brief = brief_for(&tracker, &second);
+    assert!(brief.instructions.unwrap().contains("Forge issue #7"));
+    assert_eq!(branch_for(&tracker, &second), "onehand/forge-7-mine");
     let _ = std::fs::remove_dir_all(dir);
 }
 
@@ -449,15 +264,6 @@ fn waiting_on_a_person_spends_none_of_the_budget() {
 }
 
 #[test]
-fn a_run_that_ended_waiting_says_the_question() {
-    let asked = Ending::Asked("Run awk?".into());
-    let said = report(&asked, &Ok(Verdict::NoPullRequest), "b");
-    assert!(said.contains("> Run awk?"), "{said}");
-    let quiet = report(&Ending::TakenOver, &Ok(Verdict::NoPullRequest), "b");
-    assert!(!quiet.contains('>'), "{quiet}");
-}
-
-#[test]
 fn an_issue_is_shown_by_its_forge_number_and_a_kept_one_as_a_draft() {
     assert_eq!(forge().shown(&issue(7, "a")), "#7");
     let (kept, dir) = local("shown", &[]);
@@ -465,4 +271,157 @@ fn an_issue_is_shown_by_its_forge_number_and_a_kept_one_as_a_draft() {
     // Kept here and in step with the forge: the forge's number, never ours.
     assert_eq!(kept.shown(&issue(3, "a").at("#41".into())), "#41");
     let _ = std::fs::remove_dir_all(dir);
+}
+
+#[test]
+fn every_title_makes_a_valid_branch() {
+    let long = "word ".repeat(60);
+    for title in [
+        "Fix the rail",
+        "!!!???",
+        "",
+        &long,
+        "émoji 🚀 ünïcode",
+        "a.lock",
+    ] {
+        let branch = branch_for(&forge(), &issue(7, title));
+        assert!(
+            crate::worktree::validate_branch(&branch).is_ok(),
+            "{title:?} gave {branch:?}"
+        );
+        assert!(branch.starts_with("onehand/forge-7"));
+        assert!(branch.len() <= "onehand/forge-7-".len() + 40);
+    }
+    assert_eq!(
+        branch_for(&forge(), &issue(3, "Fix the rail!")),
+        "onehand/forge-3-fix-the-rail"
+    );
+    assert_eq!(branch_for(&forge(), &issue(3, "!!!")), "onehand/forge-3");
+}
+
+#[test]
+fn a_kept_issue_and_a_forge_issue_of_one_number_never_share_a_branch() {
+    let (kept, dir) = local("branch", &[]);
+    let same = issue(3, "Fix the rail");
+    let here = branch_for(&kept, &same);
+    let there = branch_for(&forge(), &same);
+    assert_eq!(here, "onehand/local-3-fix-the-rail");
+    assert_ne!(here, there);
+    // Kept in step with the forge, it goes by the forge's name for it.
+    let synced = Tracker::Synced {
+        file: dir.join("issues.json"),
+        forge: &Fake::SERVING,
+    };
+    assert_eq!(
+        branch_for(&synced, &issue(3, "Fix the rail").at("#41".into())),
+        "onehand/forge-41-fix-the-rail"
+    );
+    assert_eq!(branch_for(&synced, &same), here);
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+#[test]
+fn the_brief_keeps_the_body_whole_and_names_the_issue() {
+    let body = "Steps:\n\n```rust\nfn main() {}\n```\n\nThat is all.";
+    let issue = Issue {
+        body: body.to_string(),
+        ..issue(42, "Crash on open")
+    };
+    let brief = brief_for(&forge(), &issue);
+    assert_eq!(brief.title, "Crash on open");
+    assert_eq!(brief.body, body);
+    let asked = brief.instructions.unwrap();
+    assert!(asked.contains("Forge issue #42"), "{asked}");
+    assert!(asked.contains("question"), "{asked}");
+    let (kept, dir) = local("brief", &[]);
+    let asked = brief_for(&kept, &issue).instructions.unwrap();
+    assert!(asked.contains("kept in onehand"), "{asked}");
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+#[test]
+fn every_outcome_has_a_sentence_and_the_work_leads() {
+    let outcomes = [
+        Outcome::Done,
+        Outcome::Stopped(Stop::ByPerson),
+        Outcome::Stopped(Stop::TakenOver),
+        Outcome::Stopped(Stop::TimedOut),
+        Outcome::Stopped(Stop::LinkLost),
+        Outcome::Stopped(Stop::Closed),
+        Outcome::Exhausted {
+            step: "Plan".into(),
+        },
+        Outcome::Failed("git refused".into()),
+    ];
+    for outcome in &outcomes {
+        let pr = report(
+            outcome,
+            &Ok(Verdict::PullRequest("https://x/pull/2".into())),
+            "b",
+            None,
+        );
+        assert!(pr.starts_with("onehand opened https://x/pull/2."), "{pr}");
+        let commits = report(outcome, &Ok(Verdict::Commits(2)), "b", None);
+        assert!(
+            commits.starts_with("onehand left 2 commits on `b`."),
+            "{commits}"
+        );
+        let unknown = report(outcome, &Err("gh: offline".into()), "b", None);
+        assert!(unknown.contains("could not tell") && unknown.contains("gh: offline"));
+        assert!(!unknown.contains("no commit"), "{unknown}");
+        assert_ne!(ended(outcome), "");
+    }
+    let one = report(&Outcome::Done, &Ok(Verdict::Commits(1)), "b", None);
+    assert!(one.starts_with("onehand left 1 commit on `b`."), "{one}");
+    let none = report(
+        &Outcome::Stopped(Stop::TimedOut),
+        &Ok(Verdict::Commits(0)),
+        "b",
+        None,
+    );
+    assert!(none.starts_with("onehand left no commit"), "{none}");
+    assert!(none.contains("timeout"), "{none}");
+}
+
+#[test]
+fn what_the_last_step_ended_on_reaches_the_issue_unless_it_got_to_the_end() {
+    let tail = Some("Should I use A\nor B?");
+    let missed = report(
+        &Outcome::Exhausted {
+            step: "Plan".into(),
+        },
+        &Ok(Verdict::Commits(0)),
+        "b",
+        tail,
+    );
+    assert!(missed.contains("> Should I use A\n> or B?"), "{missed}");
+    let done = report(&Outcome::Done, &Ok(Verdict::Commits(1)), "b", tail);
+    assert!(!done.contains('>'), "{done}");
+}
+
+#[test]
+fn a_tracker_kept_by_name_resolves_back() {
+    let all: [&'static dyn Connector; 1] = [&Fake::SERVING];
+    let tracker = forge();
+    let kept = tracker.to_ref();
+    assert_eq!(kept.resolve(&all).map(|t| t.to_ref()), Some(kept.clone()));
+    assert!(kept.resolve(&[]).is_none());
+    let source = IssueSource {
+        tracker: kept,
+        number: 7,
+        forge_ref: None,
+        forge: None,
+        base: "main".into(),
+        picked: false,
+        unsent: Vec::new(),
+    };
+    assert_eq!(source.shown(), tracker.shown(&issue(7, "a")));
+}
+
+#[test]
+fn the_cap_counts_working_runs_only() {
+    assert!(room(0, 1));
+    assert!(!room(1, 1));
+    assert!(room(1, 2));
+    assert!(!room(0, 0));
 }

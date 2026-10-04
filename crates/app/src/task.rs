@@ -183,6 +183,9 @@ pub(crate) fn boot(cx: &mut App) {
                 .collect();
             cx.update_global::<Tasks, _>(|t, _| t.tasks.extend(tasks));
             enforce_cap(cx);
+            // An issue not told how its run ended before the last quit is
+            // told now.
+            crate::unattended::deliver_all(cx);
             cx.refresh_windows();
         });
     })
@@ -306,8 +309,10 @@ fn ended(
 }
 
 /// Task `id` has stopped working: pin where its last visit left the work,
-/// then give its place to whoever waits for it.
+/// then give its place to whoever waits for it. An issue it works is told
+/// how the run ended.
 fn freed(id: String, from: usize, cx: &mut App) {
+    crate::unattended::ended(&id, cx);
     let unpinned = cx.try_global::<Tasks>().and_then(|t| {
         let task = t.task(&id)?;
         let run = task.runs.last()?;
@@ -605,7 +610,7 @@ fn enforce_cap(cx: &mut App) {
 pub(crate) struct Row {
     pub(crate) id: String,
     pub(crate) title: String,
-    /// Its workflow's name.
+    /// Its workflow's name, after the issue it works if it has one.
     pub(crate) name: String,
     /// The step it is at while it works, or how it ended.
     pub(crate) at: String,
@@ -619,38 +624,15 @@ pub(crate) struct Row {
     /// running. A task that ended but still holds its place, its session's
     /// turn not yet over, has nothing left to stop.
     pub(crate) stoppable: bool,
-    /// An unattended run: it is listed, and only its session can be opened.
-    pub(crate) read_only: bool,
 }
 
-/// Every task of the projects at `roots`, and the unattended runs working
-/// their issues: finished ones newest first, every other group oldest first.
+/// Every task of the projects at `roots`: finished ones newest first, every
+/// other group oldest first.
 pub(crate) fn rows(roots: &[PathBuf], cx: &App) -> Vec<Row> {
     let Some(t) = cx.try_global::<Tasks>() else {
         return Vec::new();
     };
-    let mut rows: Vec<(Option<&Task>, Row)> = crate::unattended::live_runs(cx)
-        .into_iter()
-        .filter(|run| roots.contains(&run.repo))
-        .map(|run| {
-            let row = Row {
-                id: String::new(),
-                at: run.waiting.clone().unwrap_or_else(|| "Working".to_string()),
-                title: run.title,
-                name: run.name,
-                project: run.repo,
-                group: match run.waiting {
-                    Some(_) => Group::Waiting,
-                    None => Group::Running,
-                },
-                session: Some((run.uid, run.window)),
-                resumable: false,
-                stoppable: false,
-                read_only: true,
-            };
-            (None, row)
-        })
-        .collect();
+    let mut rows: Vec<(Option<&Task>, Row)> = Vec::new();
     let tasks = t
         .tasks
         .iter()
@@ -670,7 +652,10 @@ pub(crate) fn rows(roots: &[PathBuf], cx: &App) -> Vec<Row> {
         let row = Row {
             id: task.id.clone(),
             title: task.brief.title.clone(),
-            name: run.map_or_else(String::new, |run| run.template.name.clone()),
+            name: match (task.issue(), run) {
+                (Some(issue), Some(run)) => format!("{} · {}", issue.shown(), run.template.name),
+                (_, run) => run.map_or_else(String::new, |run| run.template.name.clone()),
+            },
             at,
             project: task.setup.repo.clone(),
             group: task.group(working),
@@ -679,7 +664,6 @@ pub(crate) fn rows(roots: &[PathBuf], cx: &App) -> Vec<Row> {
             stoppable: live.is_some()
                 || t.queue.queued(&task.id)
                 || t.checks.contains_key(&task.id),
-            read_only: false,
         };
         rows.push((Some(task), row));
     }
@@ -702,5 +686,82 @@ pub(crate) fn attention(roots: &[PathBuf], cx: &App) -> usize {
 pub(crate) fn removed(roots: &[PathBuf], cx: &App) -> usize {
     cx.try_global::<Tasks>().map_or(0, |t| {
         roots.iter().filter_map(|root| t.removed.get(root)).sum()
+    })
+}
+
+/// How each issue task working or queued is shown, oldest first: what the
+/// cap on unattended runs counts. One waiting on a person is not working.
+pub(crate) fn issues_working(cx: &App) -> Vec<String> {
+    let Some(t) = cx.try_global::<Tasks>() else {
+        return Vec::new();
+    };
+    t.tasks
+        .iter()
+        .filter(|task| match t.working(&task.id) {
+            Some(Working::Running | Working::Queued) => true,
+            Some(Working::Waiting) | None => false,
+        })
+        .filter_map(|task| task.issue().map(|issue| issue.shown()))
+        .collect()
+}
+
+/// Every issue task with a session under way, as the rail and the workspace
+/// page list them.
+pub(crate) fn live_issues(cx: &App) -> Vec<crate::unattended::LiveRun> {
+    let Some(t) = cx.try_global::<Tasks>() else {
+        return Vec::new();
+    };
+    let mut live: Vec<_> = t
+        .live
+        .iter()
+        .filter_map(|(uid, d)| {
+            let task = t.task(&d.task)?;
+            let issue = task.issue()?;
+            let waiting = match (d.run.awaiting_approval(), d.waits_on_person()) {
+                (true, _) => Some("Waiting for approval".to_string()),
+                (false, true) => Some("Waiting for an answer".to_string()),
+                (false, false) => None,
+            };
+            let run = crate::unattended::LiveRun {
+                repo: task.setup.repo.clone(),
+                name: issue.shown(),
+                title: task.brief.title.clone(),
+                uid: *uid,
+                window: d.window,
+                waiting,
+            };
+            Some((task.id.clone(), run))
+        })
+        .collect();
+    live.sort_by(|(a, _), (b, _)| a.cmp(b));
+    live.into_iter().map(|(_, run)| run).collect()
+}
+
+/// Change the issue task `id` works, and write the task.
+pub(crate) fn update_issue(
+    id: &str,
+    cx: &mut App,
+    change: impl FnOnce(&mut onehand_core::unattended::IssueSource),
+) {
+    cx.update_global::<Tasks, _>(|t, _| {
+        let Some(task) = t.task_mut(id) else {
+            return;
+        };
+        let onehand_core::task::Source::Issue(issue) = &mut task.source else {
+            return;
+        };
+        change(issue);
+        t.save(id);
+    });
+}
+
+/// Every issue task whose issue has not been told how a run ended.
+pub(crate) fn undelivered(cx: &App) -> Vec<String> {
+    cx.try_global::<Tasks>().map_or_else(Vec::new, |t| {
+        t.tasks
+            .iter()
+            .filter(|task| task.issue().is_some_and(|issue| !issue.unsent.is_empty()))
+            .map(|task| task.id.clone())
+            .collect()
     })
 }

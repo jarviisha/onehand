@@ -187,8 +187,10 @@ Listed because a missing feature nobody wrote down reads as a bug in the ones th
 - **One window holds a run, and runs do not queue.** Starting a second run on a project
   while one works there is allowed and nothing stops the two from editing the same checkout.
 - **A run ends at the branch.** There is no step that pushes, opens a pull request or waits on
-  CI, and a person typing the brief is the only source: an issue is not yet one. `verified_at` is
-  recorded so that a push step can later require the commit it pushes to be the one the check
-  passed on.
+  CI, so an unattended run on an issue leaves commits on its branch and says so on the issue; it
+  no longer opens the pull request itself. `verified_at` is recorded so that a push step can later
+  require the commit it pushes to be the one the check passed on.
+- **The cap on unattended runs can be passed by one** when a tick lands in the moment between a
+  run's task being kept and its place being asked for.
 - **A worktree a run made is never removed by it**, nor its branch, whatever the outcome; the
   folder stays as a project until a person removes it.
