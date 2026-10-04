@@ -463,7 +463,7 @@ impl ChatPane {
                                         });
                                     })),
                             )
-                            // Pipeline runs that stopped short of their own
+                            // Runs that stopped short of their own
                             // outcome here, each to resume or let go. Above
                             // the conversations: one is work left half done.
                             .children(unfinished_runs(&project.path, cx))
@@ -572,14 +572,14 @@ pub(super) fn count_of(n: usize, noun: &str) -> String {
     }
 }
 
-/// How many unfinished pipeline runs the page lists before it says how many
+/// How many unfinished runs the page lists before it says how many
 /// more there are.
 const UNFINISHED_ROWS: usize = 5;
 
-/// The unfinished pipeline runs of the project at `root`: what each was
+/// The unfinished runs of the project at `root`: what each was
 /// asked to do and where it stopped, with *Resume* and *Discard*.
 fn unfinished_runs(root: &Path, cx: &mut Context<ChatPane>) -> Option<gpui::AnyElement> {
-    let runs = crate::pipeline::unfinished_in(root, cx);
+    let runs = crate::workflow::unfinished_in(root, cx);
     if runs.is_empty() {
         return None;
     }
@@ -616,22 +616,22 @@ fn unfinished_runs(root: &Path, cx: &mut Context<ChatPane>) -> Option<gpui::AnyE
                         ),
                 )
                 .child(
-                    crate::controls::action(("pipeline-discard", i))
+                    crate::controls::action(("workflow-discard", i))
                         .ghost()
                         .small()
                         .label("Discard")
                         .tooltip("Forget this run; its work stays where it is")
                         .on_click(cx.listener(move |_: &mut ChatPane, _, _, cx| {
-                            cx.emit(ChatPaneEvent::DiscardPipeline(discard.clone()));
+                            cx.emit(ChatPaneEvent::DiscardWorkflow(discard.clone()));
                         })),
                 )
                 .child(
-                    crate::controls::action(("pipeline-resume", i))
+                    crate::controls::action(("workflow-resume", i))
                         .small()
                         .label("Resume")
                         .tooltip("Carry on from that step in a new session")
                         .on_click(cx.listener(move |_: &mut ChatPane, _, _, cx| {
-                            cx.emit(ChatPaneEvent::ResumePipeline(resume.clone()));
+                            cx.emit(ChatPaneEvent::ResumeWorkflow(resume.clone()));
                         })),
                 )
         })
@@ -641,12 +641,7 @@ fn unfinished_runs(root: &Path, cx: &mut Context<ChatPane>) -> Option<gpui::AnyE
             .v_flex()
             .gap_2()
             .w_full()
-            .child(
-                div()
-                    .text_xs()
-                    .text_color(muted)
-                    .child("Unfinished pipelines"),
-            )
+            .child(div().text_xs().text_color(muted).child("Unfinished runs"))
             .children(rows)
             .children((hidden > 0).then(|| {
                 div()

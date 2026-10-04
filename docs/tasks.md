@@ -1,8 +1,8 @@
 # Tasks
 
-**Status: design.** Nothing here is built yet. This is where milestones 1+2 and 3 of
+**Status: design.** Only pull request 1, the rename, is built. This is where milestones 1+2 and 3 of
 [roadmap.md](roadmap.md) are headed, and the decisions behind it are listed there. When the code
-lands, this file becomes its account, the way [pipelines.md](pipelines.md) is for the engine.
+lands, this file becomes its account, the way [workflows.md](workflows.md) is for the engine.
 
 ## What a person gets
 
@@ -53,7 +53,7 @@ Task ──< Run ──< Step visit
 - **A task is the work. A run is one execution of it.** Retry starts a new run. Resume carries on
   the same run with its marks kept.
 - **A task is anything with a lifecycle and an outcome:**
-  - a workflow run (today's `PipelineRun`);
+  - a run (today's `workflow::Run`);
   - the project's check command run on its own;
   - an unattended run, shown read-only until milestone 5.
 
@@ -133,7 +133,7 @@ crates/core (GUI-free, blocking)          crates/app (GPUI)
 ─────────────────────────────────         ──────────────────────────────────────
 workflow::template / validate / store     settings: Workflows
 workflow::run   (the engine; today's      workflow::driver  ── session events → reports
-                 PipelineRun)                   │  (unchanged in kind: still the only one)
+                 workflow::Run)                 │  (unchanged in kind: still the only one)
 task            (Task, Run list,                ▼
                  outcome, group rule)     Tasks global on Shared ── one per process
 task::queue     (who may run where)            │  owns every task, its lock and queue,
@@ -145,7 +145,7 @@ unattended      (as it is; a thin         Tasks page in the agent pane, rail row
 
 ### Core
 
-- **The engine does not change in kind.** `PipelineRun` becomes `workflow::Run` in the rename, and
+- **The engine does not change in kind.** `workflow::Run` (`PipelineRun` before the rename) stays, and
   goes on taking reports and answering with the next `Action`. A task wraps its runs; it does not
   move transitions out of the engine.
 - **`Task`** holds its id, source, brief or command, place, project, the list of its runs, and
@@ -180,7 +180,7 @@ unattended      (as it is; a thin         Tasks page in the agent pane, rail row
   It is not `git stash create`, which leaves untracked files out and makes a commit nothing points
   at, so `git gc` prunes it within weeks. The temporary index leaves the person's own index alone.
   The refs are deleted when their task falls out of the history cap.
-- **One writer, in order.** `pipeline::files::Writer` becomes the task store's writer: one thread,
+- **One writer, in order.** `workflow::files::Writer` becomes the task store's writer: one thread,
   saves and removals carried out in the order sent, `flush` on quit. The difference is that a
   finished task's file is kept as history instead of removed.
 
@@ -219,7 +219,7 @@ pull request, before the migration it protects.
 
 ### The app
 
-- **One `Tasks` global** replaces today's `Pipelines`, which holds runs by session uid. It owns every
+- **One `Tasks` global** replaces today's `Workflows`, which holds runs by session uid. It owns every
   task, applies the queue rule, and keeps a session uid → task index so the driver still finds its
   run from a session event.
 - **The driver stays the only code that turns session events into reports.** It gains two
@@ -241,8 +241,8 @@ Milestone 1+2 lands as three pull requests in a row, each with its docs.
 
 | Pull request | Core | App |
 |---|---|---|
-| 1. Rename and migration | `pipeline` → `workflow`, `PipelineRun` → `Run`; the restartable move of `pipelines/` | the one-instance lock; every module, type and string; Settings ▸ Workflows |
-| 2. Tasks, history, visits and the queue | `task`, `task::files` and the move of `pipeline-runs/`; step visits; `task::marks`; `task::queue` keyed by the real checkout | `Pipelines` → `Tasks` global; the driver records visits and marks their end; every start asks the queue, and a place is given up only once the work has stopped |
+| 1. Rename and migration (landed) | `workflow` (was `pipeline`), `workflow::Run` (was `PipelineRun`); `workflow::store::migrate_blocking` moves `pipelines/` to `workflows/`, restartably; `instance::hold_lock` | `boot` takes the lock, then runs the move; every module, type and string renamed, the `Workflows` global and Settings ▸ Workflows; a `run_pipeline` keymap override is read as `run_workflow` |
+| 2. Tasks, history, visits and the queue | `task`, `task::files` and the move of `pipeline-runs/`; step visits; `task::marks`; `task::queue` keyed by the real checkout | `Workflows` → `Tasks` global; the driver records visits and marks their end; every start asks the queue, and a place is given up only once the work has stopped |
 | 3. The Tasks page, the check as a task, and Retry | group rule, history cap; a one-step run with no agent; what a retry carries over | page, rail row and count, project filter; the project page links here; Retry from *Needs attention* |
 
 Each one brings its glossary terms and turns its part of this file into the account of the code.

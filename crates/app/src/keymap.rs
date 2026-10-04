@@ -114,10 +114,10 @@ pub const COMMANDS: &[Command] = &[
         CloseSession
     ),
     command!(
-        "run_pipeline",
-        "Run a pipeline on the current project",
+        "run_workflow",
+        "Run a workflow on the current project",
         [],
-        RunPipeline
+        RunWorkflow
     ),
     command!(
         "maximize",
@@ -452,7 +452,21 @@ fn install(cx: &mut App) {
 struct LoadWarning(Option<String>);
 impl gpui::Global for LoadWarning {}
 
+/// Ids a command answered to before it was renamed, and the id it has now.
+/// Without this an override saved under the old id fails validation, and that
+/// throws the person's whole keymap away.
+const RENAMED: &[(&str, &str)] = &[("run_pipeline", "run_workflow")];
+
+fn rename_old_ids(overrides: &mut Overrides) {
+    for (old, new) in RENAMED {
+        if let Some(keys) = overrides.remove(*old) {
+            overrides.entry((*new).to_string()).or_insert(keys);
+        }
+    }
+}
+
 pub fn init(cx: &mut App) {
+    cx.update_global::<Shared, _>(|shared, _| rename_old_ids(&mut shared.keymap));
     let existing: Vec<_> = cx.key_bindings().borrow().bindings().cloned().collect();
     let warning = validate_controls(&Shared::global(cx).keymap, &existing).err();
     if let Some(error) = &warning {
@@ -818,6 +832,27 @@ mod tests {
         assert_eq!(
             action_at(&map, "enter", &["Dialog", "Input"]),
             Some(gpui_component::input::SelectAll.name().into())
+        );
+    }
+
+    #[test]
+    fn an_override_under_a_renamed_id_reaches_the_new_one() {
+        let keys = |k: &str| vec![k.to_string()];
+        let mut old = Overrides::from([("run_pipeline".to_string(), keys("ctrl-alt-p"))]);
+        rename_old_ids(&mut old);
+        assert_eq!(
+            old,
+            Overrides::from([("run_workflow".to_string(), keys("ctrl-alt-p"))])
+        );
+        assert!(validate(&old).is_ok());
+        let mut both = Overrides::from([
+            ("run_pipeline".to_string(), keys("ctrl-alt-p")),
+            ("run_workflow".to_string(), keys("ctrl-alt-w")),
+        ]);
+        rename_old_ids(&mut both);
+        assert_eq!(
+            both,
+            Overrides::from([("run_workflow".to_string(), keys("ctrl-alt-w"))])
         );
     }
 

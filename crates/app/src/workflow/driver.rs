@@ -1,20 +1,20 @@
-//! The one driver of every pipeline run: it watches the run's session, does
+//! The one driver of every run: it watches the run's session, does
 //! what the run's engine asks, and reports back what happened.
 //!
 //! **Every Stop goes through the engine the same way.** A person's Stop, a
 //! prompt of their own, the timeout, the agent going and the session closing
-//! each end the run with [`PipelineRun::stopped`], which never judges the turn
+//! each end the run with [`Run::stopped`], which never judges the turn
 //! that was under way — a cut-short turn passing as finished work is the
 //! mistake two drivers disagreeing made before.
 
-use super::Pipelines;
+use super::Workflows;
 use crate::chat::session::{ChatEvent, ChatSession, note};
 use gpui::{App, BorrowAppContext as _, Entity, Subscription, Task, WeakEntity};
 use onehand_core::chat::Link;
-use onehand_core::pipeline::{
-    Action, Facts, Mark, Outcome, PipelineRun, Stop, files, run_command_blocking,
-};
 use onehand_core::unattended::Budget;
+use onehand_core::workflow::{
+    Action, Facts, Mark, Outcome, Run, Stop, files, run_command_blocking,
+};
 use onehand_core::worktree;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -23,7 +23,7 @@ use std::time::{Duration, Instant};
 
 /// A run under way on one session.
 pub(super) struct Driven {
-    pub(super) run: PipelineRun,
+    pub(super) run: Run,
     file: PathBuf,
     session: WeakEntity<ChatSession>,
     /// How many prompts the run has sent its session: any more, and a person
@@ -73,11 +73,11 @@ const TIMEOUT_FALLBACK: Duration = Duration::from_secs(45 * 60);
 const ANSWER_MAX: usize = 20_000;
 
 /// Drive `run` on session `uid`, starting with `first`: what
-/// [`PipelineRun::begin`] or [`PipelineRun::resume`] said to do.
+/// [`Run::begin`] or [`Run::resume`] said to do.
 pub(crate) fn start(
     uid: u64,
     session: &Entity<ChatSession>,
-    run: PipelineRun,
+    run: Run,
     first: Action,
     cx: &mut App,
 ) {
@@ -120,14 +120,14 @@ pub(crate) fn start(
         _release: release,
         _clock: clock(uid, limit, cx),
     };
-    cx.default_global::<Pipelines>().runs.insert(uid, driven);
+    cx.default_global::<Workflows>().runs.insert(uid, driven);
     act(uid, first, cx);
 }
 
 /// A person approved what the run waits on.
 pub(crate) fn approve(uid: u64, cx: &mut App) {
     with(uid, cx, |d| d.budget.resume(Instant::now()));
-    advance(uid, cx, PipelineRun::approved);
+    advance(uid, cx, Run::approved);
 }
 
 /// A person sent it back with `note`.
@@ -146,14 +146,14 @@ pub(crate) fn stop(uid: u64, cx: &mut App) {
 /// session sends asks, and a mutable borrow would tell every observer of the
 /// global that it changed.
 fn read<R>(uid: u64, cx: &App, look: impl FnOnce(&Driven) -> R) -> Option<R> {
-    cx.try_global::<Pipelines>()?.runs.get(&uid).map(look)
+    cx.try_global::<Workflows>()?.runs.get(&uid).map(look)
 }
 
 fn with<R>(uid: u64, cx: &mut App, act: impl FnOnce(&mut Driven) -> R) -> Option<R> {
-    if !cx.has_global::<Pipelines>() {
+    if !cx.has_global::<Workflows>() {
         return None;
     }
-    cx.update_global::<Pipelines, _>(|p, _| p.runs.get_mut(&uid).map(act))
+    cx.update_global::<Workflows, _>(|p, _| p.runs.get_mut(&uid).map(act))
 }
 
 /// End the run as `stop` — at once, or, while the step's command runs, once
@@ -174,7 +174,7 @@ fn end(uid: u64, stop: Stop, cx: &mut App) {
 }
 
 /// Report to the run's engine, then do what it says.
-fn advance(uid: u64, cx: &mut App, report: impl FnOnce(&mut PipelineRun) -> Action) {
+fn advance(uid: u64, cx: &mut App, report: impl FnOnce(&mut Run) -> Action) {
     if let Some(action) = with(uid, cx, |d| report(&mut d.run)) {
         act(uid, action, cx);
     }
@@ -285,10 +285,10 @@ fn announce_step(uid: u64, session: &Entity<ChatSession>, cx: &mut App) {
 
 /// Write the run's snapshot, in order with every other write.
 fn save(uid: u64, cx: &mut App) {
-    if !cx.has_global::<Pipelines>() {
+    if !cx.has_global::<Workflows>() {
         return;
     }
-    cx.update_global::<Pipelines, _>(|p, _| {
+    cx.update_global::<Workflows, _>(|p, _| {
         let Some(d) = p.runs.get_mut(&uid) else {
             return;
         };
@@ -469,8 +469,8 @@ fn cancel_turn(uid: u64, cx: &mut App) {
 /// dropping the run drops the subscription it came through.
 fn finish(uid: u64, session: Option<&Entity<ChatSession>>, outcome: Outcome, cx: &mut App) {
     let driven = cx
-        .has_global::<Pipelines>()
-        .then(|| cx.update_global::<Pipelines, _>(|p, _| p.runs.remove(&uid)))
+        .has_global::<Workflows>()
+        .then(|| cx.update_global::<Workflows, _>(|p, _| p.runs.remove(&uid)))
         .flatten();
     let Some(driven) = driven else {
         return;
@@ -489,7 +489,7 @@ fn finish(uid: u64, session: Option<&Entity<ChatSession>>, outcome: Outcome, cx:
     if resumable {
         super::park(run, cx);
     } else {
-        cx.update_global::<Pipelines, _>(|p, _| p.writer.send(files::FileOp::Remove(file)));
+        cx.update_global::<Workflows, _>(|p, _| p.writer.send(files::FileOp::Remove(file)));
     }
     cx.defer(move |cx| {
         drop(driven);

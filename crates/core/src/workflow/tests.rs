@@ -48,9 +48,8 @@ fn prompt_of(action: Action) -> String {
 }
 
 /// A checkout run past its plan and at its approval.
-fn at_approval() -> PipelineRun {
-    let (mut run, first) =
-        PipelineRun::begin("1".into(), checkout(), brief(), setup(Some("make check")));
+fn at_approval() -> Run {
+    let (mut run, first) = Run::begin("1".into(), checkout(), brief(), setup(Some("make check")));
     assert_eq!(first, Action::Measure);
     prompt_of(run.measured(mark("a", "d0")));
     assert_eq!(
@@ -137,7 +136,7 @@ fn validate_names_each_kind_of_problem() {
 
 #[test]
 fn a_prompt_is_filled_in_and_told_where_it_works_and_what_is_checked() {
-    let (mut run, _) = PipelineRun::begin("1".into(), checkout(), brief(), setup(None));
+    let (mut run, _) = Run::begin("1".into(), checkout(), brief(), setup(None));
     let text = prompt_of(run.measured(mark("a", "d0")));
     assert!(text.contains("Title: Fix the thing\n\nIt is broken."));
     assert!(!text.contains("{brief}"));
@@ -147,7 +146,7 @@ fn a_prompt_is_filled_in_and_told_where_it_works_and_what_is_checked() {
 
     let mut with = brief();
     with.instructions = Some("Keep it small.".into());
-    let (mut run, _) = PipelineRun::begin("1".into(), checkout(), with, setup(None));
+    let (mut run, _) = Run::begin("1".into(), checkout(), with, setup(None));
     let text = prompt_of(run.measured(mark("a", "d0")));
     assert!(
         text.contains("> Keep it small."),
@@ -180,7 +179,7 @@ fn an_agent_step_passes_on_its_gates_and_keeps_its_answer() {
 
 #[test]
 fn a_missed_gate_carries_on_and_too_many_exhaust_the_step() {
-    let (mut run, _) = PipelineRun::begin("1".into(), checkout(), brief(), setup(None));
+    let (mut run, _) = Run::begin("1".into(), checkout(), brief(), setup(None));
     prompt_of(run.measured(mark("a", "d0")));
     for missed in 1..=3 {
         let text = prompt_of(run.turn_ended(&facts("a", false, 0, "d0"), "  "));
@@ -197,7 +196,7 @@ fn a_missed_gate_carries_on_and_too_many_exhaust_the_step() {
 
 #[test]
 fn a_change_in_a_checkout_plan_is_measured_again_so_a_persons_edit_may_stay() {
-    let (mut run, _) = PipelineRun::begin("1".into(), checkout(), brief(), setup(None));
+    let (mut run, _) = Run::begin("1".into(), checkout(), brief(), setup(None));
     prompt_of(run.measured(mark("a", "d0")));
     // The plan turn left the checkout changed: perhaps the person's edit.
     assert_eq!(
@@ -268,7 +267,7 @@ fn every_stop_ends_the_run_without_judging_the_turn() {
         Stop::LinkLost,
         Stop::Closed,
     ] {
-        let (mut run, _) = PipelineRun::begin("1".into(), checkout(), brief(), setup(None));
+        let (mut run, _) = Run::begin("1".into(), checkout(), brief(), setup(None));
         prompt_of(run.measured(mark("a", "d0")));
         assert_eq!(run.stopped(stop), Action::Finish(Outcome::Stopped(stop)));
         assert!(run.outputs.is_empty(), "a cut-short plan is not kept");
@@ -293,7 +292,7 @@ fn resume_keeps_where_the_step_started() {
     run.approved();
     prompt_of(run.measured(mark("a", "d0")));
     let text = serde_json::to_string(&run).unwrap();
-    let mut back: PipelineRun = serde_json::from_str(&text).unwrap();
+    let mut back: Run = serde_json::from_str(&text).unwrap();
     assert!(!back.awaiting_turn(), "what it waits for is not kept");
     let prompt = prompt_of(back.resume());
     assert!(prompt.contains("This step is the change"));
@@ -306,7 +305,7 @@ fn resume_keeps_where_the_step_started() {
 
     // A run waiting for its approval waits again; one restarted before its
     // step was measured measures.
-    let mut waiting: PipelineRun =
+    let mut waiting: Run =
         serde_json::from_str(&serde_json::to_string(&at_approval()).unwrap()).unwrap();
     assert_eq!(waiting.resume(), Action::AwaitApproval);
     // What it waits on comes back with it, for the new session to show.
@@ -314,9 +313,8 @@ fn resume_keeps_where_the_step_started() {
     assert_eq!((step.id.as_str(), answer), ("plan", "The plan."));
     waiting.approved();
     assert!(waiting.under_review().is_none());
-    let (fresh, _) = PipelineRun::begin("1".into(), checkout(), brief(), setup(None));
-    let mut fresh: PipelineRun =
-        serde_json::from_str(&serde_json::to_string(&fresh).unwrap()).unwrap();
+    let (fresh, _) = Run::begin("1".into(), checkout(), brief(), setup(None));
+    let mut fresh: Run = serde_json::from_str(&serde_json::to_string(&fresh).unwrap()).unwrap();
     assert_eq!(fresh.resume(), Action::Measure);
 }
 
@@ -354,7 +352,7 @@ fn a_template_needs_a_check_command_only_for_a_command_step_naming_none() {
 #[test]
 fn a_run_keeps_the_template_it_began_with() {
     let mut template = checkout();
-    let (run, _) = PipelineRun::begin("1".into(), template.clone(), brief(), setup(None));
+    let (run, _) = Run::begin("1".into(), template.clone(), brief(), setup(None));
     template.steps.remove(1);
     template.name = "Edited".into();
     assert_eq!(run.template, checkout());
@@ -393,7 +391,7 @@ fn every_move_is_in_the_history() {
 }
 
 fn temp_dir(name: &str) -> PathBuf {
-    let dir = std::env::temp_dir().join(format!("onehand-pipeline-{name}-{}", std::process::id()));
+    let dir = std::env::temp_dir().join(format!("onehand-workflow-{name}-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(&dir).unwrap();
     dir
@@ -442,7 +440,7 @@ fn templates_are_saved_one_file_each_under_their_name() {
 #[test]
 fn the_writer_never_brings_a_removed_run_back() {
     let dir = temp_dir("writer");
-    let (run, _) = PipelineRun::begin("7".into(), checkout(), brief(), setup(None));
+    let (run, _) = Run::begin("7".into(), checkout(), brief(), setup(None));
     let file = files::run_file(&dir, &run.id);
     let writer = files::Writer::spawn();
     for _ in 0..50 {
@@ -457,7 +455,7 @@ fn the_writer_never_brings_a_removed_run_back() {
     assert!(writer.flush(std::time::Duration::from_secs(10)));
     let loaded = files::load_all_blocking(&dir);
     assert_eq!(loaded.len(), 1);
-    let json = |run: &PipelineRun| serde_json::to_value(run).unwrap();
+    let json = |run: &Run| serde_json::to_value(run).unwrap();
     assert_eq!(json(loaded[0].1.as_ref().unwrap()), json(&run));
     let _ = std::fs::remove_dir_all(&dir);
 }
@@ -480,4 +478,60 @@ fn gates_read_the_work_against_the_mark() {
     assert!(
         holds(GateKind::Uncommitted, &edited, "") && !holds(GateKind::Uncommitted, &committed, "")
     );
+}
+
+#[test]
+fn templates_move_to_the_new_directory_and_the_old_one_goes() {
+    let root = temp_dir("migrate");
+    let (old, new) = (root.join("old"), root.join("new"));
+    std::fs::create_dir_all(&old).unwrap();
+    let text = toml::to_string_pretty(&checkout()).unwrap();
+    std::fs::write(old.join("plain.toml"), &text).unwrap();
+    assert!(store::migrate_blocking(&old, &new).is_empty());
+    assert_eq!(
+        std::fs::read_to_string(new.join("plain.toml")).unwrap(),
+        text
+    );
+    assert!(!old.exists());
+    // A missing `old` is nothing to do.
+    assert!(store::migrate_blocking(&old, &new).is_empty());
+    let _ = std::fs::remove_dir_all(&root);
+}
+
+#[test]
+fn a_name_already_moved_keeps_the_new_copy() {
+    let root = temp_dir("migrate-twice");
+    let (old, new) = (root.join("old"), root.join("new"));
+    std::fs::create_dir_all(&old).unwrap();
+    std::fs::create_dir_all(&new).unwrap();
+    let text = toml::to_string_pretty(&checkout()).unwrap();
+    // As a crash between the write and the removal leaves it.
+    std::fs::write(old.join("same.toml"), "stale").unwrap();
+    std::fs::write(new.join("same.toml"), &text).unwrap();
+    assert!(store::migrate_blocking(&old, &new).is_empty());
+    assert_eq!(
+        std::fs::read_to_string(new.join("same.toml")).unwrap(),
+        text
+    );
+    assert!(!old.exists());
+    let _ = std::fs::remove_dir_all(&root);
+}
+
+#[test]
+fn a_template_this_build_cannot_read_stays_where_it_is() {
+    let root = temp_dir("migrate-unreadable");
+    let (old, new) = (root.join("old"), root.join("new"));
+    std::fs::create_dir_all(&old).unwrap();
+    let future = format!("schema_version = {}\n", SCHEMA_VERSION + 1);
+    std::fs::write(old.join("future.toml"), &future).unwrap();
+    std::fs::write(old.join("notes.txt"), "mine").unwrap();
+    let problems = store::migrate_blocking(&old, &new);
+    assert_eq!(problems.len(), 1, "{problems:?}");
+    assert_eq!(
+        std::fs::read_to_string(old.join("future.toml")).unwrap(),
+        future
+    );
+    assert!(old.join("notes.txt").exists());
+    assert!(!new.join("future.toml").exists());
+    let _ = std::fs::remove_dir_all(&root);
 }

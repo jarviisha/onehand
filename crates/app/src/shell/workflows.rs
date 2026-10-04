@@ -1,4 +1,4 @@
-//! Starting a pipeline run from the launcher, and resuming one a previous
+//! Starting a run from the launcher, and resuming one a previous
 //! session left unfinished.
 
 use super::Shell;
@@ -7,12 +7,12 @@ use gpui::{AppContext as _, Context, Entity, SharedString, Window};
 use gpui_component::WindowExt as _;
 use gpui_component::input::{InputState, TextareaState};
 use gpui_component::notification::Notification;
-use onehand_core::pipeline::{self as core, Brief, PipelineRun, Place, Setup, Template};
+use onehand_core::workflow::{self as core, Brief, Place, Run, Setup, Template};
 use onehand_core::worktree;
 use std::path::PathBuf;
 
 /// The launcher's fields, while it is on screen.
-pub struct PipelineLauncher {
+pub struct WorkflowLauncher {
     /// The project it runs on, and what the dialog calls it.
     pub root: PathBuf,
     pub project: String,
@@ -28,21 +28,21 @@ pub struct PipelineLauncher {
 }
 
 impl Shell {
-    pub fn pipeline_launcher(&self) -> Option<&PipelineLauncher> {
-        self.pipeline_launcher.as_ref()
+    pub fn workflow_launcher(&self) -> Option<&WorkflowLauncher> {
+        self.workflow_launcher.as_ref()
     }
 
     /// Put the launcher up for the project on screen.
-    pub fn begin_pipeline(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+    pub fn begin_workflow(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let Some(root) = self.window.workspace.active_root() else {
             window.push_notification(
-                Notification::warning("Add a project before running a pipeline"),
+                Notification::warning("Add a project before running a workflow"),
                 cx,
             );
             return;
         };
         let (root, project) = (root.path.clone(), root.label.clone());
-        let template = crate::pipeline::templates(cx)
+        let template = crate::workflow::templates(cx)
             .iter()
             .position(|entry| entry.template.is_ok())
             .unwrap_or(0);
@@ -53,7 +53,7 @@ impl Shell {
         let instructions = cx
             .new(|cx| TextareaState::new(window, cx).placeholder("Optional: asked of every step"));
         title.update(cx, |input, cx| input.focus(window, cx));
-        self.pipeline_launcher = Some(PipelineLauncher {
+        self.workflow_launcher = Some(WorkflowLauncher {
             root,
             project: project.to_string(),
             template,
@@ -66,8 +66,8 @@ impl Shell {
         cx.notify();
     }
 
-    pub fn pick_pipeline_template(&mut self, template: usize, cx: &mut Context<Self>) {
-        if let Some(launcher) = self.pipeline_launcher.as_mut() {
+    pub fn pick_workflow_template(&mut self, template: usize, cx: &mut Context<Self>) {
+        if let Some(launcher) = self.workflow_launcher.as_mut() {
             launcher.template = template;
             launcher.error = None;
         }
@@ -77,23 +77,23 @@ impl Shell {
     /// Put the launcher away, unless a worktree is being made for its run:
     /// that cannot be called back, and a run with nowhere to report would be
     /// a folder made for nothing.
-    pub fn cancel_pipeline(&mut self, cx: &mut Context<Self>) {
-        if self.pipeline_launcher.as_ref().is_some_and(|l| !l.busy) {
-            self.pipeline_launcher = None;
+    pub fn cancel_workflow(&mut self, cx: &mut Context<Self>) {
+        if self.workflow_launcher.as_ref().is_some_and(|l| !l.busy) {
+            self.workflow_launcher = None;
             cx.notify();
         }
     }
 
     /// Start the run the launcher describes, or say on it why not.
-    pub fn commit_pipeline(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let Some(launcher) = self.pipeline_launcher.as_ref().filter(|l| !l.busy) else {
+    pub fn commit_workflow(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(launcher) = self.workflow_launcher.as_ref().filter(|l| !l.busy) else {
             return;
         };
         let started = self.launch_parts(launcher, cx);
         let (template, brief, check) = match started {
             Ok(parts) => parts,
             Err(why) => {
-                if let Some(launcher) = self.pipeline_launcher.as_mut() {
+                if let Some(launcher) = self.workflow_launcher.as_mut() {
                     launcher.error = Some(why);
                 }
                 cx.notify();
@@ -110,11 +110,11 @@ impl Shell {
         };
         match template.place {
             Place::Checkout => {
-                self.pipeline_launcher = None;
-                self.start_pipeline(setup, template, brief, window, cx);
+                self.workflow_launcher = None;
+                self.start_workflow(setup, template, brief, window, cx);
             }
             Place::Worktree => {
-                if let Some(launcher) = self.pipeline_launcher.as_mut() {
+                if let Some(launcher) = self.workflow_launcher.as_mut() {
                     launcher.busy = true;
                     launcher.error = None;
                 }
@@ -144,7 +144,7 @@ impl Shell {
                         .await;
                     let _ = shell.update_in(cx, |shell: &mut Self, window, cx| match made {
                         Ok((dir, branch)) => {
-                            shell.pipeline_launcher = None;
+                            shell.workflow_launcher = None;
                             shell.window.workspace.add_root(dir.clone());
                             shell.refresh_git(cx);
                             shell.save_workspace(window, cx);
@@ -153,10 +153,10 @@ impl Shell {
                                 branch: Some(branch),
                                 ..setup
                             };
-                            shell.start_pipeline(setup, template, brief, window, cx);
+                            shell.start_workflow(setup, template, brief, window, cx);
                         }
                         Err(why) => {
-                            if let Some(launcher) = shell.pipeline_launcher.as_mut() {
+                            if let Some(launcher) = shell.workflow_launcher.as_mut() {
                                 launcher.busy = false;
                                 launcher.error = Some(format!("The worktree was not made: {why}"));
                             }
@@ -173,13 +173,13 @@ impl Shell {
     /// describes, or why it cannot run.
     fn launch_parts(
         &self,
-        launcher: &PipelineLauncher,
+        launcher: &WorkflowLauncher,
         cx: &Context<Self>,
     ) -> Result<(Template, Brief, Option<String>), String> {
-        let entries = crate::pipeline::templates(cx);
+        let entries = crate::workflow::templates(cx);
         let entry = entries
             .get(launcher.template)
-            .ok_or_else(|| "Pick a template".to_string())?;
+            .ok_or_else(|| "Pick a workflow".to_string())?;
         let template = entry
             .template
             .clone()
@@ -187,7 +187,7 @@ impl Shell {
         let problems = core::validate(&template);
         if !problems.is_empty() {
             let said: Vec<String> = problems.iter().map(ToString::to_string).collect();
-            return Err(format!("This template cannot run: {}", said.join("; ")));
+            return Err(format!("This workflow cannot run: {}", said.join("; ")));
         }
         let title = launcher.title.read(cx).value().trim().to_string();
         if title.is_empty() {
@@ -203,7 +203,7 @@ impl Shell {
         if template.needs_check() && check.is_none() {
             return Err(format!(
                 "This template runs the project's check command, and {} has none. Set one \
-                 under Settings ▸ Pipelines.",
+                 under Settings ▸ Workflows.",
                 launcher.project
             ));
         }
@@ -218,7 +218,7 @@ impl Shell {
 
     /// Start a session on the project at `setup.dir` and drive a new run of
     /// `template` on it.
-    fn start_pipeline(
+    fn start_workflow(
         &mut self,
         mut setup: Setup,
         template: Template,
@@ -231,15 +231,15 @@ impl Shell {
             .first()
             .map(|spec| spec.name.clone());
         let id = core::files::new_id();
-        let (run, first) = PipelineRun::begin(id, template, brief, setup);
-        self.drive_pipeline(run, Some(first), window, cx);
+        let (run, first) = Run::begin(id, template, brief, setup);
+        self.drive_workflow(run, Some(first), window, cx);
     }
 
     /// Resume the unfinished run `id`: its project is put on screen, added
     /// back if it left the workspace, and a new session carries on from the
     /// step it was at.
-    pub fn resume_pipeline(&mut self, id: &str, window: &mut Window, cx: &mut Context<Self>) {
-        let Some(run) = crate::pipeline::take_unfinished(id, cx) else {
+    pub fn resume_workflow(&mut self, id: &str, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(run) = crate::workflow::take_unfinished(id, cx) else {
             return;
         };
         if !run.setup.dir.is_dir() {
@@ -250,10 +250,10 @@ impl Shell {
                 )),
                 cx,
             );
-            crate::pipeline::park(run, cx);
+            crate::workflow::park(run, cx);
             return;
         }
-        self.drive_pipeline(run, None, window, cx);
+        self.drive_workflow(run, None, window, cx);
     }
 
     /// Show the run's project, start a session on it, and hand both to the
@@ -261,9 +261,9 @@ impl Shell {
     /// session exists when that is `None`. A resumed run that cannot start
     /// goes back on the unfinished list; a new one had nothing yet worth
     /// keeping.
-    fn drive_pipeline(
+    fn drive_workflow(
         &mut self,
-        mut run: PipelineRun,
+        mut run: Run,
         first: Option<core::Action>,
         window: &mut Window,
         cx: &mut Context<Self>,
@@ -284,18 +284,15 @@ impl Shell {
             .start_session(agent, None, window, cx)
             .and_then(|uid| Some((uid, self.chat.read(cx).session_entity(uid)?)));
         let Some((uid, session)) = session else {
-            window.push_notification(
-                Notification::warning("The pipeline's session did not start"),
-                cx,
-            );
+            window.push_notification(Notification::warning("The run's session did not start"), cx);
             if first.is_none() {
-                crate::pipeline::park(run, cx);
+                crate::workflow::park(run, cx);
             }
             return;
         };
         let first = first.unwrap_or_else(|| run.resume());
         // Deferred: the driver reaches into the session and the global the
         // shell is reading from while this runs.
-        cx.defer(move |cx| crate::pipeline::start(uid, &session, run, first, cx));
+        cx.defer(move |cx| crate::workflow::start(uid, &session, run, first, cx));
     }
 }

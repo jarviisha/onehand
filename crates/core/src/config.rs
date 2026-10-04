@@ -535,7 +535,7 @@ pub struct WorkspaceConfig {
     /// Roots whose labelled issues may be worked unattended, by path for the
     /// reason pins are.
     pub unattended: Vec<PathBuf>,
-    /// The command a pipeline's work must pass before it goes further, by
+    /// The command a workflow's work must pass before it goes further, by
     /// root: onehand runs it itself rather than taking the agent's word.
     pub checks: std::collections::BTreeMap<PathBuf, String>,
 }

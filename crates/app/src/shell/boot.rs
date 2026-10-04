@@ -169,22 +169,22 @@ impl Shell {
                     }
                     // Deferred: the run reaches into its session, which may
                     // be what is announcing this.
-                    E::ContinuePipeline(uid) => {
+                    E::ContinueWorkflow(uid) => {
                         let uid = *uid;
-                        cx.defer(move |cx| crate::pipeline::approve(uid, cx));
+                        cx.defer(move |cx| crate::workflow::approve(uid, cx));
                     }
-                    E::RevisePipeline { uid, note } => {
+                    E::ReviseWorkflow { uid, note } => {
                         let (uid, note) = (*uid, note.clone());
-                        cx.defer(move |cx| crate::pipeline::revise(uid, note, cx));
+                        cx.defer(move |cx| crate::workflow::revise(uid, note, cx));
                     }
-                    E::StopPipeline(uid) => {
+                    E::StopWorkflow(uid) => {
                         let uid = *uid;
-                        cx.defer(move |cx| crate::pipeline::stop(uid, cx));
+                        cx.defer(move |cx| crate::workflow::stop(uid, cx));
                     }
-                    E::ResumePipeline(id) => shell.resume_pipeline(id, window, cx),
-                    E::DiscardPipeline(id) => {
+                    E::ResumeWorkflow(id) => shell.resume_workflow(id, window, cx),
+                    E::DiscardWorkflow(id) => {
                         let id = id.clone();
-                        cx.defer(move |cx| crate::pipeline::discard(&id, cx));
+                        cx.defer(move |cx| crate::workflow::discard(&id, cx));
                     }
                     // Its project made the active one first, since a session
                     // is minted on that, but not shown: showing it would
@@ -424,9 +424,9 @@ impl Shell {
             worktree_draft: None,
             branch_draft: None,
             issue_picker: None,
-            pipeline_draft: None,
+            workflow_draft: None,
             check_inputs: HashMap::new(),
-            pipeline_launcher: None,
+            workflow_launcher: None,
             branch_input,
             worktree_branch,
             dock,
@@ -556,6 +556,21 @@ fn open_window(workspace: Workspace, cx: &mut App) {
 
 /// Install global state and open the first window.
 pub fn boot(cx: &mut App) {
+    // First, before anything reads or writes the config directory: what
+    // follows assumes no other onehand is moving its files at the same time.
+    let dir = onehand_core::config::config_dir();
+    if onehand_core::instance::hold_lock(&dir).is_err() {
+        eprintln!("onehand is already running on {}", dir.display());
+        std::process::exit(1);
+    }
+    // Templates were once kept under `pipelines/`; the name on disk from
+    // before the rename.
+    for problem in onehand_core::workflow::store::migrate_blocking(
+        &dir.join("pipelines"),
+        &onehand_core::workflow::store::dir(),
+    ) {
+        eprintln!("onehand: {problem}");
+    }
     let (cfg, config_path) = AppConfig::load_resolved();
     let mono = cfg.font.monospace.clone();
     let appearance = cfg.appearance;
@@ -568,7 +583,7 @@ pub fn boot(cx: &mut App) {
     // already been asked by the time there is anything to announce.
     crate::remote::boot(&remote, cx);
     crate::unattended::boot(&unattended, cx);
-    crate::pipeline::boot(cx);
+    crate::workflow::boot(cx);
     // Before a mode is chosen, because choosing one applies whichever of the
     // two configs this installs.
     crate::theme::install(cx);

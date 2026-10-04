@@ -805,21 +805,21 @@ pub enum ChatPaneEvent {
         agent: SharedString,
         archive: PathBuf,
     },
-    /// The pipeline run on session `uid` waits for approval, and it is
+    /// The run on session `uid` waits for approval, and it is
     /// given: go on. Announced, because the run is the shell's and the strip
     /// that offers this only draws it.
-    ContinuePipeline(u64),
+    ContinueWorkflow(u64),
     /// Send what that run waits on back, with a `note` on what to change.
-    RevisePipeline {
+    ReviseWorkflow {
         uid: u64,
         note: String,
     },
-    /// Stop the pipeline run on session `uid`.
-    StopPipeline(u64),
-    /// Resume the unfinished pipeline run `id` — a row of the project page.
-    ResumePipeline(String),
-    /// Drop the unfinished pipeline run `id` and its file.
-    DiscardPipeline(String),
+    /// Stop the run on session `uid`.
+    StopWorkflow(u64),
+    /// Resume the unfinished run `id` — a row of the project page.
+    ResumeWorkflow(String),
+    /// Drop the unfinished run `id` and its file.
+    DiscardWorkflow(String),
 }
 
 impl EventEmitter<ChatPaneEvent> for ChatPane {}

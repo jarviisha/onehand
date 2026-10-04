@@ -44,7 +44,7 @@ pub struct ProjectRoot {
     /// pull requests against, and the second is a permission worth giving one
     /// project at a time.
     pub unattended: bool,
-    /// The command a pipeline's work here must pass before it goes further:
+    /// The command a workflow's work here must pass before it goes further:
     /// the app runs it itself rather than taking the agent's word for it.
     pub check: Option<String>,
 }

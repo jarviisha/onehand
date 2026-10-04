@@ -1,18 +1,18 @@
-// A mock ACP agent that plays its part in a pipeline run, so the paths a run
+// A mock ACP agent that plays its part in a run, so the paths a run
 // takes when an agent does its work, misses a gate or breaks the check are
 // walked in seconds, without an API key, against a real checkout.
 //
 //   [[agents]]
-//   name = "Mock pipeline"
+//   name = "Mock workflow"
 //   command = "node"
-//   args = ["/absolute/path/to/onehand-gpui/crates/core/examples/mock_pipeline_agent.js"]
+//   args = ["/absolute/path/to/onehand-gpui/crates/core/examples/mock_workflow_agent.js"]
 //
 // **It reads what a step wants from the rules onehand appends to the prompt**,
 // not from the template's own wording, so an edited template still drives
 // it: "Do not edit any file" is a plan, "has to change the code" is a change,
 // "Commit your work" asks for a commit. A carry-on prompt is answered the
 // same way, from what onehand says the last turn missed. Those phrases are
-// `rule` and `carry_on` in crates/core/src/pipeline/prompt.rs, word for word:
+// `rule` and `carry_on` in crates/core/src/workflow/prompt.rs, word for word:
 // reword one there and change it here, or the mock answers every step with a
 // plan.
 //
@@ -23,9 +23,9 @@
 //   * `miss` — every turn does nothing and says nothing, so the step's gates
 //     miss until the run is exhausted;
 //   * `fail-check` — the session's first change writes `check: fail` into
-//     `mock-pipeline.txt`, and every change after it `check: pass`. Pair it
+//     `mock-workflow.txt`, and every change after it `check: pass`. Pair it
 //     with a check command such as
-//     `sleep 5 && grep -q 'check: pass' mock-pipeline.txt`;
+//     `sleep 5 && grep -q 'check: pass' mock-workflow.txt`;
 //   * `fast` — answer at once instead of over about six seconds, which is
 //     what leaves room to press Stop or quit mid-step.
 //
@@ -74,7 +74,7 @@ function play(session, prompt) {
     return {
       lines: [
         'The plan: ',
-        'add `mock-pipeline.txt` at the top of the checkout, ',
+        'add `mock-workflow.txt` at the top of the checkout, ',
         'with one line the check reads. ',
         'The check passing is how this is known to work.',
       ],
@@ -85,15 +85,15 @@ function play(session, prompt) {
   // `{check_output}` itself never carries onehand's "The check failed:" line.
   const verdict = orders.has('fail-check') && change && session.changes++ === 0 ? 'fail' : 'pass';
   return {
-    lines: ['Writing `mock-pipeline.txt`. ', commit && 'Committing it. ', `Done (check: ${verdict}).`].filter(Boolean),
+    lines: ['Writing `mock-workflow.txt`. ', commit && 'Committing it. ', `Done (check: ${verdict}).`].filter(Boolean),
     act: () => {
       if (change) {
-        fs.writeFileSync(path.join(cwd, 'mock-pipeline.txt'), `check: ${verdict}\n${Date.now()}\n`);
+        fs.writeFileSync(path.join(cwd, 'mock-workflow.txt'), `check: ${verdict}\n${Date.now()}\n`);
       }
       if (commit) {
         const git = (...args) => execFileSync('git', args, { cwd, stdio: 'pipe' });
         git('add', '-A');
-        git('commit', '-q', '-m', 'mock pipeline change');
+        git('commit', '-q', '-m', 'mock workflow change');
       }
     },
   };
@@ -118,7 +118,7 @@ rl.on('line', (line) => {
     case 'initialize':
       return send({ jsonrpc: '2.0', id: m.id, result: { protocolVersion: 1, agentCapabilities: {} } });
     case 'session/new': {
-      const id = `mock-pipeline-${process.pid}-${Date.now()}-${sessions.size}`;
+      const id = `mock-workflow-${process.pid}-${Date.now()}-${sessions.size}`;
       sessions.set(id, { id, cwd: m.params?.cwd ?? process.cwd(), turn: null, changes: 0, orders: new Set() });
       return send({ jsonrpc: '2.0', id: m.id, result: { sessionId: id } });
     }

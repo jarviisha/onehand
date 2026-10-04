@@ -1,4 +1,4 @@
-# Roadmap: from the pipeline engine to Tasks
+# Roadmap: from the workflow engine to Tasks
 
 Where the work goes after the configurable pipelines landed (#72). The goal of the next stretch is
 **to make the work that is running visible**: one place showing what is running, what needs a
@@ -13,14 +13,19 @@ rename, the task store and the page each carry risks of their own.
 
 ## Where things stand
 
-Templates are configurable and saved, one per file. A single engine (`onehand_core::pipeline`)
-decides every transition, and a single driver (`crates/app/src/pipeline/driver.rs`) runs it. Every
-run keeps a snapshot of its template, its file is written in order by one thread, and an unfinished
+Workflows are configurable and saved, one per file. A single engine (`onehand_core::workflow`)
+decides every transition, and a single driver (`crates/app/src/workflow/driver.rs`) runs it. Every
+run keeps a snapshot of its workflow, its file is written in order by one thread, and an unfinished
 run can be resumed after a restart.
 
+Pull request 1 of milestone 1+2 has landed: "pipeline" has left the code and the screen (the
+template is a **Workflow**, its execution a `workflow::Run`), `pipelines/` moves to `workflows/` at
+start, and a lock on the config directory keeps a second onehand from starting on it. Run files are
+still in `pipeline-runs/`; they move once, to `tasks/`, in pull request 2.
+
 Not there yet:
-- The pipeline mock agent (`crates/core/examples/mock_pipeline_agent.js`) and the checklist in
-  [pipelines.md](pipelines.md#checking-it-by-hand) are in the repository; a full pass of the
+- The workflow mock agent (`crates/core/examples/mock_workflow_agent.js`) and the checklist in
+  [workflows.md](workflows.md#checking-it-by-hand) are in the repository; a full pass of the
   checklist is still owed before the Tasks page depends on the states the driver reports. The loop
   back after a failed command is a miss inside one run, not the Retry designed below, which starts a
   new run.
@@ -208,7 +213,7 @@ The rename is already done by 1+2.
   build cannot read is left untouched, and an old directory goes only once it is empty. There is no
   way back to an older build, which this pre-release accepts; the release notes say so.
 - **The pipeline mock agent takes its orders from the brief** (`miss`, `fail-check`), as
-  `mock_ui_agent.js` takes `fast`. The manual checklist is a section of the pipelines doc and
+  `mock_ui_agent.js` takes `fast`. The manual checklist is a section of the workflows doc and
   moves with it when it is renamed.
 - **The per-checkout lock comes before any cap on concurrency.** Two runs editing one checkout is
   the failure possible today. A workspace-wide cap arrives with milestone 5, before issues are
