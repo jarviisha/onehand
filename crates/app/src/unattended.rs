@@ -21,11 +21,13 @@ use std::path::Path;
 use std::path::PathBuf;
 use std::time::Duration;
 
-mod ending;
 mod launch;
-pub(crate) use ending::{deliver_all, ended, opening, refuse_mode, spec_for, started};
+mod report;
 pub use launch::{Pickable, look_now, pickable_blocking, start_picked};
 use launch::{begin_blocking, landed};
+pub(crate) use report::{
+    card_question, deliver, deliver_all, ended, keep, opening, refuse_mode, spec_for, started,
+};
 
 /// The unattended half of the process: its settings, the claim in flight and
 /// the tick. The runs themselves are tasks, kept with every other.
@@ -55,6 +57,10 @@ pub struct Unattended {
     /// Tasks whose reports are on their way to their issue, so a second
     /// delivery does not send them twice.
     delivering: HashSet<String>,
+    /// Issue tasks kept but not yet waiting for or holding a place: counted
+    /// against the cap meanwhile, so a tick landing in between cannot start
+    /// one more.
+    starting: HashSet<String>,
     /// What each connector last said about its account, for the lines in
     /// Settings. `None` until the first answer lands.
     accounts: Option<Accounts>,
@@ -113,13 +119,16 @@ pub fn connector_for(root: &Path) -> Result<&'static dyn Connector, String> {
 /// mid-turn.
 // ponytail: waiting runs are not capped; each keeps an adapter alive. Cap
 // them when a pile of unanswered runs is seen to cost something.
-fn full(u: &Unattended, cx: &App) -> Option<String> {
+fn at_cap(u: &Unattended, cx: &App) -> Option<String> {
     let working = crate::task::issues_working(cx);
-    if core::room(working.len(), u.at_once) {
+    if core::room(working.len() + u.starting.len(), u.at_once) {
         return None;
     }
     Some(match working.as_slice() {
-        [] => "Unattended runs are capped at none at once (unattended.at_once).".to_string(),
+        [] if u.at_once == 0 => {
+            "Unattended runs are capped at none at once (unattended.at_once).".to_string()
+        }
+        [] => "An unattended run is starting.".to_string(),
         [one] => format!(
             "An unattended run is already working on issue {one} — {} at a time.",
             u.at_once
@@ -134,7 +143,7 @@ fn full(u: &Unattended, cx: &App) -> Option<String> {
 
 /// Why nothing at all may start, picked or found: the agent does not offer
 /// the mode runs start in, or the workflow they run is missing or cannot run.
-fn refused(u: &Unattended, cx: &App) -> Option<String> {
+fn cannot_start(u: &Unattended, cx: &App) -> Option<String> {
     u.mode_refused
         .clone()
         .or_else(|| launch::workflow(&u.workflow, &u.timeout, cx).err())
@@ -191,6 +200,7 @@ pub fn boot(cfg: &UnattendedConfig, cx: &mut App) {
             blocked,
             mode_refused: None,
             delivering: HashSet::new(),
+            starting: HashSet::new(),
             accounts: None,
             checked_at: None,
             checks_out: 0,
@@ -203,7 +213,23 @@ pub fn boot(cfg: &UnattendedConfig, cx: &mut App) {
 /// Why no run can start at all, if something stops every one.
 pub fn blocked(cx: &App) -> Option<String> {
     let u = Shared::global(cx).unattended.as_ref()?;
-    u.blocked.clone().or_else(|| refused(u, cx))
+    u.blocked.clone().or_else(|| cannot_start(u, cx))
+}
+
+/// What stops a run being picked now, if anything: the cap reached, then
+/// anything that stops every run.
+fn why_not(cx: &App) -> (Option<String>, Option<String>) {
+    Shared::global(cx)
+        .unattended
+        .as_ref()
+        .map(|u| (at_cap(u, cx), cannot_start(u, cx)))
+        .unwrap_or_default()
+}
+
+/// Issue task `id` now waits for its place or holds it, and counts against
+/// the cap as such.
+pub(crate) fn placed(id: &str, cx: &mut App) {
+    with(cx, |u| u.starting.remove(id));
 }
 
 /// A run of issue task `id` now waits on a person and gives its place under
@@ -366,31 +392,6 @@ fn opted_in_roots(cx: &App) -> Vec<Project> {
     roots
 }
 
-/// A run under way, as the rail and the workspace page read it.
-pub struct LiveRun {
-    /// The project the issue was found in.
-    pub repo: PathBuf,
-    /// How its issue is shown: the forge's number, or *Draft*.
-    pub name: String,
-    pub title: String,
-    /// The run's own session.
-    pub uid: u64,
-    /// The window the session is in.
-    pub window: gpui::AnyWindowHandle,
-    /// What it waits on a person for, while it does.
-    pub waiting: Option<String>,
-}
-
-/// Every run with a session under way, oldest first.
-///
-/// The rail says on a project's row that a run is working one of its issues:
-/// the run's own session is on a worktree's row of its own, and nothing on the
-/// project the issue belongs to would otherwise say so. The workspace page
-/// lists them, the waiting ones apart from the working.
-pub fn live_runs(cx: &App) -> Vec<LiveRun> {
-    crate::task::live_issues(cx)
-}
-
 /// The label that asks for a run, for the places that tell the user which
 /// label to put on an issue.
 pub fn label(cx: &App) -> String {
@@ -426,7 +427,7 @@ fn tick(asked_from: Option<gpui::AnyWindowHandle>, cx: &mut App) {
     let stopped = Shared::global(cx)
         .unattended
         .as_ref()
-        .and_then(|u| full(u, cx).or_else(|| refused(u, cx)));
+        .and_then(|u| at_cap(u, cx).or_else(|| cannot_start(u, cx)));
     let search = with(cx, |u| {
         let idle = !u.claiming && u.blocked.is_none() && stopped.is_none();
         idle.then(|| {

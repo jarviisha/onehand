@@ -663,6 +663,10 @@ fn finish(uid: u64, session: Option<&Entity<ChatSession>>, outcome: Outcome, cx:
     let mut run = driven.run.clone();
     run.spent_secs = driven.spent_secs();
     let task = driven.task.clone();
+    let asked = session
+        .filter(|_| driven.card)
+        .and_then(|session| crate::unattended::card_question(session, cx));
+    crate::unattended::keep(&task, &run, driven.sent > 0, asked, cx);
     cx.update_global::<Tasks, _>(|t, _| t.store_run(&task, run));
     super::ended(task, driven.pinned, session, cx);
     cx.defer(move |cx| {

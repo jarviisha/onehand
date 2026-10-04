@@ -240,6 +240,9 @@ pub(crate) fn request(id: String, window: &mut Window, cx: &mut Context<Shell>) 
                 }
                 Some(free)
             });
+            // Asked for, or held already: an issue's run counts against the
+            // cap from here as queued or running.
+            crate::unattended::placed(&id, cx);
             match free {
                 Some(true) => shell.drive_task(id, window, cx),
                 Some(false) => {
@@ -312,7 +315,6 @@ fn ended(
 /// then give its place to whoever waits for it. An issue it works is told
 /// how the run ended.
 fn freed(id: String, from: usize, cx: &mut App) {
-    crate::unattended::ended(&id, cx);
     let unpinned = cx.try_global::<Tasks>().and_then(|t| {
         let task = t.task(&id)?;
         let run = task.runs.last()?;
@@ -320,7 +322,7 @@ fn freed(id: String, from: usize, cx: &mut App) {
         (!refs.is_empty()).then(|| (run.setup.dir.clone(), refs))
     });
     let Some((dir, refs)) = unpinned else {
-        return release(id, cx);
+        return let_go(id, cx);
     };
     cx.spawn(async move |cx| {
         let pinned = cx
@@ -337,10 +339,17 @@ fn freed(id: String, from: usize, cx: &mut App) {
                 }),
                 Err(why) => eprintln!("onehand: a task's last mark was not pinned: {why}"),
             }
-            release(id, cx);
+            let_go(id, cx);
         });
     })
     .detach();
+}
+
+/// Task `id` is over and its last mark pinned: tell an issue it works how it
+/// ended, then give its place up.
+fn let_go(id: String, cx: &mut App) {
+    crate::unattended::ended(&id, cx);
+    release(id, cx);
 }
 
 /// Give task `id`'s place up, and start the next task waiting for it in the
@@ -375,19 +384,26 @@ pub(crate) fn release(id: String, cx: &mut App) {
 /// never ran a step is over, stopped by a person, with no empty run kept;
 /// one resumed goes back to how it was.
 pub(crate) fn stop_queued(id: &str, cx: &mut App) {
-    cx.update_global::<Tasks, _>(|t, _| {
+    let dropped = cx.update_global::<Tasks, _>(|t, _| {
         if !t.queue.call_off(id) {
-            return;
+            return None;
         }
         t.asked_in.remove(id);
-        let Some(task) = t.task_mut(id) else {
-            return;
+        let task = t.task_mut(id)?;
+        let dropped = match task.runs.last().is_some_and(|run| !run.begun()) {
+            true => task.runs.pop(),
+            false => None,
         };
-        if task.runs.last().is_some_and(|run| !run.begun()) {
-            task.runs.pop();
-        }
         t.save(id);
+        dropped
     });
+    // An issue whose run never began is told it was stopped, or it would
+    // stay claimed with nothing after the claim.
+    if let Some(mut run) = dropped {
+        run.outcome = Some(onehand_core::workflow::Outcome::Stopped(Stop::ByPerson));
+        crate::unattended::keep(id, &run, false, None, cx);
+        crate::unattended::deliver(id.to_string(), cx);
+    }
     enforce_cap(cx);
     cx.refresh_windows();
 }
@@ -395,15 +411,25 @@ pub(crate) fn stop_queued(id: &str, cx: &mut App) {
 /// A person let interrupted task `id` go: it is kept as history and never
 /// offered again.
 pub(crate) fn dismiss(id: &str, cx: &mut App) {
-    cx.update_global::<Tasks, _>(|t, _| {
+    let cut_off = cx.update_global::<Tasks, _>(|t, _| {
         if t.busy(id) {
-            return;
+            return None;
         }
-        if let Some(task) = t.task_mut(id) {
-            task.dismissed = true;
-        }
+        let task = t.task_mut(id)?;
+        task.dismissed = true;
+        let cut_off = task
+            .runs
+            .last()
+            .filter(|run| run.outcome.is_none())
+            .cloned();
         t.save(id);
+        cut_off
     });
+    // A run cut off by a quit was never reported; letting it go is its end.
+    if let Some(run) = cut_off {
+        crate::unattended::keep(id, &run, run.begun(), None, cx);
+        crate::unattended::deliver(id.to_string(), cx);
+    }
     enforce_cap(cx);
     cx.refresh_windows();
 }
@@ -705,9 +731,26 @@ pub(crate) fn issues_working(cx: &App) -> Vec<String> {
         .collect()
 }
 
-/// Every issue task with a session under way, as the rail and the workspace
-/// page list them.
-pub(crate) fn live_issues(cx: &App) -> Vec<crate::unattended::LiveRun> {
+/// An unattended run with a session under way, as the rail and the workspace
+/// page read it.
+pub(crate) struct LiveRun {
+    /// The project the issue was found in.
+    pub(crate) repo: PathBuf,
+    /// How its issue is shown: the forge's number, or *Draft*.
+    pub(crate) name: String,
+    pub(crate) title: String,
+    /// The run's own session.
+    pub(crate) uid: u64,
+    /// The window the session is in.
+    pub(crate) window: AnyWindowHandle,
+    /// What it waits on a person for, while it does.
+    pub(crate) waiting: Option<String>,
+}
+
+/// Every issue task with a session under way, oldest first. The rail says on
+/// a project's row that a run works one of its issues, since the run's own
+/// session is on a worktree's row of its own; the workspace page lists them.
+pub(crate) fn live_issues(cx: &App) -> Vec<LiveRun> {
     let Some(t) = cx.try_global::<Tasks>() else {
         return Vec::new();
     };
@@ -722,7 +765,7 @@ pub(crate) fn live_issues(cx: &App) -> Vec<crate::unattended::LiveRun> {
                 (false, true) => Some("Waiting for an answer".to_string()),
                 (false, false) => None,
             };
-            let run = crate::unattended::LiveRun {
+            let run = LiveRun {
                 repo: task.setup.repo.clone(),
                 name: issue.shown(),
                 title: task.brief.title.clone(),

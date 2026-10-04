@@ -274,11 +274,12 @@ impl Shell {
             cx.defer(move |cx| crate::task::drive_check(id, handle, cx));
             return;
         }
-        let session = match (task.issue(), self.root_index(&dir)) {
+        let session = match task.issue() {
             // An issue's run comes up off screen, on a project of its own that
-            // the workspace file never holds, so nothing the person is looking
-            // at moves; one they picked by hand is put in front of them.
-            (Some(issue), None) => {
+            // the workspace file never holds unless it was kept, so nothing the
+            // person is looking at moves; one they picked by hand is put in
+            // front of them.
+            Some(issue) => {
                 let spec = crate::unattended::spec_for(run.setup.agent.as_deref(), cx);
                 let started = spec.and_then(|spec| self.run_unattended(dir, spec, cx));
                 if let Some((uid, session)) = &started {
@@ -289,8 +290,8 @@ impl Shell {
                 }
                 started
             }
-            (_, idx) => {
-                let idx = idx.unwrap_or_else(|| {
+            None => {
+                let idx = self.root_index(&dir).unwrap_or_else(|| {
                     let idx = self.window.workspace.add_root(dir);
                     self.refresh_git(cx);
                     self.save_workspace(window, cx);

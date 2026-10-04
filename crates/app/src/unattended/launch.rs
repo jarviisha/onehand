@@ -1,5 +1,5 @@
-use super::ending::tell_issue;
-use super::{Project, Served, connector_for, full, label, opted_in_roots, refused, tick, with};
+use super::report::tell_issue;
+use super::{Project, Served, connector_for, label, opted_in_roots, tick, why_not, with};
 use crate::state::Shared;
 use gpui::App;
 use onehand_core::connector::Connector;
@@ -212,11 +212,7 @@ pub fn start_picked(
     window: gpui::AnyWindowHandle,
     cx: &mut App,
 ) -> Result<(), String> {
-    let (full, refused) = Shared::global(cx)
-        .unattended
-        .as_ref()
-        .map(|u| (full(u, cx), refused(u, cx)))
-        .unwrap_or_default();
+    let (full, refused) = why_not(cx);
     let label = with(cx, |u| {
         if let Some(why) = full {
             return Err(why);
@@ -299,11 +295,7 @@ pub fn look_now(window: gpui::AnyWindowHandle, cx: &mut App) {
     let why_not = if opted_in_roots(cx).is_empty() {
         Some("No project is switched on for unattended runs.".to_string())
     } else {
-        let (full, refused) = Shared::global(cx)
-            .unattended
-            .as_ref()
-            .map(|u| (full(u, cx), refused(u, cx)))
-            .unwrap_or_default();
+        let (full, refused) = why_not(cx);
         with(cx, |u| {
             if full.is_some() {
                 full
@@ -444,13 +436,20 @@ fn start(claimed: Claimed, cx: &mut App) -> Result<(), Unstarted> {
         picked,
         unsent: Vec::new(),
     });
-    // ponytail: the task counts against the cap once its place is asked for,
-    // a moment after this; a tick landing in between could start one more.
-    // Hold `claiming` until then if that is ever seen.
+    // Counted against the cap until it has asked for its place.
+    with(cx, |u| u.starting.insert(task_id.clone()));
     crate::task::add(task, cx);
-    let _ = window.update(cx, |_, window, cx| {
-        shell.update(cx, |_, cx| crate::task::request(task_id, window, cx))
-    });
+    let asked = {
+        let task_id = task_id.clone();
+        window.update(cx, |_, window, cx| {
+            shell.update(cx, |_, cx| crate::task::request(task_id, window, cx))
+        })
+    };
+    // ponytail: a window closed while the place is looked up also leaves the
+    // task counted; it goes at the next start of onehand.
+    if asked.is_err() {
+        super::placed(&task_id, cx);
+    }
     Ok(())
 }
 

@@ -135,14 +135,14 @@ impl Shell {
         Some(onehand_core::issues::file_for(storage, root))
     }
 
-    /// Add `dir` as a transient project and start `spec` on it, off screen.
+    /// Start `spec` on `dir`, off screen: on the project already open there,
+    /// or on `dir` added as a transient project.
     ///
-    /// **Nothing the user is looking at moves.** The root is added without
-    /// being selected and the pane connects the session without showing it.
-    /// The root is transient, so the workspace file never holds it.
-    ///
-    /// `None` when `dir` is already a project here: marking a root the user
-    /// added as transient would quietly drop it from their workspace.
+    /// **Nothing the user is looking at moves.** No root is selected and the
+    /// pane connects the session without showing it. A root added here is
+    /// transient, so the workspace file never holds it; one the user already
+    /// had keeps what it was, since marking it transient would quietly drop it
+    /// from their workspace.
     pub fn run_unattended(
         &mut self,
         dir: PathBuf,
@@ -150,10 +150,11 @@ impl Shell {
         cx: &mut Context<Self>,
     ) -> Option<(u64, Entity<crate::chat::session::ChatSession>)> {
         let uid = cx.update_global::<Shared, _>(|shared, _| shared.next_uid());
-        let idx = self
-            .window
-            .workspace
-            .add_transient_root(dir, spec.clone(), uid)?;
+        let workspace = &mut self.window.workspace;
+        let idx = match workspace.add_session_quietly(&dir, spec.clone(), uid) {
+            Some(idx) => idx,
+            None => workspace.add_transient_root(dir, spec.clone(), uid)?,
+        };
         let root = self.window.workspace.roots[idx].path.clone();
         let session = self
             .chat

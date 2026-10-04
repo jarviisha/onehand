@@ -339,6 +339,17 @@ fn the_brief_keeps_the_body_whole_and_names_the_issue() {
     let _ = std::fs::remove_dir_all(dir);
 }
 
+/// A run that ended as `outcome`, after asking its agent something.
+fn ran(outcome: Outcome) -> PendingReport {
+    PendingReport {
+        run: "1".into(),
+        outcome: Some(outcome),
+        started: true,
+        ended_on: None,
+        asked: None,
+    }
+}
+
 #[test]
 fn every_outcome_has_a_sentence_and_the_work_leads() {
     let outcomes = [
@@ -353,31 +364,30 @@ fn every_outcome_has_a_sentence_and_the_work_leads() {
         },
         Outcome::Failed("git refused".into()),
     ];
-    for outcome in &outcomes {
+    for outcome in outcomes {
+        let pending = ran(outcome);
         let pr = report(
-            outcome,
+            &pending,
             &Ok(Verdict::PullRequest("https://x/pull/2".into())),
             "b",
-            None,
         );
         assert!(pr.starts_with("onehand opened https://x/pull/2."), "{pr}");
-        let commits = report(outcome, &Ok(Verdict::Commits(2)), "b", None);
+        let commits = report(&pending, &Ok(Verdict::Commits(2)), "b");
         assert!(
             commits.starts_with("onehand left 2 commits on `b`."),
             "{commits}"
         );
-        let unknown = report(outcome, &Err("gh: offline".into()), "b", None);
+        let unknown = report(&pending, &Err("gh: offline".into()), "b");
         assert!(unknown.contains("could not tell") && unknown.contains("gh: offline"));
         assert!(!unknown.contains("no commit"), "{unknown}");
-        assert_ne!(ended(outcome), "");
+        assert_ne!(ended(pending.outcome.as_ref()), "");
     }
-    let one = report(&Outcome::Done, &Ok(Verdict::Commits(1)), "b", None);
+    let one = report(&ran(Outcome::Done), &Ok(Verdict::Commits(1)), "b");
     assert!(one.starts_with("onehand left 1 commit on `b`."), "{one}");
     let none = report(
-        &Outcome::Stopped(Stop::TimedOut),
+        &ran(Outcome::Stopped(Stop::TimedOut)),
         &Ok(Verdict::Commits(0)),
         "b",
-        None,
     );
     assert!(none.starts_with("onehand left no commit"), "{none}");
     assert!(none.contains("timeout"), "{none}");
@@ -385,37 +395,98 @@ fn every_outcome_has_a_sentence_and_the_work_leads() {
 
 #[test]
 fn what_the_last_step_ended_on_reaches_the_issue_unless_it_got_to_the_end() {
-    let tail = Some("Should I use A\nor B?");
-    let missed = report(
-        &Outcome::Exhausted {
+    let tail = Some("Should I use A\nor B?".to_string());
+    let missed = PendingReport {
+        ended_on: tail.clone(),
+        ..ran(Outcome::Exhausted {
             step: "Plan".into(),
-        },
-        &Ok(Verdict::Commits(0)),
-        "b",
-        tail,
-    );
-    assert!(missed.contains("> Should I use A\n> or B?"), "{missed}");
-    let done = report(&Outcome::Done, &Ok(Verdict::Commits(1)), "b", tail);
-    assert!(!done.contains('>'), "{done}");
+        })
+    };
+    let said = report(&missed, &Ok(Verdict::Commits(0)), "b");
+    assert!(said.contains("> Should I use A\n> or B?"), "{said}");
+    let done = PendingReport {
+        ended_on: tail,
+        ..ran(Outcome::Done)
+    };
+    let said = report(&done, &Ok(Verdict::Commits(1)), "b");
+    assert!(!said.contains('>'), "{said}");
 }
 
 #[test]
-fn a_tracker_kept_by_name_resolves_back() {
-    let all: [&'static dyn Connector; 1] = [&Fake::SERVING];
-    let tracker = forge();
-    let kept = tracker.to_ref();
-    assert_eq!(kept.resolve(&all).map(|t| t.to_ref()), Some(kept.clone()));
-    assert!(kept.resolve(&[]).is_none());
-    let source = IssueSource {
-        tracker: kept,
-        number: 7,
-        forge_ref: None,
-        forge: None,
-        base: "main".into(),
-        picked: false,
-        unsent: Vec::new(),
+fn a_run_that_ended_on_a_card_says_the_question() {
+    let asked = PendingReport {
+        asked: Some("Run awk?".into()),
+        ..ran(Outcome::Stopped(Stop::LinkLost))
     };
-    assert_eq!(source.shown(), tracker.shown(&issue(7, "a")));
+    let said = report(&asked, &Ok(Verdict::Commits(0)), "b");
+    assert!(
+        said.contains("nobody answered") && said.contains("> Run awk?"),
+        "{said}"
+    );
+}
+
+#[test]
+fn a_run_that_failed_before_asking_anything_could_not_start() {
+    let refused = PendingReport {
+        started: false,
+        ..ran(Outcome::Failed("the agent offers no mode `x`".into()))
+    };
+    let said = report(&refused, &Ok(Verdict::Commits(0)), "b");
+    assert_eq!(
+        said,
+        "onehand could not start the run: the agent offers no mode `x`"
+    );
+    // Failing later is a failure of the run, with its work said first.
+    let later = report(
+        &ran(Outcome::Failed("boom".into())),
+        &Ok(Verdict::Commits(1)),
+        "b",
+    );
+    assert!(later.starts_with("onehand left 1 commit"), "{later}");
+}
+
+#[test]
+fn a_run_cut_off_and_let_go_says_so() {
+    let let_go = PendingReport {
+        outcome: None,
+        ..ran(Outcome::Done)
+    };
+    let said = report(&let_go, &Ok(Verdict::Commits(0)), "b");
+    assert!(said.contains("cut off"), "{said}");
+}
+
+#[test]
+fn every_tracker_kept_by_name_resolves_back() {
+    let all: [&'static dyn Connector; 1] = [&Fake::SERVING];
+    let file = PathBuf::from("/kept/issues.json");
+    let trackers = [
+        forge(),
+        Tracker::Local(file.clone()),
+        Tracker::Synced {
+            file,
+            forge: &Fake::SERVING,
+        },
+    ];
+    for tracker in trackers {
+        // Exhaustive on purpose: a new tracker cannot be added without being
+        // kept and found again here.
+        match &tracker {
+            Tracker::Forge(_) | Tracker::Local(_) | Tracker::Synced { .. } => {}
+        }
+        let kept = tracker.to_ref();
+        assert_eq!(kept.resolve(&all).map(|t| t.to_ref()), Some(kept.clone()));
+        let source = IssueSource {
+            tracker: kept,
+            number: 7,
+            forge_ref: None,
+            forge: None,
+            base: "main".into(),
+            picked: false,
+            unsent: Vec::new(),
+        };
+        assert_eq!(source.shown(), tracker.shown(&issue(7, "a")));
+    }
+    assert!(forge().to_ref().resolve(&[]).is_none());
 }
 
 #[test]

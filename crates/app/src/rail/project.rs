@@ -347,7 +347,7 @@ pub(super) fn folder_row(
     // the project the issue belongs to would say nothing about it.
     // A working run is named ahead of a waiting one, since a project can hold
     // both and the older, usually the waiting one, would otherwise hide it.
-    let runs = crate::unattended::live_runs(cx);
+    let runs = crate::task::live_issues(cx);
     let run = run_on(
         runs.iter()
             .map(|run| (run.repo.as_path(), run.name.as_str(), run.waiting.is_some())),

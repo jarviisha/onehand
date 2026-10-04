@@ -546,8 +546,8 @@ A tick on `Shared` (one per process, like the bridge) looks for the oldest open 
 that carries the label, in the opted-in projects, in rail order, while fewer than `at_once` issue
 tasks run or wait in the queue across every window (`task::issues_working`, `unattended::room`);
 a project row says `auto`, `auto · #N` while a run is on issue N, or `auto · #N waiting` while it
-waits on a person (`crate::unattended::live_runs`, built from the task global by
-`task::live_issues`).
+waits on a person (`task::live_issues`). A task just kept counts against `at_once` until it has
+asked for its place (`unattended::placed`).
 **Everything outside the checkout goes through a connector, and a project that cannot be worked
 says so.** `onehand_core::connector::Connector` is the trait — account, whether it serves a project,
 issues, labels, comments, default branch, pull request — and `plugins/builtin/connector-github` is the
@@ -600,11 +600,13 @@ where `ChatPane::open_unshown` connects without showing and the worktree's root 
 `Setup::mode` when it first comes up (`came_up`); a mode it does not offer fails the run and pauses
 every run (`unattended::refuse_mode`). A card or an approval waits for a person, its time not counted
 (`unattended::Budget`), and gives up the slot: `unattended::waiting` looks for the next issue at once.
-**The report is kept before it is sent**: when the task gives its place up, `task::freed` calls
-`unattended::ended`, which drops the project (`end_unattended`, only a transient one) unless it was
-picked by hand or taken over (`adopt_unattended`, which saves it), then pushes
-`core::report(outcome, verdict, branch, last step's output)` onto `IssueSource::unsent` and saves
-the task before `deliver` sends it. A report is dropped only once the issue has it, the first failure
+**The report is kept before it is sent**: the driver's `finish` keeps a `PendingReport` on
+`IssueSource::unsent` (`unattended::keep`) and the file is saved before anything touches the
+network; a queued task stopped before it began and a cut-off one dismissed keep one too. Once the
+task's last mark is pinned and its place given up (`task::let_go`), `unattended::ended` drops the
+project (`end_unattended`, only a transient one) unless it was picked by hand or taken over
+(`adopt_unattended`, which saves it), and `deliver` looks for the verdict and sends
+`core::report`. A report is dropped only once the issue has it, the first failure
 stops the rest, and what is left is sent again at every tick and at boot (`deliver_all`);
 `task::history::over_cap` never removes a task whose report is unsent. The verdict is the forge's
 pull request on the branch, else the commits past the base (`unattended::Verdict`,
@@ -812,7 +814,7 @@ back to an older build: it would find no workflows or runs of the person's.
   a handover that restores it; `workbench_aside` remembers an open Workbench for
   `show_active_session` to reopen. `show_workbench` and `show_terminal` refuse while the page
   shows, which covers every key. **It holds no run store.** Runs are read per frame from
-  `unattended::live_runs` (a `LiveRun` each), and sessions from the uids `PageProject` carries
+  `task::live_issues` (a `LiveRun` each), and sessions from the uids `PageProject` carries
   through the same `signal` query the rail's dots use. The project list (branch line and
   session uids included) is built by `Shell::page_projects` when the page is shown and pushed again
   by every git sweep while it shows (`ChatPane::set_page_projects`); a session closing always

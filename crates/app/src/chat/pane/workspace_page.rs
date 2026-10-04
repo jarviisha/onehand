@@ -283,7 +283,7 @@ impl ChatPane {
         // end. For a waiting run what it is about is the question, since
         // answering that is what the row is pressed for.
         let (mut waiting, mut working) = (Vec::new(), Vec::new());
-        for run in crate::unattended::live_runs(cx) {
+        for run in crate::task::live_issues(cx) {
             let (uid, window) = (run.uid, run.window);
             let waits = run.waiting.is_some();
             let row = crate::dialogs::issue_row(

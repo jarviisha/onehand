@@ -112,14 +112,14 @@ impl Tracker {
     /// kept in onehand only — the number it is filed under there is a key,
     /// and beside a forge's own it reads as a second issue.
     pub fn shown(&self, issue: &Issue) -> String {
-        match (self, issue.forge_ref()) {
-            (Self::Forge(_), _) => format!("#{}", issue.number),
-            (_, Some(reference)) => reference.to_string(),
-            (_, None) => "Draft".to_string(),
-        }
+        shown(
+            lives_on_forge(self.to_ref()),
+            issue.number,
+            issue.forge_ref(),
+        )
     }
 
-    /// How the prompt names `issue`.
+    /// How a run's brief names `issue`, in what every step is asked.
     fn names(&self, issue: &Issue) -> String {
         let number = issue.number;
         match (self, issue.forge_ref()) {
@@ -343,6 +343,12 @@ fn slug(text: &str, max: usize) -> String {
     words.trim_matches('-').to_string()
 }
 
+/// How long the name of the forge in a branch may be.
+const FORGE_MAX: usize = 20;
+
+/// How long the title words in a branch may be.
+const WORDS_MAX: usize = 40;
+
 /// The branch a run on `issue` works on:
 /// `onehand/<where it lives>-<its number>-<title words>`.
 ///
@@ -355,13 +361,17 @@ fn slug(text: &str, max: usize) -> String {
 /// is cut rather than carried whole into a folder name.
 pub fn branch_for(tracker: &Tracker, issue: &Issue) -> String {
     let named = match (tracker, issue.forge_ref()) {
-        (Tracker::Forge(forge), _) => format!("{}-{}", slug(forge.name(), 20), issue.number),
-        (Tracker::Synced { forge, .. }, Some(reference)) => {
-            format!("{}-{}", slug(forge.name(), 20), slug(reference, 20))
+        (Tracker::Forge(forge), _) => {
+            format!("{}-{}", slug(forge.name(), FORGE_MAX), issue.number)
         }
+        (Tracker::Synced { forge, .. }, Some(reference)) => format!(
+            "{}-{}",
+            slug(forge.name(), FORGE_MAX),
+            slug(reference, FORGE_MAX)
+        ),
         (Tracker::Local(_) | Tracker::Synced { .. }, _) => format!("local-{}", issue.number),
     };
-    match slug(&issue.title, 40) {
+    match slug(&issue.title, WORDS_MAX) {
         words if words.is_empty() => format!("onehand/{named}"),
         words => format!("onehand/{named}-{words}"),
     }
@@ -445,18 +455,55 @@ pub struct IssueSource {
     /// only once the issue has it, so a report that could not be delivered is
     /// tried again rather than lost with the run.
     #[serde(default)]
-    pub unsent: Vec<String>,
+    pub unsent: Vec<PendingReport>,
 }
 
 impl IssueSource {
     /// How the issue is shown to a person, as [`Tracker::shown`] says.
     pub fn shown(&self) -> String {
-        match (&self.tracker, &self.forge_ref) {
-            (TrackerRef::Forge { .. }, _) => format!("#{}", self.number),
-            (_, Some(reference)) => reference.clone(),
-            (_, None) => "Draft".to_string(),
-        }
+        shown(
+            lives_on_forge(self.tracker.clone()),
+            self.number,
+            self.forge_ref.as_deref(),
+        )
     }
+}
+
+/// Whether an issue living in `tracker` lives on the forge itself.
+fn lives_on_forge(tracker: TrackerRef) -> bool {
+    match tracker {
+        TrackerRef::Forge { .. } => true,
+        TrackerRef::Local { .. } | TrackerRef::Synced { .. } => false,
+    }
+}
+
+/// How an issue is shown to a person: by the forge's number where it lives on
+/// the forge or is kept in step with one, and as a draft where it is kept in
+/// onehand only — the number it is filed under there is a key, and beside a
+/// forge's own it reads as a second issue.
+fn shown(on_forge: bool, number: u64, forge_ref: Option<&str>) -> String {
+    match (on_forge, forge_ref) {
+        (true, _) => format!("#{number}"),
+        (false, Some(reference)) => reference.to_string(),
+        (false, None) => "Draft".to_string(),
+    }
+}
+
+/// How one run of an issue's task ended, kept until the issue is told. What
+/// the run left on its branch is looked up when it is sent, so keeping it
+/// asks nothing of the network and lands before anything can be lost.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PendingReport {
+    /// The run it is about.
+    pub run: String,
+    /// How the run ended; `None` for one cut off and then let go.
+    pub outcome: Option<Outcome>,
+    /// Whether the run got as far as asking its agent anything.
+    pub started: bool,
+    /// What its last step answered or printed.
+    pub ended_on: Option<String>,
+    /// What a card still waiting asked when the run ended.
+    pub asked: Option<String>,
 }
 
 /// Where an issue lives, as a task keeps it: [`Tracker`] with its connector
@@ -472,7 +519,7 @@ impl TrackerRef {
     /// The tracker it names, among the connectors in `all`; `None` when its
     /// connector is not one of them.
     pub fn resolve(&self, all: &[&'static dyn Connector]) -> Option<Tracker> {
-        let named = |name: &str| all.iter().copied().find(|c| c.name() == name);
+        let named = |name: &str| crate::connector::named(all, name);
         Some(match self {
             Self::Forge { connector } => Tracker::Forge(named(connector)?),
             Self::Local { file } => Tracker::Local(file.clone()),
@@ -567,20 +614,20 @@ pub enum Verdict {
     Commits(u64),
 }
 
-/// The comment a run's end leaves on the issue: what looking for its work on
-/// `branch` found, then how the run ended, then what its last step `ended_on`
-/// when it did not get to the end.
+/// The comment `pending` leaves on the issue, given what looking for the
+/// run's work on `branch` found: the work first, then how the run ended, then
+/// a card it left waiting and what its last step ended on.
 ///
 /// **The work leads, whatever the ending.** A run that timed out may still
 /// have left commits, and a comment about the timeout alone would hide them.
 /// A lookup that *failed* is said as a failure and never as "nothing": that is
-/// a claim, and one nobody checked.
-pub fn report(
-    outcome: &Outcome,
-    found: &Result<Verdict, String>,
-    branch: &str,
-    ended_on: Option<&str>,
-) -> String {
+/// a claim, and one nobody checked. A run that failed before it asked its
+/// agent anything says only that it could not start: it left nothing to look
+/// for.
+pub fn report(pending: &PendingReport, found: &Result<Verdict, String>, branch: &str) -> String {
+    if let (Some(Outcome::Failed(why)), false) = (&pending.outcome, pending.started) {
+        return could_not_start(why);
+    }
     let head = match found {
         Ok(Verdict::PullRequest(url)) => format!("onehand opened {url}."),
         Ok(Verdict::Commits(0)) => format!("onehand left no commit on `{branch}`."),
@@ -590,9 +637,16 @@ pub fn report(
         ),
         Err(err) => format!("onehand could not tell what the run left on `{branch}`: {err}"),
     };
-    let said = format!("{head}\n\n{}", ended(outcome));
-    match ended_on.map(str::trim).filter(|tail| !tail.is_empty()) {
-        Some(tail) if *outcome != Outcome::Done => {
+    let mut said = format!("{head}\n\n{}", ended(pending.outcome.as_ref()));
+    if let Some(asked) = pending.asked.as_deref().filter(|q| !q.trim().is_empty()) {
+        said += &format!(
+            "\n\nIt ended waiting on a decision nobody answered:\n\n{}",
+            quoted(asked.trim())
+        );
+    }
+    let done = pending.outcome == Some(Outcome::Done);
+    match pending.ended_on.as_deref().map(str::trim) {
+        Some(tail) if !tail.is_empty() && !done => {
             format!("{said}\n\nIts last step ended on:\n\n{}", quoted(tail))
         }
         Some(_) | None => said,
@@ -600,7 +654,10 @@ pub fn report(
 }
 
 /// How a run ended, as a sentence for the issue.
-fn ended(outcome: &Outcome) -> String {
+fn ended(outcome: Option<&Outcome>) -> String {
+    let Some(outcome) = outcome else {
+        return "The run was cut off, and let go rather than resumed.".to_string();
+    };
     match outcome {
         Outcome::Done => "Every step of the workflow passed.".to_string(),
         Outcome::Stopped(Stop::ByPerson) => "The run was stopped by hand.".to_string(),

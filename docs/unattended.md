@@ -77,9 +77,9 @@ background executor, one interval in the config, no cron expressions.
 | `plugins/builtin/connector-github/src/lib.rs` | the `gh` calls, the `origin` and ssh-alias check, and the account check |
 | `crates/core/src/process.rs` | `output_within`: a command with a limit on its exit *and* its output, stopped with its whole process group |
 | `crates/core/src/task/history.rs` | `over_cap`, which never lets go of a task whose report is unsent |
-| `crates/app/src/unattended.rs` | the tick, the cap, `waiting`, `live_runs` |
+| `crates/app/src/unattended.rs` | the tick, the cap (`at_cap`, the tasks still `starting`), `waiting` |
 | `crates/app/src/unattended/launch.rs` | claiming an issue, cutting its worktree, and making it a task |
-| `crates/app/src/unattended/ending.rs` | `spec_for`, `refuse_mode`, `started`, `opening`, and the end: `ended`, `deliver`, `deliver_all` |
+| `crates/app/src/unattended/report.rs` | `spec_for`, `refuse_mode`, `started`, `opening`, and the end: `keep`, `card_question`, `ended`, `deliver`, `deliver_all` |
 | `crates/app/src/task.rs` | `freed`, which calls `unattended::ended`; `issues_working`, `live_issues`, `update_issue`, `undelivered` |
 | `crates/app/src/task/driver.rs` | `came_up` (the mode, the note on the issue), the clock, the take-over |
 | `crates/app/src/shell/workflows.rs` | `drive_task`, which brings an issue's run up off screen |
@@ -251,8 +251,8 @@ row carries a pill reading `auto`, `auto · #N` while a run is working issue N o
 that project, and `auto · #N waiting` while that run waits on a person — a
 working run is named ahead of a waiting one on the same project. The run's own
 session is on a worktree's row of its own, so without the pill the project the
-issue belongs to would say nothing about it. Both read `unattended::live_runs`,
-built from the tasks with a session under way.
+issue belongs to would say nothing about it. Both read `task::live_issues`, the
+issue tasks with a session under way.
 
 **Only issues you opened.** The issue body goes into the brief word for word,
 and the agent it goes to may run `git` and `gh` with your credentials. Anybody
@@ -454,10 +454,13 @@ again.
 
 ## The report
 
-When a run ends and its task gives its place up, `task::freed` calls
-`unattended::ended`: the project is dropped unless it was picked by hand or
-taken over, the verdict is looked for, and `report(outcome, verdict, branch,
-last step's output)` is what the issue is told. It opens on the verdict —
+A run's end is kept as a `PendingReport` the moment the driver ends it
+(`unattended::keep`): the run, its outcome, whether it asked its agent anything,
+what its last step ended on, and the question of a card still waiting. When its
+task has given its place up and pinned its last mark, `unattended::ended` drops
+the project unless it was picked by hand or taken over, and the report is sent.
+The verdict is looked for as it is sent, and `report(pending, verdict, branch)`
+is what the issue is told. It opens on the verdict —
 *"onehand opened <url>."*, *"onehand left N commits on `<branch>`."*, *"onehand
 left no commit on `<branch>`."*, or *"onehand could not tell what the run left
 on `<branch>`: <why>"* — then one sentence per outcome:
@@ -473,13 +476,18 @@ Exhausted { step } → "The run stopped after too many misses at the <step> step
 Failed(why)        → "The run failed: <why>"
 ```
 
-and, for any outcome but `Done`, what the last step ended on, quoted. A claim
-that then could not become a task is told `could_not_start` directly, best
-effort, since there is no task to keep it in.
+then the question of a card nobody answered, and, for any outcome but `Done`,
+what the last step ended on, quoted. A run that failed before it asked its agent
+anything (a mode the agent does not offer) is told only *"onehand could not start
+the run: <why>"*. A run cut off by a quit and then dismissed is told it was cut
+off and let go, and a queued task stopped before its run began is told it was
+stopped by hand, so no claim is left with nothing after it. A claim that then
+could not become a task is told `could_not_start` directly, best effort, since
+there is no task to keep it in.
 
 **The report is kept before it is sent.** It goes onto the task's
 `IssueSource::unsent`, and the task's file is saved, before anything reaches the
-issue. `deliver` sends the unsent reports oldest first and drops each only once
+network: even the verdict is looked for only when the report is sent. `deliver` sends the unsent reports oldest first and drops each only once
 the issue has it; the first that fails stops the rest, so the issue never hears
 them out of order. What is left is sent again at every tick and at the next
 start (`deliver_all`), and the history cap never removes a task whose report is

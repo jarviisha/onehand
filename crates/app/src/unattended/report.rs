@@ -3,12 +3,14 @@ use crate::chat::session::{ChatSession, note};
 use crate::state::Shared;
 use gpui::{App, Entity};
 use onehand_core::config::AgentSpec;
-use onehand_core::connector::Connector;
+use onehand_core::connector::{self, Connector};
 use onehand_core::task::Task;
-use onehand_core::unattended::{self as core, IssueSource, Tracker, TrackerRef, Verdict};
-use onehand_core::workflow::{Outcome, Stop};
+use onehand_core::unattended::{
+    self as core, IssueSource, PendingReport, Tracker, TrackerRef, Verdict,
+};
+use onehand_core::workflow::{Outcome, Run, Stop};
 use onehand_core::worktree;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 /// The agent a run starts, with every build it makes pointed at one shared
 /// directory.
@@ -116,46 +118,51 @@ pub(crate) fn opening(task: &Task, session: &Entity<ChatSession>, cx: &mut App) 
     }
 }
 
+/// Keep how `run` of task `id` ended, if the task works an issue, in its
+/// file before anything else happens to it: nothing here waits on the
+/// network, so a quit right after cannot lose it. `started` says whether the
+/// run asked its agent anything, and `asked` what a card still waiting asked.
+pub(crate) fn keep(id: &str, run: &Run, started: bool, asked: Option<String>, cx: &mut App) {
+    let pending = PendingReport {
+        run: run.id.clone(),
+        outcome: run.outcome.clone(),
+        started,
+        ended_on: run.visits().last().and_then(|visit| visit.output.clone()),
+        asked,
+    };
+    crate::task::update_issue(id, cx, |issue| issue.unsent.push(pending));
+}
+
+/// What a card still waiting in `session` asks, in its own words.
+pub(crate) fn card_question(session: &Entity<ChatSession>, cx: &App) -> Option<String> {
+    let chat = &session.read(cx).chat;
+    chat.pending_asks()
+        .last()
+        .map(|(_, ask)| ask.req.message.clone())
+        .or_else(|| {
+            chat.pending_permissions()
+                .last()
+                .map(|(_, permission)| permission.req.title.clone())
+        })
+}
+
 /// Issue task `id`'s run has ended and given its place up: drop its project
-/// unless a person has it, then tell the issue what the run left.
-///
-/// **The report is kept before it is sent.** It is put in the task's file
-/// first and taken out only once the issue has it, so a forge that cannot be
-/// reached, or a quit, never loses it: the next tick, or the next start,
-/// sends it again.
+/// unless a person has it, then tell the issue how the run ended.
 pub(crate) fn ended(id: &str, cx: &mut App) {
     let Some(task) = crate::task::task(id, cx) else {
         return;
     };
-    let (Some(issue), Some(run)) = (task.issue().cloned(), task.runs.last()) else {
+    let (Some(issue), Some(run)) = (task.issue(), task.runs.last()) else {
         return;
     };
-    let Some(outcome) = run.outcome.clone() else {
+    let Some(outcome) = &run.outcome else {
         return;
     };
     // A run picked by hand stays where the person watching it can read how it
     // ended, and a taken-over one is a person's now; both are kept for good.
-    let keep = issue.picked || outcome == Outcome::Stopped(Stop::TakenOver);
+    let keep = issue.picked || *outcome == Outcome::Stopped(Stop::TakenOver);
     teardown(&task.setup.dir, keep, cx);
-    let ended_on = run.visits().last().and_then(|visit| visit.output.clone());
-    let forge = issue.forge.as_deref().and_then(connector_named);
-    let (repo, dir) = (task.setup.repo.clone(), task.setup.dir.clone());
-    let branch = task.setup.branch.clone().unwrap_or_default();
-    let id = id.to_string();
-    cx.spawn(async move |cx| {
-        let said = cx
-            .background_executor()
-            .spawn(async move {
-                let found = verdict_blocking(forge, &repo, &dir, &branch, &issue.base);
-                core::report(&outcome, &found, &branch, ended_on.as_deref())
-            })
-            .await;
-        cx.update(|cx| {
-            crate::task::update_issue(&id, cx, |issue| issue.unsent.push(said));
-            deliver(id, cx);
-        });
-    })
-    .detach();
+    deliver(id.to_string(), cx);
 }
 
 /// Keep or drop the project a run worked in, in every window holding it. Only
@@ -201,11 +208,23 @@ pub(crate) fn deliver(id: String, cx: &mut App) {
         with(cx, |u| u.delivering.remove(&id));
         return;
     };
-    let (unsent, number, repo) = (issue.unsent.clone(), issue.number, task.setup.repo.clone());
+    let sending = Sending {
+        tracker,
+        number: issue.number,
+        forge: issue
+            .forge
+            .as_deref()
+            .and_then(|name| connector::named(crate::plugins::connectors(), name)),
+        base: issue.base.clone(),
+        repo: task.setup.repo.clone(),
+        dir: task.setup.dir.clone(),
+        branch: task.setup.branch.clone().unwrap_or_default(),
+    };
+    let unsent = issue.unsent.clone();
     cx.spawn(async move |cx| {
         let landed = cx
             .background_executor()
-            .spawn(async move { send_blocking(&tracker, &repo, number, &unsent) })
+            .spawn(async move { sending.send_blocking(&unsent) })
             .await;
         cx.update(|cx| {
             crate::task::update_issue(&id, cx, |issue: &mut IssueSource| {
@@ -224,19 +243,53 @@ pub(crate) fn deliver_all(cx: &mut App) {
     }
 }
 
-/// Leave each of `unsent` on issue `number`, in order: how many landed.
-fn send_blocking(tracker: &Tracker, repo: &Path, number: u64, unsent: &[String]) -> usize {
-    let mut landed = 0;
-    for body in unsent {
-        match tracker.comment_blocking(repo, number, body) {
-            Ok(()) => landed += 1,
-            Err(why) => {
-                eprintln!("onehand: could not tell issue #{number} how its run ended: {why}");
-                break;
+/// Where a task's reports go, and where to look for what its run left.
+struct Sending {
+    tracker: Tracker,
+    number: u64,
+    forge: Option<&'static dyn Connector>,
+    base: String,
+    repo: PathBuf,
+    dir: PathBuf,
+    branch: String,
+}
+
+impl Sending {
+    /// Leave each of `unsent` on the issue, in order, each with what its run
+    /// left as it stands now: how many landed.
+    fn send_blocking(&self, unsent: &[PendingReport]) -> usize {
+        let mut landed = 0;
+        for pending in unsent {
+            let found = self.verdict_blocking();
+            let body = core::report(pending, &found, &self.branch);
+            match self
+                .tracker
+                .comment_blocking(&self.repo, self.number, &body)
+            {
+                Ok(()) => landed += 1,
+                Err(why) => {
+                    eprintln!(
+                        "onehand: could not tell issue #{} how its run ended: {why}",
+                        self.number
+                    );
+                    break;
+                }
             }
         }
+        landed
     }
-    landed
+
+    /// What the run left: the pull request on its branch where the project
+    /// has a forge and one was opened, otherwise its commits past where it was
+    /// cut.
+    fn verdict_blocking(&self) -> Result<Verdict, String> {
+        if let Some(forge) = self.forge
+            && let Some(url) = forge.pull_request_for_blocking(&self.repo, &self.branch)?
+        {
+            return Ok(Verdict::PullRequest(url));
+        }
+        worktree::commits_since_blocking(&self.dir, &self.base).map(Verdict::Commits)
+    }
 }
 
 /// Leave `body` on issue `number`, saying on stderr if that failed: a run
@@ -245,30 +298,4 @@ pub(super) fn tell_issue(tracker: &Tracker, repo: &Path, number: u64, body: &str
     if let Err(why) = tracker.comment_blocking(repo, number, body) {
         eprintln!("onehand: could not comment on issue #{number}: {why}");
     }
-}
-
-/// The connector named `name`, if it is one of this build's.
-fn connector_named(name: &str) -> Option<&'static dyn Connector> {
-    crate::plugins::connectors()
-        .iter()
-        .copied()
-        .find(|c| c.name() == name)
-}
-
-/// What the run left: the pull request on its branch where the project has a
-/// forge and one was opened, otherwise its commits past where it was cut.
-/// Blocking.
-fn verdict_blocking(
-    forge: Option<&'static dyn Connector>,
-    repo: &Path,
-    dir: &Path,
-    branch: &str,
-    base: &str,
-) -> Result<Verdict, String> {
-    if let Some(forge) = forge
-        && let Some(url) = forge.pull_request_for_blocking(repo, branch)?
-    {
-        return Ok(Verdict::PullRequest(url));
-    }
-    worktree::commits_since_blocking(dir, base).map(Verdict::Commits)
 }

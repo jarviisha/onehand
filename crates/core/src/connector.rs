@@ -119,6 +119,11 @@ pub trait Connector: Send + Sync + 'static {
     }
 }
 
+/// The connector in `connectors` called `name`, if there is one.
+pub fn named(connectors: &[&'static dyn Connector], name: &str) -> Option<&'static dyn Connector> {
+    connectors.iter().copied().find(|c| c.name() == name)
+}
+
 /// Where in `connectors` the first one that serves the project at `root` is,
 /// or every reason none does.
 ///

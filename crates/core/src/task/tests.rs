@@ -366,7 +366,16 @@ fn issue_task(id: &str, at: u64, unsent: &[&str]) -> Task {
         forge: Some("Forge".into()),
         base: "origin/main".into(),
         picked: false,
-        unsent: unsent.iter().map(|s| s.to_string()).collect(),
+        unsent: unsent
+            .iter()
+            .map(|run| crate::unattended::PendingReport {
+                run: run.to_string(),
+                outcome: Some(Outcome::Done),
+                started: true,
+                ended_on: None,
+                asked: None,
+            })
+            .collect(),
     });
     t
 }
@@ -376,7 +385,7 @@ fn a_task_whose_issue_was_not_told_is_never_let_go() {
     let mut all: Vec<Task> = (0..history::KEPT)
         .map(|i| finished(&(i + 10).to_string(), "/a", 100 + i as u64))
         .collect();
-    all.push(issue_task("waits", 0, &["onehand left 1 commit"]));
+    all.push(issue_task("waits", 0, &["1"]));
     all.push(issue_task("told", 1, &[]));
     let listed: Vec<(&Task, Group)> = all.iter().map(|t| (t, t.group(None))).collect();
     assert_eq!(history::over_cap(&listed), ["told"]);
@@ -384,7 +393,7 @@ fn a_task_whose_issue_was_not_told_is_never_let_go() {
 
 #[test]
 fn an_issue_task_survives_its_file() {
-    let t = issue_task("1", 5, &["report"]);
+    let t = issue_task("1", 5, &["1"]);
     let json = serde_json::to_string(&t).unwrap();
     let back: Task = serde_json::from_str(&json).unwrap();
     assert_eq!(back, t);
