@@ -169,7 +169,8 @@ again. A check is retried from its one step, so one that passed runs again.
 `task::marks::against_blocking` answers `Same`, `Changed` or `OtherBranch`, and
 `Shell::begin_retry` (`crates/app/src/shell/workflows.rs`) asks the question. The dialog shows
 *Retry with the newer workflow (version N)* when the workflows on offer hold one that is newer than
-the run's snapshot (`Template::newer_than`: the same id at a higher version, or for a snapshot from
+the run's snapshot (`Template::newer_than`: the same id at a higher version, or at the same version with different
+content, as a hand edit leaves it; or for a snapshot from
 before ids the same name with different content) and validates, and it says where that one would
 start.
 

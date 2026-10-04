@@ -87,8 +87,9 @@ which a save would otherwise drop without a word; such a file is listed as unrea
 keeps its `id`, and its `version` goes up by one when what the template says changed (the version
 itself left out of the comparison). A file written before ids takes its file name when read. No
 old version is kept: a run's snapshot already holds the one it ran. `Template::newer_than` is the
-rule Retry offers *the newer workflow* by: the same `id` at a higher `version`, so a rename still
-finds it. A snapshot from before ids falls back to the same name with different content. A file
+rule Retry offers *the newer workflow* by: the same `id` at a higher `version`, or at the same
+`version` with different content, which is what a file edited by hand outside onehand looks like;
+a rename still finds it. A snapshot from before ids falls back to the same name with different content. A file
 copied by hand keeps its id, so two may share one, and Retry offers the first.
 
 ### Import and export

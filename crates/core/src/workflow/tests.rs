@@ -659,6 +659,14 @@ fn a_newer_template_is_one_saved_later_under_the_same_id() {
     later.id = "other".into();
     assert!(!later.newer_than(&snapshot));
 
+    // A file edited by hand keeps its version, and still counts.
+    let mut by_hand = snapshot.clone();
+    assert!(!by_hand.newer_than(&snapshot), "the same, unchanged");
+    by_hand.misses += 1;
+    assert!(by_hand.newer_than(&snapshot));
+    by_hand.version = 0;
+    assert!(!by_hand.newer_than(&snapshot), "an older version never is");
+
     // A run kept before ids falls back to the name and what it says.
     snapshot.id.clear();
     let mut same_name = checkout();

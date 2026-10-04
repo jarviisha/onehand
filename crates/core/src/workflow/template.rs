@@ -84,13 +84,18 @@ impl Template {
     }
 
     /// Whether `self` is a later save of the template a run kept as
-    /// `snapshot`: the same id at a higher version. A snapshot from before
-    /// ids has none, and then a template of the same name that says
-    /// something else counts.
+    /// `snapshot`: the same id at a higher version, or at the same version
+    /// saying something else, as a file edited by hand outside onehand does,
+    /// its version untouched. A snapshot from before ids has none, and then a
+    /// template of the same name that says something else counts.
     pub fn newer_than(&self, snapshot: &Self) -> bool {
         match snapshot.id.is_empty() {
             true => self.name == snapshot.name && !self.same_content(snapshot),
-            false => self.id == snapshot.id && self.version > snapshot.version,
+            false => {
+                self.id == snapshot.id
+                    && (self.version > snapshot.version
+                        || self.version == snapshot.version && !self.same_content(snapshot))
+            }
         }
     }
 
