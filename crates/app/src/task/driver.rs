@@ -19,8 +19,8 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 
-/// A call held until a mark is pinned.
-type Later = Box<dyn FnOnce(&mut App)>;
+/// A call held until a mark is pinned, and whether it ends the run.
+type Later = (bool, Box<dyn FnOnce(&mut App)>);
 
 /// A run under way on one session.
 pub(super) struct Driven {
@@ -33,8 +33,9 @@ pub(super) struct Driven {
     /// for waits on it, holding what a person or an event asked meanwhile.
     /// Done at once, an approval or a Stop would move the run on under the
     /// waiting action, which would then be carried out stale; held, each
-    /// runs once that action has. A turn ending meanwhile is not the one the
-    /// action will send.
+    /// runs once that action has. An ending held runs instead of the action,
+    /// so a prompt is never sent to a run already said to be over. A turn
+    /// ending meanwhile is not the one the action will send.
     held: Option<Vec<Later>>,
     session: WeakEntity<ChatSession>,
     /// How many prompts the run has sent its session: any more, and a person
@@ -140,12 +141,12 @@ pub(crate) fn start(
     act(uid, first, cx);
 }
 
-/// Hold `then` while a mark is being pinned for the run on session `uid`:
-/// whether it was held.
-fn held(uid: u64, cx: &mut App, then: impl FnOnce(&mut App) + 'static) -> bool {
+/// Hold `then`, which ends the run when `ends`, while a mark is being pinned
+/// for the run on session `uid`: whether it was held.
+fn held(uid: u64, cx: &mut App, ends: bool, then: impl FnOnce(&mut App) + 'static) -> bool {
     with(uid, cx, |d| match &mut d.held {
         Some(held) => {
-            held.push(Box::new(then));
+            held.push((ends, Box::new(then)));
             true
         }
         None => false,
@@ -155,7 +156,7 @@ fn held(uid: u64, cx: &mut App, then: impl FnOnce(&mut App) + 'static) -> bool {
 
 /// A person approved what the run waits on.
 pub(crate) fn approve(uid: u64, cx: &mut App) {
-    if held(uid, cx, move |cx| approve(uid, cx)) {
+    if held(uid, cx, false, move |cx| approve(uid, cx)) {
         return;
     }
     with(uid, cx, |d| d.budget.resume(Instant::now()));
@@ -165,7 +166,7 @@ pub(crate) fn approve(uid: u64, cx: &mut App) {
 /// A person sent it back with `note`.
 pub(crate) fn revise(uid: u64, note: String, cx: &mut App) {
     let later = note.clone();
-    if held(uid, cx, move |cx| revise(uid, later, cx)) {
+    if held(uid, cx, false, move |cx| revise(uid, later, cx)) {
         return;
     }
     with(uid, cx, |d| d.budget.resume(Instant::now()));
@@ -174,11 +175,18 @@ pub(crate) fn revise(uid: u64, note: String, cx: &mut App) {
 
 /// A person pressed Stop: the turn is cancelled and the run ends.
 pub(crate) fn stop(uid: u64, cx: &mut App) {
-    if held(uid, cx, move |cx| stop(uid, cx)) {
+    cut(uid, Stop::ByPerson, cx);
+}
+
+/// Cancel the turn under way and end the run as `stop`, as one call: held
+/// together while a mark is pinned, so the cancel never runs before a
+/// prompt the pin is still holding back.
+fn cut(uid: u64, stop: Stop, cx: &mut App) {
+    if held(uid, cx, true, move |cx| cut(uid, stop, cx)) {
         return;
     }
     cancel_turn(uid, cx);
-    end(uid, Stop::ByPerson, cx);
+    end(uid, stop, cx);
 }
 
 /// Read the run on session `uid`. Apart from [`with`] because every event the
@@ -200,7 +208,7 @@ fn with<R>(uid: u64, cx: &mut App, act: impl FnOnce(&mut Driven) -> R) -> Option
 /// A run said to be stopped never leaves a build or a test writing to the
 /// work behind it. The first reason given is the one the run ends with.
 fn end(uid: u64, stop: Stop, cx: &mut App) {
-    if held(uid, cx, move |cx| end(uid, stop, cx)) {
+    if held(uid, cx, true, move |cx| end(uid, stop, cx)) {
         return;
     }
     let running = with(uid, cx, |d| {
@@ -300,9 +308,17 @@ fn act(uid: u64, action: Action, cx: &mut App) {
             let Some(held) = held else {
                 return;
             };
+            // An ending asked meanwhile wins over the action, which would only
+            // start work on a run that is over; the first one asked is its
+            // reason, and the rest find nothing left to do.
+            let mut held = held;
+            if let Some(at) = held.iter().position(|(ends, _)| *ends) {
+                let (_, ending) = held.swap_remove(at);
+                return ending(cx);
+            }
             carry_out(uid, action, cx);
             // In the order asked; one that starts another pin holds the rest.
-            for then in held {
+            for (_, then) in held {
                 then(cx);
             }
         });
@@ -532,8 +548,7 @@ fn clock(uid: u64, left: Duration, cx: &mut App) -> Task<()> {
                 return;
             };
             if left.is_zero() {
-                cancel_turn(uid, cx);
-                end(uid, Stop::TimedOut, cx);
+                cut(uid, Stop::TimedOut, cx);
             } else {
                 let next = clock(uid, left, cx);
                 with(uid, cx, |d| d._clock = next);
