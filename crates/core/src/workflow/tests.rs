@@ -183,6 +183,11 @@ fn an_agent_step_passes_on_its_gates_and_keeps_its_answer() {
     );
     assert_eq!(run.marks.verified_at.as_deref(), Some("a"));
     assert!(run.over());
+    let done = Outcome::Done.said();
+    assert_eq!(
+        run.visits.last().unwrap().why.as_deref(),
+        Some(done.as_str())
+    );
 }
 
 #[test]
@@ -423,14 +428,14 @@ fn going_back_is_a_new_visit_and_each_keeps_how_it_came_out() {
     let ids: Vec<u32> = run.visits.iter().map(|v| v.id).collect();
     assert_eq!(ids, [1, 2, 3, 4, 5]);
     assert_eq!(run.visits[0].output.as_deref(), Some("The plan."));
-    assert_eq!(run.visits[0].result.as_deref(), Some("its gates held"));
+    assert_eq!(run.visits[0].why.as_deref(), Some("its gates held"));
     assert_eq!(run.visits[3].output.as_deref(), Some("test failed"));
-    assert_eq!(run.visits[3].result.as_deref(), Some("the command failed"));
+    assert_eq!(run.visits[3].why.as_deref(), Some("the command failed"));
     assert!(run.visits[4].ended_at.is_none(), "the last is the open one");
 
     run.stopped(Stop::ByPerson);
     let said = Outcome::Stopped(Stop::ByPerson).said();
-    assert_eq!(run.visits[4].result.as_deref(), Some(said.as_str()));
+    assert_eq!(run.visits[4].why.as_deref(), Some(said.as_str()));
 }
 
 #[test]
@@ -440,7 +445,7 @@ fn resume_closes_the_cut_off_visit_and_opens_one_of_the_same_step() {
     let mut back: Run = serde_json::from_str(&serde_json::to_string(&run).unwrap()).unwrap();
     assert_eq!(back.resume(), Action::AwaitApproval);
     assert_eq!(back.visits.len(), 3);
-    assert_eq!(back.visits[1].result.as_deref(), Some("interrupted"));
+    assert_eq!(back.visits[1].why.as_deref(), Some("interrupted"));
     assert_eq!(back.visits[2].step, "approve");
 
     // Stopped by its agent going: the visit was ended then, and resume opens
@@ -448,7 +453,7 @@ fn resume_closes_the_cut_off_visit_and_opens_one_of_the_same_step() {
     run.stopped(Stop::LinkLost);
     assert_eq!(run.resume(), Action::AwaitApproval);
     assert_eq!(run.visits.len(), 3);
-    assert_ne!(run.visits[1].result.as_deref(), Some("interrupted"));
+    assert_ne!(run.visits[1].why.as_deref(), Some("interrupted"));
     assert_eq!(run.outcome, None, "a resumed run has not ended");
 }
 

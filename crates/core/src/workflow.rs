@@ -20,7 +20,7 @@ mod template;
 mod validate;
 
 pub use facts::{run_command_blocking, Facts, Mark};
-pub use run::{Action, Brief, Outcome, Run, Setup, Stop, Visit};
+pub use run::{Action, Brief, Outcome, Run, Setup, Stop};
 pub use template::{GateKind, Place, StepKind, StepSpec, Template, SCHEMA_VERSION};
 pub use validate::validate;
 

@@ -16,7 +16,7 @@ pub fn dir() -> PathBuf {
 
 /// What the writer's thread is handed: a task to save, or a mark to answer
 /// once every save handed over before it has landed.
-enum Job {
+enum Op {
     Save(Box<Task>),
     Mark(mpsc::Sender<()>),
 }
@@ -26,23 +26,23 @@ enum Job {
 /// clone.
 #[derive(Clone)]
 pub struct Writer {
-    tx: mpsc::Sender<Job>,
+    tx: mpsc::Sender<Op>,
 }
 
 impl Writer {
     pub fn spawn(dir: PathBuf) -> Self {
-        let (tx, rx) = mpsc::channel::<Job>();
+        let (tx, rx) = mpsc::channel::<Op>();
         std::thread::Builder::new()
             .name("onehand-tasks".to_string())
             .spawn(move || {
                 for job in rx {
                     match job {
-                        Job::Save(task) => {
+                        Op::Save(task) => {
                             if let Err(why) = save_blocking(&dir, &task) {
                                 eprintln!("onehand: could not write a task's file: {why}");
                             }
                         }
-                        Job::Mark(landed) => {
+                        Op::Mark(landed) => {
                             let _ = landed.send(());
                         }
                     }
@@ -54,7 +54,7 @@ impl Writer {
     }
 
     pub fn save(&self, task: Task) {
-        if self.tx.send(Job::Save(Box::new(task))).is_err() {
+        if self.tx.send(Op::Save(Box::new(task))).is_err() {
             eprintln!("onehand: a task's file was not written: its writer is gone");
         }
     }
@@ -64,7 +64,7 @@ impl Writer {
     /// they all landed. Blocking.
     pub fn flush(&self, within: std::time::Duration) -> bool {
         let (mark, landed) = mpsc::channel();
-        self.tx.send(Job::Mark(mark)).is_ok() && landed.recv_timeout(within).is_ok()
+        self.tx.send(Op::Mark(mark)).is_ok() && landed.recv_timeout(within).is_ok()
     }
 }
 

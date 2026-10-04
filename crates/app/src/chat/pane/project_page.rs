@@ -591,10 +591,15 @@ fn unfinished_tasks(root: &Path, cx: &mut Context<ChatPane>) -> Option<gpui::Any
         .take(UNFINISHED_ROWS)
         .enumerate()
         .map(|(i, task)| {
-            let (first, second) = (task.id.clone(), task.id.clone());
-            let said = match task.queued {
-                true => format!("{} · starts at {}", task.name, task.step),
-                false => format!("{} · stopped at {}", task.name, task.step),
+            let (id, resume) = (task.id.clone(), task.id.clone());
+            let said = match (task.queued, task.begun) {
+                (true, true) => format!("{} · resumes at {}", task.name, task.step),
+                (true, false) => format!("{} · starts at {}", task.name, task.step),
+                (false, _) => format!("{} · stopped at {}", task.name, task.step),
+            };
+            let call_off = match task.begun {
+                true => "Call off this resume; the task stays as it was",
+                false => "Call off this start; the task does not run",
             };
             let row = div()
                 .h_flex()
@@ -622,9 +627,9 @@ fn unfinished_tasks(root: &Path, cx: &mut Context<ChatPane>) -> Option<gpui::Any
                             .ghost()
                             .small()
                             .label("Stop")
-                            .tooltip("Call off this start; the task does not run")
+                            .tooltip(call_off)
                             .on_click(cx.listener(move |_: &mut ChatPane, _, _, cx| {
-                                cx.emit(ChatPaneEvent::StopQueuedTask(first.clone()));
+                                cx.emit(ChatPaneEvent::StopQueuedTask(id.clone()));
                             })),
                     ),
                 false => row
@@ -635,7 +640,7 @@ fn unfinished_tasks(root: &Path, cx: &mut Context<ChatPane>) -> Option<gpui::Any
                             .label("Dismiss")
                             .tooltip("Let this task go; it is kept as history and its work stays")
                             .on_click(cx.listener(move |_: &mut ChatPane, _, _, cx| {
-                                cx.emit(ChatPaneEvent::DismissTask(first.clone()));
+                                cx.emit(ChatPaneEvent::DismissTask(id.clone()));
                             })),
                     )
                     .child(
@@ -644,7 +649,7 @@ fn unfinished_tasks(root: &Path, cx: &mut Context<ChatPane>) -> Option<gpui::Any
                             .label("Resume")
                             .tooltip("Carry on from that step in a new session")
                             .on_click(cx.listener(move |_: &mut ChatPane, _, _, cx| {
-                                cx.emit(ChatPaneEvent::ResumeTask(second.clone()));
+                                cx.emit(ChatPaneEvent::ResumeTask(resume.clone()));
                             })),
                     ),
             }

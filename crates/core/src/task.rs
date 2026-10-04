@@ -44,7 +44,7 @@ impl Task {
 
     /// How it stands: its last run's outcome, `None` while that run has not
     /// ended, or stopped by a person when it was called off before any run.
-    pub fn outcome(&self) -> Option<Outcome> {
+    pub(crate) fn outcome(&self) -> Option<Outcome> {
         match self.runs.last() {
             Some(run) => run.outcome.clone(),
             None => Some(Outcome::Stopped(Stop::ByPerson)),

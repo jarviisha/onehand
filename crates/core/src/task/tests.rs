@@ -168,7 +168,7 @@ fn git(dir: &Path, args: &[&str]) -> String {
         .arg("-C")
         .arg(dir)
         .args(args)
-        // No identity of anybody's: a mark must not need one.
+        // The test's own git calls read no identity of anybody's.
         .env("GIT_CONFIG_GLOBAL", "/dev/null")
         .env("GIT_CONFIG_NOSYSTEM", "1")
         .output()
@@ -182,7 +182,8 @@ fn a_mark_holds_untracked_work_and_leaves_the_persons_index_alone() {
     let repo = temp_dir("mark");
     git(&repo, &["init", "-q"]);
     std::fs::write(repo.join("first.txt"), "one").unwrap();
-    // On an unborn HEAD, with no identity configured.
+    // On an unborn HEAD, in a repository that sets no identity: the mark
+    // commits as onehand, whatever the person's own config says.
     let refs = [marks::ref_name("t", "r", 1, false)];
     let unborn = marks::pin_blocking(&repo, &refs).unwrap();
     assert_eq!(git(&repo, &["rev-parse", &refs[0]]), unborn);
@@ -222,4 +223,21 @@ fn a_mark_holds_untracked_work_and_leaves_the_persons_index_alone() {
         3
     );
     let _ = std::fs::remove_dir_all(&repo);
+}
+
+#[test]
+fn the_refs_still_to_pin_name_every_boundary_from_the_count_pinned() {
+    let mut t = task("9");
+    let run = &mut t.runs[0];
+    run.resume();
+    assert_eq!(
+        marks::refs_from("9", run, 0),
+        ["refs/onehand/tasks/9/9/1/start"]
+    );
+    assert!(marks::refs_from("9", run, 1).is_empty());
+    run.stopped(Stop::ByPerson);
+    assert_eq!(
+        marks::refs_from("9", run, 1),
+        ["refs/onehand/tasks/9/9/1/end"]
+    );
 }

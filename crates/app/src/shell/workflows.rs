@@ -249,9 +249,7 @@ impl Shell {
             let id = id.clone();
             cx.defer(move |cx| crate::task::release(id, cx));
         };
-        let Some(mut run) = crate::task::last_run(&id, cx)
-            .filter(|run| run.outcome.as_ref().is_none_or(|o| o.resumable()))
-        else {
+        let Some(mut run) = crate::task::resumable_run(&id, cx) else {
             return refused("That task has nothing left to run".to_string(), window, cx);
         };
         let dir = run.setup.dir.clone();

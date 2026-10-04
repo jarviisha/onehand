@@ -26,6 +26,9 @@ pub(super) struct Driven {
     pub(super) run: Run,
     /// How many of the run's boundaries have had their mark pinned, or tried.
     pinned: usize,
+    /// A mark is being pinned, and the action the engine asked for waits on
+    /// it: a turn ending meanwhile is not the one that action will send.
+    pinning: bool,
     session: WeakEntity<ChatSession>,
     /// How many prompts the run has sent its session: any more, and a person
     /// is driving.
@@ -111,6 +114,7 @@ pub(crate) fn start(
         spent_before: run.spent_secs,
         run,
         pinned,
+        pinning: false,
         session: session.downgrade(),
         sent: 0,
         answer_from: 0,
@@ -187,7 +191,11 @@ fn advance(uid: u64, cx: &mut App, report: impl FnOnce(&mut Run) -> Action) {
 
 fn on_event(uid: u64, session: &Entity<ChatSession>, event: &ChatEvent, cx: &mut App) {
     let Some((sent, pending, awaiting_turn)) = read(uid, cx, |d| {
-        (d.sent, d.pending.is_some(), d.run.awaiting_turn())
+        (
+            d.sent,
+            d.pending.is_some(),
+            d.run.awaiting_turn() && !d.pinning,
+        )
     }) else {
         return;
     };
@@ -228,13 +236,10 @@ fn act(uid: u64, action: Action, cx: &mut App) {
     if ends_run(&action) || action == Action::Idle {
         return carry_out(uid, action, cx);
     }
-    let unpinned = read(uid, cx, |d| {
-        let crossed = d.run.boundaries();
-        let refs: Vec<String> = crossed[d.pinned.min(crossed.len())..]
-            .iter()
-            .map(|(visit, end)| marks::ref_name(&d.task, &d.run.id, *visit, *end))
-            .collect();
-        (!refs.is_empty()).then(|| (d.run.setup.dir.clone(), refs, d.pinned))
+    let unpinned = with(uid, cx, |d| {
+        let refs = marks::refs_from(&d.task, &d.run, d.pinned);
+        d.pinning = !refs.is_empty();
+        d.pinning.then(|| (d.run.setup.dir.clone(), refs, d.pinned))
     })
     .flatten();
     let Some((dir, refs, from)) = unpinned else {
@@ -253,6 +258,7 @@ fn act(uid: u64, action: Action, cx: &mut App) {
                     Err(why) => eprintln!("onehand: a step's mark was not pinned: {why}"),
                 }
                 d.pinned = total;
+                d.pinning = false;
             });
             // Ended while the mark was being made: nothing is left to do.
             if live.is_some() {

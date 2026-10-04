@@ -50,6 +50,10 @@ impl Default for Tasks {
 impl Global for Tasks {}
 
 impl Tasks {
+    fn task(&self, id: &str) -> Option<&Task> {
+        self.tasks.iter().find(|task| task.id == id)
+    }
+
     fn task_mut(&mut self, id: &str) -> Option<&mut Task> {
         self.tasks.iter_mut().find(|task| task.id == id)
     }
@@ -68,7 +72,7 @@ impl Tasks {
     }
 
     fn save(&self, id: &str) {
-        if let Some(task) = self.tasks.iter().find(|task| task.id == id) {
+        if let Some(task) = self.task(id) {
             self.writer.save(task.clone());
         }
     }
@@ -131,12 +135,12 @@ pub(crate) fn add(task: Task, cx: &mut App) {
     });
 }
 
-/// The last run of task `id`, to drive.
-pub(crate) fn last_run(id: &str, cx: &App) -> Option<Run> {
+/// The last run of task `id`, to drive, while the task may be picked up:
+/// not dismissed, and its run not ended on its own outcome.
+pub(crate) fn resumable_run(id: &str, cx: &App) -> Option<Run> {
     cx.try_global::<Tasks>()?
-        .tasks
-        .iter()
-        .find(|task| task.id == id)?
+        .task(id)
+        .filter(|task| task.resumable())?
         .runs
         .last()
         .cloned()
@@ -148,7 +152,7 @@ pub(crate) fn last_run(id: &str, cx: &App) -> Option<Run> {
 pub(crate) fn request(id: String, window: &mut Window, cx: &mut Context<Shell>) {
     let Some(dir) = cx
         .try_global::<Tasks>()
-        .and_then(|t| t.tasks.iter().find(|task| task.id == id))
+        .and_then(|t| t.task(&id))
         .map(|task| task.setup.dir.clone())
     else {
         return;
@@ -176,9 +180,7 @@ pub(crate) fn request(id: String, window: &mut Window, cx: &mut Context<Shell>) 
                 Some(false) => {
                     let title = cx
                         .global::<Tasks>()
-                        .tasks
-                        .iter()
-                        .find(|task| task.id == id)
+                        .task(&id)
                         .map_or_else(String::new, |task| task.brief.title.clone());
                     let at = place.file_name().map_or_else(
                         || place.display().to_string(),
@@ -245,14 +247,9 @@ fn ended(
 /// then give its place to whoever waits for it.
 fn freed(id: String, from: usize, cx: &mut App) {
     let unpinned = cx.try_global::<Tasks>().and_then(|t| {
-        let task = t.tasks.iter().find(|task| task.id == id)?;
+        let task = t.task(&id)?;
         let run = task.runs.last()?;
-        let refs: Vec<String> = run
-            .boundaries()
-            .into_iter()
-            .skip(from)
-            .map(|(visit, end)| marks::ref_name(&task.id, &run.id, visit, end))
-            .collect();
+        let refs = marks::refs_from(&task.id, run, from);
         (!refs.is_empty()).then(|| (run.setup.dir.clone(), refs))
     });
     let Some((dir, refs)) = unpinned else {
@@ -377,10 +374,15 @@ pub(crate) struct Listed {
     pub(crate) title: String,
     pub(crate) step: String,
     pub(crate) queued: bool,
+    /// Its run took a step before: waiting, it waits to be resumed, and
+    /// calling that off leaves it as it was.
+    pub(crate) begun: bool,
 }
 
 /// The tasks started from, or working in, the project at `root` that wait
-/// on a person or on their place, in the order they were started.
+/// on a person or on their place, in the order they were started. One that
+/// ended but still holds its place, its session's turn not yet over, is
+/// left out until it lets go: nothing can be done with it before then.
 pub(crate) fn listed_in(root: &Path, cx: &App) -> Vec<Listed> {
     let Some(t) = cx.try_global::<Tasks>() else {
         return Vec::new();
@@ -388,7 +390,7 @@ pub(crate) fn listed_in(root: &Path, cx: &App) -> Vec<Listed> {
     t.tasks
         .iter()
         .filter(|task| task.setup.repo == root || task.setup.dir == root)
-        .filter(|task| task.resumable() && !t.live.values().any(|d| d.task == task.id))
+        .filter(|task| task.resumable() && (t.queue.queued(&task.id) || !t.busy(&task.id)))
         .map(|task| {
             let run = task.runs.last();
             Listed {
@@ -399,6 +401,7 @@ pub(crate) fn listed_in(root: &Path, cx: &App) -> Vec<Listed> {
                     .and_then(Run::current)
                     .map_or_else(String::new, |step| step.label.clone()),
                 queued: t.queue.queued(&task.id),
+                begun: run.is_some_and(|run| !run.history.is_empty()),
             }
         })
         .collect()

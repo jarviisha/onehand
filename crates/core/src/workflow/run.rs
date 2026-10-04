@@ -161,23 +161,23 @@ enum Await {
 /// One stay at a step: going back to a step is a new visit, never a rewrite
 /// of the last one, so a step visited twice keeps both.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct Visit {
+pub(crate) struct Visit {
     /// Its number in the run, from 1.
-    pub id: u32,
+    pub(crate) id: u32,
     /// The step's id.
-    pub step: String,
+    pub(crate) step: String,
     /// Seconds past the epoch.
-    pub started_at: u64,
+    pub(crate) started_at: u64,
     /// `None` while the visit is the run's open one.
-    pub ended_at: Option<u64>,
+    pub(crate) ended_at: Option<u64>,
     /// The commit pinned for the work as the visit found it, and as it left
     /// it; `None` until pinned, or when pinning failed.
-    pub start: Option<String>,
-    pub end: Option<String>,
+    pub(crate) start: Option<String>,
+    pub(crate) end: Option<String>,
     /// The answer it kept, or how its failed command's output ended.
-    pub output: Option<String>,
-    /// How it came out.
-    pub result: Option<String>,
+    pub(crate) output: Option<String>,
+    /// Why it ended, as its history says it.
+    pub(crate) why: Option<String>,
 }
 
 /// How many transitions a run's history keeps, newest last.
@@ -213,7 +213,7 @@ pub struct Run {
     /// Every stay at a step, oldest first. Not capped: each one ends on a
     /// miss or a person, and the answers they keep are capped already.
     #[serde(default)]
-    pub visits: Vec<Visit>,
+    pub(crate) visits: Vec<Visit>,
     /// How the run ended; `None` while it has not, which after a restart
     /// means it was cut off.
     #[serde(default)]
@@ -226,7 +226,7 @@ impl Run {
     /// A run of `template` on `brief`, not started: [`Run::resume`] starts
     /// it, so a run that waited for its place and one picked up again take
     /// the same way in.
-    pub fn new(id: String, template: Template, brief: Brief, setup: Setup) -> Self {
+    pub(crate) fn new(id: String, template: Template, brief: Brief, setup: Setup) -> Self {
         Self {
             id,
             template,
@@ -501,13 +501,14 @@ impl Run {
     /// Go to the step at `at`, or end done past the last.
     fn enter(&mut self, at: usize, why: &str) -> Action {
         let from = self.step_id();
-        self.close_visit(why);
         let Some(to) = self.template.steps.get(at).map(|step| step.id.clone()) else {
+            self.close_visit(&Outcome::Done.said());
             self.log(from, "done".to_string(), why);
             self.awaiting = Await::Nothing;
             self.outcome = Some(Outcome::Done);
             return Action::Finish(Outcome::Done);
         };
+        self.close_visit(why);
         self.open_visit(to.clone());
         if at > self.furthest {
             self.furthest = at;
@@ -583,15 +584,15 @@ impl Run {
             start: None,
             end: None,
             output: None,
-            result: None,
+            why: None,
         });
     }
 
-    /// End the open visit, if there is one, as `result`.
-    fn close_visit(&mut self, result: &str) {
+    /// End the open visit, if there is one, for `why`.
+    fn close_visit(&mut self, why: &str) {
         if let Some(visit) = self.visits.last_mut().filter(|v| v.ended_at.is_none()) {
             visit.ended_at = Some(now());
-            visit.result = Some(result.to_string());
+            visit.why = Some(why.to_string());
         }
     }
 
