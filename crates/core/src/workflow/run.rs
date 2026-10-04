@@ -267,11 +267,17 @@ impl Run {
             let find = |t: &Template| t.steps.iter().find(|s| s.id == step).cloned();
             find(&template).is_some_and(|s| Some(s) == find(&prev.template))
         };
+        // Passed means passed in the last run's own template: a step dropped
+        // earlier on in `template` must not move one it failed into the past.
+        let passed = |step: &str| {
+            prev.template
+                .index_of(step)
+                .is_some_and(|at| at < prev.step)
+        };
         let start = template
             .steps
             .iter()
-            .enumerate()
-            .position(|(i, step)| {
+            .position(|step| {
                 let reads: Vec<&str> = match &step.kind {
                     StepKind::Agent { prompt, .. } => prompt::refs(prompt)
                         .into_iter()
@@ -280,7 +286,7 @@ impl Run {
                     StepKind::Approval { of } => vec![of.as_str()],
                     StepKind::Command { on_fail, .. } => vec![on_fail.as_str()],
                 };
-                i >= prev.step
+                !passed(&step.id)
                     || !same(&step.id)
                     || reads.iter().any(|read| !read.is_empty() && !same(read))
             })
@@ -330,10 +336,12 @@ impl Run {
         !self.history.is_empty()
     }
 
-    /// The mark pinned where the run's last visit left the work, once it
-    /// has one.
-    pub fn last_end(&self) -> Option<&str> {
-        self.visits.last()?.end.as_deref()
+    /// The last mark pinned of the work: where the run's last visit left
+    /// it, or where that visit found it when the run was cut off before the
+    /// visit ended.
+    pub fn last_mark(&self) -> Option<&str> {
+        let visit = self.visits.last()?;
+        visit.end.as_deref().or(visit.start.as_deref())
     }
 
     /// The run has ended.

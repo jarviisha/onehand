@@ -130,11 +130,13 @@ With the previous run's own snapshot, nothing differs, so a retry starts where t
   and the retry still carries outputs over, since a person fixing something by hand is the usual
   reason to retry. The new run's first mark records the work as it now is.
 
-A retry with no end mark to compare against, or whose comparison fails, skips this check. **A
-check task is retried at once**, with no dialog: it is a fresh run of its one step.
+A run cut off before its last visit ended is compared with that visit's start mark instead
+(`Run::last_mark`). A retry with no mark to compare against, or whose comparison fails, skips this
+check. **A check task is retried at once**, with no dialog: it is a fresh run of its one step.
 
 In code: `Run::retry_of` (`crates/core/src/workflow/run.rs`) builds the new run with `step` and
-`furthest` at the start step and the outputs of the steps before it; `Task::retry` pushes it.
+`furthest` at the start step. A step counts as passed by where it stood in the last run's own
+template, so dropping an earlier step never moves a failed one into the past and the outputs of the steps before it; `Task::retry` pushes it.
 `Run::resume` enters the run's own step on its first start, which is step 0 for a fresh run.
 `task::marks::against_blocking` answers `Same`, `Changed` or `OtherBranch`, and
 `Shell::begin_retry` (`crates/app/src/shell/workflows.rs`) asks the question. The dialog shows

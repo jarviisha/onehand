@@ -762,6 +762,19 @@ fn a_retry_starts_at_the_first_step_whose_prompt_changed() {
     assert!(next.outputs.is_empty());
 }
 
+/// A step carries over only if the last run passed it in its own template:
+/// dropping a step earlier on must not move the failed one into the past.
+#[test]
+fn a_retry_never_skips_a_step_the_last_run_did_not_pass() {
+    let prev = exhausted_at_verify();
+    let mut changed = prev.template.clone();
+    changed.steps.remove(1);
+    let mut next = Run::retry_of(&prev, "2".into(), changed);
+    assert_eq!(next.current().map(|s| s.id.as_str()), Some("verify"));
+    assert_eq!(next.outputs.len(), 1, "the plan carries");
+    assert!(matches!(next.resume(), Action::RunCommand(_)));
+}
+
 #[test]
 fn a_retry_does_not_carry_an_approval_whose_of_changed() {
     let prev = exhausted_at_implement();

@@ -349,7 +349,7 @@ impl Shell {
             .find(|t| {
                 t.name == last.template.name && *t != last.template && core::validate(t).is_empty()
             });
-        let (dir, end) = (last.setup.dir.clone(), last.last_end().map(str::to_string));
+        let (dir, end) = (last.setup.dir.clone(), last.last_mark().map(str::to_string));
         cx.spawn_in(window, async move |shell, cx| {
             let against = match end {
                 Some(end) => cx
