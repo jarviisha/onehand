@@ -341,8 +341,7 @@ One window hosts exactly one workspace. The frame is a navigation **rail** plus 
     when) opening onto the same timeline.
   Bounded and said: the newest 20 earlier runs, the newest 100 visits per run,
   100 files per visit, the last 60 lines of an output or answer, 400 lines of a
-  diff. A task let go by
-  the history cap while open leaves the cards on screen.
+  diff. A task let go by the history cap while open leaves the cards on screen.
 - The **rail** is app chrome, not a panel: it lives outside the dock, so the dock
   cannot swallow it and a layout restore cannot lose it. `Ctrl+Shift+B` **hides
   it entirely** — it is never narrowed to an icon column, because at that width

@@ -160,11 +160,10 @@ In code: `Run::retry_start` (`crates/core/src/workflow/run.rs`) says where a ret
 `Run::retry_offered` which step the dialog offers first, and `Run::retry_plan` where a retry from a
 picked step starts and how many answers it carries, which is what the dialog says. `Run::retry_of`
 builds the new run from that plan, with `step` and `furthest` at its start and the outputs of the
-steps before it. A step
-counts as passed by where it stood in the last run's own template, so dropping an earlier step
-never moves a failed one into the past. `Task::retry` pushes it and clears `dismissed`, so a task
-let go comes back live and a failure lands under *Needs attention* again. A check is retried from
-its one step, so one that passed runs again.
+steps before it. A step counts as passed by where it stood in the last run's own template, so
+dropping an earlier step never moves a failed one into the past. `Task::retry` pushes it and
+clears `dismissed`, so a task let go comes back live and a failure lands under *Needs attention*
+again. A check is retried from its one step, so one that passed runs again.
 `Run::resume` enters the run's own step on its first start, which is step 0 for a fresh run.
 `task::marks::against_blocking` answers `Same`, `Changed` or `OtherBranch`, and
 `Shell::begin_retry` (`crates/app/src/shell/workflows.rs`) asks the question. The dialog shows

@@ -307,12 +307,15 @@ impl Run {
     /// earlier at step `from` when `template` has it, and how many answers
     /// of the steps before that it carries over.
     pub fn retry_plan(prev: &Run, template: &Template, from: Option<&str>) -> (usize, usize) {
+        let start = Run::retry_from(prev, template, from);
+        (start, Run::carried(prev, template, start).count())
+    }
+
+    /// [`Run::retry_start`], or step `from` when `template` has it earlier.
+    fn retry_from(prev: &Run, template: &Template, from: Option<&str>) -> usize {
         let start = Run::retry_start(prev, template);
-        let start = from
-            .and_then(|step| template.index_of(step))
-            .map_or(start, |at| at.min(start));
-        let carried = Run::carried(prev, template, start).count();
-        (start, carried)
+        from.and_then(|step| template.index_of(step))
+            .map_or(start, |at| at.min(start))
     }
 
     /// The answers `prev` kept for the steps of `template` before `start`.
@@ -330,7 +333,7 @@ impl Run {
     /// where [`Run::retry_plan`] says, with what the steps before the start
     /// kept carried over.
     pub(crate) fn retry_of(prev: &Run, id: String, template: Template, from: Option<&str>) -> Self {
-        let (start, _) = Run::retry_plan(prev, &template, from);
+        let start = Run::retry_from(prev, &template, from);
         let outputs = Run::carried(prev, &template, start).collect();
         let mut run = Run::new(id, template, prev.brief.clone(), prev.setup.clone());
         run.step = start;
