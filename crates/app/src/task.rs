@@ -16,7 +16,7 @@ use onehand_core::workflow::{Action, Run, Stop, Template, run_command_blocking};
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
 mod driver;
 pub(crate) use driver::{approve, revise, start, stop};
@@ -39,7 +39,19 @@ pub(crate) struct Tasks {
     /// history bounded.
     // ponytail: counts since boot only; persist it if people ask.
     removed: HashMap<PathBuf, usize>,
+    /// How many commands, a check's or a step's, have not exited yet.
+    commands: Arc<AtomicUsize>,
     writer: files::Writer,
+}
+
+/// A command counted as running until this drops, which its background work
+/// does the moment the command has exited.
+pub(super) struct Running(Arc<AtomicUsize>);
+
+impl Drop for Running {
+    fn drop(&mut self) {
+        self.0.fetch_sub(1, Ordering::SeqCst);
+    }
 }
 
 impl Default for Tasks {
@@ -52,6 +64,7 @@ impl Default for Tasks {
             draining: HashMap::new(),
             checks: HashMap::new(),
             removed: HashMap::new(),
+            commands: Arc::default(),
             writer: files::Writer::spawn(files::dir()),
         }
     }
@@ -87,6 +100,12 @@ impl Tasks {
         }
     }
 
+    /// Count a command as running until the guard drops.
+    pub(super) fn command_started(&self) -> Running {
+        self.commands.fetch_add(1, Ordering::SeqCst);
+        Running(self.commands.clone())
+    }
+
     /// Whether task `id` is running or waiting for its place.
     fn busy(&self, id: &str) -> bool {
         self.working(id).is_some()
@@ -119,10 +138,28 @@ pub(crate) fn boot(cx: &mut App) {
     // save still queued would die with it. The wait is in the future, which
     // runs once the windows are gone and their sessions have let go of their
     // runs, so those last writes are already queued ahead of it.
+    //
+    // A command still running is called off and waited for as well: left
+    // alone, it would go on writing to the work after the app is gone, beside
+    // whatever task starts there next.
     let writer = cx.global::<Tasks>().writer.clone();
-    cx.on_app_quit(move |_| {
-        let writer = writer.clone();
+    let commands = cx.global::<Tasks>().commands.clone();
+    cx.on_app_quit(move |cx| {
+        if let Some(t) = cx.try_global::<Tasks>() {
+            let steps = t.live.values().filter_map(|d| d.command.as_ref());
+            for cancel in t.checks.values().chain(steps) {
+                cancel.store(true, Ordering::SeqCst);
+            }
+        }
+        let (writer, commands) = (writer.clone(), commands.clone());
         async move {
+            let until = std::time::Instant::now() + QUIT_WAIT;
+            while commands.load(Ordering::SeqCst) > 0 && std::time::Instant::now() < until {
+                std::thread::sleep(std::time::Duration::from_millis(20));
+            }
+            if commands.load(Ordering::SeqCst) > 0 {
+                eprintln!("onehand: a command was still running at quit");
+            }
             if !writer.flush(QUIT_WAIT) {
                 eprintln!("onehand: a task's last write may not have landed");
             }
@@ -454,9 +491,12 @@ pub(crate) fn drive_check(id: String, window: AnyWindowHandle, cx: &mut App) {
     };
     let cancel = Arc::new(AtomicBool::new(false));
     let refs = marks::refs_from(&id, &run, from);
-    cx.update_global::<Tasks, _>(|t, _| {
+    // Counted from before the pin: a quit meanwhile waits for the command
+    // too, which never starts once called off.
+    let running = cx.update_global::<Tasks, _>(|t, _| {
         t.checks.insert(id.clone(), cancel.clone());
         t.store_run(&id, run.clone());
+        t.command_started()
     });
     cx.refresh_windows();
     let dir = run.setup.dir.clone();
@@ -471,8 +511,12 @@ pub(crate) fn drive_check(id: String, window: AnyWindowHandle, cx: &mut App) {
             let cancel = cancel.clone();
             cx.background_executor()
                 .spawn(async move {
-                    run_command_blocking(&dir, &command, &cancel)?;
-                    onehand_core::worktree::head_blocking(&dir)
+                    let ran = run_command_blocking(&dir, &command, &cancel);
+                    drop(running);
+                    ran?;
+                    // Passed on its exit status; the commit is kept when
+                    // there is one, and a folder outside git has none.
+                    Ok(onehand_core::worktree::head_blocking(&dir).ok())
                 })
                 .await
         };

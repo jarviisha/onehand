@@ -288,7 +288,8 @@ pull request, before the migration it protects.
   the spot and never saved or validated. *Run check* on the project page keeps the task and asks
   for its place like any other. With no session to watch, the driver is not involved:
   `task::drive_check` pins the start mark, runs the command on the background executor with a
-  cancel flag, reports `command_finished` (or `stopped` by a person when called off), says *Check
+  cancel flag, reports `command_finished` (passed on the exit status alone, so a folder outside
+  git or a repository with no commit passes too) (or `stopped` by a person when called off), says *Check
   passed in <project>* or *Check failed in <project>* in the window it was asked from, then pins the end mark
   and gives the place up.
 - **The history cap runs** once the tasks are read at boot and whenever a task lets go of its

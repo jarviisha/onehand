@@ -178,7 +178,7 @@ fn an_agent_step_passes_on_its_gates_and_keeps_its_answer() {
         Action::RunCommand("make check".into())
     );
     assert_eq!(
-        run.command_finished(Ok("a".into())),
+        run.command_finished(Ok(Some("a".into()))),
         Action::Finish(Outcome::Done)
     );
     assert_eq!(run.marks.verified_at.as_deref(), Some("a"));
@@ -813,4 +813,19 @@ fn a_retry_counts_its_misses_from_zero() {
     // One miss is under the allowance again.
     prompt_of(next.turn_ended(&facts("a", false, 0, "d0"), ""));
     assert_eq!((next.misses, next.outcome.clone()), (1, None));
+}
+
+/// A command passes on its exit status: the commit it ran on is kept when
+/// there is one, and a folder outside git, or a repository with no commit,
+/// passes the same way.
+#[test]
+fn a_command_passes_on_its_exit_status_with_or_without_a_commit() {
+    let mut t = crate::task::Task::check("1".into(), "true".into(), setup(None));
+    let run = &mut t.runs[0];
+    assert!(matches!(run.resume(), Action::RunCommand(_)));
+    assert_eq!(
+        run.command_finished(Ok(None)),
+        Action::Finish(Outcome::Done)
+    );
+    assert_eq!(run.marks.verified_at, None);
 }

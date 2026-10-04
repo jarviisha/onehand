@@ -289,7 +289,7 @@ fn a_file_from_before_checks_reads_as_a_workflows_task() {
 fn a_check_task_passes_or_fails_on_its_command() {
     let setup = task("1").setup;
     for (ran, outcome) in [
-        (Ok("abc".to_string()), Outcome::Done),
+        (Ok(Some("abc".to_string())), Outcome::Done),
         (
             Err("boom".to_string()),
             Outcome::Failed("the command failed".into()),

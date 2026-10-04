@@ -480,15 +480,16 @@ impl Run {
         }
     }
 
-    /// The step's command finished: `Ok` with the commit it passed on, or
-    /// `Err` with how its output ended.
-    pub fn command_finished(&mut self, ran: Result<String, String>) -> Action {
+    /// The step's command finished: `Ok` when it exited zero, with the commit
+    /// it passed on when the work has one, or `Err` with how its output
+    /// ended. Whether it passed is its exit status alone.
+    pub fn command_finished(&mut self, ran: Result<Option<String>, String>) -> Action {
         if self.awaiting != Await::Command {
             return Action::Idle;
         }
         match ran {
             Ok(head) => {
-                self.marks.verified_at = Some(head);
+                self.marks.verified_at = head;
                 self.check_output = None;
                 self.enter(self.step + 1, "the command passed")
             }

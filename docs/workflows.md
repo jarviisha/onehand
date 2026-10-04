@@ -112,8 +112,9 @@ the run's history, capped at 200.
   `code_unchanged` or `uncommitted` is measured again before the carry-on, and the mark keeps both
   fingerprints, because a person working in the same checkout may have made the change; the agent is
   told to undo only its own.
-- **A command step** runs its command, or the project's check command; passing records the head as
-  `verified_at`, failing is a miss and goes back to `on_fail` carrying the output.
+- **A command step** runs its command, or the project's check command. It passes on its exit status
+  alone and records the head as `verified_at` when the work has one; failing is a miss and goes
+  back to `on_fail` carrying the output.
 - **An approval step** waits. *Continue* goes on; *Revise…* goes back to the step it approves, whose
   prompt then carries the note and its last answer. A revision is not a miss.
 - **Misses are counted per stretch**: they reset only when the run reaches a step further on than it
@@ -140,8 +141,9 @@ subscribes to the session and maps its events onto the engine:
 **Every one of these goes through one `end`, and a step's command is stopped first.** While a
 command runs, the run holds the flag that calls it off (`process::output_until`): ending sets it,
 the command's whole process group is killed, and the run is said to be stopped only once the
-command has exited, so a stopped run never leaves a build or a test writing to the work. The first
-reason given is the one the run ends with.
+command has exited, so a stopped run never leaves a build or a test writing to the work. A
+command called off before it started is never started. The first reason given is the one the run
+ends with.
 
 A prompt asked for before the adapter is up waits for the link. The clock is
 `unattended::Budget`: it pauses while a card or an approval waits on a person, and its timer looks
@@ -153,8 +155,10 @@ saves in the order sent, so a late save can never land over a newer one. A task'
 whatever the outcome: it is the task's history. The run keeps its outcome (`Run::outcome`), so a
 run with none after a restart was cut off. **A run whose agent stopped or whose session went** can
 be resumed: neither is the run's own outcome, and app shutdown can look like either. Quitting
-waits, briefly, for the writes still queued (`Writer::flush`), so a run's last save is not lost when
-the process exits with its last window.
+calls off every command still running, a step's or a check's, and waits, briefly, for each to
+exit, so none goes on writing to the work beside the next task there; then it waits for the
+writes still queued (`Writer::flush`), so a run's last save is not lost when the process exits
+with its last window.
 
 **A run records step visits** (`Run::visits`): each stay at a step, with its times, what it kept
 (the answer, or how a failed command's output ended) and how it came out. Going back to a step is a

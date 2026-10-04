@@ -69,6 +69,11 @@ pub fn output_until(
     limit: Duration,
     cancel: &AtomicBool,
 ) -> Result<Output, Failure> {
+    // Called off already: never started, so it cannot touch the work in the
+    // moment before the first look at the flag below.
+    if cancel.load(Ordering::SeqCst) {
+        return Err(Failure::Cancelled);
+    }
     #[cfg(unix)]
     std::os::unix::process::CommandExt::process_group(cmd, 0);
     let mut child = cmd
@@ -174,6 +179,22 @@ mod tests {
         assert!(started.elapsed() < Duration::from_secs(3));
         std::thread::sleep(Duration::from_millis(1500));
         assert!(!marker.exists(), "a child of the stopped command still ran");
+    }
+
+    /// Called off before it began: it never starts, so it cannot touch the
+    /// work in the moment before the first look at the flag.
+    #[test]
+    fn a_command_called_off_before_it_starts_never_runs() {
+        let marker = std::env::temp_dir().join(format!("onehand-unstarted-{}", std::process::id()));
+        let _ = std::fs::remove_file(&marker);
+        let cancel = AtomicBool::new(true);
+        let out = output_until(
+            Command::new("touch").arg(&marker),
+            Duration::from_secs(5),
+            &cancel,
+        );
+        assert!(matches!(out, Err(Failure::Cancelled)));
+        assert!(!marker.exists(), "the called-off command ran");
     }
 
     #[test]

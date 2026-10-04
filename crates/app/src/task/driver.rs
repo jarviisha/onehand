@@ -58,7 +58,7 @@ pub(super) struct Driven {
     /// The agent parked a card nobody has answered yet.
     card: bool,
     /// Set to call off the step's command, while one is running.
-    command: Option<Arc<AtomicBool>>,
+    pub(super) command: Option<Arc<AtomicBool>>,
     /// How the run ends once its called-off command has exited.
     stopping: Option<Stop>,
     _watch: Subscription,
@@ -517,12 +517,16 @@ fn run_command(uid: u64, session: &Entity<ChatSession>, command: String, cx: &mu
     };
     note(session, format!("Running: {command}"), cx);
     let weak = session.downgrade();
+    let running = cx.global::<Tasks>().command_started();
     cx.spawn(async move |cx| {
         let ran = cx
             .background_executor()
             .spawn(async move {
-                run_command_blocking(&dir, &command, &cancel)?;
-                worktree::head_blocking(&dir)
+                let ran = run_command_blocking(&dir, &command, &cancel);
+                drop(running);
+                ran?;
+                // Passed on its exit status; the commit is kept when there is one.
+                Ok(worktree::head_blocking(&dir).ok())
             })
             .await;
         cx.update(|cx| {
