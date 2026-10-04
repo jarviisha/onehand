@@ -12,6 +12,15 @@ pub const SCHEMA_VERSION: u32 = 1;
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Template {
     pub schema_version: u32,
+    /// What names this template whatever it is called: a person's own file
+    /// takes its file name when first saved, a shipped one `builtin:<name>`.
+    /// Empty in a run kept by a build from before ids.
+    #[serde(default)]
+    pub id: String,
+    /// How many times its file has been saved with something changed,
+    /// counting from 1.
+    #[serde(default = "default_version")]
+    pub version: u32,
     pub name: String,
     #[serde(default)]
     pub description: String,
@@ -27,6 +36,10 @@ pub struct Template {
     pub steps: Vec<StepSpec>,
 }
 
+fn default_version() -> u32 {
+    1
+}
+
 fn default_misses() -> u32 {
     3
 }
@@ -40,6 +53,8 @@ impl Template {
     pub fn blank(name: &str) -> Self {
         Self {
             schema_version: SCHEMA_VERSION,
+            id: String::new(),
+            version: default_version(),
             name: name.to_string(),
             description: String::new(),
             place: Place::Checkout,
@@ -56,6 +71,32 @@ impl Template {
             StepKind::Command { command, .. } => command.is_none(),
             StepKind::Agent { .. } | StepKind::Approval { .. } => false,
         })
+    }
+
+    /// Whether `self` and `other` say the same, whatever their id and version.
+    pub(crate) fn same_content(&self, other: &Self) -> bool {
+        let bare = |t: &Self| Self {
+            id: String::new(),
+            version: 0,
+            ..t.clone()
+        };
+        bare(self) == bare(other)
+    }
+
+    /// Whether `self` is a later save of the template a run kept as
+    /// `snapshot`: the same id at a higher version, or at the same version
+    /// saying something else, as a file edited by hand outside onehand does,
+    /// its version untouched. A snapshot from before ids has none, and then a
+    /// template of the same name that says something else counts.
+    pub fn newer_than(&self, snapshot: &Self) -> bool {
+        match snapshot.id.is_empty() {
+            true => self.name == snapshot.name && !self.same_content(snapshot),
+            false => {
+                self.id == snapshot.id
+                    && (self.version > snapshot.version
+                        || self.version == snapshot.version && !self.same_content(snapshot))
+            }
+        }
     }
 
     /// Where the step `id` is, if the template has one.
@@ -94,6 +135,35 @@ pub struct StepSpec {
     pub label: String,
     #[serde(flatten)]
     pub kind: StepKind,
+}
+
+impl StepSpec {
+    /// What the step does, in a line: its kind, then what it checks or runs
+    /// and where it leads.
+    pub fn summary(&self) -> String {
+        match &self.kind {
+            StepKind::Agent {
+                gates, keep_answer, ..
+            } => {
+                let mut parts = vec!["Agent".to_string()];
+                if !gates.is_empty() {
+                    let gates: Vec<&str> = gates.iter().map(|gate| gate.label()).collect();
+                    parts.push(gates.join(", "));
+                }
+                if *keep_answer {
+                    parts.push("keeps its answer".to_string());
+                }
+                parts.join(" · ")
+            }
+            StepKind::Command { command, on_fail } => format!(
+                "Command · {} · back to {on_fail} on failure",
+                command
+                    .as_deref()
+                    .map_or_else(|| "the project's check".to_string(), |c| format!("`{c}`"))
+            ),
+            StepKind::Approval { of } => format!("Approval of {of}"),
+        }
+    }
 }
 
 /// What a step does.

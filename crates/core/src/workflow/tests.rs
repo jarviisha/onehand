@@ -140,6 +140,40 @@ fn validate_names_each_kind_of_problem() {
     }
     has(&t, "cannot hold in a checkout");
     has(&t, "both changed and unchanged");
+
+    let mut t = checkout();
+    if let StepKind::Agent { prompt, .. } = &mut t.steps[0].kind {
+        prompt.push_str(" {check_output}");
+    }
+    if let StepKind::Agent { prompt, .. } = &mut t.steps[2].kind {
+        prompt.push_str(" {check_output} {revise}");
+    }
+    let all = said(&t);
+    assert_eq!(all.len(), 2, "{all:?}");
+    has(
+        &t,
+        "Step 1: its prompt names `{check_output}`, but no later command step",
+    );
+    has(
+        &t,
+        "Step 3: its prompt names `{revise}`, but no later approval",
+    );
+
+    let mut t = checkout();
+    if let StepKind::Agent { prompt, .. } = &mut t.steps[0].kind {
+        prompt.push_str(" {revise}");
+    }
+    assert_eq!(said(&t), Vec::<String>::new(), "the approval sends it back");
+
+    let mut t = builtin::all().remove(1);
+    if let StepKind::Agent { gates, .. } = &mut t.steps[1].kind {
+        gates.retain(|gate| *gate != GateKind::Committed);
+    }
+    has(&t, "no agent step has the gate Committed");
+
+    let mut t = checkout();
+    t.steps[2].label = " Plan ".into();
+    has(&t, "Step 3: its label `Plan` is used by an earlier step");
 }
 
 #[test]
@@ -532,14 +566,16 @@ fn a_template_written_by_a_newer_onehand_is_refused_and_never_written_over() {
 #[test]
 fn templates_are_saved_one_file_each_under_their_name() {
     let dir = temp_dir("save");
-    let first = store::save_blocking(&dir, None, &checkout()).unwrap();
-    let second = store::save_blocking(&dir, None, &checkout()).unwrap();
+    let first = store::save_blocking(&dir, None, &checkout()).unwrap().0;
+    let second = store::save_blocking(&dir, None, &checkout()).unwrap().0;
     assert_eq!(first, dir.join("work-in-checkout.toml"));
     assert_eq!(second, dir.join("work-in-checkout-2.toml"));
     let mut renamed = checkout();
     renamed.name = "Renamed".into();
     assert_eq!(
-        store::save_blocking(&dir, Some(&first), &renamed).unwrap(),
+        store::save_blocking(&dir, Some(&first), &renamed)
+            .unwrap()
+            .0,
         first
     );
     let loaded = store::load_all_blocking(&dir);
@@ -549,6 +585,120 @@ fn templates_are_saved_one_file_each_under_their_name() {
     store::delete_blocking(&second).unwrap();
     assert_eq!(store::load_all_blocking(&dir).len(), 1);
     let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn a_save_sets_the_id_and_counts_versions_of_what_changed() {
+    let dir = temp_dir("versions");
+    let (file, first) = store::save_blocking(&dir, None, &checkout()).unwrap();
+    assert_eq!((first.id.as_str(), first.version), ("work-in-checkout", 1));
+
+    let (_, same) = store::save_blocking(&dir, Some(&file), &first).unwrap();
+    assert_eq!(same.version, 1, "nothing changed");
+
+    let mut renamed = same.clone();
+    renamed.name = "Renamed".into();
+    // Whatever the caller says, the file's own id and version count.
+    renamed.id = "elsewhere".into();
+    renamed.version = 9;
+    let (_, saved) = store::save_blocking(&dir, Some(&file), &renamed).unwrap();
+    assert_eq!((saved.id.as_str(), saved.version), ("work-in-checkout", 2));
+    let loaded = store::load_all_blocking(&dir);
+    assert_eq!(loaded[0].1.as_ref().unwrap(), &saved);
+
+    // A duplicate is a new file, and so a new id.
+    let (_, copy) = store::save_blocking(&dir, None, &saved).unwrap();
+    assert_eq!((copy.id.as_str(), copy.version), ("renamed", 1));
+
+    // A file from before ids takes its file's name.
+    let old = dir.join("old.toml");
+    let text = toml::to_string_pretty(&checkout()).unwrap();
+    let text: String = text
+        .lines()
+        .filter(|line| *line != "id = \"builtin:checkout\"" && !line.starts_with("version ="))
+        .map(|line| format!("{line}\n"))
+        .collect();
+    std::fs::write(&old, text).unwrap();
+    let loaded = store::load_all_blocking(&dir);
+    let (_, read) = loaded.iter().find(|(path, _)| *path == old).unwrap();
+    let read = read.as_ref().unwrap();
+    assert_eq!((read.id.as_str(), read.version), ("old", 1));
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn an_export_is_offered_under_the_name_as_a_file_name() {
+    assert_eq!(store::export_name(&checkout()), "work-in-checkout.toml");
+}
+
+#[test]
+fn a_key_onehand_does_not_read_is_refused() {
+    let text = toml::to_string_pretty(&checkout()).unwrap();
+    let top = format!("colour = \"red\"\n{text}");
+    assert!(store::parse(&top)
+        .unwrap_err()
+        .contains("a key `colour` that onehand does not read"));
+    let in_step = text.replacen("of = \"plan\"", "of = \"plan\"\ngate = \"x\"", 1);
+    assert!(store::parse(&in_step)
+        .unwrap_err()
+        .contains("`steps[1].gate`"));
+    assert!(store::parse(&text).is_ok());
+}
+
+#[test]
+fn a_newer_template_is_one_saved_later_under_the_same_id() {
+    let mut snapshot = checkout();
+    let mut later = snapshot.clone();
+    later.name = "Renamed".into();
+    later.version = 2;
+    assert!(later.newer_than(&snapshot), "found by id after a rename");
+    assert!(
+        !snapshot.newer_than(&later),
+        "an older version is not newer"
+    );
+    later.id = "other".into();
+    assert!(!later.newer_than(&snapshot));
+
+    // A file edited by hand keeps its version, and still counts.
+    let mut by_hand = snapshot.clone();
+    assert!(!by_hand.newer_than(&snapshot), "the same, unchanged");
+    by_hand.misses += 1;
+    assert!(by_hand.newer_than(&snapshot));
+    by_hand.version = 0;
+    assert!(!by_hand.newer_than(&snapshot), "an older version never is");
+
+    // A run kept before ids falls back to the name and what it says.
+    snapshot.id.clear();
+    let mut same_name = checkout();
+    assert!(
+        !same_name.newer_than(&snapshot),
+        "the same, only with an id"
+    );
+    same_name.misses += 1;
+    assert!(same_name.newer_than(&snapshot));
+}
+
+#[test]
+fn the_first_prompt_is_filled_with_the_brief_and_the_gates() {
+    let text = first_prompt(&checkout(), &brief()).unwrap();
+    assert!(text.contains("Title: Fix the thing\n\nIt is broken."));
+    assert!(text.contains("Do not edit any file or commit"));
+    assert!(first_prompt(&Template::blank("x"), &brief()).is_none());
+}
+
+#[test]
+fn a_step_says_what_it_does_in_a_line() {
+    let t = checkout();
+    let said: Vec<String> = t.steps.iter().map(StepSpec::summary).collect();
+    assert_eq!(
+        said,
+        [
+            "Agent · Answered, Code unchanged · keeps its answer",
+            "Approval of plan",
+            "Agent · Code changed, Uncommitted",
+            "Command · the project's check · back to implement on failure",
+        ]
+    );
 }
 
 #[test]

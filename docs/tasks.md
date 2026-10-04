@@ -168,8 +168,11 @@ again. A check is retried from its one step, so one that passed runs again.
 `Run::resume` enters the run's own step on its first start, which is step 0 for a fresh run.
 `task::marks::against_blocking` answers `Same`, `Changed` or `OtherBranch`, and
 `Shell::begin_retry` (`crates/app/src/shell/workflows.rs`) asks the question. The dialog shows
-*Retry with the newer workflow* when the workflows on offer hold one of the same name that differs
-from the run's snapshot and validates, and it says where that one would start.
+*Retry with the newer workflow (version N)* when the workflows on offer hold one that is newer than
+the run's snapshot (`Template::newer_than`: the same id at a higher version, or at the same version with different
+content, as a hand edit leaves it; or for a snapshot from
+before ids the same name with different content) and validates, and it says where that one would
+start.
 
 ## The architecture
 
@@ -341,6 +344,7 @@ Milestone 1+2 lands as three pull requests in a row, each with its docs.
 | 1. Rename and migration (landed) | `workflow` (was `pipeline`), `workflow::Run` (was `PipelineRun`); `workflow::store::migrate_old_dir_blocking` moves `pipelines/` to `workflows/`, restartably; `instance::hold_lock` | `boot` takes the lock, then runs the move; every module, type and string renamed, the `Workflows` global and Settings ▸ Workflows; a `run_pipeline` keymap override is read as `run_workflow` |
 | 2. Tasks, history, visits and the queue (landed) | `task`, `task::files` and the move of `pipeline-runs/`; step visits; `task::marks`; `task::queue` keyed by the real checkout | `Workflows` → `Tasks` global; the driver records visits and marks their end; every start asks the queue, and a place is given up only once the work has stopped |
 | 3. The Tasks page, the check as a task, and Retry (landed) | group rule, history cap; a one-step run with no agent; what a retry carries over | page, rail row and count, project filter; the project page links here; Retry from *Needs attention* |
+| Milestone 4: the workflow library (landed) | `Template::id`, `version` and `newer_than`, set by `store::save_blocking`; unknown keys refused; fuller validation; `first_prompt`, `StepSpec::summary`, `store::export_blocking` | Import and Export in Settings ▸ Workflows; the launcher's preview; Retry offers the newer workflow by id |
 | Milestone 3: the task detail (landed) | `Visit` public; `Run::retry_start`, `retry_of` from an earlier step; `Task::retry` clears `dismissed`; `task::marks::changes_blocking` and `file_diff_blocking` | the detail in `chat/pane/tasks_page.rs`; the retry dialog's step menu |
 
 Each one brings its glossary terms and turns its part of this file into the account of the code.
@@ -353,4 +357,3 @@ Each one brings its glossary terms and turns its part of this file into the acco
 - **Arbitrary commands as tasks.** Only the project's check command, until a real need shows.
 - **Plain sessions on the page.** A card a plain session parks is signalled on the rail, as now.
 - **Warning when a task starts beside a person's own session** in the same checkout.
-- **Template versions, import and export**, which are milestone 4's.

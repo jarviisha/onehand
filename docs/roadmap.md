@@ -42,6 +42,12 @@ from its marks), what waits for approval with *Open session*, and the earlier ru
 on a finished task there too, and its dialog has a step menu to start from an earlier step; a
 dismissed task retried is live again.
 
+Milestone 4 has landed: every workflow has an **id** and a **version**, set when it is saved, and
+Retry finds the newer workflow by id, a rename included. Settings ▸ Workflows imports and exports a
+workflow file, the launcher previews the steps and the first prompt before Run, and validation
+refuses unknown keys, variables that would always be empty, a worktree workflow that never commits
+and two steps with one label.
+
 Not there yet:
 - The workflow mock agent (`crates/core/examples/mock_workflow_agent.js`) and the checklist in
   [workflows.md](workflows.md#checking-it-by-hand) are in the repository; a full pass of the
@@ -230,6 +236,15 @@ The rename is already done by 1+2.
 - **The pipeline mock agent takes its orders from the brief** (`miss`, `fail-check`), as
   `mock_ui_agent.js` takes `fast`. The manual checklist is a section of the workflows doc and
   moves with it when it is renamed.
+- **A template has an id and a version counter, and no old version is kept.** A run's snapshot
+  already holds the one it ran. A new file takes its file name as id, a shipped one
+  `builtin:<name>`; the save alone sets both, so a duplicate or an import always gets a new id.
+- **Import and export are a template file to and from disk**, nothing more. An import opens in the
+  form and is written only at Save.
+- **The preview lives in the launcher, before Run**, collapsed by default.
+- **Fuller validation refuses** unknown TOML keys, a variable that would always be empty, a
+  worktree workflow with no step gated `committed`, and a label used twice. A file with an
+  unknown key reads as unreadable and is never written over.
 - **The per-checkout lock comes before any cap on concurrency.** Two runs editing one checkout is
   the failure possible today. A workspace-wide cap arrives with milestone 5, before issues are
   taken up automatically.

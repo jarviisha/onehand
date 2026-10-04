@@ -42,6 +42,72 @@ impl Shell {
         self.open_workflow_form(template, None, window, cx);
     }
 
+    /// Ask where to, then write template `at` to a file of the person's
+    /// choosing, shipped ones included.
+    pub fn export_workflow(&mut self, at: usize, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(entry) = crate::workflow::templates(cx).get(at).cloned() else {
+            return;
+        };
+        let Ok(template) = entry.template else {
+            return;
+        };
+        let name = core::store::export_name(&template);
+        cx.spawn_in(window, async move |shell, cx| {
+            // The native dialog blocks until it is answered, so it runs off
+            // the UI thread, as does the write.
+            let written = cx
+                .background_executor()
+                .spawn(async move {
+                    let path = rfd::FileDialog::new().set_file_name(name).save_file()?;
+                    Some(core::store::export_blocking(&path, &template))
+                })
+                .await;
+            let Some(written) = written else {
+                return;
+            };
+            let _ = shell.update_in(cx, |shell: &mut Self, window, cx| {
+                shell.report_write("Exported workflow", written, true, window, cx);
+                cx.notify();
+            });
+        })
+        .detach();
+    }
+
+    /// Ask for a template file, then open the form on it as a new workflow:
+    /// nothing is written until it is saved, which gives it an id of its own.
+    pub fn import_workflow(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        cx.spawn_in(window, async move |shell, cx| {
+            let read = cx
+                .background_executor()
+                .spawn(async move {
+                    let path = rfd::FileDialog::new()
+                        .add_filter("Workflow", &["toml"])
+                        .pick_file()?;
+                    Some(
+                        core::store::read_blocking(&path)
+                            .map_err(|why| format!("{} cannot be read: {why}", path.display())),
+                    )
+                })
+                .await;
+            let Some(read) = read else {
+                return;
+            };
+            let _ = shell.update_in(cx, |shell: &mut Self, window, cx| {
+                match read {
+                    Ok(template) => shell.open_workflow_form(template, None, window, cx),
+                    Err(why) => window.push_notification(
+                        gpui_component::notification::Notification::error(format!(
+                            "Workflow not imported — {why}"
+                        )),
+                        cx,
+                    ),
+                }
+                cx.notify();
+            });
+        })
+        .detach();
+    }
+
     /// Open the form on the person's own template `at`.
     pub fn edit_workflow(&mut self, at: usize, window: &mut Window, cx: &mut Context<Self>) {
         let Some(entry) = crate::workflow::templates(cx).get(at).cloned() else {
@@ -149,16 +215,15 @@ impl Shell {
             return;
         }
         cx.spawn_in(window, async move |shell, cx| {
-            let kept = template.clone();
             let saved = cx
                 .background_executor()
                 .spawn(async move {
-                    core::store::save_blocking(&core::store::dir(), file.as_deref(), &kept)
+                    core::store::save_blocking(&core::store::dir(), file.as_deref(), &template)
                 })
                 .await;
             let _ = shell.update_in(cx, |shell: &mut Self, window, cx| {
                 match saved {
-                    Ok(path) => {
+                    Ok((path, written)) => {
                         // Only the form that was saved learns its file: one
                         // opened on another template meanwhile would otherwise
                         // take this file, and its next save overwrite it.
@@ -168,7 +233,7 @@ impl Shell {
                             .filter(|d| d.name.entity_id() == form)
                         {
                             draft.file = Some(path);
-                            draft.original = template;
+                            draft.original = written;
                         }
                         shell.report_write("Workflow", Ok::<(), String>(()), true, window, cx);
                         crate::workflow::reload_templates(cx);

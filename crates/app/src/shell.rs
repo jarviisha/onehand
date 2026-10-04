@@ -30,6 +30,7 @@ mod workflows;
 pub use boot::{boot, open_or_focus, seed_workspace};
 pub use drafts::{BranchDraft, Draft, WorktreeDraft};
 pub use workflows::WorkflowLauncher;
+pub(crate) use workflows::brief;
 
 gpui::actions!(
     onehand,

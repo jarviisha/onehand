@@ -3,7 +3,7 @@
 //! names nothing or a prompt variable with no value.
 
 use super::prompt;
-use super::template::{GateKind, StepKind, Template, SCHEMA_VERSION};
+use super::template::{GateKind, StepKind, StepSpec, Template, SCHEMA_VERSION};
 
 /// One thing wrong with a template: the step it is in, by position, if it is
 /// in one.
@@ -44,6 +44,17 @@ pub fn validate(template: &Template) -> Vec<Problem> {
     if template.steps.is_empty() {
         whole("it has no steps".to_string());
     }
+    let commits = template.steps.iter().any(|step| match &step.kind {
+        StepKind::Agent { gates, .. } => gates.contains(&GateKind::Committed),
+        StepKind::Command { .. } | StepKind::Approval { .. } => false,
+    });
+    if template.place == super::Place::Worktree && !template.steps.is_empty() && !commits {
+        whole(
+            "it works on a worktree, and no agent step has the gate Committed, so the branch \
+             could end with nothing on it"
+                .to_string(),
+        );
+    }
 
     let steps = &template.steps;
     for (at, step) in steps.iter().enumerate() {
@@ -62,9 +73,13 @@ pub fn validate(template: &Template) -> Vec<Problem> {
         } else if earlier.iter().any(|other| other.id == step.id) {
             here(format!("its id `{}` is used by an earlier step", step.id));
         }
-        if step.label.trim().is_empty() {
+        let label = step.label.trim();
+        if label.is_empty() {
             here("it has no label".to_string());
+        } else if earlier.iter().any(|other| other.label.trim() == label) {
+            here(format!("its label `{label}` is used by an earlier step"));
         }
+        let later = &steps[at + 1..];
         // An earlier agent step by id, and whether it keeps its answer.
         let agent = |id: &str| {
             earlier
@@ -81,6 +96,19 @@ pub fn validate(template: &Template) -> Vec<Problem> {
                     here("its prompt is empty".to_string());
                 }
                 for name in prompt::refs(prompt) {
+                    // A variable only a later step sending this one back
+                    // fills in is always empty without one.
+                    let unfed = SENT_BACK.iter().find(|(var, _)| *var == name).filter(|_| {
+                        !later
+                            .iter()
+                            .any(|other| fills_on_send_back(other, &step.id) == Some(name))
+                    });
+                    if let Some((_, sender)) = unfed {
+                        here(format!(
+                            "its prompt names `{{{name}}}`, but no later {sender} sends it back \
+                             here, so it is always empty"
+                        ));
+                    }
                     if prompt::NAMES.contains(&name) {
                         continue;
                     }
@@ -143,6 +171,19 @@ pub fn validate(template: &Template) -> Vec<Problem> {
         }
     }
     problems
+}
+
+/// The variables a step sending another back fills in, beside what that
+/// step is called.
+const SENT_BACK: [(&str, &str); 2] = [("check_output", "command step"), ("revise", "approval")];
+
+/// The variable `step` fills in when it sends the step `id` back, if it does.
+fn fills_on_send_back(step: &StepSpec, id: &str) -> Option<&'static str> {
+    match &step.kind {
+        StepKind::Command { on_fail, .. } => (on_fail == id).then_some("check_output"),
+        StepKind::Approval { of } => (of == id).then_some("revise"),
+        StepKind::Agent { .. } => None,
+    }
 }
 
 /// A step id: what `{output.<id>}` and the steps that name another can say.
