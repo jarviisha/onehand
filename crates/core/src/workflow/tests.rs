@@ -47,9 +47,17 @@ fn prompt_of(action: Action) -> String {
     }
 }
 
+/// A run of `template`, started: what `Run::new` and `Run::resume` do for a
+/// task that found its place free.
+fn begin(id: String, template: Template, brief: Brief, setup: Setup) -> (Run, Action) {
+    let mut run = Run::new(id, template, brief, setup);
+    let first = run.resume();
+    (run, first)
+}
+
 /// A checkout run past its plan and at its approval.
 fn at_approval() -> Run {
-    let (mut run, first) = Run::begin("1".into(), checkout(), brief(), setup(Some("make check")));
+    let (mut run, first) = begin("1".into(), checkout(), brief(), setup(Some("make check")));
     assert_eq!(first, Action::Measure);
     prompt_of(run.measured(mark("a", "d0")));
     assert_eq!(
@@ -136,7 +144,7 @@ fn validate_names_each_kind_of_problem() {
 
 #[test]
 fn a_prompt_is_filled_in_and_told_where_it_works_and_what_is_checked() {
-    let (mut run, _) = Run::begin("1".into(), checkout(), brief(), setup(None));
+    let (mut run, _) = begin("1".into(), checkout(), brief(), setup(None));
     let text = prompt_of(run.measured(mark("a", "d0")));
     assert!(text.contains("Title: Fix the thing\n\nIt is broken."));
     assert!(!text.contains("{brief}"));
@@ -146,7 +154,7 @@ fn a_prompt_is_filled_in_and_told_where_it_works_and_what_is_checked() {
 
     let mut with = brief();
     with.instructions = Some("Keep it small.".into());
-    let (mut run, _) = Run::begin("1".into(), checkout(), with, setup(None));
+    let (mut run, _) = begin("1".into(), checkout(), with, setup(None));
     let text = prompt_of(run.measured(mark("a", "d0")));
     assert!(
         text.contains("> Keep it small."),
@@ -175,11 +183,16 @@ fn an_agent_step_passes_on_its_gates_and_keeps_its_answer() {
     );
     assert_eq!(run.marks.verified_at.as_deref(), Some("a"));
     assert!(run.over());
+    let done = Outcome::Done.said();
+    assert_eq!(
+        run.visits.last().unwrap().why.as_deref(),
+        Some(done.as_str())
+    );
 }
 
 #[test]
 fn a_missed_gate_carries_on_and_too_many_exhaust_the_step() {
-    let (mut run, _) = Run::begin("1".into(), checkout(), brief(), setup(None));
+    let (mut run, _) = begin("1".into(), checkout(), brief(), setup(None));
     prompt_of(run.measured(mark("a", "d0")));
     for missed in 1..=3 {
         let text = prompt_of(run.turn_ended(&facts("a", false, 0, "d0"), "  "));
@@ -196,7 +209,7 @@ fn a_missed_gate_carries_on_and_too_many_exhaust_the_step() {
 
 #[test]
 fn a_change_in_a_checkout_plan_is_measured_again_so_a_persons_edit_may_stay() {
-    let (mut run, _) = Run::begin("1".into(), checkout(), brief(), setup(None));
+    let (mut run, _) = begin("1".into(), checkout(), brief(), setup(None));
     prompt_of(run.measured(mark("a", "d0")));
     // The plan turn left the checkout changed: perhaps the person's edit.
     assert_eq!(
@@ -267,7 +280,7 @@ fn every_stop_ends_the_run_without_judging_the_turn() {
         Stop::LinkLost,
         Stop::Closed,
     ] {
-        let (mut run, _) = Run::begin("1".into(), checkout(), brief(), setup(None));
+        let (mut run, _) = begin("1".into(), checkout(), brief(), setup(None));
         prompt_of(run.measured(mark("a", "d0")));
         assert_eq!(run.stopped(stop), Action::Finish(Outcome::Stopped(stop)));
         assert!(run.outputs.is_empty(), "a cut-short plan is not kept");
@@ -313,7 +326,7 @@ fn resume_keeps_where_the_step_started() {
     assert_eq!((step.id.as_str(), answer), ("plan", "The plan."));
     waiting.approved();
     assert!(waiting.under_review().is_none());
-    let (fresh, _) = Run::begin("1".into(), checkout(), brief(), setup(None));
+    let (fresh, _) = begin("1".into(), checkout(), brief(), setup(None));
     let mut fresh: Run = serde_json::from_str(&serde_json::to_string(&fresh).unwrap()).unwrap();
     assert_eq!(fresh.resume(), Action::Measure);
 }
@@ -352,7 +365,7 @@ fn a_template_needs_a_check_command_only_for_a_command_step_naming_none() {
 #[test]
 fn a_run_keeps_the_template_it_began_with() {
     let mut template = checkout();
-    let (run, _) = Run::begin("1".into(), template.clone(), brief(), setup(None));
+    let (run, _) = begin("1".into(), template.clone(), brief(), setup(None));
     template.steps.remove(1);
     template.name = "Edited".into();
     assert_eq!(run.template, checkout());
@@ -388,6 +401,109 @@ fn every_move_is_in_the_history() {
             ("approve", "implement")
         ]
     );
+}
+
+#[test]
+fn a_run_not_started_has_no_visits_and_starts_on_resume() {
+    let mut run = Run::new("1".into(), checkout(), brief(), setup(None));
+    assert!(run.visits.is_empty() && run.history.is_empty() && !run.over());
+    assert_eq!(run.resume(), Action::Measure);
+    assert_eq!(run.visits.len(), 1);
+    assert_eq!(run.visits[0].step, "plan");
+    assert_eq!(run.history[0].from, "start");
+}
+
+#[test]
+fn going_back_is_a_new_visit_and_each_keeps_how_it_came_out() {
+    let mut run = at_approval();
+    run.approved();
+    prompt_of(run.measured(mark("a", "d0")));
+    run.turn_ended(&facts("a", true, 0, "d1"), "");
+    run.command_finished(Err("test failed".into()));
+    let steps: Vec<&str> = run.visits.iter().map(|v| v.step.as_str()).collect();
+    assert_eq!(
+        steps,
+        ["plan", "approve", "implement", "verify", "implement"]
+    );
+    let ids: Vec<u32> = run.visits.iter().map(|v| v.id).collect();
+    assert_eq!(ids, [1, 2, 3, 4, 5]);
+    assert_eq!(run.visits[0].output.as_deref(), Some("The plan."));
+    assert_eq!(run.visits[0].why.as_deref(), Some("its gates held"));
+    assert_eq!(run.visits[3].output.as_deref(), Some("test failed"));
+    assert_eq!(run.visits[3].why.as_deref(), Some("the command failed"));
+    assert!(run.visits[4].ended_at.is_none(), "the last is the open one");
+
+    run.stopped(Stop::ByPerson);
+    let said = Outcome::Stopped(Stop::ByPerson).said();
+    assert_eq!(run.visits[4].why.as_deref(), Some(said.as_str()));
+}
+
+#[test]
+fn resume_closes_the_cut_off_visit_and_opens_one_of_the_same_step() {
+    let mut run = at_approval();
+    // As a restart finds it: nothing ended the visit.
+    let mut back: Run = serde_json::from_str(&serde_json::to_string(&run).unwrap()).unwrap();
+    assert_eq!(back.resume(), Action::AwaitApproval);
+    assert_eq!(back.visits.len(), 3);
+    assert_eq!(back.visits[1].why.as_deref(), Some("interrupted"));
+    assert_eq!(back.visits[2].step, "approve");
+
+    // Stopped by its agent going: the visit was ended then, and resume opens
+    // the next one.
+    run.stopped(Stop::LinkLost);
+    assert_eq!(run.resume(), Action::AwaitApproval);
+    assert_eq!(run.visits.len(), 3);
+    assert_ne!(run.visits[1].why.as_deref(), Some("interrupted"));
+    assert_eq!(run.outcome, None, "a resumed run has not ended");
+}
+
+#[test]
+fn one_commit_pins_a_visits_end_and_the_next_ones_start() {
+    let (mut run, _) = begin("1".into(), checkout(), brief(), setup(None));
+    assert_eq!(run.boundaries(), [(1, false)]);
+    run.pinned("c1", 0);
+    prompt_of(run.measured(mark("a", "d0")));
+    run.turn_ended(&facts("a", false, 0, "d0"), "The plan.");
+    assert_eq!(run.boundaries(), [(1, false), (1, true), (2, false)]);
+    run.pinned("c2", 1);
+    assert_eq!(run.visits[0].start.as_deref(), Some("c1"));
+    assert_eq!(run.visits[0].end.as_deref(), Some("c2"));
+    assert_eq!(run.visits[1].start.as_deref(), Some("c2"));
+    assert_eq!(run.visits[1].end, None);
+}
+
+/// A mark lost when the app quit before it landed is pinned again on resume,
+/// never counted as made.
+#[test]
+fn a_boundary_counts_as_pinned_only_up_to_the_last_one_that_landed() {
+    let (mut run, _) = begin("1".into(), checkout(), brief(), setup(None));
+    assert_eq!(run.pinned_count(), 0);
+    run.pinned("c1", 0);
+    assert_eq!(run.pinned_count(), 1);
+    prompt_of(run.measured(mark("a", "d0")));
+    run.stopped(Stop::Closed);
+    assert_eq!(run.boundaries().len(), 2);
+    assert_eq!(run.pinned_count(), 1, "the end mark never landed");
+    run.pinned("c2", 1);
+    assert_eq!(run.pinned_count(), 2);
+}
+
+#[test]
+fn the_outcome_is_kept_and_an_old_run_without_it_still_loads() {
+    let mut run = at_approval();
+    run.stopped(Stop::TimedOut);
+    let mut back: Run = serde_json::from_str(&serde_json::to_string(&run).unwrap()).unwrap();
+    assert_eq!(back.outcome, Some(Outcome::Stopped(Stop::TimedOut)));
+    assert!(back.over());
+    assert_eq!(back.resume(), Action::Idle, "a timeout is not resumed");
+
+    let mut old = serde_json::to_value(at_approval()).unwrap();
+    let fields = old.as_object_mut().unwrap();
+    fields.remove("visits");
+    fields.remove("outcome");
+    let mut old: Run = serde_json::from_value(old).unwrap();
+    assert!(old.visits.is_empty() && !old.over());
+    assert_eq!(old.resume(), Action::AwaitApproval);
 }
 
 fn temp_dir(name: &str) -> PathBuf {
@@ -432,31 +548,6 @@ fn templates_are_saved_one_file_each_under_their_name() {
     assert_eq!(kept.as_ref().unwrap().name, "Renamed");
     store::delete_blocking(&second).unwrap();
     assert_eq!(store::load_all_blocking(&dir).len(), 1);
-    let _ = std::fs::remove_dir_all(&dir);
-}
-
-/// Finding #4: writes land in the order sent, so a save sent before the
-/// file's removal never brings the run back.
-#[test]
-fn the_writer_never_brings_a_removed_run_back() {
-    let dir = temp_dir("writer");
-    let (run, _) = Run::begin("7".into(), checkout(), brief(), setup(None));
-    let file = files::run_file(&dir, &run.id);
-    let writer = files::Writer::spawn();
-    for _ in 0..50 {
-        writer.send(files::FileOp::Save(file.clone(), Box::new(run.clone())));
-    }
-    writer.send(files::FileOp::Remove(file.clone()));
-    assert!(writer.flush(std::time::Duration::from_secs(10)));
-    assert!(!file.exists());
-
-    let writer = files::Writer::spawn();
-    writer.send(files::FileOp::Save(file.clone(), Box::new(run.clone())));
-    assert!(writer.flush(std::time::Duration::from_secs(10)));
-    let loaded = files::load_all_blocking(&dir);
-    assert_eq!(loaded.len(), 1);
-    let json = |run: &Run| serde_json::to_value(run).unwrap();
-    assert_eq!(json(loaded[0].1.as_ref().unwrap()), json(&run));
     let _ = std::fs::remove_dir_all(&dir);
 }
 

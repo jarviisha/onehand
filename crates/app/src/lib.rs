@@ -28,6 +28,7 @@ mod remote;
 mod settings;
 pub mod shell;
 mod state;
+mod task;
 mod terminal;
 mod theme;
 mod unattended;

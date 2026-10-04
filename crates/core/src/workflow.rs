@@ -7,13 +7,12 @@
 //!   ([`store`]) beside the ones onehand ships ([`builtin`]);
 //! - [`validate`] says what keeps one from being saved or run;
 //! - a [`Run`] is one run as pure state: it takes reports and says
-//!   what to do next, and its snapshot is written in order by [`files`];
+//!   what to do next, and is kept in its task (`crate::task`);
 //! - [`Facts`] and [`Mark`] are what is read of the work, never the agent's
 //!   word for it.
 
 pub mod builtin;
 mod facts;
-pub mod files;
 mod prompt;
 mod run;
 pub mod store;

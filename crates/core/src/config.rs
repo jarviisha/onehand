@@ -684,6 +684,70 @@ pub(crate) fn sync_dir(dir: &Path) -> std::io::Result<()> {
     Ok(())
 }
 
+/// Move every `.<ext>` file from `old` to `new`, each turned into what `new`
+/// keeps by `convert`, and say what was left behind. Blocking.
+///
+/// Safe to run at every start and again after a crash part way: a file
+/// `convert` refuses stays where it is, a name already in `new` keeps the
+/// copy there (the old one goes only when `settled` says the copy there
+/// stands for it, as a crash between the write and the removal leaves it),
+/// and each file is written in full, and on disk, before its old one goes.
+/// Anything else is left alone, and `old` goes once empty. Only a missing
+/// `old` is nothing to report: one that cannot be listed is somebody's files
+/// out of sight.
+pub(crate) fn migrate_dir_blocking(
+    old: &Path,
+    new: &Path,
+    ext: &str,
+    convert: impl Fn(&str) -> Result<String, String>,
+    settled: impl Fn(&str, &str) -> bool,
+) -> Vec<String> {
+    let mut problems = Vec::new();
+    let entries = match std::fs::read_dir(old) {
+        Ok(entries) => entries,
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => return problems,
+        Err(err) => {
+            problems.push(format!("{} could not be read: {err}", old.display()));
+            return problems;
+        }
+    };
+    for entry in entries {
+        let path = match entry {
+            Ok(entry) => entry.path(),
+            Err(err) => {
+                problems.push(format!("{} could not be read: {err}", old.display()));
+                continue;
+            }
+        };
+        if path.extension().is_none_or(|x| x != ext) {
+            continue;
+        }
+        let Some(name) = path.file_name() else {
+            continue;
+        };
+        let to = new.join(name);
+        let moved = std::fs::read_to_string(&path)
+            .map_err(|err| err.to_string())
+            .and_then(|text| convert(&text))
+            .and_then(|text| match std::fs::read_to_string(&to) {
+                Ok(there) if settled(&there, &text) => Ok(()),
+                Ok(_) => Err(format!("{} differs from it", to.display())),
+                Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
+                    write_atomic(&to, &text).map_err(|e| e.to_string())
+                }
+                Err(err) => Err(err.to_string()),
+            })
+            // The copy in `new` must be on disk before the only other one goes.
+            .and_then(|()| sync_dir(new).map_err(|e| e.to_string()))
+            .and_then(|()| std::fs::remove_file(&path).map_err(|e| e.to_string()));
+        if let Err(why) = moved {
+            problems.push(format!("{} was not moved: {why}", path.display()));
+        }
+    }
+    let _ = std::fs::remove_dir(old);
+    problems
+}
+
 /// Write `text` to `path` so a reader never sees half of it.
 ///
 /// Write-then-rename, with the temp waited for before it is promoted: the

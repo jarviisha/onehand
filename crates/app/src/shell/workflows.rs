@@ -1,5 +1,5 @@
-//! Starting a run from the launcher, and resuming one a previous
-//! session left unfinished.
+//! Starting a task from the launcher, and driving one once its place is
+//! free.
 
 use super::Shell;
 use crate::state::Shared;
@@ -7,7 +7,8 @@ use gpui::{AppContext as _, Context, Entity, SharedString, Window};
 use gpui_component::WindowExt as _;
 use gpui_component::input::{InputState, TextareaState};
 use gpui_component::notification::Notification;
-use onehand_core::workflow::{self as core, Brief, Place, Run, Setup, Template};
+use onehand_core::task::Task;
+use onehand_core::workflow::{self as core, Brief, Place, Setup, Template};
 use onehand_core::worktree;
 use std::path::PathBuf;
 
@@ -216,8 +217,9 @@ impl Shell {
         Ok((template, brief, check))
     }
 
-    /// Start a session on the project at `setup.dir` and drive a new run of
-    /// `template` on it.
+    /// Keep a new task of `template` on the project at `setup.dir`, then ask
+    /// for its place: kept first, so one waiting for its place survives a
+    /// restart, as interrupted.
     fn start_workflow(
         &mut self,
         mut setup: Setup,
@@ -230,45 +232,34 @@ impl Shell {
             .agents
             .first()
             .map(|spec| spec.name.clone());
-        let id = core::files::new_id();
-        let (run, first) = Run::begin(id, template, brief, setup);
-        self.drive_workflow(run, Some(first), window, cx);
+        let id = onehand_core::task::new_id();
+        crate::task::add(Task::new(id.clone(), template, brief, setup), cx);
+        crate::task::request(id, window, cx);
     }
 
-    /// Resume the unfinished run `id`: its project is put on screen, added
-    /// back if it left the workspace, and a new session carries on from the
-    /// step it was at.
-    pub fn resume_workflow(&mut self, id: &str, window: &mut Window, cx: &mut Context<Self>) {
-        let Some(run) = crate::workflow::take_unfinished(id, cx) else {
-            return;
+    /// Drive task `id`, whose place it now holds: show its project, adding
+    /// it back if it left the workspace, start a session on it, and hand both
+    /// to the driver, which starts the task's last run or carries it on from
+    /// the step it was at. One that cannot start stays as it was, and its
+    /// place passes on.
+    pub fn drive_task(&mut self, id: String, window: &mut Window, cx: &mut Context<Self>) {
+        let refused = |why: String, window: &mut Window, cx: &mut Context<Self>| {
+            window.push_notification(Notification::warning(why), cx);
+            // Deferred: handing the place on may start a task in this shell.
+            let id = id.clone();
+            cx.defer(move |cx| crate::task::release(id, cx));
         };
-        if !run.setup.dir.is_dir() {
-            window.push_notification(
-                Notification::warning(format!(
-                    "The folder that run worked in is gone: {}",
-                    run.setup.dir.display()
-                )),
+        let Some(mut run) = crate::task::resumable_run(&id, cx) else {
+            return refused("That task has nothing left to run".to_string(), window, cx);
+        };
+        let dir = run.setup.dir.clone();
+        if !dir.is_dir() {
+            return refused(
+                format!("The folder that task works in is gone: {}", dir.display()),
+                window,
                 cx,
             );
-            crate::workflow::park(run, cx);
-            return;
         }
-        self.drive_workflow(run, None, window, cx);
-    }
-
-    /// Show the run's project, start a session on it, and hand both to the
-    /// driver, starting with `first`, or with the run resumed once its new
-    /// session exists when that is `None`. A resumed run that cannot start
-    /// goes back on the unfinished list; a new one had nothing yet worth
-    /// keeping.
-    fn drive_workflow(
-        &mut self,
-        mut run: Run,
-        first: Option<core::Action>,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        let dir = run.setup.dir.clone();
         let idx = match self.root_index(&dir) {
             Some(idx) => idx,
             None => {
@@ -284,15 +275,14 @@ impl Shell {
             .start_session(agent, None, window, cx)
             .and_then(|uid| Some((uid, self.chat.read(cx).session_entity(uid)?)));
         let Some((uid, session)) = session else {
-            window.push_notification(Notification::warning("The run's session did not start"), cx);
-            if first.is_none() {
-                crate::workflow::park(run, cx);
-            }
-            return;
+            return refused("The task's session did not start".to_string(), window, cx);
         };
-        let first = first.unwrap_or_else(|| run.resume());
+        // Counted from what landed, so a mark the app quit before pinning is
+        // pinned now rather than taken as made.
+        let pinned = run.pinned_count();
+        let first = run.resume();
         // Deferred: the driver reaches into the session and the global the
         // shell is reading from while this runs.
-        cx.defer(move |cx| crate::workflow::start(uid, &session, run, first, cx));
+        cx.defer(move |cx| crate::task::start(uid, &session, id, run, first, pinned, cx));
     }
 }

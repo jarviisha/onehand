@@ -197,14 +197,22 @@ One window hosts exactly one workspace. The frame is a navigation **rail** plus 
   filed away behind it. The row's own delete is offered here and nowhere else —
   this page is what shows when a project has no session on it, so every row on
   it is a conversation nothing is writing to.
-  **Unfinished runs come first**, under *New session* and above the
-  conversations, under a muted *Unfinished runs*: a run whose agent
-  stopped or whose session was closed, in this process or before a restart, is
-  work left half done. Each is a hairline card carrying the run's title, then
-  the workflow and the step it stopped at muted, and two words at its end:
-  *Discard* (ghost) and *Resume*. Nothing restarts an agent by itself; *Resume*
-  is the only way back, and it opens a new session that carries on from that
-  step. The list is capped and says how many more it left out.
+  **Unfinished tasks come first**, under *New session* and above the
+  conversations, under a muted *Unfinished tasks*. Two kinds of row are listed.
+  A task whose agent stopped or whose session was closed, in this process or
+  before a restart, is work left half done: its hairline card carries the task's
+  title, then the workflow and the step it stopped at muted, and two words at
+  its end: *Dismiss* (ghost) and *Resume*. *Dismiss* lets it go but keeps it as
+  history; nothing is deleted. Nothing restarts an agent by itself; *Resume* is
+  the only way back, and it opens a new session that carries on from that step.
+  A task waiting for its place, because another task is working in the same
+  checkout, carries a muted *Queued* and *Stop* (ghost), which calls that start
+  off; its muted line says where it starts, or where it resumes for a task that
+  ran before, and stopping a resume leaves the task as it was. Starting a task
+  that has to wait says so in a notification, naming the checkout it waits for.
+  A task that has ended but still holds its place, its session's turn not yet
+  over, is not listed until it lets go. The list is capped and says how many
+  more it left out.
 - **The workspace has a page too**, for the question no project page can
   answer: what needs me, and what is there to do, across every project at once.
   It is reached from a muted row in the rail's header, *Workspace overview*,

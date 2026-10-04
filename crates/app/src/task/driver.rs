@@ -7,24 +7,36 @@
 //! that was under way — a cut-short turn passing as finished work is the
 //! mistake two drivers disagreeing made before.
 
-use super::Workflows;
+use super::Tasks;
 use crate::chat::session::{ChatEvent, ChatSession, note};
 use gpui::{App, BorrowAppContext as _, Entity, Subscription, Task, WeakEntity};
 use onehand_core::chat::Link;
+use onehand_core::task::marks;
 use onehand_core::unattended::Budget;
-use onehand_core::workflow::{
-    Action, Facts, Mark, Outcome, Run, Stop, files, run_command_blocking,
-};
+use onehand_core::workflow::{Action, Facts, Mark, Outcome, Run, Stop, run_command_blocking};
 use onehand_core::worktree;
-use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 
+/// A call held until a mark is pinned, and whether it ends the run.
+type Later = (bool, Box<dyn FnOnce(&mut App)>);
+
 /// A run under way on one session.
 pub(super) struct Driven {
+    /// The task the run is of.
+    pub(super) task: String,
     pub(super) run: Run,
-    file: PathBuf,
+    /// How many of the run's boundaries have had their mark pinned, or tried.
+    pinned: usize,
+    /// `Some` while a mark is being pinned and the action the engine asked
+    /// for waits on it, holding what a person or an event asked meanwhile.
+    /// Done at once, an approval or a Stop would move the run on under the
+    /// waiting action, which would then be carried out stale; held, each
+    /// runs once that action has. An ending held runs instead of the action,
+    /// so a prompt is never sent to a run already said to be over. A turn
+    /// ending meanwhile is not the one the action will send.
+    held: Option<Vec<Later>>,
     session: WeakEntity<ChatSession>,
     /// How many prompts the run has sent its session: any more, and a person
     /// is driving.
@@ -72,13 +84,16 @@ const TIMEOUT_FALLBACK: Duration = Duration::from_secs(45 * 60);
 /// rather than carried whole into the run's file and the next prompt.
 const ANSWER_MAX: usize = 20_000;
 
-/// Drive `run` on session `uid`, starting with `first`: what
-/// [`Run::begin`] or [`Run::resume`] said to do.
+/// Drive `run`, the last run of `task`, on session `uid`, starting with
+/// `first`: what [`Run::resume`] said to do. `pinned` boundaries of it had
+/// their mark pinned before.
 pub(crate) fn start(
     uid: u64,
     session: &Entity<ChatSession>,
+    task: String,
     run: Run,
     first: Action,
+    pinned: usize,
     cx: &mut App,
 ) {
     let watch = cx.subscribe(session, move |session, event: &ChatEvent, cx| {
@@ -103,9 +118,11 @@ pub(crate) fn start(
         .unwrap_or(TIMEOUT_FALLBACK)
         .saturating_sub(Duration::from_secs(run.spent_secs));
     let driven = Driven {
-        file: files::run_file(&files::runs_dir(), &run.id),
+        task,
         spent_before: run.spent_secs,
         run,
+        pinned,
+        held: None,
         session: session.downgrade(),
         sent: 0,
         answer_from: 0,
@@ -120,40 +137,70 @@ pub(crate) fn start(
         _release: release,
         _clock: clock(uid, limit, cx),
     };
-    cx.default_global::<Workflows>().runs.insert(uid, driven);
+    cx.default_global::<Tasks>().live.insert(uid, driven);
     act(uid, first, cx);
+}
+
+/// Hold `then`, which ends the run when `ends`, while a mark is being pinned
+/// for the run on session `uid`: whether it was held.
+fn held(uid: u64, cx: &mut App, ends: bool, then: impl FnOnce(&mut App) + 'static) -> bool {
+    with(uid, cx, |d| match &mut d.held {
+        Some(held) => {
+            held.push((ends, Box::new(then)));
+            true
+        }
+        None => false,
+    })
+    .unwrap_or(false)
 }
 
 /// A person approved what the run waits on.
 pub(crate) fn approve(uid: u64, cx: &mut App) {
+    if held(uid, cx, false, move |cx| approve(uid, cx)) {
+        return;
+    }
     with(uid, cx, |d| d.budget.resume(Instant::now()));
     advance(uid, cx, Run::approved);
 }
 
 /// A person sent it back with `note`.
 pub(crate) fn revise(uid: u64, note: String, cx: &mut App) {
+    let later = note.clone();
+    if held(uid, cx, false, move |cx| revise(uid, later, cx)) {
+        return;
+    }
     with(uid, cx, |d| d.budget.resume(Instant::now()));
     advance(uid, cx, move |run| run.revised(note));
 }
 
 /// A person pressed Stop: the turn is cancelled and the run ends.
 pub(crate) fn stop(uid: u64, cx: &mut App) {
+    cut(uid, Stop::ByPerson, cx);
+}
+
+/// Cancel the turn under way and end the run as `stop`, as one call: held
+/// together while a mark is pinned, so the cancel never runs before a
+/// prompt the pin is still holding back.
+fn cut(uid: u64, stop: Stop, cx: &mut App) {
+    if held(uid, cx, true, move |cx| cut(uid, stop, cx)) {
+        return;
+    }
     cancel_turn(uid, cx);
-    end(uid, Stop::ByPerson, cx);
+    end(uid, stop, cx);
 }
 
 /// Read the run on session `uid`. Apart from [`with`] because every event the
 /// session sends asks, and a mutable borrow would tell every observer of the
 /// global that it changed.
 fn read<R>(uid: u64, cx: &App, look: impl FnOnce(&Driven) -> R) -> Option<R> {
-    cx.try_global::<Workflows>()?.runs.get(&uid).map(look)
+    cx.try_global::<Tasks>()?.live.get(&uid).map(look)
 }
 
 fn with<R>(uid: u64, cx: &mut App, act: impl FnOnce(&mut Driven) -> R) -> Option<R> {
-    if !cx.has_global::<Workflows>() {
+    if !cx.has_global::<Tasks>() {
         return None;
     }
-    cx.update_global::<Workflows, _>(|p, _| p.runs.get_mut(&uid).map(act))
+    cx.update_global::<Tasks, _>(|t, _| t.live.get_mut(&uid).map(act))
 }
 
 /// End the run as `stop` — at once, or, while the step's command runs, once
@@ -161,6 +208,9 @@ fn with<R>(uid: u64, cx: &mut App, act: impl FnOnce(&mut Driven) -> R) -> Option
 /// A run said to be stopped never leaves a build or a test writing to the
 /// work behind it. The first reason given is the one the run ends with.
 fn end(uid: u64, stop: Stop, cx: &mut App) {
+    if held(uid, cx, true, move |cx| end(uid, stop, cx)) {
+        return;
+    }
     let running = with(uid, cx, |d| {
         let cancel = d.command.as_ref()?;
         cancel.store(true, Ordering::SeqCst);
@@ -181,8 +231,13 @@ fn advance(uid: u64, cx: &mut App, report: impl FnOnce(&mut Run) -> Action) {
 }
 
 fn on_event(uid: u64, session: &Entity<ChatSession>, event: &ChatEvent, cx: &mut App) {
-    let Some((sent, pending, awaiting_turn)) = read(uid, cx, |d| {
-        (d.sent, d.pending.is_some(), d.run.awaiting_turn())
+    // A turn ending while a mark is pinned is not the turn the run will send.
+    let Some((sent, pending, judge_turn)) = read(uid, cx, |d| {
+        (
+            d.sent,
+            d.pending.is_some(),
+            d.run.awaiting_turn() && d.held.is_none(),
+        )
     }) else {
         return;
     };
@@ -201,7 +256,7 @@ fn on_event(uid: u64, session: &Entity<ChatSession>, event: &ChatEvent, cx: &mut
         // A Stop pressed in the composer, or from the remote bridge: the
         // person's word that this is not to go on.
         ChatEvent::TurnEnded if session.read(cx).chat.cancelled => end(uid, Stop::ByPerson, cx),
-        ChatEvent::TurnEnded if awaiting_turn => after_turn(uid, session, cx),
+        ChatEvent::TurnEnded if judge_turn => after_turn(uid, session, cx),
         ChatEvent::TurnEnded => {}
         // A person answers the card; the clock waits for them.
         ChatEvent::AwaitingUser(_) => {
@@ -215,8 +270,64 @@ fn on_event(uid: u64, session: &Entity<ChatSession>, event: &ChatEvent, cx: &mut
     }
 }
 
-/// Do what the engine said.
+/// Do what the engine said, once the work is pinned at every boundary the
+/// run has crossed since the last pin: the mark of a step's start lands
+/// before its prompt or command touches the work. A mark that cannot be
+/// pinned is said and left out; it never stops the run.
 fn act(uid: u64, action: Action, cx: &mut App) {
+    if ends_run(&action) || action == Action::Idle {
+        return carry_out(uid, action, cx);
+    }
+    let unpinned = with(uid, cx, |d| {
+        let refs = marks::refs_from(&d.task, &d.run, d.pinned);
+        if refs.is_empty() {
+            return None;
+        }
+        d.held = Some(Vec::new());
+        Some((d.run.setup.dir.clone(), refs, d.pinned))
+    })
+    .flatten();
+    let Some((dir, refs, from)) = unpinned else {
+        return carry_out(uid, action, cx);
+    };
+    let total = from + refs.len();
+    cx.spawn(async move |cx| {
+        let pinned = cx
+            .background_executor()
+            .spawn(async move { marks::pin_blocking(&dir, &refs) })
+            .await;
+        cx.update(|cx| {
+            let held = with(uid, cx, |d| {
+                match &pinned {
+                    Ok(commit) => d.run.pinned(commit, from),
+                    Err(why) => eprintln!("onehand: a step's mark was not pinned: {why}"),
+                }
+                d.pinned = total;
+                d.held.take().unwrap_or_default()
+            });
+            let Some(held) = held else {
+                return;
+            };
+            // An ending asked meanwhile wins over the action, which would only
+            // start work on a run that is over; the first one asked is its
+            // reason, and the rest find nothing left to do.
+            let mut held = held;
+            if let Some(at) = held.iter().position(|(ends, _)| *ends) {
+                let (_, ending) = held.swap_remove(at);
+                return ending(cx);
+            }
+            carry_out(uid, action, cx);
+            // In the order asked; one that starts another pin holds the rest.
+            for (_, then) in held {
+                then(cx);
+            }
+        });
+    })
+    .detach();
+}
+
+/// Do what the engine said, now.
+fn carry_out(uid: u64, action: Action, cx: &mut App) {
     let Some(session) = read(uid, cx, |d| d.session.upgrade()) else {
         return;
     };
@@ -283,18 +394,18 @@ fn announce_step(uid: u64, session: &Entity<ChatSession>, cx: &mut App) {
     }
 }
 
-/// Write the run's snapshot, in order with every other write.
+/// Write the run into its task's file, in order with every other write.
 fn save(uid: u64, cx: &mut App) {
-    if !cx.has_global::<Workflows>() {
+    if !cx.has_global::<Tasks>() {
         return;
     }
-    cx.update_global::<Workflows, _>(|p, _| {
-        let Some(d) = p.runs.get_mut(&uid) else {
+    cx.update_global::<Tasks, _>(|t, _| {
+        let Some(d) = t.live.get_mut(&uid) else {
             return;
         };
         d.run.spent_secs = d.spent_secs();
-        p.writer
-            .send(files::FileOp::Save(d.file.clone(), Box::new(d.run.clone())));
+        let (task, run) = (d.task.clone(), d.run.clone());
+        t.store_run(&task, run);
     });
 }
 
@@ -437,8 +548,7 @@ fn clock(uid: u64, left: Duration, cx: &mut App) -> Task<()> {
                 return;
             };
             if left.is_zero() {
-                cancel_turn(uid, cx);
-                end(uid, Stop::TimedOut, cx);
+                cut(uid, Stop::TimedOut, cx);
             } else {
                 let next = clock(uid, left, cx);
                 with(uid, cx, |d| d._clock = next);
@@ -460,37 +570,32 @@ fn cancel_turn(uid: u64, cx: &mut App) {
     });
 }
 
-/// End the run: say how in its transcript, and keep its file only when it
-/// can be resumed — its agent stopped or its session went, neither of which
-/// is the run's own outcome.
+/// End the run: say how in its transcript and keep it in its task, then let
+/// its place go once its session's turn is over.
 ///
 /// Taken off the list at once, so an event the ending causes finds nothing
 /// to end again; dropped only once the event delivering it is over, since
 /// dropping the run drops the subscription it came through.
 fn finish(uid: u64, session: Option<&Entity<ChatSession>>, outcome: Outcome, cx: &mut App) {
     let driven = cx
-        .has_global::<Workflows>()
-        .then(|| cx.update_global::<Workflows, _>(|p, _| p.runs.remove(&uid)))
+        .has_global::<Tasks>()
+        .then(|| cx.update_global::<Tasks, _>(|t, _| t.live.remove(&uid)))
         .flatten();
     let Some(driven) = driven else {
         return;
     };
-    let resumable = outcome.resumable();
     if let Some(session) = session {
-        let said = match resumable {
+        let said = match outcome.resumable() {
             true => format!("{}; resume it from the project's page", outcome.said()),
             false => outcome.said(),
         };
         note(session, said, cx);
     }
-    let file = driven.file.clone();
     let mut run = driven.run.clone();
     run.spent_secs = driven.spent_secs();
-    if resumable {
-        super::park(run, cx);
-    } else {
-        cx.update_global::<Workflows, _>(|p, _| p.writer.send(files::FileOp::Remove(file)));
-    }
+    let task = driven.task.clone();
+    cx.update_global::<Tasks, _>(|t, _| t.store_run(&task, run));
+    super::ended(task, driven.pinned, session, cx);
     cx.defer(move |cx| {
         drop(driven);
         cx.refresh_windows();

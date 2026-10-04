@@ -816,10 +816,12 @@ pub enum ChatPaneEvent {
     },
     /// Stop the run on session `uid`.
     StopWorkflow(u64),
-    /// Resume the unfinished run `id` — a row of the project page.
-    ResumeWorkflow(String),
-    /// Drop the unfinished run `id` and its file.
-    DiscardWorkflow(String),
+    /// Resume the interrupted task `id` — a row of the project page.
+    ResumeTask(String),
+    /// Let the interrupted task `id` go; it is kept as history.
+    DismissTask(String),
+    /// Call off the queued task `id`.
+    StopQueuedTask(String),
 }
 
 impl EventEmitter<ChatPaneEvent> for ChatPane {}

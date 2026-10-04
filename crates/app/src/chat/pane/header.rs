@@ -112,7 +112,7 @@ impl ChatPane {
         cx: &mut Context<Self>,
     ) -> Option<impl IntoElement + use<>> {
         let uid = self.active?;
-        let shown = crate::workflow::shown(uid, cx)?;
+        let shown = crate::task::shown(uid, cx)?;
         let muted = cx.theme().muted_foreground;
         let foreground = cx.theme().foreground;
         let at_step = shown.at;

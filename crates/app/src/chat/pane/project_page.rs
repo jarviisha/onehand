@@ -463,10 +463,10 @@ impl ChatPane {
                                         });
                                     })),
                             )
-                            // Runs that stopped short of their own
-                            // outcome here, each to resume or let go. Above
-                            // the conversations: one is work left half done.
-                            .children(unfinished_runs(&project.path, cx))
+                            // Tasks cut off here, each to resume or let go,
+                            // and tasks waiting for their place. Above the
+                            // conversations: one is work left half done.
+                            .children(unfinished_tasks(&project.path, cx))
                             .children(
                                 note.map(|note| div().text_xs().text_color(muted).child(note)),
                             )
@@ -572,26 +572,36 @@ pub(super) fn count_of(n: usize, noun: &str) -> String {
     }
 }
 
-/// How many unfinished runs the page lists before it says how many
+/// How many unfinished tasks the page lists before it says how many
 /// more there are.
 const UNFINISHED_ROWS: usize = 5;
 
-/// The unfinished runs of the project at `root`: what each was
-/// asked to do and where it stopped, with *Resume* and *Discard*.
-fn unfinished_runs(root: &Path, cx: &mut Context<ChatPane>) -> Option<gpui::AnyElement> {
-    let runs = crate::workflow::unfinished_in(root, cx);
-    if runs.is_empty() {
+/// The unfinished tasks of the project at `root`: what each was asked to do
+/// and where it stands. One cut off offers *Dismiss* and *Resume*; one
+/// waiting for its place says so and offers *Stop*.
+fn unfinished_tasks(root: &Path, cx: &mut Context<ChatPane>) -> Option<gpui::AnyElement> {
+    let tasks = crate::task::listed_in(root, cx);
+    if tasks.is_empty() {
         return None;
     }
     let muted = cx.theme().muted_foreground;
-    let hidden = runs.len().saturating_sub(UNFINISHED_ROWS);
-    let rows: Vec<_> = runs
+    let hidden = tasks.len().saturating_sub(UNFINISHED_ROWS);
+    let rows: Vec<_> = tasks
         .into_iter()
         .take(UNFINISHED_ROWS)
         .enumerate()
-        .map(|(i, run)| {
-            let (resume, discard) = (run.id.clone(), run.id.clone());
-            div()
+        .map(|(i, task)| {
+            let (id, resume_id) = (task.id.clone(), task.id.clone());
+            let said = match (task.queued, task.begun) {
+                (true, true) => format!("{} · resumes at {}", task.name, task.step),
+                (true, false) => format!("{} · starts at {}", task.name, task.step),
+                (false, _) => format!("{} · stopped at {}", task.name, task.step),
+            };
+            let call_off = match task.begun {
+                true => "Call off this resume; the task stays as it was",
+                false => "Call off this start; the task does not run",
+            };
+            let row = div()
                 .h_flex()
                 .items_center()
                 .gap_2()
@@ -606,34 +616,43 @@ fn unfinished_runs(root: &Path, cx: &mut Context<ChatPane>) -> Option<gpui::AnyE
                         .gap_0p5()
                         .flex_1()
                         .min_w_0()
-                        .child(div().truncate().child(run.title))
-                        .child(
-                            div()
-                                .text_xs()
-                                .text_color(muted)
-                                .truncate()
-                                .child(format!("{} · stopped at {}", run.name, run.step)),
-                        ),
-                )
-                .child(
-                    crate::controls::action(("workflow-discard", i))
-                        .ghost()
-                        .small()
-                        .label("Discard")
-                        .tooltip("Forget this run; its work stays where it is")
-                        .on_click(cx.listener(move |_: &mut ChatPane, _, _, cx| {
-                            cx.emit(ChatPaneEvent::DiscardWorkflow(discard.clone()));
-                        })),
-                )
-                .child(
-                    crate::controls::action(("workflow-resume", i))
-                        .small()
-                        .label("Resume")
-                        .tooltip("Carry on from that step in a new session")
-                        .on_click(cx.listener(move |_: &mut ChatPane, _, _, cx| {
-                            cx.emit(ChatPaneEvent::ResumeWorkflow(resume.clone()));
-                        })),
-                )
+                        .child(div().truncate().child(task.title))
+                        .child(div().text_xs().text_color(muted).truncate().child(said)),
+                );
+            match task.queued {
+                true => row
+                    .child(div().text_xs().text_color(muted).child("Queued"))
+                    .child(
+                        crate::controls::action(("task-stop-queued", i))
+                            .ghost()
+                            .small()
+                            .label("Stop")
+                            .tooltip(call_off)
+                            .on_click(cx.listener(move |_: &mut ChatPane, _, _, cx| {
+                                cx.emit(ChatPaneEvent::StopQueuedTask(id.clone()));
+                            })),
+                    ),
+                false => row
+                    .child(
+                        crate::controls::action(("task-dismiss", i))
+                            .ghost()
+                            .small()
+                            .label("Dismiss")
+                            .tooltip("Let this task go; it is kept as history and its work stays")
+                            .on_click(cx.listener(move |_: &mut ChatPane, _, _, cx| {
+                                cx.emit(ChatPaneEvent::DismissTask(id.clone()));
+                            })),
+                    )
+                    .child(
+                        crate::controls::action(("task-resume", i))
+                            .small()
+                            .label("Resume")
+                            .tooltip("Carry on from that step in a new session")
+                            .on_click(cx.listener(move |_: &mut ChatPane, _, _, cx| {
+                                cx.emit(ChatPaneEvent::ResumeTask(resume_id.clone()));
+                            })),
+                    ),
+            }
         })
         .collect();
     Some(
@@ -641,7 +660,7 @@ fn unfinished_runs(root: &Path, cx: &mut Context<ChatPane>) -> Option<gpui::AnyE
             .v_flex()
             .gap_2()
             .w_full()
-            .child(div().text_xs().text_color(muted).child("Unfinished runs"))
+            .child(div().text_xs().text_color(muted).child("Unfinished tasks"))
             .children(rows)
             .children((hidden > 0).then(|| {
                 div()

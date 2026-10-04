@@ -15,10 +15,14 @@ an approval step waits for a person. The words are defined in [CONTEXT.md](../CO
 | The person's workflows on disk | [crates/core/src/workflow/store.rs](../crates/core/src/workflow/store.rs) |
 | The engine: one run as pure state | [crates/core/src/workflow/run.rs](../crates/core/src/workflow/run.rs) |
 | Marks, facts, gates, the command runner | [crates/core/src/workflow/facts.rs](../crates/core/src/workflow/facts.rs) |
-| Run files and their ordered writer | [crates/core/src/workflow/files.rs](../crates/core/src/workflow/files.rs) |
-| The one driver | [crates/app/src/workflow/driver.rs](../crates/app/src/workflow/driver.rs) |
-| Workflows on offer, unfinished runs | [crates/app/src/workflow.rs](../crates/app/src/workflow.rs) |
-| Launcher and resume | [crates/app/src/shell/workflows.rs](../crates/app/src/shell/workflows.rs) |
+| Tasks, which keep their runs | [crates/core/src/task.rs](../crates/core/src/task.rs) |
+| Task files, their ordered writer, the move of `pipeline-runs/` | [crates/core/src/task/files.rs](../crates/core/src/task/files.rs) |
+| The queue: one task per place | [crates/core/src/task/queue.rs](../crates/core/src/task/queue.rs) |
+| Marks pinned as commits under `refs/onehand/` | [crates/core/src/task/marks.rs](../crates/core/src/task/marks.rs) |
+| The one driver | [crates/app/src/task/driver.rs](../crates/app/src/task/driver.rs) |
+| The `Tasks` global: requests, the queue, unfinished tasks | [crates/app/src/task.rs](../crates/app/src/task.rs) |
+| Workflows on offer | [crates/app/src/workflow.rs](../crates/app/src/workflow.rs) |
+| Launcher, and driving a task once its place is free | [crates/app/src/shell/workflows.rs](../crates/app/src/shell/workflows.rs) |
 | Settings ▸ Workflows | [crates/app/src/settings/workflows.rs](../crates/app/src/settings/workflows.rs) |
 
 ## Workflows
@@ -143,13 +147,31 @@ A prompt asked for before the adapter is up waits for the link. The clock is
 `unattended::Budget`: it pauses while a card or an approval waits on a person, and its timer looks
 again when it fires rather than being re-armed at every pause.
 
-**The run's file is written after every action**, through `workflow::files::Writer`, one thread
-carrying out saves and removals in the order sent, so a late save can never bring back a run whose
-file was removed. A run that ends on its own outcome — done, exhausted, failed, stopped by a person,
-taken over, timed out — removes its file. **A run whose agent stopped or whose session went keeps
-it** and is put on the unfinished list: neither is the run's own outcome, and app shutdown can look
-like either. Quitting waits, briefly, for the writes still queued (`Writer::flush`), so a run's
-last save or its file's removal is not lost when the process exits with its last window.
+**Every run belongs to a task, and the task's file is written after every action**
+(`<config_dir>/onehand/tasks/<id>.json`), through `task::files::Writer`, one thread carrying out
+saves in the order sent, so a late save can never land over a newer one. A task's file is kept
+whatever the outcome: it is the task's history. The run keeps its outcome (`Run::outcome`), so a
+run with none after a restart was cut off. **A run whose agent stopped or whose session went** can
+be resumed: neither is the run's own outcome, and app shutdown can look like either. Quitting
+waits, briefly, for the writes still queued (`Writer::flush`), so a run's last save is not lost when
+the process exits with its last window.
+
+**A run records step visits** (`Run::visits`): each stay at a step, with its times, what it kept
+(the answer, or how a failed command's output ended) and how it came out. Going back to a step is a
+new visit, and resuming closes the cut-off visit as `interrupted` and opens a new one of the same
+step. **Each visit's start and end is pinned as a commit** (`task::marks::pin_blocking`): the work
+as it stands, untracked files included and ignored ones left out, committed from a temporary
+index so the person's own index is untouched, and kept under
+`refs/onehand/tasks/<task>/<run>/<visit>/<start|end>` so `git gc` keeps it. The driver pins before
+it carries out a step's first action, so the start mark lands before the prompt or command touches
+the work; one commit serves a visit's end and the next one's start. A mark that cannot be pinned is
+logged and left out, and never stops a run: gates read `Mark` and `Facts`, not the pinned commits. While a mark is
+being pinned, an approval or a revision waits for it and for the action it holds back, so nothing
+moves the run on under that action. A Stop, the timeout or any other ending waits for the pin too,
+and then runs instead of that action, with its cancel of the turn: a prompt is never sent to a run
+already said to be over, and no ending races the pin. A driver
+taking a run up counts as pinned only the marks up to the last one that landed
+(`Run::pinned_count`), so a mark the app quit before pinning is pinned on resume.
 
 **A turn's answer is what the agent said after the run's own prompt** (`Chat::prose_since`,
 counted from where the transcript stood when the prompt went), so a turn that said nothing answers
@@ -163,7 +185,7 @@ the very file the change before it created.
 the strip's *Review…* opens the kept answer, so a run resumed in a new session is not approved
 blind.
 
-## Starting and resuming
+## Starting, queueing and resuming
 
 The composer's `+` menu and the keymap's `run_workflow` (no default key) open the launcher on the
 project on screen. A checkout workflow starts a session there; a worktree workflow first cuts
@@ -171,11 +193,34 @@ project on screen. A checkout workflow starts a session there; a worktree workfl
 A workflow with a command step that names no command needs the project's check command, set under
 Settings ▸ Workflows and kept in the workspace file (`WorkspaceConfig::checks`).
 
-At boot every `<config_dir>/onehand/pipeline-runs/*.json` (the name on disk from before the
-rename) is read into the unfinished list. A
-project page shows the unfinished runs started from it or working in it, with *Resume* and
-*Discard*. Nothing restarts an agent by itself. *Resume* adds the run's folder back as a project if
-it left the workspace, starts a session on the agent the run used, and calls `resume`.
+**Every start goes through the queue** (`task::request`), Resume included. A place is the
+checkout git sees: the canonical top level of the repository, or a folder's own canonical path
+outside git (`task::queue::place_blocking`), so two projects that are folders of one checkout share
+one place. One task works in a place at a time; a start that finds its place taken waits, first
+in, first out, says so in a notification and shows as *Queued* on the project page, where *Stop*
+calls it off. A task called off before its run took a step drops that empty run and reads as
+stopped by a person; a resume called off goes back to how it was. **A place is given up only once
+the work has stopped**: a run that ends while its session's turn is still going keeps it until
+that turn ends, the agent goes or the session is closed, and a command step ends only after its
+process group has exited. The end mark is pinned first, and then the next task waiting starts in
+the window it was asked from. A worktree workflow makes its worktree at launch, its own place, so
+it never waits.
+
+The launcher keeps the new task before asking for its place, so one waiting survives a restart.
+After a restart nothing is running or queued: a task whose last run has no outcome reads as
+interrupted. A project page lists, under *Unfinished tasks*, the interrupted tasks started from it
+or working in it, with *Dismiss* (kept as history, never offered again) and *Resume*, and the
+queued ones with *Stop*. Nothing restarts an agent by itself. *Resume* adds the task's folder back
+as a project if it left the workspace, starts a session on the agent the run used, and calls
+`Run::resume`, which also starts a run that never took a step. A task that ended exhausted,
+failed, timed out, done or stopped is kept on disk and not listed yet.
+
+At boot, behind the instance lock and right after the templates move, every run a build from
+before tasks kept in `<config_dir>/onehand/pipeline-runs/` becomes a task of the same id in
+`tasks/`, with that one run, cut off (`task::files::migrate_old_dir_blocking`). The move shares its
+rules with the templates' (`config::migrate_dir_blocking`): a file that does not read stays and is
+reported, a task already in `tasks/` under that name wins (it may have moved on since), each file
+is written in full and on disk before its old one goes, and the folder goes once empty.
 
 ## Checking it by hand
 
@@ -213,9 +258,14 @@ change (`git checkout . && git clean -fd`).
 |---|---|---|
 | Done | Brief `go`. *Continue* at the approval | Plan, Approve, Implement, Verify; *Workflow done*. `mock-workflow.txt` is left uncommitted. On *Implement on a branch*, a new branch holds one commit |
 | Stop while a command runs | Brief `go fast`, *Continue*, then *Stop* during Verify's `sleep 5` | The run ends *stopped by hand* only once the command has exited: no `sleep` is left (`pgrep -f 'sleep 5'`) |
-| Exhausted | Brief `miss` | The workflow allows three misses, so the plan misses `answered` four times; the fourth ends the run with *too many misses at the Plan step*. The run's file is removed |
+| Exhausted | Brief `miss` | The workflow allows three misses, so the plan misses `answered` four times; the fourth ends the run with *too many misses at the Plan step*. The task stays in `tasks/` and is not listed on the project page |
 | A failed command goes back | Brief `fail-check`, *Continue* | Verify fails, Implement runs again with the check's output in its prompt, Verify passes; *Workflow done* |
 | Approve and Revise | Brief `go`. *Revise…* with a note, then *Continue* | The plan runs again, its prompt carrying the note and the earlier answer; no miss is counted. *Review…* shows the kept answer |
-| A restart mid-step, then Resume | Brief `go`, *Continue*, quit while Implement's turn is still answering | At the next start the project page lists the run. *Resume* starts a new session at Implement, with its mark kept, and the run carries on to *Workflow done* |
+| A restart mid-step, then Resume | Brief `go`, *Continue*, quit while Implement's turn is still answering | At the next start the project page lists the task under *Unfinished tasks*. *Resume* starts a new session at Implement, with its mark kept, and the run carries on to *Workflow done* |
 | A restart at an approval, then Resume | Brief `go`, quit while the run waits for approval | *Resume* waits for approval again; *Review…* shows the plan |
 | A workflow edited under a run | Duplicate *Work in checkout*, start a run on the copy with brief `go`, then while the run waits for approval delete its Verify step and save | The run still reaches Verify: it uses the snapshot it started with |
+| Two tasks in one checkout | Brief `go`, then while it runs start a second with brief `go fast` | A notification says the second is queued; the project page lists it as *Queued*. It starts by itself once the first ends, in a session of its own |
+| Stop on a queued task | As above, then *Stop* on the queued row | The row goes; the first run carries on. The task's file keeps no run |
+| Dismiss | Quit mid-run, then *Dismiss* on the row at the next start | The row goes; the task's file is kept with `"dismissed": true` |
+| Marks | After any run, `git for-each-ref refs/onehand` | A `start` and an `end` ref per visit, under `refs/onehand/tasks/<task>/<run>/<visit>/`; `git show` on one includes `mock-workflow.txt` while it is untracked |
+| Runs from an older build | Put a run file from before tasks in `<config_dir>/onehand/pipeline-runs/` and start onehand | It is in `tasks/` under the same name, listed as interrupted, and `pipeline-runs/` is gone |

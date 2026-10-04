@@ -1,8 +1,10 @@
 # Tasks
 
-**Status: design.** Only pull request 1, the rename, is built. This is where milestones 1+2 and 3 of
-[roadmap.md](roadmap.md) are headed, and the decisions behind it are listed there. When the code
-lands, this file becomes its account, the way [workflows.md](workflows.md) is for the engine.
+**Status: partly built.** Pull requests 1 (the rename) and 2 (tasks, history, step visits, marks
+and the queue) are built; the Tasks page, Retry and the history cap are design. This is where
+milestones 1+2 and 3 of [roadmap.md](roadmap.md) are headed, and the decisions behind it are listed
+there. Where the code has landed, this file is its account, with [workflows.md](workflows.md)
+holding the engine and the driver.
 
 ## What a person gets
 
@@ -132,7 +134,7 @@ an async runtime to core or a GUI dependency to it.
 crates/core (GUI-free, blocking)          crates/app (GPUI)
 ─────────────────────────────────         ──────────────────────────────────────
 workflow::template / validate / store     settings: Workflows
-workflow::run   (the engine; today's      workflow::driver  ── session events → reports
+workflow::run   (the engine; today's      task::driver      ── session events → reports
                  workflow::Run)                 │  (unchanged in kind: still the only one)
 task            (Task, Run list,                ▼
                  outcome, group rule)     Tasks global on Shared ── one per process
@@ -148,21 +150,28 @@ unattended      (as it is; a thin         Tasks page in the agent pane, rail row
 - **The engine does not change in kind.** `workflow::Run` (`PipelineRun` before the rename) stays, and
   goes on taking reports and answering with the next `Action`. A task wraps its runs; it does not
   move transitions out of the engine.
-- **`Task`** holds its id, source, brief or command, place, project, the list of its runs, and
-  whether it was dismissed. Its outcome and its group are functions of that state, written once in
-  core, as `GitStatus::label` is, never per call site.
-- **The queue rule is pure.** Given the tasks and a place, it answers whether a start runs now or
-  queues, and which queued task goes next when a place frees up (first in, first out). Every task
+- **`Task`** (`crates/core/src/task.rs`) holds its id (its first run's), its brief and setup (the
+  project and place), the list of its runs, and whether it was dismissed. Brief and setup are kept
+  on the task as well as on each run, so a task called off before its run started still says what
+  it was. `Task::outcome` is the last run's, or stopped by a person with no run; `Task::resumable`
+  is not dismissed and that outcome unset or resumable. Both are written once in core, as
+  `GitStatus::label` is, never per call site. The source and the group rule arrive with pull
+  request 3, as fields an older file reads without.
+- **The queue rule is pure** (`task::queue::Queue`). Given a place, it answers whether a start runs
+  now or queues, and which queued task goes next when a place frees up (first in, first out). Every task
   holds its place's lock, a single command included, so a check waits behind a workflow that is
   still editing. A plain session holds no lock.
 - **A place is the checkout git sees, not the path a project was opened at.** The lock is keyed by
   the canonical path of the worktree's top level (`git rev-parse --show-toplevel`, symlinks
   resolved), so two projects that are folders of one checkout, or one checkout reached through a
-  symlink, share one lock. A folder outside git is keyed by its own canonical path.
+  symlink, share one lock. A folder outside git is keyed by its own canonical path
+  (`task::queue::place_blocking`).
 - **A run is a list of step visits.** Going back to a step, after a failed command or a revision,
   is a new visit, never a rewrite of the last one: `implement → verify (fails) → implement` is three
   visits. Each keeps its own id, times, marks, output and result, which is what milestone 3's
-  timeline is drawn from.
+  timeline is drawn from (`workflow::Visit`). Resuming closes the cut-off visit as `interrupted`
+  and opens a new one of the same step. Visits are not capped: each ends on a miss or a person.
+  The run also keeps its `Outcome` now, so a run with none after a restart reads as interrupted.
 - **Marks carry a commit object.** Today a `Mark` is a head and a fingerprint of the uncommitted
   work, enough to tell whether two states differ but not to rebuild a diff. Each visit gets a mark
   at its start and its end, and each mark gains a commit made like this:
@@ -175,14 +184,17 @@ unattended      (as it is; a thin         Tasks page in the agent pane, rail row
   git update-ref refs/onehand/tasks/<task>/<run>/<visit>/<start|end> $commit
   ```
 
-  The visit id is in the path, so a step visited twice keeps both pairs.
+  The visit id is in the path, so a step visited twice keeps both pairs. `task::marks::pin_blocking`
+  does this with onehand's own author and committer, so a repository with no identity set still
+  gets its marks, and reads an empty tree on an unborn `HEAD`. One commit serves a visit's end and
+  the next visit's start (`Run::boundaries`, `Run::pinned`).
 
   It is not `git stash create`, which leaves untracked files out and makes a commit nothing points
   at, so `git gc` prunes it within weeks. The temporary index leaves the person's own index alone.
   The refs are deleted when their task falls out of the history cap.
-- **One writer, in order.** `workflow::files::Writer` becomes the task store's writer: one thread,
-  saves and removals carried out in the order sent, `flush` on quit. The difference is that a
-  finished task's file is kept as history instead of removed.
+- **One writer, in order.** `task::files::Writer` is the task store's writer: one thread, saves
+  carried out in the order sent, `flush` on quit. A finished task's file is kept as history; nothing
+  removes one until the history cap.
 
 ### On disk
 
@@ -219,12 +231,20 @@ pull request, before the migration it protects.
 
 ### The app
 
-- **One `Tasks` global** replaces today's `Workflows`, which holds runs by session uid. It owns every
-  task, applies the queue rule, and keeps a session uid → task index so the driver still finds its
-  run from a session event.
-- **The driver stays the only code that turns session events into reports.** It gains two
-  duties: taking a mark at each step's end as well as its start, and telling the global when a run
-  ends, so the queue can start the next task in that place.
+- **One `Tasks` global** (`crates/app/src/task.rs`) owns every task, the queue, the runs under way
+  by session uid (so the driver still finds its run from a session event), the window each queued
+  task was asked from, and the tasks still draining. `Workflows` keeps only the templates on offer.
+- **Every start goes through `task::request`**: the launcher keeps the task first, then asks; Resume
+  asks too. A free place starts the task at once (`Shell::drive_task`); a taken one queues it and
+  says so in a notification. A task already running or waiting is left alone.
+- **The driver stays the only code that turns session events into reports.** It gained two
+  duties: pinning the work at every boundary a step change crosses, before the step's first action,
+  and handing an ended run to the global. That one keeps the place until the session's turn is over
+  (or its agent or session goes), pins the last end mark, then releases the place and starts the
+  next task in the window it was asked from; one whose window or folder is gone stays interrupted,
+  and the place passes on.
+- **Until the Tasks page**, the project page lists the interrupted tasks (*Dismiss*, *Resume*) and
+  the queued ones (*Stop*) under *Unfinished tasks*.
 - **The check command as a task** is a run with one command step and no agent. It goes through the
   same queue and the same writer, and its outcome lands on the page like any other.
 - **Unattended runs are read through a conversion** that turns what `onehand_core::unattended`
@@ -242,7 +262,7 @@ Milestone 1+2 lands as three pull requests in a row, each with its docs.
 | Pull request | Core | App |
 |---|---|---|
 | 1. Rename and migration (landed) | `workflow` (was `pipeline`), `workflow::Run` (was `PipelineRun`); `workflow::store::migrate_old_dir_blocking` moves `pipelines/` to `workflows/`, restartably; `instance::hold_lock` | `boot` takes the lock, then runs the move; every module, type and string renamed, the `Workflows` global and Settings ▸ Workflows; a `run_pipeline` keymap override is read as `run_workflow` |
-| 2. Tasks, history, visits and the queue | `task`, `task::files` and the move of `pipeline-runs/`; step visits; `task::marks`; `task::queue` keyed by the real checkout | `Workflows` → `Tasks` global; the driver records visits and marks their end; every start asks the queue, and a place is given up only once the work has stopped |
+| 2. Tasks, history, visits and the queue (landed) | `task`, `task::files` and the move of `pipeline-runs/`; step visits; `task::marks`; `task::queue` keyed by the real checkout | `Workflows` → `Tasks` global; the driver records visits and marks their end; every start asks the queue, and a place is given up only once the work has stopped |
 | 3. The Tasks page, the check as a task, and Retry | group rule, history cap; a one-step run with no agent; what a retry carries over | page, rail row and count, project filter; the project page links here; Retry from *Needs attention* |
 
 Each one brings its glossary terms and turns its part of this file into the account of the code.

@@ -77,7 +77,7 @@ pub enum Action {
 }
 
 /// How a run ended.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Outcome {
     /// Every step passed.
     Done,
@@ -118,7 +118,7 @@ impl Outcome {
 }
 
 /// Why a run stopped before its steps were done.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Stop {
     /// A person pressed Stop.
     ByPerson,
@@ -156,10 +156,28 @@ enum Await {
     Turn,
     Command,
     Approval,
-    /// The run ended; one that may be resumed waits to be.
-    Over {
-        resumable: bool,
-    },
+}
+
+/// One stay at a step: going back to a step is a new visit, never a rewrite
+/// of the last one, so a step visited twice keeps both.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub(crate) struct Visit {
+    /// Its number in the run, from 1.
+    pub(crate) id: u32,
+    /// The step's id.
+    pub(crate) step: String,
+    /// Seconds past the epoch.
+    pub(crate) started_at: u64,
+    /// `None` while the visit is the run's open one.
+    pub(crate) ended_at: Option<u64>,
+    /// The commit pinned for the work as the visit found it, and as it left
+    /// it; `None` until pinned, or when pinning failed.
+    pub(crate) start: Option<String>,
+    pub(crate) end: Option<String>,
+    /// The answer it kept, or how its failed command's output ended.
+    pub(crate) output: Option<String>,
+    /// Why it ended, as its history says it.
+    pub(crate) why: Option<String>,
 }
 
 /// How many transitions a run's history keeps, newest last.
@@ -192,14 +210,24 @@ pub struct Run {
     /// Working time spent, in seconds, for a resumed run's clock.
     pub spent_secs: u64,
     pub history: Vec<Transition>,
+    /// Every stay at a step, oldest first. Not capped: each one ends on a
+    /// miss or a person, and the answers they keep are capped already.
+    #[serde(default)]
+    pub(crate) visits: Vec<Visit>,
+    /// How the run ended; `None` while it has not, which after a restart
+    /// means it was cut off.
+    #[serde(default)]
+    pub outcome: Option<Outcome>,
     #[serde(skip)]
     awaiting: Await,
 }
 
 impl Run {
-    /// A run of `template` on `brief`, at its first step.
-    pub fn begin(id: String, template: Template, brief: Brief, setup: Setup) -> (Self, Action) {
-        let mut run = Self {
+    /// A run of `template` on `brief`, not started: [`Run::resume`] starts
+    /// it, so a run that waited for its place and one picked up again take
+    /// the same way in.
+    pub(crate) fn new(id: String, template: Template, brief: Brief, setup: Setup) -> Self {
+        Self {
             id,
             template,
             brief,
@@ -213,10 +241,10 @@ impl Run {
             check_output: None,
             spent_secs: 0,
             history: Vec::new(),
+            visits: Vec::new(),
+            outcome: None,
             awaiting: Await::Nothing,
-        };
-        let action = run.enter(0, "started");
-        (run, action)
+        }
     }
 
     /// The step the run is at.
@@ -248,9 +276,63 @@ impl Run {
         self.awaiting == Await::Turn
     }
 
+    /// The run has taken a step: it was started, not only made.
+    pub fn begun(&self) -> bool {
+        !self.history.is_empty()
+    }
+
     /// The run has ended.
     pub fn over(&self) -> bool {
-        matches!(self.awaiting, Await::Over { .. })
+        self.outcome.is_some()
+    }
+
+    /// Every point a mark is pinned at, in order: each visit's start, then
+    /// its end once it has one. Only ever grows at its end, so a count of
+    /// how many were pinned stays true.
+    pub fn boundaries(&self) -> Vec<(u32, bool)> {
+        self.visits
+            .iter()
+            .flat_map(|visit| {
+                std::iter::once((visit.id, false)).chain(visit.ended_at.map(|_| (visit.id, true)))
+            })
+            .collect()
+    }
+
+    /// How many boundaries count as pinned: every one up to the last whose
+    /// mark landed. One after it, a mark that failed or that the app quit
+    /// before it landed, is pinned again by the next driver.
+    pub fn pinned_count(&self) -> usize {
+        let landed: Vec<bool> = self
+            .visits
+            .iter()
+            .flat_map(|visit| {
+                std::iter::once(visit.start.is_some())
+                    .chain(visit.ended_at.map(|_| visit.end.is_some()))
+            })
+            .collect();
+        landed.iter().rposition(|&at| at).map_or(0, |at| at + 1)
+    }
+
+    /// `commit` is the work at every boundary from the `from`th on: one
+    /// commit serves a visit's end and the next one's start.
+    pub fn pinned(&mut self, commit: &str, from: usize) {
+        let mut at = 0;
+        for visit in &mut self.visits {
+            for end in [false, true] {
+                if end && visit.ended_at.is_none() {
+                    continue;
+                }
+                if at >= from {
+                    let slot = if end {
+                        &mut visit.end
+                    } else {
+                        &mut visit.start
+                    };
+                    *slot = Some(commit.to_string());
+                }
+                at += 1;
+            }
+        }
     }
 
     /// The mark asked for: the step's prompt, or the carry-on waiting on it.
@@ -307,8 +389,9 @@ impl Run {
             .find(|gate| !facts::holds(*gate, facts, &from, answer));
         let Some(gate) = failed else {
             if *keep_answer {
-                self.outputs
-                    .insert(step.id.clone(), answer.trim().to_string());
+                let answer = answer.trim().to_string();
+                self.visit_output(answer.clone());
+                self.outputs.insert(step.id.clone(), answer);
             }
             self.revise = None;
             self.check_output = None;
@@ -347,6 +430,7 @@ impl Run {
                 self.enter(self.step + 1, "the command passed")
             }
             Err(out) => {
+                self.visit_output(out.clone());
                 if let Some(action) = self.miss("the command failed") {
                     return action;
                 }
@@ -409,9 +493,19 @@ impl Run {
     /// session went: the step again, from the mark it kept, so work done
     /// before still counts as done in this step. A run that ended on its own
     /// outcome does not come back.
+    ///
+    /// A run never started starts here.
     pub fn resume(&mut self) -> Action {
-        if self.awaiting == (Await::Over { resumable: false }) {
+        if self.outcome.as_ref().is_some_and(|o| !o.resumable()) {
             return Action::Idle;
+        }
+        self.outcome = None;
+        if !self.begun() {
+            return self.enter(0, "started");
+        }
+        self.close_visit("interrupted");
+        if let Some(step) = self.current().map(|step| step.id.clone()) {
+            self.open_visit(step);
         }
         self.log_here("resumed");
         match (self.current().map(|step| &step.kind), &self.marks.step_from) {
@@ -428,10 +522,14 @@ impl Run {
     fn enter(&mut self, at: usize, why: &str) -> Action {
         let from = self.step_id();
         let Some(to) = self.template.steps.get(at).map(|step| step.id.clone()) else {
+            self.close_visit(&Outcome::Done.said());
             self.log(from, "done".to_string(), why);
-            self.awaiting = Await::Over { resumable: false };
+            self.awaiting = Await::Nothing;
+            self.outcome = Some(Outcome::Done);
             return Action::Finish(Outcome::Done);
         };
+        self.close_visit(why);
+        self.open_visit(to.clone());
         if at > self.furthest {
             self.furthest = at;
             self.misses = 0;
@@ -489,10 +587,40 @@ impl Run {
             Outcome::Failed(_) => "failed",
         };
         self.log(self.step_id(), to.to_string(), &outcome.said());
-        self.awaiting = Await::Over {
-            resumable: outcome.resumable(),
-        };
+        self.close_visit(&outcome.said());
+        self.awaiting = Await::Nothing;
+        self.outcome = Some(outcome.clone());
         Action::Finish(outcome)
+    }
+
+    /// Start a visit of `step`.
+    fn open_visit(&mut self, step: String) {
+        let id = self.visits.last().map_or(1, |visit| visit.id + 1);
+        self.visits.push(Visit {
+            id,
+            step,
+            started_at: now(),
+            ended_at: None,
+            start: None,
+            end: None,
+            output: None,
+            why: None,
+        });
+    }
+
+    /// End the open visit, if there is one, for `why`.
+    fn close_visit(&mut self, why: &str) {
+        if let Some(visit) = self.visits.last_mut().filter(|v| v.ended_at.is_none()) {
+            visit.ended_at = Some(now());
+            visit.why = Some(why.to_string());
+        }
+    }
+
+    /// What the open visit answered or printed.
+    fn visit_output(&mut self, output: String) {
+        if let Some(visit) = self.visits.last_mut().filter(|v| v.ended_at.is_none()) {
+            visit.output = Some(output);
+        }
     }
 
     /// The prompt that starts the agent step at hand.
@@ -522,7 +650,7 @@ impl Run {
     /// The step at hand by id, or `start` before the first move.
     fn step_id(&self) -> String {
         match self.current() {
-            Some(step) if !self.history.is_empty() => step.id.clone(),
+            Some(step) if self.begun() => step.id.clone(),
             _ => "start".to_string(),
         }
     }
@@ -533,11 +661,8 @@ impl Run {
     }
 
     fn log(&mut self, from: String, to: String, why: &str) {
-        let at = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map_or(0, |d| d.as_secs());
         self.history.push(Transition {
-            at,
+            at: now(),
             from,
             to,
             why: why.to_string(),
@@ -546,4 +671,11 @@ impl Run {
             self.history.remove(0);
         }
     }
+}
+
+/// Seconds past the epoch.
+fn now() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |d| d.as_secs())
 }
