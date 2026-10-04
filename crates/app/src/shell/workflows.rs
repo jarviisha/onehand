@@ -8,11 +8,14 @@ use gpui_component::WindowExt as _;
 use gpui_component::button::ButtonVariants as _;
 use gpui_component::input::{InputState, TextareaState};
 use gpui_component::notification::Notification;
+use gpui_component::{Icon, IconName, Sizable as _};
 use onehand_core::task::marks::{self, Against};
 use onehand_core::task::{Source, Task};
-use onehand_core::workflow::{self as core, Brief, Place, Setup, Template};
+use onehand_core::workflow::{self as core, Brief, Place, Run, Setup, Template};
 use onehand_core::worktree;
+use std::cell::Cell;
 use std::path::PathBuf;
+use std::rc::Rc;
 
 /// The launcher's fields, while it is on screen.
 pub struct WorkflowLauncher {
@@ -336,8 +339,10 @@ impl Shell {
         let Some(last) = task.runs.last() else {
             return;
         };
+        // From its one step: a check that passed would otherwise start past it.
         if task.source == Source::Check {
-            if crate::task::retry(&id, last.template.clone(), cx) {
+            let first = last.template.steps.first().map(|step| step.id.as_str());
+            if crate::task::retry(&id, last.template.clone(), first, cx) {
                 crate::task::request(id, window, cx);
             }
             return;
@@ -384,53 +389,109 @@ impl Shell {
             );
             return;
         }
-        let Some(same) = task.runs.last().map(|run| run.template.clone()) else {
+        let Some(last) = task.runs.last().cloned() else {
             return;
         };
-        // Where a retry on `template` starts, and how many answers it carries.
-        let starts = |template: &Template| {
-            let mut probe = task.clone();
-            let run = probe.retry(String::new(), template.clone())?;
-            let step = run.current().map_or_else(
-                || "the end".to_string(),
-                |s| format!("the {} step", s.label),
-            );
-            Some((step, run.outputs.len()))
+        let same = last.template.clone();
+        let steps = same.steps.clone();
+        let start = Run::retry_start(&last, &same);
+        // A run that got to the end starts over; any other carries on where
+        // it cannot carry over, or earlier, as picked.
+        let picked = Rc::new(Cell::new(if start >= steps.len() { 0 } else { start }));
+        let choices: Vec<SharedString> = steps
+            .iter()
+            .take(start + 1)
+            .map(|step| step.label.clone().into())
+            .collect();
+        // Where a retry on `template` from step `from` starts, and how many
+        // answers it carries.
+        let starts = {
+            let last = last.clone();
+            move |template: &Template, from: Option<&str>| {
+                let at = from
+                    .and_then(|from| template.index_of(from))
+                    .unwrap_or(usize::MAX)
+                    .min(Run::retry_start(&last, template));
+                let step = template.steps.get(at).map_or_else(
+                    || "the end".to_string(),
+                    |s| format!("the {} step", s.label),
+                );
+                let carried = template.steps[..at.min(template.steps.len())]
+                    .iter()
+                    .filter(|s| last.outputs.contains_key(&s.id))
+                    .count();
+                (step, carried)
+            }
         };
-        let Some((step, carried)) = starts(&same) else {
-            return;
-        };
-        let mut said = match carried {
-            0 => format!("It starts at {step}."),
-            1 => format!("It starts at {step}, carrying over 1 answer."),
-            n => format!("It starts at {step}, carrying over {n} answers."),
-        };
-        if against == Some(Against::Changed) {
-            said.push_str(" The work changed since the last run stopped.");
-        }
-        let newer = newer.and_then(|t| Some((starts(&t)?.0, t)));
+        let changed = against == Some(Against::Changed);
         let (id, title) = (task.id.clone(), task.brief.title.clone());
         let shell = cx.entity();
         window.open_alert_dialog(cx, move |alert, _, _| {
+            let from = steps.get(picked.get()).map(|step| step.id.clone());
+            let (step, carried) = starts(&same, from.as_deref());
+            let mut said = match carried {
+                0 => format!("It starts at {step}."),
+                1 => format!("It starts at {step}, carrying over 1 answer."),
+                n => format!("It starts at {step}, carrying over {n} answers."),
+            };
+            if changed {
+                said.push_str(" The work changed since the last run stopped.");
+            }
             let retry = {
-                let (shell, id, same) = (shell.clone(), id.clone(), same.clone());
+                let (shell, id, same, from) =
+                    (shell.clone(), id.clone(), same.clone(), from.clone());
                 move |_: &gpui::ClickEvent, window: &mut Window, cx: &mut gpui::App| {
                     window.close_dialog(cx);
-                    retry_now(&shell, id.clone(), same.clone(), window, cx);
+                    retry_now(&shell, id.clone(), same.clone(), from.clone(), window, cx);
                 }
             };
-            let with_newer = newer.clone().map(|(at, template)| {
-                let (shell, id) = (shell.clone(), id.clone());
+            let with_newer = newer.clone().map(|template| {
+                let at = starts(&template, from.as_deref()).0;
+                let (shell, id, from) = (shell.clone(), id.clone(), from.clone());
                 crate::controls::action("retry-newer")
                     .label(format!("Retry with the newer workflow, from {at}"))
                     .on_click(move |_, window: &mut Window, cx: &mut gpui::App| {
                         window.close_dialog(cx);
-                        retry_now(&shell, id.clone(), template.clone(), window, cx);
+                        retry_now(
+                            &shell,
+                            id.clone(),
+                            template.clone(),
+                            from.clone(),
+                            window,
+                            cx,
+                        );
                     })
+            });
+            let menu = (choices.len() > 1).then(|| {
+                let (choices, picked, shell) = (choices.clone(), picked.clone(), shell.clone());
+                let at = choices.get(picked.get()).cloned().unwrap_or_default();
+                crate::controls::menu_below(
+                    "retry-from",
+                    crate::controls::action("retry-from-trigger")
+                        .small()
+                        .label(format!("From {at}"))
+                        .icon(Icon::new(IconName::ChevronDown)),
+                    move |mut menu, _, _| {
+                        for (i, label) in choices.iter().enumerate() {
+                            let (picked, shell) = (picked.clone(), shell.clone());
+                            menu = menu.item(
+                                crate::controls::menu_item(label.clone())
+                                    .checked(i == picked.get())
+                                    .on_click(move |_, _, cx: &mut gpui::App| {
+                                        picked.set(i);
+                                        // The dialog is drawn by the shell.
+                                        shell.update(cx, |_, cx| cx.notify());
+                                    }),
+                            );
+                        }
+                        menu
+                    },
+                )
             });
             alert
                 .title(format!("Retry {title}?"))
-                .description(said.clone())
+                .description(said)
+                .children(menu)
                 .footer(
                     gpui_component::dialog::DialogFooter::new()
                         .child(
@@ -452,16 +513,18 @@ impl Shell {
     }
 }
 
-/// Give task `id` a new run of `template` and ask for its place.
+/// Give task `id` a new run of `template`, from step `from` when that is
+/// earlier than where it would start, and ask for its place.
 fn retry_now(
     shell: &Entity<Shell>,
     id: String,
     template: Template,
+    from: Option<String>,
     window: &mut Window,
     cx: &mut gpui::App,
 ) {
     shell.update(cx, |_, cx| {
-        if crate::task::retry(&id, template, cx) {
+        if crate::task::retry(&id, template, from.as_deref(), cx) {
             crate::task::request(id, window, cx);
         }
     });

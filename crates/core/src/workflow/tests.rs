@@ -706,7 +706,7 @@ fn exhausted_at_implement() -> Run {
 #[test]
 fn a_retry_on_the_same_template_starts_where_the_last_run_stopped() {
     let prev = exhausted_at_implement();
-    let mut next = Run::retry_of(&prev, "2".into(), prev.template.clone());
+    let mut next = Run::retry_of(&prev, "2".into(), prev.template.clone(), None);
     assert_eq!((next.step, next.misses), (2, 0));
     assert_eq!(
         next.outputs.get("plan").map(String::as_str),
@@ -718,6 +718,34 @@ fn a_retry_on_the_same_template_starts_where_the_last_run_stopped() {
     assert!(
         text.contains("The plan."),
         "the plan it carried is filled in"
+    );
+}
+
+#[test]
+fn a_retry_from_an_earlier_step_drops_what_came_after() {
+    let prev = exhausted_at_implement();
+    let next = Run::retry_of(&prev, "2".into(), prev.template.clone(), Some("plan"));
+    assert_eq!(next.step, 0);
+    assert!(next.outputs.is_empty(), "the plan runs again");
+}
+
+#[test]
+fn a_retry_ignores_a_step_it_lacks_or_one_past_its_start() {
+    let prev = exhausted_at_implement();
+    for from in ["nope", "verify"] {
+        let next = Run::retry_of(&prev, "2".into(), prev.template.clone(), Some(from));
+        assert_eq!(next.step, 2, "{from}");
+        assert_eq!(next.outputs.len(), 1);
+    }
+}
+
+#[test]
+fn a_done_run_retries_from_past_its_last_step() {
+    let mut prev = exhausted_at_implement();
+    prev.step = prev.template.steps.len();
+    assert_eq!(
+        Run::retry_start(&prev, &prev.template),
+        prev.template.steps.len()
     );
 }
 
@@ -746,7 +774,7 @@ fn a_retry_starts_at_the_first_step_whose_prompt_changed() {
     if let StepKind::Agent { prompt, .. } = &mut changed.steps[2].kind {
         prompt.push_str("\nAnd more.");
     }
-    let next = Run::retry_of(&prev, "2".into(), changed);
+    let next = Run::retry_of(&prev, "2".into(), changed, None);
     assert_eq!(
         next.step, 2,
         "the change runs again; plan and approval carry"
@@ -757,7 +785,7 @@ fn a_retry_starts_at_the_first_step_whose_prompt_changed() {
     if let StepKind::Agent { prompt, .. } = &mut changed.steps[0].kind {
         prompt.push_str("\nAnd more.");
     }
-    let next = Run::retry_of(&prev, "2".into(), changed);
+    let next = Run::retry_of(&prev, "2".into(), changed, None);
     assert_eq!(next.step, 0);
     assert!(next.outputs.is_empty());
 }
@@ -769,7 +797,7 @@ fn a_retry_never_skips_a_step_the_last_run_did_not_pass() {
     let prev = exhausted_at_verify();
     let mut changed = prev.template.clone();
     changed.steps.remove(1);
-    let mut next = Run::retry_of(&prev, "2".into(), changed);
+    let mut next = Run::retry_of(&prev, "2".into(), changed, None);
     assert_eq!(next.current().map(|s| s.id.as_str()), Some("verify"));
     assert_eq!(next.outputs.len(), 1, "the plan carries");
     assert!(matches!(next.resume(), Action::RunCommand(_)));
@@ -782,7 +810,7 @@ fn a_retry_does_not_carry_an_approval_whose_of_changed() {
     changed.steps[1].kind = StepKind::Approval {
         of: "implement".into(),
     };
-    let next = Run::retry_of(&prev, "2".into(), changed);
+    let next = Run::retry_of(&prev, "2".into(), changed, None);
     assert_eq!(next.step, 1);
     assert_eq!(next.outputs.len(), 1, "the plan before it still carries");
 }
@@ -798,7 +826,7 @@ fn a_retry_does_not_carry_a_step_that_reads_one_that_changed() {
         changed.steps[0], prev.template.steps[1],
         "the approval is unchanged"
     );
-    let next = Run::retry_of(&prev, "2".into(), changed);
+    let next = Run::retry_of(&prev, "2".into(), changed, None);
     assert_eq!(next.step, 0);
     assert!(next.outputs.is_empty());
 }
@@ -807,7 +835,7 @@ fn a_retry_does_not_carry_a_step_that_reads_one_that_changed() {
 fn a_retry_counts_its_misses_from_zero() {
     let prev = exhausted_at_implement();
     assert!(prev.misses > 0);
-    let mut next = Run::retry_of(&prev, "2".into(), prev.template.clone());
+    let mut next = Run::retry_of(&prev, "2".into(), prev.template.clone(), None);
     next.resume();
     prompt_of(next.measured(mark("a", "d0")));
     // One miss is under the allowance again.

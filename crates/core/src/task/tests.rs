@@ -315,7 +315,7 @@ fn a_retry_pushes_a_new_run_and_keeps_the_old_one() {
     t.runs[0].resume();
     t.runs[0].stopped(Stop::TimedOut);
     let template = t.runs[0].template.clone();
-    assert_eq!(t.retry("2".into(), template).map(|r| r.step), Some(0));
+    assert_eq!(t.retry("2".into(), template, None).map(|r| r.step), Some(0));
     assert_eq!(t.runs.len(), 2);
     assert_eq!(t.group(None), Group::Ended, "cut off until it runs");
 }
@@ -424,6 +424,54 @@ fn the_work_is_read_against_a_mark_and_its_branch() {
         Ok(Against::OtherBranch("main".into()))
     );
     let _ = std::fs::remove_dir_all(&repo);
+}
+
+#[test]
+fn a_visits_changes_and_a_files_diff_read_between_two_marks() {
+    use crate::diff::Row as D;
+    let repo = repo_with_commit("changes");
+    std::fs::write(repo.join("gone.txt"), "x").unwrap();
+    git(&repo, &["add", "gone.txt"]);
+    let from = marks::pin_blocking(&repo, &[]).unwrap();
+    std::fs::write(repo.join("a.txt"), "a\nb").unwrap();
+    std::fs::write(repo.join("new.txt"), "n").unwrap();
+    std::fs::remove_file(repo.join("gone.txt")).unwrap();
+    let to = marks::pin_blocking(&repo, &[]).unwrap();
+    let changes = marks::changes_blocking(&repo, &from, &to).unwrap();
+    let said: Vec<(&str, Option<u32>, Option<u32>)> = changes
+        .iter()
+        .map(|c| (c.path.as_str(), c.added, c.removed))
+        .collect();
+    assert_eq!(
+        said,
+        [
+            ("a.txt", Some(2), Some(1)),
+            ("gone.txt", Some(0), Some(1)),
+            ("new.txt", Some(1), Some(0)),
+        ]
+    );
+    assert_eq!(
+        marks::file_diff_blocking(&repo, &from, &to, "new.txt").unwrap(),
+        [D::Added("n".into())]
+    );
+    assert_eq!(
+        marks::file_diff_blocking(&repo, &from, &to, "gone.txt").unwrap(),
+        [D::Removed("x".into())]
+    );
+    let _ = std::fs::remove_dir_all(&repo);
+}
+
+#[test]
+fn retrying_a_task_let_go_makes_it_live_again() {
+    let mut t = task("1");
+    t.runs[0].resume();
+    t.runs[0].stopped(Stop::TimedOut);
+    t.dismissed = true;
+    assert_eq!(t.group(None), Group::Finished);
+    let template = t.runs[0].template.clone();
+    t.retry("2".into(), template, None).unwrap();
+    assert!(!t.dismissed);
+    assert!(t.resumable(), "its new run may start");
 }
 
 #[test]

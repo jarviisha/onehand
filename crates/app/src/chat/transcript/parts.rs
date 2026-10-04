@@ -713,7 +713,7 @@ pub(super) fn line_counts(added: usize, removed: usize, cx: &App) -> Option<gpui
 /// **Seconds up to a minute, then minutes.** A step that took four hundred and
 /// twelve seconds is a step that took seven minutes, and the extra two digits
 /// are two digits the eye has to divide before it means anything.
-pub(super) fn elapsed(secs: u64) -> String {
+pub(in crate::chat) fn elapsed(secs: u64) -> String {
     match secs {
         0..=59 => format!("{secs}s"),
         _ => format!("{}m {}s", secs / 60, secs % 60),

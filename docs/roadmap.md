@@ -36,12 +36,16 @@ starts a new run at the default step, carrying over what it can, and says when t
 refuses when another branch is checked out. Finished tasks past the newest 200 of a project are
 removed with their mark refs.
 
+Milestone 3 has landed: pressing a row opens the **task detail** in place of the cards, with the
+last run's step timeline (each visit's output, and the files it changed with their line diffs read
+from its marks), what waits for approval with *Open session*, and the earlier runs. Retry is offered
+on a finished task there too, and its dialog has a step menu to start from an earlier step; a
+dismissed task retried is live again.
+
 Not there yet:
 - The workflow mock agent (`crates/core/examples/mock_workflow_agent.js`) and the checklist in
   [workflows.md](workflows.md#checking-it-by-hand) are in the repository; a full pass of the
   checklist, the Tasks page rows included, is still owed.
-- Retry starts at the default step; picking an earlier one comes with milestone 3's task detail, as
-  does Retry on a finished task.
 - How many old tasks the cap removed is counted since onehand started, not kept across restarts.
 - An issue or a pull request cannot be the source of a run. The unattended run on `main` is still
   the older one-turn kind.
@@ -213,8 +217,7 @@ The rename is already done by 1+2.
 - **The history cap counts tasks against the project they were started from**, never a worktree
   added as a project. A task pushed out of the cap is deleted with its refs, and the page says
   how many were removed.
-- **Finished is read-only on the Tasks page.** Retrying a finished task is milestone 3's, from
-  the task detail.
+- **Finished is read-only on the Tasks page**, except *Retry* in the task detail.
 - **The Tasks page has a rail row beside the overview**, with the count of *Needs attention*
   (hidden at zero), and a keymap command with no default key.
 - **The page covers the window's workspace**, filtered by project.

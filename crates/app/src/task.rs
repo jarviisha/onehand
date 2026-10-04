@@ -457,16 +457,18 @@ pub(crate) fn stop_task(id: &str, cx: &mut App) {
     }
 }
 
-/// Give task `id` a new run of `template`, kept but not started: the caller
-/// asks for its place. Whether there was one to give.
-pub(crate) fn retry(id: &str, template: Template, cx: &mut App) -> bool {
+/// Give task `id` a new run of `template`, from step `from` when that is
+/// earlier than where it would start, kept but not started: the caller asks
+/// for its place. Whether there was one to give.
+pub(crate) fn retry(id: &str, template: Template, from: Option<&str>, cx: &mut App) -> bool {
     cx.update_global::<Tasks, _>(|t, _| {
         if t.busy(id) {
             return false;
         }
-        let made = t
-            .task_mut(id)
-            .is_some_and(|task| task.retry(onehand_core::task::new_id(), template).is_some());
+        let made = t.task_mut(id).is_some_and(|task| {
+            task.retry(onehand_core::task::new_id(), template, from)
+                .is_some()
+        });
         if made {
             t.save(id);
         }

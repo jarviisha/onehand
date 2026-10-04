@@ -97,6 +97,55 @@ pub fn drop_blocking(dir: &Path, task: &str) -> Result<(), String> {
     Ok(())
 }
 
+/// A file one mark changed against another, with the lines it added and
+/// removed; `None` for a binary file, which has no lines to count.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Change {
+    pub path: String,
+    pub added: Option<u32>,
+    pub removed: Option<u32>,
+}
+
+/// Every file that differs between the marks `from` and `to` in the
+/// repository at `dir`. Blocking.
+pub fn changes_blocking(dir: &Path, from: &str, to: &str) -> Result<Vec<Change>, String> {
+    let out = run(
+        dir,
+        None,
+        &["diff", "--numstat", "-z", "--no-renames", from, to],
+    )?;
+    Ok(out
+        .split('\0')
+        .filter_map(|entry| {
+            let mut parts = entry.trim_start_matches('\n').splitn(3, '\t');
+            let (added, removed, path) = (parts.next()?, parts.next()?, parts.next()?);
+            Some(Change {
+                path: path.to_string(),
+                added: added.parse().ok(),
+                removed: removed.parse().ok(),
+            })
+        })
+        .collect())
+}
+
+/// The line diff of `path` between the marks `from` and `to`; a side that
+/// has no such file reads as empty. Blocking.
+pub fn file_diff_blocking(
+    dir: &Path,
+    from: &str,
+    to: &str,
+    path: &str,
+) -> Result<Vec<crate::diff::Row>, String> {
+    let blob = |at: &str| {
+        let spec = format!("{at}:{path}");
+        match run(dir, None, &["cat-file", "-e", &spec]) {
+            Ok(_) => run_raw(dir, &["show", &spec]),
+            Err(_) => Ok(String::new()),
+        }
+    };
+    Ok(crate::diff::rows(&blob(from)?, &blob(to)?))
+}
+
 /// The branch checked out at `dir`, or `None` on a detached HEAD.
 fn branch(dir: &Path) -> Option<String> {
     run(dir, None, &["symbolic-ref", "--short", "-q", "HEAD"])
@@ -129,6 +178,16 @@ fn tree(dir: &Path, index: &Path) -> Result<(String, Option<String>), String> {
     run(dir, Some(index), &["add", "-A"])?;
     let tree = run(dir, Some(index), &["write-tree"])?;
     Ok((tree, head))
+}
+
+/// What `git <args>` in `dir` printed, untrimmed: a file's own text.
+fn run_raw(dir: &Path, args: &[&str]) -> Result<String, String> {
+    let out =
+        output_within(git(dir).args(args), LOCAL_LIMIT).map_err(|err| format!("git {err}"))?;
+    if !out.status.success() {
+        return Err(git_message(&out.stderr));
+    }
+    Ok(String::from_utf8_lossy(&out.stdout).into_owned())
 }
 
 /// `git <args>` in `dir`, on `index` when given, as onehand: a mark needs no

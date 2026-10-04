@@ -634,7 +634,11 @@ fn diff_path(
 }
 
 /// One diff, as three columns that hold whatever the text does.
-pub(super) fn diff_rows(hunks: &[DiffRow], budget: &mut usize, cx: &App) -> Vec<gpui::AnyElement> {
+pub(in crate::chat) fn diff_rows(
+    hunks: &[DiffRow],
+    budget: &mut usize,
+    cx: &App,
+) -> Vec<gpui::AnyElement> {
     let status = crate::theme::status_ink(cx);
     let mut out = Vec::new();
     let mut n = 0usize;
