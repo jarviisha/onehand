@@ -506,7 +506,7 @@ fn a_name_already_moved_keeps_the_new_copy() {
     std::fs::create_dir_all(&new).unwrap();
     let text = toml::to_string_pretty(&checkout()).unwrap();
     // As a crash between the write and the removal leaves it.
-    std::fs::write(old.join("same.toml"), "stale").unwrap();
+    std::fs::write(old.join("same.toml"), &text).unwrap();
     std::fs::write(new.join("same.toml"), &text).unwrap();
     assert!(store::migrate_blocking(&old, &new).is_empty());
     assert_eq!(
@@ -533,5 +533,13 @@ fn a_template_this_build_cannot_read_stays_where_it_is() {
     );
     assert!(old.join("notes.txt").exists());
     assert!(!new.join("future.toml").exists());
+    // Nor is it removed when a file of the same name is already there.
+    std::fs::create_dir_all(&new).unwrap();
+    std::fs::write(new.join("future.toml"), "mine").unwrap();
+    assert_eq!(store::migrate_blocking(&old, &new).len(), 1);
+    assert_eq!(
+        std::fs::read_to_string(old.join("future.toml")).unwrap(),
+        future
+    );
     let _ = std::fs::remove_dir_all(&root);
 }

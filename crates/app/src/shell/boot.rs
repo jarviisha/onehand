@@ -563,12 +563,8 @@ pub fn boot(cx: &mut App) {
         eprintln!("onehand is already running on {}", dir.display());
         std::process::exit(1);
     }
-    // Templates were once kept under `pipelines/`; the name on disk from
-    // before the rename.
-    for problem in onehand_core::workflow::store::migrate_blocking(
-        &dir.join("pipelines"),
-        &onehand_core::workflow::store::dir(),
-    ) {
+    // Behind the lock, and before anything reads the templates.
+    for problem in onehand_core::workflow::store::migrate_old_dir_blocking() {
         eprintln!("onehand: {problem}");
     }
     let (cfg, config_path) = AppConfig::load_resolved();

@@ -343,7 +343,7 @@ pub(super) fn workflows_page(handle: &Entity<Shell>, cx: &App) -> AnyElement {
         .w_full()
         .child(page_head(
             "Workflows",
-            "The templates a run starts from, shared by every workspace. The ones \
+            "The workflows a run starts from, shared by every workspace. The ones \
              onehand ships are read-only: duplicate one to change it.",
             APP,
             cx,

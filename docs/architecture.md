@@ -633,9 +633,9 @@ dies, so a crash never leaves it held, and a lock that cannot be taken at all (a
 is reported and does not stop the app. Whatever must run only once at a time runs behind it; today
 that is the move below.
 
-**Workflows used to live in `pipelines/`.** Right after the lock, `store::migrate_blocking` moves
-each `*.toml` from there to `workflows/`, at every start, and can be cut short at any point and run
-again: a file this build cannot read stays where it was and is reported; a name already in
+**Workflows used to live in `pipelines/`.** Right after the lock, `store::migrate_old_dir_blocking`
+moves each `*.toml` from there to `workflows/`, at every start, and can be cut short at any point
+and run again: a file this build cannot read stays where it was and is reported; a name already in
 `workflows/` keeps that copy and the old one is removed; any other is written whole (temp file and
 rename) before the old one goes. Anything that is not a template is left alone, and `pipelines/`
 goes once empty. Run files still live in `pipeline-runs/`, the name on disk, until they move with

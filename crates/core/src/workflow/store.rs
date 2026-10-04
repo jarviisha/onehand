@@ -103,37 +103,41 @@ pub fn delete_blocking(path: &Path) -> Result<(), String> {
     }
 }
 
-/// Move every template file from `old` to `new`, the directory they are kept
-/// in now, and say what was left behind. Blocking.
+/// Move the templates a build from before the rename kept in `pipelines/`
+/// to [`dir`], and say what was left behind. Blocking.
+pub fn migrate_old_dir_blocking() -> Vec<String> {
+    migrate_blocking(&crate::config::config_dir().join("pipelines"), &dir())
+}
+
+/// Move every template file from `old` to `new`, and say what was left
+/// behind. Blocking.
 ///
 /// Safe to run at every start and again after a crash part way: a file this
 /// build cannot read stays where it is, a name already in `new` keeps the
 /// copy there, and each file is written in full before its old one goes.
 /// Anything that is not a template is left alone, and `old` goes once empty.
-pub fn migrate_blocking(old: &Path, new: &Path) -> Vec<String> {
+pub(crate) fn migrate_blocking(old: &Path, new: &Path) -> Vec<String> {
     let mut problems = Vec::new();
     let Ok(entries) = std::fs::read_dir(old) else {
         return problems;
     };
     for path in entries.filter_map(Result::ok).map(|entry| entry.path()) {
-        let (Some(name), true) = (
-            path.file_name(),
-            path.extension().is_some_and(|x| x == "toml"),
-        ) else {
+        if path.extension().is_none_or(|x| x != "toml") {
+            continue;
+        }
+        let Some(name) = path.file_name() else {
             continue;
         };
         let to = new.join(name);
-        let moved = if to.exists() {
-            Ok(())
-        } else {
-            std::fs::read_to_string(&path)
-                .map_err(|err| err.to_string())
-                .and_then(|text| parse(&text).map(|_| text))
-                .and_then(|text| crate::config::write_atomic(&to, &text).map_err(|e| e.to_string()))
-        };
-        if let Err(why) =
-            moved.and_then(|()| std::fs::remove_file(&path).map_err(|e| e.to_string()))
-        {
+        let moved = std::fs::read_to_string(&path)
+            .map_err(|err| err.to_string())
+            .and_then(|text| parse(&text).map(|_| text))
+            .and_then(|text| match to.exists() {
+                true => Ok(()),
+                false => crate::config::write_atomic(&to, &text).map_err(|e| e.to_string()),
+            })
+            .and_then(|()| std::fs::remove_file(&path).map_err(|e| e.to_string()));
+        if let Err(why) = moved {
             problems.push(format!("{} was not moved: {why}", path.display()));
         }
     }
