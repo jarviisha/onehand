@@ -276,6 +276,11 @@ impl Run {
         self.awaiting == Await::Turn
     }
 
+    /// The run has taken a step: it was started, not only made.
+    pub fn begun(&self) -> bool {
+        !self.history.is_empty()
+    }
+
     /// The run has ended.
     pub fn over(&self) -> bool {
         self.outcome.is_some()
@@ -480,7 +485,7 @@ impl Run {
             return Action::Idle;
         }
         self.outcome = None;
-        if self.history.is_empty() {
+        if !self.begun() {
             return self.enter(0, "started");
         }
         self.close_visit("interrupted");
@@ -630,7 +635,7 @@ impl Run {
     /// The step at hand by id, or `start` before the first move.
     fn step_id(&self) -> String {
         match self.current() {
-            Some(step) if !self.history.is_empty() => step.id.clone(),
+            Some(step) if self.begun() => step.id.clone(),
             _ => "start".to_string(),
         }
     }

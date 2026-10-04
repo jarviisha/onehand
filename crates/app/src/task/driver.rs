@@ -190,7 +190,8 @@ fn advance(uid: u64, cx: &mut App, report: impl FnOnce(&mut Run) -> Action) {
 }
 
 fn on_event(uid: u64, session: &Entity<ChatSession>, event: &ChatEvent, cx: &mut App) {
-    let Some((sent, pending, awaiting_turn)) = read(uid, cx, |d| {
+    // A turn ending while a mark is pinned is not the turn the run will send.
+    let Some((sent, pending, judge_turn)) = read(uid, cx, |d| {
         (
             d.sent,
             d.pending.is_some(),
@@ -214,7 +215,7 @@ fn on_event(uid: u64, session: &Entity<ChatSession>, event: &ChatEvent, cx: &mut
         // A Stop pressed in the composer, or from the remote bridge: the
         // person's word that this is not to go on.
         ChatEvent::TurnEnded if session.read(cx).chat.cancelled => end(uid, Stop::ByPerson, cx),
-        ChatEvent::TurnEnded if awaiting_turn => after_turn(uid, session, cx),
+        ChatEvent::TurnEnded if judge_turn => after_turn(uid, session, cx),
         ChatEvent::TurnEnded => {}
         // A person answers the card; the clock waits for them.
         ChatEvent::AwaitingUser(_) => {

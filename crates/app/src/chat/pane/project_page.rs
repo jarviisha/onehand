@@ -591,7 +591,7 @@ fn unfinished_tasks(root: &Path, cx: &mut Context<ChatPane>) -> Option<gpui::Any
         .take(UNFINISHED_ROWS)
         .enumerate()
         .map(|(i, task)| {
-            let (id, resume) = (task.id.clone(), task.id.clone());
+            let (id, resume_id) = (task.id.clone(), task.id.clone());
             let said = match (task.queued, task.begun) {
                 (true, true) => format!("{} · resumes at {}", task.name, task.step),
                 (true, false) => format!("{} · starts at {}", task.name, task.step),
@@ -649,7 +649,7 @@ fn unfinished_tasks(root: &Path, cx: &mut Context<ChatPane>) -> Option<gpui::Any
                             .label("Resume")
                             .tooltip("Carry on from that step in a new session")
                             .on_click(cx.listener(move |_: &mut ChatPane, _, _, cx| {
-                                cx.emit(ChatPaneEvent::ResumeTask(resume.clone()));
+                                cx.emit(ChatPaneEvent::ResumeTask(resume_id.clone()));
                             })),
                     ),
             }

@@ -207,8 +207,12 @@ One window hosts exactly one workspace. The frame is a navigation **rail** plus 
   the only way back, and it opens a new session that carries on from that step.
   A task waiting for its place, because another task is working in the same
   checkout, carries a muted *Queued* and *Stop* (ghost), which calls that start
-  off. Starting a task that has to wait says so in a notification, naming the
-  checkout it waits for. The list is capped and says how many more it left out.
+  off; its muted line says where it starts, or where it resumes for a task that
+  ran before, and stopping a resume leaves the task as it was. Starting a task
+  that has to wait says so in a notification, naming the checkout it waits for.
+  A task that has ended but still holds its place, its session's turn not yet
+  over, is not listed until it lets go. The list is capped and says how many
+  more it left out.
 - **The workspace has a page too**, for the question no project page can
   answer: what needs me, and what is there to do, across every project at once.
   It is reached from a muted row in the rail's header, *Workspace overview*,

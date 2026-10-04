@@ -35,8 +35,8 @@ impl Writer {
         std::thread::Builder::new()
             .name("onehand-tasks".to_string())
             .spawn(move || {
-                for job in rx {
-                    match job {
+                for op in rx {
+                    match op {
                         Op::Save(task) => {
                             if let Err(why) = save_blocking(&dir, &task) {
                                 eprintln!("onehand: could not write a task's file: {why}");

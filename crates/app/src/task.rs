@@ -315,7 +315,7 @@ pub(crate) fn stop_queued(id: &str, cx: &mut App) {
         let Some(task) = t.task_mut(id) else {
             return;
         };
-        if task.runs.last().is_some_and(|run| run.history.is_empty()) {
+        if task.runs.last().is_some_and(|run| !run.begun()) {
             task.runs.pop();
         }
         t.save(id);
@@ -401,7 +401,7 @@ pub(crate) fn listed_in(root: &Path, cx: &App) -> Vec<Listed> {
                     .and_then(Run::current)
                     .map_or_else(String::new, |step| step.label.clone()),
                 queued: t.queue.queued(&task.id),
-                begun: run.is_some_and(|run| !run.history.is_empty()),
+                begun: run.is_some_and(Run::begun),
             }
         })
         .collect()
