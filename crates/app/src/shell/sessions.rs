@@ -574,25 +574,46 @@ impl Shell {
     /// click goes through, and which puts back the Workbench this put away.
     pub fn show_workspace(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let projects = self.page_projects();
-        // Both docks hold one project's things, and this page is about all of
-        // them. Put away, not closed: the terminal's state is filed under its
-        // project and `terminal_root` let go, so the next arrival is a handover
-        // that restores it, and the Workbench comes back on leaving.
-        if !self.workspace_shown(cx) {
-            if let Some(root) = self.terminal_root.take() {
-                let live = self.dock.read(cx).is_dock_open(DockPlacement::Bottom, cx);
-                self.terminal_open.insert(root, live);
-            }
-            self.set_terminal_visible(false, window, cx);
-            self.workbench_aside = self.dock.read(cx).is_dock_open(DockPlacement::Right, cx);
-            self.hide_workbench(window, cx);
-        }
+        self.docks_aside(window, cx);
         self.chat
             .update(cx, |pane, cx| pane.show_workspace(projects, window, cx));
         // No session is showing now, so there is no running agent to be
         // behind on anything.
         self.sync_agent_started(cx);
         cx.notify();
+    }
+
+    /// Show the Tasks page, narrowed to the project at `filter` or not.
+    /// Left the way the workspace page is.
+    pub fn show_tasks(
+        &mut self,
+        filter: Option<std::path::PathBuf>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let projects = self.page_projects();
+        self.docks_aside(window, cx);
+        self.chat
+            .update(cx, |pane, cx| pane.show_tasks(projects, filter, window, cx));
+        self.sync_agent_started(cx);
+        cx.notify();
+    }
+
+    /// Both docks hold one project's things, and a page is about all of
+    /// them. Put away, not closed: the terminal's state is filed under its
+    /// project and `terminal_root` let go, so the next arrival is a handover
+    /// that restores it, and the Workbench comes back on leaving.
+    fn docks_aside(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.page_shown(cx) {
+            return;
+        }
+        if let Some(root) = self.terminal_root.take() {
+            let live = self.dock.read(cx).is_dock_open(DockPlacement::Bottom, cx);
+            self.terminal_open.insert(root, live);
+        }
+        self.set_terminal_visible(false, window, cx);
+        self.workbench_aside = self.dock.read(cx).is_dock_open(DockPlacement::Right, cx);
+        self.hide_workbench(window, cx);
     }
 
     /// Every project as the workspace page lists it, in rail order.
@@ -627,6 +648,29 @@ impl Shell {
     /// the rail row that leads to it.
     pub fn workspace_shown(&self, cx: &App) -> bool {
         self.chat.read(cx).showing_workspace()
+    }
+
+    /// Whether the Tasks page is what the centre of the window shows.
+    pub fn tasks_shown(&self, cx: &App) -> bool {
+        self.chat.read(cx).showing_tasks()
+    }
+
+    /// Whether either page is what the centre of the window shows: no
+    /// project is on screen, and neither dock is.
+    pub fn page_shown(&self, cx: &App) -> bool {
+        self.chat.read(cx).showing_page()
+    }
+
+    /// The projects the pages list, as paths: every project but a run's own
+    /// worktree.
+    pub fn page_roots(&self) -> Vec<std::path::PathBuf> {
+        self.window
+            .workspace
+            .roots
+            .iter()
+            .filter(|root| !root.transient)
+            .map(|root| root.path.clone())
+            .collect()
     }
 
     /// Show session `uid`, in whichever window holds it — bringing that window

@@ -9,7 +9,7 @@
 
 use super::Tasks;
 use crate::chat::session::{ChatEvent, ChatSession, note};
-use gpui::{App, BorrowAppContext as _, Entity, Subscription, Task, WeakEntity};
+use gpui::{AnyWindowHandle, App, BorrowAppContext as _, Entity, Subscription, Task, WeakEntity};
 use onehand_core::chat::Link;
 use onehand_core::task::marks;
 use onehand_core::unattended::Budget;
@@ -38,6 +38,8 @@ pub(super) struct Driven {
     /// ending meanwhile is not the one the action will send.
     held: Option<Vec<Later>>,
     session: WeakEntity<ChatSession>,
+    /// The window the session is in.
+    pub(super) window: AnyWindowHandle,
     /// How many prompts the run has sent its session: any more, and a person
     /// is driving.
     sent: usize,
@@ -56,7 +58,7 @@ pub(super) struct Driven {
     /// The agent parked a card nobody has answered yet.
     card: bool,
     /// Set to call off the step's command, while one is running.
-    command: Option<Arc<AtomicBool>>,
+    pub(super) command: Option<Arc<AtomicBool>>,
     /// How the run ends once its called-off command has exited.
     stopping: Option<Stop>,
     _watch: Subscription,
@@ -66,6 +68,11 @@ pub(super) struct Driven {
 }
 
 impl Driven {
+    /// The run waits on a person: an approval, or a card the agent parked.
+    pub(super) fn waits_on_person(&self) -> bool {
+        self.run.awaiting_approval() || self.card
+    }
+
     /// Working time spent on the run, sessions before this one included.
     fn spent_secs(&self) -> u64 {
         let used = self
@@ -87,9 +94,11 @@ const ANSWER_MAX: usize = 20_000;
 /// Drive `run`, the last run of `task`, on session `uid`, starting with
 /// `first`: what [`Run::resume`] said to do. `pinned` boundaries of it had
 /// their mark pinned before.
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn start(
     uid: u64,
     session: &Entity<ChatSession>,
+    window: AnyWindowHandle,
     task: String,
     run: Run,
     first: Action,
@@ -124,6 +133,7 @@ pub(crate) fn start(
         pinned,
         held: None,
         session: session.downgrade(),
+        window,
         sent: 0,
         answer_from: 0,
         pending: None,
@@ -507,12 +517,16 @@ fn run_command(uid: u64, session: &Entity<ChatSession>, command: String, cx: &mu
     };
     note(session, format!("Running: {command}"), cx);
     let weak = session.downgrade();
+    let running = cx.global::<Tasks>().command_started();
     cx.spawn(async move |cx| {
         let ran = cx
             .background_executor()
             .spawn(async move {
-                run_command_blocking(&dir, &command, &cancel)?;
-                worktree::head_blocking(&dir)
+                let ran = run_command_blocking(&dir, &command, &cancel);
+                drop(running);
+                ran?;
+                // Passed on its exit status; the commit is kept when there is one.
+                Ok(worktree::head_blocking(&dir).ok())
             })
             .await;
         cx.update(|cx| {
@@ -586,7 +600,7 @@ fn finish(uid: u64, session: Option<&Entity<ChatSession>>, outcome: Outcome, cx:
     };
     if let Some(session) = session {
         let said = match outcome.resumable() {
-            true => format!("{}; resume it from the project's page", outcome.said()),
+            true => format!("{}; resume it from the Tasks page", outcome.said()),
             false => outcome.said(),
         };
         note(session, said, cx);

@@ -1,6 +1,6 @@
 use super::{
     CloseSession, FocusComposer, NewSession, NextSession, OpenNeovim, OpenSettings, PrevSession,
-    RestartSession, RunWorkflow, SaveFile, ToggleMarkdown, ToggleMaximize, ToggleRail,
+    RestartSession, RunWorkflow, SaveFile, ShowTasks, ToggleMarkdown, ToggleMaximize, ToggleRail,
     ToggleTerminal, ToggleWorkbench, ToggleWorkbenchVisibility, ZoomIn, ZoomOut, ZoomReset,
 };
 use super::{FocusedPanel, SelectSession, Shell, ZoomStep};
@@ -167,6 +167,9 @@ impl Render for Shell {
                     shell.begin_workflow(window, cx);
                 }),
             )
+            .on_action(cx.listener(|shell: &mut Self, _: &ShowTasks, window, cx| {
+                shell.show_tasks(None, window, cx);
+            }))
             .on_action(
                 cx.listener(|shell: &mut Self, _: &ToggleMaximize, window, cx| {
                     shell.toggle_maximize(window, cx);

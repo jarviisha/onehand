@@ -11,10 +11,12 @@ use gpui::{
 };
 use gpui_component::WindowExt as _;
 use gpui_component::notification::Notification;
-use onehand_core::task::{Task, files, marks, queue};
-use onehand_core::workflow::Run;
+use onehand_core::task::{Group, Task, Working, files, history, marks, queue, sort_listed};
+use onehand_core::workflow::{Action, Run, Stop, Template, run_command_blocking};
 use std::collections::HashMap;
-use std::path::Path;
+use std::path::PathBuf;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
 mod driver;
 pub(crate) use driver::{approve, revise, start, stop};
@@ -31,7 +33,25 @@ pub(crate) struct Tasks {
     /// Tasks that ended while their session's turn was still going, holding
     /// their place until it is over.
     draining: HashMap<String, Vec<Subscription>>,
+    /// Checks running, each with the flag that calls its command off.
+    checks: HashMap<String, Arc<AtomicBool>>,
+    /// How many finished tasks of each project were let go to keep the
+    /// history bounded.
+    // ponytail: counts since boot only; persist it if people ask.
+    removed: HashMap<PathBuf, usize>,
+    /// How many commands, a check's or a step's, have not exited yet.
+    commands: Arc<AtomicUsize>,
     writer: files::Writer,
+}
+
+/// A command counted as running until this drops, which its background work
+/// does the moment the command has exited.
+pub(super) struct Running(Arc<AtomicUsize>);
+
+impl Drop for Running {
+    fn drop(&mut self) {
+        self.0.fetch_sub(1, Ordering::SeqCst);
+    }
 }
 
 impl Default for Tasks {
@@ -42,6 +62,9 @@ impl Default for Tasks {
             queue: queue::Queue::default(),
             asked_in: HashMap::new(),
             draining: HashMap::new(),
+            checks: HashMap::new(),
+            removed: HashMap::new(),
+            commands: Arc::default(),
             writer: files::Writer::spawn(files::dir()),
         }
     }
@@ -77,9 +100,29 @@ impl Tasks {
         }
     }
 
+    /// Count a command as running until the guard drops.
+    pub(super) fn command_started(&self) -> Running {
+        self.commands.fetch_add(1, Ordering::SeqCst);
+        Running(self.commands.clone())
+    }
+
     /// Whether task `id` is running or waiting for its place.
     fn busy(&self, id: &str) -> bool {
-        self.live.values().any(|d| d.task == id) || self.queue.queued(id) || self.queue.holds(id)
+        self.working(id).is_some()
+    }
+
+    /// What task `id` is doing, if anything.
+    fn working(&self, id: &str) -> Option<Working> {
+        if self.queue.queued(id) {
+            return Some(Working::Queued);
+        }
+        if let Some(d) = self.live.values().find(|d| d.task == id) {
+            return Some(match d.waits_on_person() {
+                true => Working::Waiting,
+                false => Working::Running,
+            });
+        }
+        (self.queue.holds(id) || self.checks.contains_key(id)).then_some(Working::Running)
     }
 }
 
@@ -95,10 +138,28 @@ pub(crate) fn boot(cx: &mut App) {
     // save still queued would die with it. The wait is in the future, which
     // runs once the windows are gone and their sessions have let go of their
     // runs, so those last writes are already queued ahead of it.
+    //
+    // A command still running is called off and waited for as well: left
+    // alone, it would go on writing to the work after the app is gone, beside
+    // whatever task starts there next.
     let writer = cx.global::<Tasks>().writer.clone();
-    cx.on_app_quit(move |_| {
-        let writer = writer.clone();
+    let commands = cx.global::<Tasks>().commands.clone();
+    cx.on_app_quit(move |cx| {
+        if let Some(t) = cx.try_global::<Tasks>() {
+            let steps = t.live.values().filter_map(|d| d.command.as_ref());
+            for cancel in t.checks.values().chain(steps) {
+                cancel.store(true, Ordering::SeqCst);
+            }
+        }
+        let (writer, commands) = (writer.clone(), commands.clone());
         async move {
+            let until = std::time::Instant::now() + QUIT_WAIT;
+            while commands.load(Ordering::SeqCst) > 0 && std::time::Instant::now() < until {
+                std::thread::sleep(std::time::Duration::from_millis(20));
+            }
+            if commands.load(Ordering::SeqCst) > 0 {
+                eprintln!("onehand: a command was still running at quit");
+            }
             if !writer.flush(QUIT_WAIT) {
                 eprintln!("onehand: a task's last write may not have landed");
             }
@@ -121,6 +182,7 @@ pub(crate) fn boot(cx: &mut App) {
                 })
                 .collect();
             cx.update_global::<Tasks, _>(|t, _| t.tasks.extend(tasks));
+            enforce_cap(cx);
             cx.refresh_windows();
         });
     })
@@ -285,6 +347,7 @@ pub(crate) fn release(id: String, cx: &mut App) {
         let asked = t.asked_in.remove(&next);
         Some((next, asked))
     });
+    enforce_cap(cx);
     cx.refresh_windows();
     let Some((next, asked)) = next else {
         return;
@@ -320,6 +383,7 @@ pub(crate) fn stop_queued(id: &str, cx: &mut App) {
         }
         t.save(id);
     });
+    enforce_cap(cx);
     cx.refresh_windows();
 }
 
@@ -335,6 +399,7 @@ pub(crate) fn dismiss(id: &str, cx: &mut App) {
         }
         t.save(id);
     });
+    enforce_cap(cx);
     cx.refresh_windows();
 }
 
@@ -366,43 +431,274 @@ pub(crate) fn shown(uid: u64, cx: &App) -> Option<Shown> {
     })
 }
 
-/// A task a project page lists: one interrupted, or one queued.
-#[derive(Clone, PartialEq)]
-pub(crate) struct Listed {
-    pub(crate) id: String,
-    pub(crate) name: String,
-    pub(crate) title: String,
-    pub(crate) step: String,
-    pub(crate) queued: bool,
-    /// Its run took a step before: waiting, it waits to be resumed, and
-    /// calling that off leaves it as it was.
-    pub(crate) begun: bool,
+/// Task `id` as it is kept.
+pub(crate) fn task(id: &str, cx: &App) -> Option<Task> {
+    cx.try_global::<Tasks>()?.task(id).cloned()
 }
 
-/// The tasks started from, or working in, the project at `root` that wait
-/// on a person or on their place, in the order they were started. One that
-/// ended but still holds its place, its session's turn not yet over, is
-/// left out until it lets go: nothing can be done with it before then.
-pub(crate) fn listed_in(root: &Path, cx: &App) -> Vec<Listed> {
+/// A person pressed Stop on task `id`, whatever it is doing.
+pub(crate) fn stop_task(id: &str, cx: &mut App) {
+    let Some(t) = cx.try_global::<Tasks>() else {
+        return;
+    };
+    if t.queue.queued(id) {
+        return stop_queued(id, cx);
+    }
+    let live = t
+        .live
+        .iter()
+        .find(|(_, d)| d.task == id)
+        .map(|(uid, _)| *uid);
+    if let Some(uid) = live {
+        return stop(uid, cx);
+    }
+    if let Some(cancel) = t.checks.get(id) {
+        cancel.store(true, Ordering::SeqCst);
+    }
+}
+
+/// Give task `id` a new run of `template`, kept but not started: the caller
+/// asks for its place. Whether there was one to give.
+pub(crate) fn retry(id: &str, template: Template, cx: &mut App) -> bool {
+    cx.update_global::<Tasks, _>(|t, _| {
+        if t.busy(id) {
+            return false;
+        }
+        let made = t
+            .task_mut(id)
+            .is_some_and(|task| task.retry(onehand_core::task::new_id(), template).is_some());
+        if made {
+            t.save(id);
+        }
+        made
+    })
+}
+
+/// Run check task `id`, whose place it now holds: pin the work, run the
+/// command, and say in `window` how it went. No session: there is no agent
+/// to watch.
+pub(crate) fn drive_check(id: String, window: AnyWindowHandle, cx: &mut App) {
+    let Some(mut run) = resumable_run(&id, cx) else {
+        return release(id, cx);
+    };
+    // Counted from what landed, as a session's run is.
+    let from = run.pinned_count();
+    let first = run.resume();
+    let Action::RunCommand(command) = first else {
+        // Nothing to run: the run ended before it began.
+        cx.update_global::<Tasks, _>(|t, _| t.store_run(&id, run));
+        return freed(id, from, cx);
+    };
+    let cancel = Arc::new(AtomicBool::new(false));
+    let refs = marks::refs_from(&id, &run, from);
+    // Counted from before the pin: a quit meanwhile waits for the command
+    // too, which never starts once called off.
+    let running = cx.update_global::<Tasks, _>(|t, _| {
+        t.checks.insert(id.clone(), cancel.clone());
+        t.store_run(&id, run.clone());
+        t.command_started()
+    });
+    cx.refresh_windows();
+    let dir = run.setup.dir.clone();
+    cx.spawn(async move |cx| {
+        let pinned = {
+            let (dir, refs) = (dir.clone(), refs.clone());
+            cx.background_executor()
+                .spawn(async move { marks::pin_blocking(&dir, &refs) })
+                .await
+        };
+        let ran = {
+            let cancel = cancel.clone();
+            cx.background_executor()
+                .spawn(async move {
+                    let ran = run_command_blocking(&dir, &command, &cancel);
+                    drop(running);
+                    ran?;
+                    // Passed on its exit status; the commit is kept when
+                    // there is one, and a folder outside git has none.
+                    Ok(onehand_core::worktree::head_blocking(&dir).ok())
+                })
+                .await
+        };
+        cx.update(|cx| {
+            match &pinned {
+                Ok(commit) => run.pinned(commit, from),
+                Err(why) => eprintln!("onehand: a check's mark was not pinned: {why}"),
+            }
+            cx.update_global::<Tasks, _>(|t, _| t.checks.remove(&id));
+            let said = match cancel.load(Ordering::SeqCst) {
+                true => {
+                    run.stopped(Stop::ByPerson);
+                    None
+                }
+                false => {
+                    let passed = ran.is_ok();
+                    run.command_finished(ran);
+                    Some(passed)
+                }
+            };
+            let project = run.setup.repo.file_name().map_or_else(
+                || run.setup.repo.display().to_string(),
+                |n| n.to_string_lossy().into_owned(),
+            );
+            cx.update_global::<Tasks, _>(|t, _| t.store_run(&id, run));
+            if let Some(passed) = said {
+                let note = match passed {
+                    true => Notification::success(format!("Check passed in {project}")),
+                    false => Notification::warning(format!("Check failed in {project}")),
+                };
+                let _ = window.update(cx, |_, window, cx| window.push_notification(note, cx));
+            }
+            freed(id, from + refs.len(), cx);
+        });
+    })
+    .detach();
+}
+
+/// Let go of the finished tasks past what each project keeps: their files,
+/// then the marks they pinned, off the UI thread.
+fn enforce_cap(cx: &mut App) {
+    let Some(t) = cx.try_global::<Tasks>() else {
+        return;
+    };
+    let listed: Vec<(&Task, Group)> = t
+        .tasks
+        .iter()
+        .map(|task| (task, task.group(t.working(&task.id))))
+        .collect();
+    let gone = history::over_cap(&listed);
+    if gone.is_empty() {
+        return;
+    }
+    let dropped = cx.update_global::<Tasks, _>(|t, _| {
+        let mut dropped = Vec::new();
+        t.tasks.retain(|task| {
+            if !gone.contains(&task.id) {
+                return true;
+            }
+            t.writer.remove(task.id.clone());
+            *t.removed.entry(task.setup.repo.clone()).or_default() += 1;
+            dropped.push((
+                task.setup.dir.clone(),
+                task.setup.repo.clone(),
+                task.id.clone(),
+            ));
+            false
+        });
+        dropped
+    });
+    cx.background_executor()
+        .spawn(async move {
+            for (dir, repo, id) in dropped {
+                let at = if dir.is_dir() { dir } else { repo };
+                if let Err(why) = marks::drop_blocking(&at, &id) {
+                    eprintln!("onehand: the marks of an old task were not dropped: {why}");
+                }
+            }
+        })
+        .detach();
+}
+
+/// A task as the Tasks page lists it.
+pub(crate) struct Row {
+    pub(crate) id: String,
+    pub(crate) title: String,
+    /// Its workflow's name.
+    pub(crate) name: String,
+    /// The step it is at while it works, or how it ended.
+    pub(crate) at: String,
+    /// The project it was started from.
+    pub(crate) project: PathBuf,
+    pub(crate) group: Group,
+    /// The session it runs in, and the window that holds it.
+    pub(crate) session: Option<(u64, AnyWindowHandle)>,
+    pub(crate) resumable: bool,
+    /// Something answers Stop: a place asked for, a run driven or a check
+    /// running. A task that ended but still holds its place, its session's
+    /// turn not yet over, has nothing left to stop.
+    pub(crate) stoppable: bool,
+    /// An unattended run: it is listed, and only its session can be opened.
+    pub(crate) read_only: bool,
+}
+
+/// Every task of the projects at `roots`, and the unattended runs working
+/// their issues: finished ones newest first, every other group oldest first.
+pub(crate) fn rows(roots: &[PathBuf], cx: &App) -> Vec<Row> {
     let Some(t) = cx.try_global::<Tasks>() else {
         return Vec::new();
     };
-    t.tasks
-        .iter()
-        .filter(|task| task.setup.repo == root || task.setup.dir == root)
-        .filter(|task| task.resumable() && (t.queue.queued(&task.id) || !t.busy(&task.id)))
-        .map(|task| {
-            let run = task.runs.last();
-            Listed {
-                id: task.id.clone(),
-                name: run.map_or_else(String::new, |run| run.template.name.clone()),
-                title: task.brief.title.clone(),
-                step: run
-                    .and_then(Run::current)
-                    .map_or_else(String::new, |step| step.label.clone()),
-                queued: t.queue.queued(&task.id),
-                begun: run.is_some_and(Run::begun),
-            }
+    let mut rows: Vec<(Option<&Task>, Row)> = crate::unattended::live_runs(cx)
+        .into_iter()
+        .filter(|run| roots.contains(&run.repo))
+        .map(|run| {
+            let row = Row {
+                id: String::new(),
+                at: run.waiting.clone().unwrap_or_else(|| "Working".to_string()),
+                title: run.title,
+                name: run.name,
+                project: run.repo,
+                group: match run.waiting {
+                    Some(_) => Group::Waiting,
+                    None => Group::Running,
+                },
+                session: Some((run.uid, run.window)),
+                resumable: false,
+                stoppable: false,
+                read_only: true,
+            };
+            (None, row)
         })
-        .collect()
+        .collect();
+    let tasks = t
+        .tasks
+        .iter()
+        .filter(|task| roots.contains(&task.setup.repo) || roots.contains(&task.setup.dir));
+    for task in tasks {
+        let working = t.working(&task.id);
+        let run = task.runs.last();
+        let step = run
+            .and_then(Run::current)
+            .map_or_else(String::new, |step| step.label.clone());
+        let at = match (working, task.outcome()) {
+            (Some(_), _) => step,
+            (None, None) => format!("cut off at {step}"),
+            (None, Some(outcome)) => outcome.said(),
+        };
+        let live = t.live.iter().find(|(_, d)| d.task == task.id);
+        let row = Row {
+            id: task.id.clone(),
+            title: task.brief.title.clone(),
+            name: run.map_or_else(String::new, |run| run.template.name.clone()),
+            at,
+            project: task.setup.repo.clone(),
+            group: task.group(working),
+            session: live.map(|(uid, d)| (*uid, d.window)),
+            resumable: task.resumable(),
+            stoppable: live.is_some()
+                || t.queue.queued(&task.id)
+                || t.checks.contains_key(&task.id),
+            read_only: false,
+        };
+        rows.push((Some(task), row));
+    }
+    sort_listed(&mut rows, |(task, row)| (row.group, *task));
+    rows.into_iter().map(|(_, row)| row).collect()
+}
+
+/// How many tasks of the projects at `roots` need a person: waiting on one,
+/// or ended on something nobody chose. Counted from [`rows`], so the rail
+/// and the page cannot disagree.
+pub(crate) fn attention(roots: &[PathBuf], cx: &App) -> usize {
+    rows(roots, cx)
+        .iter()
+        .filter(|row| row.group.needs_attention())
+        .count()
+}
+
+/// How many finished tasks of the projects at `roots` were let go since
+/// the app started, to keep the history bounded.
+pub(crate) fn removed(roots: &[PathBuf], cx: &App) -> usize {
+    cx.try_global::<Tasks>().map_or(0, |t| {
+        roots.iter().filter_map(|root| t.removed.get(root)).sum()
+    })
 }

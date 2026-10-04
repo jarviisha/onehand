@@ -235,8 +235,9 @@ impl ChatPane {
     pub(super) fn header(&self, cx: &mut Context<Self>) -> impl IntoElement + use<> {
         let chat = self.active_chat(cx);
         let title = chat.and_then(Chat::conversation_title).unwrap_or_else(|| {
-            match (&self.workspace, &self.empty) {
-                (Some(_), _) => "Workspace".to_string(),
+            match (&self.page, &self.empty) {
+                (Some(super::Page::Workspace(_)), _) => "Workspace".to_string(),
+                (Some(super::Page::Tasks(_)), _) => "Tasks".to_string(),
                 (None, Some(project)) => project.label.to_string(),
                 (None, None) => String::new(),
             }
@@ -365,9 +366,9 @@ impl ChatPane {
             // to apply: a key has one binding and no other way to reach an open
             // panel, while a button can see the dock and is pressed with the
             // caret back in the composer.
-            // Neither dock is offered on the workspace page: both hold one
-            // project's things, and the page stands on none.
-            .when(self.workspace.is_none(), |row| {
+            // Neither dock is offered on the workspace or Tasks page: both
+            // hold one project's things, and the page stands on none.
+            .when(self.page.is_none(), |row| {
                 row.child(self.terminal_control(cx))
             })
             // The Workbench closed leaves nothing on screen at all -- no strip,
@@ -379,7 +380,7 @@ impl ChatPane {
             // Outermost on the row, always: its dock is the window's right
             // edge, so the control that moves it holds the row's right edge --
             // the same mapping that puts the rail's button at the left.
-            .when(self.workspace.is_none(), |row| {
+            .when(self.page.is_none(), |row| {
                 row.child(
                     header_control("workbench", IconName::PanelRight, cx)
                         // **Both directions, because the button does both.** It
@@ -813,6 +814,7 @@ fn project_menu(
         pinned,
         is_repo,
         unattended,
+        check: _,
     }: ProjectFacts,
     pane: Entity<ChatPane>,
 ) -> impl Fn(

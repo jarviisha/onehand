@@ -451,7 +451,7 @@ pub(super) fn session_rows(
         .workspace
         .active_root()
         .and_then(|root| root.active_session().map(|s| s.uid))
-        .filter(|_| !shell.workspace_shown(cx));
+        .filter(|_| !shell.page_shown(cx));
 
     let mut rows: Vec<(u64, Row)> = Vec::new();
     for (root_idx, root) in window_state.workspace.roots.iter().enumerate() {

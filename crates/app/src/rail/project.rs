@@ -182,6 +182,7 @@ fn project_menu(
         pinned,
         is_repo,
         unattended,
+        check: _,
     }: ProjectFacts,
     shell: WeakEntity<Shell>,
 ) -> impl Fn(PopupMenu, &mut Window, &mut App) -> PopupMenu + use<> {
@@ -337,7 +338,7 @@ pub(super) fn folder_row(
     let is_active = window_state.workspace.active_root == root_idx;
     // The workspace page is about no one project, so while it shows, no project
     // or session row is drawn as the one on screen.
-    let marked = is_active && !shell.workspace_shown(cx);
+    let marked = is_active && !shell.page_shown(cx);
     let active_session = root.active_session;
     let pinned = root.pinned;
     let unattended = root.unattended;

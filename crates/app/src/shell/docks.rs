@@ -110,7 +110,7 @@ impl Shell {
     ) {
         // The Workbench and the terminal are one project's, and the workspace
         // page stands on none.
-        if self.workspace_shown(cx) {
+        if self.page_shown(cx) {
             return;
         }
         self.last_panel = FocusedPanel::Workbench;
@@ -168,7 +168,7 @@ impl Shell {
     /// Toggle the bottom terminal regardless of focus. A shell is spawned on
     /// first open and never at boot (see [`crate::terminal`]).
     pub fn show_terminal(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if self.workspace_shown(cx) {
+        if self.page_shown(cx) {
             return;
         }
         self.last_panel = FocusedPanel::Terminal;
@@ -207,7 +207,7 @@ impl Shell {
     pub fn show_neovim(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         // Refused before the editor is started, not only before the dock
         // opens: on the workspace page there is no project to start it in.
-        if self.workspace_shown(cx) {
+        if self.page_shown(cx) {
             return;
         }
         self.workbench.update(cx, |panel, cx| panel.start_child(cx));

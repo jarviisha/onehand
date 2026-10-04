@@ -43,9 +43,23 @@ _Avoid_: workflow run, pipeline run, job, execution, instance
 
 **Task**:
 The work onehand does on a person's behalf: a brief on a place, and every run of it. Kept as one
-file each, unfinished or as history; it reads as its last run's outcome. Dismissing an interrupted
-task keeps it as history and never offers it again.
+file each, unfinished or as history; it reads as its last run's outcome. Dismissing an ended task
+keeps it as history and never offers it again. The project's check command run on its own is a
+task too, with one command step and no session. Each project keeps its newest 200 finished tasks;
+older ones are removed, with their marks.
 _Avoid_: job, ticket, workflow run
+
+**Retry**:
+A new run of a task, after its last run ended. It starts at the first step it cannot carry over
+from the last run, keeping what the steps before it answered, and counts its misses from zero.
+Unlike Resume, which carries the same run on.
+_Avoid_: rerun, restart
+
+**Needs attention**:
+A task a person should act on, of two kinds: one **waiting** on a person (an approval, or a card its
+agent parked), and one **ended** on something nobody chose (cut off, exhausted, failed, timed out,
+or its agent or session gone). Done, stopped by a person and dismissed tasks are finished instead.
+_Avoid_: failed (one kind only), errors, inbox
 
 **Step visit**:
 One stay of a run at a step, with its times, its marks at start and end, what it kept and how it

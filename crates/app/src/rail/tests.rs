@@ -254,3 +254,11 @@ fn two_agents_in_one_project_are_worth_saying() {
         ["Claude Code", "Claude Code", "Mock UI"].into_iter()
     ));
 }
+
+/// The Tasks row's pill is there only when something needs a person, and
+/// then says how many.
+#[test]
+fn the_tasks_pill_shows_only_a_count_above_zero() {
+    assert_eq!(super::attention_pill(0), None);
+    assert_eq!(super::attention_pill(3).as_deref(), Some("3"));
+}

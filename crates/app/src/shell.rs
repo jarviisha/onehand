@@ -57,7 +57,8 @@ gpui::actions!(
         CompletionAccept,
         PasteHere,
         CycleMode,
-        RunWorkflow
+        RunWorkflow,
+        ShowTasks
     ]
 );
 

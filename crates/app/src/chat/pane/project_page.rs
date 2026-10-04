@@ -452,21 +452,34 @@ impl ChatPane {
                             // two rows lower was one word twice on a page whose
                             // whole job is to offer the few things there are.
                             .child(
-                                crate::controls::action("project-new-session")
-                                    .primary()
-                                    .icon(Icon::new(IconName::Plus))
-                                    .label("New session")
-                                    .on_click(cx.listener(|_: &mut Self, _, _, cx| {
-                                        cx.emit(ChatPaneEvent::StartSession {
-                                            agent: None,
-                                            resume: None,
-                                        });
+                                div()
+                                    .h_flex()
+                                    .gap_2()
+                                    .child(
+                                        crate::controls::action("project-new-session")
+                                            .primary()
+                                            .icon(Icon::new(IconName::Plus))
+                                            .label("New session")
+                                            .on_click(cx.listener(|_: &mut Self, _, _, cx| {
+                                                cx.emit(ChatPaneEvent::StartSession {
+                                                    agent: None,
+                                                    resume: None,
+                                                });
+                                            })),
+                                    )
+                                    .children(project.facts.check.then(|| {
+                                        crate::controls::action("project-run-check")
+                                            .label("Run check")
+                                            .tooltip("Run the project's check command")
+                                            .on_click(cx.listener(|_: &mut Self, _, _, cx| {
+                                                cx.emit(ChatPaneEvent::RunCheck);
+                                            }))
                                     })),
                             )
-                            // Tasks cut off here, each to resume or let go,
-                            // and tasks waiting for their place. Above the
-                            // conversations: one is work left half done.
-                            .children(unfinished_tasks(&project.path, cx))
+                            // What this project's tasks need, as one line to
+                            // the Tasks page. Above the conversations: one is
+                            // work left half done.
+                            .children(tasks_link(&project.path, cx))
                             .children(
                                 note.map(|note| div().text_xs().text_color(muted).child(note)),
                             )
@@ -572,101 +585,43 @@ pub(super) fn count_of(n: usize, noun: &str) -> String {
     }
 }
 
-/// How many unfinished tasks the page lists before it says how many
-/// more there are.
-const UNFINISHED_ROWS: usize = 5;
-
-/// The unfinished tasks of the project at `root`: what each was asked to do
-/// and where it stands. One cut off offers *Dismiss* and *Resume*; one
-/// waiting for its place says so and offers *Stop*.
-fn unfinished_tasks(root: &Path, cx: &mut Context<ChatPane>) -> Option<gpui::AnyElement> {
-    let tasks = crate::task::listed_in(root, cx);
-    if tasks.is_empty() {
+/// One line saying what the tasks of the project at `root` need, leading
+/// to the Tasks page narrowed to it; nothing when no task needs anything.
+fn tasks_link(root: &Path, cx: &mut Context<ChatPane>) -> Option<gpui::AnyElement> {
+    use onehand_core::task::Group as G;
+    let (mut attention, mut running, mut queued) = (0, 0, 0);
+    for row in crate::task::rows(&[root.to_path_buf()], cx) {
+        match row.group {
+            group if group.needs_attention() => attention += 1,
+            G::Waiting | G::Ended | G::Running => running += 1,
+            G::Queued => queued += 1,
+            G::Finished => {}
+        }
+    }
+    let said: Vec<String> = [
+        (attention > 0).then(|| match attention {
+            1 => "1 task needs attention".to_string(),
+            n => format!("{n} tasks need attention"),
+        }),
+        (running > 0).then(|| format!("{running} running")),
+        (queued > 0).then(|| format!("{queued} queued")),
+    ]
+    .into_iter()
+    .flatten()
+    .collect();
+    if said.is_empty() {
         return None;
     }
-    let muted = cx.theme().muted_foreground;
-    let hidden = tasks.len().saturating_sub(UNFINISHED_ROWS);
-    let rows: Vec<_> = tasks
-        .into_iter()
-        .take(UNFINISHED_ROWS)
-        .enumerate()
-        .map(|(i, task)| {
-            let (id, resume_id) = (task.id.clone(), task.id.clone());
-            let said = match (task.queued, task.begun) {
-                (true, true) => format!("{} · resumes at {}", task.name, task.step),
-                (true, false) => format!("{} · starts at {}", task.name, task.step),
-                (false, _) => format!("{} · stopped at {}", task.name, task.step),
-            };
-            let call_off = match task.begun {
-                true => "Call off this resume; the task stays as it was",
-                false => "Call off this start; the task does not run",
-            };
-            let row = div()
-                .h_flex()
-                .items_center()
-                .gap_2()
-                .w_full()
-                .p_2()
-                .rounded(cx.theme().radius)
-                .border_1()
-                .border_color(cx.theme().border)
-                .child(
-                    div()
-                        .v_flex()
-                        .gap_0p5()
-                        .flex_1()
-                        .min_w_0()
-                        .child(div().truncate().child(task.title))
-                        .child(div().text_xs().text_color(muted).truncate().child(said)),
-                );
-            match task.queued {
-                true => row
-                    .child(div().text_xs().text_color(muted).child("Queued"))
-                    .child(
-                        crate::controls::action(("task-stop-queued", i))
-                            .ghost()
-                            .small()
-                            .label("Stop")
-                            .tooltip(call_off)
-                            .on_click(cx.listener(move |_: &mut ChatPane, _, _, cx| {
-                                cx.emit(ChatPaneEvent::StopQueuedTask(id.clone()));
-                            })),
-                    ),
-                false => row
-                    .child(
-                        crate::controls::action(("task-dismiss", i))
-                            .ghost()
-                            .small()
-                            .label("Dismiss")
-                            .tooltip("Let this task go; it is kept as history and its work stays")
-                            .on_click(cx.listener(move |_: &mut ChatPane, _, _, cx| {
-                                cx.emit(ChatPaneEvent::DismissTask(id.clone()));
-                            })),
-                    )
-                    .child(
-                        crate::controls::action(("task-resume", i))
-                            .small()
-                            .label("Resume")
-                            .tooltip("Carry on from that step in a new session")
-                            .on_click(cx.listener(move |_: &mut ChatPane, _, _, cx| {
-                                cx.emit(ChatPaneEvent::ResumeTask(resume_id.clone()));
-                            })),
-                    ),
-            }
-        })
-        .collect();
+    let root = root.to_path_buf();
     Some(
-        div()
-            .v_flex()
-            .gap_2()
-            .w_full()
-            .child(div().text_xs().text_color(muted).child("Unfinished tasks"))
-            .children(rows)
-            .children((hidden > 0).then(|| {
-                div()
-                    .text_xs()
-                    .text_color(muted)
-                    .child(format!("{hidden} more not shown"))
+        crate::controls::action("project-tasks")
+            .ghost()
+            .small()
+            .icon(Icon::new(IconName::Inbox))
+            .label(said.join(" · "))
+            .tooltip("Show these tasks on the Tasks page")
+            .on_click(cx.listener(move |_: &mut ChatPane, _, _, cx| {
+                cx.emit(ChatPaneEvent::ShowTasks(Some(root.clone())));
             }))
             .into_any_element(),
     )

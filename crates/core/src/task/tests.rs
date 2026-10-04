@@ -1,5 +1,6 @@
 use super::queue::{place_blocking, Queue};
 use super::*;
+use super::{Group, Source, Working};
 use crate::workflow::builtin;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -240,4 +241,226 @@ fn the_refs_still_to_pin_name_every_boundary_from_the_count_pinned() {
         marks::refs_from("9", run, 1),
         ["refs/onehand/tasks/9/9/1/end"]
     );
+}
+
+#[test]
+fn a_task_is_listed_by_what_it_does_and_how_it_ended() {
+    use crate::workflow::Outcome as O;
+    let t = task("1");
+    for (working, group) in [
+        (Working::Queued, Group::Queued),
+        (Working::Running, Group::Running),
+        (Working::Waiting, Group::Waiting),
+    ] {
+        assert_eq!(t.group(Some(working)), group);
+    }
+    assert_eq!(t.group(None), Group::Ended, "cut off");
+    for (outcome, group) in [
+        (O::Done, Group::Finished),
+        (O::Stopped(Stop::ByPerson), Group::Finished),
+        (O::Stopped(Stop::TakenOver), Group::Finished),
+        (O::Stopped(Stop::TimedOut), Group::Ended),
+        (O::Stopped(Stop::LinkLost), Group::Ended),
+        (O::Stopped(Stop::Closed), Group::Ended),
+        (O::Exhausted { step: "x".into() }, Group::Ended),
+        (O::Failed("x".into()), Group::Ended),
+    ] {
+        let mut t = task("1");
+        t.runs[0].outcome = Some(outcome.clone());
+        assert_eq!(t.group(None), group, "{outcome:?}");
+        t.dismissed = true;
+        assert_eq!(t.group(None), Group::Finished, "dismissed {outcome:?}");
+    }
+    // Called off before its run started.
+    let mut t = task("1");
+    t.runs.pop();
+    assert_eq!(t.group(None), Group::Finished);
+}
+
+#[test]
+fn a_file_from_before_checks_reads_as_a_workflows_task() {
+    let mut json = serde_json::to_value(task("1")).unwrap();
+    json.as_object_mut().unwrap().remove("source");
+    let t: Task = serde_json::from_value(json).unwrap();
+    assert_eq!(t.source, Source::Workflow);
+}
+
+#[test]
+fn a_check_task_passes_or_fails_on_its_command() {
+    let setup = task("1").setup;
+    for (ran, outcome) in [
+        (Ok(Some("abc".to_string())), Outcome::Done),
+        (
+            Err("boom".to_string()),
+            Outcome::Failed("the command failed".into()),
+        ),
+    ] {
+        let mut t = Task::check("1".into(), "make check".into(), setup.clone());
+        assert_eq!(t.source, Source::Check);
+        let run = &mut t.runs[0];
+        assert_eq!(
+            run.resume(),
+            crate::workflow::Action::RunCommand("make check".into())
+        );
+        assert_eq!(
+            run.command_finished(ran),
+            crate::workflow::Action::Finish(outcome)
+        );
+    }
+}
+
+#[test]
+fn a_retry_pushes_a_new_run_and_keeps_the_old_one() {
+    let mut t = task("1");
+    t.runs[0].resume();
+    t.runs[0].stopped(Stop::TimedOut);
+    let template = t.runs[0].template.clone();
+    assert_eq!(t.retry("2".into(), template).map(|r| r.step), Some(0));
+    assert_eq!(t.runs.len(), 2);
+    assert_eq!(t.group(None), Group::Ended, "cut off until it runs");
+}
+
+/// A finished task of project `repo`, last moved at `at`.
+fn finished(id: &str, repo: &str, at: u64) -> Task {
+    let mut t = task(id);
+    t.setup.repo = PathBuf::from(repo);
+    t.runs[0].resume();
+    t.runs[0].stopped(Stop::ByPerson);
+    for move_ in &mut t.runs[0].history {
+        move_.at = at;
+    }
+    t
+}
+
+#[test]
+fn each_project_keeps_its_newest_finished_tasks() {
+    let n = history::KEPT + 2;
+    let mut all: Vec<Task> = (0..n)
+        .map(|i| finished(&i.to_string(), "/a", i as u64))
+        .collect();
+    all.push(finished("b", "/b", 0));
+    let mut ended = task("e");
+    ended.setup.repo = PathBuf::from("/a");
+    all.push(ended);
+    let listed: Vec<(&Task, Group)> = all.iter().map(|t| (t, t.group(None))).collect();
+    let mut gone = history::over_cap(&listed);
+    gone.sort();
+    assert_eq!(
+        gone,
+        ["0", "1"],
+        "the two oldest of /a, never /b's or one ended"
+    );
+}
+
+#[test]
+fn a_removal_lands_after_the_saves_before_it() {
+    let dir = temp_dir("writer-remove");
+    let writer = files::Writer::spawn(dir.clone());
+    writer.save(task("7"));
+    writer.save(task("8"));
+    writer.remove("7".into());
+    assert!(writer.flush(std::time::Duration::from_secs(10)));
+    let loaded = files::load_all_blocking(&dir);
+    assert_eq!(loaded.len(), 1);
+    assert_eq!(loaded[0].1.as_ref().unwrap().id, "8");
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// A repository with one commit on `main`, as onehand's tests' own git.
+fn repo_with_commit(name: &str) -> PathBuf {
+    let repo = temp_dir(name);
+    git(&repo, &["init", "-q", "-b", "main"]);
+    std::fs::write(repo.join("a.txt"), "a").unwrap();
+    git(&repo, &["add", "a.txt"]);
+    git(
+        &repo,
+        &[
+            "-c",
+            "user.name=T",
+            "-c",
+            "user.email=t@t",
+            "commit",
+            "-q",
+            "-m",
+            "base",
+        ],
+    );
+    repo
+}
+
+#[test]
+fn dropping_a_tasks_marks_leaves_every_other_tasks() {
+    let repo = repo_with_commit("drop");
+    let mine = [
+        marks::ref_name("t1", "r", 1, false),
+        marks::ref_name("t1", "r2", 1, true),
+    ];
+    let theirs = [marks::ref_name("t10", "r", 1, false)];
+    marks::pin_blocking(&repo, &mine).unwrap();
+    marks::pin_blocking(&repo, &theirs).unwrap();
+    marks::drop_blocking(&repo, "t1").unwrap();
+    assert_eq!(
+        git(
+            &repo,
+            &["for-each-ref", "--format=%(refname)", "refs/onehand"]
+        ),
+        theirs[0]
+    );
+    let _ = std::fs::remove_dir_all(&repo);
+}
+
+#[test]
+fn the_work_is_read_against_a_mark_and_its_branch() {
+    use marks::Against;
+    let repo = repo_with_commit("against");
+    let mark = marks::pin_blocking(&repo, &[]).unwrap();
+    assert_eq!(marks::against_blocking(&repo, &mark), Ok(Against::Same));
+    std::fs::write(repo.join("b.txt"), "b").unwrap();
+    assert_eq!(marks::against_blocking(&repo, &mark), Ok(Against::Changed));
+    std::fs::remove_file(repo.join("b.txt")).unwrap();
+    git(&repo, &["checkout", "-q", "-b", "other"]);
+    assert_eq!(
+        marks::against_blocking(&repo, &mark),
+        Ok(Against::OtherBranch("main".into()))
+    );
+    let _ = std::fs::remove_dir_all(&repo);
+}
+
+#[test]
+fn needs_attention_is_waiting_and_ended_only() {
+    for (group, needs) in [
+        (Group::Waiting, true),
+        (Group::Ended, true),
+        (Group::Running, false),
+        (Group::Queued, false),
+        (Group::Finished, false),
+    ] {
+        assert_eq!(group.needs_attention(), needs, "{group:?}");
+    }
+}
+
+/// Groups in page order; finished newest first, every other group oldest
+/// first, and the same answer whatever order the rows came in.
+#[test]
+fn a_listing_reads_by_group_then_age() {
+    let (f1, f3) = (finished("1", "/a", 30), finished("3", "/a", 10));
+    let (r2, r4) = (task("2"), task("4"));
+    let rows = [
+        (Group::Finished, Some(&f1)),
+        (Group::Running, Some(&r4)),
+        (Group::Finished, Some(&f3)),
+        (Group::Running, Some(&r2)),
+        (Group::Waiting, None),
+    ];
+    for turn in 0..rows.len() {
+        let mut listed = rows.to_vec();
+        listed.rotate_left(turn);
+        sort_listed(&mut listed, |row| *row);
+        let ids: Vec<&str> = listed
+            .iter()
+            .map(|(_, task)| task.map_or("-", |t| t.id.as_str()))
+            .collect();
+        // f1 moved last, so it is the newer finished one.
+        assert_eq!(ids, ["-", "2", "4", "1", "3"]);
+    }
 }
