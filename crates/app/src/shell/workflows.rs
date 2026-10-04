@@ -31,6 +31,8 @@ pub struct WorkflowLauncher {
     pub error: Option<String>,
     /// A worktree is being made for the run.
     pub busy: bool,
+    /// The preview of what the run starts with is open.
+    pub preview: bool,
 }
 
 impl Shell {
@@ -68,6 +70,7 @@ impl Shell {
             instructions,
             error: None,
             busy: false,
+            preview: false,
         });
         cx.notify();
     }
@@ -76,6 +79,13 @@ impl Shell {
         if let Some(launcher) = self.workflow_launcher.as_mut() {
             launcher.template = template;
             launcher.error = None;
+        }
+        cx.notify();
+    }
+
+    pub fn toggle_workflow_preview(&mut self, cx: &mut Context<Self>) {
+        if let Some(launcher) = self.workflow_launcher.as_mut() {
+            launcher.preview = !launcher.preview;
         }
         cx.notify();
     }
@@ -347,13 +357,12 @@ impl Shell {
             }
             return;
         }
-        // A newer template of the same name, which reads and may run.
+        // A later save of the template the last run took, which reads and
+        // may run.
         let newer = crate::workflow::templates(cx)
             .into_iter()
             .filter_map(|entry| entry.template.ok())
-            .find(|t| {
-                t.name == last.template.name && *t != last.template && core::validate(t).is_empty()
-            });
+            .find(|t| t.newer_than(&last.template) && core::validate(t).is_empty());
         let (dir, end) = (last.setup.dir.clone(), last.last_mark().map(str::to_string));
         cx.spawn_in(window, async move |shell, cx| {
             let against = match end {
@@ -437,7 +446,10 @@ impl Shell {
                 let at = starts(&template, from.as_deref()).0;
                 let (shell, id, from) = (shell.clone(), id.clone(), from.clone());
                 crate::controls::action("retry-newer")
-                    .label(format!("Retry with the newer workflow, from {at}"))
+                    .label(format!(
+                        "Retry with the newer workflow (version {}), from {at}",
+                        template.version
+                    ))
                     .on_click(move |_, window: &mut Window, cx: &mut gpui::App| {
                         window.close_dialog(cx);
                         retry_now(

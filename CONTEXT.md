@@ -35,6 +35,17 @@ workflow's place, allowance of misses and timeout. Kept as one TOML file each; t
 ships are read-only and are duplicated to be changed.
 _Avoid_: pipeline, template on its own, recipe, playbook
 
+**Workflow id**:
+What names a workflow whatever it is called: a person's own takes its file's name when first saved,
+a shipped one `builtin:<name>`. A duplicate or an import gets a new one. Retry finds the newer
+workflow by it, so a rename does not lose it.
+_Avoid_: template id, key, slug
+
+**Workflow version**:
+A counter on a workflow, 1 when its file is made and up by one at each save that changes what it
+says. Only the latest is kept; a run's snapshot holds the one it ran.
+_Avoid_: template version, revision
+
 **Run**:
 One pass of a workflow over a brief: a snapshot of the workflow as it was when the run began, the
 step it is at, its marks, what its steps kept, its step visits, its outcome once it has one, and

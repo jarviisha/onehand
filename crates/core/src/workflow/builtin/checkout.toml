@@ -1,4 +1,6 @@
 schema_version = 1
+id = "builtin:checkout"
+version = 1
 name = "Work in checkout"
 description = "Plan, have the plan approved, change the code and pass the project's check, in the checkout the project is open on. The change is left uncommitted."
 place = "checkout"

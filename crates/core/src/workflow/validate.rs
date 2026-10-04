@@ -44,6 +44,17 @@ pub fn validate(template: &Template) -> Vec<Problem> {
     if template.steps.is_empty() {
         whole("it has no steps".to_string());
     }
+    let commits = template.steps.iter().any(|step| match &step.kind {
+        StepKind::Agent { gates, .. } => gates.contains(&GateKind::Committed),
+        StepKind::Command { .. } | StepKind::Approval { .. } => false,
+    });
+    if template.place == super::Place::Worktree && !template.steps.is_empty() && !commits {
+        whole(
+            "it works on a worktree, and no agent step has the gate Committed, so the branch \
+             could end with nothing on it"
+                .to_string(),
+        );
+    }
 
     let steps = &template.steps;
     for (at, step) in steps.iter().enumerate() {
@@ -62,9 +73,13 @@ pub fn validate(template: &Template) -> Vec<Problem> {
         } else if earlier.iter().any(|other| other.id == step.id) {
             here(format!("its id `{}` is used by an earlier step", step.id));
         }
-        if step.label.trim().is_empty() {
+        let label = step.label.trim();
+        if label.is_empty() {
             here("it has no label".to_string());
+        } else if earlier.iter().any(|other| other.label.trim() == label) {
+            here(format!("its label `{label}` is used by an earlier step"));
         }
+        let later = &steps[at + 1..];
         // An earlier agent step by id, and whether it keeps its answer.
         let agent = |id: &str| {
             earlier
@@ -81,6 +96,28 @@ pub fn validate(template: &Template) -> Vec<Problem> {
                     here("its prompt is empty".to_string());
                 }
                 for name in prompt::refs(prompt) {
+                    // A variable that would only ever be empty: what a later
+                    // step sending this one back fills it with.
+                    let fed = |by: &str| {
+                        later.iter().any(|other| match &other.kind {
+                            StepKind::Command { on_fail, .. } => {
+                                by == "check_output" && *on_fail == step.id
+                            }
+                            StepKind::Approval { of } => by == "revise" && *of == step.id,
+                            StepKind::Agent { .. } => false,
+                        })
+                    };
+                    let fed = !matches!(name, "check_output" | "revise") || fed(name);
+                    if !fed {
+                        here(format!(
+                            "its prompt names `{{{name}}}`, but no later {} sends it back here, \
+                             so it is always empty",
+                            match name {
+                                "check_output" => "command step",
+                                _ => "approval",
+                            }
+                        ));
+                    }
                     if prompt::NAMES.contains(&name) {
                         continue;
                     }

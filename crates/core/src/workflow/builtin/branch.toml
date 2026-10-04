@@ -1,4 +1,6 @@
 schema_version = 1
+id = "builtin:branch"
+version = 1
 name = "Implement on a branch"
 description = "Plan, change the code and pass the project's check on a new branch in a worktree of its own, committing the work there."
 place = "worktree"

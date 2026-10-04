@@ -31,6 +31,8 @@ A workflow is a TOML file:
 
 ```toml
 schema_version = 1
+id = "builtin:checkout"   # set by onehand: a file's own name, `builtin:<name>` when shipped
+version = 1               # set by onehand: up by one at each save that changes something
 name = "Work in checkout"
 description = "…"
 place = "checkout"        # or "worktree"
@@ -75,6 +77,27 @@ they move here at start, behind the one-instance lock, by the rules in
 **A file this build cannot read is never written over.** A `schema_version` above
 `workflow::SCHEMA_VERSION` was written by a newer onehand; it is listed as unreadable, and a save
 aimed at it is refused. Every read-check-write of a workflow goes through one lock.
+`store::parse` also refuses **a key onehand does not read** (`steps[2].gate`), most likely a typo,
+which a save would otherwise drop without a word; such a file is listed as unreadable too.
+
+### Id and version
+
+`store::save_blocking` alone sets them, whatever the template it is handed carries. A new file
+(a new workflow, a duplicate, an import) takes its file name as `id` at version 1; an existing file
+keeps its `id`, and its `version` goes up by one when what the template says changed (the version
+itself left out of the comparison). A file written before ids takes its file name when read. No
+old version is kept: a run's snapshot already holds the one it ran. `Template::newer_than` is the
+rule Retry offers *the newer workflow* by: the same `id` at a higher `version`, so a rename still
+finds it. A snapshot from before ids falls back to the same name with different content. A file
+copied by hand keeps its id, so two may share one, and Retry offers the first.
+
+### Import and export
+
+Settings ▸ Workflows has *Export…* on every readable row, shipped ones included: a native save
+dialog, then `store::export_blocking`. *Import…* beside *New workflow* picks a `.toml` file and
+reads it with `store::read_blocking`; a file that does not read is refused in a notification, and
+one that does opens in the form as a new workflow. Nothing is written until Save, which runs
+validation, the name check and `save_blocking`, so an import always gets a new id.
 
 ### Validation
 
@@ -84,7 +107,10 @@ lowercase letters, digits, `-` and `_`, or is used twice; an empty label or prom
 variable that is not one; `{output.<id>}` naming anything but an earlier agent step that keeps its
 answer; `on_fail` naming anything but an earlier agent step; an approval of anything but an earlier
 agent step that keeps its answer; a gate that cannot hold where the workflow works (`committed` in
-a checkout, `uncommitted` on a worktree); and `code_changed` beside `code_unchanged`.
+a checkout, `uncommitted` on a worktree); `code_changed` beside `code_unchanged`; a label used by
+an earlier step; `{check_output}` in a step no later command step sends back to, or `{revise}` in
+one no later approval sends back, since either would always be empty; and a worktree workflow with
+no agent step gated `committed`, whose branch could end with nothing on it.
 
 ### Prompts
 
@@ -197,6 +223,11 @@ project on screen. A checkout workflow starts a session there; a worktree workfl
 A workflow with a command step that names no command needs the project's check command, set under
 Settings ▸ Workflows and kept in the workspace file (`WorkspaceConfig::checks`).
 
+Under the workflow picker, a collapsed *Preview* opens on what the run would start with: a line
+with where it works, its timeout, its misses and its version; a line per step
+(`StepSpec::summary`); and the first prompt as the agent would receive it
+(`workflow::first_prompt`), filled with the brief as it is typed, in a scrolling box.
+
 **Every start goes through the queue** (`task::request`), Resume included. A place is the
 checkout git sees: the canonical top level of the repository, or a folder's own canonical path
 outside git (`task::queue::place_blocking`), so two projects that are folders of one checkout share
@@ -280,3 +311,7 @@ change (`git checkout . && git clean -fd`).
 | Retry a finished task | After *Done*, open the task and press *Retry* | The menu defaults to Plan; the new run goes through every step, and the detail lists Run 1 under *Earlier runs* |
 | Retry a dismissed task | *Dismiss* an ended task, open it under *Finished*, *Retry* | It leaves *Finished*; if the run ends on something nobody chose it is under *Needs attention* again |
 | Runs from an older build | Put a run file from before tasks in `<config_dir>/onehand/pipeline-runs/` and start onehand | It is in `tasks/` under the same name, listed as interrupted, and `pipeline-runs/` is gone |
+| An unknown key | Copy a workflow file into `<config_dir>/onehand/workflows/` with `gate = "x"` added to a step, then *Import…* it too | The row reads *Cannot be read: it has a key `steps[N].gate` that onehand does not read*; the import is refused with the same reason |
+| Export, then import | *Export…* *Work in checkout*, then *Import…* that file | The form opens on it as a new workflow; Save asks for another name, and once renamed it is saved under a new id at version 1 |
+| Retry after a rename | Duplicate *Work in checkout* and save it, start a run with brief `miss`, then rename the workflow and save | *Retry* offers *Retry with the newer workflow (version 2), from …* |
+| Preview | Open the launcher, expand *Preview*, type a title | The steps are listed, and the first prompt shows the title as it is typed |

@@ -142,7 +142,12 @@ One window hosts exactly one workspace. The frame is a navigation **rail** plus 
   which has no default key. Both open one modal: a workflow picker as a small
   outline menu control (shipped workflows marked *built in*), a muted line
   saying what the workflow does **and where it works** — this checkout, or a new
-  branch in a worktree of its own — then *Title*, *Details* and *Instructions*.
+  branch in a worktree of its own — then a small ghost *Preview* toggle with a
+  chevron, collapsed by default, which opens on a muted line of where it works,
+  its timeout, misses and version, a line per step (capped, saying how many
+  more), and the first prompt filled with the brief as it is typed, in a
+  hairline box of bounded height that scrolls — then *Title*, *Details* and
+  *Instructions*.
   A workflow that cannot run, a missing title or a project with no check command
   for a workflow that needs one is said in the danger ink above the footer, and
   *Run* starts nothing. While a worktree is being made *Run* reads *Making the
@@ -317,7 +322,7 @@ One window hosts exactly one workspace. The frame is a navigation **rail** plus 
   stopped when it did. Under that, a small *From …* menu lists the first step up
   to where the retry would start, defaulting to that start, or to the first
   step when the last run got to the end; the description follows the pick. Its footer is *Cancel* (ghost), *Retry with the newer
-  workflow, from …* (only when a newer version of the workflow exists) and
+  workflow (version N), from …* (only when a newer version of the workflow exists) and
   *Retry* (primary). A retry whose last run worked on another branch is refused
   in a warning notification naming that branch. A check is retried at once,
   with no modal.
@@ -534,9 +539,11 @@ One window hosts exactly one workspace. The frame is a navigation **rail** plus 
   name, a line about it and a full-width control.
   **Settings ▸ Workflows** lists every workflow as a row: its name, its
   description (or why its file cannot be read, in the warning ink), and at the
-  end a *Built in* tag on the shipped ones, *Duplicate* on every readable one,
-  and the edit and delete icons on the person's own only — the shipped ones are
-  read-only. *New workflow* sits under the list. The form below it is the agent
+  end a *Built in* tag on the shipped ones, *Duplicate* and *Export…* on every
+  readable one, and the edit and delete icons on the person's own only — the
+  shipped ones are read-only. *New workflow* and *Import…* sit under the list;
+  an import opens in the form as a new workflow, and one that cannot be read is
+  refused in a notification. The form below it is the agent
   form's shape: name, description, *Where it works* as the segmented switch,
   *Misses allowed* and *Timeout* side by side, a muted line naming the prompt
   variables, then one hairline box per step — its number, its kind as a small

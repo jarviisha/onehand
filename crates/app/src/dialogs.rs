@@ -210,7 +210,7 @@ pub fn run_workflow(shell: &Shell, cx: &mut Context<Shell>) -> Dialog {
         launcher.body.clone(),
         launcher.instructions.clone(),
     );
-    let (error, busy) = (launcher.error.clone(), launcher.busy);
+    let (error, busy, preview) = (launcher.error.clone(), launcher.busy, launcher.preview);
     let (muted, danger) = (
         cx.theme().muted_foreground,
         crate::theme::status_ink(cx).danger,
@@ -240,11 +240,24 @@ pub fn run_workflow(shell: &Shell, cx: &mut Context<Shell>) -> Dialog {
         .map(|(at, entry)| (at, entry.name(), entry.file.is_none()))
         .collect();
     let current = launcher.template;
+    let runnable = picked
+        .as_ref()
+        .and_then(|entry| entry.template.clone().ok());
     let picker_name = picked.map_or_else(|| "Pick a workflow".to_string(), |e| e.name());
 
     Dialog::new(cx)
         .close_button(false)
-        .content(move |content, _, _: &mut App| {
+        .content(move |content, _, cx: &mut App| {
+            // Read here, as it is typed, so the preview follows the brief.
+            let shown = runnable.as_ref().map(|template| {
+                let instructions = instructions.read(cx).value().trim().to_string();
+                let brief = onehand_core::workflow::Brief {
+                    title: title.read(cx).value().trim().to_string(),
+                    body: body.read(cx).value().trim().to_string(),
+                    instructions: (!instructions.is_empty()).then_some(instructions),
+                };
+                workflow_preview(template, &brief, preview, &handle, cx)
+            });
             let handle = handle.clone();
             let names = names.clone();
             let picker = crate::controls::menu_below(
@@ -286,6 +299,7 @@ pub fn run_workflow(shell: &Shell, cx: &mut Context<Shell>) -> Dialog {
                     .child(label("Workflow"))
                     .child(div().h_flex().child(picker))
                     .child(div().text_xs().text_color(muted).child(about.clone()))
+                    .children(shown)
                     .child(label("Title"))
                     .child(Input::new(&title))
                     .child(label("Details"))
@@ -335,6 +349,97 @@ pub fn run_workflow(shell: &Shell, cx: &mut Context<Shell>) -> Dialog {
         .on_close(cx.listener(|shell: &mut Shell, _, _, cx| {
             shell.cancel_workflow(cx);
         }))
+}
+
+/// How many steps the launcher's preview lists before saying how many more
+/// there are.
+const PREVIEW_STEPS: usize = 12;
+
+/// What a run of `template` on `brief` starts with, behind a toggle: where
+/// it works and its limits, a line per step, and the first prompt exactly as
+/// the agent would receive it.
+fn workflow_preview(
+    template: &onehand_core::workflow::Template,
+    brief: &onehand_core::workflow::Brief,
+    open: bool,
+    handle: &Entity<Shell>,
+    cx: &App,
+) -> AnyElement {
+    let (muted, border, radius) = (
+        cx.theme().muted_foreground,
+        cx.theme().border,
+        cx.theme().radius,
+    );
+    let toggle = {
+        let handle = handle.clone();
+        crate::controls::action("workflow-preview")
+            .ghost()
+            .small()
+            .label("Preview")
+            .icon(Icon::new(match open {
+                true => IconName::ChevronDown,
+                false => IconName::ChevronRight,
+            }))
+            .on_click(move |_, _, cx: &mut App| {
+                handle.update(cx, |shell: &mut Shell, cx| {
+                    shell.toggle_workflow_preview(cx)
+                });
+            })
+    };
+    let column = div()
+        .v_flex()
+        .gap_1()
+        .w_full()
+        .child(div().h_flex().child(toggle));
+    if !open {
+        return column.into_any_element();
+    }
+    let head = format!(
+        "{} · times out after {} · {} misses allowed · version {}",
+        template.place.label(),
+        template.timeout,
+        template.misses,
+        template.version
+    );
+    let left_out = template.steps.len().saturating_sub(PREVIEW_STEPS);
+    let steps = template
+        .steps
+        .iter()
+        .take(PREVIEW_STEPS)
+        .enumerate()
+        .map(|(at, step)| {
+            div()
+                .text_xs()
+                .child(format!("{}. {}: {}", at + 1, step.label, step.summary()))
+        });
+    let prompt = onehand_core::workflow::first_prompt(template, brief)
+        .unwrap_or_else(|| "No step prompts the agent.".to_string());
+    column
+        .child(div().text_xs().text_color(muted).child(head))
+        .children(steps)
+        .when(left_out > 0, |col| {
+            col.child(
+                div()
+                    .text_xs()
+                    .text_color(muted)
+                    .child(format!("{left_out} more steps not shown")),
+            )
+        })
+        .child(div().text_xs().text_color(muted).child("The first prompt"))
+        .child(
+            div()
+                .id("workflow-preview-prompt")
+                .w_full()
+                .max_h(gpui::rems(12.))
+                .overflow_y_scroll()
+                .p_2()
+                .border_1()
+                .border_color(border)
+                .rounded(radius)
+                .text_xs()
+                .child(prompt),
+        )
+        .into_any_element()
 }
 
 /// One issue as a pressable row: how it is shown muted — the forge's number, or

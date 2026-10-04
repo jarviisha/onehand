@@ -9,7 +9,7 @@
 
 use super::facts::Facts;
 use super::run::Brief;
-use super::template::{GateKind, Place};
+use super::template::{GateKind, Place, StepKind, Template};
 use std::collections::BTreeMap;
 
 /// The variables every prompt may use besides `output.<id>`.
@@ -133,6 +133,25 @@ pub(crate) fn step_prompt(prompt: &str, gates: &[GateKind], place: Place, fill: 
     }
     text.push('\n');
     text
+}
+
+/// What the agent is first told by a run of `template` on `brief`: its first
+/// agent step's prompt, filled in as a run fills it. `None` when it has no
+/// agent step.
+pub fn first_prompt(template: &Template, brief: &Brief) -> Option<String> {
+    template.steps.iter().find_map(|step| match &step.kind {
+        StepKind::Agent { prompt, gates, .. } => {
+            let fill = Fill {
+                brief,
+                outputs: &BTreeMap::new(),
+                check_output: None,
+                revise: None,
+                revised_answer: None,
+            };
+            Some(step_prompt(prompt, gates, template.place, &fill))
+        }
+        StepKind::Command { .. } | StepKind::Approval { .. } => None,
+    })
 }
 
 /// What the variable `name` stands for.

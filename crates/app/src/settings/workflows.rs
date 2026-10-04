@@ -172,6 +172,8 @@ impl WorkflowDraft {
             .map_err(|_| format!("the misses allowed, `{misses}`, is not a whole number"))?;
         Ok(Template {
             schema_version: core::SCHEMA_VERSION,
+            id: self.original.id.clone(),
+            version: self.original.version,
             name: self.name.read(cx).value().trim().to_string(),
             description: self.description.read(cx).value().trim().to_string(),
             place: self.place,
@@ -286,6 +288,14 @@ pub(super) fn workflows_page(handle: &Entity<Shell>, cx: &App) -> AnyElement {
                             move |shell, window, cx| shell.duplicate_workflow(i, window, cx),
                         ))
                     })
+                    .when(readable, |row| {
+                        row.child(row_action(
+                            handle,
+                            ("export-workflow", i),
+                            "Export…",
+                            move |shell, window, cx| shell.export_workflow(i, window, cx),
+                        ))
+                    })
                     .when(readable && !shipped, |row| {
                         row.child(
                             row_icon(("edit-workflow", i), crate::icons::Icon::SquarePen, "Edit")
@@ -326,15 +336,27 @@ pub(super) fn workflows_page(handle: &Entity<Shell>, cx: &App) -> AnyElement {
             )
         })
         .child(
-            div().h_flex().child(
-                crate::controls::action("new-workflow")
-                    .ghost()
-                    .icon(Icon::new(IconName::Plus))
-                    .label("New workflow")
-                    .on_click(click(handle, |shell, window, cx| {
-                        shell.new_workflow(window, cx)
-                    })),
-            ),
+            div()
+                .h_flex()
+                .gap_1()
+                .child(
+                    crate::controls::action("new-workflow")
+                        .ghost()
+                        .icon(Icon::new(IconName::Plus))
+                        .label("New workflow")
+                        .on_click(click(handle, |shell, window, cx| {
+                            shell.new_workflow(window, cx)
+                        })),
+                )
+                .child(
+                    crate::controls::action("import-workflow")
+                        .ghost()
+                        .icon(Icon::new(IconName::FolderOpen))
+                        .label("Import…")
+                        .on_click(click(handle, |shell, window, cx| {
+                            shell.import_workflow(window, cx)
+                        })),
+                ),
         );
 
     div()
