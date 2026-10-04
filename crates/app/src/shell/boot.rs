@@ -171,21 +171,19 @@ impl Shell {
                     // be what is announcing this.
                     E::ContinueWorkflow(uid) => {
                         let uid = *uid;
-                        cx.defer(move |cx| crate::workflow::approve(uid, cx));
+                        cx.defer(move |cx| crate::task::approve(uid, cx));
                     }
                     E::ReviseWorkflow { uid, note } => {
                         let (uid, note) = (*uid, note.clone());
-                        cx.defer(move |cx| crate::workflow::revise(uid, note, cx));
+                        cx.defer(move |cx| crate::task::revise(uid, note, cx));
                     }
                     E::StopWorkflow(uid) => {
                         let uid = *uid;
-                        cx.defer(move |cx| crate::workflow::stop(uid, cx));
+                        cx.defer(move |cx| crate::task::stop(uid, cx));
                     }
-                    E::ResumeWorkflow(id) => shell.resume_workflow(id, window, cx),
-                    E::DiscardWorkflow(id) => {
-                        let id = id.clone();
-                        cx.defer(move |cx| crate::workflow::discard(&id, cx));
-                    }
+                    E::ResumeTask(id) => crate::task::request(id.clone(), window, cx),
+                    E::DismissTask(id) => crate::task::dismiss(id, cx),
+                    E::StopQueuedTask(id) => crate::task::stop_queued(id, cx),
                     // Its project made the active one first, since a session
                     // is minted on that, but not shown: showing it would
                     // connect the session it was last on, which nobody asked
@@ -564,7 +562,10 @@ pub fn boot(cx: &mut App) {
         std::process::exit(1);
     }
     // Behind the lock, and before anything reads the templates.
-    for problem in onehand_core::workflow::store::migrate_old_dir_blocking() {
+    for problem in onehand_core::workflow::store::migrate_old_dir_blocking()
+        .into_iter()
+        .chain(onehand_core::task::files::migrate_old_dir_blocking())
+    {
         eprintln!("onehand: {problem}");
     }
     let (cfg, config_path) = AppConfig::load_resolved();
@@ -580,6 +581,7 @@ pub fn boot(cx: &mut App) {
     crate::remote::boot(&remote, cx);
     crate::unattended::boot(&unattended, cx);
     crate::workflow::boot(cx);
+    crate::task::boot(cx);
     // Before a mode is chosen, because choosing one applies whichever of the
     // two configs this installs.
     crate::theme::install(cx);

@@ -274,7 +274,7 @@ pub fn fetch_blocking(root: &Path, branch: &str) -> Result<(), String> {
 }
 
 /// How long a question git answers from the repository alone may take.
-const LOCAL_LIMIT: Duration = Duration::from_secs(30);
+pub(crate) const LOCAL_LIMIT: Duration = Duration::from_secs(30);
 
 /// The branch checked out at `root`: what a run on a project with no forge
 /// starts from, since there is no remote default branch to ask for. A detached
@@ -387,7 +387,7 @@ pub(crate) fn work_digest_blocking(dir: &Path) -> Result<String, String> {
 
 /// `git -C <root>`, with every way git has of asking a person for something
 /// switched off.
-fn git(root: &Path) -> std::process::Command {
+pub(crate) fn git(root: &Path) -> std::process::Command {
     let mut cmd = std::process::Command::new("git");
     cmd.arg("-C").arg(root).env("GIT_TERMINAL_PROMPT", "0");
     cmd
@@ -429,7 +429,7 @@ pub fn rename_branch_blocking(root: &Path, name: &str) -> Result<(), String> {
 /// already saying something failed. `hint:` lines are dropped whole — they
 /// advise a shell user about their next command, which is not what the reader
 /// of a dialog has in front of them.
-fn git_message(stderr: &[u8]) -> String {
+pub(crate) fn git_message(stderr: &[u8]) -> String {
     let text = String::from_utf8_lossy(stderr);
     let out = text
         .lines()

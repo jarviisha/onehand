@@ -37,6 +37,7 @@ pub mod instance;
 pub mod issues;
 pub mod process;
 pub mod remote;
+pub mod task;
 pub mod tree;
 pub mod unattended;
 pub mod workflow;

@@ -14,14 +14,20 @@ rename, the task store and the page each carry risks of their own.
 ## Where things stand
 
 Workflows are configurable and saved, one per file. A single engine (`onehand_core::workflow`)
-decides every transition, and a single driver (`crates/app/src/workflow/driver.rs`) runs it. Every
-run keeps a snapshot of its workflow, its file is written in order by one thread, and an unfinished
-run can be resumed after a restart.
+decides every transition, and a single driver (`crates/app/src/task/driver.rs`) runs it. Every
+run keeps a snapshot of its workflow and belongs to a task, whose file is written in order by one
+thread and kept as history; an interrupted task can be resumed after a restart.
 
 Pull request 1 of milestone 1+2 has landed: "pipeline" has left the code and the screen (the
 template is a **Workflow**, its execution a `workflow::Run`), `pipelines/` moves to `workflows/` at
-start, and a lock on the config directory keeps a second onehand from starting on it. Run files are
-still in `pipeline-runs/`; they move once, to `tasks/`, in pull request 2.
+start, and a lock on the config directory keeps a second onehand from starting on it.
+
+Pull request 2 has landed as well: every run belongs to a **Task** kept in `tasks/<id>.json`
+whatever its outcome, and `pipeline-runs/` moves there at start. A run records its step visits, each
+pinned at its start and end as a commit under `refs/onehand/tasks/…`. Every start, Resume included,
+goes through one queue keyed by the checkout git sees, and a place is freed only once the work has
+stopped. Until the Tasks page, the project page lists interrupted tasks (*Resume*, *Dismiss*) and
+queued ones (*Stop*); a task that ended any other way is kept on disk only.
 
 Not there yet:
 - The workflow mock agent (`crates/core/examples/mock_workflow_agent.js`) and the checklist in
@@ -29,8 +35,8 @@ Not there yet:
   checklist is still owed before the Tasks page depends on the states the driver reports. The loop
   back after a failed command is a miss inside one run, not the Retry designed below, which starts a
   new run.
-- There is no task model, and a run's record is deleted when it finishes, so there is no history.
-- Runs do not queue, and two runs can edit the same checkout at once.
+- There is no Tasks page, no history cap and no deletion of mark refs, so `tasks/` and
+  `refs/onehand/` grow until pull request 3.
 - An issue or a pull request cannot be the source of a run. The unattended run on `main` is still
   the older one-turn kind.
 

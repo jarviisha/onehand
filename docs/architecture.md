@@ -611,15 +611,22 @@ caret with it. The rules that decide are core's (`onehand_core::unattended`); th
 
 [docs/workflows.md](workflows.md) is the whole account; this is the part a change elsewhere can
 break. **The engine decides, the driver does.** `onehand_core::workflow::Run` is pure state
-that takes a report and answers with the next `Action`; `crate::workflow::driver` is the only code
+that takes a report and answers with the next `Action`; `crate::task::driver` is the only code
 that turns session events into reports, so a Stop, a take-over, the timeout, a lost adapter and a
 closed session all reach the engine as `stopped`, which never judges the turn under way. Two drivers
 holding their own copy of that logic is how a Stop once passed a cut-short plan as finished.
 **A run snapshots its workflow** at the start, so editing or deleting a workflow never reaches a run
-under way. **Its file is written in order by one thread** (`workflow::files::Writer`), and kept
-only for a run whose agent stopped or whose session went — those wait on the project page to be
-resumed, and nothing resumes one by itself. The strip under the conversation header reads
-`workflow::shown`; its *Continue*, *Revise…* and *Stop* are `ChatPaneEvent`s the shell defers to the
+under way. **Every run belongs to a task** (`onehand_core::task::Task`), kept in
+`tasks/<id>.json` whatever its outcome and written in order by one thread (`task::files::Writer`).
+A task whose run was cut off (its agent stopped, its session went, or the app quit) waits on the
+project page to be resumed, and nothing resumes one by itself. **Every start goes through one
+queue** (`crate::task::request`, over `onehand_core::task::queue::Queue`), keyed by the checkout
+git sees, so one task at a time works in a checkout; the place is given up only once the session's
+turn is over and the command's process group has exited, and the next task starts in the window
+it was asked from. **Each step visit is pinned** at its start and end as a commit under
+`refs/onehand/tasks/…` (`task::marks`), made from a temporary index; the driver pins before it
+acts, and a failed pin never stops a run. The strip under the conversation header reads
+`task::shown`; its *Continue*, *Revise…* and *Stop* are `ChatPaneEvent`s the shell defers to the
 driver, because the driver reaches into the session that may be announcing them. A project's check
 command is `ProjectRoot::check`, kept by path in the workspace file like a pin. `Chat::cancelled`
 is what tells a Stop from a finished turn: set by `cancel_turn` or a `cancelled` stop reason, and
@@ -640,9 +647,12 @@ and run again: a file this build cannot read stays where it was and is reported;
 stays and is reported, since an older build may have saved an edit there); any other is written
 whole (temp file and rename), and its directory waited on to reach the disk, before the old one
 goes. A `pipelines/` that is there but cannot be listed is reported, not taken for empty. Anything
-that is not a template is left alone, and `pipelines/` goes once empty. Run files still live in
-`pipeline-runs/`, the name on disk, until they move with the task store. There is no way back to an
-older build: it would find no workflows of the person's.
+that is not a template is left alone, and `pipelines/` goes once empty. **Runs used to live in
+`pipeline-runs/`.** Right after the templates, `task::files::migrate_old_dir_blocking` turns each
+into a task of the same id in `tasks/`, holding that one run, cut off. Both moves are one helper,
+`config::migrate_dir_blocking`, with the same rules; for runs, a task already in `tasks/` under that
+name wins as long as it reads, since it may have moved on after a move cut short. There is no way
+back to an older build: it would find no workflows or runs of the person's.
 
 ### The chat pane
 

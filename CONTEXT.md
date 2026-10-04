@@ -37,9 +37,20 @@ _Avoid_: pipeline, template on its own, recipe, playbook
 
 **Run**:
 One pass of a workflow over a brief: a snapshot of the workflow as it was when the run began, the
-step it is at, its marks, what its steps kept, and the history of its transitions. Its file is kept
-only while it can still be resumed.
+step it is at, its marks, what its steps kept, its step visits, its outcome once it has one, and
+the history of its transitions. Kept in its task's history whatever its outcome.
 _Avoid_: workflow run, pipeline run, job, execution, instance
+
+**Task**:
+The work onehand does on a person's behalf: a brief on a place, and every run of it. Kept as one
+file each, unfinished or as history; it reads as its last run's outcome. Dismissing an interrupted
+task keeps it as history and never offers it again.
+_Avoid_: job, ticket, workflow run
+
+**Step visit**:
+One stay of a run at a step, with its times, its marks at start and end, what it kept and how it
+came out. Going back to a step, or resuming at one, is a new visit, never a rewrite of the last.
+_Avoid_: attempt, iteration
 
 **Step**:
 A named stretch of a run. An agent step prompts the session and is judged by its gates; a
@@ -64,13 +75,21 @@ _Avoid_: task, ticket, prompt
 
 **Mark**:
 A point in the work a run measures from: where an agent step started (the commit and the
-fingerprint of the uncommitted work), and the commit a command last passed on.
+fingerprint of the uncommitted work), and the commit a command last passed on. Each step visit's
+start and end also carries a pinned commit of the work, untracked files included, kept under
+`refs/onehand/tasks/<task>/<run>/<visit>/<start|end>`.
 _Avoid_: baseline, checkpoint, snapshot
 
 **Place**:
 Where a run's work happens: the checkout the project is open on, left uncommitted, or a new
-branch in a worktree of its own, committed there.
+branch in a worktree of its own, committed there. Also what the queue locks: the checkout git sees
+(its canonical top level, or a folder's own path outside git), held by one task at a time.
 _Avoid_: mode, target
+
+**Queued**:
+A task waiting for its place while another task works there. It starts by itself, first in first
+out, once that task's work has stopped; *Stop* calls the start off.
+_Avoid_: pending, scheduled
 
 **Check command**:
 A project's own command for "the work is sound", run by onehand in a command step that names no
@@ -82,8 +101,9 @@ How a run ended: done, stopped (and why), exhausted at a step, or failed.
 _Avoid_: result, status
 
 **Resume**:
-Carrying on a run whose agent stopped or whose session went, from the step it was at, with
-its marks kept. Nothing resumes a run by itself.
+Carrying on a run whose agent stopped, whose session went or that a restart cut off, from the
+step it was at, with its marks kept. It goes through the queue like any start. Nothing resumes a
+run by itself.
 _Avoid_: restart, retry
 
 ## Unattended runs
