@@ -499,7 +499,7 @@ fn templates_move_to_the_new_directory_and_the_old_one_goes() {
 }
 
 #[test]
-fn a_name_already_moved_keeps_the_new_copy() {
+fn a_crash_between_the_write_and_the_removal_ends_with_one_copy() {
     let root = temp_dir("migrate-twice");
     let (old, new) = (root.join("old"), root.join("new"));
     std::fs::create_dir_all(&old).unwrap();
@@ -514,6 +514,32 @@ fn a_name_already_moved_keeps_the_new_copy() {
         text
     );
     assert!(!old.exists());
+    let _ = std::fs::remove_dir_all(&root);
+}
+
+#[test]
+fn an_old_copy_that_differs_from_the_moved_one_is_kept_and_reported() {
+    let root = temp_dir("migrate-differs");
+    let (old, new) = (root.join("old"), root.join("new"));
+    std::fs::create_dir_all(&old).unwrap();
+    std::fs::create_dir_all(&new).unwrap();
+    let moved = toml::to_string_pretty(&checkout()).unwrap();
+    // An older build, finding nothing in `old`, saved an edit there.
+    let mut edited = checkout();
+    edited.name = "Edited".into();
+    let edited = toml::to_string_pretty(&edited).unwrap();
+    std::fs::write(new.join("same.toml"), &moved).unwrap();
+    std::fs::write(old.join("same.toml"), &edited).unwrap();
+    let problems = store::migrate_blocking(&old, &new);
+    assert_eq!(problems.len(), 1, "{problems:?}");
+    assert_eq!(
+        std::fs::read_to_string(old.join("same.toml")).unwrap(),
+        edited
+    );
+    assert_eq!(
+        std::fs::read_to_string(new.join("same.toml")).unwrap(),
+        moved
+    );
     let _ = std::fs::remove_dir_all(&root);
 }
 

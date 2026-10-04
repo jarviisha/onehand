@@ -114,7 +114,9 @@ pub fn migrate_old_dir_blocking() -> Vec<String> {
 ///
 /// Safe to run at every start and again after a crash part way: a file this
 /// build cannot read stays where it is, a name already in `new` keeps the
-/// copy there, and each file is written in full before its old one goes.
+/// copy there (the old one goes only when it is the same text, as a crash
+/// between the write and the removal leaves it), and each file is written in
+/// full before its old one goes.
 /// Anything that is not a template is left alone, and `old` goes once empty.
 pub(crate) fn migrate_blocking(old: &Path, new: &Path) -> Vec<String> {
     let mut problems = Vec::new();
@@ -132,9 +134,13 @@ pub(crate) fn migrate_blocking(old: &Path, new: &Path) -> Vec<String> {
         let moved = std::fs::read_to_string(&path)
             .map_err(|err| err.to_string())
             .and_then(|text| parse(&text).map(|_| text))
-            .and_then(|text| match to.exists() {
-                true => Ok(()),
-                false => crate::config::write_atomic(&to, &text).map_err(|e| e.to_string()),
+            .and_then(|text| match std::fs::read_to_string(&to) {
+                Ok(there) if there == text => Ok(()),
+                Ok(_) => Err(format!("{} differs from it", to.display())),
+                Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
+                    crate::config::write_atomic(&to, &text).map_err(|e| e.to_string())
+                }
+                Err(err) => Err(err.to_string()),
             })
             .and_then(|()| std::fs::remove_file(&path).map_err(|e| e.to_string()));
         if let Err(why) = moved {
