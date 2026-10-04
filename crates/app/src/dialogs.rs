@@ -250,12 +250,7 @@ pub fn run_workflow(shell: &Shell, cx: &mut Context<Shell>) -> Dialog {
         .content(move |content, _, cx: &mut App| {
             // Read here, as it is typed, so the preview follows the brief.
             let shown = runnable.as_ref().map(|template| {
-                let instructions = instructions.read(cx).value().trim().to_string();
-                let brief = onehand_core::workflow::Brief {
-                    title: title.read(cx).value().trim().to_string(),
-                    body: body.read(cx).value().trim().to_string(),
-                    instructions: (!instructions.is_empty()).then_some(instructions),
-                };
+                let brief = crate::shell::brief(&title, &body, &instructions, cx);
                 workflow_preview(template, &brief, preview, &handle, cx)
             });
             let handle = handle.clone();

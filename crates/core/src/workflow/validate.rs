@@ -3,7 +3,7 @@
 //! names nothing or a prompt variable with no value.
 
 use super::prompt;
-use super::template::{GateKind, StepKind, Template, SCHEMA_VERSION};
+use super::template::{GateKind, StepKind, StepSpec, Template, SCHEMA_VERSION};
 
 /// One thing wrong with a template: the step it is in, by position, if it is
 /// in one.
@@ -96,26 +96,17 @@ pub fn validate(template: &Template) -> Vec<Problem> {
                     here("its prompt is empty".to_string());
                 }
                 for name in prompt::refs(prompt) {
-                    // A variable that would only ever be empty: what a later
-                    // step sending this one back fills it with.
-                    let fed = |by: &str| {
-                        later.iter().any(|other| match &other.kind {
-                            StepKind::Command { on_fail, .. } => {
-                                by == "check_output" && *on_fail == step.id
-                            }
-                            StepKind::Approval { of } => by == "revise" && *of == step.id,
-                            StepKind::Agent { .. } => false,
-                        })
-                    };
-                    let fed = !matches!(name, "check_output" | "revise") || fed(name);
-                    if !fed {
+                    // A variable only a later step sending this one back
+                    // fills in is always empty without one.
+                    let unfed = SENT_BACK.iter().find(|(var, _)| *var == name).filter(|_| {
+                        !later
+                            .iter()
+                            .any(|other| fills_on_send_back(other, &step.id) == Some(name))
+                    });
+                    if let Some((_, sender)) = unfed {
                         here(format!(
-                            "its prompt names `{{{name}}}`, but no later {} sends it back here, \
-                             so it is always empty",
-                            match name {
-                                "check_output" => "command step",
-                                _ => "approval",
-                            }
+                            "its prompt names `{{{name}}}`, but no later {sender} sends it back \
+                             here, so it is always empty"
                         ));
                     }
                     if prompt::NAMES.contains(&name) {
@@ -180,6 +171,19 @@ pub fn validate(template: &Template) -> Vec<Problem> {
         }
     }
     problems
+}
+
+/// The variables a step sending another back fills in, beside what that
+/// step is called.
+const SENT_BACK: [(&str, &str); 2] = [("check_output", "command step"), ("revise", "approval")];
+
+/// The variable `step` fills in when it sends the step `id` back, if it does.
+fn fills_on_send_back(step: &StepSpec, id: &str) -> Option<&'static str> {
+    match &step.kind {
+        StepKind::Command { on_fail, .. } => (on_fail == id).then_some("check_output"),
+        StepKind::Approval { of } => (of == id).then_some("revise"),
+        StepKind::Agent { .. } => None,
+    }
 }
 
 /// A step id: what `{output.<id>}` and the steps that name another can say.

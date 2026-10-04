@@ -51,21 +51,14 @@ impl Shell {
         let Ok(template) = entry.template else {
             return;
         };
-        let stem = entry
-            .file
-            .as_deref()
-            .and_then(|file| file.file_stem())
-            .map(|stem| stem.to_string_lossy().into_owned())
-            .unwrap_or_else(|| template.id.trim_start_matches("builtin:").to_string());
+        let name = core::store::export_name(&template);
         cx.spawn_in(window, async move |shell, cx| {
             // The native dialog blocks until it is answered, so it runs off
             // the UI thread, as does the write.
             let written = cx
                 .background_executor()
                 .spawn(async move {
-                    let path = rfd::FileDialog::new()
-                        .set_file_name(format!("{stem}.toml"))
-                        .save_file()?;
+                    let path = rfd::FileDialog::new().set_file_name(name).save_file()?;
                     Some(core::store::export_blocking(&path, &template))
                 })
                 .await;

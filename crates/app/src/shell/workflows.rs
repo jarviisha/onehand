@@ -205,8 +205,8 @@ impl Shell {
             let said: Vec<String> = problems.iter().map(ToString::to_string).collect();
             return Err(format!("This workflow cannot run: {}", said.join("; ")));
         }
-        let title = launcher.title.read(cx).value().trim().to_string();
-        if title.is_empty() {
+        let brief = brief(&launcher.title, &launcher.body, &launcher.instructions, cx);
+        if brief.title.is_empty() {
             return Err("Say what to do in the title".to_string());
         }
         let check = self
@@ -223,12 +223,6 @@ impl Shell {
                 launcher.project
             ));
         }
-        let instructions = launcher.instructions.read(cx).value().trim().to_string();
-        let brief = Brief {
-            title,
-            body: launcher.body.read(cx).value().trim().to_string(),
-            instructions: (!instructions.is_empty()).then_some(instructions),
-        };
         Ok((template, brief, check))
     }
 
@@ -510,6 +504,21 @@ impl Shell {
                         ),
                 )
         });
+    }
+}
+
+/// The brief the launcher's fields say, as typed so far.
+pub(crate) fn brief(
+    title: &Entity<InputState>,
+    body: &Entity<TextareaState>,
+    instructions: &Entity<TextareaState>,
+    cx: &gpui::App,
+) -> Brief {
+    let instructions = instructions.read(cx).value().trim().to_string();
+    Brief {
+        title: title.read(cx).value().trim().to_string(),
+        body: body.read(cx).value().trim().to_string(),
+        instructions: (!instructions.is_empty()).then_some(instructions),
     }
 }
 

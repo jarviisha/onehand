@@ -74,7 +74,7 @@ impl Template {
     }
 
     /// Whether `self` and `other` say the same, whatever their id and version.
-    pub fn same_content(&self, other: &Self) -> bool {
+    pub(crate) fn same_content(&self, other: &Self) -> bool {
         let bare = |t: &Self| Self {
             id: String::new(),
             version: 0,

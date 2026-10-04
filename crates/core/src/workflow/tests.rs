@@ -627,6 +627,11 @@ fn a_save_sets_the_id_and_counts_versions_of_what_changed() {
 }
 
 #[test]
+fn an_export_is_offered_under_the_name_as_a_file_name() {
+    assert_eq!(store::export_name(&checkout()), "work-in-checkout.toml");
+}
+
+#[test]
 fn a_key_onehand_does_not_read_is_refused() {
     let text = toml::to_string_pretty(&checkout()).unwrap();
     let top = format!("colour = \"red\"\n{text}");

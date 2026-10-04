@@ -85,9 +85,10 @@ fn stem(path: &Path) -> String {
 
 /// Every template file in `dir`, each read or why it could not be, in file
 /// name order. Blocking.
-///
-/// `ponytail:` a file copied by hand keeps its id, so two may share one;
-/// Retry offers the first. Give each a fresh id on load if that bites.
+// ponytail: a file copied by hand keeps its id, so two may share one, and a
+// new file may take the name, and so the id, of one deleted; Retry offers the
+// first match. Give ids that cannot repeat (a stem plus a random suffix) if
+// that bites.
 pub fn load_all_blocking(dir: &Path) -> Vec<(PathBuf, Result<Template, String>)> {
     let Ok(entries) = std::fs::read_dir(dir) else {
         return Vec::new();
@@ -142,10 +143,13 @@ pub fn save_blocking(
         Some(before) => (before.id, before.version + 1),
         None => (stem(&path), 1),
     };
-    let text = toml::to_string_pretty(&template).map_err(|err| err.to_string())?;
-    crate::config::write_atomic(&path, &text)
-        .map_err(|err| format!("{} could not be written: {err}", path.display()))?;
+    export_blocking(&path, &template)?;
     Ok((path, template))
+}
+
+/// The file name an export of `template` is offered under.
+pub fn export_name(template: &Template) -> String {
+    format!("{}.toml", slug(&template.name))
 }
 
 /// Write `template` to `path`, a file of the person's choosing anywhere.
