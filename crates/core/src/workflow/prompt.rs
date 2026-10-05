@@ -99,8 +99,8 @@ pub(crate) fn step_prompt(prompt: &str, gates: &[GateKind], place: Place, fill: 
         .filter(|_| !named.contains(&"check_output"))
     {
         add(format!(
-            "What onehand checked failed:\n\n```\n{}\n```",
-            out.trim()
+            "What onehand checked failed:\n\n{}",
+            fenced(out.trim())
         ));
     }
     if let Some(note) = fill.revise.filter(|_| !named.contains(&"revise")) {
@@ -272,4 +272,13 @@ fn quoted(text: &str) -> String {
         .map(|line| format!("> {line}"))
         .collect::<Vec<_>>()
         .join("\n")
+}
+
+/// `text` as a Markdown code block whose fence is longer than any run of
+/// backticks in it, so output that prints a fence of its own never closes
+/// this one and leaves the rest of it read as prose.
+pub(crate) fn fenced(text: &str) -> String {
+    let longest = text.split(|c| c != '`').map(str::len).max().unwrap_or(0);
+    let fence = "`".repeat(longest.max(2) + 1);
+    format!("{fence}\n{text}\n{fence}")
 }

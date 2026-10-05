@@ -484,10 +484,11 @@ mod tests {
                 let reads = whole
                     .match_indices(&format!(".{field}"))
                     .filter(|(i, _)| {
-                        // `.name` followed by `=` (but not `==`) is a write.
+                        // `.name` followed by `=` (but not `==`, or the `=>`
+                        // after a match guard) is a write.
                         let after = &whole[i + field.len() + 1..];
                         let rest = after.trim_start();
-                        !rest.starts_with('=') || rest.starts_with("==")
+                        !rest.starts_with('=') || rest.starts_with("==") || rest.starts_with("=>")
                     })
                     // Guard against a prefix match: `.git` inside `.gitstat`.
                     .filter(|(i, _)| {

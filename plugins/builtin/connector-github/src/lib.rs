@@ -144,9 +144,12 @@ impl Connector for GitHub {
         gh(root, &["pr", "ready", &number.to_string()]).map(drop)
     }
 
-    /// The failed steps' log of an Actions job, its last lines only: the
-    /// failure is at the end, and a whole log is more than any prompt should
-    /// carry. A check that is not an Actions job has no log `gh` can read.
+    /// The log of an Actions job, its last lines only: the failure is at the
+    /// end, and a whole log is more than any prompt should carry. Asked of
+    /// the job rather than its run, because `gh run view` holds every log
+    /// back until the whole run is over, and a job that failed fast is
+    /// repaired while its slower siblings still run. A status check that is
+    /// not an Actions job has no log `gh` can read.
     fn check_log_blocking(&self, root: &Path, check: &Check) -> Result<String, String> {
         let job = check
             .link
@@ -160,7 +163,13 @@ impl Connector for GitHub {
                     check.name
                 )
             })?;
-        let log = gh(root, &["run", "view", "--job", job, "--log-failed"])?;
+        let log = gh(
+            root,
+            &[
+                "api",
+                &format!("repos/{{owner}}/{{repo}}/actions/jobs/{job}/logs"),
+            ],
+        )?;
         Ok(last_lines(&log, LOG_LINES))
     }
 
@@ -188,8 +197,13 @@ impl Connector for GitHub {
 
     /// `git push` as ever, and, when that fails on an ssh `origin`, over HTTPS
     /// with `gh`'s own sign-in, for the reason [`Self::fetch_blocking`] gives.
+    /// A push the forge turned down, as one behind the branch it would
+    /// replace, is its answer whichever way it went, and is not tried again.
     fn push_blocking(&self, root: &Path, commit: &str, branch: &str) -> Result<(), String> {
         onehand_core::worktree::push_blocking(root, commit, branch).or_else(|over_origin| {
+            if turned_down(&over_origin) {
+                return Err(over_origin);
+            }
             over_https_blocking(root, over_origin, "push", |url| {
                 https_args("push", url, format!("{commit}:refs/heads/{branch}"))
             })
@@ -586,6 +600,12 @@ fn https_fetch_args(url: &str, branch: &str) -> Vec<String> {
     )
 }
 
+/// Whether git's complaint about a push is the remote refusing the commit,
+/// rather than never being reached.
+fn turned_down(said: &str) -> bool {
+    said.contains("[rejected]") || said.contains("[remote rejected]")
+}
+
 /// `git <verb>` of `refspec` with `url`, signed in by `gh` alone.
 fn https_args(verb: &str, url: &str, refspec: String) -> Vec<String> {
     vec![
@@ -832,6 +852,14 @@ fn ssh_resolve_blocking(alias: &str) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_push_turned_down_is_not_tried_over_https() {
+        assert!(turned_down(
+            "! [rejected] abc -> onehand/x (non-fast-forward)\nfailed to push some refs"
+        ));
+        assert!(!turned_down("Permission denied (publickey)."));
+    }
 
     #[test]
     fn a_rollup_reads_as_checks_that_pass_only_on_success() {

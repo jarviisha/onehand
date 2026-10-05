@@ -149,9 +149,15 @@ impl Shell {
                             let top = worktree::repo_top_blocking(&root).ok_or_else(|| {
                                 format!("{} is not in a git repository", root.display())
                             })?;
+                            // ponytail: only local branches count here; a
+                            // `workflow/` branch whose worktree is gone but
+                            // whose pull request is on the forge is reused.
+                            // Ask the forge as an issue's claim does if that
+                            // is seen.
                             let branch = onehand_core::unattended::free_branch_blocking(
                                 &top,
                                 &core::branch_for(&title),
+                                |_| false,
                             );
                             let dir = worktree::worktree_dir(&top, &branch);
                             let made = worktree::branch_off_blocking(&top, &branch, &dir, "HEAD")?;

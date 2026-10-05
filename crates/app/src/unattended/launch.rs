@@ -65,6 +65,9 @@ pub(super) struct Earlier {
     dir: PathBuf,
     branch: String,
     working: bool,
+    /// Its last run's workflow can answer a review: it has a step its status
+    /// checks send back to, and a forge to push the answer to.
+    answers_reviews: bool,
 }
 
 /// Every issue task with a branch of its own, oldest first.
@@ -78,6 +81,11 @@ pub(super) fn earlier(cx: &App) -> Vec<Earlier> {
             dir: task.setup.dir.clone(),
             branch: task.setup.branch.clone()?,
             working,
+            answers_reviews: task.setup.forge.is_some()
+                && task
+                    .runs
+                    .last()
+                    .is_some_and(|run| run.template.repair_step().is_some()),
         })
     })
 }
@@ -123,8 +131,17 @@ pub(super) fn begin_blocking(
                             &project.root,
                             *forge,
                         ) {
-                            Taking::Busy => continue,
-                            taking => {
+                            Err(Skip::Busy) => continue,
+                            // Looked at again at the next tick, its label
+                            // still on: a blip must not spend the request.
+                            Err(Skip::Unread(why)) => {
+                                eprintln!(
+                                    "onehand: passed over issue #{} for now: {why}",
+                                    issue.number
+                                );
+                                continue;
+                            }
+                            Ok(taking) => {
                                 return Some((
                                     project.root.clone(),
                                     tracker,
@@ -154,8 +171,6 @@ pub(super) fn begin_blocking(
 
 /// What claiming an issue comes to, given the tasks it had before.
 enum Taking {
-    /// A task is still working on it: it is not taken again.
-    Busy,
     /// A new task, on a branch of its own.
     Fresh,
     /// The last task's pull request is open: the label put back is a reviewer
@@ -168,8 +183,10 @@ enum Taking {
         pr: String,
         note: String,
     },
-    /// The last task's pull request was closed without being merged, so a
-    /// second is never opened beside the one turned down; why, to be said.
+    /// The issue is claimed only to be told why nothing follows: its last
+    /// pull request was closed without being merged, so a second is never
+    /// opened beside the one turned down, or its workflow cannot answer a
+    /// review on the one open.
     Refused(String),
 }
 
@@ -178,46 +195,68 @@ impl Taking {
     fn answering(&self) -> Option<&str> {
         match self {
             Self::Review { pr, .. } => Some(pr),
-            Self::Busy | Self::Fresh | Self::Refused(_) => None,
+            Self::Fresh | Self::Refused(_) => None,
+        }
+    }
+}
+
+/// Why an issue is not claimed now, its label left on.
+enum Skip {
+    /// A task is still working on it: it is never taken twice.
+    Busy,
+    /// The pull request on its last task's branch could not be looked up.
+    Unread(String),
+}
+
+impl Skip {
+    /// What a person who picked issue `number` is told.
+    fn said(&self, number: u64) -> String {
+        match self {
+            Self::Busy => format!("A run is already working on issue #{number}."),
+            Self::Unread(why) => format!("Could not start on issue #{number}: {why}"),
         }
     }
 }
 
 /// What claiming issue `number` of `tracker` comes to, by the newest of
 /// `earlier` on it and, with a forge, the pull request on its branch; one
-/// merged, or none, is a fresh start, and one that cannot be looked up is
-/// refused, to be said on the issue. Blocking.
+/// merged, or none, is a fresh start. Blocking.
 fn taking_blocking(
     earlier: &[Earlier],
     tracker: &Tracker,
     number: u64,
     repo: &Path,
     forge: Option<&'static dyn Connector>,
-) -> Taking {
+) -> Result<Taking, Skip> {
     let at = tracker.to_ref();
     let Some(last) = earlier
         .iter()
         .rfind(|e| e.tracker == at && e.number == number)
     else {
-        return Taking::Fresh;
+        return Ok(Taking::Fresh);
     };
     if last.working {
-        return Taking::Busy;
+        return Err(Skip::Busy);
     }
     let Some(forge) = forge else {
-        return Taking::Fresh;
+        return Ok(Taking::Fresh);
     };
     let pr = match forge.pull_request_for_blocking(repo, &last.branch) {
         Ok(Some(pr)) => pr,
-        Ok(None) => return Taking::Fresh,
+        Ok(None) => return Ok(Taking::Fresh),
         Err(why) => {
-            return Taking::Refused(format!(
+            return Err(Skip::Unread(format!(
                 "the pull request on `{}` could not be looked up: {why}",
                 last.branch
-            ));
+            )));
         }
     };
-    match pr.state {
+    Ok(match pr.state {
+        PrState::Open if !last.answers_reviews => Taking::Refused(format!(
+            "its pull request {} is open, and the workflow its task ran has no status \
+             checks step to answer a review from",
+            pr.url
+        )),
         PrState::Open => Taking::Review {
             task: last.task.clone(),
             dir: last.dir.clone(),
@@ -231,7 +270,7 @@ fn taking_blocking(
             pr.url
         )),
         PrState::Merged => Taking::Fresh,
-    }
+    })
 }
 
 /// Make what a claimed issue is worked on, as `taking` says. For a new task,
@@ -254,7 +293,6 @@ fn prepare_blocking(
 ) -> Result<Claimed, Unstarted> {
     let made = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         match taking {
-            Taking::Busy => return Err("a run is still working on it".to_string()),
             Taking::Refused(why) => return Err(why),
             Taking::Review {
                 task,
@@ -280,7 +318,16 @@ fn prepare_blocking(
             None => worktree::current_branch_blocking(&repo)?,
         };
         let top = worktree::repo_top_blocking(&repo).unwrap_or_else(|| repo.clone());
-        let branch = core::free_branch_blocking(&top, &core::branch_for(&tracker, &issue));
+        // A branch the forge still has a pull request on belongs to work
+        // before this, whatever is left of it here.
+        let taken = |name: &str| {
+            forge.is_some_and(|forge| {
+                forge
+                    .pull_request_for_blocking(&repo, name)
+                    .is_ok_and(|pr| pr.is_some())
+            })
+        };
+        let branch = core::free_branch_blocking(&top, &core::branch_for(&tracker, &issue), taken);
         let dir = worktree::worktree_dir(&top, &branch);
         let dir = worktree::branch_off_blocking(&top, &branch, &dir, &base)?;
         Ok::<_, String>(Work::Cut { branch, base, dir })
@@ -411,12 +458,10 @@ pub fn start_picked(
                         Tracker::Forge(forge) | Tracker::Synced { forge, .. } => Some(*forge),
                         Tracker::Local(_) => connector_for(&repo).ok(),
                     };
-                    let taking = taking_blocking(&earlier, &tracker, number, &repo, forge);
                     // Refused before the claim: claimed twice, it would be
                     // worked twice, on two branches.
-                    if let Taking::Busy = taking {
-                        return Err(format!("A run is already working on issue #{number}."));
-                    }
+                    let taking = taking_blocking(&earlier, &tracker, number, &repo, forge)
+                        .map_err(|skip| skip.said(number))?;
                     core::claim_picked_blocking(&tracker, &repo, &row, &label, taking.answering())
                         .map_err(|why| format!("Could not start on issue #{number}: {why}"))?;
                     Ok(prepare_blocking(
@@ -545,10 +590,6 @@ fn start(claimed: Claimed, cx: &mut App) -> Result<(), Unstarted> {
     }) else {
         return Err(unstarted(claimed, "unattended runs are off"));
     };
-    let template = match workflow(&id, &timeout, cx) {
-        Ok(template) => template,
-        Err(why) => return Err(unstarted(claimed, &why)),
-    };
     let agent = agent.or_else(|| {
         Shared::global(cx)
             .agents
@@ -581,9 +622,15 @@ fn start(claimed: Claimed, cx: &mut App) -> Result<(), Unstarted> {
     };
     let (branch, base, dir) = match claimed.work.clone() {
         Work::Cut { branch, base, dir } => (branch, base, dir),
+        // A review is answered on the task's own snapshot, as any retry is:
+        // the configured workflow is for new tasks only.
         Work::Review { task, note } => {
             return answer_review(claimed, task, note, window, &shell, cx);
         }
+    };
+    let template = match workflow(&id, &timeout, cx) {
+        Ok(template) => template,
+        Err(why) => return Err(unstarted(claimed, &why)),
     };
     let check = shell.read(cx).check_of(&claimed.repo);
     if template.needs_check() && check.is_none() {

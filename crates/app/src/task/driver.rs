@@ -16,6 +16,7 @@ use onehand_core::task::marks;
 use onehand_core::unattended::Budget;
 use onehand_core::workflow::{
     Action, Facts, Mark, Outcome, Run, Seen, Stop, judge, run_command_blocking, waited_on,
+    with_logs,
 };
 use onehand_core::worktree;
 use std::sync::Arc;
@@ -775,19 +776,20 @@ fn watch_status_checks(
                         wait,
                     );
                     match (seen, pr) {
-                        (Seen::Repair(mut said), Some(pr)) => {
-                            let failed = pr.checks.iter().filter(|c| c.state == CheckState::Failed);
-                            for check in failed.take(LOGS_MAX) {
-                                let log = connector
-                                    .check_log_blocking(&dir, check)
-                                    .unwrap_or_else(|why| format!("(no log: {why})"));
-                                said.push_str(&format!(
-                                    "\n\n{}:\n\n```\n{}\n```",
-                                    check.name,
-                                    log.trim()
-                                ));
-                            }
-                            Seen::Repair(said)
+                        (Seen::Repair(said), Some(pr)) => {
+                            let logs: Vec<(String, String)> = pr
+                                .checks
+                                .iter()
+                                .filter(|c| c.state == CheckState::Failed)
+                                .take(LOGS_MAX)
+                                .map(|check| {
+                                    let log = connector
+                                        .check_log_blocking(&dir, check)
+                                        .unwrap_or_else(|why| format!("(no log: {why})"));
+                                    (check.name.clone(), log)
+                                })
+                                .collect();
+                            Seen::Repair(with_logs(said, &logs))
                         }
                         (Seen::Passed, Some(pr)) if pr.draft => {
                             match connector.mark_ready_blocking(&dir, pr.number) {

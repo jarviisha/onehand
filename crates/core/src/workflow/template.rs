@@ -219,7 +219,7 @@ pub enum StepKind {
     /// Open a draft pull request from the run's branch, or take the one
     /// already open there.
     PullRequest,
-    /// Wait for the forge's checks on the pull request's head, at most
+    /// Wait for the forge's status checks on the pull request's head, at most
     /// `wait`. All passing takes it out of draft; a failure or a conflict goes
     /// back to the step `on_fail`, carrying what failed.
     StatusChecks {

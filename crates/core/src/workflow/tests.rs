@@ -1294,3 +1294,28 @@ fn only_every_status_check_passing_on_the_pushed_commit_is_ready() {
         Seen::Fail(why) if why.contains("offline")
     ));
 }
+
+#[test]
+fn a_wait_shorter_than_the_grace_still_lets_no_status_checks_pass() {
+    let pr = pull_request(PrState::Open, &[], false);
+    let wait = Duration::from_secs(300);
+    assert_eq!(
+        judge(Ok(Some(&pr)), Some("b"), Duration::from_secs(60), wait),
+        Seen::Pending
+    );
+    assert_eq!(judge(Ok(Some(&pr)), Some("b"), wait, wait), Seen::Passed);
+}
+
+#[test]
+fn a_log_holding_a_fence_never_closes_the_one_around_it() {
+    let said = with_logs(
+        "Lint failed.".into(),
+        &[("Lint".into(), "before\n```\nafter\n````".into())],
+    );
+    assert!(
+        said.starts_with("Lint failed.\n\nLint:\n\n`````\n"),
+        "{said}"
+    );
+    assert!(said.ends_with("\n`````"), "{said}");
+    assert_eq!(prompt::fenced("plain"), "```\nplain\n```");
+}

@@ -201,7 +201,7 @@ pub fn validate(template: &Template) -> Vec<Problem> {
             StepKind::StatusChecks { on_fail, wait } => {
                 if !before(|kind| *kind == StepKind::PullRequest) {
                     here(
-                        "it waits on a pull request's checks, and no earlier step opens one"
+                        "it waits on a pull request's status checks, and no earlier step opens one"
                             .to_string(),
                     );
                 }

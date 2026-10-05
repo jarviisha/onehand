@@ -115,13 +115,17 @@ impl Tasks {
     /// or running, and not waiting on its pull request's status checks.
     fn holds_slot(&self, id: &str) -> bool {
         match self.working(id) {
-            Some(Working::Running) => !self
-                .live
-                .values()
-                .any(|d| d.task == id && d.run.awaiting_status_checks()),
+            Some(Working::Running) => self
+                .driven(id)
+                .is_none_or(|d| !d.run.awaiting_status_checks()),
             Some(Working::Queued) => true,
             Some(Working::Waiting) | None => false,
         }
+    }
+
+    /// The driver running task `id`'s run, if one is.
+    fn driven(&self, id: &str) -> Option<&driver::Driven> {
+        self.live.values().find(|d| d.task == id)
     }
 
     /// What task `id` is doing, if anything.
@@ -129,7 +133,7 @@ impl Tasks {
         if self.queue.queued(id) {
             return Some(Working::Queued);
         }
-        if let Some(d) = self.live.values().find(|d| d.task == id) {
+        if let Some(d) = self.driven(id) {
             return Some(match d.waits_on_person() {
                 true => Working::Waiting,
                 false => Working::Running,
@@ -779,7 +783,7 @@ pub(crate) fn is_working(id: &str, cx: &App) -> bool {
 
 /// How each issue task working or queued is shown, oldest first: what the
 /// cap on unattended runs counts. One waiting on a person, or on its pull
-/// request's checks, is not working.
+/// request's status checks, is not working.
 pub(crate) fn issues_working(cx: &App) -> Vec<String> {
     let Some(t) = cx.try_global::<Tasks>() else {
         return Vec::new();

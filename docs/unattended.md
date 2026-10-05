@@ -539,9 +539,10 @@ Before it claims an issue, `launch::taking_blocking` looks for the issue's newes
 task with a branch of its own. **One still working is never taken again**: the
 search passes the issue over for the next labelled one
 (`core::candidates_blocking`), and a pick is refused, so an issue is never worked
-twice on two branches. A pull request that cannot be looked up is said on the
-issue, after its claim, like any other reason a run could not start. Otherwise it asks the forge for the pull request on that
-task's branch:
+twice on two branches. A pull request that cannot be looked up passes the issue
+over too, its label left on for the next tick, so a forge that is down for a
+moment does not spend a person's request. Otherwise it asks the forge for the
+pull request on that task's branch:
 
 - **Open**: the label put back is a reviewer asking for changes, and the claim
   comment says it answers the review. No worktree is cut: the old one is fetched
@@ -551,9 +552,16 @@ task's branch:
   its status checks send back to, its new run told how to read the review
   (`core::review_note`, `Connector::read_review_with`) as a revision note. It
   pushes to the same pull request.
+- **Open, on a task whose workflow has no status checks step**, or no forge to
+  push to: refused, since a retry would have no step to answer the review in.
 - **Closed without being merged**: refused. The issue is told onehand will not
   open another, and to reopen it to have its review answered.
-- **Merged, or none**: a fresh branch, as for any issue.
+- **Merged, or none**: a fresh branch, as for any issue. A branch name the
+  forge still has a pull request on is passed over for the next free one, so a
+  new task never pushes onto old work whose worktree is gone.
+
+A review is answered on the task's own snapshot, as any retry is: a workflow,
+agent, mode or timeout configured since applies to new tasks only.
 
 ## Where it lives
 

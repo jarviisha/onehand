@@ -391,15 +391,17 @@ pub fn branch_for(tracker: &Tracker, issue: &Issue) -> String {
 }
 
 /// `branch`, or the first of `branch-2` … `branch-9` the repository at `root`
-/// does not have yet.
+/// does not have yet and `taken` does not say is taken elsewhere.
 ///
 /// An issue whose label was put back after a run left work on its branch gets a
 /// branch of its own this time: the old one is still checked out in the
 /// worktree that run left on disk, and git refuses a second checkout of it.
-pub fn free_branch_blocking(root: &Path, branch: &str) -> String {
+/// One the forge still has a pull request on is taken too, though its local
+/// branch is gone: a new task pushing there would meet the old one's work.
+pub fn free_branch_blocking(root: &Path, branch: &str, taken: impl Fn(&str) -> bool) -> String {
     std::iter::once(branch.to_string())
         .chain((2..=9).map(|n| format!("{branch}-{n}")))
-        .find(|name| !crate::worktree::branch_exists_blocking(root, name))
+        .find(|name| !crate::worktree::branch_exists_blocking(root, name) && !taken(name))
         .unwrap_or_else(|| format!("{branch}-10"))
 }
 

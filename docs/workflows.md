@@ -16,7 +16,7 @@ worktree's branch to the forge. The words are defined in [CONTEXT.md](../CONTEXT
 | The person's workflows on disk | [crates/core/src/workflow/store.rs](../crates/core/src/workflow/store.rs) |
 | The engine: one run as pure state | [crates/core/src/workflow/run.rs](../crates/core/src/workflow/run.rs) |
 | Marks, facts, gates, the command runner | [crates/core/src/workflow/facts.rs](../crates/core/src/workflow/facts.rs) |
-| What a pull request's checks say | [crates/core/src/workflow/checks.rs](../crates/core/src/workflow/checks.rs) |
+| What a pull request's status checks say | [crates/core/src/workflow/status_checks.rs](../crates/core/src/workflow/status_checks.rs) |
 | Tasks, which keep their runs | [crates/core/src/task.rs](../crates/core/src/task.rs) |
 | Task files, their ordered writer, the move of `pipeline-runs/` | [crates/core/src/task/files.rs](../crates/core/src/task/files.rs) |
 | The queue: one task per place | [crates/core/src/task/queue.rs](../crates/core/src/task/queue.rs) |
@@ -179,7 +179,10 @@ the run's history, capped at 200.
   forge's pull request, **on the commit that was pushed**: checks on any other head are waited
   past. A failing check or a conflict wins over one still running and goes back to `on_fail` as a
   miss, carrying what failed and up to three logs as `{check_output}`; all passing takes the pull
-  request out of draft and goes on; none at all after a ten-minute grace counts as passing. A forge
+  request out of draft and goes on; none at all after a ten-minute grace (or `wait`, when shorter)
+  counts as passing. A failing Actions job's log is read from the job itself, so a job that failed
+  fast is repaired while slower ones still run, and every log is fenced longer than any fence it
+  prints. A push the forge turns down is not tried again over HTTPS. A forge
   that cannot be read, or a draft that cannot be taken out of draft, is waited on like a check still
   running, and nothing is waited on past `wait`: the run fails. Merged ends it done; closed, or no
   pull request at all, fails it. Repairs are bounded by `misses`, like a failing command.
@@ -219,7 +222,7 @@ A prompt asked for before the adapter is up waits for the link. When the agent f
 session, a run whose setup names a mode (`Setup::mode`, an unattended run's) has its agent put in
 that mode before the first prompt; an agent that does not offer it fails the run. The clock is
 `unattended::Budget`: it pauses while a card or an approval waits on a person, or the pull
-request's checks run, and its timer looks
+request's status checks run, and its timer looks
 again when it fires rather than being re-armed at every pause.
 
 **Every run belongs to a task, and the task's file is written after every action**

@@ -29,7 +29,7 @@ pub struct RemoteIssue {
 }
 
 /// A pull request as a forge holds it now: where it is, whether it is still
-/// open, what commit it is at, and what its checks say about that commit.
+/// open, what commit it is at, and what its status checks say about that commit.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PullRequest {
     pub url: String,

@@ -95,10 +95,24 @@ pub fn judge(
         }
         return Seen::Repair(said);
     }
+    // A wait shorter than the grace ends the grace with it, so a pull request
+    // with none at all can still pass.
     let running = pr.checks.iter().any(|c| c.state == CheckState::Pending)
-        || (pr.checks.is_empty() && waited < STATUS_CHECKS_GRACE);
+        || (pr.checks.is_empty() && waited < STATUS_CHECKS_GRACE.min(wait));
     match running {
         true => pending(format!("the status checks on {} were not done", pr.url)),
         false => Seen::Passed,
     }
+}
+
+/// What a repair is told, `said`, with the end of each failing status
+/// check's log after it, as `(name, log)`, each fenced on its own.
+pub fn with_logs(mut said: String, logs: &[(String, String)]) -> String {
+    for (name, log) in logs {
+        said.push_str(&format!(
+            "\n\n{name}:\n\n{}",
+            super::prompt::fenced(log.trim())
+        ));
+    }
+    said
 }

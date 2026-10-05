@@ -560,3 +560,17 @@ fn a_pull_request_closes_the_issue_only_where_the_forge_knows_it() {
     assert!(!body(&source(kept, None)).contains('#'));
     assert_eq!(pull_request_text(&brief, None).0, "Fix it");
 }
+
+#[test]
+fn a_branch_taken_on_the_forge_is_passed_over_too() {
+    let root = std::env::temp_dir();
+    let taken = |name: &str| name == "onehand/github-1-x";
+    assert_eq!(
+        free_branch_blocking(&root, "onehand/github-1-x", taken),
+        "onehand/github-1-x-2"
+    );
+    assert_eq!(
+        free_branch_blocking(&root, "onehand/github-2-x", taken),
+        "onehand/github-2-x"
+    );
+}
