@@ -83,7 +83,7 @@ background executor, one interval in the config, no cron expressions.
 | `crates/core/src/process.rs` | `output_within`: a command with a limit on its exit *and* its output, stopped with its whole process group |
 | `crates/core/src/task/history.rs` | `over_cap`, which never lets go of a task whose report is unsent |
 | `crates/app/src/unattended.rs` | the tick, the cap (`at_cap`, the tasks still `starting`), `waiting` |
-| `crates/app/src/unattended/launch.rs` | claiming an issue, cutting its worktree, and making it a task |
+| `crates/app/src/unattended/launch.rs` | claiming an issue, cutting its worktree, and making it a task of its workflow; `workflow`, which refuses a checkout workflow |
 | `crates/app/src/unattended/report.rs` | `spec_for`, `refuse_mode`, `started`, `opening`, and the end: `keep`, `card_question`, `ended`, `deliver`, `deliver_all` |
 | `crates/app/src/task.rs` | `freed`, which calls `unattended::ended`; `issues_working`, `live_issues`, `update_issue`, `undelivered` |
 | `crates/app/src/task/driver.rs` | `came_up` (the mode, the note on the issue), the clock, the take-over |
@@ -94,6 +94,9 @@ background executor, one interval in the config, no cron expressions.
 | `crates/app/src/shell/remote_runs.rs` | `run_unattended`, `end_unattended`, `adopt_unattended` |
 | `crates/app/src/shell/roots.rs` | `forget_root`, the half of `remove_root` that asks nothing and moves nothing |
 | `crates/app/src/chat/pane/sessions.rs` | `open_unshown` |
+| `crates/app/src/dialogs.rs` | `pick_issue` and `issue_workflow_menu`, the workflow menu the picker and Settings share |
+| `crates/app/src/settings/pages.rs` | the default workflow and the workflow labels in Settings |
+| `crates/app/src/task.rs` (`issue_runs`) and `plugins/builtin/workbench-issues/src/view/detail.rs` (`runs_view`) | the tasks working an issue, told to the Issues tab through `Request::IssueRuns` |
 
 The split is the one the crate boundary already forces: everything that can be
 decided without a window — which issue, what branch, what the run is asked, what
@@ -122,6 +125,9 @@ mode = "acceptEdits"        # the ACP session mode a run starts in; empty leaves
 agent = "Claude Code"       # which agent spec; the default agent when unset
 workflow = "builtin:issue"  # the workflow an issue is worked with, by id
 at_once = 1                 # runs working at once, across every window
+
+[unattended.workflows]      # workflow labels: label = workflow id
+bug = "my-fix"
 ```
 
 **The switch is per project, and there is none in this table.** Every project
@@ -136,12 +142,29 @@ carrying the old global `enabled` key keeps loading; the key is ignored. An
 Settings list both say so, since a switch that is on while nothing can happen is
 the one state that looks exactly like working.
 
-**`workflow` is any workflow, by its id.** *Work an issue* (`builtin:issue`)
+**Which workflow an issue gets.** A person picking it chooses, in the picker;
+otherwise its **workflow labels** do: an issue carrying, beside the trigger
+label, a label `[unattended.workflows]` names is worked with that workflow, the
+first in the table's (alphabetical) order winning when it carries several,
+because a forge hands labels back in no promised order
+(`unattended::workflow_for`). The trigger label never chooses, even written
+into the table by hand, since every issue a search finds carries it; Settings
+refuses it as a workflow label (`unattended::workflow_label_refused`). Everything else
+gets `workflow`. A review answered runs its task's own workflow, whatever the
+labels say now. Settings ▸ Workspace ▸ Unattended runs edits `workflow` and
+the table (a menu, then one row per label with *Remove*, then a label field, a
+menu and *Add*), and writes them to the config at once; a run already working
+keeps the workflow it started with.
+
+**`workflow` is any workflow on a worktree, by its id.** *Work an issue* (`builtin:issue`)
 plans in an answer, changes and commits the code, then runs the project's check
 command, sending a failure back to the change. A workflow that is not there, or
 one that would not pass validation, stops every run, said the way a bad config
-is (below), and so does having no agent to run it. One that runs the project's
-check command is never claimed for on a project with none: that project's row
+is (below), and so does having no agent to run it, or one that works in the
+checkout: a run's work is cut a worktree of its own, and a checkout workflow
+would leave it uncommitted there. A workflow label naming such a workflow stops
+every run the same way, said with the label (`cannot_start`). One that runs the
+project's check command is never claimed for on a project with none: that project's row
 says so, a pick there is refused, and no issue is claimed for a run that cannot
 start. A run whose session cannot start (its folder gone, its agent gone) ends
 failed, and its issue is told it could not start rather than left claimed.
@@ -219,6 +242,22 @@ Picking one runs the same path as a found issue, with four differences:
 - what stops every run — a mode the agent does not offer, once learned, or a
   workflow that cannot run — refuses the pick *before* the claim, rather than
   claiming an issue for a run that would fail.
+
+The picker has a *Workflow* menu above the list: *By the issue's labels* (the
+default, as the tick chooses) or any workflow that works on a worktree. The
+same picker opens from an issue in the Issues tab, by *Run workflow…* (offered
+where *Work an issue…* is: a repository that is not a run's own worktree),
+narrowed to that one issue; an issue a run may not take (closed, brought in
+from a forge the project is no longer kept in step with, or older than the
+newest 100 the list reads) is said there instead of a row. Below its body, the Issues tab lists the tasks working the issue, working
+ones first, five at most and saying how many more are on the Tasks page: each
+its workflow and its step or how it ended, a waiting one in the warning ink,
+and *Show task*, which opens the task's detail. Only issues a project keeps
+show them: a forge's issue numbers are its own.
+
+A workflow label's workflow that runs the project's check command is checked
+against a project with none only after the claim, and the issue is told why
+the run could not start; the default workflow is checked before.
 
 **`at_once` runs work at a time**, picked and found alike, counted across every
 window (`task::issues_working`: issue tasks running or queued). A run waiting on
@@ -612,6 +651,10 @@ Core, pure, no fixtures:
   punctuation and for one 300 characters long, and a kept issue and a forge
   issue of one number never share a branch.
 - `room` counts working runs against `at_once`.
+- `workflow_for` takes the first workflow label in the table's order, never
+  the trigger label, and falls back to the default; a found issue keeps every
+  label it carries; `workflow_label_refused` refuses an empty, trigger or
+  duplicate label.
 - `history::over_cap` never lets go of a task whose report is unsent.
 
 The `gh` calls themselves are not unit-tested; they are `Command`

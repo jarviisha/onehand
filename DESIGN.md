@@ -118,6 +118,8 @@ monospace font.
   - The terminal strip has its shell tabs and `+`, then the same maximize and hide.
   - Each dock is a card, inset on three sides and flush on the side it is dragged by, on the same
     reading surface as the conversation.
+  - The Issues tab's issue shows its title with *Work here*, *Run workflow…*, *Edit* and ⋯, its
+    facts, its body, the tasks working it (not drawn without any, capped) and its history.
   - Hiding a dock keeps its buffers and processes.
   - A hidden terminal is unmounted and takes no room.
   - The terminal's open state follows the selected project.

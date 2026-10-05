@@ -16,7 +16,7 @@ use gpui::{App, BorrowAppContext as _, Task, WeakEntity};
 use onehand_core::config::UnattendedConfig;
 use onehand_core::connector::{self, Connector};
 use onehand_core::unattended as core;
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::path::Path;
 use std::path::PathBuf;
 use std::time::Duration;
@@ -37,8 +37,11 @@ pub struct Unattended {
     timeout: String,
     mode: String,
     agent: Option<String>,
-    /// The id of the workflow an issue is worked with.
+    /// The id of the workflow an issue is worked with, unless a workflow
+    /// label on it names another.
     workflow: String,
+    /// Workflow label → workflow id.
+    workflows: BTreeMap<String, String>,
     /// How many runs may work at once.
     at_once: u32,
     /// A claim is on its way to the connector and the worktree is being made. A tick
@@ -142,11 +145,26 @@ fn at_cap(u: &Unattended, cx: &App) -> Option<String> {
 }
 
 /// Why nothing at all may start, picked or found: the agent does not offer
-/// the mode runs start in, or the workflow they run is missing or cannot run.
+/// the mode runs start in, or a workflow runs may be given — the default or
+/// one a workflow label names — is missing or cannot run.
+///
+/// **A label's workflow stops every run**, not only its issues': it is the
+/// same broken config either way, and said before any claim it costs no issue
+/// a comment.
 fn cannot_start(u: &Unattended, cx: &App) -> Option<String> {
     u.mode_refused
         .clone()
-        .or_else(|| launch::workflow(&u.workflow, &u.timeout, cx).err())
+        .or_else(|| {
+            launch::workflow(&u.workflow, &u.timeout, cx)
+                .err()
+                .map(|why| format!("{why} (unattended.workflow)"))
+        })
+        .or_else(|| {
+            u.workflows.iter().find_map(|(label, id)| {
+                let why = launch::workflow(id, &u.timeout, cx).err()?;
+                Some(format!("{why} (unattended.workflows, label `{label}`)"))
+            })
+        })
         .or_else(|| {
             spec_for(u.agent.as_deref(), cx)
                 .is_none()
@@ -154,24 +172,32 @@ fn cannot_start(u: &Unattended, cx: &App) -> Option<String> {
         })
 }
 
-/// Why the project at `root` cannot be worked by the workflow runs use, when
+/// Why the project at `root` cannot be worked by the default workflow, when
 /// that workflow runs the project's check command and the project has none.
 /// Asked before a claim, so no issue is claimed for a run that cannot start.
+// ponytail: a workflow label's workflow is checked for this only once its
+// issue is claimed (`launch::start` tells the issue); look per issue before
+// the claim if that is seen to happen.
 fn lacks_check(root: &Path, cx: &App) -> Option<String> {
     let has = Shared::global(cx)
         .windows
         .iter()
         .filter_map(|w| w.shell.upgrade())
         .any(|shell| shell.read(cx).check_of(root).is_some());
-    lacks_check_given(has, cx)
+    let id = Shared::global(cx).unattended.as_ref()?.workflow.clone();
+    lacks_check_given(has, &id, cx)
 }
 
-/// [`lacks_check`] for a project that `has` a check command or not, for a
-/// caller that already knows: one inside its own window's update, whose shell
-/// cannot be read again while it is being updated.
-fn lacks_check_given(has: bool, cx: &App) -> Option<String> {
+/// Why a project that `has` a check command or not cannot be worked by the
+/// workflow `id` — or why that workflow cannot run anywhere — for a caller
+/// that already knows whether it has one: one inside its own window's update,
+/// whose shell cannot be read again while it is being updated.
+fn lacks_check_given(has: bool, id: &str, cx: &App) -> Option<String> {
     let u = Shared::global(cx).unattended.as_ref()?;
-    let template = launch::workflow(&u.workflow, &u.timeout, cx).ok()?;
+    let template = match launch::workflow(id, &u.timeout, cx) {
+        Ok(template) => template,
+        Err(why) => return Some(why),
+    };
     (template.needs_check() && !has).then(|| {
         format!(
             "the workflow `{}` runs the project's check command, and it has none; set one \
@@ -227,6 +253,7 @@ pub fn boot(cfg: &UnattendedConfig, cx: &mut App) {
             mode: cfg.mode.clone(),
             agent: cfg.agent.clone(),
             workflow: cfg.workflow.clone(),
+            workflows: cfg.workflows.clone(),
             at_once: cfg.at_once,
             claiming: false,
             blocked,
@@ -447,6 +474,57 @@ pub fn label(cx: &App) -> String {
         .unwrap_or_default()
 }
 
+/// The id of the workflow an issue carrying `labels` is worked with: the one
+/// its first workflow label names, else the default.
+pub fn workflow_for(labels: &[String], cx: &App) -> String {
+    Shared::global(cx)
+        .unattended
+        .as_ref()
+        .map(|u| core::workflow_for(labels, &u.workflows, &u.workflow, &u.label).to_string())
+        .unwrap_or_default()
+}
+
+/// The default workflow and the workflow labels, as the config has them.
+pub fn workflows(cx: &App) -> (String, BTreeMap<String, String>) {
+    Shared::global(cx)
+        .unattended
+        .as_ref()
+        .map(|u| (u.workflow.clone(), u.workflows.clone()))
+        .unwrap_or_default()
+}
+
+/// Every workflow an issue can be worked with, as `(id, name, shipped)`:
+/// the readable ones that work on a worktree, in the library's order.
+pub fn issue_workflows(cx: &App) -> Vec<(String, String, bool)> {
+    crate::workflow::templates(cx)
+        .into_iter()
+        .filter_map(|entry| {
+            let template = entry.template.ok()?;
+            (template.place == onehand_core::workflow::Place::Worktree)
+                .then(|| (template.id, template.name, entry.file.is_none()))
+        })
+        .collect()
+}
+
+/// Make `default` the workflow issues are worked with and `by_label` the
+/// workflow labels, for every run from now on, and write both to the config
+/// at `path`. A run already working keeps the workflow it started with.
+pub fn set_workflows(
+    default: String,
+    by_label: BTreeMap<String, String>,
+    path: &Path,
+    cx: &mut App,
+) -> Result<(), String> {
+    with(cx, |u| {
+        u.workflow = default.clone();
+        u.workflows = by_label.clone();
+    });
+    onehand_core::config::AppConfig::update_in_place(path, |cfg| {
+        cfg.unattended.workflow = default;
+        cfg.unattended.workflows = by_label;
+    })
+}
+
 /// Act on the unattended state, if there is one.
 fn with<R>(cx: &mut App, act: impl FnOnce(&mut Unattended) -> R) -> Option<R> {
     cx.update_global::<Shared, _>(|shared, _| shared.unattended.as_mut().map(act))
@@ -484,7 +562,7 @@ fn tick(asked_from: Option<gpui::AnyWindowHandle>, cx: &mut App) {
         let idle = !u.claiming && u.blocked.is_none() && stopped.is_none();
         idle.then(|| {
             u.claiming = true;
-            u.label.clone()
+            (u.label.clone(), u.workflow.clone(), u.workflows.clone())
         })
     })
     .flatten();
@@ -515,8 +593,14 @@ fn tick(asked_from: Option<gpui::AnyWindowHandle>, cx: &mut App) {
                             Some((project, forge))
                         })
                         .collect();
-                    let begun = search.and_then(|label| {
-                        begin_blocking(&workable, &label, &earlier, &mut checked)
+                    let begun = search.and_then(|(label, default, by_label)| {
+                        begin_blocking(
+                            &workable,
+                            &label,
+                            (&default, &by_label),
+                            &earlier,
+                            &mut checked,
+                        )
                     });
                     (Some(accounts), checked, begun)
                 }))

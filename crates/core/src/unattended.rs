@@ -10,6 +10,7 @@ use crate::connector::{Connector, PrState};
 use crate::issues;
 use crate::workflow::{Brief, Outcome, Stop};
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
@@ -152,14 +153,14 @@ impl Tracker {
     /// [`Self::Synced`], which asks, or not at all: a sync switched off, a
     /// forge unreachable for one tick, or a link lost must not turn somebody
     /// else's text into a prompt run with the user's credentials.
-    fn labelled_blocking(&self, root: &Path, label: &str) -> Result<Vec<Issue>, String> {
+    fn labelled_blocking(&self, root: &Path, label: &str) -> Result<Vec<IssueRow>, String> {
         match self {
             Self::Forge(c) => c.my_labelled_issues_blocking(root, label),
             Self::Local(file) => Ok(issues::load_blocking(file)?
                 .listed()
                 .into_iter()
                 .filter(|i| i.written_here() && i.open && i.labels.iter().any(|l| l == label))
-                .map(Issue::from)
+                .map(|i| kept_row(i, None))
                 .collect()),
             // Synced first, so a label put on at the forge is seen. An issue
             // brought in from the forge may be anybody's, so it is taken only
@@ -170,19 +171,18 @@ impl Tracker {
                 let mine: Vec<String> = forge
                     .my_labelled_issues_blocking(root, label)?
                     .into_iter()
-                    .map(|i| i.number.to_string())
+                    .map(|row| row.issue.number.to_string())
                     .collect();
                 Ok(kept
                     .listed()
                     .into_iter()
                     .filter(|i| i.open && i.labels.iter().any(|l| l == label))
                     .filter_map(|i| {
-                        let found = Issue::from(i);
                         if i.written_here() {
-                            return Some(found);
+                            return Some(kept_row(i, None));
                         }
                         let link = i.link_on(forge.name()).filter(|l| mine.contains(&l.key))?;
-                        Some(found.at(link.reference.clone()))
+                        Some(kept_row(i, Some(link.reference.clone())))
                     })
                     .collect())
             }
@@ -195,17 +195,7 @@ impl Tracker {
     /// Synced, every one is, and a linked one carries its forge reference so
     /// its pull request names it there.
     fn open_blocking(&self, root: &Path, limit: usize) -> Result<Vec<IssueRow>, String> {
-        let row = |i: &issues::LocalIssue, forge_ref: Option<String>| {
-            let issue = Issue::from(i);
-            IssueRow {
-                issue: match forge_ref {
-                    Some(reference) => issue.at(reference),
-                    None => issue,
-                },
-                author: String::new(),
-                labels: i.labels.clone(),
-            }
-        };
+        let row = kept_row;
         match self {
             Self::Forge(c) => c.open_issues_blocking(root, limit),
             Self::Local(file) => Ok(issues::load_blocking(file)?
@@ -270,6 +260,20 @@ impl Tracker {
                 }
             }
         }
+    }
+}
+
+/// An issue kept here as a row: no author, since only a forge knows who
+/// wrote one, and known on its forge as `forge_ref` when it is kept in step.
+fn kept_row(i: &issues::LocalIssue, forge_ref: Option<String>) -> IssueRow {
+    let issue = Issue::from(i);
+    IssueRow {
+        issue: match forge_ref {
+            Some(reference) => issue.at(reference),
+            None => issue,
+        },
+        author: String::new(),
+        labels: i.labels.clone(),
     }
 }
 
@@ -798,13 +802,58 @@ pub fn candidates_blocking(
     tracker: &Tracker,
     root: &Path,
     label: &str,
-) -> Result<Vec<Issue>, String> {
+) -> Result<Vec<IssueRow>, String> {
     if label.trim().is_empty() {
         return Ok(Vec::new());
     }
     let mut found = tracker.labelled_blocking(root, label)?;
-    found.sort_by_key(|issue| issue.number);
+    found.sort_by_key(|row| row.issue.number);
     Ok(found)
+}
+
+/// The id of the workflow an issue carrying `labels` is worked with: the one
+/// `by_label` names for the first of its labels in that table's order, else
+/// `default`.
+///
+/// The table's order rather than the issue's, because a forge hands labels
+/// back in no order it promises, and the same issue must not get a different
+/// workflow from one look to the next. **The trigger label never chooses**,
+/// even written into the table by hand: every issue a search finds carries it,
+/// so it would choose for all of them.
+pub fn workflow_for<'a>(
+    labels: &[String],
+    by_label: &'a BTreeMap<String, String>,
+    default: &'a str,
+    trigger: &str,
+) -> &'a str {
+    by_label
+        .iter()
+        .find(|(label, _)| *label != trigger && labels.contains(label))
+        .map_or(default, |(_, id)| id)
+}
+
+/// Why `label` cannot be added as a workflow label beside `by_label`, the
+/// trigger label being `trigger`: it is empty, it is the trigger label, which
+/// never chooses, or it already chooses a workflow.
+pub fn workflow_label_refused(
+    label: &str,
+    trigger: &str,
+    by_label: &BTreeMap<String, String>,
+) -> Option<String> {
+    if label.is_empty() {
+        Some("Type the label an issue carries.".to_string())
+    } else if label == trigger {
+        Some(format!(
+            "“{label}” is the trigger label; every issue a run takes carries it, so it \
+             cannot choose."
+        ))
+    } else if by_label.contains_key(label) {
+        Some(format!(
+            "“{label}” already chooses a workflow; remove it first."
+        ))
+    } else {
+        None
+    }
 }
 
 /// Take `number`: remove the trigger label, then say a run started.

@@ -1,6 +1,6 @@
 use super::list::{chip, identity};
 use super::mentions::FILE_LINK;
-use super::{FILES_SHOWN, Form, HISTORY_SHOWN, IssuesView};
+use super::{FILES_SHOWN, Form, HISTORY_SHOWN, IssuesView, RUNS_SHOWN};
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
     AnyElement, App, ClickEvent, ClipboardItem, Context, Entity, HighlightStyle,
@@ -13,20 +13,33 @@ use gpui_component::text::{TextView, TextViewState, TextViewStyle};
 use gpui_component::tooltip::Tooltip;
 use gpui_component::{ActiveTheme, Icon, IconName, Sizable as _, StyledExt};
 use onehand_core::issues::{LocalIssue, sync};
-use onehand_plugin_host::{action, menu_below, menu_item, status_ink};
+use onehand_plugin_host::{IssueRun, action, menu_below, menu_item, status_ink};
 use std::path::Path;
 
+/// What is being done with an issue: the live session its history names,
+/// whether a run may be started on its project, and the tasks working it.
+pub(super) struct Doing {
+    pub(super) session: Option<String>,
+    pub(super) offered: bool,
+    pub(super) runs: Vec<IssueRun>,
+}
+
 /// One issue, read: how it is named and its title with what can be done to it,
-/// its labels, and its body.
+/// its labels, its body, and the tasks working it.
 pub(super) fn issue_view(
     root: &Path,
     issue: &LocalIssue,
     body: Option<(Entity<TextViewState>, Vec<String>)>,
     publish_to: Option<&'static str>,
-    working: Option<String>,
+    doing: Doing,
     window: &mut Window,
     cx: &mut Context<IssuesView>,
 ) -> AnyElement {
+    let Doing {
+        session: working,
+        offered,
+        runs,
+    } = doing;
     let number = issue.number;
     let open = issue.open;
     let muted = cx.theme().muted_foreground;
@@ -94,6 +107,25 @@ pub(super) fn issue_view(
                                 })),
                         ),
                         None => actions,
+                    })
+                    // A workflow works it on a worktree of its own, so it may
+                    // go beside a session here; the app refuses a second run
+                    // on an issue one is already working.
+                    .when(open && offered, |actions| {
+                        actions.child(
+                            action("issue-run-workflow")
+                                .xsmall()
+                                .ghost()
+                                .icon(Icon::new(IconName::Play))
+                                .label("Run workflow…")
+                                .tooltip(
+                                    "Choose a workflow and work the issue with it as a task, \
+                                     on a branch and worktree of its own",
+                                )
+                                .on_click(cx.listener(move |view, _: &ClickEvent, window, cx| {
+                                    view.run_workflow(number, window, cx)
+                                })),
+                        )
                     })
                     .child(
                         action("issue-edit")
@@ -168,6 +200,7 @@ pub(super) fn issue_view(
         }));
     let conflict = conflict_view(issue, cx);
 
+    let runs = runs_view(runs, cx);
     let history = history(issue, cx);
 
     div()
@@ -200,8 +233,79 @@ pub(super) fn issue_view(
                 .into_any_element(),
         })
         .children(body.and_then(|(_, files)| referenced(files, cx)))
+        .children(runs)
         .child(history)
         .into_any_element()
+}
+
+/// The tasks working the issue, working ones first: each its workflow and the
+/// step it is at or how it ended, the ones waiting on a person in the warning
+/// ink, with a way to the task. Not drawn when there are none.
+fn runs_view(runs: Vec<IssueRun>, cx: &mut Context<IssuesView>) -> Option<AnyElement> {
+    if runs.is_empty() {
+        return None;
+    }
+    let muted = cx.theme().muted_foreground;
+    let warning = status_ink(cx).warning;
+    let left_out = runs.len().saturating_sub(RUNS_SHOWN);
+    Some(
+        div()
+            .flex_none()
+            .v_flex()
+            .gap_1()
+            .px_3()
+            .py_2()
+            .border_t_1()
+            .border_color(cx.theme().border)
+            .child(div().text_xs().text_color(muted).child("Runs"))
+            .children(
+                runs.into_iter()
+                    .take(RUNS_SHOWN)
+                    .enumerate()
+                    .map(|(i, run)| {
+                        let ink = match (run.waiting, run.working) {
+                            (true, _) => warning,
+                            (false, true) => cx.theme().foreground,
+                            (false, false) => muted,
+                        };
+                        let task = run.task;
+                        div()
+                            .h_flex()
+                            .items_center()
+                            .gap_2()
+                            .text_xs()
+                            .child(
+                                div()
+                                    .flex_1()
+                                    .min_w_0()
+                                    .truncate()
+                                    .text_color(ink)
+                                    .child(format!("{} · {}", run.workflow, run.at)),
+                            )
+                            .child(
+                                action(("issue-run-task", i))
+                                    .xsmall()
+                                    .ghost()
+                                    .label("Show task")
+                                    .tooltip("Open the task on the Tasks page")
+                                    .on_click(cx.listener(
+                                        move |view, _: &ClickEvent, window, cx| {
+                                            view.open_task(task.clone(), window, cx)
+                                        },
+                                    )),
+                            )
+                    }),
+            )
+            .when(left_out > 0, |list| {
+                list.child(
+                    div()
+                        .text_xs()
+                        .text_color(muted)
+                        .child(format!("… {left_out} more on the Tasks page")),
+                )
+            })
+            .into_any_element(),
+    )
 }
 
 /// Everything that happened to the issue, oldest first under its arrival:

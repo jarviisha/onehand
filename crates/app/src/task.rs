@@ -12,6 +12,7 @@ use gpui::{
 use gpui_component::WindowExt as _;
 use gpui_component::notification::Notification;
 use onehand_core::task::{Group, Task, Working, files, history, marks, queue, sort_listed};
+use onehand_core::unattended::TrackerRef;
 use onehand_core::workflow::{Action, Run, Stop, Template, run_command_blocking};
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -756,6 +757,40 @@ pub(crate) fn rows(roots: &[PathBuf], cx: &App) -> Vec<Row> {
     }
     sort_listed(&mut rows, |(task, row)| (row.group, *task));
     rows.into_iter().map(|(_, row)| row).collect()
+}
+
+/// Every task of the projects at `roots` that works an issue those projects
+/// keep themselves, in the Tasks page's order.
+///
+/// **An issue on the forge is left out**: its number is the forge's, and the
+/// issues a project keeps are numbered apart, so one would be shown on the
+/// wrong issue.
+pub(crate) fn issue_runs(roots: &[PathBuf], cx: &App) -> Vec<onehand_plugin_host::IssueRun> {
+    let Some(t) = cx.try_global::<Tasks>() else {
+        return Vec::new();
+    };
+    rows(roots, cx)
+        .into_iter()
+        .filter_map(|row| {
+            let task = t.task(&row.id)?;
+            let issue = task.issue()?;
+            if matches!(issue.tracker, TrackerRef::Forge { .. }) {
+                return None;
+            }
+            Some(onehand_plugin_host::IssueRun {
+                root: row.project,
+                number: issue.number,
+                workflow: task
+                    .runs
+                    .last()
+                    .map_or_else(String::new, |run| run.template.name.clone()),
+                at: row.at,
+                waiting: row.group == Group::Waiting,
+                working: matches!(row.group, Group::Running | Group::Queued | Group::Waiting),
+                task: row.id,
+            })
+        })
+        .collect()
 }
 
 /// How many tasks of the projects at `roots` need a person: waiting on one,

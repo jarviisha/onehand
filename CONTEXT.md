@@ -170,6 +170,10 @@ _Avoid_: poll, schedule
 The label whose presence on an issue asks for an unattended run.
 _Avoid_: tag, auto label
 
+**Workflow label**:
+A label on an issue, beside the trigger label, that chooses the workflow its run works with.
+_Avoid_: tag, workflow tag
+
 **Claim**:
 Removing the trigger label from an issue and commenting that a run started on it. Adding the label
 back is how a person asks for the issue to be tried again.

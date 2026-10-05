@@ -174,6 +174,41 @@ pub enum Request<'a> {
     /// session holding it, or the saved one reopened on the project it ran
     /// in. Only ever travels **upward**.
     OpenConversation(&'a str),
+    /// Every task working an issue a project in this window keeps itself,
+    /// working or ended, and the projects a run may be started on (git
+    /// repositories that are not a run's own worktree). Broadcast whenever one
+    /// starts, moves on a step or ends, or the projects change, so a mode
+    /// listing issues can say what is being done with each and offer a run
+    /// only where one can start.
+    IssueRuns {
+        runs: &'a [IssueRun],
+        offered: &'a [PathBuf],
+    },
+    /// Let a person choose a workflow and work issue `number` of project
+    /// `root` with it, on a worktree of its own, as a task. Only ever travels
+    /// **upward**.
+    RunIssueWorkflow { root: &'a Path, number: u64 },
+    /// Put task `id` on screen, in the Tasks page's detail. Only ever travels
+    /// **upward**.
+    OpenTask(&'a str),
+}
+
+/// A task working an issue, as a mode listing issues is told of it.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct IssueRun {
+    /// The project the issue is kept in.
+    pub root: PathBuf,
+    pub number: u64,
+    /// The task's id, to ask for it by.
+    pub task: String,
+    /// The name of the workflow its last run ran.
+    pub workflow: String,
+    /// The step it is at while it works, or how it ended.
+    pub at: String,
+    /// It waits on a person: an answer or an approval.
+    pub waiting: bool,
+    /// It is queued, running or waiting, rather than ended.
+    pub working: bool,
 }
 
 /// How a mode reaches back into the panel.

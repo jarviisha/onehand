@@ -61,7 +61,11 @@ impl Connector for GitHub {
         issue_rows(&json)
     }
 
-    fn my_labelled_issues_blocking(&self, root: &Path, label: &str) -> Result<Vec<Issue>, String> {
+    fn my_labelled_issues_blocking(
+        &self,
+        root: &Path,
+        label: &str,
+    ) -> Result<Vec<IssueRow>, String> {
         let json = gh(
             root,
             &[
@@ -76,10 +80,10 @@ impl Connector for GitHub {
                 "--limit",
                 "50",
                 "--json",
-                "number,title,body",
+                "number,title,body,author,labels",
             ],
         )?;
-        issues(&json)
+        issue_rows(&json)
     }
 
     fn remove_label_blocking(&self, root: &Path, number: u64, label: &str) -> Result<(), String> {
@@ -577,13 +581,6 @@ fn edit_args(key: &str, from: &Snapshot, to: &Snapshot) -> Option<Vec<String>> {
     (args.len() > 3).then_some(args)
 }
 
-/// `gh issue list --json number,title,body` as issues.
-fn issues(json: &str) -> Result<Vec<Issue>, String> {
-    let found: Vec<GhIssue> = serde_json::from_str(json)
-        .map_err(|err| format!("gh printed something unreadable: {err}"))?;
-    Ok(found.into_iter().map(Issue::from).collect())
-}
-
 /// `gh issue list --json number,title,body,author,labels` as rows.
 fn issue_rows(json: &str) -> Result<Vec<IssueRow>, String> {
     #[derive(Deserialize)]
@@ -1027,13 +1024,17 @@ mod tests {
     }
 
     #[test]
-    fn labelled_issues_are_read_and_nothing_unreadable_passes() {
-        let json = r#"[{"number":9,"title":"b","body":""},{"number":4,"title":"a"}]"#;
-        let found = issues(json).unwrap();
-        assert_eq!(found.iter().map(|i| i.number).collect::<Vec<_>>(), [9, 4]);
-        assert_eq!(found[1].title_text(), "a");
-        assert_eq!(issues("[]"), Ok(Vec::new()));
-        assert!(issues("not json").is_err());
+    fn labelled_issues_are_read_with_their_labels_and_nothing_unreadable_passes() {
+        let json = r#"[{"number":9,"title":"b","body":"","author":{"login":"me"},
+            "labels":[{"name":"auto"},{"name":"bug"}]},
+            {"number":4,"title":"a","author":{"login":"me"}}]"#;
+        let found = issue_rows(json).unwrap();
+        let numbers: Vec<_> = found.iter().map(|row| row.issue.number).collect();
+        assert_eq!(numbers, [9, 4]);
+        assert_eq!(found[0].labels, ["auto", "bug"]);
+        assert_eq!(found[1].issue.title_text(), "a");
+        assert_eq!(issue_rows("[]"), Ok(Vec::new()));
+        assert!(issue_rows("not json").is_err());
     }
 
     #[test]

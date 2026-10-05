@@ -119,6 +119,13 @@ impl Workbench {
             Request::OpenConversation(session) => {
                 cx.emit(WorkbenchEvent::OpenConversation(session.to_string()))
             }
+            Request::RunIssueWorkflow { root, number } => {
+                cx.emit(WorkbenchEvent::RunIssueWorkflow {
+                    root: root.to_path_buf(),
+                    number: *number,
+                })
+            }
+            Request::OpenTask(id) => cx.emit(WorkbenchEvent::OpenTask(id.to_string())),
             // The caret is the panel's half of reaping: a view dropped while it
             // holds focus leaves the window pointing at an element no frame
             // contains, and GPUI resolves a key along the path down to the
@@ -291,6 +298,17 @@ impl Workbench {
         self.broadcast(&Request::LiveConversations(ids), cx);
     }
 
+    /// Tell the modes which tasks work the issues this window's projects keep,
+    /// and on which projects a run may be started.
+    pub fn issue_runs(
+        &mut self,
+        runs: &[onehand_plugin_host::IssueRun],
+        offered: &[PathBuf],
+        cx: &mut Context<Self>,
+    ) {
+        self.broadcast(&Request::IssueRuns { runs, offered }, cx);
+    }
+
     /// Tell the modes when the agent on screen started, or that none is.
     pub fn agent_started(&mut self, since: Option<std::time::Instant>, cx: &mut Context<Self>) {
         self.broadcast(&Request::AgentStarted(since), cx);
@@ -374,6 +392,13 @@ pub enum WorkbenchEvent {
     },
     /// Show the conversation the agent named `session`, live or saved.
     OpenConversation(String),
+    /// Choose a workflow to work issue `number` of project `root` with.
+    RunIssueWorkflow {
+        root: std::path::PathBuf,
+        number: u64,
+    },
+    /// Show task `id` on the Tasks page.
+    OpenTask(String),
 }
 
 impl EventEmitter<WorkbenchEvent> for Workbench {}

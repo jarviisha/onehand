@@ -15,7 +15,9 @@
 //! code) is when the two halves split into capabilities of their own.
 
 use crate::issues::Snapshot;
-use crate::unattended::{Issue, IssueRow};
+#[cfg(test)]
+use crate::unattended::Issue;
+use crate::unattended::IssueRow;
 use std::path::Path;
 
 /// An issue as a forge holds it, for keeping a local one in step with it.
@@ -100,8 +102,13 @@ pub trait Connector: Send + Sync + 'static {
     /// Open issues, newest first, at most `limit` of them.
     fn open_issues_blocking(&self, root: &Path, limit: usize) -> Result<Vec<IssueRow>, String>;
 
-    /// Open issues carrying `label` that the signed-in account opened itself.
-    fn my_labelled_issues_blocking(&self, root: &Path, label: &str) -> Result<Vec<Issue>, String>;
+    /// Open issues carrying `label` that the signed-in account opened itself,
+    /// with every label each carries: another one may choose its workflow.
+    fn my_labelled_issues_blocking(
+        &self,
+        root: &Path,
+        label: &str,
+    ) -> Result<Vec<IssueRow>, String>;
 
     /// Take `label` off issue `number`.
     fn remove_label_blocking(&self, root: &Path, number: u64, label: &str) -> Result<(), String>;
@@ -253,7 +260,11 @@ pub(crate) mod fake {
                 })
                 .collect())
         }
-        fn my_labelled_issues_blocking(&self, _: &Path, label: &str) -> Result<Vec<Issue>, String> {
+        fn my_labelled_issues_blocking(
+            &self,
+            _: &Path,
+            label: &str,
+        ) -> Result<Vec<IssueRow>, String> {
             assert!(
                 !label.trim().is_empty(),
                 "an empty label reached the connector"
@@ -261,7 +272,11 @@ pub(crate) mod fake {
             Ok(self
                 .labelled
                 .iter()
-                .map(|&n| Issue::new(n, format!("#{n}"), String::new()))
+                .map(|&n| IssueRow {
+                    issue: Issue::new(n, format!("#{n}"), String::new()),
+                    author: "a".into(),
+                    labels: vec![label.to_string()],
+                })
                 .collect())
         }
         fn remove_label_blocking(&self, _: &Path, _: u64, _: &str) -> Result<(), String> {
@@ -389,18 +404,24 @@ pub(crate) mod memory {
         fn open_issues_blocking(&self, _: &Path, _: usize) -> Result<Vec<IssueRow>, String> {
             unreachable!()
         }
-        fn my_labelled_issues_blocking(&self, _: &Path, label: &str) -> Result<Vec<Issue>, String> {
+        fn my_labelled_issues_blocking(
+            &self,
+            _: &Path,
+            label: &str,
+        ) -> Result<Vec<IssueRow>, String> {
             let issues = self.issues.lock().unwrap();
             Ok(issues
                 .iter()
                 .filter(|r| r.snapshot.open && r.snapshot.labels.iter().any(|l| l == label))
                 .filter(|r| self.mine.contains(&r.key))
-                .map(|r| {
-                    Issue::new(
+                .map(|r| IssueRow {
+                    issue: Issue::new(
                         r.key.parse().unwrap(),
                         r.snapshot.title.clone(),
                         String::new(),
-                    )
+                    ),
+                    author: "a".into(),
+                    labels: r.snapshot.labels.clone(),
                 })
                 .collect())
         }

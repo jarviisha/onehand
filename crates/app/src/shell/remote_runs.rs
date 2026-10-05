@@ -2,6 +2,7 @@ use super::{IssuePicker, Shell};
 use crate::state::Shared;
 use gpui::{App, BorrowAppContext, Context, Entity, SharedString, Window};
 use gpui_component::WindowExt as _;
+use gpui_component::input::InputState;
 use gpui_component::notification::Notification;
 use onehand_core::config::AgentSpec;
 use std::path::{Path, PathBuf};
@@ -204,12 +205,13 @@ impl Shell {
         self.save_workspace(window, cx);
     }
 
-    /// Open the list of `root_idx`'s open issues, to pick one to work now.
+    /// Open the list of `root_idx`'s open issues, to pick one to work now, or
+    /// only issue `only` of the project's own when it is asked for from there.
     ///
     /// The list is read off the UI loop and the dialog is up while it is:
     /// saying "reading" in the place the list will be is better than a menu
     /// entry that does nothing visible for the seconds `gh` takes.
-    pub fn begin_pick(&mut self, root_idx: usize, cx: &mut Context<Self>) {
+    pub fn begin_pick(&mut self, root_idx: usize, only: Option<u64>, cx: &mut Context<Self>) {
         let Some(root) = self.window.workspace.roots.get(root_idx) else {
             return;
         };
@@ -219,6 +221,8 @@ impl Shell {
             root: path.clone(),
             project: label,
             found: None,
+            workflow: None,
+            only,
         });
         cx.notify();
         cx.spawn(async move |shell, cx| {
@@ -227,6 +231,10 @@ impl Shell {
                 cx.background_executor()
                     .spawn(async move { crate::unattended::pickable_blocking(&path, issues) })
                     .await
+                    .and_then(|found| match only {
+                        Some(number) => narrowed(found, number),
+                        None => Ok(found),
+                    })
             };
             shell
                 .update(cx, |shell: &mut Self, cx| {
@@ -240,6 +248,101 @@ impl Shell {
                 .ok();
         })
         .detach();
+    }
+
+    /// Let issue workflow labels choose the picker's workflow (`None`), or
+    /// choose workflow `id` for whatever is picked.
+    pub fn pick_issue_workflow(&mut self, id: Option<String>, cx: &mut Context<Self>) {
+        if let Some(picker) = self.issue_picker.as_mut() {
+            picker.workflow = id;
+            cx.notify();
+        }
+    }
+
+    /// Make `default` the workflow issues are worked with and `by_label` the
+    /// workflow labels, from Settings, saying in the window if the config
+    /// could not be written.
+    fn set_issue_workflows(
+        &mut self,
+        default: String,
+        by_label: std::collections::BTreeMap<String, String>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let path = crate::state::Shared::global(cx).config_path.clone();
+        let saved = crate::unattended::set_workflows(default, by_label, &path, cx);
+        self.report_write("Unattended runs", saved, true, window, cx);
+        cx.notify();
+    }
+
+    /// Work issues with workflow `id` unless a workflow label names another.
+    pub fn set_default_issue_workflow(
+        &mut self,
+        id: String,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let (_, by_label) = crate::unattended::workflows(cx);
+        self.set_issue_workflows(id, by_label, window, cx);
+    }
+
+    /// The workflow Settings' new workflow label is to name, `None` for none
+    /// picked yet.
+    pub fn label_workflow(&self) -> (Entity<InputState>, Option<&str>, Option<&str>) {
+        (
+            self.label_input.clone(),
+            self.label_workflow.as_deref(),
+            self.label_refused.as_deref(),
+        )
+    }
+
+    /// Pick workflow `id` for Settings' new workflow label.
+    pub fn pick_label_workflow(&mut self, id: Option<String>, cx: &mut Context<Self>) {
+        self.label_workflow = id;
+        self.label_refused = None;
+        cx.notify();
+    }
+
+    /// Add the workflow label typed in Settings, naming the workflow picked
+    /// for it, or say why not: what core refuses as a workflow label, or no
+    /// workflow picked.
+    pub fn add_workflow_label(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let label = self.label_input.read(cx).value().trim().to_string();
+        let (default, mut by_label) = crate::unattended::workflows(cx);
+        let trigger = crate::unattended::label(cx);
+        let refused = onehand_core::unattended::workflow_label_refused(&label, &trigger, &by_label)
+            .or_else(|| {
+                self.label_workflow
+                    .is_none()
+                    .then(|| "Pick the workflow it chooses.".to_string())
+            });
+        let id = match (refused, self.label_workflow.clone()) {
+            (None, Some(id)) => id,
+            (refused, _) => {
+                self.label_refused = refused;
+                cx.notify();
+                return;
+            }
+        };
+        self.label_refused = None;
+        by_label.insert(label, id);
+        self.label_workflow = None;
+        self.label_input
+            .update(cx, |input, cx| input.set_value("", window, cx));
+        self.set_issue_workflows(default, by_label, window, cx);
+    }
+
+    /// Drop workflow label `label`: its issues go back to the default.
+    pub fn remove_workflow_label(
+        &mut self,
+        label: &str,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let (default, mut by_label) = crate::unattended::workflows(cx);
+        if by_label.remove(label).is_some() {
+            self.set_issue_workflows(default, by_label, window, cx);
+        }
     }
 
     /// The picker on screen, if one is.
@@ -264,9 +367,18 @@ impl Shell {
         };
         let handle = window.window_handle();
         let has_check = self.check_of(&picker.root).is_some();
-        if let Err(why) =
-            crate::unattended::start_picked(picker.root, tracker, row, has_check, handle, cx)
-        {
+        let workflow = picker
+            .workflow
+            .unwrap_or_else(|| crate::unattended::workflow_for(&row.labels, cx));
+        if let Err(why) = crate::unattended::start_picked(
+            picker.root,
+            tracker,
+            row,
+            workflow,
+            has_check,
+            handle,
+            cx,
+        ) {
             window.push_notification(Notification::warning(why), cx);
         }
     }
@@ -336,4 +448,35 @@ impl Shell {
         self.chat
             .update(cx, |pane, cx| pane.remote_answer(press, cx))
     }
+}
+
+/// `found` narrowed to issue `number` of the project's own, or why it cannot
+/// be picked: the Issues tab numbers only the issues it keeps, and one there
+/// that a run may not take (brought in from a forge and no longer kept in step
+/// with it) is not on the list at all.
+fn narrowed(
+    (rows, cut, _): crate::unattended::Pickable,
+    number: u64,
+) -> Result<crate::unattended::Pickable, String> {
+    use onehand_core::unattended::Tracker;
+    let rows: Vec<_> = rows
+        .into_iter()
+        .filter(|(tracker, row)| {
+            !matches!(tracker, Tracker::Forge(_)) && row.issue.number == number
+        })
+        .collect();
+    if rows.is_empty() && cut {
+        return Err(format!(
+            "issue {number} is not among the newest {} open issues a pick reads; close \
+             some of the newer ones to reach it",
+            onehand_core::unattended::ISSUES_SHOWN
+        ));
+    }
+    if rows.is_empty() {
+        return Err(format!(
+            "issue {number} cannot be worked by a run: it is closed, or it was brought in \
+             from a forge the project is no longer kept in step with"
+        ));
+    }
+    Ok((rows, false, None))
 }

@@ -7,8 +7,9 @@ use gpui::App;
 use onehand_core::connector::{Connector, PrState};
 use onehand_core::task::{Source, Task};
 use onehand_core::unattended::{self as core, Issue, IssueRow, IssueSource, Tracker, TrackerRef};
-use onehand_core::workflow::{self as flow, Setup, Template};
+use onehand_core::workflow::{self as flow, Place, Setup, Template};
 use onehand_core::worktree;
+use std::collections::BTreeMap;
 use std::path::Path;
 use std::path::PathBuf;
 
@@ -23,6 +24,9 @@ pub(super) struct Claimed {
     /// forge, whose work stays on the branch.
     pub(super) forge: Option<&'static dyn Connector>,
     pub(super) issue: Issue,
+    /// The id of the workflow a new task on it runs: the one picked, else the
+    /// one its labels choose. A review answered runs its task's own.
+    workflow: String,
     /// What the claim works on.
     work: Work,
     /// The window a person picked it in, rather than the search finding it.
@@ -109,25 +113,27 @@ pub(super) struct Unstarted {
 /// A project whose search failed has the reason added to `checked`, so its
 /// row says why rather than showing it as workable.
 /// Within a project the issues it keeps itself are searched before its forge's:
-/// they are the ones written for onehand to work.
+/// they are the ones written for onehand to work. The issue's other labels
+/// choose its workflow from `by_label`, `default` when none does.
 pub(super) fn begin_blocking(
     roots: &[(Project, Option<&'static dyn Connector>)],
     label: &str,
+    (default, by_label): (&str, &BTreeMap<String, String>),
     earlier: &[Earlier],
     checked: &mut Vec<(PathBuf, Served)>,
 ) -> Option<Result<Claimed, Unstarted>> {
     // The oldest labelled issue no task is still working on: one being
     // worked is passed over, never claimed twice, and never in the way of
     // the next.
-    let (repo, tracker, forge, issue, taking) = roots.iter().find_map(|(project, forge)| {
+    let (repo, tracker, forge, row, taking) = roots.iter().find_map(|(project, forge)| {
         for tracker in trackers_blocking(project.issues.clone(), *forge) {
             match core::candidates_blocking(&tracker, &project.root, label) {
                 Ok(found) => {
-                    for issue in found {
+                    for row in found {
                         match taking_blocking(
                             earlier,
                             &tracker,
-                            issue.number,
+                            row.issue.number,
                             &project.root,
                             *forge,
                         ) {
@@ -137,18 +143,12 @@ pub(super) fn begin_blocking(
                             Err(Skip::Unread(why)) => {
                                 eprintln!(
                                     "onehand: passed over issue #{} for now: {why}",
-                                    issue.number
+                                    row.issue.number
                                 );
                                 continue;
                             }
                             Ok(taking) => {
-                                return Some((
-                                    project.root.clone(),
-                                    tracker,
-                                    *forge,
-                                    issue,
-                                    taking,
-                                ));
+                                return Some((project.root.clone(), tracker, *forge, row, taking));
                             }
                         }
                     }
@@ -162,11 +162,15 @@ pub(super) fn begin_blocking(
         None
     })?;
     let answering = taking.answering();
-    if let Err(why) = core::claim_blocking(&tracker, &repo, issue.number, label, answering) {
-        eprintln!("onehand: could not claim issue #{}: {why}", issue.number);
+    let number = row.issue.number;
+    if let Err(why) = core::claim_blocking(&tracker, &repo, number, label, answering) {
+        eprintln!("onehand: could not claim issue #{number}: {why}");
         return None;
     }
-    Some(prepare_blocking(repo, tracker, forge, issue, taking, None))
+    let workflow = core::workflow_for(&row.labels, by_label, default, label).to_string();
+    Some(prepare_blocking(
+        repo, tracker, forge, row.issue, workflow, taking, None,
+    ))
 }
 
 /// What claiming an issue comes to, given the tasks it had before.
@@ -288,6 +292,7 @@ fn prepare_blocking(
     tracker: Tracker,
     forge: Option<&'static dyn Connector>,
     issue: Issue,
+    workflow: String,
     taking: Taking,
     picked_in: Option<gpui::AnyWindowHandle>,
 ) -> Result<Claimed, Unstarted> {
@@ -339,6 +344,7 @@ fn prepare_blocking(
             tracker,
             forge,
             issue,
+            workflow,
             work,
             picked_in,
         }),
@@ -413,7 +419,8 @@ fn trackers_blocking(
         .collect()
 }
 
-/// Work `row`, picked by hand from a project's open issues, now.
+/// Work `row`, picked by hand from a project's open issues, now, with the
+/// workflow `workflow`.
 ///
 /// **Refused while the cap is reached**, the rule for picked and found alike —
 /// a run waiting on a person does not count — and the refusal names the
@@ -426,12 +433,13 @@ pub fn start_picked(
     repo: PathBuf,
     tracker: Tracker,
     row: IssueRow,
+    workflow: String,
     has_check: bool,
     window: gpui::AnyWindowHandle,
     cx: &mut App,
 ) -> Result<(), String> {
     let (full, refused) = why_not(cx);
-    let refused = refused.or_else(|| lacks_check_given(has_check, cx));
+    let refused = refused.or_else(|| lacks_check_given(has_check, &workflow, cx));
     let label = with(cx, |u| {
         if let Some(why) = full {
             return Err(why);
@@ -481,6 +489,7 @@ pub fn start_picked(
                             tracker,
                             forge,
                             row.issue,
+                            workflow,
                             taking,
                             Some(window),
                         ))
@@ -590,19 +599,14 @@ pub(super) fn landed(
         .detach();
 }
 
-/// Keep the claimed issue as a task of the configured workflow, then ask for
+/// Keep the claimed issue as a task of its workflow, then ask for
 /// its place in the window holding its project: the one it was picked in
 /// when that one does, so its session comes up in front of the person who
 /// asked for it.
 fn start(claimed: Claimed, cx: &mut App) -> Result<(), Unstarted> {
-    let Some((id, mode, agent, timeout)) = with(cx, |u| {
-        (
-            u.workflow.clone(),
-            u.mode.clone(),
-            u.agent.clone(),
-            u.timeout.clone(),
-        )
-    }) else {
+    let Some((mode, agent, timeout)) =
+        with(cx, |u| (u.mode.clone(), u.agent.clone(), u.timeout.clone()))
+    else {
         return Err(unstarted(claimed, "unattended runs are off"));
     };
     let agent = agent.or_else(|| {
@@ -643,7 +647,7 @@ fn start(claimed: Claimed, cx: &mut App) -> Result<(), Unstarted> {
             return answer_review(claimed, task, note, window, &shell, cx);
         }
     };
-    let template = match workflow(&id, &timeout, cx) {
+    let template = match workflow(&claimed.workflow, &timeout, cx) {
         Ok(template) => template,
         Err(why) => return Err(unstarted(claimed, &why)),
     };
@@ -729,12 +733,23 @@ fn answer_review(
 
 /// The workflow `id` as a run of it starts: its timeout put to the config's,
 /// and validated, or why it cannot run.
+///
+/// **Only a workflow that works on a worktree.** An issue's run is cut a
+/// worktree of its own, and a workflow meant for a checkout run there leaves
+/// its work uncommitted where nobody looks and reports that nothing landed.
 pub(super) fn workflow(id: &str, timeout: &str, cx: &App) -> Result<Template, String> {
     let mut template = crate::workflow::templates(cx)
         .into_iter()
         .filter_map(|entry| entry.template.ok())
         .find(|template| template.id == id)
-        .ok_or_else(|| format!("there is no workflow `{id}` (unattended.workflow)"))?;
+        .ok_or_else(|| format!("there is no workflow `{id}`"))?;
+    if template.place != Place::Worktree {
+        return Err(format!(
+            "the workflow `{}` works in the checkout, and an issue is worked on a \
+             worktree of its own",
+            template.name
+        ));
+    }
     template.timeout = timeout.to_string();
     let problems = flow::validate(&template);
     if !problems.is_empty() {

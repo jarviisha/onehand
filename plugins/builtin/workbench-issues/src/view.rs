@@ -17,7 +17,7 @@ use gpui_component::text::TextViewState;
 use gpui_component::{StyledExt, h_resizable, resizable_panel};
 use onehand_core::connector::{self, Connector};
 use onehand_core::issues::{self, Draft, Issues, LocalIssue, sync};
-use onehand_plugin_host::{Ask, Request, hint, status_line};
+use onehand_plugin_host::{Ask, IssueRun, Request, hint, status_line};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
@@ -25,7 +25,7 @@ use std::time::Duration;
 mod detail;
 mod list;
 mod mentions;
-use detail::{form_view, issue_view};
+use detail::{Doing, form_view, issue_view};
 use list::Showing;
 
 /// How often a project kept in step with its forge is synced while it is the
@@ -63,6 +63,10 @@ const FILES_SHOWN: usize = 20;
 /// since the last thing that happened to it is the one read first.
 const HISTORY_SHOWN: usize = 50;
 
+/// How many of the tasks working an issue are drawn under it, the working
+/// ones first; the rest are on the Tasks page, and the list says so.
+const RUNS_SHOWN: usize = 5;
+
 pub(crate) struct IssuesView {
     root: Option<PathBuf>,
     /// The workspace's storage directory. `None` is a workspace bound to
@@ -99,6 +103,11 @@ pub(crate) struct IssuesView {
     /// The conversations with a live session in this window, by the agent's
     /// session id: an issue whose history names one of them is being worked.
     live: Vec<String>,
+    /// Every task working an issue this window's projects keep, as the app
+    /// last told it.
+    runs: Vec<IssueRun>,
+    /// The projects a run may be started on.
+    offered: Vec<PathBuf>,
 }
 
 /// One project's issues and what is open among them.
@@ -182,6 +191,8 @@ impl IssuesView {
             label: None,
             ask,
             live: Vec::new(),
+            runs: Vec::new(),
+            offered: Vec::new(),
             _sync_every: cx.spawn(async move |view, cx| {
                 let every = (SYNC_EVERY.as_secs() / TICK.as_secs()).max(1);
                 for tick in 1u64.. {
@@ -227,6 +238,17 @@ impl IssuesView {
         self.storage = storage;
         self.roots.clear();
         self.stale = true;
+        cx.notify();
+    }
+
+    pub(crate) fn set_runs(
+        &mut self,
+        runs: &[IssueRun],
+        offered: &[PathBuf],
+        cx: &mut Context<Self>,
+    ) {
+        self.runs = runs.to_vec();
+        self.offered = offered.to_vec();
         cx.notify();
     }
 
@@ -737,8 +759,17 @@ impl IssuesView {
             .filter(|_| issue.link.is_none())
             .map(|forge| forge.name());
         let body = self.parsed_body(root, &issue, cx);
-        let working = working_in(&issue, &self.live).map(str::to_string);
-        issue_view(root, &issue, body, publish_to, working, window, cx)
+        let doing = Doing {
+            session: working_in(&issue, &self.live).map(str::to_string),
+            offered: self.offered.iter().any(|offered| offered == root),
+            runs: self
+                .runs
+                .iter()
+                .filter(|run| run.root == root && run.number == issue.number)
+                .cloned()
+                .collect(),
+        };
+        issue_view(root, &issue, body, publish_to, doing, window, cx)
     }
 
     /// Put a request to the Workbench about the project on screen, once this
@@ -775,6 +806,21 @@ impl IssuesView {
                 prompt: &prompt,
             };
             ask(&request, window, cx)
+        });
+    }
+
+    /// Choose a workflow and work issue `number` of the project on screen
+    /// with it, on a worktree of its own.
+    fn run_workflow(&mut self, number: u64, window: &mut Window, cx: &mut Context<Self>) {
+        self.ask_later(window, cx, move |ask, root, window, cx| {
+            ask(&Request::RunIssueWorkflow { root, number }, window, cx)
+        });
+    }
+
+    /// Put task `id` on screen, on the Tasks page.
+    fn open_task(&mut self, id: String, window: &mut Window, cx: &mut Context<Self>) {
+        self.ask_later(window, cx, move |ask, _, window, cx| {
+            ask(&Request::OpenTask(&id), window, cx)
         });
     }
 

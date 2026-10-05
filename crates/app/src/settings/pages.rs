@@ -9,7 +9,7 @@ use gpui::{
 use gpui_component::button::{ButtonGroup, ButtonVariants};
 use gpui_component::input::Input;
 use gpui_component::switch::Switch;
-use gpui_component::{ActiveTheme, Selectable, StyledExt};
+use gpui_component::{ActiveTheme, Icon, IconName, Selectable, Sizable as _, StyledExt};
 use onehand_core::config::Appearance;
 
 /// The light/dark/system picker.
@@ -316,6 +316,40 @@ fn unattended_section(handle: &Entity<Shell>, cx: &App) -> AnyElement {
         ),
         cx,
     ))
+    .child(field(
+        "Workflow",
+        about(
+            "What an issue is worked with, unless one of its workflow labels below names \
+             another. Only workflows that work on a worktree of their own are offered.",
+        ),
+        div().h_flex().child({
+            let shell = handle.clone();
+            let (default, _) = crate::unattended::workflows(cx);
+            crate::dialogs::issue_workflow_menu(
+                "unattended-workflow",
+                Some(&default),
+                None,
+                move |id, window, cx| {
+                    if let Some(id) = id {
+                        shell.update(cx, |shell, cx| {
+                            shell.set_default_issue_workflow(id, window, cx)
+                        });
+                    }
+                },
+                cx,
+            )
+        }),
+        cx,
+    ))
+    .child(field(
+        "Workflow labels",
+        about(
+            "A label on an issue, beside the trigger label, that chooses its workflow. An \
+             issue carrying several takes the first in this list.",
+        ),
+        workflow_labels(handle, cx),
+        cx,
+    ))
     // Whatever stops every run, said above the switches in the warning ink:
     // with it unsaid they would look as though they did something.
     .when_some(crate::unattended::blocked(cx), |group, why| {
@@ -354,4 +388,91 @@ fn unattended_section(handle: &Entity<Shell>, cx: &App) -> AnyElement {
         cx,
     ))
     .into_any_element()
+}
+
+/// The workflow labels, each with the workflow it chooses and *Remove*, then
+/// a row to add one: the label, its workflow, *Add*, and why the last *Add*
+/// was refused. A label naming a workflow that is gone shows its id in the
+/// warning ink, since its issues will not start.
+fn workflow_labels(handle: &Entity<Shell>, cx: &App) -> impl IntoElement {
+    let (_, by_label) = crate::unattended::workflows(cx);
+    let offered = crate::unattended::issue_workflows(cx);
+    let (input, picked, refused) = {
+        let (input, picked, refused) = handle.read(cx).label_workflow();
+        (
+            input,
+            picked.map(str::to_string),
+            refused.map(str::to_string),
+        )
+    };
+    let ink = crate::theme::status_ink(cx);
+    let muted = cx.theme().muted_foreground;
+    let rows = by_label.into_iter().enumerate().map(|(i, (label, id))| {
+        let named = offered.iter().find(|(offered, _, _)| *offered == id);
+        let shell = handle.clone();
+        let remove = label.clone();
+        div()
+            .h_flex()
+            .items_center()
+            .gap_2()
+            .text_sm()
+            .child(div().flex_none().child(label))
+            .child(Icon::new(IconName::ArrowRight).small().text_color(muted))
+            .child(match named {
+                Some((_, name, _)) => div().flex_1().min_w_0().truncate().child(name.clone()),
+                None => div()
+                    .flex_1()
+                    .min_w_0()
+                    .truncate()
+                    .text_color(ink.warning)
+                    .child(format!("{id} (no such workflow on a worktree)")),
+            })
+            .child(
+                crate::controls::action(("workflow-label-remove", i))
+                    .ghost()
+                    .small()
+                    .label("Remove")
+                    .on_click(move |_: &ClickEvent, window: &mut Window, cx: &mut App| {
+                        shell.update(cx, |shell, cx| {
+                            shell.remove_workflow_label(&remove, window, cx)
+                        });
+                    }),
+            )
+    });
+    let pick = {
+        let shell = handle.clone();
+        crate::dialogs::issue_workflow_menu(
+            "workflow-label-pick",
+            picked.as_deref(),
+            Some("Choose a workflow"),
+            move |id, _, cx| shell.update(cx, |shell, cx| shell.pick_label_workflow(id, cx)),
+            cx,
+        )
+    };
+    let add = {
+        let shell = handle.clone();
+        crate::controls::action("workflow-label-add")
+            .outline()
+            .small()
+            .label("Add")
+            .on_click(move |_: &ClickEvent, window: &mut Window, cx: &mut App| {
+                shell.update(cx, |shell, cx| shell.add_workflow_label(window, cx));
+            })
+    };
+    div()
+        .v_flex()
+        .gap_2()
+        .children(rows)
+        .child(
+            div()
+                .h_flex()
+                .items_center()
+                .gap_2()
+                .child(div().w(gpui::rems(10.)).child(Input::new(&input).small()))
+                .child(pick)
+                .child(add),
+        )
+        .when_some(refused, |list, why| {
+            list.child(div().text_sm().text_color(ink.warning).child(why))
+        })
 }

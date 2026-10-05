@@ -12,6 +12,7 @@
 //! setting left over from an older build into a refusal to load at all.
 
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
 use std::io::Write as _;
 use std::path::{Path, PathBuf};
 
@@ -354,8 +355,13 @@ pub struct UnattendedConfig {
     pub mode: String,
     /// Which configured agent runs it; the default agent when unset.
     pub agent: Option<String>,
-    /// The id of the workflow an issue is worked with.
+    /// The id of the workflow an issue is worked with, unless one of its
+    /// labels names another in `workflows`.
     pub workflow: String,
+    /// Label → workflow id: an issue carrying one of these labels, beside the
+    /// trigger label, is worked with that workflow. The first label in the
+    /// table's order wins.
+    pub workflows: BTreeMap<String, String>,
     /// How many issues may be worked at once across every window. One
     /// waiting on a person does not count.
     pub at_once: u32,
@@ -370,6 +376,7 @@ impl Default for UnattendedConfig {
             mode: "acceptEdits".to_string(),
             agent: None,
             workflow: "builtin:issue".to_string(),
+            workflows: BTreeMap::new(),
             at_once: 1,
         }
     }
