@@ -29,6 +29,7 @@ mod header;
 mod project_page;
 mod runs;
 mod sessions;
+mod step_strip;
 mod tasks_page;
 mod workspace_page;
 use header::Archives;
