@@ -436,6 +436,16 @@ impl Workspace {
         }
     }
 
+    /// Add a session of `spec` to the root at `path`, **selecting nothing**:
+    /// a run taken up again on a project already open must not move what the
+    /// person is looking at. Returns the root's index; `None` without one.
+    pub fn add_session_quietly(&mut self, path: &Path, spec: AgentSpec, uid: u64) -> Option<usize> {
+        let path = normalize_root(path.to_path_buf());
+        let idx = self.roots.iter().position(|r| r.path == path)?;
+        self.roots[idx].sessions.push(Session::new(spec, uid));
+        Some(idx)
+    }
+
     /// Spawn a new session on the active root from `spec`, making it active.
     /// Returns `(root_idx, session_idx)`, or `None` if there is no active root.
     pub fn add_session(&mut self, spec: AgentSpec, uid: u64) -> Option<(usize, usize)> {

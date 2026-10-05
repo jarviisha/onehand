@@ -350,9 +350,15 @@ pub struct UnattendedConfig {
     /// How long a run may go before it is cancelled, in the same form.
     pub timeout: String,
     /// The ACP session mode a run starts in — the adapter's own id for it.
+    /// Empty leaves the agent in the mode it starts in.
     pub mode: String,
     /// Which configured agent runs it; the default agent when unset.
     pub agent: Option<String>,
+    /// The id of the workflow an issue is worked with.
+    pub workflow: String,
+    /// How many issues may be worked at once across every window. One
+    /// waiting on a person does not count.
+    pub at_once: u32,
 }
 
 impl Default for UnattendedConfig {
@@ -363,6 +369,8 @@ impl Default for UnattendedConfig {
             timeout: "45m".to_string(),
             mode: "acceptEdits".to_string(),
             agent: None,
+            workflow: "builtin:issue".to_string(),
+            at_once: 1,
         }
     }
 }

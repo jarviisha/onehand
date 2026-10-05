@@ -541,11 +541,13 @@ break. **The switch is per project** (`ProjectRoot::unattended`, kept in the wor
 like a pin) and off until turned on: from the project's ••• menu, the project page's menu, or the list
 of switches in Settings ▸ Workspace, all through `Shell::toggle_unattended`. `[unattended]` in
 `onehand.toml` has no switch of its own any more — only the label (default `auto`), the interval,
-the timeout, the mode and the agent. A tick on `Shared` (one per process, like the bridge) looks for
-the oldest open issue **you** opened that carries the label, in the opted-in projects, in rail order;
+the timeout, the mode, the agent, the workflow (default `builtin:issue`) and `at_once` (default 1).
+A tick on `Shared` (one per process, like the bridge) looks for the oldest open issue **you** opened
+that carries the label, in the opted-in projects, in rail order, while fewer than `at_once` issue
+tasks run or wait in the queue across every window (`task::issues_working`, `unattended::room`);
 a project row says `auto`, `auto · #N` while a run is on issue N, or `auto · #N waiting` while it
-waits on a card (`crate::unattended::live_runs`,
-with `cx.refresh_windows()` at start and settle because nothing the rail watches changes).
+waits on a person (`task::live_issues`). A task just kept counts against `at_once` until it has
+asked for its place (`unattended::placed`).
 **Everything outside the checkout goes through a connector, and a project that cannot be worked
 says so.** `onehand_core::connector::Connector` is the trait — account, whether it serves a project,
 issues, labels, comments, default branch, pull request — and `plugins/builtin/connector-github` is the
@@ -555,21 +557,19 @@ and each connector's `account_blocking` says who it acts as. A run's fetch is th
 (`Connector::fetch_blocking`, plain `git fetch` by default): GitHub retries a failed one over HTTPS
 with `gh`'s own sign-in when `origin` is an ssh remote (the HTTPS URL is built from `origin` itself,
 alias resolved, never from `gh`'s default repository), since an ssh remote often cannot authenticate
-from an app opened off the desktop while `gh` is already signed in. Only the fetch — the agent's own push still uses `origin`.
+from an app opened off the desktop while `gh` is already signed in.
 **An issue lives on the forge or in onehand** (`unattended::Tracker::Forge` / `Local`, the latter the
 project's Issues tab), and a run carries both where its issue lives and the forge its work goes to,
-because the two come apart. The project's own issues are searched first. A local issue on a project
-with a forge still ends in a pull request, one that must not reference `#N` (onehand's numbers are not
-the forge's). A project **no connector serves** is still worked on its own issues: branched off the
-branch checked out, told to commit and not push, judged by its commits past the start
-(`unattended::Verdict`, `worktree::commits_since_blocking`). The outcome is a comment on the forge or
-a note on the local issue. What refuses a project is nothing to work (no forge, no storage) or not
+because the two come apart. The project's own issues are searched first. The branch leads with
+where the issue lives (`onehand/github-57-…`, `onehand/local-3-…`, `unattended::branch_for`), so a
+kept and a forge issue of one number never share one. A project **no connector serves** is still
+worked on its own issues, branched off the branch checked out. The report is a comment on the forge
+or a note on the local issue. What refuses a project is nothing to work (no forge, no storage) or not
 being a repository. **A project whose issues are kept in step with its forge is searched through the
 sync and only there** (`Tracker::Synced`), so no issue is found twice: each search syncs first, a
 claim takes the label off locally and the sync takes it off the forge, and every note is also left
-as a comment on the forge's issue. The run's pull request references the forge's number, never
-onehand's. **An imported issue is taken only if the forge says the user wrote it** — the same rule
-the forge's own search keeps, because an issue's body goes into the prompt word for word and anybody
+as a comment on the forge's issue. **An imported issue is taken only if the forge says the user wrote it** — the same rule
+the forge's own search keeps, because an issue's body goes into the brief word for word and anybody
 with triage rights can label an issue anybody wrote; the forge is asked since only it knows the
 author. **An issue brought in from a forge is never run as the user's own by any other route**
 (`LocalIssue::imported_from`, kept after the link goes): `Tracker::Local` takes only issues
@@ -578,7 +578,7 @@ somebody else's text into a prompt.
 What either finds is kept per project (`Unattended::problems`) and shown as the pill in the warning
 ink with the reason on hover — never only on stderr, since a switch that is on while nothing can
 happen looks exactly like one that is working. **A config that stops every run** (empty label,
-unparsable interval, a mode the agent lacks) is `Unattended::blocked`, and it is kept rather than
+unparsable interval, a workflow that cannot run, a mode the agent lacks) is `Unattended::blocked`, and it is kept rather than
 leaving the state unset: the switches stay on screen, so the reason has to be readable by the rows
 and by Settings, and every connector is still asked. A project is looked at when it is switched on
 (`check_now`), when its window registers and on *Check again* (`recheck`), and on **every tick, a
@@ -586,26 +586,33 @@ run included** — all three through one `look_blocking`. One row per connector,
 Settings ▸ Connections, with its *Check again*; Settings ▸ Workspace keeps *Look now* and the switches. A run's own worktree never offers the switch (`ProjectFacts::unattended` is
 `None` there). **A run can also be picked by hand**: *Work an issue…* in either project menu opens
 `dialogs::pick_issue` over `unattended::open_issues_blocking` (every open issue, author on the row,
-bounded at `ISSUES_SHOWN`), and `unattended::start_picked` runs it now. That run is shown as it starts
-(`Shell::show_session`) and kept on screen when it ends. *Look now* in Settings runs the search at
-once. Every run writes its own log into its transcript as notices (`unattended::turn::note`) — the start,
-the prompt going out, a cancel, and the words the issue was told at the end. A run the search finds claims its issue by removing the label,
-branches a worktree off `origin/<default>` and mints a session there. **Neither step moves anything on
-screen**: `ChatPane::open_unshown` connects without showing, and the worktree's root is
-`ProjectRoot::transient`, which `to_config` never writes. One prompt, one turn. The pull request the forge
-finds — or, with no forge, the commits on the branch — is the verdict, on every ending. **A parked
-ask waits for a person and is never answered by the run**: the card stays up, announced like any
-other, and answering it from anywhere lets the turn carry on — answering is not taking over. While it
-waits the run's timeout does not count (`unattended::Budget`) and it **gives up the slot**
-(`Unattended::runs`), so the search looks for the next issue at once; a run is only *started* while
-none is working, but one whose card is answered carries on beside it, since a turn under way cannot
-be held. Cards are watched for being answered by observing the session, because an answer emits no
-event of its own. An adapter
-lost or a session closed while waiting ends the run as `Ending::Asked`, with the question on the
-issue. A prompt of anybody else's is a **take-over**: the run stops watching, which clears
-`transient` and saves. Teardown is
-`Shell::forget_root`, never `remove_root`, because that one re-shows the active session and takes the
-caret with it. The rules that decide are core's (`onehand_core::unattended`); the calls are the connector's.
+bounded at `ISSUES_SHOWN`), and `unattended::start_picked` runs it now; it is shown as it starts and
+kept on screen when it ends. *Look now* in Settings runs the search at once. **An issue is worked as a
+task** (`Source::Issue(IssueSource)`) of the `[unattended]` workflow, its timeout put over the
+workflow's own, driven by the one task driver like any other and listed on the Tasks page with
+Stop, Resume, Retry and Dismiss. Until the integration steps land, a run ends on its branch: the
+agent is told not to push. A run the search finds claims its issue by removing the label, branches a
+worktree off `origin/<default>` (`launch::prepare_blocking`), builds the task (`core::brief_for`)
+and asks for its place (`task::add` + `task::request`) in the window holding the project.
+**Nothing moves on screen**: `Shell::drive_task` brings an issue task up through `run_unattended`,
+where `ChatPane::open_unshown` connects without showing and the worktree's root is
+`ProjectRoot::transient`, which `to_config` never writes. The driver puts the agent in
+`Setup::mode` when it first comes up (`came_up`); a mode it does not offer fails the run and pauses
+every run (`unattended::refuse_mode`). A card or an approval waits for a person, its time not counted
+(`unattended::Budget`), and gives up the slot: `unattended::waiting` looks for the next issue at once.
+**The report is kept before it is sent**: the driver's `finish` keeps a `PendingReport` on
+`IssueSource::unsent` (`unattended::keep`) and the file is saved before anything touches the
+network; a queued task stopped before it began and a cut-off one dismissed keep one too. Once the
+task's last mark is pinned and its place given up (`task::let_go`), `unattended::ended` drops the
+project (`end_unattended`, only a transient one) unless it was picked by hand or taken over
+(`adopt_unattended`, which saves it), and `deliver` looks for the verdict and sends
+`core::report`. A report is dropped only once the issue has it, the first failure
+stops the rest, and what is left is sent again at every tick and at boot (`deliver_all`);
+`task::history::over_cap` never removes a task whose report is unsent. The verdict is the forge's
+pull request on the branch, else the commits past the base (`unattended::Verdict`,
+`worktree::commits_since_blocking`), on every outcome. Teardown is `Shell::forget_root`, never
+`remove_root`, because that one re-shows the active session and takes the caret with it. The rules
+that decide are core's (`onehand_core::unattended`); the calls are the connector's.
 
 ### Workflows
 
@@ -807,15 +814,15 @@ back to an older build: it would find no workflows or runs of the person's.
   a handover that restores it; `workbench_aside` remembers an open Workbench for
   `show_active_session` to reopen. `show_workbench` and `show_terminal` refuse while the page
   shows, which covers every key. **It holds no run store.** Runs are read per frame from
-  `unattended::live_runs` (a `LiveRun` each), and sessions from the uids `PageProject` carries
+  `task::live_issues` (a `LiveRun` each), and sessions from the uids `PageProject` carries
   through the same `signal` query the rail's dots use. The project list (branch line and
   session uids included) is built by `Shell::page_projects` when the page is shown and pushed again
   by every git sweep while it shows (`ChatPane::set_page_projects`); a session closing always
   leaves the page. Leaving restores the Workbench after the pane has left the page
   (`Shell::show_active_session` wraps `arrive_at_active_root`), since `show_workbench` refuses
   while it shows; `show_neovim` refuses before it starts an editor. `ResumeIn` makes the project
-  active without showing it, so the session it was last on is not connected for nothing. Live runs are cheap to read because a run starting, parking or
-  ending already calls `cx.refresh_windows()`. Issues come from **the projects' own files alone**
+  active without showing it, so the session it was last on is not connected for nothing. Live runs are cheap to read because the task driver
+  already calls `cx.refresh_windows()` after every action and at a run's end. Issues come from **the projects' own files alone**
   (`issues::open_across`, core, tested): a forge's issue kept in step is imported into the same
   file, so reading the forge too would list it twice. They are read off the UI loop when the page
   is shown and at every `Shell::refresh_worktree` (turn end, window activation) while it shows,

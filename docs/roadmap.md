@@ -48,13 +48,25 @@ workflow file, the launcher previews the steps and the first prompt before Run, 
 refuses unknown keys, variables that would always be empty, a worktree workflow that never commits
 and two steps with one label.
 
+Pull request A of milestone 5 has landed: an **issue is a task's source**. The tick and *Work an
+issue…* claim an issue as before, then keep a task of the workflow `[unattended] workflow` names
+(the shipped *Work an issue* by default) and drive it off screen with the one driver, in the mode
+`[unattended] mode` names. Branches lead with where the issue lives (`onehand/github-57-…`,
+`onehand/local-3-…`), so a kept issue and a forge issue of one number never share one. How a run
+ended is kept in the task's file as a report until the issue has it, sent again at every tick and
+at boot, and a task with a report unsent is never past the history cap. `[unattended] at_once`
+caps the runs working across every window. Unattended runs are ordinary rows on the Tasks page.
+Until pull request B, a run ends at its branch: nothing pushes or opens a pull request.
+
 Not there yet:
 - The workflow mock agent (`crates/core/examples/mock_workflow_agent.js`) and the checklist in
   [workflows.md](workflows.md#checking-it-by-hand) are in the repository; a full pass of the
   checklist, the Tasks page rows included, is still owed.
 - How many old tasks the cap removed is counted since onehand started, not kept across restarts.
-- An issue or a pull request cannot be the source of a run. The unattended run on `main` is still
-  the older one-turn kind.
+- Pull request B of milestone 5: the integration steps (push, open a pull request, wait for CI,
+  repair failing checks, answer a review), a push carrying the commit the check passed on
+  (`verified_at`), and the report retried until the work lands. A pull request cannot be a source
+  yet.
 
 ## Milestones
 
@@ -64,7 +76,7 @@ Not there yet:
 | 1+2 | Tasks (three pull requests) | The rename to Workflows; the task model, history, step visits and the per-checkout queue; the Tasks page, the check as a task and Retry | One place showing what runs, what needs them, and what finished |
 | 3 | Task detail (medium) | Step timeline, outputs, diffs, what awaits approval, retries | Understanding a task and stepping in from it |
 | 4 | Workflow library (medium) | Template versions, import and export, a preview of the run's configuration | Managing and reusing many workflows |
-| 5 | Issues and pull requests (large) | An issue as a source; integration steps; reports that retry | Unattended work on issues, rebuilt on the new foundation |
+| 5 | Issues and pull requests (large, two pull requests) | A: an issue as a source, branches by tracker, reports kept until sent, the cap. B: integration steps | Unattended work on issues, rebuilt on the new foundation |
 
 ### 0. Engine check
 
@@ -135,6 +147,9 @@ check as a task and Retry. Item 7 is spread over all three, each bringing its ow
 The rename is already done by 1+2.
 
 ### 5. Issues and pull requests
+
+Two pull requests: **A** is the issue as a source, the branches by tracker, the reports kept until
+sent, the cap and the one-turn run replaced (landed); **B** is the integration steps.
 
 - An issue as a task's source.
 - Integration steps: push, open a pull request, wait for CI, repair failing checks, answer a
@@ -248,3 +263,14 @@ The rename is already done by 1+2.
 - **The per-checkout lock comes before any cap on concurrency.** Two runs editing one checkout is
   the failure possible today. A workspace-wide cap arrives with milestone 5, before issues are
   taken up automatically.
+- **Milestone 5 is two pull requests**: A makes the issue a source and replaces the one-turn run;
+  B adds the integration steps.
+- **An issue runs the workflow `[unattended] workflow` names**, the shipped *Work an issue* by
+  default, for a found issue and a picked one alike.
+- **Between A and B an issue run ends at its branch.** Nothing tells the agent to push or open a
+  pull request in the meantime, so no push lands without the check behind it.
+- **The cap counts runs working, not waiting**: `[unattended] at_once`, 1 by default, counts issue
+  tasks running or queued across every window; one waiting on a card or an approval gives its slot
+  up, as the one-turn run did.
+- **A report is kept before it is sent.** It is written into the task's file, sent in order, and
+  dropped only once the issue has it; a task holding one is never past the history cap.

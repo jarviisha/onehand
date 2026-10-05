@@ -414,6 +414,16 @@ impl Shell {
         self.window.workspace.roots.iter().any(|r| r.path == root)
     }
 
+    /// The check command of the project at `root`, if it has one.
+    pub fn check_of(&self, root: &Path) -> Option<String> {
+        self.window
+            .workspace
+            .roots
+            .iter()
+            .find(|r| r.path == root)
+            .and_then(|r| r.check.clone())
+    }
+
     /// Re-read everything derived from the files on disk.
     ///
     /// Two panels read the working tree and neither notices it change: the

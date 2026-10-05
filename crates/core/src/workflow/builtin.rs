@@ -4,9 +4,10 @@
 use super::template::Template;
 
 /// The shipped templates' files, in the order they are offered.
-const FILES: [&str; 2] = [
+const FILES: [&str; 3] = [
     include_str!("builtin/checkout.toml"),
     include_str!("builtin/branch.toml"),
+    include_str!("builtin/issue.toml"),
 ];
 
 /// Every shipped template.

@@ -16,6 +16,7 @@ fn setup(check: Option<&str>) -> Setup {
         branch: None,
         agent: None,
         check: check.map(str::to_string),
+        mode: None,
     }
 }
 
@@ -68,14 +69,16 @@ fn at_approval() -> Run {
 }
 
 #[test]
-fn both_shipped_templates_parse_and_validate() {
+fn every_shipped_template_parses_and_validates() {
     let all = builtin::all();
-    assert_eq!(all.len(), 2);
+    assert_eq!(all.len(), 3);
     for template in &all {
         assert_eq!(validate(template), [], "{}", template.name);
     }
     assert_eq!(all[0].place, Place::Checkout);
     assert_eq!(all[1].place, Place::Worktree);
+    assert_eq!(all[2].place, Place::Worktree);
+    assert_eq!(all[2].id, "builtin:issue");
 }
 
 #[test]

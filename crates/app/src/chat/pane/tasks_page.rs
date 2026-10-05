@@ -412,7 +412,7 @@ fn row_said(row: &Row, page: &TasksPage) -> String {
 
 /// One task: its title, then its workflow, where it is and its project,
 /// then what can be done with it from here. Pressing the text opens the
-/// task, unless it is an unattended run's, which has no task to show.
+/// task.
 fn task_row(
     key: (&'static str, usize),
     row: Row,
@@ -431,16 +431,11 @@ fn task_row(
         .flex_1()
         .min_w_0()
         .child(div().truncate().child(row.title))
-        .child(div().text_xs().text_color(muted).truncate().child(said));
-    let text = match row.read_only {
-        true => text,
-        false => {
-            text.cursor_pointer()
-                .on_click(cx.listener(move |pane: &mut ChatPane, _, _, cx| {
-                    pane.open_task(Some(id.clone()), cx)
-                }))
-        }
-    };
+        .child(div().text_xs().text_color(muted).truncate().child(said))
+        .cursor_pointer()
+        .on_click(
+            cx.listener(move |pane: &mut ChatPane, _, _, cx| pane.open_task(Some(id.clone()), cx)),
+        );
     card_box(cx)
         .p_2()
         .h_flex()
@@ -475,9 +470,8 @@ fn row_actions(
             .into_any_element()
     };
     let mut actions: Vec<gpui::AnyElement> = Vec::new();
-    match (row.read_only, row.group) {
-        (true, _) => actions.extend(open.map(IntoElement::into_any_element)),
-        (false, Group::Waiting | Group::Running | Group::Queued) => {
+    match row.group {
+        Group::Waiting | Group::Running | Group::Queued => {
             actions.extend(open.map(IntoElement::into_any_element));
             if row.stoppable {
                 actions.push(
@@ -487,7 +481,7 @@ fn row_actions(
                 );
             }
         }
-        (false, Group::Ended) => {
+        Group::Ended => {
             if row.resumable {
                 actions.push(
                     button("resume", "Resume")
@@ -504,7 +498,7 @@ fn row_actions(
                     .into_any_element(),
             );
         }
-        (false, Group::Finished) => {
+        Group::Finished => {
             if retry_finished {
                 actions.push(retry(cx));
             }

@@ -243,9 +243,10 @@ One window hosts exactly one workspace. The frame is a navigation **rail** plus 
   or *nothing is running* when empty, so the page keeps one shape; inside a
   card, a row is the issue row's shape — a muted head, the title truncated, a
   muted line at the end — and pressing it goes to what it names.
-  - **Waiting on you**: every unattended run standing on a card (head the
-    issue as shown — the forge's `#N`, or *Draft* for one kept in onehand only,
-    then the question, then the project), and every session whose rail mark is
+  - **Waiting on you**: every unattended run standing on a card or an approval
+    (head the issue as shown — the forge's `#N`, or *Draft* for one kept in
+    onehand only, then *Waiting for an answer* or *Waiting for approval*, then
+    the project), and every session whose rail mark is
     *lost*, *waiting for you* or *finished* (head the rail's own mark, then the
     conversation's name, then the project and the state in the rail's word).
     Pressing a run or session opens it; a run in another window brings that
@@ -306,7 +307,8 @@ One window hosts exactly one workspace. The frame is a navigation **rail** plus 
   *N more not shown* past that. *Finished* also says *N older tasks were
   removed.* once the history cap has let some go.
   A row is a hairline card: the task's title, then a muted line with the
-  workflow, the step it is at or how it ended, and the project. Its actions sit
+  workflow (after the issue as shown, for an unattended run's task), the step
+  it is at or how it ended, and the project. Its actions sit
   at its end, all ghost and small:
   - waiting on a person: *Open session*, *Stop*;
   - ended: *Resume* (only when it can carry on where it was), *Retry*,
@@ -314,8 +316,6 @@ One window hosts exactly one workspace. The frame is a navigation **rail** plus 
   - running or queued: *Open session* (when it has one), *Stop* (left off a
     task that has ended but still holds its place until its session's turn is
     over, since nothing is left to stop);
-  - an unattended run, listed read-only as waiting or running: *Open session*
-    only;
   - finished: nothing on the row; *Retry* in its detail.
   *Retry* asks first in a modal that says where the new run starts and how many
   answers it carries over, and adds that the work changed since the last run
@@ -326,7 +326,7 @@ One window hosts exactly one workspace. The frame is a navigation **rail** plus 
   *Retry* (primary). A retry whose last run worked on another branch is refused
   in a warning notification naming that branch. A check is retried at once,
   with no modal.
-  **The task detail.** Pressing a row's text (not an unattended run's) swaps the
+  **The task detail.** Pressing a row's text swaps the
   four cards for that task, in the same column; the filter goes with them. A
   ghost *All tasks* control with a left chevron leads back. Then, as hairline
   cards:

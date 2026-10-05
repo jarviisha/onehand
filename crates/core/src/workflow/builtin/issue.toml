@@ -1,0 +1,45 @@
+schema_version = 1
+id = "builtin:issue"
+version = 1
+name = "Work an issue"
+description = "Plan, change the code and pass the project's check on the issue's own branch, with nobody watching. The work is committed on the branch."
+place = "worktree"
+misses = 3
+timeout = "45m"
+
+[[steps]]
+id = "plan"
+label = "Plan"
+kind = "agent"
+gates = ["answered", "code_unchanged"]
+keep_answer = true
+prompt = """
+Work this issue in the repository:
+
+{brief}
+
+This step is the plan. Read the code this touches and answer with a plan: what you will change, where, and how you will know it works.
+"""
+
+[[steps]]
+id = "implement"
+label = "Implement"
+kind = "agent"
+gates = ["code_changed", "committed"]
+prompt = """
+Work this issue in the repository:
+
+{brief}
+
+This step is the change. Follow the plan, run the repository's checks, and commit your work on this branch.
+
+The plan:
+
+{output.plan}
+"""
+
+[[steps]]
+id = "verify"
+label = "Verify"
+kind = "command"
+on_fail = "implement"

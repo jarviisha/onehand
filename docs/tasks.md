@@ -1,8 +1,9 @@
 # Tasks
 
-**Status: milestone 3 is built.** Milestone 1+2 landed as pull requests 1 (the rename), 2 (tasks,
-history, step visits, marks and the queue) and 3 (the Tasks page, the check as a task, Retry and
-the history cap); milestone 3 added the task detail and the earlier-step picker. This is where
+**Status: milestones 1+2 to 4 are built, and the first pull request of milestone 5.** Milestone 1+2
+landed as pull requests 1 (the rename), 2 (tasks, history, step visits, marks and the queue) and 3
+(the Tasks page, the check as a task, Retry and the history cap); milestone 3 added the task detail
+and the earlier-step picker; milestone 5 began by making an issue a task's source. This is where
 milestones 1+2 and 3 of [roadmap.md](roadmap.md) went, and the decisions behind it are listed
 there. Where the code has landed, this file is its account, with [workflows.md](workflows.md)
 holding the engine and the driver.
@@ -32,14 +33,15 @@ running, what needs me, and what has finished.
 - **The project page links to this page** with one line, e.g. *2 tasks need attention · 1 queued*,
   drawn only when a task of the project needs attention, runs or waits, so two lists can never
   disagree. Beside *New session* it offers **Run check** when the project has a check command.
-- **Unattended runs are listed read-only**, as waiting when a card is parked and running otherwise,
-  with *Open session* only. Only live runs exist, so no other group holds one.
+- **An unattended run is a task like any other**: an issue worked by the configured workflow,
+  listed with the issue it works before its workflow's name (*#57 · Work an issue*), and stopped,
+  resumed, retried and dismissed from its row. See [unattended.md](unattended.md).
 - **History is bounded:** the most recent 200 finished tasks per project. The page says how many
   older ones were removed since onehand started.
 - **Every card is capped at 50 rows** and says how many more it left out.
 
-**The task detail** opens in place of the cards when a row's text is pressed (an unattended run's
-row opens nothing: it has no task to show), with *All tasks* to go back. It shows:
+**The task detail** opens in place of the cards when a row's text is pressed, with *All tasks* to
+go back. It shows:
 
 - **a head**: the title, the row's muted line, and the row's actions, plus *Retry* on a finished
   task;
@@ -68,7 +70,7 @@ Task ──< Run ──< Step visit
  │        ├─ snapshot of the workflow (frozen when the run starts)
  │        ├─ session it used
  │        └─ outcome
- ├─ source (the launcher, a project's check, later an issue)
+ ├─ source (the launcher, a project's check, an issue)
  ├─ brief (workflow tasks only)
  ├─ place (checkout or worktree + branch), shared by every run
  └─ outcome = the last run's outcome, or Dismissed
@@ -79,7 +81,8 @@ Task ──< Run ──< Step visit
 - **A task is anything with a lifecycle and an outcome:**
   - a run (today's `workflow::Run`);
   - the project's check command run on its own;
-  - an unattended run, shown read-only until milestone 5.
+  - an issue worked unattended (`Source::Issue`), which also keeps where the issue lives and the
+    reports it has not been given yet.
 
   A plain agent session is not a task and never appears on the page.
 - **A workflow is the template.** "Pipeline" leaves the code and the screen. There is no
@@ -190,8 +193,8 @@ task            (Task, Run list,                ▼
 task::queue     (who may run where)            │  owns every task, its lock and queue,
 task::files     (Writer, one thread)           │  and the session uid → task index
 task::marks     (commit objects + refs)        ▼
-unattended      (as it is; a thin         Tasks page in the agent pane, rail row
-                 conversion feeds the page)
+unattended      (the issue a task works,  Tasks page in the agent pane, rail row
+                 its branch and report)
 ```
 
 ### Core
@@ -204,8 +207,9 @@ unattended      (as it is; a thin         Tasks page in the agent pane, rail row
   on the task as well as on each run, so a task called off before its run started still says what
   it was. `Task::outcome` is the last run's, or stopped by a person with no run; `Task::resumable`
   is not dismissed and that outcome unset or resumable. Both are written once in core, as
-  `GitStatus::label` is, never per call site. `Task::source` is `Workflow` or `Check`, and a file
-  from before it reads as `Workflow`.
+  `GitStatus::label` is, never per call site. `Task::source` is `Workflow`, `Check` or `Issue`, and a
+  file from before it reads as `Workflow`. A task whose issue still waits for a report is never
+  past the history cap.
 - **The group rule is pure** (`Task::group`). The app passes what only it knows, `Working::Queued`,
   `Running` or `Waiting`, which maps straight to its group. Otherwise a task not dismissed whose
   outcome is unset (cut off) or `Outcome::needs_attention` (exhausted, failed, timed out, agent or
@@ -305,7 +309,7 @@ pull request, before the migration it protects.
   next task in the window it was asked from; one whose window or folder is gone stays interrupted,
   and the place passes on.
 - **The page reads its rows per frame** from `task::rows`, the window's tasks (by `setup.repo` or
-  `setup.dir`) plus the unattended runs converted read-only, sorted by `task::sort_listed`
+  `setup.dir`), sorted by `task::sort_listed`
   (core): by group, finished rows by when they last moved, newest first, every other group by
   when the task was made, oldest first. The rail's count is `task::attention`, counted from the same
   rows. `Tasks::working` says what a task does: queued, waiting (an approval or an unanswered card
@@ -327,9 +331,9 @@ pull request, before the migration it protects.
   place, is dismissed or is called off. Each task past the cap has its file removed, leaves the
   global, and has its marks dropped off the UI thread; a failure is logged. How many went is counted
   per project since boot only.
-- **Unattended runs are read through a conversion** that turns what `onehand_core::unattended`
-  already knows into rows. Their data and code are left alone until milestone 5 replaces the
-  one-turn run, when an unattended run becomes a run of a task for real.
+- **An unattended run is a task of its own source** (`Source::Issue`). Its session is started off
+  screen, its run is driven by the same driver, and when its place is freed the issue is told how
+  it ended through the reports the task keeps (`crate::unattended::ended`).
 - **After a restart nothing starts by itself.** A task that was running or queued comes back
   interrupted, under *Needs attention*, and waits for Resume.
 - **Worktrees are never removed by onehand.** A task's worktree may hold unpushed commits. The merged
@@ -346,14 +350,14 @@ Milestone 1+2 lands as three pull requests in a row, each with its docs.
 | 3. The Tasks page, the check as a task, and Retry (landed) | group rule, history cap; a one-step run with no agent; what a retry carries over | page, rail row and count, project filter; the project page links here; Retry from *Needs attention* |
 | Milestone 4: the workflow library (landed) | `Template::id`, `version` and `newer_than`, set by `store::save_blocking`; unknown keys refused; fuller validation; `first_prompt`, `StepSpec::summary`, `store::export_blocking` | Import and Export in Settings ▸ Workflows; the launcher's preview; Retry offers the newer workflow by id |
 | Milestone 3: the task detail (landed) | `Visit` public; `Run::retry_start`, `retry_of` from an earlier step; `Task::retry` clears `dismissed`; `task::marks::changes_blocking` and `file_diff_blocking` | the detail in `chat/pane/tasks_page.rs`; the retry dialog's step menu |
+| Milestone 5, pull request A: an issue as a source (landed) | `Source::Issue(IssueSource)`, its unsent reports kept past the cap; `Setup::mode`; branches by tracker; `report` from an `Outcome`; `room`; the shipped *Work an issue* | the tick and a pick start a task; an issue task driven off screen; the mode set when the agent comes up; reports sent and retried; the cap `at_once`; the read-only rows gone |
 
 Each one brings its glossary terms and turns its part of this file into the account of the code.
 
 ## Not in this design
 
-- **A cap on concurrency across the workspace.** The per-place lock comes first because two runs
-  editing one checkout is the failure possible today. The cap arrives with milestone 5, before
-  issues are taken up automatically.
+- **A cap on concurrency across every task.** Only unattended runs are capped (`[unattended]
+  at_once`); a task a person starts waits only for its place.
 - **Arbitrary commands as tasks.** Only the project's check command, until a real need shows.
 - **Plain sessions on the page.** A card a plain session parks is signalled on the rail, as now.
 - **Warning when a task starts beside a person's own session** in the same checkout.

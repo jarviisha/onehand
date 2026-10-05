@@ -11,7 +11,7 @@ an approval step waits for a person. The words are defined in [CONTEXT.md](../CO
 | Workflow types and serde | [crates/core/src/workflow/template.rs](../crates/core/src/workflow/template.rs) |
 | What stops a workflow being saved or run | [crates/core/src/workflow/validate.rs](../crates/core/src/workflow/validate.rs) |
 | Prompt variables, onehand's additions, carry-on prompts | [crates/core/src/workflow/prompt.rs](../crates/core/src/workflow/prompt.rs) |
-| The two shipped workflows | [crates/core/src/workflow/builtin/](../crates/core/src/workflow/builtin/) |
+| The shipped workflows | [crates/core/src/workflow/builtin/](../crates/core/src/workflow/builtin/) |
 | The person's workflows on disk | [crates/core/src/workflow/store.rs](../crates/core/src/workflow/store.rs) |
 | The engine: one run as pure state | [crates/core/src/workflow/run.rs](../crates/core/src/workflow/run.rs) |
 | Marks, facts, gates, the command runner | [crates/core/src/workflow/facts.rs](../crates/core/src/workflow/facts.rs) |
@@ -64,11 +64,13 @@ kind = "command"          # `command = "…"`; left out, the project's check com
 on_fail = "implement"
 ```
 
-onehand ships two, read-only: *Work in checkout* (Plan → Approve → Implement → Verify, in the
-checkout, left uncommitted) and *Implement on a branch* (Plan → Implement → Verify, on a new
+onehand ships three, read-only: *Work in checkout* (Plan → Approve → Implement → Verify, in the
+checkout, left uncommitted), *Implement on a branch* (Plan → Implement → Verify, on a new
 `workflow/<title>` branch in a worktree beside the project's repository, committed; a project that
 is a folder inside its repository works in the same folder of the new checkout, as a worktree made
-from the project menu does). The person's own are in
+from the project menu does) and *Work an issue* (`builtin:issue`, the same steps on the branch an
+unattended run cuts for its issue, and what `[unattended] workflow` names by default; see
+[unattended.md](unattended.md)). The person's own are in
 `<config_dir>/onehand/workflows/<slug>.toml`, made by duplicating a shipped one or from *New
 workflow* in Settings ▸ Workflows. A build from before the rename kept them in `pipelines/`;
 they move here at start, behind the one-instance lock, by the rules in
@@ -172,7 +174,9 @@ command has exited, so a stopped run never leaves a build or a test writing to t
 command called off before it started is never started. The first reason given is the one the run
 ends with.
 
-A prompt asked for before the adapter is up waits for the link. The clock is
+A prompt asked for before the adapter is up waits for the link. When the agent first comes up in a
+session, a run whose setup names a mode (`Setup::mode`, an unattended run's) has its agent put in
+that mode before the first prompt; an agent that does not offer it fails the run. The clock is
 `unattended::Budget`: it pauses while a card or an approval waits on a person, and its timer looks
 again when it fires rather than being re-armed at every pause.
 
@@ -316,3 +320,7 @@ change (`git checkout . && git clean -fd`).
 | Export, then import | *Export…* *Work in checkout*, then *Import…* that file | The form opens on it as a new workflow; Save asks for another name, and once renamed it is saved under a new id at version 1 |
 | Retry after a rename | Duplicate *Work in checkout* and save it, start a run with brief `miss`, then rename the workflow and save | *Retry* offers *Retry with the newer workflow (version 2), from …* |
 | Preview | Open the launcher, expand *Preview*, type a title | The steps are listed, and the first prompt shows the title as it is typed |
+| An issue found by its label | Switch the scratch project on for unattended runs, keep an issue in its Issues tab labelled `auto`, set `[unattended] agent = "Mock workflow"` and `mode = ""` (the mock offers no modes), then *Look now* | A task *#… · Work an issue* is under *Running*; a worktree on `onehand/local-<n>-<title>` is a project of its own and no session moves on screen. When it ends the project goes from the rail, the task is under *Finished*, and the issue has a note: *onehand left 1 commit on …* |
+| An issue picked by hand | *Work an issue…* from the project's menu, pick an issue | The session comes up on screen as it starts, and its project stays when it ends |
+| Two at once | With `at_once = 1`, *Work an issue…* while an issue task runs | Refused, naming the issue being worked |
+| A report that could not be sent | On a project served by GitHub, sign `gh` out (`gh auth logout`) before an issue task ends, then sign in again | The task's file keeps the report under `unsent`; the next tick, or the next start, comments it on the issue and empties `unsent` |

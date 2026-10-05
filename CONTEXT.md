@@ -56,7 +56,7 @@ _Avoid_: workflow run, pipeline run, job, execution, instance
 The work onehand does on a person's behalf: a brief on a place, and every run of it. Kept as one
 file each, unfinished or as history; it reads as its last run's outcome. Dismissing an ended task
 keeps it as history and never offers it again. The project's check command run on its own is a
-task too, with one command step and no session. Each project keeps its newest 200 finished tasks;
+task too, with one command step and no session, and so is an issue worked unattended. Each project keeps its newest 200 finished tasks;
 older ones are removed, with their marks.
 _Avoid_: job, ticket, workflow run
 
@@ -135,9 +135,10 @@ _Avoid_: restart, retry
 ## Unattended runs
 
 **Unattended run**:
-One issue worked by one session, in a worktree of its own, with one prompt and nobody watching,
-ending in a pull request or commits.
-_Avoid_: job, task, batch, auto run
+One issue worked as a task of the configured workflow, in a worktree and on a branch of its own,
+in a session nobody is watching, found by its trigger label or picked by hand. It ends on its
+branch, and its issue is told how.
+_Avoid_: job, batch, auto run
 
 **Tracker**:
 Where an issue lives: on a forge, kept by onehand, or kept by onehand in step with a forge.
@@ -148,7 +149,8 @@ What onehand reaches a forge through: its account, its issues, labels, comments 
 _Avoid_: integration, adapter (that is an agent's)
 
 **Tick**:
-One look for work, made every configured interval; it starts nothing while a run is working.
+One look for work, made every configured interval; it starts nothing while every slot is taken.
+It also sends the reports not yet delivered.
 _Avoid_: poll, schedule
 
 **Trigger label**:
@@ -161,16 +163,17 @@ back is how a person asks for the issue to be tried again.
 _Avoid_: lock, lease
 
 **Slot**:
-The one place a working unattended run holds. A run waiting on a card gives it up, so the next tick
-can start another.
+One of the places, `at_once` across every window, a working unattended run holds. A run waiting on
+a card or an approval gives it up, so the next tick can start another.
 _Avoid_: lock, worker
 
-**Ending**:
-How an unattended run stopped: its turn ended, a card was left unanswered, the adapter went, the
-session closed, it timed out, it was taken over, or it never got as far as a prompt.
-_Avoid_: outcome (a run's), status
-
 **Verdict**:
-What an unattended run left behind, judged by onehand rather than the agent: a pull request or
-none, or, without a forge, commits on its branch or none.
+What an unattended run left behind, judged by onehand rather than the agent: the pull request on
+its branch if one was opened, or how many commits its branch has past where it was cut.
 _Avoid_: result, review
+
+**Report**:
+What an issue is told when an unattended run ends: the verdict, the run's outcome, and what its
+last step ended on. Kept in the task's file until the issue has it, and sent again at every tick
+until it lands.
+_Avoid_: notification, status update
