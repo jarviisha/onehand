@@ -12,7 +12,7 @@ use crate::index::{DocIndex, DocRow};
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
     App, AppContext as _, Entity, InteractiveElement, IntoElement, ParentElement,
-    StatefulInteractiveElement, Styled, Window, div, px,
+    StatefulInteractiveElement, Styled, Window, div, rems,
 };
 use gpui_component::button::ButtonVariants as _;
 use gpui_component::text::{TextView, TextViewState, TextViewStyle};
@@ -221,7 +221,7 @@ fn doc_row(
         // Indent by depth rather than by nested containers, for the same reason
         // the file tree does: the cap here is 400 documents, and that many
         // nested elements is that many wasted.
-        .pl(px(4. + row.depth as f32 * 12.))
+        .pl(rems(0.25 + row.depth as f32 * 0.75))
         .child(
             Icon::new(if is_dir {
                 if shut {
@@ -375,8 +375,8 @@ pub(crate) fn reader(
 fn doc_style(rem: gpui::Pixels, cx: &App) -> TextViewStyle {
     let mut style = TextViewStyle::default().code_block(
         gpui::StyleRefinement::default()
-            .p(gpui::rems(0.75))
-            .text_size(gpui::rems(0.8125))
+            .p(rems(0.75))
+            .text_size(rems(0.8125))
             // **The fill is named here rather than left to the library**, which
             // would be the same value -- but only for as long as the panel
             // around this document stays on the reading surface. It was drawn in

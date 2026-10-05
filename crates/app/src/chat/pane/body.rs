@@ -503,17 +503,13 @@ impl ChatPane {
                                     // opaque raised surface so transcript text
                                     // scrolling beneath cannot show through it.
                                     div()
-                                        .rounded(px(9999.))
+                                        .rounded_full()
                                         .bg(cx.theme().popover.alpha(1.))
                                         .shadow_lg()
                                         .child(
                                             crate::controls::action("to-bottom")
                                                 .outline()
-                                                // Fully round, which is what a
-                                                // radius past any plausible
-                                                // half-height means here -- not
-                                                // a measured size.
-                                                .rounded(px(9999.))
+                                                .rounded_full()
                                                 // **The arrow alone.** The
                                                 // words named what was down
                                                 // there, which the transcript

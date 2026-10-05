@@ -1,8 +1,5 @@
 use super::project_page::EmptyProject;
-use super::{
-    ChatPane, ChatPaneEvent, ProjectFacts, Restart, SessionSignal, restart_needs_arming,
-    switching_away,
-};
+use super::{ChatPane, ChatPaneEvent, ProjectFacts, Restart, SessionSignal, switching_away};
 use crate::chat::conversation::{Conversation, SessionPhase};
 use crate::chat::session::{ChatEvent, ChatSession};
 use gpui::{App, Context, Entity, Focusable, SharedString, Window};
@@ -108,8 +105,6 @@ impl ChatPane {
     /// across the call sites they were written at some of them and not others,
     /// which is a session opening onto the previous one's half-typed prompt.
     pub(super) fn leave_shown_session(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        // An arming press only speaks for the conversation it was made on.
-        self.restart_armed = None;
         // The composer is emptied *unconditionally*, so "no session showing"
         // always means "nothing composed". Anything weaker leaves a prompt in
         // the box after the session it was written for was closed, and the next
@@ -361,7 +356,7 @@ impl ChatPane {
         .detach();
     }
 
-    /// Restart the active session's adapter on the same conversation.
+    /// Restart session `uid`'s adapter on the same conversation.
     ///
     /// Dropping the old session is what kills the old adapter (its pump task
     /// owns the event stream), so this cannot leave two processes replaying
@@ -369,27 +364,20 @@ impl ChatPane {
     /// the new session as history, so the pane keeps reading as itself while
     /// the agent replays -- the model comes back empty, and a restart that
     /// blanks the conversation looks like data loss even though it is not.
-    pub fn restart_active(&mut self, cx: &mut Context<Self>) -> Restart {
-        let Some(uid) = self.active else {
-            return Restart::Nothing;
-        };
+    ///
+    /// Mid-turn this throws away the turn the user is waiting on; asking
+    /// first is the caller's, through [`Self::turn_in_flight`].
+    pub fn restart(&mut self, uid: u64, cx: &mut Context<Self>) -> Restart {
         // The session is looked up twice rather than held across the whole
         // function, and neither look-up is a clone. A cloned handle is a second
         // strong reference to the old session, and the old adapter only dies
         // when the last one goes -- so holding one here would keep the process
         // alive right through the spawn of its replacement, which is the one
         // thing this is careful about.
-        let Some(busy) = self.session_of(uid).map(|s| s.read(cx).chat.busy) else {
+        if self.session_of(uid).is_none() {
             return Restart::Nothing;
-        };
-        if restart_needs_arming(busy, self.restart_armed, uid) {
-            self.restart_armed = Some(uid);
-            return Restart::Armed;
         }
-        self.restart_armed = None;
 
-        // Taken only now: an arming press does not need it.
-        //
         // The conversation is *moved* out of the old session rather than copied
         // from it. The old one is about to be dropped, and a drop still holding
         // these items would write them to the file a second time -- while the
@@ -413,9 +401,6 @@ impl ChatPane {
     /// dot on a rail row that no longer exists.
     pub fn close(&mut self, uid: u64, cx: &mut Context<Self>) {
         self.conversations.remove(&uid);
-        if self.restart_armed == Some(uid) {
-            self.restart_armed = None;
-        }
         if self.active == Some(uid) {
             // What the composer still holds is dropped by the next `show`,
             // which treats an unaddressed draft as unaddressed.

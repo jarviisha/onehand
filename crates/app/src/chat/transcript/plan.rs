@@ -200,13 +200,13 @@ pub(super) fn plan(
                 .w_full()
                 .h(PLAN_BAR_H)
                 .mt(STACK_GAP)
-                .rounded_full()
+                .rounded(cx.theme().radius)
                 .bg(cx.theme().border)
                 .child(
                     div()
                         .h_full()
                         .w(relative(done as f32 / total as f32))
-                        .rounded_full()
+                        .rounded(cx.theme().radius)
                         .bg(crate::theme::status_ink(cx).success),
                 ),
         )

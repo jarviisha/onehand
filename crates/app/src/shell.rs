@@ -16,6 +16,7 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 
 mod boot;
+mod confirm;
 mod docks;
 mod drafts;
 mod issue_work;
@@ -323,19 +324,6 @@ pub struct Shell {
     mru: HashMap<PathBuf, Vec<u64>>,
     /// A `Ctrl+Tab` cycle in flight, if any.
     tab_cycle: Option<TabCycle>,
-    /// A root whose removal is armed, waiting for the confirming click.
-    ///
-    /// Only armed for a root that has live sessions: removing those kills their
-    /// agents mid-turn, which is not something one stray click on a small
-    /// target should be able to do. A root with nothing running just goes.
-    pending_remove: Option<usize>,
-    /// A session whose closing is armed, waiting for the confirming click.
-    ///
-    /// By uid rather than by position: the arming has to survive the list
-    /// shifting under it, and a session closed elsewhere must not hand its
-    /// index -- and with it its confirmation -- to whichever session slides
-    /// into that place.
-    pending_close: Option<u64>,
     /// The panel currently filling the whole frame, rail included.
     ///
     /// Only the *app* direction is tracked here, because only that direction

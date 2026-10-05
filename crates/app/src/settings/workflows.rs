@@ -351,12 +351,12 @@ pub(super) fn workflows_page(handle: &Entity<Shell>, cx: &App) -> AnyElement {
                         )
                     })
                     .when(!shipped, |row| {
-                        row.child(
-                            row_icon(("delete-workflow", i), crate::icons::Icon::Trash, "Delete")
-                                .on_click(click(handle, move |shell, window, cx| {
-                                    shell.confirm_delete_workflow(i, window, cx)
-                                })),
-                        )
+                        row.child(row_delete(
+                            handle,
+                            ("delete-workflow", i),
+                            move |shell, window, cx| shell.confirm_delete_workflow(i, window, cx),
+                            cx,
+                        ))
                     }),
                 cx,
             )
@@ -441,6 +441,22 @@ fn row_action(
         .ghost()
         .small()
         .label(label)
+        .on_click(click(handle, act))
+}
+
+/// A row's *Delete*: a word in the danger tint, like every control that
+/// removes something.
+fn row_delete(
+    handle: &Entity<Shell>,
+    id: (&'static str, usize),
+    act: impl Fn(&mut Shell, &mut Window, &mut gpui::Context<Shell>) + 'static,
+    cx: &App,
+) -> impl IntoElement {
+    crate::controls::action(id)
+        .ghost()
+        .small()
+        .text_color(crate::theme::status_ink(cx).danger)
+        .label("Delete")
         .on_click(click(handle, act))
 }
 
@@ -669,16 +685,16 @@ fn step_box(
                 },
             )),
         )
-        .child(
-            row_icon(("step-delete", i), crate::icons::Icon::Trash, "Remove step").on_click(click(
-                handle,
-                move |shell, window, cx| {
-                    shell.edit_workflow_draft(window, cx, |d, _, _| {
-                        d.steps.remove(i);
-                    })
-                },
-            )),
-        );
+        .child(row_delete(
+            handle,
+            ("step-delete", i),
+            move |shell, window, cx| {
+                shell.edit_workflow_draft(window, cx, |d, _, _| {
+                    d.steps.remove(i);
+                })
+            },
+            cx,
+        ));
     let names = div()
         .h_flex()
         .gap_4()

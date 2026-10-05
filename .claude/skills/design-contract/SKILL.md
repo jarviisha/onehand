@@ -18,4 +18,4 @@ values: every colour, radius and size comes from `cx.theme()`, and sizes are rem
   holds, in what order, and what it says when empty. The whole file stays under about 250 lines;
   past that, merge or cut before adding.
 - **Code never cites it.** Comments, doc comments and runtime strings give their reason in their
-  own words. A test enforces this.
+  own words. A source guard checks line comments; review block comments and runtime strings too.

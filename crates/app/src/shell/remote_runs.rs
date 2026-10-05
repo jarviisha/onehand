@@ -166,7 +166,7 @@ impl Shell {
 
     /// End a run's session and drop its project, if the run added it.
     ///
-    /// Not `remove_root`, whose two-click guard asks a person whether live
+    /// Not `remove_root`, whose modal asks a person whether live
     /// sessions should be lost — the run has already decided — and which puts
     /// the active session back on screen afterwards, taking the caret with it.
     /// A run ending while somebody types elsewhere must not move either. Only

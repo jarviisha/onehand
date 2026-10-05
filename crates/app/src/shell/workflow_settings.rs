@@ -2,6 +2,7 @@
 //! and deleting templates, and each project's check command field.
 
 use super::Shell;
+use super::confirm::Ask;
 use crate::settings::WorkflowDraft;
 use gpui::{App, AppContext as _, Context, Entity, ParentElement as _, SharedString, Window};
 use gpui_component::WindowExt as _;
@@ -259,38 +260,16 @@ impl Shell {
         let Some(file) = entry.file.clone() else {
             return;
         };
-        let name = entry.name();
-        let shell = cx.entity();
-        window.open_alert_dialog(cx, move |alert, _, _| {
-            let (shell, file) = (shell.clone(), file.clone());
-            alert
-                .title(format!("Delete {name}?"))
-                .description(
-                    "The template's file is deleted. Runs already started from it carry on \
-                     with the copy they took.",
-                )
-                .footer(
-                    gpui_component::dialog::DialogFooter::new()
-                        .child(
-                            gpui_component::dialog::DialogClose::new().child(
-                                crate::controls::action("keep-workflow")
-                                    .ghost()
-                                    .label("Keep"),
-                            ),
-                        )
-                        .child(
-                            crate::controls::action("delete-workflow-confirm")
-                                .danger()
-                                .label("Delete")
-                                .on_click(move |_, window: &mut Window, cx: &mut gpui::App| {
-                                    window.close_dialog(cx);
-                                    let file = file.clone();
-                                    shell.update(cx, |shell: &mut Self, cx| {
-                                        shell.delete_workflow_file(file, window, cx)
-                                    });
-                                }),
-                        ),
-                )
+        let ask = Ask {
+            id: "delete-workflow",
+            title: format!("Delete {}?", entry.name()).into(),
+            description: "The template's file is deleted. Runs already started from it carry \
+                          on with the copy they took."
+                .into(),
+            act: "Delete",
+        };
+        self.ask(ask, window, cx, move |shell, window, cx| {
+            shell.delete_workflow_file(file.clone(), window, cx)
         });
     }
 

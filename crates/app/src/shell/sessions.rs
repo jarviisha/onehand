@@ -1,9 +1,8 @@
+use super::confirm::Ask;
 use super::{FocusedPanel, RailSession, Shell, TabCycle};
 use crate::state::Shared;
-use gpui::{App, BorrowAppContext, Context, ParentElement, SharedString, Window};
+use gpui::{App, BorrowAppContext, Context, SharedString, Window};
 use gpui_component::WindowExt as _;
-use gpui_component::button::ButtonVariants as _;
-use gpui_component::dialog::{DialogClose, DialogFooter};
 use gpui_component::dock::DockPlacement;
 use gpui_component::notification::Notification;
 use onehand_core::gitstat;
@@ -109,54 +108,29 @@ impl Shell {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let shell = cx.entity();
         // The name of what is being deleted, read now while the session that
         // holds it is still on screen. An unnamed conversation is one nothing
         // has been asked in, so the question names it by what it is instead.
         let name = self
             .active_session_uid()
             .and_then(|uid| self.chat.read(cx).title_for(uid, cx));
-        window.open_alert_dialog(cx, move |alert, _, _| {
-            // Cloned per build: a dialog's builder runs again on every frame it
-            // is on screen, so nothing captured here can be consumed by one.
-            let (shell, dir, name) = (shell.clone(), dir.clone(), name.clone());
-            alert
-                .title("Delete this conversation?")
-                .description(match &name {
-                    Some(name) => format!(
-                        "“{name}” will be removed from disk, with every message \
-                         and image in it, and the agent running it will stop. \
-                         This cannot be undone."
-                    ),
-                    None => "This conversation will be removed from disk, and the \
-                             agent running it will stop. This cannot be undone."
-                        .to_string(),
-                })
-                // Ours rather than the library's default pair, for the reason
-                // every button in this app is ours: the library draws its own
-                // with the arrow cursor.
-                .footer(
-                    DialogFooter::new()
-                        .child(
-                            DialogClose::new().child(
-                                crate::controls::action("keep-open-conversation")
-                                    .ghost()
-                                    .label("Keep"),
-                            ),
-                        )
-                        .child(
-                            crate::controls::action("confirm-delete-open-conversation")
-                                .danger()
-                                .label("Delete")
-                                .on_click(move |_, window: &mut Window, cx: &mut App| {
-                                    window.close_dialog(cx);
-                                    let dir = dir.clone();
-                                    shell.update(cx, |shell: &mut Self, cx| {
-                                        shell.delete_conversation(dir, window, cx);
-                                    });
-                                }),
-                        ),
-                )
+        let ask = Ask {
+            id: "delete-open-conversation",
+            title: "Delete this conversation?".into(),
+            description: match &name {
+                Some(name) => format!(
+                    "“{name}” will be removed from disk, with every message and image in \
+                     it, and the agent running it will stop. This cannot be undone."
+                ),
+                None => "This conversation will be removed from disk, and the agent \
+                         running it will stop. This cannot be undone."
+                    .to_string(),
+            }
+            .into(),
+            act: "Delete",
+        };
+        self.ask(ask, window, cx, move |shell, window, cx| {
+            shell.delete_conversation(dir.clone(), window, cx)
         });
     }
 
@@ -168,10 +142,9 @@ impl Shell {
         cx: &mut Context<Self>,
     ) {
         if let Some(uid) = self.active_session_uid() {
-            // What lets the close through its own mid-turn guard: the question
-            // it would ask has already been asked, in stronger terms.
-            self.pending_close = Some(uid);
-            self.close_active_session(window, cx);
+            // Past the close's own mid-turn question: the one it would ask has
+            // already been asked, in stronger terms.
+            self.end_session(uid, window, cx);
         }
 
         cx.spawn_in(window, async move |shell, cx| {
@@ -215,13 +188,11 @@ impl Shell {
     /// Until this existed the only way to end a session was to remove the whole
     /// project it belonged to, so a root accumulated agents nothing could stop.
     ///
-    /// **Guarded by a second click only while a turn is in flight.** The
+    /// **Asked about in a modal only while a turn is in flight.** The
     /// transcript is written at the end of every turn, so closing an idle
     /// session costs nothing that is not already on disk and does not deserve a
-    /// confirmation; closing one mid-turn throws away the turn that is running,
-    /// which is the same loss a mid-turn restart guards against and is guarded
-    /// the same way. Arming a different session replaces the arming, so the
-    /// confirmation always belongs to the row just clicked.
+    /// question; closing one mid-turn throws away the turn that is running,
+    /// which is the same loss a mid-turn restart asks about.
     pub fn close_session(
         &mut self,
         root_idx: usize,
@@ -229,33 +200,52 @@ impl Shell {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let Some(root) = self.window.workspace.roots.get(root_idx) else {
+        let Some(session) = self
+            .window
+            .workspace
+            .roots
+            .get(root_idx)
+            .and_then(|root| root.sessions.get(session_idx))
+        else {
             return;
         };
-        let Some(session) = root.sessions.get(session_idx) else {
-            return;
-        };
-        let (uid, path) = (session.uid, root.path.clone());
-
-        if self.chat.read(cx).turn_in_flight(uid, cx) && self.pending_close != Some(uid) {
-            self.pending_close = Some(uid);
-            // Named by whatever the row is named by, so the warning and the row
-            // it is about read as the same thing.
-            let label = self
-                .chat
-                .read(cx)
-                .title_for(uid, cx)
-                .unwrap_or_else(|| session.title().to_string());
-            window.push_notification(
-                Notification::warning(format!(
-                    "{label} is mid-turn. Click ✕ again to close it and lose that turn"
-                )),
-                cx,
-            );
-            cx.notify();
+        let uid = session.uid;
+        if !self.chat.read(cx).turn_in_flight(uid, cx) {
+            self.end_session(uid, window, cx);
             return;
         }
-        self.pending_close = None;
+        let label = self.session_label(uid, cx);
+        let ask = Ask {
+            id: "close-session",
+            title: format!("Close {label}?").into(),
+            description: "A turn is running. Closing the session stops its agent, and that \
+                          turn is lost."
+                .into(),
+            act: "Close",
+        };
+        // By uid, not by place: the list can shift while the question is open.
+        self.ask(ask, window, cx, move |shell, window, cx| {
+            shell.end_session(uid, window, cx)
+        });
+    }
+
+    /// Close session `uid` and its agent, no question asked.
+    fn end_session(&mut self, uid: u64, window: &mut Window, cx: &mut Context<Self>) {
+        let Some((root_idx, session_idx, path)) = self
+            .window
+            .workspace
+            .roots
+            .iter()
+            .enumerate()
+            .find_map(|(ri, root)| {
+                root.sessions
+                    .iter()
+                    .position(|session| session.uid == uid)
+                    .map(|si| (ri, si, root.path.clone()))
+            })
+        else {
+            return;
+        };
 
         // The pane owns the conversation and, through it, the adapter: dropping
         // the session there is what ends the agent process. Nothing else has to
@@ -439,8 +429,7 @@ impl Shell {
 
     /// Drop a session at another place under its project.
     ///
-    /// Nothing to save: sessions are not persisted, they respawn. `pending_close`
-    /// is keyed by uid rather than by place, so it survives the move.
+    /// Nothing to save: sessions are not persisted, they respawn.
     pub fn move_session(
         &mut self,
         root_idx: usize,
@@ -531,20 +520,55 @@ impl Shell {
             .update(cx, |panel, cx| panel.agent_started(since, cx));
     }
 
-    /// Restart the active session's adapter, guarded while a turn is running.
+    /// Restart the active session's adapter, asked about in a modal while a
+    /// turn is running.
     pub fn restart_session(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.last_panel = FocusedPanel::Chat;
-        match self.chat.update(cx, |pane, cx| pane.restart_active(cx)) {
+        let Some(uid) = self.active_session_uid() else {
+            return;
+        };
+        if !self.chat.read(cx).turn_in_flight(uid, cx) {
+            self.restart_now(uid, window, cx);
+            return;
+        }
+        let label = self.session_label(uid, cx);
+        let ask = Ask {
+            id: "restart-agent",
+            title: format!("Restart the agent of {label}?").into(),
+            description: "A turn is running. Restarting stops it, and that turn is lost.".into(),
+            act: "Restart",
+        };
+        // By uid: the question is about the session it was asked on,
+        // whichever one shows by the time it is answered.
+        self.ask(ask, window, cx, move |shell, window, cx| {
+            shell.restart_now(uid, window, cx)
+        });
+    }
+
+    /// Restart session `uid`'s adapter, no question asked.
+    fn restart_now(&mut self, uid: u64, window: &mut Window, cx: &mut Context<Self>) {
+        match self.chat.update(cx, |pane, cx| pane.restart(uid, cx)) {
             crate::chat::pane::Restart::Restarted => {
                 window.push_notification(Notification::info("Restarting the agent"), cx);
             }
-            crate::chat::pane::Restart::Armed => window.push_notification(
-                Notification::warning("A turn is running — invoke Restart again to confirm"),
-                cx,
-            ),
             crate::chat::pane::Restart::Nothing => {}
         }
         cx.notify();
+    }
+
+    /// What a question about session `uid` calls it: whatever its row is
+    /// named by, so the question and the row read as the same thing.
+    fn session_label(&self, uid: u64, cx: &App) -> String {
+        self.chat.read(cx).title_for(uid, cx).unwrap_or_else(|| {
+            self.window
+                .workspace
+                .roots
+                .iter()
+                .flat_map(|root| root.sessions.iter())
+                .find(|session| session.uid == uid)
+                .map(|session| session.title().to_string())
+                .unwrap_or_default()
+        })
     }
 
     /// Put session `uid` on screen: its project selected, its conversation

@@ -4,7 +4,7 @@ use super::{ChatPane, ChatPaneEvent, ProjectFacts, rel_time};
 use crate::chat::conversation::Conversation;
 use gpui::{
     App, Context, Div, ElementId, InteractiveElement, IntoElement, ParentElement, SharedString,
-    Stateful, StatefulInteractiveElement, Styled, Window, div, px,
+    Stateful, StatefulInteractiveElement, Styled, Window, div, rems,
 };
 use gpui_component::button::ButtonVariants as _;
 use gpui_component::dialog::{DialogClose, DialogFooter};
@@ -301,7 +301,7 @@ impl ChatPane {
                     .v_flex()
                     .gap_3()
                     .w_full()
-                    .max_w(px(PAGE_COLUMN))
+                    .max_w(rems(PAGE_COLUMN))
                     // Bounded by the panel, for the same reason the project
                     // page's column is: this list is every conversation the
                     // agent has had in the project, and a column taller than
@@ -434,7 +434,7 @@ impl ChatPane {
                             .v_flex()
                             .gap_3()
                             .w_full()
-                            .max_w(px(PAGE_COLUMN))
+                            .max_w(rems(PAGE_COLUMN))
                             // Bounded by the panel it sits in, so the page is
                             // centred while it fits and fills the space when it
                             // does not. Without this the column takes its

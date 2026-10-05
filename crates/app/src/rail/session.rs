@@ -8,7 +8,7 @@ use crate::state::WorkspaceWindow;
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
     App, AppContext as _, ClickEvent, Context, InteractiveElement, IntoElement, ParentElement,
-    SharedString, StatefulInteractiveElement, Styled, WeakEntity, Window, div, px,
+    SharedString, StatefulInteractiveElement, Styled, WeakEntity, Window, div, rems,
 };
 use gpui_component::menu::PopupMenu;
 use gpui_component::tooltip::Tooltip;
@@ -109,7 +109,7 @@ pub(crate) fn signal_mark(signal: SessionSignal, cx: &App) -> impl IntoElement +
 
 /// The plain mark: a small filled circle.
 fn dot(color: gpui::Hsla) -> impl IntoElement + use<> {
-    div().size(px(6.)).rounded_full().bg(color)
+    div().size(rems(0.375)).rounded_full().bg(color)
 }
 
 /// More characters than the widest rail can draw, fewer than a paste.

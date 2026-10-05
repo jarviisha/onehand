@@ -1,9 +1,7 @@
 use super::body::away_from_tail;
 use super::runs::lead_gap;
 use super::runs::working_word;
-use super::{
-    BLOCK_GAP, COMPACT_GAP, SessionSignal, restart_needs_arming, switching_away, waits_alone,
-};
+use super::{BLOCK_GAP, COMPACT_GAP, SessionSignal, switching_away, waits_alone};
 use crate::chat::viewport::{self, RunKind};
 use gpui::rems;
 use onehand_core::chat::{Link, TranscriptItemId};
@@ -248,34 +246,6 @@ fn reselecting_the_shown_session_changes_nothing() {
 fn every_other_move_is_a_switch() {
     assert!(switching_away(Some(7), 8), "one session to another");
     assert!(switching_away(None, 8), "from nothing showing to a session");
-}
-
-/// A turn in flight is what makes a restart worth confirming.
-#[test]
-fn an_idle_session_restarts_on_the_first_press() {
-    assert!(!restart_needs_arming(false, None, 1));
-    assert!(
-        !restart_needs_arming(false, Some(1), 1),
-        "a stale arming press on an idle session is not a reason to stop"
-    );
-}
-
-#[test]
-fn a_busy_session_arms_then_confirms() {
-    assert!(restart_needs_arming(true, None, 1), "first press arms");
-    assert!(
-        !restart_needs_arming(true, Some(1), 1),
-        "the second press on the same session goes through"
-    );
-}
-
-/// The whole reason the arming is keyed by session. Arm a restart on one
-/// busy conversation, switch to another that is also busy, and that
-/// session's first press must still be its own warning -- not the
-/// confirmation of a press aimed somewhere else.
-#[test]
-fn arming_one_session_never_confirms_another() {
-    assert!(restart_needs_arming(true, Some(1), 2));
 }
 
 /// A healthy, idle, already-read session draws **nothing**. This is the

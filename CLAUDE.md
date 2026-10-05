@@ -9,12 +9,15 @@ session is an ACP agent** ([Agent Client Protocol](https://agentclientprotocol.c
 ## Where the rest lives
 
 Read the relevant one **before** changing the area it covers.
+This is the shared guide for all coding agents; `AGENTS.md` routes here without
+duplicating the rules. Automatic skill discovery is optional; the reading routes below are not.
 
 How the repository is held together:
 
 - [CONTEXT.md](CONTEXT.md): the glossary; use its terms and never the words it says to avoid.
 - [DESIGN.md](DESIGN.md): the **binding** UI overview (layout, transcript, theme rules),
-  structure and behaviour only. The `design-contract` skill triggers on any visible change.
+  structure and behaviour only. Before any visible change, also read
+  [.claude/skills/design-contract/SKILL.md](.claude/skills/design-contract/SKILL.md).
 - [docs/rules-and-gotchas.md](docs/rules-and-gotchas.md): the full reasons behind the short rules
   and gotchas below.
 - [docs/known-gaps.md](docs/known-gaps.md): what this build deliberately does not do yet, and why.
@@ -28,6 +31,35 @@ The features that span core and app, each as built:
 Everything else (chat pane, Workbench, rail, terminal, persistence, config) keeps its reasons in
 the comments beside its code, starting from each module's header; `crates/app/src/lib.rs` and
 `crates/core/src/lib.rs` list the modules.
+
+## Authority and scope
+
+- The user's explicit task determines the change. Repository contracts constrain the
+  implementation; generic skills and plugin defaults must be adapted to those contracts.
+- `CONTEXT.md` owns vocabulary, `DESIGN.md` owns the UI overview, and feature documents own
+  their detailed behaviour. Code and tests show what is implemented, not permission to rewrite
+  a contract to fit it. Surface a conflict; preserve the contract unless the requested change
+  authorizes changing it. Update the owning document alongside an authorized behaviour change.
+- `docs/known-gaps.md` records deliberate omissions; listing one does not request implementing it.
+  `CHANGELOG.md` is history. `localDocs/` contains local proposals and superseded notes, never
+  current requirements. Consult a proposal only when the task explicitly calls for it, and
+  reconcile it with the current contracts before implementation.
+- Keep a rule in one owning document. Link to it from entrypoints and skills rather than
+  copying it or creating a competing design system.
+
+## Skills and plugins
+
+These are applicability rules, not a list of tools every contributor must install.
+Availability or installation does not authorize a skill's side effects.
+
+| Tool or workflow | Fit for this repository |
+|---|---|
+| `design-contract` | Required reading for visible changes; follow the existing GPUI theme and components. |
+| Matt Pocock review, debugging, domain modeling | Use for the requested concern; keep the existing glossary and document ownership. Tracker/triage workflows need an explicitly selected tracker and label mapping before publishing. |
+| Matt Pocock `setup-pre-commit`, TypeScript setup | Do not apply npm/Husky/Prettier or TypeScript defaults to this Rust workspace. Use the Makefile and Cargo checks. |
+| `ponytail` | Simplify within the requested behaviour. Preserve the module seams, guards, rendering bounds and deliberate exceptions; fewer files is not a reason to bypass them. |
+| `ui-ux-pro-max` | General UX guidance only; it has no GPUI stack. Adapt recommendations to `DESIGN.md`, not a generated palette or a second design-system document. |
+| Commit/push/PR commands | Use only for the Git operations requested. Run relevant checks before invoking a command-only workflow; it is not a validation step. |
 
 ## Commands
 
@@ -62,7 +94,8 @@ ACP_CMD="node crates/core/examples/mock_ask_agent.js" cargo run -p onehand-core 
   ```
 - **Tests:** unit tests live in `#[cfg(test)]` modules, inline or in a file of their own beside
   the module (`foo.rs` + `foo/tests.rs`); there is still no `tests/` directory.
-- **CI:** fmt, core tests, app tests and clippy, all `--locked`, because `Cargo.lock` is the
+- **CI:** fmt, core tests, tests of every other workspace member (plugins and vendor included),
+  and clippy. Dependency-resolving commands use `--locked`, because `Cargo.lock` is the
   only pin for revless `gpui`. A `v*` tag cuts a GitHub pre-release tarball. Nothing goes to
   crates.io.
 
@@ -85,22 +118,18 @@ ACP_CMD="node crates/core/examples/mock_ask_agent.js" cargo run -p onehand-core 
 - **Core dictates no async runtime.** Blocking functions, thin async wrappers. GPUI runs on smol
   with no tokio reactor; tokio I/O on the UI executor panics. In the app, `acp.rs` and `remote.rs`
   drive their tokio side on runtimes of their own and cross to GPUI over a `futures` channel.
-- **Nothing in core is `pub` unless something outside the crate names it.** Every first-party
-  library carries `#![warn(unreachable_pub)]`. `dead_code` stops at a `pub` item, which is how dead
-  code hid before.
+- **Nothing in core is `pub` unless something outside the crate names it.** First-party
+  libraries other than the app carry `#![warn(unreachable_pub)]`. Keeping internal items
+  private lets `dead_code` reach them; publicly reachable items can hide unused code.
 - **In `crates/app` only `assets` and `shell` are `pub`; keep new modules private.**
 - **Shared rules live in core, not per call site** (e.g. `GitStatus::label`, `Chat::apply`,
   `AppConfig::update_in_place`, `Chats::reconcile`).
-- **`crates/app/src/guards.rs` tests hold rules rustc cannot.** Among them:
-  - no glyph used as an icon;
-  - every button goes through the app's wrapper;
-  - our own event enums matched exhaustively (never `matches!`);
-  - no field assigned and never read;
-  - code never cites a document;
-  - every `.md` file is in English.
-
-  Each guard was added after the same mistake appeared in
-  several places. Remove one only after a probe shows a lint covers it.
+- **`crates/app/src/guards.rs` checks recurring violations rustc cannot catch.** These source
+  scans are partial checks, not proof of every rule. Their coverage and review gaps are in
+  [docs/rules-and-gotchas.md](docs/rules-and-gotchas.md#guard-coverage).
+  Match our own event enums exhaustively, without wildcard arms or partial `if let` handling.
+  Each guard was added after the same mistake appeared in several places. Remove one only
+  after a probe shows a lint covers it.
 
 ## GPUI model
 
@@ -126,8 +155,8 @@ ACP_CMD="node crates/core/examples/mock_ask_agent.js" cargo run -p onehand-core 
   `scripts/sync-icons.sh` + the `icons!` macro, and never hand-edit a synced SVG.
   - Some library icons are renamed: `close` is Lucide's `x`.
   - An icon that fails to resolve draws nothing rather than failing the build.
-  - Some bundled SVGs have a hard-coded stroke (`dash.svg`). After bumping `gpui-component`, grep
-    for `stroke="black"`.
+  - Some bundled SVGs have a hard-coded stroke (`dash.svg`, `resize-corner.svg`). After bumping
+    `gpui-component`, check for `stroke="black"` and `stroke="#`.
 - **Code describes; it never cites.** No comment, doc comment or runtime string names a document
   (CLAUDE.md, DESIGN.md, anything under `docs/`, a section or item code). Give
   the reason in the comment's own words. Pointing at code is fine. Documents point at code, never
@@ -184,5 +213,8 @@ ACP_CMD="node crates/core/examples/mock_ask_agent.js" cargo run -p onehand-core 
   `Cargo.lock` pins both.
 - **A Vietnamese IME can swallow a typed `/`.** Keep the composer's `+` menu entries that
   insert `@` and `/` from code (`Composer::insert_trigger`).
-- **Terminal pitfalls** (paint cost, repaint gate, cell measurement, vendor tests) load
-  automatically from `.claude/rules/terminal.md` when terminal files are read.
+- **Terminal pitfalls:** before changing `vendor/gpui-terminal/**`, `crates/terminal-ui/**`,
+  `crates/app/src/terminal.rs`, `crates/app/src/terminal/**` or
+  `plugins/builtin/workbench-neovim/**`, read
+  [.claude/rules/terminal.md](.claude/rules/terminal.md). This is required even when the host
+  does not load path-scoped rules automatically.

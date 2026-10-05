@@ -29,8 +29,9 @@ const PAGE_ISSUES: usize = 100;
 
 /// The width of the column the pages drawn in place of a conversation keep to:
 /// the project page, the resume picker and the workspace page. One figure, so
-/// moving between them does not move the column.
-pub(super) const PAGE_COLUMN: f32 = 560.;
+/// moving between them does not move the column. In rems, so it follows the
+/// pane's zoom with the text inside it.
+pub(super) const PAGE_COLUMN: f32 = 35.;
 
 /// The widest the workspace page grows, in rems: room for two cards side by
 /// side and a few project tiles to a row, without lines too long to read.
