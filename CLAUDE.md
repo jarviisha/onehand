@@ -22,6 +22,10 @@ Read the relevant one **before** changing the area it covers:
 - [docs/roadmap.md](docs/roadmap.md): the milestones from the workflow engine to Tasks and
   issue/PR integration, and the decisions already taken for them.
 
+Everything else (chat pane, Workbench, rail, terminal, persistence, config) keeps its reasons in
+the comments beside its code, starting from each module's header; `crates/app/src/lib.rs` and
+`crates/core/src/lib.rs` list the modules.
+
 ## Commands
 
 ```bash

@@ -1,8 +1,9 @@
 # DESIGN.md: UI overview
 
 The whole-app UI contract for `onehand`: how the window is laid out and the rules every view
-follows. It describes structure and behaviour, not values. Details below that level belong to the
-code and its tests. Code never cites this file; a comment gives its reason in its own words.
+follows. It describes structure and behaviour, not values. It is binding at the level written here;
+below it, the code and its tests decide. A feature's own document (`docs/tasks.md`,
+`docs/workflows.md`, `docs/unattended.md`) holds the detail of its screens. Code never cites this file; a comment gives its reason in its own words.
 
 **No palette lives here.** onehand uses gpui-component's theme, plus one surface-ramp override
 installed at boot (`crate::theme::install`, which carries contrast tests). Every colour, radius and
@@ -125,15 +126,10 @@ monospace font.
     *Projects*, *Recent conversations* and *Open issues*. While it shows, the header reads
     *Workspace*, and both docks are put away.
   - *Tasks* is the third page, left like the overview and drawn in its column: one column of four
-    cards, *Needs attention* (with the project filter), *Running*, *Queued* and *Finished*
-    (newest first; the others oldest first). Each card has a count, says when it is empty and
-    draws at most fifty rows. A row is the task's title over a muted line (workflow, step or
-    outcome, project) with ghost actions at its end that depend on its state: *Open session*,
-    *Stop*, *Resume*, *Retry*, *Dismiss*. *Retry* asks first, in a modal that says where the new
-    run starts and offers an earlier step or a newer version of the workflow; a check retries at
-    once, and a run that worked on another branch is refused in a warning toast. Pressing a row's text opens the task's detail in the
-    same column: a head, the approval it waits on, and its runs as timelines of step visits, each
-    opening onto its output and changed files.
+    cards, *Needs attention* (with the project filter), *Running*, *Queued* and *Finished*, each
+    with a count, an empty line and a cap. A row is the task's title over a muted line (workflow,
+    step or outcome, project) with ghost actions at its end: *Open session*, *Stop*, *Resume*,
+    *Retry*, *Dismiss*, by state. Pressing a row's text opens the task's detail in the same column.
 - **No top bar, no status bar, no right toolbar.** Transient status goes in a toast. Modals are
   `Dialog`s. Settings is a large dialog: a nav column with Appearance, Workspace, Agents,
   Connections, Workflows and Shortcuts. Groups are separated by hairlines, not boxes.
