@@ -136,6 +136,11 @@ ACP_CMD="node crates/core/examples/mock_ask_agent.js" cargo run -p onehand-core 
   rows through `controls::menu_item`/`menu_row` (re-exported from `onehand_plugin_host`, where a
   plugin reaches them too), so the pointer cursor is right.
 - **Keep rendering bounded**: a named cap per list, and say on screen when it bites.
+- **Split a file before it passes about 800 lines of code** (tests not counted). Cut along a
+  seam that stands alone: a strip, a dialog, a page section, a parser. It becomes a sibling
+  module (`foo.rs` + `foo/bar.rs`, or a file beside it in the same directory). Tests move to
+  `foo/tests.rs` first. When a change would push a file past the line, split it in the same PR.
+  Never split mid-thought just to hit a number.
 - **Don't self-verify UI by launching or screenshotting.** Build, test, stop; the user looks.
 
 ## Load-bearing specifics
