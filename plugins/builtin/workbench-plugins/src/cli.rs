@@ -758,6 +758,10 @@ impl Change {
             if word == "uninstall" {
                 args.push("--keep-data");
             }
+            // Its result line is what tells an update made from one refused.
+            if word == "update" {
+                args.push("--json");
+            }
             args.into_iter().map(str::to_string).collect()
         };
         match verb {
@@ -800,9 +804,35 @@ impl Change {
 pub(crate) fn change_blocking(root: &Path, change: &Change) -> Result<(), String> {
     for step in change.steps() {
         let args: Vec<&str> = step.iter().map(String::as_str).collect();
-        claude(root, &args, CHANGE_LIMIT)?;
+        let said = claude(root, &args, CHANGE_LIMIT)?;
+        if change.verb == Verb::Update {
+            updated(&said)?;
+        }
     }
     Ok(())
+}
+
+/// Whether `claude plugin update --json` changed anything.
+///
+/// **It exits 0 when it did nothing.** It decides "latest" by release number,
+/// so a plugin whose repository moved to a new commit without a new release
+/// reads to it as up to date — while the commit compared here says otherwise.
+/// Passed as success, the press changed nothing and said nothing; it is said
+/// as a refusal instead, with the way that does fetch the commit.
+pub(crate) fn updated(said: &str) -> Result<(), String> {
+    let Ok(result) = serde_json::from_str::<serde_json::Value>(said.trim()) else {
+        return Ok(());
+    };
+    if result["updateOutcome"] != "up_to_date" {
+        return Ok(());
+    }
+    let message = result["message"]
+        .as_str()
+        .unwrap_or("Claude Code reports it already at the latest version.");
+    Err(format!(
+        "{message} Claude Code updates by release number, and this plugin moved to a \
+         new commit without a new one; remove and install it again to get that commit."
+    ))
 }
 
 /// Run `claude` in `root` and hand back what it printed.

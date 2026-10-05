@@ -485,3 +485,18 @@ fn checking_for_updates_fetches_the_plugins_own_marketplace() {
         [vec!["plugin", "marketplace", "update", "official"]]
     );
 }
+
+#[test]
+fn an_update_that_changed_nothing_is_said_rather_than_passed_as_done() {
+    let change = Change {
+        id: "x@m".into(),
+        scope: Scope::User,
+        verb: Verb::Update,
+    };
+    assert_eq!(change.steps()[0][3..], ["--scope", "user", "--json"]);
+    let up_to_date = r#"{"command":"update","outcome":"ok","updateOutcome":"up_to_date","message":"x is already at the latest version (1.2.3)."}"#;
+    let why = updated(up_to_date).unwrap_err();
+    assert!(why.starts_with("x is already at the latest version (1.2.3)."));
+    assert!(updated(r#"{"outcome":"ok","updateOutcome":"updated"}"#).is_ok());
+    assert!(updated("not json").is_ok());
+}
