@@ -23,7 +23,7 @@ mod validate;
 pub use facts::{run_command_blocking, Facts, Mark};
 pub use prompt::first_prompt;
 pub use run::{Action, Brief, Outcome, Run, Setup, Stop, Visit};
-pub use status_checks::{judge, Seen};
+pub use status_checks::{judge, waited_on, Seen};
 pub use template::{GateKind, Place, StepKind, StepSpec, Template, DEFAULT_WAIT, SCHEMA_VERSION};
 pub use validate::validate;
 

@@ -706,9 +706,6 @@ mod tests {
         }
     }
 
-    /// The rename, against a real repository for the same reason: what it does
-    /// is one argument order, and the two failures worth having are both git's
-    /// rather than ours.
     #[test]
     fn a_fast_forward_catches_up_and_refuses_a_branch_that_went_its_own_way() {
         let git = |dir: &Path, args: &[&str]| {
@@ -749,6 +746,9 @@ mod tests {
         let _ = std::fs::remove_dir_all(&repo);
     }
 
+    /// The rename, against a real repository for the same reason: what it does
+    /// is one argument order, and the two failures worth having are both git's
+    /// rather than ours.
     #[test]
     fn rename_moves_the_checked_out_branch_and_refuses_a_collision() {
         let git = |dir: &Path, args: &[&str]| {

@@ -108,11 +108,34 @@ pub(super) fn begin_blocking(
     earlier: &[Earlier],
     checked: &mut Vec<(PathBuf, Served)>,
 ) -> Option<Result<Claimed, Unstarted>> {
-    let (repo, tracker, forge, issue) = roots.iter().find_map(|(project, forge)| {
+    // The oldest labelled issue no task is still working on: one being
+    // worked is passed over, never claimed twice, and never in the way of
+    // the next.
+    let (repo, tracker, forge, issue, taking) = roots.iter().find_map(|(project, forge)| {
         for tracker in trackers_blocking(project.issues.clone(), *forge) {
-            match core::candidate_blocking(&tracker, &project.root, label) {
-                Ok(Some(issue)) => return Some((project.root.clone(), tracker, *forge, issue)),
-                Ok(None) => {}
+            match core::candidates_blocking(&tracker, &project.root, label) {
+                Ok(found) => {
+                    for issue in found {
+                        match taking_blocking(
+                            earlier,
+                            &tracker,
+                            issue.number,
+                            &project.root,
+                            *forge,
+                        ) {
+                            Taking::Busy => continue,
+                            taking => {
+                                return Some((
+                                    project.root.clone(),
+                                    tracker,
+                                    *forge,
+                                    issue,
+                                    taking,
+                                ));
+                            }
+                        }
+                    }
+                }
                 Err(why) => {
                     checked.push((project.root.clone(), Err(why)));
                     return None;
@@ -121,22 +144,12 @@ pub(super) fn begin_blocking(
         }
         None
     })?;
-    let taking = match taking_blocking(earlier, &tracker, issue.number, &repo, forge) {
-        Ok(Taking::Busy) => return None,
-        Ok(taking) => taking,
-        Err(why) => {
-            eprintln!("onehand: could not look at issue #{}: {why}", issue.number);
-            return None;
-        }
-    };
     let answering = taking.answering();
     if let Err(why) = core::claim_blocking(&tracker, &repo, issue.number, label, answering) {
         eprintln!("onehand: could not claim issue #{}: {why}", issue.number);
         return None;
     }
-    Some(prepare_blocking(
-        repo, tracker, forge, issue, taking, earlier, None,
-    ))
+    Some(prepare_blocking(repo, tracker, forge, issue, taking, None))
 }
 
 /// What claiming an issue comes to, given the tasks it had before.
@@ -148,7 +161,10 @@ enum Taking {
     /// The last task's pull request is open: the label put back is a reviewer
     /// asking for changes, and that task answers them on its own branch.
     Review {
-        earlier: usize,
+        task: String,
+        /// Its worktree and branch.
+        dir: PathBuf,
+        branch: String,
         pr: String,
         note: String,
     },
@@ -169,34 +185,43 @@ impl Taking {
 
 /// What claiming issue `number` of `tracker` comes to, by the newest of
 /// `earlier` on it and, with a forge, the pull request on its branch; one
-/// merged, or none, is a fresh start. Blocking.
+/// merged, or none, is a fresh start, and one that cannot be looked up is
+/// refused, to be said on the issue. Blocking.
 fn taking_blocking(
     earlier: &[Earlier],
     tracker: &Tracker,
     number: u64,
     repo: &Path,
     forge: Option<&'static dyn Connector>,
-) -> Result<Taking, String> {
+) -> Taking {
     let at = tracker.to_ref();
-    let Some((index, last)) = earlier
+    let Some(last) = earlier
         .iter()
-        .enumerate()
-        .rfind(|(_, e)| e.tracker == at && e.number == number)
+        .rfind(|e| e.tracker == at && e.number == number)
     else {
-        return Ok(Taking::Fresh);
+        return Taking::Fresh;
     };
     if last.working {
-        return Ok(Taking::Busy);
+        return Taking::Busy;
     }
     let Some(forge) = forge else {
-        return Ok(Taking::Fresh);
+        return Taking::Fresh;
     };
-    let Some(pr) = forge.pull_request_for_blocking(repo, &last.branch)? else {
-        return Ok(Taking::Fresh);
+    let pr = match forge.pull_request_for_blocking(repo, &last.branch) {
+        Ok(Some(pr)) => pr,
+        Ok(None) => return Taking::Fresh,
+        Err(why) => {
+            return Taking::Refused(format!(
+                "the pull request on `{}` could not be looked up: {why}",
+                last.branch
+            ));
+        }
     };
-    Ok(match pr.state {
+    match pr.state {
         PrState::Open => Taking::Review {
-            earlier: index,
+            task: last.task.clone(),
+            dir: last.dir.clone(),
+            branch: last.branch.clone(),
             note: core::review_note(&pr.url, &forge.read_review_with(pr.number)),
             pr: pr.url,
         },
@@ -206,7 +231,7 @@ fn taking_blocking(
             pr.url
         )),
         PrState::Merged => Taking::Fresh,
-    })
+    }
 }
 
 /// Make what a claimed issue is worked on, as `taking` says. For a new task,
@@ -225,7 +250,6 @@ fn prepare_blocking(
     forge: Option<&'static dyn Connector>,
     issue: Issue,
     taking: Taking,
-    earlier: &[Earlier],
     picked_in: Option<gpui::AnyWindowHandle>,
 ) -> Result<Claimed, Unstarted> {
     let made = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
@@ -233,17 +257,17 @@ fn prepare_blocking(
             Taking::Busy => return Err("a run is still working on it".to_string()),
             Taking::Refused(why) => return Err(why),
             Taking::Review {
-                earlier: at, note, ..
+                task,
+                dir,
+                branch,
+                note,
+                ..
             } => {
-                let last = &earlier[at];
                 if let Some(forge) = forge {
-                    forge.fetch_blocking(&repo, &last.branch)?;
+                    forge.fetch_blocking(&repo, &branch)?;
                 }
-                worktree::fast_forward_blocking(&last.dir, &format!("origin/{}", last.branch))?;
-                return Ok(Work::Review {
-                    task: last.task.clone(),
-                    note,
-                });
+                worktree::fast_forward_blocking(&dir, &format!("origin/{branch}"))?;
+                return Ok(Work::Review { task, note });
             }
             Taking::Fresh => {}
         }
@@ -387,8 +411,7 @@ pub fn start_picked(
                         Tracker::Forge(forge) | Tracker::Synced { forge, .. } => Some(*forge),
                         Tracker::Local(_) => connector_for(&repo).ok(),
                     };
-                    let taking = taking_blocking(&earlier, &tracker, number, &repo, forge)
-                        .map_err(|why| format!("Could not start on issue #{number}: {why}"))?;
+                    let taking = taking_blocking(&earlier, &tracker, number, &repo, forge);
                     // Refused before the claim: claimed twice, it would be
                     // worked twice, on two branches.
                     if let Taking::Busy = taking {
@@ -402,7 +425,6 @@ pub fn start_picked(
                         forge,
                         row.issue,
                         taking,
-                        &earlier,
                         Some(window),
                     ))
                 }))

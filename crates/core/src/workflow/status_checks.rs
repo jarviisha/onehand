@@ -25,15 +25,24 @@ pub enum Seen {
     Merged,
 }
 
+/// Something that keeps the run waiting, `why`, after `waited` of at most
+/// `wait`: pending while there is time left, the run's failure after.
+pub fn waited_on(why: String, waited: Duration, wait: Duration) -> Seen {
+    match waited >= wait {
+        true => Seen::Fail(format!("{why}, still after {}m", wait.as_secs() / 60)),
+        false => Seen::Pending,
+    }
+}
+
 /// What the forge's read of the pull request on the run's branch, `read`,
 /// says after waiting `waited` of at most `wait` for the status checks on
 /// `pushed`, the commit the run put there.
 ///
-/// - A failure or a conflict wins over a check still running: there is
-///   something to fix already. The names of the failing checks are what
+/// - A failure or a conflict wins over a status check still running: there
+///   is something to fix already. The names of the failing ones are what
 ///   [`Seen::Repair`] holds; their logs are added by whoever can read them.
-/// - Checks on any other head say nothing about what was pushed, so they
-///   are waited past, as is a forge that cannot be read for now.
+/// - Status checks on any other head say nothing about what was pushed, so
+///   they are waited past, as is a forge that cannot be read for now.
 /// - Nothing is waited on past `wait`.
 pub fn judge(
     read: Result<Option<&PullRequest>, String>,
@@ -41,10 +50,7 @@ pub fn judge(
     waited: Duration,
     wait: Duration,
 ) -> Seen {
-    let pending = |why: String| match waited >= wait {
-        true => Seen::Fail(format!("{why}, still after {}m", wait.as_secs() / 60)),
-        false => Seen::Pending,
-    };
+    let pending = |why: String| waited_on(why, waited, wait);
     let pr = match read {
         Ok(Some(pr)) => pr,
         Ok(None) => return Seen::Fail("there is no pull request on its branch".to_string()),
@@ -62,7 +68,7 @@ pub fn judge(
     }
     if pushed.is_some_and(|pushed| pushed != pr.head) {
         return pending(format!(
-            "{} is not yet at the commit onehand pushed",
+            "{} is at another commit than the one onehand pushed",
             pr.url
         ));
     }

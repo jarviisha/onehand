@@ -537,8 +537,10 @@ had by hand.
 
 Before it claims an issue, `launch::taking_blocking` looks for the issue's newest
 task with a branch of its own. **One still working is never taken again**: the
-search passes the issue over, and a pick is refused, so an issue is never worked
-twice on two branches. Otherwise it asks the forge for the pull request on that
+search passes the issue over for the next labelled one
+(`core::candidates_blocking`), and a pick is refused, so an issue is never worked
+twice on two branches. A pull request that cannot be looked up is said on the
+issue, after its claim, like any other reason a run could not start. Otherwise it asks the forge for the pull request on that
 task's branch:
 
 - **Open**: the label put back is a reviewer asking for changes, and the claim

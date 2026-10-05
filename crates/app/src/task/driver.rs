@@ -15,7 +15,7 @@ use onehand_core::connector::{self, CheckState, Connector, PrState};
 use onehand_core::task::marks;
 use onehand_core::unattended::Budget;
 use onehand_core::workflow::{
-    Action, Facts, Mark, Outcome, Run, Seen, Stop, judge, run_command_blocking,
+    Action, Facts, Mark, Outcome, Run, Seen, Stop, judge, run_command_blocking, waited_on,
 };
 use onehand_core::worktree;
 use std::sync::Arc;
@@ -792,9 +792,8 @@ fn watch_status_checks(
                         (Seen::Passed, Some(pr)) if pr.draft => {
                             match connector.mark_ready_blocking(&dir, pr.number) {
                                 Ok(()) => Seen::Passed,
-                                Err(why) => judge(
-                                    Err(format!("it could not be taken out of draft: {why}")),
-                                    pushed.as_deref(),
+                                Err(why) => waited_on(
+                                    format!("{} could not be taken out of draft: {why}", pr.url),
                                     since.elapsed(),
                                     wait,
                                 ),

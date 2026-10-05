@@ -28,6 +28,17 @@ fn local(name: &str, issues: &[(&str, &[&str])]) -> (Tracker, PathBuf) {
     (Tracker::Local(file), dir)
 }
 
+/// The issue a search would take first.
+fn candidate_blocking(
+    tracker: &Tracker,
+    root: &Path,
+    label: &str,
+) -> Result<Option<Issue>, String> {
+    Ok(candidates_blocking(tracker, root, label)?
+        .into_iter()
+        .next())
+}
+
 fn issue(number: u64, title: &str) -> Issue {
     Issue::new(number, title.to_string(), String::new())
 }

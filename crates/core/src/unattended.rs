@@ -742,8 +742,8 @@ fn quoted(text: &str) -> String {
         .join("\n")
 }
 
-/// The oldest open issue in `tracker` that carries `label` and was opened by the
-/// user.
+/// The open issues in `tracker` that carry `label` and were opened by the
+/// user, oldest first: a search takes the first no task is still working on.
 ///
 /// **An empty label picks nothing**, without asking the connector: the failure of
 /// leaving it blank has to be "nothing runs", not "everything runs".
@@ -752,18 +752,17 @@ fn quoted(text: &str) -> String {
 /// and the agent runs with the user's credentials; a label is
 /// something anybody with triage rights can apply, to an issue anybody at all
 /// may have written.
-pub fn candidate_blocking(
+pub fn candidates_blocking(
     tracker: &Tracker,
     root: &Path,
     label: &str,
-) -> Result<Option<Issue>, String> {
+) -> Result<Vec<Issue>, String> {
     if label.trim().is_empty() {
-        return Ok(None);
+        return Ok(Vec::new());
     }
-    Ok(tracker
-        .labelled_blocking(root, label)?
-        .into_iter()
-        .min_by_key(|issue| issue.number))
+    let mut found = tracker.labelled_blocking(root, label)?;
+    found.sort_by_key(|issue| issue.number);
+    Ok(found)
 }
 
 /// Take `number`: remove the trigger label, then say a run started.

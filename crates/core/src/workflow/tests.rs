@@ -1226,11 +1226,15 @@ fn a_retry_keeps_the_commit_that_was_checked() {
 #[test]
 fn a_review_is_answered_at_the_step_status_checks_send_back_to() {
     assert_eq!(builtin::all().remove(2).repair_step(), Some("implement"));
+    assert!(
+        crate::unattended::parse_every(DEFAULT_WAIT).is_some(),
+        "the default wait reads, or a step leaving it out waits on nothing"
+    );
     assert_eq!(checkout().repair_step(), None);
 }
 
 #[test]
-fn only_every_check_passing_on_the_pushed_commit_is_ready() {
+fn only_every_status_check_passing_on_the_pushed_commit_is_ready() {
     let hour = Duration::from_secs(3600);
     let minute = Duration::from_secs(60);
     let judged = |pr: &PullRequest, waited| judge(Ok(Some(pr)), Some("b"), waited, hour);
@@ -1239,7 +1243,7 @@ fn only_every_check_passing_on_the_pushed_commit_is_ready() {
     };
     let passed = pr(&[("Build", CheckState::Passed)], false);
     assert_eq!(judged(&passed, minute), Seen::Passed);
-    // Checks on another head say nothing about what was pushed.
+    // Status checks on another head say nothing about what was pushed.
     let behind = PullRequest {
         head: "a".into(),
         ..passed.clone()
