@@ -284,9 +284,9 @@ impl Sending {
     /// cut.
     fn verdict_blocking(&self) -> Result<Verdict, String> {
         if let Some(forge) = self.forge
-            && let Some(url) = forge.pull_request_for_blocking(&self.repo, &self.branch)?
+            && let Some(pr) = forge.pull_request_for_blocking(&self.repo, &self.branch)?
         {
-            return Ok(Verdict::PullRequest(url));
+            return Ok(Verdict::PullRequest(pr.url));
         }
         worktree::commits_since_blocking(&self.dir, &self.base).map(Verdict::Commits)
     }

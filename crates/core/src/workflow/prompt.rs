@@ -98,7 +98,10 @@ pub(crate) fn step_prompt(prompt: &str, gates: &[GateKind], place: Place, fill: 
         .check_output
         .filter(|_| !named.contains(&"check_output"))
     {
-        add(format!("The check failed:\n\n```\n{}\n```", out.trim()));
+        add(format!(
+            "What onehand checked failed:\n\n```\n{}\n```",
+            out.trim()
+        ));
     }
     if let Some(note) = fill.revise.filter(|_| !named.contains(&"revise")) {
         let before = fill
@@ -106,7 +109,7 @@ pub(crate) fn step_prompt(prompt: &str, gates: &[GateKind], place: Place, fill: 
             .map(|answer| format!("\n\nWhat you answered before:\n\n{}", quoted(answer)))
             .unwrap_or_default();
         add(format!(
-            "A person read your last answer to this step and asked for changes:\n\n{}{before}",
+            "A person asked for changes:\n\n{}{before}",
             quoted(note)
         ));
     }
@@ -150,7 +153,11 @@ pub fn first_prompt(template: &Template, brief: &Brief) -> Option<String> {
             };
             Some(step_prompt(prompt, gates, template.place, &fill))
         }
-        StepKind::Command { .. } | StepKind::Approval { .. } => None,
+        StepKind::Command { .. }
+        | StepKind::Approval { .. }
+        | StepKind::Push
+        | StepKind::PullRequest
+        | StepKind::StatusChecks { .. } => None,
     })
 }
 
@@ -184,8 +191,8 @@ fn place_said(place: Place) -> &'static str {
              switch branches."
         }
         Place::Worktree => {
-            "You are on a branch of your own, in a worktree of its own. Do not push: onehand \
-             does not take the work further than the branch."
+            "You are on a branch of your own, in a worktree of its own. Do not push or open a \
+             pull request: onehand does that itself where the workflow says so."
         }
     }
 }

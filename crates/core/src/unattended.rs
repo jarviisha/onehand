@@ -422,6 +422,33 @@ pub fn brief_for(tracker: &Tracker, issue: &Issue) -> Brief {
     }
 }
 
+/// The title and body of the pull request a run of `brief` opens, on the
+/// issue `issue` when it works one. The body closes the issue only where the
+/// forge knows it: an issue kept in onehand alone has a number the forge
+/// would read as one of its own.
+pub fn pull_request_text(brief: &Brief, issue: Option<&IssueSource>) -> (String, String) {
+    let closes = issue.and_then(|issue| match (&issue.tracker, &issue.forge_ref) {
+        (TrackerRef::Forge { .. }, _) => Some(format!("#{}", issue.number)),
+        (TrackerRef::Synced { .. }, Some(reference)) => Some(reference.clone()),
+        (TrackerRef::Local { .. } | TrackerRef::Synced { .. }, _) => None,
+    });
+    let mut body = String::new();
+    if let Some(closes) = closes {
+        body += &format!("Closes {closes}.\n\n");
+    }
+    body += "Opened by onehand. What was pushed passed the project's check first.";
+    (brief.title.clone(), body)
+}
+
+/// What the run answering a review on `pr` is told, with `how` the words for
+/// reading it on the forge.
+pub fn review_note(pr: &str, how: &str) -> String {
+    format!(
+        "The pull request {pr} was asked for again: a reviewer wants changes. Read the review \
+         with {how}, and address what is still open."
+    )
+}
+
 /// What the issue is told when a run takes it.
 ///
 /// Worded to stay true if nothing follows it. A crash between the claim and

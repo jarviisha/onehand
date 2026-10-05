@@ -11,9 +11,11 @@ A run is worth having only because it is *disposable*.
 
 An issue is worked as a **task** of a workflow, driven like every other task.
 What is particular to an unattended run is how the issue is found and claimed,
-where its work is cut, and what the issue is told at the end. Until the
-integration steps land (push, pull request, CI), a run ends on its branch: the
-agent is told not to push.
+where its work is cut, and what the issue is told at the end. On a project a
+forge serves, the run goes on past its branch: onehand pushes the commit the
+check passed on, opens a draft pull request and waits for its status checks,
+repairing a failing one. Putting the label back on an issue whose pull request
+is open answers its review.
 
 This describes what is built. Where the build settled something the design left
 open, the section says so.
@@ -31,8 +33,11 @@ while a slot is free under at_once,
            └─ a task of the [unattended] workflow, its brief the issue; ask for its place
               └─ its place given: a transient project and a session on it, *not shown*;
                  the agent comes up and is put in the run's mode
-                 └─ the workflow's steps (builtin:issue: Plan → Implement → Verify)
-                    (a card or an approval waits for a person, and gives up the slot)
+                 └─ the workflow's steps (builtin:issue: Plan → Implement → Verify →
+                    Push → Pull request → Status checks; without a forge the last three pass)
+                    (a card or an approval waits for a person, and status checks for the
+                    forge; each gives up the slot)
+                    (a failing status check or a conflict goes back to Implement)
                     └─ the run ends with an outcome: done · stopped · exhausted · failed
                        └─ verdict: the forge's pull request on the branch, else its
                           commits past where it was cut
@@ -437,8 +442,8 @@ word for word, and instructions asked of every step that name the issue and say
 nobody is watching, so a decision the issue needs is asked through the agent's
 question tool and not guessed. Each step's prompt is the workflow's, with the
 brief filled in; onehand adds what it adds to every step — where the work is (a
-branch of its own, *do not push*), to read the repository's own instructions,
-and the rule each gate checks.
+branch of its own, *do not push or open a pull request*: onehand does that), to
+read the repository's own instructions, and the rule each gate checks.
 
 It deliberately does **not** restate the commit convention or the test
 commands. Those are in the repository's own instructions, which the agent reads
@@ -528,6 +533,21 @@ The transcript needs no special handling — it is written at the end of every
 turn, under the conversations directory, exactly like a conversation somebody
 had by hand.
 
+## Answering a review
+
+`launch::prepare_blocking` looks, before it cuts a worktree, for the issue's
+newest task that is not working and asks the forge for the pull request on its
+branch:
+
+- **Open**: the label put back is a reviewer asking for changes. No worktree is
+  cut; the task is retried (`crate::task::retry`) from the step its status
+  checks send back to, its new run told how to read the review
+  (`core::review_note`, `Connector::read_review_with`) as a revision note. It
+  pushes to the same pull request.
+- **Closed without being merged**: refused. The issue is told onehand will not
+  open another, and to reopen it to have its review answered.
+- **Merged, or none**: a fresh branch, as for any issue.
+
 ## Where it lives
 
 The tick is on `Shared`, one per process, for the reason the remote bridge is
@@ -544,10 +564,11 @@ accumulate one row per issue ever worked.
 
 ## Not built, on purpose
 
-- **Pushing and the pull request.** A run ends on its branch until the
-  integration steps (push, open a pull request, wait for CI) land as steps of
-  their own. The verdict already looks for a pull request, so one opened by hand
-  on the branch is reported.
+- **Parking a run while its status checks run.** Its session stays open and the
+  driver looks at the pull request every minute; a restart waits afresh. Park it
+  with no session when idle adapters are seen to cost something.
+- **Cleaning up after a merged pull request.** The worktree and its branch stay
+  on disk; a merged pull request is the first signal clear enough to act on.
 - **A cap on waiting runs.** `at_once` counts working runs only; each waiting
   one keeps an adapter alive. Add when a pile of unanswered runs is seen to
   cost something.

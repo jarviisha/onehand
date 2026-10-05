@@ -11,9 +11,12 @@ use super::Tasks;
 use crate::chat::session::{ChatEvent, ChatSession, note};
 use gpui::{AnyWindowHandle, App, BorrowAppContext as _, Entity, Subscription, Task, WeakEntity};
 use onehand_core::chat::Link;
+use onehand_core::connector::{self, CheckState, Connector, PrState};
 use onehand_core::task::marks;
 use onehand_core::unattended::Budget;
-use onehand_core::workflow::{Action, Facts, Mark, Outcome, Run, Stop, run_command_blocking};
+use onehand_core::workflow::{
+    Action, Facts, Mark, Outcome, Run, Seen, Stop, judge, run_command_blocking,
+};
 use onehand_core::worktree;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -67,6 +70,8 @@ pub(super) struct Driven {
     _answered: Subscription,
     _release: Subscription,
     _clock: Task<()>,
+    /// Looking at the pull request's checks, while the run waits on them.
+    _checks: Option<Task<()>>,
 }
 
 impl Driven {
@@ -149,6 +154,7 @@ pub(crate) fn start(
         _answered: answered,
         _release: release,
         _clock: clock(uid, limit, cx),
+        _checks: None,
     };
     cx.default_global::<Tasks>().live.insert(uid, driven);
     act(uid, first, cx);
@@ -376,6 +382,28 @@ fn carry_out(uid: u64, action: Action, cx: &mut App) {
                 crate::unattended::waiting(&task, cx);
             }
         }
+        Action::Push(commit) => {
+            note(
+                &session,
+                format!("Pushing {}, which the check passed on", short(&commit)),
+                cx,
+            );
+            on_forge(uid, Some(commit), cx);
+        }
+        Action::OpenPullRequest => {
+            note(&session, "Opening the pull request".to_string(), cx);
+            on_forge(uid, None, cx);
+        }
+        Action::AwaitChecks(limit) => {
+            with(uid, cx, |d| d.budget.pause(Instant::now()));
+            note(
+                &session,
+                "Waiting for the pull request's checks".to_string(),
+                cx,
+            );
+            let looking = checks(uid, Instant::now(), limit, cx);
+            with(uid, cx, |d| d._checks = Some(looking));
+        }
         Action::Finish(outcome) => return finish(uid, Some(&session), outcome, cx),
         Action::Idle => return,
     }
@@ -392,6 +420,9 @@ fn ends_run(action: &Action) -> bool {
         | Action::Prompt(_)
         | Action::RunCommand(_)
         | Action::AwaitApproval
+        | Action::Push(_)
+        | Action::OpenPullRequest
+        | Action::AwaitChecks(_)
         | Action::Idle => false,
     }
 }
@@ -605,6 +636,131 @@ fn run_command(uid: u64, session: &Entity<ChatSession>, command: String, cx: &mu
         });
     })
     .detach();
+}
+
+/// How often a run waiting on its pull request's checks looks at them.
+// ponytail: the session stays open while the checks run, and a restart waits
+// afresh; park the run with no session once idle adapters cost something.
+const CHECKS_EVERY: Duration = Duration::from_secs(60);
+
+/// How many failing checks' logs a repair is handed.
+const LOGS_MAX: usize = 3;
+
+/// A commit as a person reads it.
+fn short(commit: &str) -> &str {
+    &commit[..commit.len().min(10)]
+}
+
+/// Where the run's forge steps go: its work, its branch, and the connector
+/// its setup names, or why there is none.
+type Forge = (std::path::PathBuf, String, &'static dyn Connector);
+
+fn forge_of(uid: u64, cx: &App) -> Option<Result<Forge, String>> {
+    read(uid, cx, |d| {
+        let setup = &d.run.setup;
+        let branch = setup
+            .branch
+            .clone()
+            .ok_or_else(|| "the run has no branch of its own".to_string())?;
+        let name = setup.forge.as_deref().unwrap_or_default();
+        let forge = connector::named(crate::plugins::connectors(), name)
+            .ok_or_else(|| format!("no connector called {name} is built into this onehand"))?;
+        Ok((setup.dir.clone(), branch, forge))
+    })
+}
+
+/// Push `commit` as the run's branch, or, with none, open its pull request
+/// unless one is open on the branch already; then report how it went.
+fn on_forge(uid: u64, commit: Option<String>, cx: &mut App) {
+    let Some(forge) = forge_of(uid, cx) else {
+        return;
+    };
+    let text = read(uid, cx, |d| {
+        let task = super::task(&d.task, cx);
+        onehand_core::unattended::pull_request_text(
+            &d.run.brief,
+            task.as_ref().and_then(|task| task.issue()),
+        )
+    });
+    cx.spawn(async move |cx| {
+        let done = cx
+            .background_executor()
+            .spawn(async move {
+                let (dir, branch, forge) = forge?;
+                if let Some(commit) = commit {
+                    return forge.push_blocking(&dir, &commit, &branch);
+                }
+                if forge
+                    .pull_request_for_blocking(&dir, &branch)?
+                    .is_some_and(|pr| pr.state == PrState::Open)
+                {
+                    return Ok(());
+                }
+                let (title, body) = text.unwrap_or_default();
+                forge.open_pull_request_blocking(&dir, &branch, &title, &body)
+            })
+            .await;
+        cx.update(|cx| advance(uid, cx, move |run| run.forge_done(done)));
+    })
+    .detach();
+}
+
+/// Look at the pull request's checks every [`CHECKS_EVERY`] until they say
+/// something other than pending, waiting at most `limit` from `since`. A look
+/// that fails waits for the next one. Failing checks carry their logs; all
+/// passing takes a draft out of draft first, and a look that could not waits.
+fn checks(uid: u64, since: Instant, limit: Duration, cx: &mut App) -> Task<()> {
+    cx.spawn(async move |cx| {
+        loop {
+            cx.background_executor().timer(CHECKS_EVERY).await;
+            let Some(forge) = cx.update(|cx| forge_of(uid, cx)) else {
+                return;
+            };
+            let seen = cx
+                .background_executor()
+                .spawn(async move {
+                    let (dir, branch, forge) = match forge {
+                        Ok(forge) => forge,
+                        Err(why) => return Seen::Stalled(why),
+                    };
+                    let Ok(pr) = forge.pull_request_for_blocking(&dir, &branch) else {
+                        return Seen::Pending;
+                    };
+                    let mut seen = judge(pr.as_ref(), since.elapsed(), limit);
+                    match (&mut seen, pr) {
+                        (Seen::Failing(said), Some(pr)) => {
+                            let failed = pr.checks.iter().filter(|c| c.state == CheckState::Failed);
+                            for check in failed.take(LOGS_MAX) {
+                                let log = forge
+                                    .check_log_blocking(&dir, check)
+                                    .unwrap_or_else(|why| format!("(no log: {why})"));
+                                said.push_str(&format!(
+                                    "\n\n{}:\n\n```\n{}\n```",
+                                    check.name,
+                                    log.trim()
+                                ));
+                            }
+                        }
+                        (Seen::Passed, Some(pr))
+                            if pr.draft && forge.mark_ready_blocking(&dir, pr.number).is_err() =>
+                        {
+                            seen = Seen::Pending;
+                        }
+                        _ => {}
+                    }
+                    seen
+                })
+                .await;
+            if seen == Seen::Pending {
+                continue;
+            }
+            cx.update(|cx| {
+                with(uid, cx, |d| d.budget.resume(Instant::now()));
+                advance(uid, cx, move |run| run.checks_seen(seen));
+            });
+            return;
+        }
+    })
 }
 
 /// The run's timeout: when `left` has run out, look again, since time spent

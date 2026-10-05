@@ -17,6 +17,7 @@ fn setup(check: Option<&str>) -> Setup {
         agent: None,
         check: check.map(str::to_string),
         mode: None,
+        forge: None,
     }
 }
 
@@ -155,7 +156,7 @@ fn validate_names_each_kind_of_problem() {
     assert_eq!(all.len(), 2, "{all:?}");
     has(
         &t,
-        "Step 1: its prompt names `{check_output}`, but no later command step",
+        "Step 1: its prompt names `{check_output}`, but no later command or status checks step",
     );
     has(
         &t,
@@ -177,6 +178,34 @@ fn validate_names_each_kind_of_problem() {
     let mut t = checkout();
     t.steps[2].label = " Plan ".into();
     has(&t, "Step 3: its label `Plan` is used by an earlier step");
+    let mut t = checkout();
+    t.steps.push(StepSpec {
+        id: "push".into(),
+        label: "Push".into(),
+        kind: StepKind::Push,
+    });
+    has(&t, "only a workflow on a worktree");
+
+    let mut t = builtin::all().remove(2);
+    t.steps
+        .retain(|step| step.id != "verify" && step.id != "push");
+    if let Some(StepSpec {
+        kind: StepKind::StatusChecks { on_fail, wait },
+        ..
+    }) = t.steps.last_mut()
+    {
+        *on_fail = "plan_x".into();
+        *wait = "later".into();
+    }
+    has(&t, "no earlier step pushes");
+    has(&t, "on failure it goes back to `plan_x`");
+    has(&t, "its wait `later`");
+
+    let mut t = builtin::all().remove(2);
+    t.steps
+        .retain(|step| step.id != "verify" && step.id != "pull_request");
+    has(&t, "no earlier step is a command");
+    has(&t, "no earlier step opens one");
 }
 
 #[test]
@@ -274,7 +303,7 @@ fn a_failed_command_goes_back_with_its_output_and_keeps_counting() {
     );
     assert_eq!(run.current().unwrap().id, "implement");
     let text = prompt_of(run.measured(mark("a", "d1")));
-    assert!(text.contains("The check failed:\n\n```\ntest failed: x\n```"));
+    assert!(text.contains("What onehand checked failed:\n\n```\ntest failed: x\n```"));
     // Back and forth between the change and the check is bounded too.
     for n in 2..4 {
         let digest = format!("d{n}");
@@ -1025,4 +1054,203 @@ fn a_command_passes_on_its_exit_status_with_or_without_a_commit() {
         Action::Finish(Outcome::Done)
     );
     assert_eq!(run.marks.verified_at, None);
+}
+
+/// The shipped issue template, on a worktree served by a forge when
+/// `forge`, run until its check has passed on `verified`.
+fn issue_past_check(forge: bool, verified: &str) -> (Run, Action) {
+    let template = builtin::all().remove(2);
+    let mut setup = setup(Some("make check"));
+    setup.forge = forge.then(|| "Forge".to_string());
+    let (mut run, _) = begin("1".into(), template, brief(), setup);
+    prompt_of(run.measured(mark("a", "d0")));
+    run.turn_ended(&facts("a", false, 0, "d0"), "The plan.");
+    prompt_of(run.measured(mark("a", "d0")));
+    run.turn_ended(&facts("b", false, 1, "d0"), "");
+    let next = run.command_finished(Ok(Some(verified.into())));
+    (run, next)
+}
+
+fn pull_request(state: PrState, checks: &[(&str, CheckState)], conflicting: bool) -> PullRequest {
+    PullRequest {
+        url: "https://forge/pr/7".into(),
+        number: 7,
+        state,
+        draft: true,
+        head: "b".into(),
+        conflicting,
+        checks: checks
+            .iter()
+            .map(|(name, state)| Check {
+                name: (*name).into(),
+                state: *state,
+                link: None,
+            })
+            .collect(),
+    }
+}
+
+use crate::connector::{Check, CheckState, PrState, PullRequest};
+use std::time::Duration;
+
+#[test]
+fn the_push_carries_the_commit_the_check_passed_on() {
+    let (mut run, next) = issue_past_check(true, "b");
+    assert_eq!(next, Action::Push("b".into()));
+    assert_eq!(run.forge_done(Ok(())), Action::OpenPullRequest);
+    assert_eq!(
+        run.forge_done(Ok(())),
+        Action::AwaitChecks(Duration::from_secs(3600))
+    );
+    assert!(run.awaiting_checks());
+    assert_eq!(run.checks_seen(Seen::Pending), Action::Idle);
+    assert_eq!(run.checks_seen(Seen::Passed), Action::Finish(Outcome::Done));
+}
+
+#[test]
+fn with_no_forge_the_branch_is_the_result() {
+    let (run, next) = issue_past_check(false, "b");
+    assert_eq!(next, Action::Finish(Outcome::Done));
+    let passed: Vec<_> = run.visits().iter().map(|v| v.step.as_str()).collect();
+    assert_eq!(
+        passed,
+        [
+            "plan",
+            "implement",
+            "verify",
+            "push",
+            "pull_request",
+            "checks"
+        ]
+    );
+}
+
+#[test]
+fn a_push_with_nothing_checked_fails_and_a_failed_push_ends_the_run() {
+    let template = builtin::all().remove(2);
+    let mut setup = setup(Some("make check"));
+    setup.forge = Some("Forge".into());
+    let mut run = Run::new("1".into(), template, brief(), setup);
+    run.step = run.template.index_of("push").unwrap();
+    assert!(matches!(run.resume(), Action::Finish(Outcome::Failed(_))));
+
+    let (mut run, _) = issue_past_check(true, "b");
+    assert_eq!(
+        run.forge_done(Err("rejected".into())),
+        Action::Finish(Outcome::Failed("rejected".into()))
+    );
+}
+
+#[test]
+fn failing_checks_go_back_to_the_change_with_what_failed_until_misses_run_out() {
+    let (mut run, _) = issue_past_check(true, "b");
+    run.forge_done(Ok(()));
+    run.forge_done(Ok(()));
+    assert_eq!(
+        run.checks_seen(Seen::Failing("Lint failed".into())),
+        Action::Measure
+    );
+    assert_eq!(run.current().unwrap().id, "implement");
+    let text = prompt_of(run.measured(mark("b", "d0")));
+    assert!(text.contains("Lint failed"), "{text}");
+    // Repair, check, push again: the push is of the newly checked commit.
+    for n in 2..=3 {
+        let head = format!("c{n}");
+        run.turn_ended(&facts(&head, false, 1, "d0"), "");
+        assert_eq!(
+            run.command_finished(Ok(Some(head.clone()))),
+            Action::Push(head)
+        );
+        run.forge_done(Ok(()));
+        run.forge_done(Ok(()));
+        run.checks_seen(Seen::Failing("Lint failed".into()));
+        prompt_of(run.measured(mark("b", "d0")));
+    }
+    run.turn_ended(&facts("c4", false, 1, "d0"), "");
+    run.command_finished(Ok(Some("c4".into())));
+    run.forge_done(Ok(()));
+    run.forge_done(Ok(()));
+    assert!(matches!(
+        run.checks_seen(Seen::Failing("Lint failed".into())),
+        Action::Finish(Outcome::Exhausted { .. })
+    ));
+}
+
+#[test]
+fn a_merged_pull_request_is_done_and_a_closed_one_failed() {
+    let (mut run, _) = issue_past_check(true, "b");
+    run.forge_done(Ok(()));
+    run.forge_done(Ok(()));
+    assert_eq!(run.checks_seen(Seen::Merged), Action::Finish(Outcome::Done));
+
+    let (mut run, _) = issue_past_check(true, "b");
+    run.forge_done(Ok(()));
+    run.forge_done(Ok(()));
+    assert!(matches!(
+        run.checks_seen(Seen::Closed),
+        Action::Finish(Outcome::Failed(_))
+    ));
+}
+
+#[test]
+fn a_stop_while_checks_run_ends_the_run_and_a_late_look_changes_nothing() {
+    let (mut run, _) = issue_past_check(true, "b");
+    run.forge_done(Ok(()));
+    run.forge_done(Ok(()));
+    assert_eq!(
+        run.stopped(Stop::ByPerson),
+        Action::Finish(Outcome::Stopped(Stop::ByPerson))
+    );
+    assert_eq!(run.checks_seen(Seen::Passed), Action::Idle);
+}
+
+#[test]
+fn a_retry_keeps_the_commit_that_was_checked() {
+    let (mut run, _) = issue_past_check(true, "b");
+    run.forge_done(Err("offline".into()));
+    let template = run.template.clone();
+    let mut again = Run::retry_of(&run, "2".into(), template, None);
+    assert_eq!(again.resume(), Action::Push("b".into()));
+}
+
+#[test]
+fn only_every_check_passing_on_an_open_pull_request_is_ready() {
+    let hour = Duration::from_secs(3600);
+    let minute = Duration::from_secs(60);
+    let pr = |checks: &[(&str, CheckState)], conflicting| {
+        pull_request(PrState::Open, checks, conflicting)
+    };
+    let passed = pr(&[("Build", CheckState::Passed)], false);
+    assert_eq!(judge(Some(&passed), minute, hour), Seen::Passed);
+    let running = pr(
+        &[("Build", CheckState::Passed), ("Test", CheckState::Pending)],
+        false,
+    );
+    assert_eq!(judge(Some(&running), minute, hour), Seen::Pending);
+    assert!(matches!(
+        judge(Some(&running), hour, hour),
+        Seen::Stalled(_)
+    ));
+    // A failure wins over a check still running.
+    let failing = pr(
+        &[("Lint", CheckState::Failed), ("Test", CheckState::Pending)],
+        false,
+    );
+    let Seen::Failing(said) = judge(Some(&failing), minute, hour) else {
+        panic!("a failing check is to be repaired");
+    };
+    assert!(said.contains("Lint") && !said.contains("Test"), "{said}");
+    let Seen::Failing(said) = judge(Some(&pr(&[], true)), minute, hour) else {
+        panic!("a conflict is to be repaired");
+    };
+    assert!(said.contains("conflicts"), "{said}");
+    // No checks at all: none yet within the grace, none at all after it.
+    let none = pr(&[], false);
+    assert_eq!(judge(Some(&none), minute, hour), Seen::Pending);
+    assert_eq!(judge(Some(&none), checks::CHECKS_GRACE, hour), Seen::Passed);
+    let merged = pull_request(PrState::Merged, &[], false);
+    assert_eq!(judge(Some(&merged), minute, hour), Seen::Merged);
+    let closed = pull_request(PrState::Closed, &[], false);
+    assert_eq!(judge(Some(&closed), minute, hour), Seen::Closed);
+    assert_eq!(judge(None, minute, hour), Seen::Closed);
 }

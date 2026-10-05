@@ -550,7 +550,9 @@ One window hosts exactly one workspace. The frame is a navigation **rail** plus 
   menu control, move up, move down and remove; *Id* and *Label*; then, by kind,
   the prompt textarea, the gates as switches (only those that can hold where
   the workflow works, plus any already on) and *Keep its answer*; or the command
-  and *On failure, back to*; or *Approves the answer of*. A step is pointed at
+  and *On failure, back to*; or *Approves the answer of*; or, for status checks,
+  *Wait at most* and *On failure, back to*; a push or a pull request shows only
+  a muted line saying what onehand does. A step is pointed at
   through a menu of the earlier steps that fit. Every problem with the workflow
   is listed in the danger ink above *Save*, which is spent while any remains;
   closing Settings, or opening another workflow, with the form changed asks

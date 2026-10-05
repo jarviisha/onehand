@@ -81,8 +81,21 @@ _Avoid_: attempt, iteration
 **Step**:
 A named stretch of a run. An agent step prompts the session and is judged by its gates; a
 command step runs a command in the work, onehand itself; an approval step waits for a person to
-approve what an earlier step answered, or to send it back with a note.
+approve what an earlier step answered, or to send it back with a note; a forge step takes a
+worktree's branch to the forge.
 _Avoid_: stage, phase, task
+
+**Forge step**:
+A step onehand does on the forge itself, never the agent: *push* (the commit the check passed on),
+*pull request* (a draft, or the one open on the branch) and *status checks*. With no forge serving
+the project each passes at once, and the branch is the result.
+_Avoid_: integration step, deploy step
+
+**Status checks**:
+What a forge runs on a pull request's head and reports back. A forge step waits on them: all
+passing takes the pull request out of draft; one failing, or a conflict, goes back to an earlier
+step to repair it.
+_Avoid_: check (that is the project's command), CI, build
 
 **Gate**:
 A condition onehand checks itself when an agent step's turn ends, read from git and the transcript
@@ -164,7 +177,8 @@ _Avoid_: lock, lease
 
 **Slot**:
 One of the places, `at_once` across every window, a working unattended run holds. A run waiting on
-a card or an approval gives it up, so the next tick can start another.
+a card, an approval or its pull request's status checks gives it up, so the next tick can start
+another.
 _Avoid_: lock, worker
 
 **Verdict**:

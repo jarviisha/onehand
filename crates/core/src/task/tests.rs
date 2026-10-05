@@ -21,6 +21,7 @@ fn task(id: &str) -> Task {
             agent: None,
             check: None,
             mode: None,
+            forge: None,
         },
     )
 }
@@ -316,7 +317,10 @@ fn a_retry_pushes_a_new_run_and_keeps_the_old_one() {
     t.runs[0].resume();
     t.runs[0].stopped(Stop::TimedOut);
     let template = t.runs[0].template.clone();
-    assert_eq!(t.retry("2".into(), template, None).map(|r| r.step), Some(0));
+    assert_eq!(
+        t.retry("2".into(), template, None, None).map(|r| r.step),
+        Some(0)
+    );
     assert_eq!(t.runs.len(), 2);
     assert_eq!(t.group(None), Group::Ended, "cut off until it runs");
 }
@@ -519,7 +523,7 @@ fn retrying_a_task_let_go_makes_it_live_again() {
     t.dismissed = true;
     assert_eq!(t.group(None), Group::Finished);
     let template = t.runs[0].template.clone();
-    t.retry("2".into(), template, None).unwrap();
+    t.retry("2".into(), template, None, None).unwrap();
     assert!(!t.dismissed);
     assert!(t.resumable(), "its new run may start");
 }
@@ -561,4 +565,21 @@ fn a_listing_reads_by_group_then_age() {
         // f1 moved last, so it is the newer finished one.
         assert_eq!(ids, ["-", "2", "4", "1", "3"]);
     }
+}
+
+#[test]
+fn a_retry_with_a_note_tells_its_first_step_what_to_change() {
+    let mut t = task("1");
+    t.runs[0].resume();
+    t.runs[0].stopped(Stop::TimedOut);
+    let template = t.runs[0].template.clone();
+    let run = t
+        .retry(
+            "2".into(),
+            template,
+            None,
+            Some("Address the review.".into()),
+        )
+        .unwrap();
+    assert_eq!(run.revise.as_deref(), Some("Address the review."));
 }

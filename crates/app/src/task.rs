@@ -489,6 +489,18 @@ pub(crate) fn shown(uid: u64, cx: &App) -> Option<Shown> {
     })
 }
 
+/// What `look` makes of each task that is not working, oldest first.
+pub(crate) fn idle<R>(cx: &App, look: impl Fn(&Task) -> Option<R>) -> Vec<R> {
+    let Some(t) = cx.try_global::<Tasks>() else {
+        return Vec::new();
+    };
+    t.tasks
+        .iter()
+        .filter(|task| !t.busy(&task.id))
+        .filter_map(look)
+        .collect()
+}
+
 /// Task `id` as it is kept.
 pub(crate) fn task(id: &str, cx: &App) -> Option<Task> {
     cx.try_global::<Tasks>()?.task(id).cloned()
@@ -517,14 +529,20 @@ pub(crate) fn stop_task(id: &str, cx: &mut App) {
 
 /// Give task `id` a new run of `template`, from step `from` when that is
 /// earlier than where it would start, kept but not started: the caller asks
-/// for its place. Whether there was one to give.
-pub(crate) fn retry(id: &str, template: Template, from: Option<&str>, cx: &mut App) -> bool {
+/// for its place, carrying `note` as a revision. Whether there was one to give.
+pub(crate) fn retry(
+    id: &str,
+    template: Template,
+    from: Option<&str>,
+    note: Option<String>,
+    cx: &mut App,
+) -> bool {
     cx.update_global::<Tasks, _>(|t, _| {
         if t.busy(id) {
             return false;
         }
         let made = t.task_mut(id).is_some_and(|task| {
-            task.retry(onehand_core::task::new_id(), template, from)
+            task.retry(onehand_core::task::new_id(), template, from, note)
                 .is_some()
         });
         if made {
@@ -748,7 +766,8 @@ pub(crate) fn is_working(id: &str, cx: &App) -> bool {
 }
 
 /// How each issue task working or queued is shown, oldest first: what the
-/// cap on unattended runs counts. One waiting on a person is not working.
+/// cap on unattended runs counts. One waiting on a person, or on its pull
+/// request's checks, is not working.
 pub(crate) fn issues_working(cx: &App) -> Vec<String> {
     let Some(t) = cx.try_global::<Tasks>() else {
         return Vec::new();
@@ -756,7 +775,11 @@ pub(crate) fn issues_working(cx: &App) -> Vec<String> {
     t.tasks
         .iter()
         .filter(|task| match t.working(&task.id) {
-            Some(Working::Running | Working::Queued) => true,
+            Some(Working::Running) => !t
+                .live
+                .values()
+                .any(|d| d.task == task.id && d.run.awaiting_checks()),
+            Some(Working::Queued) => true,
             Some(Working::Waiting) | None => false,
         })
         .filter_map(|task| task.issue().map(|issue| issue.shown()))

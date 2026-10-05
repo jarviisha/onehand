@@ -1,9 +1,9 @@
 # Tasks
 
-**Status: milestones 1+2 to 4 are built, and the first pull request of milestone 5.** Milestone 1+2
+**Status: milestones 1+2 to 5 are built.** Milestone 1+2
 landed as pull requests 1 (the rename), 2 (tasks, history, step visits, marks and the queue) and 3
 (the Tasks page, the check as a task, Retry and the history cap); milestone 3 added the task detail
-and the earlier-step picker; milestone 5 began by making an issue a task's source. This is where
+and the earlier-step picker; milestone 5 made an issue a task's source, then added the forge steps. This is where
 milestones 1+2 and 3 of [roadmap.md](roadmap.md) went, and the decisions behind it are listed
 there. Where the code has landed, this file is its account, with [workflows.md](workflows.md)
 holding the engine and the driver.
@@ -351,6 +351,7 @@ Milestone 1+2 lands as three pull requests in a row, each with its docs.
 | Milestone 4: the workflow library (landed) | `Template::id`, `version` and `newer_than`, set by `store::save_blocking`; unknown keys refused; fuller validation; `first_prompt`, `StepSpec::summary`, `store::export_blocking` | Import and Export in Settings ▸ Workflows; the launcher's preview; Retry offers the newer workflow by id |
 | Milestone 3: the task detail (landed) | `Visit` public; `Run::retry_start`, `retry_of` from an earlier step; `Task::retry` clears `dismissed`; `task::marks::changes_blocking` and `file_diff_blocking` | the detail in `chat/pane/tasks_page.rs`; the retry dialog's step menu |
 | Milestone 5, pull request A: an issue as a source (landed) | `Source::Issue(IssueSource)`, its unsent reports kept past the cap; `Setup::mode`; branches by tracker; `report` from an `Outcome`; `room`; the shipped *Work an issue* | the tick and a pick start a task; an issue task driven off screen; the mode set when the agent comes up; reports sent and retried; the cap `at_once`; the read-only rows gone |
+| Milestone 5, pull request B: the forge steps (landed) | `StepKind::Push`, `PullRequest`, `StatusChecks`; `Setup::forge`; `Run::forge_done`, `checks_seen`; `workflow::judge`; the connector's pull request with its checks, push, draft, ready and logs; `Task::retry` with a note | the driver pushes, opens the pull request and looks at its checks; a claim on an issue whose pull request is open retries its task; Settings ▸ Workflows edits the three kinds |
 
 Each one brings its glossary terms and turns its part of this file into the account of the code.
 

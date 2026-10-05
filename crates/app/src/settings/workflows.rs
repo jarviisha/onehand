@@ -37,10 +37,20 @@ pub enum Kind {
     Agent,
     Command,
     Approval,
+    Push,
+    PullRequest,
+    StatusChecks,
 }
 
 impl Kind {
-    const ALL: [Self; 3] = [Self::Agent, Self::Command, Self::Approval];
+    const ALL: [Self; 6] = [
+        Self::Agent,
+        Self::Command,
+        Self::Approval,
+        Self::Push,
+        Self::PullRequest,
+        Self::StatusChecks,
+    ];
 
     /// What a person calls it.
     fn label(self) -> &'static str {
@@ -48,6 +58,9 @@ impl Kind {
             Self::Agent => "Agent",
             Self::Command => "Command",
             Self::Approval => "Approval",
+            Self::Push => "Push",
+            Self::PullRequest => "Pull request",
+            Self::StatusChecks => "Status checks",
         }
     }
 }
@@ -63,7 +76,10 @@ pub struct StepDraft {
     pub gates: Vec<GateKind>,
     pub keep_answer: bool,
     pub command: Entity<InputState>,
-    /// The step a command goes back to, or an approval approves, by id.
+    /// How long status checks are waited on.
+    pub wait: Entity<InputState>,
+    /// The step a command or status checks go back to, or an approval
+    /// approves, by id.
     pub target: String,
 }
 
@@ -73,6 +89,7 @@ impl StepDraft {
             let text = text.to_string();
             cx.new(|cx| InputState::new(window, cx).default_value(text))
         };
+        let mut wait = "1h";
         let (kind, prompt, gates, keep_answer, command, target) = match &spec.kind {
             StepKind::Agent {
                 prompt,
@@ -95,6 +112,22 @@ impl StepDraft {
                 on_fail.as_str(),
             ),
             StepKind::Approval { of } => (Kind::Approval, "", Vec::new(), false, "", of.as_str()),
+            StepKind::Push => (Kind::Push, "", Vec::new(), false, "", ""),
+            StepKind::PullRequest => (Kind::PullRequest, "", Vec::new(), false, "", ""),
+            StepKind::StatusChecks {
+                on_fail,
+                wait: waits,
+            } => {
+                wait = waits.as_str();
+                (
+                    Kind::StatusChecks,
+                    "",
+                    Vec::new(),
+                    false,
+                    "",
+                    on_fail.as_str(),
+                )
+            }
         };
         let prompt = prompt.to_string();
         Self {
@@ -109,6 +142,7 @@ impl StepDraft {
                     .placeholder("Empty: the project's check command")
                     .default_value(command.to_string())
             }),
+            wait: input(wait, window, cx),
             target: target.to_string(),
         }
     }
@@ -130,6 +164,12 @@ impl StepDraft {
                 },
                 Kind::Approval => StepKind::Approval {
                     of: self.target.clone(),
+                },
+                Kind::Push => StepKind::Push,
+                Kind::PullRequest => StepKind::PullRequest,
+                Kind::StatusChecks => StepKind::StatusChecks {
+                    on_fail: self.target.clone(),
+                    wait: self.wait.read(cx).value().trim().to_string(),
                 },
             },
         }
@@ -224,6 +264,12 @@ impl WorkflowDraft {
                     on_fail: String::new(),
                 },
                 Kind::Approval => StepKind::Approval { of: String::new() },
+                Kind::Push => StepKind::Push,
+                Kind::PullRequest => StepKind::PullRequest,
+                Kind::StatusChecks => StepKind::StatusChecks {
+                    on_fail: String::new(),
+                    wait: "1h".to_string(),
+                },
             },
         };
         self.steps.push(StepDraft::new(&spec, window, cx));
@@ -711,7 +757,19 @@ fn step_box(
                 .child(div().h_flex().child(keep))
                 .into_any_element()
         }
-        kind @ (Kind::Command | Kind::Approval) => {
+        Kind::Push => div()
+            .text_sm()
+            .text_color(cx.theme().muted_foreground)
+            .child("onehand pushes the commit the last command passed on, as the run's branch.")
+            .into_any_element(),
+        Kind::PullRequest => div()
+            .text_sm()
+            .text_color(cx.theme().muted_foreground)
+            .child(
+                "onehand opens a draft pull request from the run's branch, or takes the open one.",
+            )
+            .into_any_element(),
+        kind @ (Kind::Command | Kind::Approval | Kind::StatusChecks) => {
             let needs_keep = kind == Kind::Approval;
             let title = match needs_keep {
                 true => "Approves the answer of",
@@ -767,6 +825,14 @@ fn step_box(
                         "Command",
                         about("Run by onehand in the work, through sh."),
                         Input::new(&step.command),
+                        cx,
+                    ))
+                })
+                .when(kind == Kind::StatusChecks, |col| {
+                    col.child(field(
+                        "Wait at most",
+                        about("Such as 45m or 2h; passing all, the pull request leaves draft."),
+                        Input::new(&step.wait).small(),
                         cx,
                     ))
                 })

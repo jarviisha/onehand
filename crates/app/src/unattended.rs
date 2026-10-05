@@ -472,6 +472,7 @@ fn tick(asked_from: Option<gpui::AnyWindowHandle>, cx: &mut App) {
         .iter()
         .filter_map(|p| Some((p.root.clone(), lacks_check(&p.root, cx)?)))
         .collect();
+    let ended = launch::ended(cx);
     let search = with(cx, |u| {
         let idle = !u.claiming && u.blocked.is_none() && stopped.is_none();
         idle.then(|| {
@@ -507,8 +508,8 @@ fn tick(asked_from: Option<gpui::AnyWindowHandle>, cx: &mut App) {
                             Some((project, forge))
                         })
                         .collect();
-                    let begun =
-                        search.and_then(|label| begin_blocking(&workable, &label, &mut checked));
+                    let begun = search
+                        .and_then(|label| begin_blocking(&workable, &label, &ended, &mut checked));
                     (Some(accounts), checked, begun)
                 }))
                 .unwrap_or_else(|_| {

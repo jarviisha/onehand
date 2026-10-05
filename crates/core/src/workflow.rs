@@ -12,6 +12,7 @@
 //!   word for it.
 
 pub mod builtin;
+mod checks;
 mod facts;
 mod prompt;
 mod run;
@@ -19,6 +20,7 @@ pub mod store;
 mod template;
 mod validate;
 
+pub use checks::{judge, Seen};
 pub use facts::{run_command_blocking, Facts, Mark};
 pub use prompt::first_prompt;
 pub use run::{Action, Brief, Outcome, Run, Setup, Stop, Visit};

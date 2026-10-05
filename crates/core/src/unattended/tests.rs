@@ -496,3 +496,34 @@ fn the_cap_counts_working_runs_only() {
     assert!(room(1, 2));
     assert!(!room(0, 0));
 }
+
+#[test]
+fn a_pull_request_closes_the_issue_only_where_the_forge_knows_it() {
+    let source = |tracker: TrackerRef, forge_ref: Option<&str>| IssueSource {
+        tracker,
+        number: 3,
+        forge_ref: forge_ref.map(str::to_string),
+        forge: Some("Forge".into()),
+        base: "origin/main".into(),
+        picked: false,
+        unsent: Vec::new(),
+    };
+    let brief = brief_for(&forge(), &issue(3, "Fix it"));
+    let body = |s: &IssueSource| pull_request_text(&brief, Some(s)).1;
+    let on_forge = TrackerRef::Forge {
+        connector: "Forge".into(),
+    };
+    assert!(body(&source(on_forge, None)).starts_with("Closes #3."));
+    let synced = TrackerRef::Synced {
+        file: "/i.json".into(),
+        connector: "Forge".into(),
+    };
+    assert!(body(&source(synced.clone(), Some("#57"))).starts_with("Closes #57."));
+    // Kept here alone, its number is onehand's, not the forge's.
+    assert!(!body(&source(synced, None)).contains('#'));
+    let kept = TrackerRef::Local {
+        file: "/i.json".into(),
+    };
+    assert!(!body(&source(kept, None)).contains('#'));
+    assert_eq!(pull_request_text(&brief, None).0, "Fix it");
+}

@@ -273,6 +273,28 @@ pub fn fetch_blocking(root: &Path, branch: &str) -> Result<(), String> {
     }
 }
 
+/// Put `commit` on `origin` as `branch`, the way [`fetch_blocking`] reaches
+/// it, and never by force: a branch that moved on the forge is refused rather
+/// than written over.
+pub fn push_blocking(root: &Path, commit: &str, branch: &str) -> Result<(), String> {
+    let mut cmd = git(root);
+    cmd.args([
+        "push",
+        "--quiet",
+        "origin",
+        &format!("{commit}:refs/heads/{branch}"),
+    ]);
+    if std::env::var_os("GIT_SSH_COMMAND").is_none() {
+        cmd.env("GIT_SSH_COMMAND", "ssh -o BatchMode=yes");
+    }
+    let out = output_within(&mut cmd, FETCH_LIMIT).map_err(|err| format!("git push {err}"))?;
+    if out.status.success() {
+        Ok(())
+    } else {
+        Err(git_message(&out.stderr))
+    }
+}
+
 /// How long a question git answers from the repository alone may take.
 pub(crate) const LOCAL_LIMIT: Duration = Duration::from_secs(30);
 
