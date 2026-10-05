@@ -10,23 +10,21 @@ session is an ACP agent** ([Agent Client Protocol](https://agentclientprotocol.c
 
 Read the relevant one **before** changing the area it covers:
 
-- [docs/architecture.md](docs/architecture.md): the full account of every subsystem and why it is
-  shaped that way (ACP client, remote bridge, unattended runs, chat pane, Workbench, terminal,
-  window shell, keyboard, persistence, config) plus the mock agent, CI and releases.
 - [docs/known-gaps.md](docs/known-gaps.md): what this build deliberately does not do yet, and why.
 - [docs/rules-and-gotchas.md](docs/rules-and-gotchas.md): the full reasons behind the short rules
   and gotchas below.
-- [DECISIONS.md](DECISIONS.md): decisions D1–D8 that code cannot explain (theme, appearance,
-  editor/Neovim scope, icons, plugins, GPUI source identity, vendored terminal).
-- [DESIGN.md](DESIGN.md) (whole-app UI) and [DESIGN-ANSWER.md](DESIGN-ANSWER.md) (transcript):
-  **binding** UI contracts, structure and behaviour only. The `design-contract` skill triggers on
-  any visible change.
+- [DESIGN.md](DESIGN.md): the **binding** UI overview (layout, transcript, theme rules),
+  structure and behaviour only. The `design-contract` skill triggers on any visible change.
 - [docs/unattended.md](docs/unattended.md): unattended runs end to end.
 - [docs/workflows.md](docs/workflows.md): workflows, the run engine and its one driver.
 - [docs/tasks.md](docs/tasks.md): the Tasks page and the task model behind it, as designed.
 - [CONTEXT.md](CONTEXT.md): the glossary; use its terms and never the words it says to avoid.
 - [docs/roadmap.md](docs/roadmap.md): the milestones from the workflow engine to Tasks and
   issue/PR integration, and the decisions already taken for them.
+
+Everything else (chat pane, Workbench, rail, terminal, persistence, config) keeps its reasons in
+the comments beside its code, starting from each module's header; `crates/app/src/lib.rs` and
+`crates/core/src/lib.rs` list the modules.
 
 ## Commands
 
@@ -128,7 +126,7 @@ ACP_CMD="node crates/core/examples/mock_ask_agent.js" cargo run -p onehand-core 
   - Some bundled SVGs have a hard-coded stroke (`dash.svg`). After bumping `gpui-component`, grep
     for `stroke="black"`.
 - **Code describes; it never cites.** No comment, doc comment or runtime string names a document
-  (CLAUDE.md, DESIGN*.md, DECISIONS.md, anything under `docs/`, a section or item code). Give
+  (CLAUDE.md, DESIGN.md, anything under `docs/`, a section or item code). Give
   the reason in the comment's own words. Pointing at code is fine. Documents point at code, never
   the reverse.
 - **Every `.md` file is written in English.** Quoted non-English data stays as it is.

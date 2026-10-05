@@ -2,6 +2,13 @@
 
 Listed because a missing feature nobody wrote down reads as a bug in the ones that exist:
 
+- **The newest terminal tab is not scrolled into view.** Past the width of the strip a new shell can
+  be the active one with its tab off the end of the list: the grid is right, the strip is behind.
+  Fixing it means a `ScrollHandle` on the panel, and `scroll_to_item` on a tab that has never been
+  painted needs deferring past the frame that first draws it.
+- **Dragging a rail row has no edge autoscroll.** A project past the bottom of a full rail has to be
+  scrolled to first.
+
 - **The header's icon buttons have no accessible names, the conversation menu's dots included.**
   The library builds a button's accessible name out of `label` and nothing else, and the only
   setter is an inherent method on the base button it keeps in a private field — so an icon-only
@@ -166,8 +173,6 @@ Listed because a missing feature nobody wrote down reads as a bug in the ones th
   always send the ordinary form. The rest of the required full-screen terminal behaviour is present.
 - **The terminal's cursor does not blink**, by decision — it would mean a repaint on a timer for the
   life of every tab, in a view that otherwise draws only when bytes arrive.
-- Transcript blocks the design contract asks for that are not drawn are marked *(not rendered)* in
-  DESIGN-ANSWER.md, each with the reason.
 - **The Plugins mode stops where the command line does.** It manages Claude Code's plugins only —
   no other agent's, so there is no agent picker and no per-agent enabling. There is no auto-update
   switch and no roll-back, since the command line offers neither and the mode writes none of

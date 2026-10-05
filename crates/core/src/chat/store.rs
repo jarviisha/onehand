@@ -703,6 +703,10 @@ fn write_meta(dir: &Path, meta: &MetaWrite) -> std::io::Result<()> {
 /// megabytes with no line referring to it any more. Taken under the same lock
 /// as a save, so a write already in flight finishes into the directory rather
 /// than half into a directory being taken away.
+///
+/// Only a person's own *Delete* reaches this. Nothing is ever removed on its
+/// own — no retention sweep, no age limit — because that would be the app
+/// throwing away work nobody asked it to.
 pub fn delete(dir: &Path) -> std::io::Result<()> {
     let lock = writer_for(dir);
     let _held = lock.lock().unwrap_or_else(|e| e.into_inner());

@@ -37,9 +37,9 @@ onehand-workbench-markdown = { path = "../../plugins/builtin/workbench-markdown"
 onehand-workbench-neovim = { path = "../../plugins/builtin/workbench-neovim" }
 onehand-workbench-plugins = { path = "../../plugins/builtin/workbench-plugins" }
 
-# gpui-component IS pinned by rev (decision D7).
+# gpui-component IS pinned by rev; gpui carries none, so Cargo.lock pins it.
 # The `tree-sitter-*` set is deliberately a *subset*, not `tree-sitter-languages`
-# (all ~35). Decision D3: the Workbench stays a quick editor -- highlighting
+# (all ~35). The Workbench stays a quick editor -- highlighting
 # for the languages this codebase is edited in, and no LSP. Each grammar is
 # build time and binary size for a language nobody has opened.
 gpui-component = { git = "https://github.com/longbridge/gpui-component", rev = "9e3a29dcbdebc318632bf68203f26c33e9f0e902", features = [
@@ -77,9 +77,6 @@ gpui_platform = { git = "https://github.com/zed-industries/zed", features = ["fo
 
 anyhow = "1"
 
-# Vendored: upstream is a render core with no interaction layer at all
-# (decision D8). See vendor/gpui-terminal/Cargo.toml.
-
 # The ACP adapter's serve loop is tokio-based, so it needs a tokio reactor to be
 # polled on; GPUI runs on smol. `crate::acp` owns the runtime that bridges them.
 tokio = { version = "1", features = ["rt", "rt-multi-thread"] }
@@ -88,7 +85,7 @@ tokio = { version = "1", features = ["rt", "rt-multi-thread"] }
 futures = "0.3"
 
 # Native folder picker. Driven blocking on the background executor, never on the
-# UI loop (CLAUDE.md "Native dialogs and file scans run off the UI loop").
+# UI loop, where a modal native dialog would freeze every window.
 rfd = "0.15"
 
 # Desktop notification when a turn ends while the window is unfocused.
@@ -97,6 +94,8 @@ notify-rust = "4"
 [dev-dependencies]
 # Native renderer comparison fixture: selection and scroll transitions.
 alacritty_terminal = "0.25.1"
+# Vendored: upstream is a render core with no interaction layer at all.
+# See vendor/gpui-terminal/Cargo.toml.
 gpui-terminal = { path = "../../vendor/gpui-terminal" }
 # Reads the pinned icon manifest in the registry consistency test.
 toml = "0.8"

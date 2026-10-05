@@ -39,7 +39,7 @@ The full text behind the short forms in `CLAUDE.md`, with the reason for each.
   Lucide for shapes), register it in the `icons!` macro. A test fails if manifest and registry
   disagree.
 - **Code describes; it never cites.** No comment, doc comment or runtime string may name another
-  document — not `CLAUDE.md`, not `DESIGN.md` / `DESIGN-ANSWER.md`, not `DECISIONS.md`, and no
+  document — not `CLAUDE.md`, not `DESIGN.md`, and no
   section number, anchor or item code belonging to one. The guard's list of forbidden names is
   deliberately longer than the set of documents that exist, because a name that was retired is
   exactly the one a stale comment would still be holding. Say the reason **in the comment's own
@@ -64,7 +64,7 @@ The full text behind the short forms in `CLAUDE.md`, with the reason for each.
   the terms stop matching the code they name. This covers prose, headings, tables and comments inside
   fenced blocks; a quoted string that is itself Vietnamese (a test fixture, a bug report being cited)
   is data and stays as it is. Enforced by `guards::tests::documents_are_written_in_english`.
-- **DESIGN.md and DESIGN-ANSWER.md are binding.** Read the theme; never hard-code a colour, radius or
+- **DESIGN.md is binding.** Read the theme; never hard-code a colour, radius or
   size. Sizes are rems.
 - **Reuse gpui-component before building.** A hand-rolled equivalent will not follow the theme, will
   not follow the focus rules, and becomes ours to maintain.
