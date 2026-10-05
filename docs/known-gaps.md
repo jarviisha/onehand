@@ -184,13 +184,15 @@ Listed because a missing feature nobody wrote down reads as a bug in the ones th
   step that runs only sometimes, and no two steps at once; a command's failure going back to an
   earlier step is the only way back, besides a revision. One session carries every step, so a step
   cannot use a different agent from the rest.
-- **One window holds a run, and runs do not queue.** Starting a second run on a project
-  while one works there is allowed and nothing stops the two from editing the same checkout.
+- **A task does not wait for a person's own session.** Tasks take turns in a checkout, one at a
+  time, but a plain session holds no place, so a task can start editing a checkout somebody is
+  working in through a session of their own, with no warning.
 - **A run ends at the branch.** There is no step that pushes, opens a pull request or waits on
   CI, so an unattended run on an issue leaves commits on its branch and says so on the issue; it
   no longer opens the pull request itself. `verified_at` is recorded so that a push step can later
   require the commit it pushes to be the one the check passed on.
-- **The cap on unattended runs can be passed by one** when a tick lands in the moment between a
-  run's task being kept and its place being asked for.
-- **A worktree a run made is never removed by it**, nor its branch, whatever the outcome; the
-  folder stays as a project until a person removes it.
+- **A run can stay counted against the cap on unattended runs until onehand restarts**, when the
+  window it was started in closes in the moment its place is being looked up.
+- **A worktree a run made is never removed by it**, nor its branch, whatever the outcome. The
+  folder stays as a project until a person removes it, except an unattended run's found by its
+  label and not taken over, whose project leaves the rail when it ends; its folder stays on disk.

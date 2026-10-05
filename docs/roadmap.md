@@ -29,8 +29,9 @@ goes through one queue keyed by the checkout git sees, and a place is freed only
 stopped.
 
 Pull request 3 has landed too: the **Tasks page** lists every task of the window's projects under
-*Needs attention*, *Running*, *Queued* and *Finished*, with a project filter, a rail row with the
-count of those needing attention, and the unattended runs read-only. The project page links there
+*Needs attention*, *Running*, *Queued* and *Finished*, with a project filter and a rail row with the
+count of those needing attention; the unattended runs of the time were listed read-only, until
+milestone 5 made them tasks. The project page links there
 in one line and offers *Run check*, which runs the check command as a task of its own. **Retry**
 starts a new run at the default step, carrying over what it can, and says when the work changed or
 refuses when another branch is checked out. Finished tasks past the newest 200 of a project are
