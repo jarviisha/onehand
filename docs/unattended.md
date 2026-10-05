@@ -1,5 +1,8 @@
 # Unattended runs
 
+How onehand works an issue with nobody watching: how the issue is found and claimed, where its
+work is cut, and what the issue is told at the end.
+
 **One small issue, one task, one session, one branch, nobody watching.**
 
 An audit leaves behind more issues than anyone wants to work by hand, and the
@@ -16,9 +19,6 @@ forge serves, the run goes on past its branch: onehand pushes the commit the
 check passed on, opens a draft pull request and waits for its status checks,
 repairing a failing one. Putting the label back on an issue whose pull request
 is open answers its review.
-
-This describes what is built. Where the build settled something the design left
-open, the section says so.
 
 ## The shape
 
@@ -108,18 +108,8 @@ their place, and one word for two things inside one app is how two answers end
 up swapped. Not "scheduler" either — what it schedules is one tick; the
 interesting noun is the run.
 
-The rest of the vocabulary, one meaning each:
-
-- **tick** — one look for work, every `every`; it sends the reports not yet
-  delivered, and starts nothing while every slot is taken.
-- **slot** — one of `at_once` places, across every window, a working run holds.
-- **trigger label** — the label (`label`) whose presence on an issue asks for a
-  run. Its removal is the claim.
-- **claim** — removing the trigger label and commenting that a run started.
-- **report** — what the issue is told when a run ends: the verdict, the outcome,
-  and what the last step ended on.
-- **take over** — a person acting inside a run's session. The run stops and the
-  session becomes an ordinary one.
+The rest of the vocabulary (tick, slot, trigger label, claim, report, take
+over) is defined in [CONTEXT.md](../CONTEXT.md).
 
 ## Config
 
@@ -237,10 +227,10 @@ issue at once (`unattended::waiting`) rather than at the next tick. A pick while
 the cap is reached is refused with the issues being worked, and so is a Resume
 or a Retry of an issue's task from the Tasks page (`unattended::over_cap`, asked
 in `task::request`, which every start goes through); a refused Retry drops the
-run it was about to start. Beside *Check
-again* in Settings, *Look now* runs the search at once and always says what came
-of it: nothing switched on, the cap reached, what blocks every run, or that no
-issue of yours carries the label.
+run it was about to start. *Look for an issue now*, in Settings ▸
+Workspace, runs the search at once and always says what came of it: nothing
+switched on, the cap reached, what blocks every run, or that no issue of yours
+carries the label.
 
 **The transcript is the run's log**, in short lines, one fact each. A remark in
 the transcript is one line down the middle of the column, cut where the column
@@ -580,8 +570,16 @@ accumulate one row per issue ever worked.
 ## Not built, on purpose
 
 - **Parking a run while its status checks run.** Its session stays open and the
-  driver looks at the pull request every minute; a restart waits afresh. Park it
-  with no session when idle adapters are seen to cost something.
+  driver looks at the pull request every minute; restarting onehand cuts the wait
+  off like any other step, and *Resume* waits afresh. Park it with no session when idle
+  adapters are seen to cost something. Repairs are bounded by the workflow's
+  `misses`, not by a count of their own, and the same check failing twice is not
+  told apart from two different failures.
+- **A pull request as a task's source.** A review is answered only by putting the
+  trigger label back on the issue the pull request came from.
+- **Letting go of a slot whose window closed mid-lookup.** A run can stay counted
+  against `at_once` until onehand restarts, when the window it was started in
+  closes in the moment its place is being looked up.
 - **Cleaning up after a merged pull request.** The worktree and its branch stay
   on disk; a merged pull request is the first signal clear enough to act on.
 - **A cap on waiting runs.** `at_once` counts working runs only; each waiting
@@ -620,7 +618,7 @@ The `gh` calls themselves are not unit-tested; they are `Command`
 invocations whose failure is a string that gets reported, the same shape
 `worktree::add_blocking` already has.
 
-## Settled
+## Which project, and when
 
 - **Which project goes first** when several have a candidate issue: the first in
   the workspace's display order. Pinning a project is already how a user says it

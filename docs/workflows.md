@@ -1,5 +1,7 @@
 # Workflows
 
+How a workflow is written, checked and run: the file, the engine and the one driver.
+
 A run takes a brief through the steps of a workflow: an agent step prompts the
 session and is judged by gates onehand checks itself, a command step runs a command in the work, an
 approval step waits for a person, and the forge steps (push, pull request, status checks) take a
@@ -201,8 +203,9 @@ the run's history, capped at 200.
 
 ## The driver
 
-One global, `crate::workflow::Workflows`, holds every run by its session's uid. The driver
-subscribes to the session and maps its events onto the engine:
+The `Tasks` global (`crate::task::Tasks`) holds every run under way by its session's uid;
+`crate::workflow::Workflows` keeps only the workflows on offer. The driver subscribes to the
+session and maps its events onto the engine:
 
 | Event | Report |
 |---|---|
@@ -313,6 +316,13 @@ rules with the templates' (`config::migrate_dir_blocking`): a file that does not
 reported, a task already in `tasks/` under that name wins (it may have moved on since), each file
 is written in full and on disk before its old one goes, and the folder goes once empty.
 
+## Not built
+
+- **A run takes its steps in a straight line.** There is no branching on a step's answer, no
+  step that runs only sometimes, and no two steps at once; a command's failure going back to an
+  earlier step is the only way back, besides a revision. One session carries every step, so a step
+  cannot use a different agent from the rest.
+
 ## Checking it by hand
 
 The workflow mock agent plays an agent's part in a run, so every path below is walked in seconds
@@ -370,7 +380,7 @@ change (`git checkout . && git clean -fd`).
 | Export, then import | *Export…* *Work in checkout*, then *Import…* that file | The form opens on it as a new workflow; Save asks for another name, and once renamed it is saved under a new id at version 1 |
 | Retry after a rename | Duplicate *Work in checkout* and save it, start a run with brief `miss`, then rename the workflow and save | *Retry* offers *Retry with version 2*, and the description says where the newer workflow starts |
 | Preview | Open the launcher, expand *Preview*, type a title | The steps are listed, and the first prompt shows the title as it is typed |
-| An issue found by its label | Switch the scratch project on for unattended runs, keep an issue in its Issues tab labelled `auto`, set `[unattended] agent = "Mock workflow"` and `mode = ""` (the mock offers no modes), then *Look now* | A task *#… · Work an issue* is under *Running*; a worktree on `onehand/local-<n>-<title>` is a project of its own and no session moves on screen. When it ends the project goes from the rail, the task is under *Finished*, and the issue has a note: *onehand left 1 commit on …* |
+| An issue found by its label | Switch the scratch project on for unattended runs, keep an issue in its Issues tab labelled `auto`, set `[unattended] agent = "Mock workflow"` and `mode = ""` (the mock offers no modes), then *Look for an issue now* in Settings ▸ Workspace | A task *#… · Work an issue* is under *Running*; a worktree on `onehand/local-<n>-<title>` is a project of its own and no session moves on screen. When it ends the project goes from the rail, the task is under *Finished*, and the issue has a note: *onehand left 1 commit on …* |
 | An issue picked by hand | *Work an issue…* from the project's menu, pick an issue | The session comes up on screen as it starts, and its project stays when it ends |
 | Two at once | With `at_once = 1`, *Work an issue…* while an issue task runs | Refused, naming the issue being worked |
 | Push and pull request | On a GitHub project with CI, an issue task through Verify | `git ls-remote origin <branch>` shows the commit Verify passed on, a draft pull request is open on the branch closing the issue, and once its status checks pass it is out of draft; the issue says *onehand opened … It is ready for review.* |

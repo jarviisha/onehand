@@ -8,7 +8,8 @@ paths:
 
 # Terminal grid pitfalls
 
-Full reasons: `docs/rules-and-gotchas.md` (Gotchas).
+What goes wrong in the terminal grid and the code around it. Full reasons:
+`docs/rules-and-gotchas.md` (Gotchas).
 
 - `vendor/gpui-terminal` is upstream `zortax/gpui-terminal@51f0292` plus our patches, each marked
   `onehand patch`. Never run `cargo fmt` / `clippy --fix` over it — use `make fmt` / `make lint`.

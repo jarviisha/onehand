@@ -3,24 +3,27 @@
 `onehand` is a Rust desktop GUI (**GPUI** + [gpui-component](https://github.com/longbridge/gpui-component))
 that hosts AI coding agents. Window: a left navigation **rail**, a central **agent pane** (a native
 chat), a right **Workbench** dock (editor, file tree, Markdown, Neovim, Issues, Plugins) and a bottom
-**terminal** dock. A *workspace* groups *project roots*; each root runs *sessions*, and **every
+**terminal** dock. A *workspace* groups *projects*; each project runs *sessions*, and **every
 session is an ACP agent** ([Agent Client Protocol](https://agentclientprotocol.com)).
 
 ## Where the rest lives
 
-Read the relevant one **before** changing the area it covers:
+Read the relevant one **before** changing the area it covers.
 
-- [docs/known-gaps.md](docs/known-gaps.md): what this build deliberately does not do yet, and why.
-- [docs/rules-and-gotchas.md](docs/rules-and-gotchas.md): the full reasons behind the short rules
-  and gotchas below.
+How the repository is held together:
+
+- [CONTEXT.md](CONTEXT.md): the glossary; use its terms and never the words it says to avoid.
 - [DESIGN.md](DESIGN.md): the **binding** UI overview (layout, transcript, theme rules),
   structure and behaviour only. The `design-contract` skill triggers on any visible change.
-- [docs/unattended.md](docs/unattended.md): unattended runs end to end.
+- [docs/rules-and-gotchas.md](docs/rules-and-gotchas.md): the full reasons behind the short rules
+  and gotchas below.
+- [docs/known-gaps.md](docs/known-gaps.md): what this build deliberately does not do yet, and why.
+
+The features that span core and app, each as built:
+
 - [docs/workflows.md](docs/workflows.md): workflows, the run engine and its one driver.
-- [docs/tasks.md](docs/tasks.md): the Tasks page and the task model behind it, as designed.
-- [CONTEXT.md](CONTEXT.md): the glossary; use its terms and never the words it says to avoid.
-- [docs/roadmap.md](docs/roadmap.md): the milestones from the workflow engine to Tasks and
-  issue/PR integration, and the decisions already taken for them.
+- [docs/tasks.md](docs/tasks.md): the Tasks page and the task model behind it.
+- [docs/unattended.md](docs/unattended.md): unattended runs end to end.
 
 Everything else (chat pane, Workbench, rail, terminal, persistence, config) keeps its reasons in
 the comments beside its code, starting from each module's header; `crates/app/src/lib.rs` and
@@ -29,7 +32,7 @@ the comments beside its code, starting from each module's header; `crates/app/sr
 ## Commands
 
 ```bash
-cargo run [-- /path/to/project]  # the app; the arg seeds the workspace's project root
+cargo run [-- /path/to/project]  # the app; the arg seeds the workspace's first project
 cargo check                      # fast type-check
 cargo test                       # everything; `cargo test <substring>` for one test
 cargo test -p onehand-core       # core only (fast, no GUI)
@@ -67,8 +70,8 @@ ACP_CMD="node crates/core/examples/mock_ask_agent.js" cargo run -p onehand-core 
 
 | Path | Crate | What |
 |---|---|---|
-| `crates/app` | `onehand` | GPUI front end + binary (`main.rs` is ~15 lines; logic lives in the lib) |
-| `crates/core` | `onehand-core` | GUI-free logic: config, workspace tree, ACP client, chat model, remote bridge, connectors, issues, editor rules, git status, worktrees |
+| `crates/app` | `onehand` | GPUI front end + binary (`main.rs` is ~25 lines; logic lives in the lib) |
+| `crates/core` | `onehand-core` | GUI-free logic: config, workspace tree, ACP client, chat model, remote bridge, connectors, issues, editor rules, git status, worktrees, the workflow engine, tasks, unattended runs |
 | `crates/plugin-api` | `onehand-plugin-api` | GUI-free plugin IDs and descriptors |
 | `crates/plugin-host` | `onehand-plugin-host` | `WorkbenchMode` + `Request`, remote-channel factory, and what a plugin draws as the app does: the button wrapper, menu rows and `menu_below`, the segmented `switch`, status ink and dock surface |
 | `crates/terminal-ui` | `onehand-terminal-ui` | PTY/grid ownership shared by the terminal dock and Neovim |

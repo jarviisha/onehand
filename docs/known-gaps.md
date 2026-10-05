@@ -1,6 +1,9 @@
 # Known gaps in this build
 
-Listed because a missing feature nobody wrote down reads as a bug in the ones that exist:
+What this build does not do yet, and why: a missing feature nobody wrote down reads as a bug in
+the ones that exist. What workflows, tasks and unattended runs do not do is listed at the end of
+[workflows.md](workflows.md#not-built), [tasks.md](tasks.md#not-built) and
+[unattended.md](unattended.md#not-built-on-purpose).
 
 - **The newest terminal tab is not scrolled into view.** Past the width of the strip a new shell can
   be the active one with its tab off the end of the list: the grid is right, the strip is behind.
@@ -8,7 +11,6 @@ Listed because a missing feature nobody wrote down reads as a bug in the ones th
   painted needs deferring past the frame that first draws it.
 - **Dragging a rail row has no edge autoscroll.** A project past the bottom of a full rail has to be
   scrolled to first.
-
 - **The header's icon buttons have no accessible names, the conversation menu's dots included.**
   The library builds a button's accessible name out of `label` and nothing else, and the only
   setter is an inherent method on the base button it keeps in a private field — so an icon-only
@@ -51,15 +53,6 @@ Listed because a missing feature nobody wrote down reads as a bug in the ones th
 - **An accepted mention is plain text, not a token.** It inserts the whole path, so a long one is
   as wide as it reads; there is no single-unit deletion and no hover carrying the full path. That
   needs the input to own a span it treats atomically, which `Input` does not offer.
-- **A turn ending settles the steps it left in flight** (`Chat::settle_running_steps`,
-  beside `cancel_pending_permissions`). Nothing more arrives for a call the adapter never
-  finished — a cancelled turn is the ordinary way that happens — so a step left `InProgress`
-  stays that way for the rest of the conversation, and everything downstream reads it as
-  live: its cluster says it is still running and never reports how long it took, and the
-  line at the foot of the transcript counts it among the steps in flight for every later
-  turn. It settles to `Failed` and not `Completed`: what is known is that it never reported
-  finishing, and a card claiming a write went through is the one reading a transcript
-  cannot recover from.
 - **An exit status only exists for a command run through ACP's terminal extension.** The protocol
   carries one nowhere else, so an adapter reporting a failure as a plain `tool_call` has no code to
   give and the row says `failed` rather than `exit N`. Recovering it from the output was considered
@@ -68,29 +61,9 @@ Listed because a missing feature nobody wrote down reads as a bug in the ones th
   carries it instead, lifted off the terminal at the one moment both are in hand — the turn-end
   flatten, after which the terminal is gone. `mock_terminal_agent.js` exits 101 on purpose so the
   path is reachable without breaking a real build.
-- **A step's duration is stamped once, when it settles**, and only for work that arrived unfinished:
-  a step that was already `completed` when it reached this process was timed by whoever ran it, and
-  a clock started here would be measuring the wire. Both facts persist into the archive as optional
-  keys, so a conversation written before they existed still loads and simply has nothing to say
-  about either. Nothing reads the duration per row — it is summed onto the line standing for the
-  cluster, where one number answers "how long was that" without twenty rows each answering it.
-- **A turn's closing summary is derived, never persisted.** A finished turn ends
-  on a block saying how many files it wrote, the turn's `+N −M` and how long it
-  took, opening into a row per file — `onehand_core::chat::turn_changes` over
-  that turn's own steps, rebuilt on every replan rather than written into
-  `items.jsonl`. The diffs it adds up are already in the archive, and that file
-  is appended to and never revisited, so a copy written at the end of a turn
-  could not be corrected if the two ever disagreed. It is one row per *file* and
-  not per edit: a turn that writes, tests and writes again is one row, because
-  the question is what is different now and the route is what the clusters above
-  it already are. A cancelled turn still gets one; a running turn does not, since
-  a total growing under the eye is not a summary. Opening a file row diffs that
-  file **at that moment** (`turn_file_diff`, first `old` against last `new`) and
-  never during the replan — a conversation holds every turn it has had, and
-  diffing all of them on the chance one is expanded is work paid a thousand
-  times to be used once.
-- **What the summary block cannot say, and where the data would have to come
-  from.** *Renames* are absent because ACP's diff section is `{path, old, new}`
+- **What a turn's closing summary cannot say, and where the data would have to
+  come from.** The summary is the block a finished turn ends on: the files it wrote, its `+N −M`
+  and how long it took. *Renames* are absent because ACP's diff section is `{path, old, new}`
   and carries no second path — an adapter reports one as a delete and an add,
   so a fourth verdict would be one `turn_changes` could never return. *Test and
   lint results* are absent because nothing in the protocol is structured: a run
@@ -185,21 +158,8 @@ Listed because a missing feature nobody wrote down reads as a bug in the ones th
   popularity and no filter by kind. And the title row of a submenu (*Change scope ▸*, *Turn on for
   ▸*) draws the arrow cursor: the menu row that answers the pointer can only reach what goes inside
   a row, and a submenu's row is the library's own.
-- **A run takes its steps in a straight line.** There is no branching on a step's answer, no
-  step that runs only sometimes, and no two steps at once; a command's failure going back to an
-  earlier step is the only way back, besides a revision. One session carries every step, so a step
-  cannot use a different agent from the rest.
-- **A task does not wait for a person's own session.** Tasks take turns in a checkout, one at a
-  time, but a plain session holds no place, so a task can start editing a checkout somebody is
-  working in through a session of their own, with no warning.
-- **A run waiting on its status checks keeps its session.** The adapter stays up while the forge
-  runs them, and the driver looks every minute; a restart cuts the wait off like any other step,
-  and *Resume* waits afresh. Repairs are bounded by the workflow's `misses`, not by a count of their
-  own, and the same check failing twice is not told apart from two different failures.
-- **A pull request cannot be a task's source.** A review is answered only by putting the trigger
-  label back on the issue the pull request came from.
-- **A run can stay counted against the cap on unattended runs until onehand restarts**, when the
-  window it was started in closes in the moment its place is being looked up.
-- **A worktree a run made is never removed by it**, nor its branch, whatever the outcome. The
-  folder stays as a project until a person removes it, except an unattended run's found by its
-  label and not taken over, whose project leaves the rail when it ends; its folder stays on disk.
+- **Settings has no interface size**, and no editor or terminal font size of its own; no
+  Comfortable / Compact density; no recorder that takes a pressed key combination (a shortcut is
+  typed as text); no page gathering what unattended runs need; and no export or import of the
+  whole configuration. Connections lists connectors and their sign-in only; managing MCP servers
+  would be a group of its own. There is no search across Settings, and none is planned.

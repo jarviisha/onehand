@@ -1,12 +1,7 @@
 # Tasks
 
-**Status: milestones 1+2 to 5 are built.** Milestone 1+2
-landed as pull requests 1 (the rename), 2 (tasks, history, step visits, marks and the queue) and 3
-(the Tasks page, the check as a task, Retry and the history cap); milestone 3 added the task detail
-and the earlier-step picker; milestone 5 made an issue a task's source, then added the forge steps. This is where
-milestones 1+2 and 3 of [roadmap.md](roadmap.md) went, and the decisions behind it are listed
-there. Where the code has landed, this file is its account, with [workflows.md](workflows.md)
-holding the engine and the driver.
+The Tasks page and the task model behind it, as built. [workflows.md](workflows.md) holds the
+engine and the driver, and [unattended.md](unattended.md) the issue a task can work.
 
 ## What a person gets
 
@@ -79,14 +74,14 @@ Task ──< Run ──< Step visit
 - **A task is the work. A run is one execution of it.** Retry starts a new run. Resume carries on
   the same run with its marks kept.
 - **A task is anything with a lifecycle and an outcome:**
-  - a run (today's `workflow::Run`);
+  - a run (`workflow::Run`);
   - the project's check command run on its own;
   - an issue worked unattended (`Source::Issue`), which also keeps where the issue lives and the
     reports it has not been given yet.
 
   A plain agent session is not a task and never appears on the page.
-- **A workflow is the template.** "Pipeline" leaves the code and the screen. There is no
-  "workflow run": a task uses a workflow, and each of its runs keeps a snapshot of it.
+- **A task uses a workflow; it does not own one.** There is no "workflow run": each of the task's
+  runs keeps a snapshot of the workflow it started with.
 - **The place belongs to the task.** Every run works in the same checkout, or the same worktree and
   branch, so a retry sees the work the run before it left.
 
@@ -130,7 +125,7 @@ and the rail count cannot drift apart.
 |---|---|---|
 | Run | the same one | a new one |
 | Offered for | an interrupted run only (the agent stopped or the session went: `Outcome::resumable`) | every outcome under *Needs attention*, and *Finished* from the detail; a dismissed task retried is live again |
-| Workflow | the run's own snapshot | the previous run's snapshot; the newer template is offered if it changed |
+| Workflow | the run's own snapshot | the previous run's snapshot; the newer workflow is offered if it changed |
 | Starts at | where it was, marks kept | the first step that cannot be carried over (below), or an earlier one picked in the dialog; a run that got to the end starts at the first step by default |
 | Misses | as they were | from zero |
 | Place | through the queue | through the queue |
@@ -189,7 +184,7 @@ an async runtime to core or a GUI dependency to it.
 crates/core (GUI-free, blocking)          crates/app (GPUI)
 ─────────────────────────────────         ──────────────────────────────────────
 workflow::template / validate / store     settings: Workflows
-workflow::run   (the engine; today's      task::driver      ── session events → reports
+workflow::run   (the engine;              task::driver      ── session events → reports
                  workflow::Run)                 │  (unchanged in kind: still the only one)
 task            (Task, Run list,                ▼
                  outcome, group rule)     Tasks global on Shared ── one per process
@@ -231,13 +226,13 @@ unattended      (the issue a task works,  Tasks page in the agent pane, rail row
   (`task::queue::place_blocking`).
 - **A run is a list of step visits.** Going back to a step, after a failed command or a revision,
   is a new visit, never a rewrite of the last one: `implement → verify (fails) → implement` is three
-  visits. Each keeps its own id, times, marks, output and result, which is what milestone 3's
+  visits. Each keeps its own id, times, marks, output and result, which is what the task detail's
   timeline is drawn from (`workflow::Visit`). Resuming closes the cut-off visit as `interrupted`
   and opens a new one of the same step. Visits are not capped: each ends on a miss or a person.
   The run also keeps its `Outcome` now, so a run with none after a restart reads as interrupted.
-- **Marks carry a commit object.** Today a `Mark` is a head and a fingerprint of the uncommitted
-  work, enough to tell whether two states differ but not to rebuild a diff. Each visit gets a mark
-  at its start and its end, and each mark gains a commit made like this:
+- **Each visit's start and end is pinned as a commit.** A `Mark` is a head and a fingerprint of the
+  uncommitted work, enough to tell whether two states differ but not to rebuild a diff, so the
+  visit also keeps a commit of the work at each end (`Visit::start`, `Visit::end`), made like this:
 
   ```
   GIT_INDEX_FILE=<temp> git read-tree HEAD
@@ -294,14 +289,14 @@ which this pre-release accepts; that does not excuse a move that can lose a file
 `<config_dir>/onehand/instance.lock` and holds it for its life; the kernel lets go if the process
 dies. A second instance says that onehand is already running and exits. Without it, two processes
 would each hold their own place locks, both run the migration and both write `tasks/`, and the one
-ordered writer would be two. More windows open in the one process, as now. It lands with the first
-pull request, before the migration it protects.
+ordered writer would be two. More windows open in the one process. It is taken before the
+migration it protects.
 
 ### The app
 
 - **One `Tasks` global** (`crates/app/src/task.rs`) owns every task, the queue, the runs under way
   by session uid (so the driver still finds its run from a session event), the window each queued
-  task was asked from, and the tasks still draining. `Workflows` keeps only the templates on offer.
+  task was asked from, and the tasks still draining. `Workflows` keeps only the workflows on offer.
 - **Every start goes through `task::request`**: the launcher keeps the task first, then asks; Resume
   asks too. A free place starts the task at once (`Shell::drive_task`); a taken one queues it and
   says so in a notification. A task already running or waiting is left alone.
@@ -339,29 +334,12 @@ pull request, before the migration it protects.
   it ended through the reports the task keeps (`crate::unattended::ended`).
 - **After a restart nothing starts by itself.** A task that was running or queued comes back
   interrupted, under *Needs attention*, and waits for Resume.
-- **Worktrees are never removed by onehand.** A task's worktree may hold unpushed commits. The merged
-  pull request of milestone 5 is the first signal clear enough to clean up on.
+- **Worktrees are never removed by onehand.** A task's worktree may hold unpushed commits.
 
-## What changes where
-
-Milestone 1+2 lands as three pull requests in a row, each with its docs.
-
-| Pull request | Core | App |
-|---|---|---|
-| 1. Rename and migration (landed) | `workflow` (was `pipeline`), `workflow::Run` (was `PipelineRun`); `workflow::store::migrate_old_dir_blocking` moves `pipelines/` to `workflows/`, restartably; `instance::hold_lock` | `boot` takes the lock, then runs the move; every module, type and string renamed, the `Workflows` global and Settings ▸ Workflows; a `run_pipeline` keymap override is read as `run_workflow` |
-| 2. Tasks, history, visits and the queue (landed) | `task`, `task::files` and the move of `pipeline-runs/`; step visits; `task::marks`; `task::queue` keyed by the real checkout | `Workflows` → `Tasks` global; the driver records visits and marks their end; every start asks the queue, and a place is given up only once the work has stopped |
-| 3. The Tasks page, the check as a task, and Retry (landed) | group rule, history cap; a one-step run with no agent; what a retry carries over | page, rail row and count, project filter; the project page links here; Retry from *Needs attention* |
-| Milestone 4: the workflow library (landed) | `Template::id`, `version` and `newer_than`, set by `store::save_blocking`; unknown keys refused; fuller validation; `first_prompt`, `StepSpec::summary`, `store::export_blocking` | Import and Export in Settings ▸ Workflows; the launcher's preview; Retry offers the newer workflow by id |
-| Milestone 3: the task detail (landed) | `Visit` public; `Run::retry_start`, `retry_of` from an earlier step; `Task::retry` clears `dismissed`; `task::marks::changes_blocking` and `file_diff_blocking` | the detail in `chat/pane/tasks_page.rs`; the retry dialog's step menu |
-| Milestone 5, pull request A: an issue as a source (landed) | `Source::Issue(IssueSource)`, its unsent reports kept past the cap; `Setup::mode`; branches by tracker; `report` from an `Outcome`; `room`; the shipped *Work an issue* | the tick and a pick start a task; an issue task driven off screen; the mode set when the agent comes up; reports sent and retried; the cap `at_once`; the read-only rows gone |
-| Milestone 5, pull request B: the forge steps (landed) | `StepKind::Push`, `PullRequest`, `StatusChecks`; `Setup::forge`; `Run::forge_done`, `status_checks_seen`; `workflow::judge`; `Template::repair_step`; the connector's pull request with its status checks, push, draft, ready and logs; `Task::retry` with a note | the driver pushes, opens the pull request and watches its status checks; a claim on an issue whose pull request is open retries its task, and one on an issue a task still works is refused; Settings ▸ Workflows edits the three kinds |
-
-Each one brings its glossary terms and turns its part of this file into the account of the code.
-
-## Not in this design
+## Not built
 
 - **A cap on concurrency across every task.** Only unattended runs are capped (`[unattended]
   at_once`); a task a person starts waits only for its place.
 - **Arbitrary commands as tasks.** Only the project's check command, until a real need shows.
-- **Plain sessions on the page.** A card a plain session parks is signalled on the rail, as now.
+- **Plain sessions on the page.** A card a plain session parks is signalled on the rail.
 - **Warning when a task starts beside a person's own session** in the same checkout.

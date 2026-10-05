@@ -29,7 +29,7 @@ The full text behind the short forms in `CLAUDE.md`, with the reason for each.
   override goes with it: `square-slash` carried one while it was a button in that row and lost it
   on moving into the `+` menu, where it stands beside two icons at the library's own weight. The weight is declared in the manifest's
   `[stroke]` table and written in by `sync-icons.sh`, never edited into a file by hand: that script
-  refetches every checked-in SVG, so a hand edit is one the next sync throws away in silence. Today it is five shapes and **no brand marks** — the one there was, for
+  refetches every checked-in SVG, so a hand edit is one the next sync throws away in silence. It is a handful of shapes, each with its reason in the manifest, and **no brand marks** — the one there was, for
   the default agent, sat in the binary drawn by nothing, which is what the registry's
   `allow(dead_code)` guarantees nobody will ever notice. So an entry is added when a call site needs
   it, never in advance.
