@@ -158,13 +158,20 @@ fn cannot_start(u: &Unattended, cx: &App) -> Option<String> {
 /// that workflow runs the project's check command and the project has none.
 /// Asked before a claim, so no issue is claimed for a run that cannot start.
 fn lacks_check(root: &Path, cx: &App) -> Option<String> {
-    let u = Shared::global(cx).unattended.as_ref()?;
-    let template = launch::workflow(&u.workflow, &u.timeout, cx).ok()?;
     let has = Shared::global(cx)
         .windows
         .iter()
         .filter_map(|w| w.shell.upgrade())
         .any(|shell| shell.read(cx).check_of(root).is_some());
+    lacks_check_given(has, cx)
+}
+
+/// [`lacks_check`] for a project that `has` a check command or not, for a
+/// caller that already knows: one inside its own window's update, whose shell
+/// cannot be read again while it is being updated.
+fn lacks_check_given(has: bool, cx: &App) -> Option<String> {
+    let u = Shared::global(cx).unattended.as_ref()?;
+    let template = launch::workflow(&u.workflow, &u.timeout, cx).ok()?;
     (template.needs_check() && !has).then(|| {
         format!(
             "the workflow `{}` runs the project's check command, and it has none; set one \
@@ -472,6 +479,7 @@ fn tick(asked_from: Option<gpui::AnyWindowHandle>, cx: &mut App) {
         .iter()
         .filter_map(|p| Some((p.root.clone(), lacks_check(&p.root, cx)?)))
         .collect();
+    let earlier = launch::earlier(cx);
     let search = with(cx, |u| {
         let idle = !u.claiming && u.blocked.is_none() && stopped.is_none();
         idle.then(|| {
@@ -507,8 +515,9 @@ fn tick(asked_from: Option<gpui::AnyWindowHandle>, cx: &mut App) {
                             Some((project, forge))
                         })
                         .collect();
-                    let begun =
-                        search.and_then(|label| begin_blocking(&workable, &label, &mut checked));
+                    let begun = search.and_then(|label| {
+                        begin_blocking(&workable, &label, &earlier, &mut checked)
+                    });
                     (Some(accounts), checked, begun)
                 }))
                 .unwrap_or_else(|_| {

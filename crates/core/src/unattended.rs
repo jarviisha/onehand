@@ -6,7 +6,7 @@
 //! what a run asks of the project's [`Connector`]. The workflow engine runs
 //! the steps; the app holds the rest: the tick, the session, the teardown.
 
-use crate::connector::Connector;
+use crate::connector::{Connector, PrState};
 use crate::issues;
 use crate::workflow::{Brief, Outcome, Stop};
 use serde::{Deserialize, Serialize};
@@ -285,18 +285,29 @@ pub fn open_issues_blocking(
 
 /// Take an issue picked by hand: take the trigger label off if it carries it,
 /// so the automatic search does not reach for it as well, then say a run
-/// started. The comment is the same one an automatic claim leaves, because it
-/// has to read correctly in the same way if nothing follows it.
+/// started, to answer the review on the pull request `answering` when there
+/// is one. The comment has to read correctly if nothing follows it, as an
+/// automatic claim's does.
 pub fn claim_picked_blocking(
     tracker: &Tracker,
     root: &Path,
     row: &IssueRow,
     label: &str,
+    answering: Option<&str>,
 ) -> Result<(), String> {
     if !label.is_empty() && row.carries(label) {
         tracker.remove_label_blocking(root, row.issue.number, label)?;
     }
-    tracker.comment_blocking(root, row.issue.number, &picked_claim_comment())
+    tracker.comment_blocking(root, row.issue.number, &picked_claim_comment(answering))
+}
+
+/// What a claim says it started: a run on the issue, or one answering the
+/// review on its pull request `answering`.
+fn started_on(answering: Option<&str>) -> String {
+    match answering {
+        Some(pr) => format!("to answer the review on {pr}"),
+        None => "on this issue".to_string(),
+    }
 }
 
 /// What an issue is told when a person picks it to be worked.
@@ -304,10 +315,12 @@ pub fn claim_picked_blocking(
 /// Not the automatic claim's sentence: that one says to re-add the trigger
 /// label to retry, and a picked issue may never have carried it — or may be
 /// somebody else's, which the automatic search never takes at all.
-fn picked_claim_comment() -> String {
-    "onehand started a run on this issue, picked by hand. If no outcome follows, the \
-     run was interrupted — pick it again to retry."
-        .to_string()
+fn picked_claim_comment(answering: Option<&str>) -> String {
+    format!(
+        "onehand started a run {}, picked by hand. If no outcome follows, the run was \
+         interrupted — pick it again to retry.",
+        started_on(answering)
+    )
 }
 
 /// `"30m"`, `"2h"`, `"90s"` as a duration.
@@ -378,15 +391,17 @@ pub fn branch_for(tracker: &Tracker, issue: &Issue) -> String {
 }
 
 /// `branch`, or the first of `branch-2` … `branch-9` the repository at `root`
-/// does not have yet.
+/// does not have yet and `taken` does not say is taken elsewhere.
 ///
 /// An issue whose label was put back after a run left work on its branch gets a
 /// branch of its own this time: the old one is still checked out in the
 /// worktree that run left on disk, and git refuses a second checkout of it.
-pub fn free_branch_blocking(root: &Path, branch: &str) -> String {
+/// One the forge still has a pull request on is taken too, though its local
+/// branch is gone: a new task pushing there would meet the old one's work.
+pub fn free_branch_blocking(root: &Path, branch: &str, taken: impl Fn(&str) -> bool) -> String {
     std::iter::once(branch.to_string())
         .chain((2..=9).map(|n| format!("{branch}-{n}")))
-        .find(|name| !crate::worktree::branch_exists_blocking(root, name))
+        .find(|name| !crate::worktree::branch_exists_blocking(root, name) && !taken(name))
         .unwrap_or_else(|| format!("{branch}-10"))
 }
 
@@ -422,16 +437,44 @@ pub fn brief_for(tracker: &Tracker, issue: &Issue) -> Brief {
     }
 }
 
+/// The title and body of the pull request a run of `brief` opens, on the
+/// issue `issue` when it works one. The body closes the issue only where the
+/// forge knows it: an issue kept in onehand alone has a number the forge
+/// would read as one of its own.
+pub fn pull_request_text(brief: &Brief, issue: Option<&IssueSource>) -> (String, String) {
+    let closes = issue.and_then(|issue| match (&issue.tracker, &issue.forge_ref) {
+        (TrackerRef::Forge { .. }, _) => Some(format!("#{}", issue.number)),
+        (TrackerRef::Synced { .. }, Some(reference)) => Some(reference.clone()),
+        (TrackerRef::Local { .. } | TrackerRef::Synced { .. }, _) => None,
+    });
+    let mut body = String::new();
+    if let Some(closes) = closes {
+        body += &format!("Closes {closes}.\n\n");
+    }
+    body += "Opened by onehand. What was pushed passed the project's check first.";
+    (brief.title.clone(), body)
+}
+
+/// What the run answering a review on `pr` is told, with `how` the words for
+/// reading it on the forge.
+pub fn review_note(pr: &str, how: &str) -> String {
+    format!(
+        "The pull request {pr} was asked for again: a reviewer wants changes. Read the review \
+         with {how}, and address what is still open."
+    )
+}
+
 /// What the issue is told when a run takes it.
 ///
 /// Worded to stay true if nothing follows it. A crash between the claim and
 /// the outcome leaves this as the last word on the issue, so it says that a run
 /// *started* — the comment's own timestamp says when — and never that one is
 /// happening, which is the one sentence a crash makes false.
-fn claim_comment(label: &str) -> String {
+fn claim_comment(label: &str, answering: Option<&str>) -> String {
     format!(
-        "onehand started an unattended run on this issue. If no outcome follows, \
-         the run was interrupted — re-add `{label}` to retry."
+        "onehand started an unattended run {}. If no outcome follows, the run was \
+         interrupted — re-add `{label}` to retry.",
+        started_on(answering)
     )
 }
 
@@ -610,7 +653,12 @@ impl Budget {
 /// it has past where it was cut.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Verdict {
-    PullRequest(String),
+    /// The pull request on the branch, as the forge has it now.
+    PullRequest {
+        url: String,
+        state: PrState,
+        draft: bool,
+    },
     Commits(u64),
 }
 
@@ -629,7 +677,12 @@ pub fn report(pending: &PendingReport, found: &Result<Verdict, String>, branch: 
         return could_not_start(why);
     }
     let head = match found {
-        Ok(Verdict::PullRequest(url)) => format!("onehand opened {url}."),
+        Ok(Verdict::PullRequest { url, state, draft }) => match (state, draft) {
+            (PrState::Open, false) => format!("onehand opened {url}. It is ready for review."),
+            (PrState::Open, true) => format!("onehand opened {url}."),
+            (PrState::Merged, _) => format!("onehand opened {url}. It was merged."),
+            (PrState::Closed, _) => format!("onehand opened {url}. It was closed unmerged."),
+        },
         Ok(Verdict::Commits(0)) => format!("onehand left no commit on `{branch}`."),
         Ok(Verdict::Commits(n)) => format!(
             "onehand left {n} commit{} on `{branch}`.",
@@ -691,8 +744,8 @@ fn quoted(text: &str) -> String {
         .join("\n")
 }
 
-/// The oldest open issue in `tracker` that carries `label` and was opened by the
-/// user.
+/// The open issues in `tracker` that carry `label` and were opened by the
+/// user, oldest first: a search takes the first no task is still working on.
 ///
 /// **An empty label picks nothing**, without asking the connector: the failure of
 /// leaving it blank has to be "nothing runs", not "everything runs".
@@ -701,18 +754,17 @@ fn quoted(text: &str) -> String {
 /// and the agent runs with the user's credentials; a label is
 /// something anybody with triage rights can apply, to an issue anybody at all
 /// may have written.
-pub fn candidate_blocking(
+pub fn candidates_blocking(
     tracker: &Tracker,
     root: &Path,
     label: &str,
-) -> Result<Option<Issue>, String> {
+) -> Result<Vec<Issue>, String> {
     if label.trim().is_empty() {
-        return Ok(None);
+        return Ok(Vec::new());
     }
-    Ok(tracker
-        .labelled_blocking(root, label)?
-        .into_iter()
-        .min_by_key(|issue| issue.number))
+    let mut found = tracker.labelled_blocking(root, label)?;
+    found.sort_by_key(|issue| issue.number);
+    Ok(found)
 }
 
 /// Take `number`: remove the trigger label, then say a run started.
@@ -724,9 +776,10 @@ pub fn claim_blocking(
     root: &Path,
     number: u64,
     label: &str,
+    answering: Option<&str>,
 ) -> Result<(), String> {
     tracker.remove_label_blocking(root, number, label)?;
-    tracker.comment_blocking(root, number, &claim_comment(label))
+    tracker.comment_blocking(root, number, &claim_comment(label, answering))
 }
 
 #[cfg(test)]

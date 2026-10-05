@@ -57,17 +57,23 @@ issue…* claim an issue as before, then keep a task of the workflow `[unattende
 ended is kept in the task's file as a report until the issue has it, sent again at every tick and
 at boot, and a task with a report unsent is never past the history cap. `[unattended] at_once`
 caps the runs working across every window. Unattended runs are ordinary rows on the Tasks page.
-Until pull request B, a run ends at its branch: nothing pushes or opens a pull request.
+
+Pull request B of milestone 5 has landed: the **forge steps**. *Push* puts the commit the check
+passed on (`verified_at`) on the forge, onehand doing it rather than the agent; *Pull request* opens
+a draft, or takes the one open; *Status checks* waits on the forge's checks, sends a failing one or
+a conflict back to Implement with its log, and takes the pull request out of draft once all pass.
+The shipped *Work an issue* ends with all three, and without a forge they pass at once. Putting the
+label back on an issue whose pull request is open retries its task to answer the review; one closed
+unmerged is refused.
 
 Not there yet:
 - The workflow mock agent (`crates/core/examples/mock_workflow_agent.js`) and the checklist in
   [workflows.md](workflows.md#checking-it-by-hand) are in the repository; a full pass of the
   checklist, the Tasks page rows included, is still owed.
 - How many old tasks the cap removed is counted since onehand started, not kept across restarts.
-- Pull request B of milestone 5: the integration steps (push, open a pull request, wait for CI,
-  repair failing checks, answer a review), a push carrying the commit the check passed on
-  (`verified_at`), and the report retried until the work lands. A pull request cannot be a source
-  yet.
+- A pull request cannot be a source: a review is answered through its issue's label. A run waiting
+  on status checks keeps its session open.
+- The by-hand rows of milestone 5 (pull requests A and B) in the checklist are owed.
 
 ## Milestones
 
@@ -150,7 +156,7 @@ The rename is already done by 1+2.
 ### 5. Issues and pull requests
 
 Two pull requests: **A** is the issue as a source, the branches by tracker, the reports kept until
-sent, the cap and the one-turn run replaced (landed); **B** is the integration steps.
+sent, the cap and the one-turn run replaced (landed); **B** is the integration steps (landed).
 
 - An issue as a task's source.
 - Integration steps: push, open a pull request, wait for CI, repair failing checks, answer a
@@ -270,6 +276,14 @@ sent, the cap and the one-turn run replaced (landed); **B** is the integration s
   default, for a found issue and a picked one alike.
 - **Between A and B an issue run ends at its branch.** Nothing tells the agent to push or open a
   pull request in the meantime, so no push lands without the check behind it.
+- **onehand pushes and opens the pull request, never the agent.** It pushes `verified_at`, so the
+  commit on the forge is the one the check passed on.
+- **The forge steps are three step kinds**: `push`, `pull_request` and `status_checks` with its
+  `on_fail` and `wait`.
+- **A review is answered by the label put back**, which retries the issue's task from the step its
+  status checks send back to, carrying a note on how to read the review.
+- **Waiting on status checks gives the slot up and pauses the timeout, but keeps the place**; a
+  pull request with no checks after ten minutes counts as passed.
 - **The cap counts runs working, not waiting**: `[unattended] at_once`, 1 by default, counts issue
   tasks running or queued across every window; one waiting on a card or an approval gives its slot
   up, as the one-turn run did.

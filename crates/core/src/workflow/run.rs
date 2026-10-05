@@ -10,6 +10,7 @@
 
 use super::facts::{self, Facts, Mark};
 use super::prompt::{self, Fill};
+use super::status_checks::Seen;
 use super::template::{Place, StepKind, StepSpec, Template};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -41,6 +42,11 @@ pub struct Setup {
     /// adapter's own id; left as the agent starts when unset.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub mode: Option<String>,
+    /// The connector the branch goes to, by name; `None` where no forge
+    /// serves the project, and then a step on the forge passes at once, the
+    /// branch being the result.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub forge: Option<String>,
 }
 
 /// The points in the work a run measures from.
@@ -74,6 +80,18 @@ pub enum Action {
     RunCommand(String),
     /// Wait for a person to approve or revise.
     AwaitApproval,
+    /// Push this commit as the run's branch and report to
+    /// [`Run::forge_done`].
+    Push(String),
+    /// Open a draft pull request from the run's branch, or take the one open
+    /// there, and report to [`Run::forge_done`].
+    OpenPullRequest,
+    /// Watch the pull request's status checks on the commit `pushed`, at
+    /// most `wait`, and report each look to [`Run::status_checks_seen`].
+    AwaitStatusChecks {
+        wait: std::time::Duration,
+        pushed: Option<String>,
+    },
     /// The run is over.
     Finish(Outcome),
     /// Nothing: the report did not fit what the run was waiting for.
@@ -171,6 +189,8 @@ enum Await {
     Turn,
     Command,
     Approval,
+    Forge,
+    StatusChecks,
 }
 
 /// One stay at a step: going back to a step is a new visit, never a rewrite
@@ -288,7 +308,7 @@ impl Run {
                         .filter_map(|name| name.strip_prefix("output."))
                         .collect(),
                     StepKind::Approval { of } => vec![of.as_str()],
-                    StepKind::Command { on_fail, .. } => vec![on_fail.as_str()],
+                    kind => kind.sends_back_to().into_iter().collect(),
                 };
                 !passed(&step.id)
                     || !same(&step.id)
@@ -343,6 +363,9 @@ impl Run {
         run.step = start;
         run.furthest = start;
         run.outputs = outputs;
+        // What was checked stays checked: a retry that starts at the push
+        // pushes the commit the last check passed on.
+        run.marks.verified_at = prev.marks.verified_at.clone();
         run
     }
 
@@ -373,6 +396,11 @@ impl Run {
         };
         let step = self.template.steps.iter().find(|step| &step.id == of)?;
         Some((step, self.outputs.get(of).map_or("", String::as_str)))
+    }
+
+    /// The pull request's status checks are what it waits for.
+    pub fn awaiting_status_checks(&self) -> bool {
+        self.awaiting == Await::StatusChecks
     }
 
     /// A turn the run sent is what it waits for.
@@ -542,22 +570,57 @@ impl Run {
                 self.check_output = None;
                 self.enter(self.step + 1, "the command passed")
             }
-            Err(out) => {
-                self.visit_output(out.clone());
-                if let Some(action) = self.miss("the command failed") {
-                    return action;
-                }
-                let back = match self.current().map(|step| &step.kind) {
-                    Some(StepKind::Command { on_fail, .. }) => self.template.index_of(on_fail),
-                    _ => None,
-                };
-                let Some(back) = back else {
-                    return self.finish(Outcome::Failed("the command failed".to_string()));
-                };
-                self.check_output = Some(out);
-                self.enter(back, "the command failed")
-            }
+            Err(out) => self.send_back(out, "the command failed"),
         }
+    }
+
+    /// The push or the pull request the step asked for is done, or failed
+    /// for the reason given. A failure ends the run: a retry starts at the
+    /// step again.
+    pub fn forge_done(&mut self, done: Result<(), String>) -> Action {
+        if self.awaiting != Await::Forge {
+            return Action::Idle;
+        }
+        match done {
+            Ok(()) => self.enter(self.step + 1, "done on the forge"),
+            Err(why) => self.finish(Outcome::Failed(why)),
+        }
+    }
+
+    /// What a look at the pull request's status checks found.
+    pub fn status_checks_seen(&mut self, seen: Seen) -> Action {
+        if self.awaiting != Await::StatusChecks {
+            return Action::Idle;
+        }
+        match seen {
+            Seen::Pending => Action::Idle,
+            Seen::Passed => {
+                self.check_output = None;
+                self.enter(self.step + 1, "its status checks passed")
+            }
+            // Past every step: whatever was left is moot once it landed.
+            Seen::Merged => self.enter(self.template.steps.len(), "its pull request was merged"),
+            Seen::Fail(why) => self.finish(Outcome::Failed(why)),
+            Seen::Repair(out) => self.send_back(out, "its status checks failed"),
+        }
+    }
+
+    /// What the step checked failed, printing `out`: a miss, and back to the
+    /// step it sends back to, carrying `out`.
+    fn send_back(&mut self, out: String, why: &str) -> Action {
+        self.visit_output(out.clone());
+        if let Some(action) = self.miss(why) {
+            return action;
+        }
+        let back = self
+            .current()
+            .and_then(|step| step.kind.sends_back_to())
+            .and_then(|id| self.template.index_of(id));
+        let Some(back) = back else {
+            return self.finish(Outcome::Failed(why.to_string()));
+        };
+        self.check_output = Some(out);
+        self.enter(back, why)
     }
 
     /// A person approved: go on.
@@ -674,6 +737,32 @@ impl Run {
             Some(StepKind::Approval { .. }) => {
                 self.awaiting = Await::Approval;
                 Action::AwaitApproval
+            }
+            Some(kind) if kind.on_forge() && self.setup.forge.is_none() => self.enter(
+                self.step + 1,
+                "no forge serves it: the branch is the result",
+            ),
+            Some(StepKind::Push) => match self.marks.verified_at.clone() {
+                Some(commit) => {
+                    self.awaiting = Await::Forge;
+                    Action::Push(commit)
+                }
+                None => self.finish(Outcome::Failed(
+                    "no command has passed on a commit to push".to_string(),
+                )),
+            },
+            Some(StepKind::PullRequest) => {
+                self.awaiting = Await::Forge;
+                Action::OpenPullRequest
+            }
+            Some(StepKind::StatusChecks { wait, .. }) => {
+                self.awaiting = Await::StatusChecks;
+                Action::AwaitStatusChecks {
+                    wait: crate::unattended::parse_every(&wait)
+                        .or_else(|| crate::unattended::parse_every(super::template::DEFAULT_WAIT))
+                        .unwrap_or_default(),
+                    pushed: self.marks.verified_at.clone(),
+                }
             }
             None => self.finish(Outcome::Done),
         }

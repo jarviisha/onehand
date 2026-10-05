@@ -69,7 +69,11 @@ impl Template {
     pub fn needs_check(&self) -> bool {
         self.steps.iter().any(|step| match &step.kind {
             StepKind::Command { command, .. } => command.is_none(),
-            StepKind::Agent { .. } | StepKind::Approval { .. } => false,
+            StepKind::Agent { .. }
+            | StepKind::Approval { .. }
+            | StepKind::Push
+            | StepKind::PullRequest
+            | StepKind::StatusChecks { .. } => false,
         })
     }
 
@@ -97,6 +101,19 @@ impl Template {
                         || self.version == snapshot.version && !self.same_content(snapshot))
             }
         }
+    }
+
+    /// The step that repairs what the forge's status checks found, and so
+    /// answers a review of the pull request too, by id.
+    pub fn repair_step(&self) -> Option<&str> {
+        self.steps.iter().find_map(|step| match &step.kind {
+            StepKind::StatusChecks { on_fail, .. } => Some(on_fail.as_str()),
+            StepKind::Agent { .. }
+            | StepKind::Command { .. }
+            | StepKind::Approval { .. }
+            | StepKind::Push
+            | StepKind::PullRequest => None,
+        })
     }
 
     /// Where the step `id` is, if the template has one.
@@ -162,13 +179,18 @@ impl StepSpec {
                     .map_or_else(|| "the project's check".to_string(), |c| format!("`{c}`"))
             ),
             StepKind::Approval { of } => format!("Approval of {of}"),
+            StepKind::Push => "Push · the commit the check passed on".to_string(),
+            StepKind::PullRequest => "Pull request · opened as a draft".to_string(),
+            StepKind::StatusChecks { on_fail, wait } => {
+                format!("Status checks · at most {wait} · back to {on_fail} on failure")
+            }
         }
     }
 }
 
 /// What a step does.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(tag = "kind", rename_all = "lowercase")]
+#[serde(tag = "kind", rename_all = "snake_case")]
 pub enum StepKind {
     /// Prompt the agent, then check the turn against `gates`. `keep_answer`
     /// keeps what the turn answered, for later prompts and an approval.
@@ -190,6 +212,46 @@ pub enum StepKind {
     /// Wait for a person to approve the answer the step `of` kept, or send
     /// it back with a note.
     Approval { of: String },
+    /// Put the commit the last command passed on onto the forge, as the
+    /// run's branch. onehand pushes, never the agent, so what lands is what
+    /// was checked.
+    Push,
+    /// Open a draft pull request from the run's branch, or take the one
+    /// already open there.
+    PullRequest,
+    /// Wait for the forge's status checks on the pull request's head, at most
+    /// `wait`. All passing takes it out of draft; a failure or a conflict goes
+    /// back to the step `on_fail`, carrying what failed.
+    StatusChecks {
+        on_fail: String,
+        #[serde(default = "default_wait")]
+        wait: String,
+    },
+}
+
+/// How long status checks are waited on when a step does not say.
+pub const DEFAULT_WAIT: &str = "1h";
+
+fn default_wait() -> String {
+    DEFAULT_WAIT.to_string()
+}
+
+impl StepKind {
+    /// The step what this one checks goes back to when it fails, by id.
+    pub(crate) fn sends_back_to(&self) -> Option<&str> {
+        match self {
+            Self::Command { on_fail, .. } | Self::StatusChecks { on_fail, .. } => Some(on_fail),
+            Self::Agent { .. } | Self::Approval { .. } | Self::Push | Self::PullRequest => None,
+        }
+    }
+
+    /// Whether onehand does the step on the forge itself.
+    pub(crate) fn on_forge(&self) -> bool {
+        match self {
+            Self::Push | Self::PullRequest | Self::StatusChecks { .. } => true,
+            Self::Agent { .. } | Self::Command { .. } | Self::Approval { .. } => false,
+        }
+    }
 }
 
 /// A condition onehand checks itself after an agent turn, against the work

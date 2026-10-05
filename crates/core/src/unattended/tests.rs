@@ -1,5 +1,6 @@
 use super::*;
 use crate::connector::fake::Fake;
+use crate::connector::PrState;
 
 /// The test forge, as the tracker an issue on it lives in.
 fn forge() -> Tracker {
@@ -27,6 +28,17 @@ fn local(name: &str, issues: &[(&str, &[&str])]) -> (Tracker, PathBuf) {
     (Tracker::Local(file), dir)
 }
 
+/// The issue a search would take first.
+fn candidate_blocking(
+    tracker: &Tracker,
+    root: &Path,
+    label: &str,
+) -> Result<Option<Issue>, String> {
+    Ok(candidates_blocking(tracker, root, label)?
+        .into_iter()
+        .next())
+}
+
 fn issue(number: u64, title: &str) -> Issue {
     Issue::new(number, title.to_string(), String::new())
 }
@@ -44,15 +56,21 @@ fn an_interval_is_a_number_and_a_unit() {
 
 #[test]
 fn the_claim_stays_true_if_nothing_follows_it() {
-    let said = claim_comment("auto");
+    let said = claim_comment("auto", None);
     assert!(said.contains("started"));
     assert!(said.contains("re-add `auto`"));
     assert!(!said.contains("is working"));
+    let answering = claim_comment("auto", Some("https://x/pull/2"));
+    assert!(
+        answering.contains("review on https://x/pull/2"),
+        "{answering}"
+    );
 }
 
 #[test]
 fn a_picked_claim_says_how_to_retry_without_a_label() {
-    let said = picked_claim_comment();
+    let said = picked_claim_comment(None);
+    assert!(picked_claim_comment(Some("https://x/pull/2")).contains("review on https://x/pull/2"));
     assert!(said.contains("started") && said.contains("picked by hand"));
     assert!(
         !said.contains("re-add"),
@@ -109,7 +127,7 @@ fn a_local_issue_is_found_by_its_label_and_claimed_in_its_own_file() {
         .unwrap()
         .unwrap();
     assert_eq!(found.number, 1, "the oldest labelled issue goes first");
-    claim_blocking(&tracker, &root, 1, "auto").unwrap();
+    claim_blocking(&tracker, &root, 1, "auto", None).unwrap();
     let Tracker::Local(file) = &tracker else {
         unreachable!()
     };
@@ -164,12 +182,12 @@ fn a_synced_project_runs_only_what_the_user_wrote_and_claims_it_on_both_sides() 
         .unwrap()
         .unwrap();
     assert_eq!((first.number, first.forge_ref()), (1, None));
-    claim_blocking(&tracker, &root, 1, "auto").unwrap();
+    claim_blocking(&tracker, &root, 1, "auto", None).unwrap();
     let second = candidate_blocking(&tracker, &root, "auto")
         .unwrap()
         .unwrap();
     assert_eq!(second.forge_ref(), Some("#7"));
-    claim_blocking(&tracker, &root, second.number, "auto").unwrap();
+    claim_blocking(&tracker, &root, second.number, "auto", None).unwrap();
     assert_eq!(candidate_blocking(&tracker, &root, "auto").unwrap(), None);
 
     // The claim reached the forge: the label came off and it was told.
@@ -366,11 +384,7 @@ fn every_outcome_has_a_sentence_and_the_work_leads() {
     ];
     for outcome in outcomes {
         let pending = ran(outcome);
-        let pr = report(
-            &pending,
-            &Ok(Verdict::PullRequest("https://x/pull/2".into())),
-            "b",
-        );
+        let pr = report(&pending, &Ok(opened(PrState::Open, true)), "b");
         assert!(pr.starts_with("onehand opened https://x/pull/2."), "{pr}");
         let commits = report(&pending, &Ok(Verdict::Commits(2)), "b");
         assert!(
@@ -391,6 +405,25 @@ fn every_outcome_has_a_sentence_and_the_work_leads() {
     );
     assert!(none.starts_with("onehand left no commit"), "{none}");
     assert!(none.contains("timeout"), "{none}");
+}
+
+/// The pull request on the branch, as the forge has it when the report goes.
+fn opened(state: PrState, draft: bool) -> Verdict {
+    Verdict::PullRequest {
+        url: "https://x/pull/2".into(),
+        state,
+        draft,
+    }
+}
+
+#[test]
+fn the_report_says_what_became_of_the_pull_request() {
+    let done = ran(Outcome::Done);
+    let said = |verdict| report(&done, &Ok(verdict), "b");
+    assert!(said(opened(PrState::Open, false)).contains("ready for review"));
+    assert!(!said(opened(PrState::Open, true)).contains("ready for review"));
+    assert!(said(opened(PrState::Merged, false)).contains("merged"));
+    assert!(said(opened(PrState::Closed, false)).contains("closed"));
 }
 
 #[test]
@@ -495,4 +528,49 @@ fn the_cap_counts_working_runs_only() {
     assert!(!room(1, 1));
     assert!(room(1, 2));
     assert!(!room(0, 0));
+}
+
+#[test]
+fn a_pull_request_closes_the_issue_only_where_the_forge_knows_it() {
+    let source = |tracker: TrackerRef, forge_ref: Option<&str>| IssueSource {
+        tracker,
+        number: 3,
+        forge_ref: forge_ref.map(str::to_string),
+        forge: Some("Forge".into()),
+        base: "origin/main".into(),
+        picked: false,
+        unsent: Vec::new(),
+    };
+    let brief = brief_for(&forge(), &issue(3, "Fix it"));
+    let body = |s: &IssueSource| pull_request_text(&brief, Some(s)).1;
+    let on_forge = TrackerRef::Forge {
+        connector: "Forge".into(),
+    };
+    assert!(body(&source(on_forge, None)).starts_with("Closes #3."));
+    let synced = TrackerRef::Synced {
+        file: "/i.json".into(),
+        connector: "Forge".into(),
+    };
+    assert!(body(&source(synced.clone(), Some("#57"))).starts_with("Closes #57."));
+    // Kept here alone, its number is onehand's, not the forge's.
+    assert!(!body(&source(synced, None)).contains('#'));
+    let kept = TrackerRef::Local {
+        file: "/i.json".into(),
+    };
+    assert!(!body(&source(kept, None)).contains('#'));
+    assert_eq!(pull_request_text(&brief, None).0, "Fix it");
+}
+
+#[test]
+fn a_branch_taken_on_the_forge_is_passed_over_too() {
+    let root = std::env::temp_dir();
+    let taken = |name: &str| name == "onehand/github-1-x";
+    assert_eq!(
+        free_branch_blocking(&root, "onehand/github-1-x", taken),
+        "onehand/github-1-x-2"
+    );
+    assert_eq!(
+        free_branch_blocking(&root, "onehand/github-2-x", taken),
+        "onehand/github-2-x"
+    );
 }

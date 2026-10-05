@@ -124,6 +124,7 @@ impl Shell {
             agent: None,
             check,
             mode: None,
+            forge: None,
         };
         match template.place {
             Place::Checkout => {
@@ -148,19 +149,30 @@ impl Shell {
                             let top = worktree::repo_top_blocking(&root).ok_or_else(|| {
                                 format!("{} is not in a git repository", root.display())
                             })?;
+                            // ponytail: only local branches count here; a
+                            // `workflow/` branch whose worktree is gone but
+                            // whose pull request is on the forge is reused.
+                            // Ask the forge as an issue's claim does if that
+                            // is seen.
                             let branch = onehand_core::unattended::free_branch_blocking(
                                 &top,
                                 &core::branch_for(&title),
+                                |_| false,
                             );
                             let dir = worktree::worktree_dir(&top, &branch);
                             let made = worktree::branch_off_blocking(&top, &branch, &dir, "HEAD")?;
                             let subtree = worktree::subtree_in(&made, &top, &root);
                             let dir = if subtree.is_dir() { subtree } else { made };
-                            Ok::<_, String>((dir, branch))
+                            // The forge the branch goes to, for a step on it;
+                            // none, and the branch is the result.
+                            let forge = crate::unattended::connector_for(&top)
+                                .ok()
+                                .map(|forge| forge.name().to_string());
+                            Ok::<_, String>((dir, branch, forge))
                         })
                         .await;
                     let _ = shell.update_in(cx, |shell: &mut Self, window, cx| match made {
-                        Ok((dir, branch)) => {
+                        Ok((dir, branch, forge)) => {
                             shell.workflow_launcher = None;
                             shell.window.workspace.add_root(dir.clone());
                             shell.refresh_git(cx);
@@ -168,6 +180,7 @@ impl Shell {
                             let setup = Setup {
                                 dir,
                                 branch: Some(branch),
+                                forge,
                                 ..setup
                             };
                             shell.start_workflow(setup, template, brief, window, cx);
@@ -339,6 +352,7 @@ impl Shell {
             agent: None,
             check: Some(check.clone()),
             mode: None,
+            forge: None,
         };
         let id = onehand_core::task::new_id();
         crate::task::add(Task::check(id.clone(), check, setup), cx);
@@ -358,7 +372,7 @@ impl Shell {
         // From its one step: a check that passed would otherwise start past it.
         if task.source == Source::Check {
             let first = last.template.steps.first().map(|step| step.id.as_str());
-            if crate::task::retry(&id, last.template.clone(), first, cx) {
+            if crate::task::retry(&id, last.template.clone(), first, None, cx) {
                 crate::task::request(id, window, cx);
             }
             return;
@@ -545,7 +559,7 @@ fn retry_now(
     cx: &mut gpui::App,
 ) {
     shell.update(cx, |_, cx| {
-        if crate::task::retry(&id, template, from.as_deref(), cx) {
+        if crate::task::retry(&id, template, from.as_deref(), None, cx) {
             crate::task::request(id, window, cx);
         }
     });

@@ -550,7 +550,8 @@ waits on a person (`task::live_issues`). A task just kept counts against `at_onc
 asked for its place (`unattended::placed`).
 **Everything outside the checkout goes through a connector, and a project that cannot be worked
 says so.** `onehand_core::connector::Connector` is the trait — account, whether it serves a project,
-issues, labels, comments, default branch, pull request — and `plugins/builtin/connector-github` is the
+issues, labels, comments, default branch, a branch's pull request with its status checks, push,
+opening a draft, taking it out of draft, a failed check's log — and `plugins/builtin/connector-github` is the
 one implementation, where `gh` is the whole API layer. `connector::serving` hands a project to the
 first connector whose `serves_blocking` accepts it (GitHub reads `origin` locally before any call),
 and each connector's `account_blocking` says who it acts as. A run's fetch is the connector's too
@@ -590,8 +591,9 @@ bounded at `ISSUES_SHOWN`), and `unattended::start_picked` runs it now; it is sh
 kept on screen when it ends. *Look now* in Settings runs the search at once. **An issue is worked as a
 task** (`Source::Issue(IssueSource)`) of the `[unattended]` workflow, its timeout put over the
 workflow's own, driven by the one task driver like any other and listed on the Tasks page with
-Stop, Resume, Retry and Dismiss. Until the integration steps land, a run ends on its branch: the
-agent is told not to push. A run the search finds claims its issue by removing the label, branches a
+Stop, Resume, Retry and Dismiss. Its forge steps push the commit the check passed on, open a draft
+pull request and wait for its status checks (`task::driver::on_forge`, `watch_status_checks`); the label put
+back on an issue whose pull request is open retries its task to answer the review. A run the search finds claims its issue by removing the label, branches a
 worktree off `origin/<default>` (`launch::prepare_blocking`), builds the task (`core::brief_for`)
 and asks for its place (`task::add` + `task::request`) in the window holding the project.
 **Nothing moves on screen**: `Shell::drive_task` brings an issue task up through `run_unattended`,

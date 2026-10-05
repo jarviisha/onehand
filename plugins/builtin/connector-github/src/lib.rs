@@ -10,7 +10,9 @@
 // a working feature.
 #![warn(unreachable_pub)]
 
-use onehand_core::connector::{Connector, RemoteIssue, SyncListing};
+use onehand_core::connector::{
+    Check, CheckState, Connector, PrState, PullRequest, RemoteIssue, SyncListing,
+};
 use onehand_core::issues::Snapshot;
 use onehand_core::unattended::{Issue, IssueRow};
 use serde::Deserialize;
@@ -116,20 +118,100 @@ impl Connector for GitHub {
         &self,
         root: &Path,
         branch: &str,
-    ) -> Result<Option<String>, String> {
+    ) -> Result<Option<PullRequest>, String> {
         // `--state all`, because a PR merged or closed before the run is
-        // settled is still the answer to "did it open one".
-        let url = gh(
+        // settled is still the answer to "did it open one". The checks come in
+        // the same call, so they are always the checks on the head it reports.
+        let json = gh(
             root,
             &[
-                "pr", "list", "--head", branch, "--state", "all", "--json", "url", "-q", ".[0].url",
+                "pr",
+                "list",
+                "--head",
+                branch,
+                "--state",
+                "all",
+                "--limit",
+                "1",
+                "--json",
+                "url,number,state,isDraft,headRefOid,mergeable,statusCheckRollup",
             ],
         )?;
-        Ok((!url.is_empty()).then_some(url))
+        pull_request(&json)
     }
 
-    fn open_pull_request_with(&self) -> &'static str {
-        "`gh pr create`"
+    fn mark_ready_blocking(&self, root: &Path, number: u64) -> Result<(), String> {
+        gh(root, &["pr", "ready", &number.to_string()]).map(drop)
+    }
+
+    /// The log of an Actions job, its last lines only: the failure is at the
+    /// end, and a whole log is more than any prompt should carry. Asked of
+    /// the job rather than its run, because `gh run view` holds every log
+    /// back until the whole run is over, and a job that failed fast is
+    /// repaired while its slower siblings still run. A status check that is
+    /// not an Actions job has no log `gh` can read.
+    fn check_log_blocking(&self, root: &Path, check: &Check) -> Result<String, String> {
+        let job = check
+            .link
+            .as_deref()
+            .and_then(|link| link.rsplit_once("/job/"))
+            .map(|(_, job)| job.split(['?', '#', '/']).next().unwrap_or(job))
+            .filter(|job| !job.is_empty() && job.bytes().all(|b| b.is_ascii_digit()))
+            .ok_or_else(|| {
+                format!(
+                    "{} is not an Actions job, so it has no log here.",
+                    check.name
+                )
+            })?;
+        // A job's log is coloured for a terminal, and `gh` refuses to print
+        // escape sequences unless asked; they are stripped here instead, so
+        // none reaches a prompt.
+        let log = gh(
+            root,
+            &[
+                "api",
+                "--allow-escape-sequences",
+                &format!("repos/{{owner}}/{{repo}}/actions/jobs/{job}/logs"),
+            ],
+        )?;
+        Ok(last_lines(&without_escapes(&log), LOG_LINES))
+    }
+
+    fn read_review_with(&self, number: u64) -> String {
+        format!(
+            "`gh pr view {number} --comments` and `gh api repos/{{owner}}/{{repo}}/pulls/{number}/comments`"
+        )
+    }
+
+    fn open_pull_request_blocking(
+        &self,
+        root: &Path,
+        branch: &str,
+        title: &str,
+        body: &str,
+    ) -> Result<(), String> {
+        gh(
+            root,
+            &[
+                "pr", "create", "--draft", "--head", branch, "--title", title, "--body", body,
+            ],
+        )
+        .map(drop)
+    }
+
+    /// `git push` as ever, and, when that fails on an ssh `origin`, over HTTPS
+    /// with `gh`'s own sign-in, for the reason [`Self::fetch_blocking`] gives.
+    /// A push the forge turned down, as one behind the branch it would
+    /// replace, is its answer whichever way it went, and is not tried again.
+    fn push_blocking(&self, root: &Path, commit: &str, branch: &str) -> Result<(), String> {
+        onehand_core::worktree::push_blocking(root, commit, branch).or_else(|over_origin| {
+            if turned_down(&over_origin) {
+                return Err(over_origin);
+            }
+            over_https_blocking(root, over_origin, "push", |url| {
+                https_args("push", url, format!("{commit}:refs/heads/{branch}"))
+            })
+        })
     }
 
     fn issue_url_blocking(&self, root: &Path, key: &str) -> Result<String, String> {
@@ -149,31 +231,11 @@ impl Connector for GitHub {
     /// HTTPS needs. An https `origin` is not tried twice: there is nothing
     /// different to try.
     fn fetch_blocking(&self, root: &Path, branch: &str) -> Result<(), String> {
-        let Err(over_origin) = onehand_core::worktree::fetch_blocking(root, branch) else {
-            return Ok(());
-        };
-        let Some(url) = origin_url(root)
-            .ok()
-            .and_then(|origin| https_url(&origin, ssh_resolve_blocking))
-        else {
-            return Err(over_origin);
-        };
-        let out = onehand_core::process::output_within(
-            Command::new("git")
-                .arg("-C")
-                .arg(root)
-                .args(https_fetch_args(&url, branch))
-                .env("GIT_TERMINAL_PROMPT", "0"),
-            onehand_core::worktree::FETCH_LIMIT,
-        );
-        let why = match out {
-            Ok(out) if out.status.success() => return Ok(()),
-            Ok(out) => String::from_utf8_lossy(&out.stderr).trim().to_string(),
-            Err(err) => format!("git fetch {err}"),
-        };
-        Err(format!(
-            "{over_origin} — and over HTTPS with gh's sign-in: {why}"
-        ))
+        onehand_core::worktree::fetch_blocking(root, branch).or_else(|over_origin| {
+            over_https_blocking(root, over_origin, "fetch", |url| {
+                https_fetch_args(url, branch)
+            })
+        })
     }
 
     /// The open issues, then every issue changed since `since` — asked
@@ -298,6 +360,122 @@ impl From<GhIssue> for Issue {
     fn from(gh: GhIssue) -> Self {
         Issue::new(gh.number, gh.title, gh.body)
     }
+}
+
+/// How many lines of a failed job's log an agent is handed.
+const LOG_LINES: usize = 80;
+
+/// `text` without terminal escape sequences (`ESC [ … letter`, and any other
+/// `ESC` with the character after it) or other control characters but line
+/// breaks and tabs.
+fn without_escapes(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    let mut chars = text.chars();
+    while let Some(c) = chars.next() {
+        match c {
+            '\u{1b}' => {
+                if chars.next() == Some('[') {
+                    for c in chars.by_ref() {
+                        if c.is_ascii_alphabetic() || c == '~' {
+                            break;
+                        }
+                    }
+                }
+            }
+            '\n' | '\t' => out.push(c),
+            c if c.is_control() => {}
+            c => out.push(c),
+        }
+    }
+    out
+}
+
+/// The last `n` lines of `text`.
+fn last_lines(text: &str, n: usize) -> String {
+    let lines: Vec<&str> = text.lines().collect();
+    lines[lines.len().saturating_sub(n)..].join("\n")
+}
+
+/// `gh pr list --json url,number,state,isDraft,headRefOid,mergeable,statusCheckRollup`
+/// as the first pull request in it, if any.
+///
+/// A rollup holds two kinds of entry: an Actions check run, which has a
+/// status and, once completed, a conclusion; and a commit status, which has a
+/// state alone. Only success, neutral and skipped pass — a cancelled or timed
+/// out check is no evidence the change works.
+fn pull_request(json: &str) -> Result<Option<PullRequest>, String> {
+    #[derive(Deserialize)]
+    #[serde(rename_all = "camelCase")]
+    struct Entry {
+        #[serde(default)]
+        name: Option<String>,
+        #[serde(default)]
+        context: Option<String>,
+        #[serde(default)]
+        status: Option<String>,
+        #[serde(default)]
+        conclusion: Option<String>,
+        #[serde(default)]
+        state: Option<String>,
+        #[serde(default)]
+        details_url: Option<String>,
+        #[serde(default)]
+        target_url: Option<String>,
+    }
+    #[derive(Deserialize)]
+    #[serde(rename_all = "camelCase")]
+    struct Row {
+        url: String,
+        number: u64,
+        state: String,
+        is_draft: bool,
+        head_ref_oid: String,
+        #[serde(default)]
+        mergeable: String,
+        #[serde(default)]
+        status_check_rollup: Vec<Entry>,
+    }
+    let rows: Vec<Row> = serde_json::from_str(json)
+        .map_err(|err| format!("gh printed something unreadable: {err}"))?;
+    let Some(row) = rows.into_iter().next() else {
+        return Ok(None);
+    };
+    let checks = row
+        .status_check_rollup
+        .into_iter()
+        .map(|e| {
+            let state = match (
+                e.status.as_deref(),
+                e.conclusion.as_deref(),
+                e.state.as_deref(),
+            ) {
+                (Some(status), _, _) if status != "COMPLETED" => CheckState::Pending,
+                (Some(_), Some("SUCCESS" | "NEUTRAL" | "SKIPPED"), _) => CheckState::Passed,
+                (Some(_), _, _) => CheckState::Failed,
+                (None, _, Some("SUCCESS")) => CheckState::Passed,
+                (None, _, Some("PENDING" | "EXPECTED") | None) => CheckState::Pending,
+                (None, _, Some(_)) => CheckState::Failed,
+            };
+            Check {
+                name: e.name.or(e.context).unwrap_or_default(),
+                state,
+                link: e.details_url.or(e.target_url).filter(|l| !l.is_empty()),
+            }
+        })
+        .collect();
+    Ok(Some(PullRequest {
+        url: row.url,
+        number: row.number,
+        state: match row.state.as_str() {
+            "MERGED" => PrState::Merged,
+            "CLOSED" => PrState::Closed,
+            _ => PrState::Open,
+        },
+        draft: row.is_draft,
+        head: row.head_ref_oid,
+        conflicting: row.mergeable == "CONFLICTING",
+        checks,
+    }))
 }
 
 /// What a sync reads of an issue.
@@ -444,16 +622,65 @@ const GH_LIMIT: Duration = Duration::from_secs(60);
 /// signed in by `gh` alone: the empty helper first clears any the user set,
 /// so nothing else is asked and nothing waits on a prompt.
 fn https_fetch_args(url: &str, branch: &str) -> Vec<String> {
+    https_args(
+        "fetch",
+        url,
+        format!("+refs/heads/{branch}:refs/remotes/origin/{branch}"),
+    )
+}
+
+/// Whether git's complaint about a push is the remote refusing the commit,
+/// rather than never being reached.
+fn turned_down(said: &str) -> bool {
+    said.contains("[rejected]") || said.contains("[remote rejected]")
+}
+
+/// `git <verb>` of `refspec` with `url`, signed in by `gh` alone.
+fn https_args(verb: &str, url: &str, refspec: String) -> Vec<String> {
     vec![
         "-c".into(),
         "credential.helper=".into(),
         "-c".into(),
         "credential.helper=!gh auth git-credential".into(),
-        "fetch".into(),
+        verb.into(),
         "--quiet".into(),
         url.into(),
-        format!("+refs/heads/{branch}:refs/remotes/origin/{branch}"),
+        refspec,
     ]
+}
+
+/// After `git <verb>` failed over `origin` for `over_origin`, the same again
+/// over HTTPS with `gh`'s sign-in when `origin` is an ssh remote, its
+/// arguments `args` of the HTTPS address. An https `origin` is not tried
+/// twice: there is nothing different to try.
+fn over_https_blocking(
+    root: &Path,
+    over_origin: String,
+    verb: &str,
+    args: impl FnOnce(&str) -> Vec<String>,
+) -> Result<(), String> {
+    let Some(url) = origin_url(root)
+        .ok()
+        .and_then(|origin| https_url(&origin, ssh_resolve_blocking))
+    else {
+        return Err(over_origin);
+    };
+    let out = onehand_core::process::output_within(
+        Command::new("git")
+            .arg("-C")
+            .arg(root)
+            .args(args(&url))
+            .env("GIT_TERMINAL_PROMPT", "0"),
+        onehand_core::worktree::FETCH_LIMIT,
+    );
+    let why = match out {
+        Ok(out) if out.status.success() => return Ok(()),
+        Ok(out) => String::from_utf8_lossy(&out.stderr).trim().to_string(),
+        Err(err) => format!("git {verb} {err}"),
+    };
+    Err(format!(
+        "{over_origin} — and over HTTPS with gh's sign-in: {why}"
+    ))
 }
 
 /// How long a question answered from this machine alone may take — the
@@ -654,6 +881,54 @@ fn ssh_resolve_blocking(alias: &str) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_job_log_loses_its_colours() {
+        assert_eq!(
+            without_escapes("\u{1b}[36;1mok\u{1b}[0m\r\nerror: \u{1b}[31mboom\u{1b}[0m\n"),
+            "ok\nerror: boom\n"
+        );
+    }
+
+    #[test]
+    fn a_push_turned_down_is_not_tried_over_https() {
+        assert!(turned_down(
+            "! [rejected] abc -> onehand/x (non-fast-forward)\nfailed to push some refs"
+        ));
+        assert!(!turned_down("Permission denied (publickey)."));
+    }
+
+    #[test]
+    fn a_rollup_reads_as_checks_that_pass_only_on_success() {
+        let json = r#"[{"url":"u","number":7,"state":"OPEN","isDraft":true,"headRefOid":"abc",
+            "mergeable":"CONFLICTING","statusCheckRollup":[
+            {"__typename":"CheckRun","name":"Build","status":"COMPLETED","conclusion":"SUCCESS",
+             "detailsUrl":"https://github.com/o/r/actions/runs/1/job/42"},
+            {"__typename":"CheckRun","name":"Lint","status":"COMPLETED","conclusion":"CANCELLED"},
+            {"__typename":"CheckRun","name":"Test","status":"IN_PROGRESS","conclusion":""},
+            {"__typename":"StatusContext","context":"ci/ext","state":"PENDING","targetUrl":""},
+            {"__typename":"StatusContext","context":"ci/old","state":"ERROR"}]}]"#;
+        let pr = pull_request(json).unwrap().unwrap();
+        assert_eq!((pr.number, pr.state, pr.draft), (7, PrState::Open, true));
+        assert!(pr.conflicting);
+        let states: Vec<_> = pr
+            .checks
+            .iter()
+            .map(|c| (c.name.as_str(), c.state))
+            .collect();
+        assert_eq!(
+            states,
+            [
+                ("Build", CheckState::Passed),
+                ("Lint", CheckState::Failed),
+                ("Test", CheckState::Pending),
+                ("ci/ext", CheckState::Pending),
+                ("ci/old", CheckState::Failed),
+            ]
+        );
+        assert_eq!(pr.checks[3].link, None, "an empty link is no link");
+        assert_eq!(pull_request("[]").unwrap(), None);
+    }
 
     #[test]
     fn an_ssh_origin_is_fetched_over_https_from_the_host_ssh_would_reach() {

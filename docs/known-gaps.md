@@ -187,10 +187,12 @@ Listed because a missing feature nobody wrote down reads as a bug in the ones th
 - **A task does not wait for a person's own session.** Tasks take turns in a checkout, one at a
   time, but a plain session holds no place, so a task can start editing a checkout somebody is
   working in through a session of their own, with no warning.
-- **A run ends at the branch.** There is no step that pushes, opens a pull request or waits on
-  CI, so an unattended run on an issue leaves commits on its branch and says so on the issue; it
-  no longer opens the pull request itself. `verified_at` is recorded so that a push step can later
-  require the commit it pushes to be the one the check passed on.
+- **A run waiting on its status checks keeps its session.** The adapter stays up while the forge
+  runs them, and the driver looks every minute; a restart cuts the wait off like any other step,
+  and *Resume* waits afresh. Repairs are bounded by the workflow's `misses`, not by a count of their
+  own, and the same check failing twice is not told apart from two different failures.
+- **A pull request cannot be a task's source.** A review is answered only by putting the trigger
+  label back on the issue the pull request came from.
 - **A run can stay counted against the cap on unattended runs until onehand restarts**, when the
   window it was started in closes in the moment its place is being looked up.
 - **A worktree a run made is never removed by it**, nor its branch, whatever the outcome. The

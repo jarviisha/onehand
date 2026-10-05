@@ -1,8 +1,9 @@
 # Workflows
 
 A run takes a brief through the steps of a workflow: an agent step prompts the
-session and is judged by gates onehand checks itself, a command step runs a command in the work, and
-an approval step waits for a person. The words are defined in [CONTEXT.md](../CONTEXT.md).
+session and is judged by gates onehand checks itself, a command step runs a command in the work, an
+approval step waits for a person, and the forge steps (push, pull request, status checks) take a
+worktree's branch to the forge. The words are defined in [CONTEXT.md](../CONTEXT.md).
 
 ## Where the code is
 
@@ -15,6 +16,7 @@ an approval step waits for a person. The words are defined in [CONTEXT.md](../CO
 | The person's workflows on disk | [crates/core/src/workflow/store.rs](../crates/core/src/workflow/store.rs) |
 | The engine: one run as pure state | [crates/core/src/workflow/run.rs](../crates/core/src/workflow/run.rs) |
 | Marks, facts, gates, the command runner | [crates/core/src/workflow/facts.rs](../crates/core/src/workflow/facts.rs) |
+| What a pull request's status checks say | [crates/core/src/workflow/status_checks.rs](../crates/core/src/workflow/status_checks.rs) |
 | Tasks, which keep their runs | [crates/core/src/task.rs](../crates/core/src/task.rs) |
 | Task files, their ordered writer, the move of `pipeline-runs/` | [crates/core/src/task/files.rs](../crates/core/src/task/files.rs) |
 | The queue: one task per place | [crates/core/src/task/queue.rs](../crates/core/src/task/queue.rs) |
@@ -62,6 +64,24 @@ id = "verify"
 label = "Verify"
 kind = "command"          # `command = "…"`; left out, the project's check command
 on_fail = "implement"
+
+# On a worktree only, the forge steps:
+[[steps]]
+id = "push"
+label = "Push"
+kind = "push"             # onehand pushes the commit the last command passed on
+
+[[steps]]
+id = "pull_request"
+label = "Pull request"
+kind = "pull_request"     # a draft, or the one already open on the branch
+
+[[steps]]
+id = "status_checks"
+label = "Status checks"
+kind = "status_checks"
+on_fail = "implement"     # a failing check or a conflict goes back here
+wait = "1h"               # how long the checks may take; the default
 ```
 
 onehand ships three, read-only: *Work in checkout* (Plan → Approve → Implement → Verify, in the
@@ -69,8 +89,8 @@ checkout, left uncommitted), *Implement on a branch* (Plan → Implement → Ver
 `workflow/<title>` branch in a worktree beside the project's repository, committed; a project that
 is a folder inside its repository works in the same folder of the new checkout, as a worktree made
 from the project menu does) and *Work an issue* (`builtin:issue`, the same steps on the branch an
-unattended run cuts for its issue, and what `[unattended] workflow` names by default; see
-[unattended.md](unattended.md)). The person's own are in
+unattended run cuts for its issue, then Push → Pull request → Status checks, and what
+`[unattended] workflow` names by default; see [unattended.md](unattended.md)). The person's own are in
 `<config_dir>/onehand/workflows/<slug>.toml`, made by duplicating a shipped one or from *New
 workflow* in Settings ▸ Workflows. A build from before the rename kept them in `pipelines/`;
 they move here at start, behind the one-instance lock, by the rules in
@@ -112,8 +132,11 @@ answer; `on_fail` naming anything but an earlier agent step; an approval of anyt
 agent step that keeps its answer; a gate that cannot hold where the workflow works (`committed` in
 a checkout, `uncommitted` on a worktree); `code_changed` beside `code_unchanged`; a label used by
 an earlier step; `{check_output}` in a step no later command step sends back to, or `{revise}` in
-one no later approval sends back, since either would always be empty; and a worktree workflow with
-no agent step gated `committed`, whose branch could end with nothing on it.
+one no later approval sends back, since either would always be empty (a status checks step sends
+`{check_output}` back too); a worktree workflow with no agent step gated `committed`, whose branch
+could end with nothing on it; a forge step in a checkout workflow; a push with no command step before
+it, a pull request with no push before it, status checks with no pull request before them or an
+`on_fail` that is no earlier agent step, and a `wait` that is not a duration.
 
 ### Prompts
 
@@ -130,9 +153,10 @@ one line per gate saying what onehand will check.
 ## The engine
 
 `workflow::Run` is the only place a transition is decided. The driver reports what happened —
-`measured`, `turn_ended`, `command_finished`, `approved`, `revised`, `stopped`, `failed`, `resume` —
-and gets back the next `Action`: `Measure`, `Prompt`, `RunCommand`, `AwaitApproval`, `Finish` or
-`Idle` (the report did not fit what the run waits for). Each report also appends a `Transition` to
+`measured`, `turn_ended`, `command_finished`, `approved`, `revised`, `forge_done`, `status_checks_seen`,
+`stopped`, `failed`, `resume` — and gets back the next `Action`: `Measure`, `Prompt`, `RunCommand`,
+`AwaitApproval`, `Push`, `OpenPullRequest`, `AwaitStatusChecks`, `Finish` or `Idle` (the report did not
+fit what the run waits for). Each report also appends a `Transition` to
 the run's history, capped at 200.
 
 - **An agent step** is measured first, so its work is judged against where it started; then
@@ -144,6 +168,24 @@ the run's history, capped at 200.
 - **A command step** runs its command, or the project's check command. It passes on its exit status
   alone and records the head as `verified_at` when the work has one; failing is a miss and goes
   back to `on_fail` carrying the output.
+- **The forge steps** go to the connector the run's setup names (`Setup::forge`, the one that
+  serves the project when a worktree task starts). With none, each passes at once: the branch is the
+  result. **A push carries the commit the check passed on**: `Push` is `marks.verified_at`, never
+  the head, so what lands is what was checked, and a push with nothing verified fails. A retry keeps
+  `verified_at`. *Pull request* takes the one open on the branch, or opens a draft
+  (`unattended::pull_request_text`: it closes the issue only where the forge knows it); one closed
+  without being merged is refused, never opened again beside. Either failing ends the run as
+  failed; a retry starts at that step again. *Status checks* is judged by `workflow::judge` from the
+  forge's pull request, **on the commit that was pushed**: checks on any other head are waited
+  past. A failing check or a conflict wins over one still running and goes back to `on_fail` as a
+  miss, carrying what failed and up to three logs as `{check_output}`; all passing takes the pull
+  request out of draft and goes on; none at all after a ten-minute grace (or `wait`, when shorter)
+  counts as passing. A failing Actions job's log is read from the job itself, so a job that failed
+  fast is repaired while slower ones still run, and every log is fenced longer than any fence it
+  prints. A push the forge turns down is not tried again over HTTPS. A forge
+  that cannot be read, or a draft that cannot be taken out of draft, is waited on like a check still
+  running, and nothing is waited on past `wait`: the run fails. Merged ends it done; closed, or no
+  pull request at all, fails it. Repairs are bounded by `misses`, like a failing command.
 - **An approval step** waits. *Continue* goes on; *Revise…* goes back to the step it approves, whose
   prompt then carries the note and its last answer. A revision is not a miss.
 - **Misses are counted per stretch**: they reset only when the run reaches a step further on than it
@@ -166,6 +208,8 @@ subscribes to the session and maps its events onto the engine:
 | The session is released | `stopped(Closed)` |
 | *Stop* on the strip | the turn is cancelled, then `stopped(ByPerson)` |
 | The timeout runs out | the turn is cancelled, then `stopped(TimedOut)` |
+| A push or a pull request is done, or fails | `forge_done` |
+| A look at the pull request's status checks, every minute, says something other than pending | `status_checks_seen` |
 
 **Every one of these goes through one `end`, and a step's command is stopped first.** While a
 command runs, the run holds the flag that calls it off (`process::output_until`): ending sets it,
@@ -177,7 +221,8 @@ ends with.
 A prompt asked for before the adapter is up waits for the link. When the agent first comes up in a
 session, a run whose setup names a mode (`Setup::mode`, an unattended run's) has its agent put in
 that mode before the first prompt; an agent that does not offer it fails the run. The clock is
-`unattended::Budget`: it pauses while a card or an approval waits on a person, and its timer looks
+`unattended::Budget`: it pauses while a card or an approval waits on a person, or the pull
+request's status checks run, and its timer looks
 again when it fires rather than being re-armed at every pause.
 
 **Every run belongs to a task, and the task's file is written after every action**
@@ -323,4 +368,11 @@ change (`git checkout . && git clean -fd`).
 | An issue found by its label | Switch the scratch project on for unattended runs, keep an issue in its Issues tab labelled `auto`, set `[unattended] agent = "Mock workflow"` and `mode = ""` (the mock offers no modes), then *Look now* | A task *#… · Work an issue* is under *Running*; a worktree on `onehand/local-<n>-<title>` is a project of its own and no session moves on screen. When it ends the project goes from the rail, the task is under *Finished*, and the issue has a note: *onehand left 1 commit on …* |
 | An issue picked by hand | *Work an issue…* from the project's menu, pick an issue | The session comes up on screen as it starts, and its project stays when it ends |
 | Two at once | With `at_once = 1`, *Work an issue…* while an issue task runs | Refused, naming the issue being worked |
+| Push and pull request | On a GitHub project with CI, an issue task through Verify | `git ls-remote origin <branch>` shows the commit Verify passed on, a draft pull request is open on the branch closing the issue, and once its status checks pass it is out of draft; the issue says *onehand opened … It is ready for review.* |
+| A failing check is repaired | As above, with a check that fails on the change | The run goes back to Implement with the check's name and log in its prompt, pushes again, and waits again |
+| No checks at all | As above, on a repository with no CI | The run waits ten minutes, then the pull request leaves draft |
+| No forge | An issue task on a project with no GitHub `origin` | Push, Pull request and Status checks each pass at once; the branch is the result |
+| A review answered | Put the trigger label back on an issue whose pull request is open | The issue's task gets a new run from Implement, its prompt saying how to read the review; it pushes to the same pull request |
+| A closed pull request | Close the pull request unmerged, then put the label back | No run; the issue says the pull request was closed and onehand will not open another |
+| The label put back mid-run | Put the label back while the issue's task waits on its status checks; also *Work an issue…* on it | The tick passes it over; the pick is refused, *A run is already working on issue #…* |
 | A report that could not be sent | On a project served by GitHub, sign `gh` out (`gh auth logout`) before an issue task ends, then sign in again | The task's file keeps the report under `unsent`; the next tick, or the next start, comments it on the issue and empties `unsent` |

@@ -1,8 +1,8 @@
 schema_version = 1
 id = "builtin:issue"
-version = 1
+version = 2
 name = "Work an issue"
-description = "Plan, change the code and pass the project's check on the issue's own branch, with nobody watching. The work is committed on the branch."
+description = "Plan, change the code and pass the project's check on the issue's own branch, with nobody watching; then push what passed, open a draft pull request and repair it until its status checks pass. Without a forge the branch is the result."
 place = "worktree"
 misses = 3
 timeout = "45m"
@@ -42,4 +42,20 @@ The plan:
 id = "verify"
 label = "Verify"
 kind = "command"
+on_fail = "implement"
+
+[[steps]]
+id = "push"
+label = "Push"
+kind = "push"
+
+[[steps]]
+id = "pull_request"
+label = "Pull request"
+kind = "pull_request"
+
+[[steps]]
+id = "status_checks"
+label = "Status checks"
+kind = "status_checks"
 on_fail = "implement"

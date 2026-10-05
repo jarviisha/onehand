@@ -111,12 +111,29 @@ impl Tasks {
         self.working(id).is_some()
     }
 
+    /// Whether task `id` holds a slot of the cap on unattended runs: queued
+    /// or running, and not waiting on its pull request's status checks.
+    fn holds_slot(&self, id: &str) -> bool {
+        match self.working(id) {
+            Some(Working::Running) => self
+                .driven(id)
+                .is_none_or(|d| !d.run.awaiting_status_checks()),
+            Some(Working::Queued) => true,
+            Some(Working::Waiting) | None => false,
+        }
+    }
+
+    /// The driver running task `id`'s run, if one is.
+    fn driven(&self, id: &str) -> Option<&driver::Driven> {
+        self.live.values().find(|d| d.task == id)
+    }
+
     /// What task `id` is doing, if anything.
     fn working(&self, id: &str) -> Option<Working> {
         if self.queue.queued(id) {
             return Some(Working::Queued);
         }
-        if let Some(d) = self.live.values().find(|d| d.task == id) {
+        if let Some(d) = self.driven(id) {
             return Some(match d.waits_on_person() {
                 true => Working::Waiting,
                 false => Working::Running,
@@ -489,6 +506,17 @@ pub(crate) fn shown(uid: u64, cx: &App) -> Option<Shown> {
     })
 }
 
+/// What `look` makes of each task, told whether it is working, oldest first.
+pub(crate) fn each<R>(cx: &App, look: impl Fn(&Task, bool) -> Option<R>) -> Vec<R> {
+    let Some(t) = cx.try_global::<Tasks>() else {
+        return Vec::new();
+    };
+    t.tasks
+        .iter()
+        .filter_map(|task| look(task, t.busy(&task.id)))
+        .collect()
+}
+
 /// Task `id` as it is kept.
 pub(crate) fn task(id: &str, cx: &App) -> Option<Task> {
     cx.try_global::<Tasks>()?.task(id).cloned()
@@ -517,14 +545,20 @@ pub(crate) fn stop_task(id: &str, cx: &mut App) {
 
 /// Give task `id` a new run of `template`, from step `from` when that is
 /// earlier than where it would start, kept but not started: the caller asks
-/// for its place. Whether there was one to give.
-pub(crate) fn retry(id: &str, template: Template, from: Option<&str>, cx: &mut App) -> bool {
+/// for its place, carrying `note` as a revision. Whether there was one to give.
+pub(crate) fn retry(
+    id: &str,
+    template: Template,
+    from: Option<&str>,
+    note: Option<String>,
+    cx: &mut App,
+) -> bool {
     cx.update_global::<Tasks, _>(|t, _| {
         if t.busy(id) {
             return false;
         }
         let made = t.task_mut(id).is_some_and(|task| {
-            task.retry(onehand_core::task::new_id(), template, from)
+            task.retry(onehand_core::task::new_id(), template, from, note)
                 .is_some()
         });
         if made {
@@ -748,17 +782,15 @@ pub(crate) fn is_working(id: &str, cx: &App) -> bool {
 }
 
 /// How each issue task working or queued is shown, oldest first: what the
-/// cap on unattended runs counts. One waiting on a person is not working.
+/// cap on unattended runs counts. One waiting on a person, or on its pull
+/// request's status checks, is not working.
 pub(crate) fn issues_working(cx: &App) -> Vec<String> {
     let Some(t) = cx.try_global::<Tasks>() else {
         return Vec::new();
     };
     t.tasks
         .iter()
-        .filter(|task| match t.working(&task.id) {
-            Some(Working::Running | Working::Queued) => true,
-            Some(Working::Waiting) | None => false,
-        })
+        .filter(|task| t.holds_slot(&task.id))
         .filter_map(|task| task.issue().map(|issue| issue.shown()))
         .collect()
 }
