@@ -409,11 +409,20 @@ pub fn branch_for(tracker: &Tracker, issue: &Issue) -> String {
 /// worktree that run left on disk, and git refuses a second checkout of it.
 /// One the forge still has a pull request on is taken too, though its local
 /// branch is gone: a new task pushing there would meet the old one's work.
-pub fn free_branch_blocking(root: &Path, branch: &str, taken: impl Fn(&str) -> bool) -> String {
-    std::iter::once(branch.to_string())
-        .chain((2..=9).map(|n| format!("{branch}-{n}")))
-        .find(|name| !crate::worktree::branch_exists_blocking(root, name) && !taken(name))
-        .unwrap_or_else(|| format!("{branch}-10"))
+/// When `taken` cannot tell, that is the error: a guess either way could cut
+/// the new task on a branch the old one's pull request is on.
+pub fn free_branch_blocking(
+    root: &Path,
+    branch: &str,
+    taken: impl Fn(&str) -> Result<bool, String>,
+) -> Result<String, String> {
+    for name in std::iter::once(branch.to_string()).chain((2..=9).map(|n| format!("{branch}-{n}")))
+    {
+        if !crate::worktree::branch_exists_blocking(root, &name) && !taken(&name)? {
+            return Ok(name);
+        }
+    }
+    Ok(format!("{branch}-10"))
 }
 
 /// Where every run builds, shared across runs.

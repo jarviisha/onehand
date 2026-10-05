@@ -170,7 +170,10 @@ clears `dismissed`, so a task let go comes back live and a failure lands under *
 again. A check is retried from its one step, so one that passed runs again.
 `Run::resume` enters the run's own step on its first start, which is step 0 for a fresh run.
 `task::marks::against_blocking` answers `Same`, `Changed` or `OtherBranch`, and
-`Shell::begin_retry` (`crates/app/src/shell/workflows.rs`) asks the question. The dialog shows
+`Shell::begin_retry` (`crates/app/src/shell/workflows.rs`) asks the question. On `Changed` the
+start is held at or before the last command step up to it (`Run::recheck`): a retry carries
+`verified_at`, and without the check running again on the work as it is now, a push would send
+the commit the last check passed on. Enter in the dialog retries as *Retry* does. The dialog shows
 *Retry with version N* when the workflows on offer hold one that is newer than
 the run's snapshot (`Template::newer_than`: the same id at a higher version, or at the same version with different
 content, as a hand edit leaves it; or for a snapshot from

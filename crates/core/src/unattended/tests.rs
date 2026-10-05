@@ -583,13 +583,18 @@ fn a_pull_request_closes_the_issue_only_where_the_forge_knows_it() {
 #[test]
 fn a_branch_taken_on_the_forge_is_passed_over_too() {
     let root = std::env::temp_dir();
-    let taken = |name: &str| name == "onehand/github-1-x";
+    let taken = |name: &str| Ok(name == "onehand/github-1-x");
     assert_eq!(
         free_branch_blocking(&root, "onehand/github-1-x", taken),
-        "onehand/github-1-x-2"
+        Ok("onehand/github-1-x-2".to_string())
     );
     assert_eq!(
         free_branch_blocking(&root, "onehand/github-2-x", taken),
-        "onehand/github-2-x"
+        Ok("onehand/github-2-x".to_string())
+    );
+    // A forge that cannot be asked is not read as one with nothing on it.
+    assert_eq!(
+        free_branch_blocking(&root, "onehand/github-3-x", |_| Err("offline".into())),
+        Err("offline".to_string())
     );
 }

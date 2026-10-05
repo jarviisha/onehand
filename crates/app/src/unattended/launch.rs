@@ -320,14 +320,14 @@ fn prepare_blocking(
         let top = worktree::repo_top_blocking(&repo).unwrap_or_else(|| repo.clone());
         // A branch the forge still has a pull request on belongs to work
         // before this, whatever is left of it here.
-        let taken = |name: &str| {
-            forge.is_some_and(|forge| {
-                forge
-                    .pull_request_for_blocking(&repo, name)
-                    .is_ok_and(|pr| pr.is_some())
-            })
+        let taken = |name: &str| match forge {
+            Some(forge) => forge
+                .pull_request_for_blocking(&repo, name)
+                .map(|pr| pr.is_some())
+                .map_err(|why| format!("could not ask the forge about branch {name}: {why}")),
+            None => Ok(false),
         };
-        let branch = core::free_branch_blocking(&top, &core::branch_for(&tracker, &issue), taken);
+        let branch = core::free_branch_blocking(&top, &core::branch_for(&tracker, &issue), taken)?;
         let dir = worktree::worktree_dir(&top, &branch);
         let dir = worktree::branch_off_blocking(&top, &branch, &dir, &base)?;
         Ok::<_, String>(Work::Cut { branch, base, dir })

@@ -159,8 +159,8 @@ impl Shell {
                             let branch = onehand_core::unattended::free_branch_blocking(
                                 &top,
                                 &core::branch_for(&title),
-                                |_| false,
-                            );
+                                |_| Ok(false),
+                            )?;
                             let dir = worktree::worktree_dir(&top, &branch);
                             let made = worktree::branch_off_blocking(&top, &branch, &dir, "HEAD")?;
                             let subtree = worktree::subtree_in(&made, &top, &root);
@@ -425,8 +425,15 @@ impl Shell {
         };
         let same = last.template.clone();
         let steps = same.steps.clone();
-        let start = Run::retry_start(&last, &same);
-        let picked = Rc::new(Cell::new(Run::retry_offered(&last, &same)));
+        let changed = against == Some(Against::Changed);
+        // Work that changed since the last run stopped is checked again before
+        // anything past the check: what it passed on is not what is there now,
+        // and a push past it would send the old commit.
+        let mut start = Run::retry_start(&last, &same);
+        if changed {
+            start = Run::recheck(&same, start);
+        }
+        let picked = Rc::new(Cell::new(Run::retry_offered(&last, &same).min(start)));
         let choices: Vec<SharedString> = steps
             .iter()
             .take(start + 1)
@@ -442,7 +449,6 @@ impl Shell {
             );
             (step, carried)
         };
-        let changed = against == Some(Against::Changed);
         let (id, title) = (task.id.clone(), task.brief.title.clone());
         let shell = cx.entity();
         window.open_alert_dialog(cx, move |alert, _, _| {
@@ -468,8 +474,7 @@ impl Shell {
             let retry = {
                 let (shell, id, same, from) =
                     (shell.clone(), id.clone(), same.clone(), from.clone());
-                move |_: &gpui::ClickEvent, window: &mut Window, cx: &mut gpui::App| {
-                    window.close_dialog(cx);
+                move |window: &mut Window, cx: &mut gpui::App| {
                     retry_now(&shell, id.clone(), same.clone(), from.clone(), window, cx);
                 }
             };
@@ -519,11 +524,20 @@ impl Shell {
                 .title(format!("Retry {title}?"))
                 .description(said)
                 .children(menu)
+                // Enter is the dialog's confirm: it retries as the primary
+                // button does, rather than closing with nothing done.
+                .on_ok({
+                    let retry = retry.clone();
+                    move |_, window, cx| {
+                        retry(window, cx);
+                        true
+                    }
+                })
                 .footer(
-                    // Wrapped, for a narrow window. Cancel still closes through
-                    // the library's close box, so a cancel handler would run;
-                    // the box is full width, and a box of its own sized to the
-                    // button keeps it from taking a row of its own.
+                    // Wrapped, for a narrow window. Cancel closes through the
+                    // library's close box, as every cancel here does; that box
+                    // is full width, so a box of its own sized to the button
+                    // keeps it on the row.
                     gpui_component::dialog::DialogFooter::new()
                         .flex_wrap()
                         .child(
@@ -540,7 +554,10 @@ impl Shell {
                             crate::controls::action("retry-confirm")
                                 .primary()
                                 .label("Retry")
-                                .on_click(retry),
+                                .on_click(move |_, window: &mut Window, cx: &mut gpui::App| {
+                                    window.close_dialog(cx);
+                                    retry(window, cx);
+                                }),
                         ),
                 )
         });

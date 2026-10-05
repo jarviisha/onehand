@@ -329,6 +329,26 @@ impl Run {
         }
     }
 
+    /// Where a retry that would start at `start` on `template` starts instead
+    /// when the work changed since the last run stopped: at the last command
+    /// step up to it. What that check passed on is no longer what is there,
+    /// and a push past it would send the commit it passed on rather than the
+    /// work. `start` itself when no command step comes up to it.
+    pub fn recheck(template: &Template, start: usize) -> usize {
+        let upto = (start + 1).min(template.steps.len());
+        template.steps[..upto]
+            .iter()
+            .rposition(|step| match step.kind {
+                StepKind::Command { .. } => true,
+                StepKind::Agent { .. }
+                | StepKind::Approval { .. }
+                | StepKind::Push
+                | StepKind::PullRequest
+                | StepKind::StatusChecks { .. } => false,
+            })
+            .unwrap_or(start)
+    }
+
     /// Where a retry of `prev` on `template` starts, [`Run::retry_start`] or
     /// earlier at step `from` when `template` has it, and how many answers
     /// of the steps before that it carries over.

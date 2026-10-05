@@ -244,16 +244,24 @@ pub fn run_workflow(shell: &Shell, window: &Window, cx: &mut Context<Shell>) -> 
         .as_ref()
         .and_then(|entry| entry.template.clone().ok());
     let picker_name = picked.map_or_else(|| "Pick a workflow".to_string(), |e| e.name());
-    // The dialog keeps the same margin above and below it; the form takes what
-    // is left under the heading and over the footer, and scrolls past that, so
-    // an open preview never pushes Run off screen.
+    // The dialog sits its margin down from the top of the window, inside any
+    // frame the window draws, and keeps at least that margin under it; the
+    // form takes what is left under the heading and over the footer, and
+    // scrolls past that, so an open preview never pushes Run off screen. The
+    // padding is in rems, so the room set aside for the rest is too.
     let rem = window.rem_size();
+    let frame = gpui_component::window_paddings(window);
     let margin = rem * LAUNCHER_MARGIN;
-    let room = (window.viewport_size().height - margin * 2. - rem * LAUNCHER_CHROME)
-        .max(rem * LAUNCHER_CHROME);
+    let room = (window.viewport_size().height
+        - frame.top
+        - frame.bottom
+        - margin * 2.
+        - rem * LAUNCHER_CHROME)
+        .max(gpui::px(0.));
 
     Dialog::new(cx)
         .margin_top(margin)
+        .p(gpui::rems(1.))
         .close_button(false)
         .content(move |content, _, cx: &mut App| {
             // Read here, as it is typed, so the preview follows the brief.
@@ -366,11 +374,11 @@ pub fn run_workflow(shell: &Shell, window: &Window, cx: &mut Context<Shell>) -> 
         }))
 }
 
-/// The launcher's margin above and below it, in rems.
+/// The launcher's margin above it, and the least below it, in rems.
 const LAUNCHER_MARGIN: f32 = 3.;
 
-/// What the launcher takes besides its form, in rems: its heading, its footer
-/// and the padding between them. The form is never shorter than this either.
+/// What the launcher takes besides its form, in rems: its heading, its
+/// footer, its padding and the gaps between them, with room to spare.
 const LAUNCHER_CHROME: f32 = 10.;
 
 /// How many steps the launcher's preview lists before saying how many more

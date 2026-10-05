@@ -939,6 +939,19 @@ fn a_done_run_retries_from_past_its_last_step_and_offers_the_first() {
 }
 
 #[test]
+fn work_changed_since_is_checked_again_before_anything_past_the_check() {
+    let t = builtin::all().remove(2);
+    let at = |id: &str| t.index_of(id).unwrap();
+    // Past the check, the check runs again on the work as it is now.
+    assert_eq!(Run::recheck(&t, at("push")), at("verify"));
+    assert_eq!(Run::recheck(&t, at("status_checks")), at("verify"));
+    assert_eq!(Run::recheck(&t, t.steps.len()), at("verify"));
+    // At or before it, nothing moves.
+    assert_eq!(Run::recheck(&t, at("verify")), at("verify"));
+    assert_eq!(Run::recheck(&t, at("implement")), at("implement"));
+}
+
+#[test]
 fn a_retry_plan_says_where_it_starts_and_what_it_carries() {
     let prev = exhausted_at_implement();
     let t = &prev.template;

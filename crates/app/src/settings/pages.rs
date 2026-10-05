@@ -214,7 +214,7 @@ pub(super) fn connections_page(cx: &App) -> AnyElement {
                     .map(|(_, account)| account.clone())
             }) {
                 None => ("Checking…".to_string(), muted),
-                Some(Ok(who)) => (format!("{} {who}", connector.name()), ink.success),
+                Some(Ok(who)) => (who, ink.success),
                 Some(Err(why)) => (why, ink.warning),
             };
             list_row(

@@ -320,7 +320,8 @@ One window hosts exactly one workspace. The frame is a navigation **rail** plus 
   - finished: nothing on the row; *Retry* in its detail.
   *Retry* asks first in a modal that says where the new run starts and how many
   answers it carries over, and adds that the work changed since the last run
-  stopped when it did. Under that, a small *From …* menu lists the first step up
+  stopped when it did; work that changed starts no later than the check before
+  where it would, so a push never sends what the last check passed on. Under that, a small *From …* menu lists the first step up
   to where the retry would start, defaulting to that start, or to the first
   step when the last run got to the end; the description follows the pick. Its
   footer is *Cancel* (ghost), *Retry with version N* (only when a newer version
@@ -412,10 +413,9 @@ One window hosts exactly one workspace. The frame is a navigation **rail** plus 
   centred line cut at the column's edge. The session stays when the run ends,
   and its project is kept.
 - **The connection runs are made through has a page of its own**, Settings ▸
-  Connections: a row per connector reading who it acts as, a sentence starting
-  with the system's name (*GitHub signed in as …*), in the success ink,
-  or saying in the warning ink what is wrong and what to run about it, with
-  *Check again* under the list. Settings ▸ Workspace keeps *Look for an issue
+  Connections: a row per connector, under its name, reading who it acts as
+  (*Signed in as …*) in the success ink, or saying in the warning ink what is
+  wrong and what to run about it, with *Check again* under the list. Settings ▸ Workspace keeps *Look for an issue
   now* above the switches, which runs the search at once and always answers with a
   notification — including when nothing is switched on, a run is already going,
   something blocks every run, or no labelled issue was found — because a button

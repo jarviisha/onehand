@@ -87,8 +87,9 @@ pub trait Connector: Send + Sync + 'static {
     /// The system's name, as a person knows it: "GitHub".
     fn name(&self) -> &'static str;
 
-    /// Who the connector acts as, as the rest of a sentence starting with the
-    /// system's name; or why it cannot act at all, in words saying what to do.
+    /// Who the connector acts as, as a sentence that reads on its own under
+    /// the system's name: "Signed in as …"; or why it cannot act at all, in
+    /// words saying what to do.
     fn account_blocking(&self) -> Result<String, String>;
 
     /// Whether this connector can work the project at `root`, and why not.
