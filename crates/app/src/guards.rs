@@ -662,6 +662,14 @@ mod tests {
             "UI-UX-PROPOSAL",
             "README",
             "CHANGELOG",
+            "roadmap.md",
+            "settings-ui-ux-proposal.md",
+            "workspace-issues-unattended-proposal.md",
+            "terminal-performance.md",
+            "terminal-profiling.md",
+            "terminal-coalescing.md",
+            "terminal-rounded-corners.md",
+            "terminal-issue-9.md",
         ];
         const SECTION_MARK: char = '\u{a7}';
         // Every document under `docs/` as well, read from the directory rather

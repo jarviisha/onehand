@@ -2,7 +2,7 @@
 
 Native desktop host for AI coding agents over the
 [Agent Client Protocol](https://agentclientprotocol.com). Rust + [GPUI](https://github.com/zed-industries/zed),
-many concurrent sessions per project root, with a quick editor and terminal built in.
+many concurrent sessions per project, with a quick editor and terminal built in.
 
 > [!WARNING]
 > **Early and unstable. Not ready to depend on.**
@@ -18,15 +18,31 @@ Most editors treat an agent as a panel bolted onto the side. onehand inverts
 that: the conversation **is** the window, and the editor and the terminal are
 what open when you need them.
 
-Work is a tree. A *workspace* groups one or more *project roots*, and each root
-runs one or more *sessions* — a session being one agent bound to that root. A
-root can hold several at once, and the left rail lists them by conversation
+Work is a tree. A *workspace* groups one or more *projects*, and each project
+runs one or more *sessions* — a session being one agent bound to that project. A
+project can hold several at once, and the left rail lists them by conversation
 rather than by agent, so switching is one click.
 
 Every session speaks ACP, so the agent is whatever you point it at. Claude Code
 is the default; anything that implements the protocol should work. Commands the
 agent runs come back over ACP's terminal extension and render inline in the
 transcript.
+
+Beside the conversation:
+
+- **Workbench**, a dock on the right with an editor and file tree, a Markdown
+  reader, Neovim, the project's Issues and a Plugins mode for Claude Code's
+  plugins.
+- **Workflows**: a brief taken through named steps (plan, approve, implement,
+  run the check, push, open a pull request, wait for its status checks), each
+  judged by what git and the transcript show rather than by what the agent says.
+- **Tasks**: one page for what is running, what needs you and what finished,
+  with each run's steps, output and diffs, and Resume and Retry.
+- **Unattended runs**: an issue carrying a label, on GitHub or kept in onehand,
+  worked in a worktree and session of its own while nobody watches, and told how
+  it went.
+- **A Telegram bridge** for following and answering sessions away from the
+  machine.
 
 ## Install
 
@@ -66,7 +82,7 @@ To build it, additionally:
 ## Build and run
 
 ```bash
-cargo run                       # the positional argument seeds the project root
+cargo run                       # the positional argument seeds the first project
 cargo run -- /path/to/project
 cargo build --release           # binary at target/release/onehand
 
@@ -94,6 +110,8 @@ rejected before saving; terminal copy/paste and Tab routing remain fixed.
 - `Ctrl+Shift+E / M / N` open and focus Editor / Markdown / Neovim. Repeating a
   mode shortcut keeps that mode visible.
 - ``Ctrl+` `` shows or hides the terminal.
+- `Ctrl+Shift+O` starts a new session on the current project with the default
+  agent.
 - `Ctrl+Shift+R` restarts the agent; `Ctrl+Shift+W` closes the session. During a
   running turn, confirmation requires releasing and pressing the shortcut again.
 
@@ -107,48 +125,41 @@ restart = []
 ```
 
 Contexts remain attached to commands: saving stays outside the terminal, and
-completion stays in the composer. Command palette is not implemented.
+completion stays in the composer.
 
 ## Known gaps
 
-Listed because a missing feature nobody wrote down reads as a bug in the ones
-that exist:
-
-- No command palette.
-- The terminal has no `APP_KEYPAD` mode and its cursor does not blink. Neovim
-  itself runs — `Ctrl+Shift+N` opens it on the active project, as one of the
-  Workbench's modes beside Editor, Files and Markdown.
-- `path:line:col` in agent prose is not clickable; only a tool card's path
-  header opens a file.
-- The remote bridge does not stream the transcript. A finished turn carries the
-  end of the agent's last answer and nothing else — no tool cards, no diffs,
-  nothing mid-turn.
-- Telegram is the only remote channel. The layer underneath it is general, but
-  nothing else implements it.
-- The bundled icon set covers less than the app wants, so some glyphs are
-  approximations.
+No command palette, no `APP_KEYPAD` in the terminal, `path:line:col` in agent
+prose is not clickable, and Telegram is the only remote channel. The full list,
+with the reason for each, is [docs/known-gaps.md](docs/known-gaps.md).
 
 ## Layout
 
 | Path | What |
 |---|---|
 | `crates/app` | the GPUI front end and the binary |
-| `crates/core` | GUI-free logic: config, the workspace tree, ACP, the chat model |
-| `crates/plugin-api` | GUI-free plugin IDs, descriptors and capabilities |
-| `crates/plugin-host` | startup registry and typed contribution contracts |
+| `crates/core` | GUI-free logic: config, the workspace tree, ACP, the chat model, workflows, tasks, unattended runs |
+| `crates/plugin-api` | GUI-free plugin IDs and descriptors |
+| `crates/plugin-host` | what a plugin is handed to draw and talk to the app as the app does |
 | `crates/terminal-ui` | shared PTY/grid ownership for Terminal and Neovim |
-| `plugins/builtin` | compile-time Editor, Files, Markdown, Neovim and Telegram plugins |
+| `plugins/builtin` | Editor, Files, Markdown, Neovim, Issues, Plugins, Telegram and the GitHub connector |
 | `vendor/gpui-terminal` | a vendored terminal grid plus the interaction layer upstream never had |
 
 `crates/core` has no dependency on any UI framework, deliberately: it is the
 half that survived one front-end rewrite.
 
-Plugins in this milestone are built into the same binary. Registration happens
-once before the first window is created; there is no plugin process, dynamic
-loading, IPC, marketplace or plugin-management screen.
+Plugins are built into the same binary and composed at compile time; there is
+no plugin process, dynamic loading, IPC or marketplace for onehand's own
+plugins.
 
-Deeper notes live beside the code: `CLAUDE.md` for working in the repository,
-`DESIGN.md` for the UI overview, and `docs/` for known gaps, gotchas and unattended runs.
+## Documentation
+
+- [CONTEXT.md](CONTEXT.md): the glossary.
+- [DESIGN.md](DESIGN.md): the UI as built.
+- [docs/](docs/): workflows, tasks and unattended runs end to end, the known
+  gaps, and the reasons behind the repository's rules.
+- [CLAUDE.md](CLAUDE.md): working in the repository.
+- [CHANGELOG.md](CHANGELOG.md): what changed in each release.
 
 ## Licence
 
