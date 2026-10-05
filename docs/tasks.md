@@ -80,8 +80,8 @@ Task ──< Run ──< Step visit
     reports it has not been given yet.
 
   A plain agent session is not a task and never appears on the page.
-- **A workflow is the template.** There is no "workflow run": a task uses a workflow, and each of
-  its runs keeps a snapshot of it.
+- **A task uses a workflow; it does not own one.** There is no "workflow run": each of the task's
+  runs keeps a snapshot of the workflow it started with.
 - **The place belongs to the task.** Every run works in the same checkout, or the same worktree and
   branch, so a retry sees the work the run before it left.
 
@@ -125,7 +125,7 @@ and the rail count cannot drift apart.
 |---|---|---|
 | Run | the same one | a new one |
 | Offered for | an interrupted run only (the agent stopped or the session went: `Outcome::resumable`) | every outcome under *Needs attention*, and *Finished* from the detail; a dismissed task retried is live again |
-| Workflow | the run's own snapshot | the previous run's snapshot; the newer template is offered if it changed |
+| Workflow | the run's own snapshot | the previous run's snapshot; the newer workflow is offered if it changed |
 | Starts at | where it was, marks kept | the first step that cannot be carried over (below), or an earlier one picked in the dialog; a run that got to the end starts at the first step by default |
 | Misses | as they were | from zero |
 | Place | through the queue | through the queue |
@@ -296,7 +296,7 @@ migration it protects.
 
 - **One `Tasks` global** (`crates/app/src/task.rs`) owns every task, the queue, the runs under way
   by session uid (so the driver still finds its run from a session event), the window each queued
-  task was asked from, and the tasks still draining. `Workflows` keeps only the templates on offer.
+  task was asked from, and the tasks still draining. `Workflows` keeps only the workflows on offer.
 - **Every start goes through `task::request`**: the launcher keeps the task first, then asks; Resume
   asks too. A free place starts the task at once (`Shell::drive_task`); a taken one queues it and
   says so in a notification. A task already running or waiting is left alone.
@@ -334,8 +334,7 @@ migration it protects.
   it ended through the reports the task keeps (`crate::unattended::ended`).
 - **After a restart nothing starts by itself.** A task that was running or queued comes back
   interrupted, under *Needs attention*, and waits for Resume.
-- **Worktrees are never removed by onehand.** A task's worktree may hold unpushed commits. A merged
-  pull request is the first signal clear enough to clean up on.
+- **Worktrees are never removed by onehand.** A task's worktree may hold unpushed commits.
 
 ## Not built
 

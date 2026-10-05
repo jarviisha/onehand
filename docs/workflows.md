@@ -1,5 +1,7 @@
 # Workflows
 
+How a workflow is written, checked and run: the file, the engine and the one driver.
+
 A run takes a brief through the steps of a workflow: an agent step prompts the
 session and is judged by gates onehand checks itself, a command step runs a command in the work, an
 approval step waits for a person, and the forge steps (push, pull request, status checks) take a
@@ -202,7 +204,8 @@ the run's history, capped at 200.
 ## The driver
 
 The `Tasks` global (`crate::task::Tasks`) holds every run under way by its session's uid;
-`crate::workflow::Workflows` keeps only the templates on offer. The driver subscribes to the session and maps its events onto the engine:
+`crate::workflow::Workflows` keeps only the workflows on offer. The driver subscribes to the
+session and maps its events onto the engine:
 
 | Event | Report |
 |---|---|

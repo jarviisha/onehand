@@ -129,28 +129,16 @@ completion stays in the composer.
 
 ## Known gaps
 
-No command palette, no `APP_KEYPAD` in the terminal, `path:line:col` in agent
-prose is not clickable, and Telegram is the only remote channel. The full list,
-with the reason for each, is [docs/known-gaps.md](docs/known-gaps.md).
+What this build does not do yet, with the reason for each, is listed in
+[docs/known-gaps.md](docs/known-gaps.md).
 
 ## Layout
 
-| Path | What |
-|---|---|
-| `crates/app` | the GPUI front end and the binary |
-| `crates/core` | GUI-free logic: config, the workspace tree, ACP, the chat model, workflows, tasks, unattended runs |
-| `crates/plugin-api` | GUI-free plugin IDs and descriptors |
-| `crates/plugin-host` | what a plugin is handed to draw and talk to the app as the app does |
-| `crates/terminal-ui` | shared PTY/grid ownership for Terminal and Neovim |
-| `plugins/builtin` | Editor, Files, Markdown, Neovim, Issues, Plugins, Telegram and the GitHub connector |
-| `vendor/gpui-terminal` | a vendored terminal grid plus the interaction layer upstream never had |
-
+The crates and plugins are listed in [CLAUDE.md](CLAUDE.md#repo-layout).
 `crates/core` has no dependency on any UI framework, deliberately: it is the
-half that survived one front-end rewrite.
-
-Plugins are built into the same binary and composed at compile time; there is
-no plugin process, dynamic loading, IPC or marketplace for onehand's own
-plugins.
+half that survived one front-end rewrite. Plugins are built into the same
+binary and composed at compile time; there is no plugin process, dynamic
+loading, IPC or marketplace for onehand's own plugins.
 
 ## Documentation
 

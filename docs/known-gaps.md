@@ -1,10 +1,9 @@
 # Known gaps in this build
 
-Listed because a missing feature nobody wrote down reads as a bug in the ones that exist. What
-workflows, tasks and unattended runs do not do is listed at the end of
+What this build does not do yet, and why: a missing feature nobody wrote down reads as a bug in
+the ones that exist. What workflows, tasks and unattended runs do not do is listed at the end of
 [workflows.md](workflows.md#not-built), [tasks.md](tasks.md#not-built) and
 [unattended.md](unattended.md#not-built-on-purpose).
-
 
 - **The newest terminal tab is not scrolled into view.** Past the width of the strip a new shell can
   be the active one with its tab off the end of the list: the grid is right, the strip is behind.
@@ -12,7 +11,6 @@ workflows, tasks and unattended runs do not do is listed at the end of
   painted needs deferring past the frame that first draws it.
 - **Dragging a rail row has no edge autoscroll.** A project past the bottom of a full rail has to be
   scrolled to first.
-
 - **The header's icon buttons have no accessible names, the conversation menu's dots included.**
   The library builds a button's accessible name out of `label` and nothing else, and the only
   setter is an inherent method on the base button it keeps in a private field — so an icon-only
@@ -63,8 +61,9 @@ workflows, tasks and unattended runs do not do is listed at the end of
   carries it instead, lifted off the terminal at the one moment both are in hand — the turn-end
   flatten, after which the terminal is gone. `mock_terminal_agent.js` exits 101 on purpose so the
   path is reachable without breaking a real build.
-- **What the summary block cannot say, and where the data would have to come
-  from.** *Renames* are absent because ACP's diff section is `{path, old, new}`
+- **What a turn's closing summary cannot say, and where the data would have to
+  come from.** The summary is the block a finished turn ends on: the files it wrote, its `+N −M`
+  and how long it took. *Renames* are absent because ACP's diff section is `{path, old, new}`
   and carries no second path — an adapter reports one as a delete and an add,
   so a fourth verdict would be one `turn_changes` could never return. *Test and
   lint results* are absent because nothing in the protocol is structured: a run
@@ -159,9 +158,8 @@ workflows, tasks and unattended runs do not do is listed at the end of
   popularity and no filter by kind. And the title row of a submenu (*Change scope ▸*, *Turn on for
   ▸*) draws the arrow cursor: the menu row that answers the pointer can only reach what goes inside
   a row, and a submenu's row is the library's own.
-- **Settings stops short of a few things it was meant to grow.** There is no interface size or
-  editor and terminal font size of its own, no Comfortable / Compact density, no recorder that
-  takes a pressed key combination (a shortcut is typed as text), no page gathering what unattended
-  runs need, and no export or import of the whole configuration. Connections lists connectors and
-  their sign-in only; managing MCP servers would be a group of its own. Searching settings was
-  weighed and declined while the pages are few.
+- **Settings has no interface size**, and no editor or terminal font size of its own; no
+  Comfortable / Compact density; no recorder that takes a pressed key combination (a shortcut is
+  typed as text); no page gathering what unattended runs need; and no export or import of the
+  whole configuration. Connections lists connectors and their sign-in only; managing MCP servers
+  would be a group of its own. There is no search across Settings, and none is planned.

@@ -49,6 +49,8 @@ minor bump may break any of them.
 - The transcript reads the agent's work as one line per stretch, and a turn ends on the files it
   changed. The composer is one surface above the conversation.
 - The rail keeps the user's order, splits into two lists, and fades a name that runs out of room.
+- `Ctrl+Shift+O` starts a new session on the current project with the default agent, and
+  `Shift+Tab` in the composer steps through the session's modes.
 - Terminal tabs size to their names and scroll; the terminal caches rows and coalesces redraws.
 
 ### Project
