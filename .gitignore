@@ -24,9 +24,9 @@ onehand.toml
 onehand-workspace.toml
 /ws00/
 
-# Claude Code: `settings.json` is the project's and is committed; the `.local`
-# half is a per-machine permission allowlist full of absolute home paths, temp
-# directories and npx cache hashes, which is worth nothing to anyone else.
+# Claude Code settings are per-machine permission allowlists, full of absolute
+# home paths, which are worth nothing to anyone else.
+.claude/settings.json
 .claude/settings.local.json
 
 # Cargo.lock is intentionally kept (binary crate) — do NOT ignore it.
