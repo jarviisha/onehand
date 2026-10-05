@@ -66,8 +66,8 @@ monospace font.
     there is a choice);
   - a hairline;
   - a *Projects | All sessions* switch;
-  - the scrolling tree, or under *All sessions* every session in the order it was made, each
-    with its project as a muted footnote, which cannot be dragged;
+  - the scrolling tree, or under *All sessions* every session in the order it was made: rows
+    that cannot be dragged, each with its project as a muted footnote;
   - *Settings* in the footer.
 
   A project row carries its folder icon and name, then any of: a pin, the branch (selected row
@@ -171,7 +171,9 @@ monospace font.
 | Machine text | `mono_font_family` |
 
 - **Sizes are rems, never pixels**, because per-panel zoom overrides the rem base. Fixed chrome
-  heights stay outside the zoom wrapper.
+  heights stay outside the zoom wrapper. Two exceptions are pixels on purpose: the settings
+  dialog's bounds, which are measured against the window, and a menu row's inset, which cancels
+  one the library draws in pixels.
 - Spacing uses gpui's base-4 scale. Radius comes from `cx.theme().radius` (`radius_lg` for
   cards); `rounded_full` is only for dots and pills.
 - Weight carries hierarchy before size does.

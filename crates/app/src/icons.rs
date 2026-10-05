@@ -108,7 +108,6 @@ icons! {
     Shield => "shield",
     SquarePen => "square-pen",
     SquareSlash => "square-slash",
-    Trash => "trash-2",
     Zap => "zap",
 }
 

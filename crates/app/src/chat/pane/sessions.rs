@@ -365,24 +365,19 @@ impl ChatPane {
     /// the agent replays -- the model comes back empty, and a restart that
     /// blanks the conversation looks like data loss even though it is not.
     ///
-    /// Mid-turn it restarts only when `confirmed`: a restart then throws away
-    /// work the user is waiting on, so the caller asks first.
-    pub fn restart(&mut self, uid: u64, confirmed: bool, cx: &mut Context<Self>) -> Restart {
+    /// Mid-turn this throws away the turn the user is waiting on; asking
+    /// first is the caller's, through [`Self::turn_in_flight`].
+    pub fn restart(&mut self, uid: u64, cx: &mut Context<Self>) -> Restart {
         // The session is looked up twice rather than held across the whole
         // function, and neither look-up is a clone. A cloned handle is a second
         // strong reference to the old session, and the old adapter only dies
         // when the last one goes -- so holding one here would keep the process
         // alive right through the spawn of its replacement, which is the one
         // thing this is careful about.
-        let Some(busy) = self.session_of(uid).map(|s| s.read(cx).chat.busy) else {
+        if self.session_of(uid).is_none() {
             return Restart::Nothing;
-        };
-        if busy && !confirmed {
-            return Restart::Busy;
         }
 
-        // Taken only now: a refused restart does not need it.
-        //
         // The conversation is *moved* out of the old session rather than copied
         // from it. The old one is about to be dropped, and a drop still holding
         // these items would write them to the file a second time -- while the

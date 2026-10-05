@@ -174,7 +174,7 @@ impl Shell {
     }
 
     /// Ask, then remove agent `idx`.
-    pub fn confirm_delete_agent(
+    pub(crate) fn confirm_delete_agent(
         &mut self,
         idx: usize,
         window: &mut Window,

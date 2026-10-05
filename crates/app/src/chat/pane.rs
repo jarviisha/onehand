@@ -633,12 +633,10 @@ impl SessionSignal {
     }
 }
 
-/// What [`ChatPane::restart_active`] did, so the shell can say so.
+/// What [`ChatPane::restart`] did, so the shell can say so.
 pub enum Restart {
     /// The adapter is coming back up on the same conversation.
     Restarted,
-    /// A turn is in flight and the restart was not confirmed; nothing happened.
-    Busy,
     /// Nothing to restart -- no session, or one that never connected.
     Nothing,
 }
