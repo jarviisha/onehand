@@ -145,8 +145,11 @@ the one state that looks exactly like working.
 plans in an answer, changes and commits the code, then runs the project's check
 command, sending a failure back to the change. A workflow that is not there, or
 one that would not pass validation, stops every run, said the way a bad config
-is (below). One that runs the project's check command on a project with none is
-learned after the claim, and the issue is told it could not start.
+is (below), and so does having no agent to run it. One that runs the project's
+check command is never claimed for on a project with none: that project's row
+says so, a pick there is refused, and no issue is claimed for a run that cannot
+start. A run whose session cannot start (its folder gone, its agent gone) ends
+failed, and its issue is told it could not start rather than left claimed.
 
 **Two places an issue can live, and a project with no forge is still worked.**
 An issue is either on the project's forge — GitHub today, through its connector

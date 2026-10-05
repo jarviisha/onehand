@@ -147,6 +147,31 @@ fn cannot_start(u: &Unattended, cx: &App) -> Option<String> {
     u.mode_refused
         .clone()
         .or_else(|| launch::workflow(&u.workflow, &u.timeout, cx).err())
+        .or_else(|| {
+            spec_for(u.agent.as_deref(), cx)
+                .is_none()
+                .then(|| "no agent is configured to run it".to_string())
+        })
+}
+
+/// Why the project at `root` cannot be worked by the workflow runs use, when
+/// that workflow runs the project's check command and the project has none.
+/// Asked before a claim, so no issue is claimed for a run that cannot start.
+fn lacks_check(root: &Path, cx: &App) -> Option<String> {
+    let u = Shared::global(cx).unattended.as_ref()?;
+    let template = launch::workflow(&u.workflow, &u.timeout, cx).ok()?;
+    let has = Shared::global(cx)
+        .windows
+        .iter()
+        .filter_map(|w| w.shell.upgrade())
+        .any(|shell| shell.read(cx).check_of(root).is_some());
+    (template.needs_check() && !has).then(|| {
+        format!(
+            "the workflow `{}` runs the project's check command, and it has none; set one \
+             under Settings ▸ Workflows",
+            template.name
+        )
+    })
 }
 
 /// Start the tick, or say why it cannot run.
@@ -428,6 +453,10 @@ fn tick(asked_from: Option<gpui::AnyWindowHandle>, cx: &mut App) {
         .unattended
         .as_ref()
         .and_then(|u| at_cap(u, cx).or_else(|| cannot_start(u, cx)));
+    let lacking: Vec<(PathBuf, String)> = roots
+        .iter()
+        .filter_map(|p| Some((p.root.clone(), lacks_check(&p.root, cx)?)))
+        .collect();
     let search = with(cx, |u| {
         let idle = !u.claiming && u.blocked.is_none() && stopped.is_none();
         idle.then(|| {
@@ -451,6 +480,12 @@ fn tick(asked_from: Option<gpui::AnyWindowHandle>, cx: &mut App) {
                     let workable: Vec<(Project, Option<&'static dyn Connector>)> = roots
                         .into_iter()
                         .filter_map(|project| {
+                            if let Some((root, why)) =
+                                lacking.iter().find(|(root, _)| *root == project.root)
+                            {
+                                checked.push((root.clone(), Err(why.clone())));
+                                return None;
+                            }
                             let (_, served) =
                                 checked.iter().find(|(root, _)| *root == project.root)?;
                             let forge = *served.as_ref().ok()?;

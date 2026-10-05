@@ -345,6 +345,18 @@ fn freed(id: String, from: usize, cx: &mut App) {
     .detach();
 }
 
+/// Task `id`, holding its place, could not start for `why`: its run ends
+/// failed, its issue is told, and its place passes on.
+pub(crate) fn fail(id: String, why: String, cx: &mut App) {
+    let Some(mut run) = resumable_run(&id, cx) else {
+        return release(id, cx);
+    };
+    run.failed(why);
+    crate::unattended::keep(&id, &run, false, None, cx);
+    cx.update_global::<Tasks, _>(|t, _| t.store_run(&id, run));
+    let_go(id, cx);
+}
+
 /// Task `id` is over and its last mark pinned: tell an issue it works how it
 /// ended, then give its place up.
 fn let_go(id: String, cx: &mut App) {

@@ -248,10 +248,16 @@ impl Shell {
     /// place passes on.
     pub fn drive_task(&mut self, id: String, window: &mut Window, cx: &mut Context<Self>) {
         let refused = |why: String, window: &mut Window, cx: &mut Context<Self>| {
-            window.push_notification(Notification::warning(why), cx);
+            // An issue's run that cannot start ends failed, so its issue is
+            // told rather than left claimed with nothing after the claim.
+            let issue = crate::task::task(&id, cx).is_some_and(|task| task.issue().is_some());
+            window.push_notification(Notification::warning(why.clone()), cx);
             // Deferred: handing the place on may start a task in this shell.
             let id = id.clone();
-            cx.defer(move |cx| crate::task::release(id, cx));
+            cx.defer(move |cx| match issue {
+                true => crate::task::fail(id, why, cx),
+                false => crate::task::release(id, cx),
+            });
         };
         let Some(mut run) = crate::task::resumable_run(&id, cx) else {
             return refused("That task has nothing left to run".to_string(), window, cx);

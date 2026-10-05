@@ -1,5 +1,7 @@
 use super::report::tell_issue;
-use super::{Project, Served, connector_for, label, opted_in_roots, tick, why_not, with};
+use super::{
+    Project, Served, connector_for, label, lacks_check, opted_in_roots, tick, why_not, with,
+};
 use crate::state::Shared;
 use gpui::App;
 use onehand_core::connector::Connector;
@@ -213,6 +215,7 @@ pub fn start_picked(
     cx: &mut App,
 ) -> Result<(), String> {
     let (full, refused) = why_not(cx);
+    let refused = refused.or_else(|| lacks_check(&repo, cx));
     let label = with(cx, |u| {
         if let Some(why) = full {
             return Err(why);
