@@ -8,7 +8,7 @@
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
     App, AppContext as _, Context, Entity, InteractiveElement, IntoElement, ParentElement, Render,
-    StatefulInteractiveElement, Styled, Window, div, px,
+    StatefulInteractiveElement, Styled, Window, div, rems,
 };
 use gpui_component::{ActiveTheme, Icon, IconName, StyledExt};
 use onehand_core::gitstat::{FileChange, GitStatus};
@@ -240,7 +240,7 @@ fn rows(
                 .hover(|r| r.bg(cx.theme().list_hover))
                 // Indent by depth, not by nested containers: a 600-row tree
                 // (the core cap) would otherwise be 600 nested elements.
-                .pl(px(4. + row.depth as f32 * 12.))
+                .pl(rems(0.25 + row.depth as f32 * 0.75))
                 .child(
                     Icon::new(if entry.is_dir {
                         if expanded {
@@ -273,7 +273,7 @@ fn rows(
                     row.child(if entry.is_dir {
                         div()
                             .flex_none()
-                            .size(px(6.))
+                            .size(rems(0.375))
                             .rounded_full()
                             .bg(color)
                             .into_any_element()

@@ -607,14 +607,6 @@ impl ChatPane {
                                 export.update(cx, |pane: &mut Self, cx| pane.export(cx));
                             }),
                     )
-                    // Named and refusing rather than absent. The transcript is held
-                    // in a shape JSON can carry and this is the format another tool
-                    // reads; leaving it out entirely would say the opposite.
-                    .item(
-                        PopupMenuItem::new("Export as JSON… (not yet)")
-                            .icon(Icon::new(IconName::File))
-                            .disabled(true),
-                    )
                     .separator()
                     .item(
                         // Named for what it does *to this session*, because the

@@ -17,7 +17,7 @@ use gpui::prelude::FluentBuilder as _;
 use gpui::{
     App, AppContext, Context, Entity, EventEmitter, FocusHandle, Focusable, InteractiveElement,
     IntoElement, ParentElement, Render, SharedString, StatefulInteractiveElement, Styled, Window,
-    div, px,
+    div, rems,
 };
 use gpui_component::button::ButtonVariants as _;
 use gpui_component::dock::{Panel, PanelControl, PanelEvent};
@@ -595,7 +595,7 @@ impl TerminalPanel {
                             // is drawn, so a project named at length ellipsizes
                             // here rather than making one tab as wide as three.
                             .flex_none()
-                            .max_w(px(220.))
+                            .max_w(rems(13.75))
                             // 8px is what the grid's own inset is built on and
                             // cannot move on its own.
                             //

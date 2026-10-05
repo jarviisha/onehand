@@ -234,16 +234,6 @@ pub struct ChatPane {
     /// zooming the transcript and leaving the box you answer in at its old
     /// size is not a posture anyone wants.
     zoom: crate::zoom::Zoom,
-    /// The session a restart was asked for while a turn was in flight, so the
-    /// second press is the confirmation. A restart mid-turn throws away work
-    /// the user is waiting on, which is exactly when a stray keystroke is most
-    /// likely.
-    ///
-    /// **The session is the point, not just the fact.** A bare flag armed on
-    /// one conversation was still raised after switching to another, so the
-    /// next press there skipped its own confirmation and threw away a turn
-    /// nobody had been warned about.
-    restart_armed: Option<u64>,
     /// A handle to this pane, for the callbacks the list builds outside the
     /// `render` that owns `Context<Self>`.
     handle: gpui::WeakEntity<Self>,
@@ -390,7 +380,6 @@ impl ChatPane {
                 active: None,
                 composer,
                 zoom: crate::zoom::Zoom::default(),
-                restart_armed: None,
                 window: window.window_handle(),
                 handle: cx.entity().downgrade(),
                 empty: None,
@@ -648,8 +637,8 @@ impl SessionSignal {
 pub enum Restart {
     /// The adapter is coming back up on the same conversation.
     Restarted,
-    /// A turn is in flight; the press armed the guard instead of restarting.
-    Armed,
+    /// A turn is in flight and the restart was not confirmed; nothing happened.
+    Busy,
     /// Nothing to restart -- no session, or one that never connected.
     Nothing,
 }
@@ -925,17 +914,6 @@ fn waits_alone(link: Link, was_live: bool) -> bool {
 /// session leaves behind.
 fn switching_away(current: Option<u64>, next: u64) -> bool {
     current != Some(next)
-}
-
-/// Whether a restart of `uid` still needs its confirming press.
-///
-/// A restart mid-turn throws away work the user is waiting on, so the first
-/// press only arms it. What is armed is the *conversation*, not the pane: an
-/// arming press made on one session says nothing about another, and treating it
-/// as though it did let a second press throw away a turn on a session the user
-/// had never been warned about.
-fn restart_needs_arming(busy: bool, armed: Option<u64>, uid: u64) -> bool {
-    busy && armed != Some(uid)
 }
 
 #[cfg(test)]

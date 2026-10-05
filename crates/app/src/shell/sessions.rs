@@ -1,3 +1,4 @@
+use super::confirm::Ask;
 use super::{FocusedPanel, RailSession, Shell, TabCycle};
 use crate::state::Shared;
 use gpui::{App, BorrowAppContext, Context, ParentElement, SharedString, Window};
@@ -168,10 +169,9 @@ impl Shell {
         cx: &mut Context<Self>,
     ) {
         if let Some(uid) = self.active_session_uid() {
-            // What lets the close through its own mid-turn guard: the question
-            // it would ask has already been asked, in stronger terms.
-            self.pending_close = Some(uid);
-            self.close_active_session(window, cx);
+            // Past the close's own mid-turn question: the one it would ask has
+            // already been asked, in stronger terms.
+            self.end_session(uid, window, cx);
         }
 
         cx.spawn_in(window, async move |shell, cx| {
@@ -215,13 +215,11 @@ impl Shell {
     /// Until this existed the only way to end a session was to remove the whole
     /// project it belonged to, so a root accumulated agents nothing could stop.
     ///
-    /// **Guarded by a second click only while a turn is in flight.** The
+    /// **Asked about in a modal only while a turn is in flight.** The
     /// transcript is written at the end of every turn, so closing an idle
     /// session costs nothing that is not already on disk and does not deserve a
-    /// confirmation; closing one mid-turn throws away the turn that is running,
-    /// which is the same loss a mid-turn restart guards against and is guarded
-    /// the same way. Arming a different session replaces the arming, so the
-    /// confirmation always belongs to the row just clicked.
+    /// question; closing one mid-turn throws away the turn that is running,
+    /// which is the same loss a mid-turn restart asks about.
     pub fn close_session(
         &mut self,
         root_idx: usize,
@@ -229,33 +227,58 @@ impl Shell {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let Some(root) = self.window.workspace.roots.get(root_idx) else {
+        let Some(session) = self
+            .window
+            .workspace
+            .roots
+            .get(root_idx)
+            .and_then(|root| root.sessions.get(session_idx))
+        else {
             return;
         };
-        let Some(session) = root.sessions.get(session_idx) else {
-            return;
-        };
-        let (uid, path) = (session.uid, root.path.clone());
-
-        if self.chat.read(cx).turn_in_flight(uid, cx) && self.pending_close != Some(uid) {
-            self.pending_close = Some(uid);
-            // Named by whatever the row is named by, so the warning and the row
-            // it is about read as the same thing.
-            let label = self
-                .chat
-                .read(cx)
-                .title_for(uid, cx)
-                .unwrap_or_else(|| session.title().to_string());
-            window.push_notification(
-                Notification::warning(format!(
-                    "{label} is mid-turn. Click ✕ again to close it and lose that turn"
-                )),
-                cx,
-            );
-            cx.notify();
+        let uid = session.uid;
+        if !self.chat.read(cx).turn_in_flight(uid, cx) {
+            self.end_session(uid, window, cx);
             return;
         }
-        self.pending_close = None;
+        // Named by whatever the row is named by, so the question and the row
+        // it is about read as the same thing.
+        let label = self
+            .chat
+            .read(cx)
+            .title_for(uid, cx)
+            .unwrap_or_else(|| session.title().to_string());
+        let ask = Ask {
+            id: "close-session",
+            title: format!("Close {label}?").into(),
+            description: "A turn is running. Closing the session stops its agent, and that \
+                          turn is lost."
+                .into(),
+            act: "Close",
+        };
+        // By uid, not by place: the list can shift while the question is open.
+        self.ask(ask, window, cx, move |shell, window, cx| {
+            shell.end_session(uid, window, cx)
+        });
+    }
+
+    /// Close session `uid` and its agent, no question asked.
+    fn end_session(&mut self, uid: u64, window: &mut Window, cx: &mut Context<Self>) {
+        let Some((root_idx, session_idx, path)) = self
+            .window
+            .workspace
+            .roots
+            .iter()
+            .enumerate()
+            .find_map(|(ri, root)| {
+                root.sessions
+                    .iter()
+                    .position(|session| session.uid == uid)
+                    .map(|si| (ri, si, root.path.clone()))
+            })
+        else {
+            return;
+        };
 
         // The pane owns the conversation and, through it, the adapter: dropping
         // the session there is what ends the agent process. Nothing else has to
@@ -439,8 +462,7 @@ impl Shell {
 
     /// Drop a session at another place under its project.
     ///
-    /// Nothing to save: sessions are not persisted, they respawn. `pending_close`
-    /// is keyed by uid rather than by place, so it survives the move.
+    /// Nothing to save: sessions are not persisted, they respawn.
     pub fn move_session(
         &mut self,
         root_idx: usize,
@@ -531,17 +553,43 @@ impl Shell {
             .update(cx, |panel, cx| panel.agent_started(since, cx));
     }
 
-    /// Restart the active session's adapter, guarded while a turn is running.
+    /// Restart the active session's adapter, asked about in a modal while a
+    /// turn is running.
     pub fn restart_session(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.last_panel = FocusedPanel::Chat;
-        match self.chat.update(cx, |pane, cx| pane.restart_active(cx)) {
+        if let Some(uid) = self.active_session_uid() {
+            self.restart_uid(uid, false, window, cx);
+        }
+    }
+
+    fn restart_uid(
+        &mut self,
+        uid: u64,
+        confirmed: bool,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        match self
+            .chat
+            .update(cx, |pane, cx| pane.restart(uid, confirmed, cx))
+        {
             crate::chat::pane::Restart::Restarted => {
                 window.push_notification(Notification::info("Restarting the agent"), cx);
             }
-            crate::chat::pane::Restart::Armed => window.push_notification(
-                Notification::warning("A turn is running — invoke Restart again to confirm"),
-                cx,
-            ),
+            crate::chat::pane::Restart::Busy => {
+                let ask = Ask {
+                    id: "restart-agent",
+                    title: "Restart the agent?".into(),
+                    description: "A turn is running. Restarting stops it, and that turn is lost."
+                        .into(),
+                    act: "Restart",
+                };
+                // By uid: the question is about the session it was asked on,
+                // whichever one shows by the time it is answered.
+                self.ask(ask, window, cx, move |shell, window, cx| {
+                    shell.restart_uid(uid, true, window, cx)
+                });
+            }
             crate::chat::pane::Restart::Nothing => {}
         }
         cx.notify();

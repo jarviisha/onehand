@@ -459,8 +459,6 @@ impl Shell {
             workbench_aside: false,
             mru: HashMap::new(),
             tab_cycle: None,
-            pending_remove: None,
-            pending_close: None,
             app_maximized: None,
         }
     }

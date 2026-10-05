@@ -197,7 +197,7 @@ pub(crate) fn tab_strip(
                 .when(file.dirty, |tab| {
                     tab.child(
                         div()
-                            .size(px(6.))
+                            .size(gpui::rems(0.375))
                             .flex_none()
                             .rounded_full()
                             .bg(cx.theme().warning),

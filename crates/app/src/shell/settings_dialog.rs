@@ -1,4 +1,5 @@
 use super::Shell;
+use super::confirm::Ask;
 use crate::settings::{AgentCheck, AgentDraft, DraftShift, SettingsPage};
 use crate::state::Shared;
 use gpui::{App, BorrowAppContext, Context, Entity, ParentElement, Window, WindowAppearance};
@@ -172,11 +173,39 @@ impl Shell {
         cx.notify();
     }
 
+    /// Ask, then remove agent `idx`.
+    pub fn confirm_delete_agent(
+        &mut self,
+        idx: usize,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(spec) = cx.global::<Shared>().agents.get(idx).cloned() else {
+            return;
+        };
+        let name = spec.name.clone();
+        let ask = Ask {
+            id: "delete-agent",
+            title: format!("Delete {name}?").into(),
+            description: "It leaves the agent list. Sessions already running on it carry on."
+                .into(),
+            act: "Delete",
+        };
+        // By the whole spec, not by position: the list can be reordered while
+        // the question is open, and two agents may share a name.
+        self.ask(ask, window, cx, move |shell, window, cx| {
+            let at = cx.global::<Shared>().agents.iter().position(|a| *a == spec);
+            if let Some(idx) = at {
+                shell.delete_agent(idx, window, cx);
+            }
+        });
+    }
+
     /// Remove an agent, and move the form off the hole it leaves.
     ///
     /// The rule is `settings::draft_shift`, which says why a position left
     /// uncorrected here is a form that saves over the wrong agent.
-    pub fn delete_agent(&mut self, idx: usize, window: &mut Window, cx: &mut Context<Self>) {
+    fn delete_agent(&mut self, idx: usize, window: &mut Window, cx: &mut Context<Self>) {
         cx.update_global::<Shared, _>(|shared, _| {
             if idx < shared.agents.len() {
                 shared.agents.remove(idx);

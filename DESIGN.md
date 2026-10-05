@@ -15,7 +15,9 @@ when it looks right, because a theme switch cannot reach it.
 1. **Chat is the centre.** The conversation is the only region that flexes. The Workbench and
    terminal are docks that start closed, open on demand, and never crowd the conversation.
 2. **Separate by hairline, not shadow.** A 1px `border` separates panels. Shadows are only for
-   surfaces that really float (dialogs, popovers, the composer popup).
+   surfaces that really float: dialogs, popovers, the composer popup, and what floats over the
+   transcript (the composer card, the cards pinned above it, the attachment tray and the
+   to-bottom button).
 3. **Colour means state.** One accent, from the theme. Danger, warning and success ink mark
    failure, in-flight and done. Anything else is `muted_foreground`, or the transcript's
    `meta_ink`, one step nearer full ink.
@@ -64,14 +66,16 @@ monospace font.
     there is a choice);
   - a hairline;
   - a *Projects | All sessions* switch;
-  - the scrolling tree;
+  - the scrolling tree, or under *All sessions* every session in the order it was made, each
+    with its project as a muted footnote, which cannot be dragged;
   - *Settings* in the footer.
 
   A project row carries its folder icon and name, then any of: a pin, the branch (selected row
   only), the change count, an unattended-run pill (*auto*, *auto · N*, *auto · N waiting*), the
   most urgent session mark, the ellipsis menu (selected row only; every row has it on right-click)
   and the fold chevron, which alone folds. A session row carries its name, its mark only when it
-  has one, and a muted agent footnote only when the project's sessions use different agents.
+  has one, and a muted agent footnote only when the project's sessions use different agents
+  and the conversation has a title.
   The order of the tree is the user's, set by dragging. Pinned projects stay on top, and
   sessions never leave their project. `Ctrl+Shift+B` hides the rail completely; it never
   collapses to an icon column. It resizes between 232 and 320px. It is the one panel drawn on
@@ -79,8 +83,9 @@ monospace font.
 - **Agent pane header**, left to right:
   - the show-rail button, only while the rail is hidden;
   - the conversation's name, semibold, full ink;
-  - a dots menu: *Rename…*, *Export as Markdown…*, *Resume in this session…*, *Restart the
-    agent*, and *Delete conversation* in the danger tint;
+  - a dots menu: *Rename…* and *Export as Markdown…*; then *Resume in this session…* (refused
+    mid-turn) and *Restart the agent*; then *Delete conversation* in the danger tint (refused
+    until the first turn has ended);
   - a spacer;
   - past conversations and *Close session*, only while a session shows;
   - the terminal, with a dot while a shell is alive;
@@ -91,12 +96,12 @@ monospace font.
 
   When the pane narrows, the name gives way first, down to a minimum width; the controls keep
   their size. Without a session, the row names the project, and its dots menu holds the project's
-  actions.
+  actions except *New session* and *Open terminal*, which the page and the header already offer.
 - **Step strip.** Under the header, only while a run drives the connected session on screen: the workflow's
   name muted, then each step's label with a chevron between them (done steps carry a muted check,
   the current one is in full ink and weight), then at the far end *Review…*, *Revise…* and
-  *Continue* (the one primary) while the run waits for approval, and *Stop* always. The labels
-  are clipped by width; the controls never are. *Review…* reads the answer from the run, not the
+  *Continue* (the one primary) while the run waits for approval, and *Stop* always. The step
+  labels are clipped by width; the workflow's name and the controls never are. *Review…* reads the answer from the run, not the
   transcript. *Revise…* asks for a note and refuses an empty one.
 - **Composer.** A card at the foot of the transcript. Inside it, one row: the `+` menu, *Fast*,
   the model chip (those two only when the agent offers them), and *Send* or *Stop*, with *Queue*
@@ -121,9 +126,10 @@ monospace font.
     command, one line counting its tasks that need attention, run or wait (not drawn at zero, and
     opening the Tasks page narrowed to the project), and its past conversations: capped,
     scrolling, each with a *Delete* word.
-  - *Workspace overview* shows these cards across all projects: *Waiting on you* (runs waiting
-    for an answer or an approval, and sessions waiting, finished or lost), *Working*,
-    *Projects*, *Recent conversations* and *Open issues*. While it shows, the header reads
+  - *Workspace overview* shows, across all projects, the cards *Waiting on you* (runs waiting
+    for an answer or an approval, and sessions waiting, finished or lost) and *Working*, then
+    *Projects* as a grid of project tiles (not drawn without projects), then the cards *Recent
+    conversations* and *Open issues*. While it shows, the header reads
     *Workspace*, and both docks are put away.
   - *Tasks* is the third page, left like the overview and drawn in its column: one column of four
     cards, *Needs attention* (with the project filter), *Running*, *Queued* and *Finished*, each
@@ -133,8 +139,9 @@ monospace font.
 - **No top bar, no status bar, no right toolbar.** Transient status goes in a toast. Modals are
   `Dialog`s. Settings is a large dialog: a nav column with Appearance, Workspace, Agents,
   Connections, Workflows and Shortcuts. Groups are separated by hairlines, not boxes.
-  Workflows lists every workflow (shipped ones tagged *Built in* and read-only) above a form in
-  the agent form's shape, one hairline box per step; its problems are listed above *Save*, which
+  Workflows lists the workflows, capped and saying how many it left out (shipped ones tagged
+  *Built in* and read-only). *New workflow* or *Edit* opens a form below in the agent form's
+  shape, one hairline box per step; its problems are listed above *Save*, which
   stays spent while any remain, and the project check commands close the page.
 - **Persistence.** The layout is saved as the Workbench width, terminal height and rail width,
   plus whether each dock is open. It is never saved as the library's `DockAreaState`.
@@ -165,8 +172,8 @@ monospace font.
 
 - **Sizes are rems, never pixels**, because per-panel zoom overrides the rem base. Fixed chrome
   heights stay outside the zoom wrapper.
-- Spacing uses gpui's base-4 scale. Radius comes from `cx.theme().radius`; `rounded_full` is only
-  for dots and pills.
+- Spacing uses gpui's base-4 scale. Radius comes from `cx.theme().radius` (`radius_lg` for
+  cards); `rounded_full` is only for dots and pills.
 - Weight carries hierarchy before size does.
 
 ## Colour and state
@@ -177,6 +184,8 @@ monospace font.
 | `muted` / `muted_foreground` | quiet fills, meta text |
 | `theme::meta_ink` | the transcript's meta text, contrast-tested |
 | `border` | every hairline |
+| `ring` | a border marking where the keyboard is: the composer while typing there, a question card's row under the arrow keys |
+| `secondary` | the user's prompt bubble |
 | `accent` | the one item selected among several |
 | `list_hover` | hover on a pickable row |
 | `primary` | the single primary action in a view |
@@ -184,7 +193,7 @@ monospace font.
 | `popover` | floating surfaces |
 
 - Cards are borders, not fills.
-- Nothing gets a ring: hover and selection are fills, at distinct steps of the ramp.
+- No control gets a focus ring: hover and selection are fills, at distinct steps of the ramp.
 - One primary per view.
 - If a surface is missing, add it to the ramp with its contrast asserted. Never add it in the one
   view that needed it.
@@ -193,14 +202,15 @@ monospace font.
 
 Reuse gpui-component before building anything: `Root`, `DockArea`, `Sidebar`, `Dialog`, `Switch`,
 `InputState`, `Editor`, `TextView`, plus gpui's own `list` for the transcript. Buttons go through the app's action
-wrapper, which sets the pointer cursor; a disabled control goes back to the arrow. The app owns
+wrapper, which sets the pointer cursor; a control that refuses says so (`resting()` or
+`.refuses()`) and goes back to the arrow. The app owns
 only what is onehand's own:
 - the transcript renderers;
 - the icon registry;
 - the terminal panel;
 - per-panel zoom;
 - the composer popup. This is one shell for `@`, `/`, the pickers and the attachment tray, with a
-  pinned title and footer, a fixed height, grouped rows, and its own scrollbar on its edge.
+  pinned title and footer, a height capped at twelve rows, grouped rows, and its own scrollbar on its edge.
 
 Scope: the Workbench editor is a quick editor (tree-sitter, no LSP). Neovim is a Workbench mode with a
 PTY of its own per project, through the shared terminal crate. Files lives inside Editor, not as a
@@ -209,6 +219,7 @@ mode. Plugins are built in, because Rust has no stable ABI to load them at run t
 ## Icons
 
 Every icon is an SVG from gpui-component's `IconName`. `crate::icons` holds only what that set
-cannot draw (brand marks, and forks of bundled shapes for stroke weight), synced from `assets/icons/manifest.toml` by `scripts/sync-icons.sh`. Where the bundled
+cannot draw (shapes it has no drawing of, brand marks, and forks of bundled shapes for stroke
+weight), synced from `assets/icons/manifest.toml` by `scripts/sync-icons.sh`. Where the bundled
 set lacks a shape, an approximate icon is accepted. An icon at rest is `muted_foreground`. One that
 carries state uses a semantic token. One that sits beside text takes that text's colour.

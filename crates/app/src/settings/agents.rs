@@ -115,18 +115,20 @@ fn agent_row(shell: &Entity<Shell>, idx: usize, spec: &AgentSpec, cx: &App) -> i
                         }
                     }),
             )
+            // A word in the danger tint rather than a trash glyph, like every
+            // other control here that removes something for good.
             .child(
                 crate::controls::action(("delete-agent", idx))
                     .ghost()
-                    // Not the bundled `delete`, which is the backspace *key* --
-                    // "erase the character behind the caret", drawn beside a
-                    // button that removes a saved agent for good.
-                    .icon(Icon::new(crate::icons::Icon::Trash))
-                    .tooltip("Delete")
+                    .small()
+                    .text_color(ink.danger)
+                    .label("Delete")
                     .on_click({
                         let shell = shell.clone();
                         move |_: &ClickEvent, window: &mut Window, cx: &mut App| {
-                            shell.update(cx, |shell, cx| shell.delete_agent(idx, window, cx));
+                            shell.update(cx, |shell, cx| {
+                                shell.confirm_delete_agent(idx, window, cx)
+                            });
                         }
                     }),
             ),

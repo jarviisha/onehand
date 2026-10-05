@@ -2,7 +2,7 @@ use gpui::prelude::FluentBuilder as _;
 use gpui::{
     Anchor, AnyElement, App, ClickEvent, Context, Div, ElementId, Hsla, InteractiveElement,
     IntoElement, ParentElement, Rems, Render, SharedString, Stateful, StatefulInteractiveElement,
-    Styled, Window, div, px, rems,
+    Styled, Window, div, rems,
 };
 use gpui_component::button::{Button, ButtonVariants as _};
 use gpui_component::menu::{ContextMenuExt as _, DropdownMenu as _, PopupMenu};
@@ -486,12 +486,12 @@ pub(super) fn project_key(path: &std::path::Path) -> SharedString {
 /// suffix takes its natural width, so an unbounded branch wins outright: a row
 /// for `fix/architecture-hardening-and-open-telemetry` pushed its own project
 /// name to zero width. Capping the branch is what keeps the label first.
-pub(super) const MAX_BRANCH_W: gpui::Pixels = px(72.);
+pub(super) const MAX_BRANCH_W: gpui::Rems = rems(4.5);
 
 /// The footnote beside a session row's label -- the agent on a tree row, the
 /// project on a flat one -- is about *how* the conversation is being run, so
 /// it is capped hard: the title is what the user is reading the row for.
-pub(super) const MAX_AGENT_W: gpui::Pixels = px(64.);
+pub(super) const MAX_AGENT_W: gpui::Rems = rems(4.);
 
 pub(super) fn ellipsize(s: &str, max: usize) -> SharedString {
     if s.chars().count() <= max {

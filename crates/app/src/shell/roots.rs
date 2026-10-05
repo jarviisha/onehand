@@ -1,3 +1,4 @@
+use super::confirm::Ask;
 use super::storage::pick_folder;
 use super::{Shell, WARM_DELAY};
 use crate::state::Shared;
@@ -270,44 +271,58 @@ impl Shell {
 
     /// Remove a project root, and everything the window keeps for it.
     ///
-    /// Two-step while the root has sessions: the first choice arms and says so,
-    /// the second removes -- the same guard shape as a mid-turn restart, and
-    /// for the same reason. Arming a different root replaces the arming rather
-    /// than stacking, so the confirmation always belongs to the row just
-    /// acted on.
+    /// Asked about in a modal first while the root has sessions or unsaved
+    /// editor buffers: removing it kills those agents, mid-turn or not, and the
+    /// buffers have nowhere to go once the tab strip they belong to leaves with
+    /// the root. A root with nothing running and nothing unsaved just goes.
     pub fn remove_root(&mut self, idx: usize, window: &mut Window, cx: &mut Context<Self>) {
         let Some(root) = self.window.workspace.roots.get(idx) else {
             return;
         };
         let (path, label, live) = (root.path.clone(), root.label.clone(), root.sessions.len());
-        // Unsaved editor buffers are the other thing this click destroys, and
-        // they have nowhere to go afterwards -- the tab strip they belong to
-        // leaves with the root. Guarded on the same second click rather than a
-        // second one of its own.
         let unsaved = self.workbench.read(cx).unsaved_in(&path, cx);
-
-        if (live > 0 || unsaved > 0) && self.pending_remove != Some(idx) {
-            self.pending_remove = Some(idx);
-            let mut losses = Vec::new();
-            if live > 0 {
-                let s = if live == 1 { "session" } else { "sessions" };
-                losses.push(format!("close {live} {s}"));
-            }
-            if unsaved > 0 {
-                let s = if unsaved == 1 { "file" } else { "files" };
-                losses.push(format!("discard {unsaved} unsaved {s}"));
-            }
-            window.push_notification(
-                Notification::warning(format!(
-                    "Remove {label} and {}? Choose Remove from workspace again to confirm",
-                    losses.join(" and ")
-                )),
-                cx,
-            );
-            cx.notify();
+        if live == 0 && unsaved == 0 {
+            self.drop_root(&path, window, cx);
             return;
         }
-        self.pending_remove = None;
+        let mut losses = Vec::new();
+        if live > 0 {
+            let s = if live == 1 { "session" } else { "sessions" };
+            losses.push(format!("closes {live} {s}"));
+        }
+        if unsaved > 0 {
+            let s = if unsaved == 1 { "file" } else { "files" };
+            losses.push(format!("discards {unsaved} unsaved {s}"));
+        }
+        let ask = Ask {
+            id: "remove-project",
+            title: format!("Remove {label} from the workspace?").into(),
+            description: format!(
+                "This {}. The folder itself stays on disk.",
+                losses.join(" and ")
+            )
+            .into(),
+            act: "Remove",
+        };
+        // By path, not by index: the tree can be reordered while the question
+        // is open, and the answer has to land on the project it was about.
+        self.ask(ask, window, cx, move |shell, window, cx| {
+            shell.drop_root(&path, window, cx)
+        });
+    }
+
+    /// Remove the root at `path`, the question already answered.
+    fn drop_root(&mut self, path: &Path, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(idx) = self
+            .window
+            .workspace
+            .roots
+            .iter()
+            .position(|r| r.path == path)
+        else {
+            return;
+        };
+        let label = self.window.workspace.roots[idx].label.clone();
         self.forget_root(idx, cx);
         window.push_notification(Notification::info(format!("Removed {label}")), cx);
         self.show_active_session(window, cx);
@@ -379,10 +394,6 @@ impl Shell {
         cx: &mut Context<Self>,
     ) {
         self.window.workspace.move_root(from, to);
-        // A root index, and every one of them has just changed hands. Left
-        // armed, the confirming click for a removal would land on whichever
-        // project moved into that slot.
-        self.pending_remove = None;
         self.save_workspace(window, cx);
         cx.notify();
     }
