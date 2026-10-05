@@ -166,7 +166,7 @@ pub enum Stop {
 }
 
 impl Stop {
-    fn said(self) -> &'static str {
+    pub(crate) fn said(self) -> &'static str {
         match self {
             Self::ByPerson => "stopped by hand",
             Self::TakenOver => "taken over by hand",
@@ -293,10 +293,12 @@ impl Run {
         };
         // Passed means passed in the last run's own template: a step dropped
         // earlier on in `template` must not move one it failed into the past.
+        // A run that ended done passed them all, its last step included,
+        // though finishing never moves `step` past it.
         let passed = |step: &str| {
             prev.template
                 .index_of(step)
-                .is_some_and(|at| at < prev.step)
+                .is_some_and(|at| at < prev.step || prev.outcome == Some(Outcome::Done))
         };
         template
             .steps
@@ -325,6 +327,26 @@ impl Run {
             at if at >= template.steps.len() => 0,
             at => at,
         }
+    }
+
+    /// Where a retry that would start at `start` on `template` starts instead
+    /// when the work changed since the last run stopped: at the last command
+    /// step up to it. What that check passed on is no longer what is there,
+    /// and a push past it would send the commit it passed on rather than the
+    /// work. `start` itself when no command step comes up to it.
+    pub fn recheck(template: &Template, start: usize) -> usize {
+        let upto = (start + 1).min(template.steps.len());
+        template.steps[..upto]
+            .iter()
+            .rposition(|step| match step.kind {
+                StepKind::Command { .. } => true,
+                StepKind::Agent { .. }
+                | StepKind::Approval { .. }
+                | StepKind::Push
+                | StepKind::PullRequest
+                | StepKind::StatusChecks { .. } => false,
+            })
+            .unwrap_or(start)
     }
 
     /// Where a retry of `prev` on `template` starts, [`Run::retry_start`] or

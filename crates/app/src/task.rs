@@ -730,10 +730,10 @@ pub(crate) fn rows(roots: &[PathBuf], cx: &App) -> Vec<Row> {
         let step = run
             .and_then(Run::current)
             .map_or_else(String::new, |step| step.label.clone());
-        let at = match (working, task.outcome()) {
+        let at = match (working, task.ended_said()) {
             (Some(_), _) => step,
             (None, None) => format!("cut off at {step}"),
-            (None, Some(outcome)) => outcome.said(),
+            (None, Some(said)) => said,
         };
         let live = t.live.iter().find(|(_, d)| d.task == task.id);
         let row = Row {
@@ -791,7 +791,7 @@ pub(crate) fn issues_working(cx: &App) -> Vec<String> {
     t.tasks
         .iter()
         .filter(|task| t.holds_slot(&task.id))
-        .filter_map(|task| task.issue().map(|issue| issue.shown()))
+        .filter_map(|task| task.issue().map(|issue| issue.named(&task.brief.title)))
         .collect()
 }
 

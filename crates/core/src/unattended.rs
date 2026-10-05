@@ -119,6 +119,17 @@ impl Tracker {
         )
     }
 
+    /// How `issue` is named in a sentence: as [`Tracker::shown`] says, and by
+    /// its title where it is kept in onehand only, since *Draft* names none.
+    pub fn named(&self, issue: &Issue) -> String {
+        named(
+            lives_on_forge(self.to_ref()),
+            issue.number,
+            issue.forge_ref(),
+            &issue.title,
+        )
+    }
+
     /// How a run's brief names `issue`, in what every step is asked.
     fn names(&self, issue: &Issue) -> String {
         let number = issue.number;
@@ -398,11 +409,20 @@ pub fn branch_for(tracker: &Tracker, issue: &Issue) -> String {
 /// worktree that run left on disk, and git refuses a second checkout of it.
 /// One the forge still has a pull request on is taken too, though its local
 /// branch is gone: a new task pushing there would meet the old one's work.
-pub fn free_branch_blocking(root: &Path, branch: &str, taken: impl Fn(&str) -> bool) -> String {
-    std::iter::once(branch.to_string())
-        .chain((2..=9).map(|n| format!("{branch}-{n}")))
-        .find(|name| !crate::worktree::branch_exists_blocking(root, name) && !taken(name))
-        .unwrap_or_else(|| format!("{branch}-10"))
+/// When `taken` cannot tell, that is the error: a guess either way could cut
+/// the new task on a branch the old one's pull request is on.
+pub fn free_branch_blocking(
+    root: &Path,
+    branch: &str,
+    taken: impl Fn(&str) -> Result<bool, String>,
+) -> Result<String, String> {
+    for name in std::iter::once(branch.to_string()).chain((2..=9).map(|n| format!("{branch}-{n}")))
+    {
+        if !crate::worktree::branch_exists_blocking(root, &name) && !taken(&name)? {
+            return Ok(name);
+        }
+    }
+    Ok(format!("{branch}-10"))
 }
 
 /// Where every run builds, shared across runs.
@@ -510,6 +530,17 @@ impl IssueSource {
             self.forge_ref.as_deref(),
         )
     }
+
+    /// How the issue titled `title` is named in a sentence, as
+    /// [`Tracker::named`] says.
+    pub fn named(&self, title: &str) -> String {
+        named(
+            lives_on_forge(self.tracker.clone()),
+            self.number,
+            self.forge_ref.as_deref(),
+            title,
+        )
+    }
 }
 
 /// Whether an issue living in `tracker` lives on the forge itself.
@@ -529,6 +560,15 @@ fn shown(on_forge: bool, number: u64, forge_ref: Option<&str>) -> String {
         (true, _) => format!("#{number}"),
         (false, Some(reference)) => reference.to_string(),
         (false, None) => "Draft".to_string(),
+    }
+}
+
+/// How an issue is named in a sentence: as [`shown`], or by its title in
+/// quotes where it is a draft.
+fn named(on_forge: bool, number: u64, forge_ref: Option<&str>, title: &str) -> String {
+    match (on_forge, forge_ref) {
+        (false, None) => format!("\u{201c}{title}\u{201d}"),
+        _ => shown(on_forge, number, forge_ref),
     }
 }
 

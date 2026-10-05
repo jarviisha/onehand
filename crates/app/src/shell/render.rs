@@ -236,7 +236,7 @@ impl Render for Shell {
             .children(
                 self.workflow_launcher
                     .is_some()
-                    .then(|| crate::dialogs::run_workflow(self, cx)),
+                    .then(|| crate::dialogs::run_workflow(self, window, cx)),
             )
             .children(
                 self.settings_open

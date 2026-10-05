@@ -923,13 +923,32 @@ fn a_retry_ignores_a_step_it_lacks_or_one_past_its_start() {
 
 #[test]
 fn a_done_run_retries_from_past_its_last_step_and_offers_the_first() {
-    let mut prev = exhausted_at_implement();
-    prev.step = prev.template.steps.len();
+    let mut prev = at_approval();
+    prev.approved();
+    prompt_of(prev.measured(mark("a", "d0")));
+    prev.turn_ended(&facts("a", true, 0, "d1"), "");
+    assert_eq!(
+        prev.command_finished(Ok(Some("a".into()))),
+        Action::Finish(Outcome::Done)
+    );
     assert_eq!(
         Run::retry_start(&prev, &prev.template),
         prev.template.steps.len()
     );
     assert_eq!(Run::retry_offered(&prev, &prev.template), 0);
+}
+
+#[test]
+fn work_changed_since_is_checked_again_before_anything_past_the_check() {
+    let t = builtin::all().remove(2);
+    let at = |id: &str| t.index_of(id).unwrap();
+    // Past the check, the check runs again on the work as it is now.
+    assert_eq!(Run::recheck(&t, at("push")), at("verify"));
+    assert_eq!(Run::recheck(&t, at("status_checks")), at("verify"));
+    assert_eq!(Run::recheck(&t, t.steps.len()), at("verify"));
+    // At or before it, nothing moves.
+    assert_eq!(Run::recheck(&t, at("verify")), at("verify"));
+    assert_eq!(Run::recheck(&t, at("implement")), at("implement"));
 }
 
 #[test]

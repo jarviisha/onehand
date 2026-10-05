@@ -31,7 +31,7 @@ impl Connector for GitHub {
 
     fn account_blocking(&self) -> Result<String, String> {
         match account_blocking() {
-            Account::SignedIn(login) => Ok(format!("signed in as {login}, through `gh`")),
+            Account::SignedIn(login) => Ok(format!("Signed in as {login}, through gh")),
             other => Err(other.problem().unwrap_or_default()),
         }
     }

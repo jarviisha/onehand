@@ -214,7 +214,7 @@ pub(super) fn connections_page(cx: &App) -> AnyElement {
                     .map(|(_, account)| account.clone())
             }) {
                 None => ("Checking…".to_string(), muted),
-                Some(Ok(who)) => (format!("Signed in as {who}"), ink.success),
+                Some(Ok(who)) => (who, ink.success),
                 Some(Err(why)) => (why, ink.warning),
             };
             list_row(
@@ -279,6 +279,10 @@ fn unattended_section(handle: &Entity<Shell>, cx: &App) -> AnyElement {
     let choices = handle.read(cx).unattended_choices();
     let ink = crate::theme::status_ink(cx);
     let empty = choices.is_empty();
+    let config = crate::state::Shared::global(cx)
+        .config_path
+        .display()
+        .to_string();
 
     section(
         Some("Unattended runs"),
@@ -287,8 +291,9 @@ fn unattended_section(handle: &Entity<Shell>, cx: &App) -> AnyElement {
              Issues tab — in a project switched on here is picked up by an agent, worked in \
              a worktree of its own, and answered with a pull request, or with commits on its \
              branch where the project has no forge. The switches are this workspace's; the \
-             label and how often to look are the app's, set in onehand.toml, and so is \
-             the agent a run uses — the default agent unless onehand.toml names another."
+             label and how often to look are the app's, set in its config file ({config}), \
+             and so is the agent a run uses — the default agent unless that file names \
+             another."
         ))),
         cx,
     )

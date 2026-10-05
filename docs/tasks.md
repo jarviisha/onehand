@@ -157,7 +157,7 @@ check. **A check task is retried at once**, with no dialog: it is a fresh run of
 **The dialog has a step menu**, *From …*, listing the first step up to where the retry would start;
 it defaults to that start, or to the first step when the last run got to the end. The description
 says where the pick starts and how many answers it carries; only the steps before it carry. The
-pick goes to both *Retry* and *Retry with the newer workflow*, and a newer workflow without that
+pick goes to both *Retry* and *Retry with version N*, and a newer workflow without that
 step ignores it.
 
 In code: `Run::retry_start` (`crates/core/src/workflow/run.rs`) says where a retry would start,
@@ -170,12 +170,15 @@ clears `dismissed`, so a task let go comes back live and a failure lands under *
 again. A check is retried from its one step, so one that passed runs again.
 `Run::resume` enters the run's own step on its first start, which is step 0 for a fresh run.
 `task::marks::against_blocking` answers `Same`, `Changed` or `OtherBranch`, and
-`Shell::begin_retry` (`crates/app/src/shell/workflows.rs`) asks the question. The dialog shows
-*Retry with the newer workflow (version N)* when the workflows on offer hold one that is newer than
+`Shell::begin_retry` (`crates/app/src/shell/workflows.rs`) asks the question. On `Changed` the
+start is held at or before the last command step up to it (`Run::recheck`): a retry carries
+`verified_at`, and without the check running again on the work as it is now, a push would send
+the commit the last check passed on. Enter in the dialog retries as *Retry* does. The dialog shows
+*Retry with version N* when the workflows on offer hold one that is newer than
 the run's snapshot (`Template::newer_than`: the same id at a higher version, or at the same version with different
 content, as a hand edit leaves it; or for a snapshot from
-before ids the same name with different content) and validates, and it says where that one would
-start.
+before ids the same name with different content) and validates, and its description says where that
+one would start.
 
 ## The architecture
 
