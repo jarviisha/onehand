@@ -1,6 +1,6 @@
 use super::report::tell_issue;
 use super::{
-    Project, Served, connector_for, label, lacks_check, opted_in_roots, tick, why_not, with,
+    Project, Served, connector_for, label, lacks_check_given, opted_in_roots, tick, why_not, with,
 };
 use crate::state::Shared;
 use gpui::App;
@@ -419,16 +419,19 @@ fn trackers_blocking(
 /// a run waiting on a person does not count — and the refusal names the
 /// issues being worked so the person knows what they are waiting on. Anything that stops it before
 /// the claim — a claim refused where the issue lives — is said in the window it
-/// was picked from; after the claim, on the issue as well.
+/// was picked from; after the claim, on the issue as well. `has_check` is
+/// whether the project has a check command, told by the window it was picked
+/// in, which is being updated and so cannot be asked.
 pub fn start_picked(
     repo: PathBuf,
     tracker: Tracker,
     row: IssueRow,
+    has_check: bool,
     window: gpui::AnyWindowHandle,
     cx: &mut App,
 ) -> Result<(), String> {
     let (full, refused) = why_not(cx);
-    let refused = refused.or_else(|| lacks_check(&repo, cx));
+    let refused = refused.or_else(|| lacks_check_given(has_check, cx));
     let label = with(cx, |u| {
         if let Some(why) = full {
             return Err(why);

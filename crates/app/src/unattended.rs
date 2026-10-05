@@ -158,13 +158,20 @@ fn cannot_start(u: &Unattended, cx: &App) -> Option<String> {
 /// that workflow runs the project's check command and the project has none.
 /// Asked before a claim, so no issue is claimed for a run that cannot start.
 fn lacks_check(root: &Path, cx: &App) -> Option<String> {
-    let u = Shared::global(cx).unattended.as_ref()?;
-    let template = launch::workflow(&u.workflow, &u.timeout, cx).ok()?;
     let has = Shared::global(cx)
         .windows
         .iter()
         .filter_map(|w| w.shell.upgrade())
         .any(|shell| shell.read(cx).check_of(root).is_some());
+    lacks_check_given(has, cx)
+}
+
+/// [`lacks_check`] for a project that `has` a check command or not, for a
+/// caller that already knows: one inside its own window's update, whose shell
+/// cannot be read again while it is being updated.
+fn lacks_check_given(has: bool, cx: &App) -> Option<String> {
+    let u = Shared::global(cx).unattended.as_ref()?;
+    let template = launch::workflow(&u.workflow, &u.timeout, cx).ok()?;
     (template.needs_check() && !has).then(|| {
         format!(
             "the workflow `{}` runs the project's check command, and it has none; set one \

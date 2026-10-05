@@ -163,14 +163,18 @@ impl Connector for GitHub {
                     check.name
                 )
             })?;
+        // A job's log is coloured for a terminal, and `gh` refuses to print
+        // escape sequences unless asked; they are stripped here instead, so
+        // none reaches a prompt.
         let log = gh(
             root,
             &[
                 "api",
+                "--allow-escape-sequences",
                 &format!("repos/{{owner}}/{{repo}}/actions/jobs/{job}/logs"),
             ],
         )?;
-        Ok(last_lines(&log, LOG_LINES))
+        Ok(last_lines(&without_escapes(&log), LOG_LINES))
     }
 
     fn read_review_with(&self, number: u64) -> String {
@@ -360,6 +364,31 @@ impl From<GhIssue> for Issue {
 
 /// How many lines of a failed job's log an agent is handed.
 const LOG_LINES: usize = 80;
+
+/// `text` without terminal escape sequences (`ESC [ … letter`, and any other
+/// `ESC` with the character after it) or other control characters but line
+/// breaks and tabs.
+fn without_escapes(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    let mut chars = text.chars();
+    while let Some(c) = chars.next() {
+        match c {
+            '\u{1b}' => {
+                if chars.next() == Some('[') {
+                    for c in chars.by_ref() {
+                        if c.is_ascii_alphabetic() || c == '~' {
+                            break;
+                        }
+                    }
+                }
+            }
+            '\n' | '\t' => out.push(c),
+            c if c.is_control() => {}
+            c => out.push(c),
+        }
+    }
+    out
+}
 
 /// The last `n` lines of `text`.
 fn last_lines(text: &str, n: usize) -> String {
@@ -852,6 +881,14 @@ fn ssh_resolve_blocking(alias: &str) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_job_log_loses_its_colours() {
+        assert_eq!(
+            without_escapes("\u{1b}[36;1mok\u{1b}[0m\r\nerror: \u{1b}[31mboom\u{1b}[0m\n"),
+            "ok\nerror: boom\n"
+        );
+    }
 
     #[test]
     fn a_push_turned_down_is_not_tried_over_https() {
