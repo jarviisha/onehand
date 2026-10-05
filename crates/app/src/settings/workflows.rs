@@ -89,7 +89,7 @@ impl StepDraft {
             let text = text.to_string();
             cx.new(|cx| InputState::new(window, cx).default_value(text))
         };
-        let mut wait = "1h";
+        let mut wait = core::DEFAULT_WAIT;
         let (kind, prompt, gates, keep_answer, command, target) = match &spec.kind {
             StepKind::Agent {
                 prompt,
@@ -268,7 +268,7 @@ impl WorkflowDraft {
                 Kind::PullRequest => StepKind::PullRequest,
                 Kind::StatusChecks => StepKind::StatusChecks {
                     on_fail: String::new(),
-                    wait: "1h".to_string(),
+                    wait: core::DEFAULT_WAIT.to_string(),
                 },
             },
         };
@@ -760,7 +760,7 @@ fn step_box(
         Kind::Push => div()
             .text_sm()
             .text_color(cx.theme().muted_foreground)
-            .child("onehand pushes the commit the last command passed on, as the run's branch.")
+            .child("onehand pushes the commit the check passed on, as the run's branch.")
             .into_any_element(),
         Kind::PullRequest => div()
             .text_sm()

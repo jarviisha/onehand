@@ -231,11 +231,8 @@ const SENT_BACK: [(&str, &str); 2] = [
 /// The variable `step` fills in when it sends the step `id` back, if it does.
 fn fills_on_send_back(step: &StepSpec, id: &str) -> Option<&'static str> {
     match &step.kind {
-        StepKind::Command { on_fail, .. } | StepKind::StatusChecks { on_fail, .. } => {
-            (on_fail == id).then_some("check_output")
-        }
         StepKind::Approval { of } => (of == id).then_some("revise"),
-        StepKind::Agent { .. } | StepKind::Push | StepKind::PullRequest => None,
+        kind => (kind.sends_back_to() == Some(id)).then_some("check_output"),
     }
 }
 

@@ -23,17 +23,8 @@ pub(super) struct Claimed {
     /// forge, whose work stays on the branch.
     pub(super) forge: Option<&'static dyn Connector>,
     pub(super) issue: Issue,
-    pub(super) branch: String,
-    /// What the worktree was cut from: the remote's default branch with a
-    /// forge, the branch checked out without one. Also what a run with no
-    /// forge is measured against.
-    pub(super) base: String,
-    /// The worktree the run made, and the project root it is added as.
-    pub(super) dir: PathBuf,
-    /// The task of the issue whose open pull request this claim answers the
-    /// review on, and what its run is told; `None` for a new task. Such a
-    /// claim cuts no worktree: `dir` and `branch` are the task's own.
-    answers: Option<(String, String)>,
+    /// What the claim works on.
+    work: Work,
     /// The window a person picked it in, rather than the search finding it.
     /// Such a run is put on screen there as it starts and stays when it ends —
     /// somebody asked for it and is watching — so a card it parks is theirs.
@@ -47,26 +38,46 @@ impl Claimed {
     }
 }
 
-/// An issue task that is not working, as a claim looks for the one whose
-/// pull request it may answer a review on.
-pub(super) struct Ended {
+/// What a claimed issue is worked on.
+#[derive(Clone)]
+enum Work {
+    /// A worktree cut for a new task.
+    Cut {
+        branch: String,
+        /// What the worktree was cut from: the remote's default branch with a
+        /// forge, the branch checked out without one. Also what a run with no
+        /// forge is measured against.
+        base: String,
+        /// The worktree the run made, and the project root it is added as.
+        dir: PathBuf,
+    },
+    /// The task whose open pull request the claim answers the review on,
+    /// brought up to the branch on the forge, and what its next run is told.
+    Review { task: String, note: String },
+}
+
+/// An issue task that worked on a branch of its own, as a claim looks for
+/// one still working on the issue, or whose pull request it answers.
+pub(super) struct Earlier {
     task: String,
     tracker: TrackerRef,
     number: u64,
     dir: PathBuf,
     branch: String,
+    working: bool,
 }
 
-/// Every issue task not working, oldest first.
-pub(super) fn ended(cx: &App) -> Vec<Ended> {
-    crate::task::idle(cx, |task| {
+/// Every issue task with a branch of its own, oldest first.
+pub(super) fn earlier(cx: &App) -> Vec<Earlier> {
+    crate::task::each(cx, |task, working| {
         let issue = task.issue()?;
-        Some(Ended {
+        Some(Earlier {
             task: task.id.clone(),
             tracker: issue.tracker.clone(),
             number: issue.number,
             dir: task.setup.dir.clone(),
             branch: task.setup.branch.clone()?,
+            working,
         })
     })
 }
@@ -94,7 +105,7 @@ pub(super) struct Unstarted {
 pub(super) fn begin_blocking(
     roots: &[(Project, Option<&'static dyn Connector>)],
     label: &str,
-    ended: &[Ended],
+    earlier: &[Earlier],
     checked: &mut Vec<(PathBuf, Served)>,
 ) -> Option<Result<Claimed, Unstarted>> {
     let (repo, tracker, forge, issue) = roots.iter().find_map(|(project, forge)| {
@@ -110,22 +121,100 @@ pub(super) fn begin_blocking(
         }
         None
     })?;
-    if let Err(why) = core::claim_blocking(&tracker, &repo, issue.number, label) {
+    let taking = match taking_blocking(earlier, &tracker, issue.number, &repo, forge) {
+        Ok(Taking::Busy) => return None,
+        Ok(taking) => taking,
+        Err(why) => {
+            eprintln!("onehand: could not look at issue #{}: {why}", issue.number);
+            return None;
+        }
+    };
+    let answering = taking.answering();
+    if let Err(why) = core::claim_blocking(&tracker, &repo, issue.number, label, answering) {
         eprintln!("onehand: could not claim issue #{}: {why}", issue.number);
         return None;
     }
-    Some(prepare_blocking(repo, tracker, forge, issue, ended, None))
+    Some(prepare_blocking(
+        repo, tracker, forge, issue, taking, earlier, None,
+    ))
 }
 
-/// Cut a worktree for a claimed issue: off the remote's default branch, fetched
-/// first, on a project with a forge; off the branch checked out on one without,
-/// since there is no remote to ask.
-///
-/// **Unless an earlier task of the issue has a pull request open**: the label
-/// put back is then a reviewer asking for changes, and that task is retried
-/// on its own branch to answer them. One closed without being merged is
-/// refused, so a second pull request is never opened beside the one turned
-/// down; one merged, or none, is a fresh start.
+/// What claiming an issue comes to, given the tasks it had before.
+enum Taking {
+    /// A task is still working on it: it is not taken again.
+    Busy,
+    /// A new task, on a branch of its own.
+    Fresh,
+    /// The last task's pull request is open: the label put back is a reviewer
+    /// asking for changes, and that task answers them on its own branch.
+    Review {
+        earlier: usize,
+        pr: String,
+        note: String,
+    },
+    /// The last task's pull request was closed without being merged, so a
+    /// second is never opened beside the one turned down; why, to be said.
+    Refused(String),
+}
+
+impl Taking {
+    /// The pull request whose review the claim answers, if it does.
+    fn answering(&self) -> Option<&str> {
+        match self {
+            Self::Review { pr, .. } => Some(pr),
+            Self::Busy | Self::Fresh | Self::Refused(_) => None,
+        }
+    }
+}
+
+/// What claiming issue `number` of `tracker` comes to, by the newest of
+/// `earlier` on it and, with a forge, the pull request on its branch; one
+/// merged, or none, is a fresh start. Blocking.
+fn taking_blocking(
+    earlier: &[Earlier],
+    tracker: &Tracker,
+    number: u64,
+    repo: &Path,
+    forge: Option<&'static dyn Connector>,
+) -> Result<Taking, String> {
+    let at = tracker.to_ref();
+    let Some((index, last)) = earlier
+        .iter()
+        .enumerate()
+        .rfind(|(_, e)| e.tracker == at && e.number == number)
+    else {
+        return Ok(Taking::Fresh);
+    };
+    if last.working {
+        return Ok(Taking::Busy);
+    }
+    let Some(forge) = forge else {
+        return Ok(Taking::Fresh);
+    };
+    let Some(pr) = forge.pull_request_for_blocking(repo, &last.branch)? else {
+        return Ok(Taking::Fresh);
+    };
+    Ok(match pr.state {
+        PrState::Open => Taking::Review {
+            earlier: index,
+            note: core::review_note(&pr.url, &forge.read_review_with(pr.number)),
+            pr: pr.url,
+        },
+        PrState::Closed => Taking::Refused(format!(
+            "its pull request {} was closed without being merged, and onehand does not open \
+             another; reopen it to have its review answered",
+            pr.url
+        )),
+        PrState::Merged => Taking::Fresh,
+    })
+}
+
+/// Make what a claimed issue is worked on, as `taking` says. For a new task,
+/// a worktree off the remote's default branch, fetched first, on a project
+/// with a forge; off the branch checked out on one without, since there is no
+/// remote to ask. For a review, the last task's worktree brought up to its
+/// branch on the forge, which a reviewer may have pushed to: a branch that
+/// went its own way there is refused rather than pushed over.
 ///
 /// Caught as well as everything around it: by now the issue has been claimed,
 /// so a panic has to become a comment on the issue, or it is left claimed with
@@ -135,37 +224,28 @@ fn prepare_blocking(
     tracker: Tracker,
     forge: Option<&'static dyn Connector>,
     issue: Issue,
-    ended: &[Ended],
+    taking: Taking,
+    earlier: &[Earlier],
     picked_in: Option<gpui::AnyWindowHandle>,
 ) -> Result<Claimed, Unstarted> {
     let made = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        let at = tracker.to_ref();
-        let last = ended
-            .iter()
-            .rfind(|e| e.tracker == at && e.number == issue.number);
-        if let (Some(last), Some(forge)) = (last, forge)
-            && let Some(pr) = forge.pull_request_for_blocking(&repo, &last.branch)?
-        {
-            match pr.state {
-                PrState::Open => {
-                    let note = core::review_note(&pr.url, &forge.read_review_with(pr.number));
-                    let answers = Some((last.task.clone(), note));
-                    return Ok((
-                        String::new(),
-                        last.branch.clone(),
-                        last.dir.clone(),
-                        answers,
-                    ));
+        match taking {
+            Taking::Busy => return Err("a run is still working on it".to_string()),
+            Taking::Refused(why) => return Err(why),
+            Taking::Review {
+                earlier: at, note, ..
+            } => {
+                let last = &earlier[at];
+                if let Some(forge) = forge {
+                    forge.fetch_blocking(&repo, &last.branch)?;
                 }
-                PrState::Closed => {
-                    return Err(format!(
-                        "its pull request {} was closed without being merged, and onehand \
-                         does not open another; reopen it to have its review answered",
-                        pr.url
-                    ));
-                }
-                PrState::Merged => {}
+                worktree::fast_forward_blocking(&last.dir, &format!("origin/{}", last.branch))?;
+                return Ok(Work::Review {
+                    task: last.task.clone(),
+                    note,
+                });
             }
+            Taking::Fresh => {}
         }
         let base = match forge {
             Some(forge) => {
@@ -179,19 +259,16 @@ fn prepare_blocking(
         let branch = core::free_branch_blocking(&top, &core::branch_for(&tracker, &issue));
         let dir = worktree::worktree_dir(&top, &branch);
         let dir = worktree::branch_off_blocking(&top, &branch, &dir, &base)?;
-        Ok::<_, String>((base, branch, dir, None))
+        Ok::<_, String>(Work::Cut { branch, base, dir })
     }))
     .unwrap_or_else(|_| Err("onehand panicked while preparing the worktree".to_string()));
     match made {
-        Ok((base, branch, dir, answers)) => Ok(Claimed {
+        Ok(work) => Ok(Claimed {
             repo,
             tracker,
             forge,
             issue,
-            branch,
-            base,
-            dir,
-            answers,
+            work,
             picked_in,
         }),
         Err(why) => Err(Unstarted {
@@ -297,7 +374,7 @@ pub fn start_picked(
         Ok(u.label.clone())
     })
     .ok_or("Unattended runs are not set up.")??;
-    let ended = ended(cx);
+    let earlier = earlier(cx);
     cx.spawn(async move |cx| {
         let number = row.issue.number;
         let begun = cx
@@ -310,14 +387,22 @@ pub fn start_picked(
                         Tracker::Forge(forge) | Tracker::Synced { forge, .. } => Some(*forge),
                         Tracker::Local(_) => connector_for(&repo).ok(),
                     };
-                    core::claim_picked_blocking(&tracker, &repo, &row, &label)
+                    let taking = taking_blocking(&earlier, &tracker, number, &repo, forge)
+                        .map_err(|why| format!("Could not start on issue #{number}: {why}"))?;
+                    // Refused before the claim: claimed twice, it would be
+                    // worked twice, on two branches.
+                    if let Taking::Busy = taking {
+                        return Err(format!("A run is already working on issue #{number}."));
+                    }
+                    core::claim_picked_blocking(&tracker, &repo, &row, &label, taking.answering())
                         .map_err(|why| format!("Could not start on issue #{number}: {why}"))?;
                     Ok(prepare_blocking(
                         repo,
                         tracker,
                         forge,
                         row.issue,
-                        &ended,
+                        taking,
+                        &earlier,
                         Some(window),
                     ))
                 }))
@@ -427,7 +512,7 @@ pub(super) fn landed(
 /// its place in the window holding its project: the one it was picked in
 /// when that one does, so its session comes up in front of the person who
 /// asked for it.
-fn start(mut claimed: Claimed, cx: &mut App) -> Result<(), Unstarted> {
+fn start(claimed: Claimed, cx: &mut App) -> Result<(), Unstarted> {
     let Some((id, mode, agent, timeout)) = with(cx, |u| {
         (
             u.workflow.clone(),
@@ -472,34 +557,12 @@ fn start(mut claimed: Claimed, cx: &mut App) -> Result<(), Unstarted> {
     let Some(shell) = shell.upgrade() else {
         return Err(unstarted(claimed, "the project's window was closed"));
     };
-    if let Some((task_id, note)) = claimed.answers.take() {
-        let Some(last) = crate::task::task(&task_id, cx).and_then(|t| t.runs.last().cloned())
-        else {
-            return Err(unstarted(claimed, "the task of its pull request is gone"));
-        };
-        // The repair step the checks send back to answers the review too.
-        let from = last
-            .template
-            .steps
-            .iter()
-            .find_map(|step| match &step.kind {
-                flow::StepKind::StatusChecks { on_fail, .. } => Some(on_fail.clone()),
-                _ => None,
-            });
-        if !crate::task::retry(&task_id, last.template, from.as_deref(), Some(note), cx) {
-            return Err(unstarted(claimed, "a run of the issue is still under way"));
+    let (branch, base, dir) = match claimed.work.clone() {
+        Work::Cut { branch, base, dir } => (branch, base, dir),
+        Work::Review { task, note } => {
+            return answer_review(claimed, task, note, window, &shell, cx);
         }
-        with(cx, |u| u.starting.insert(task_id.clone()));
-        let asked = window.update(cx, |_, window, cx| {
-            shell.update(cx, |_, cx| {
-                crate::task::request(task_id.clone(), window, cx)
-            })
-        });
-        if asked.is_err() {
-            super::placed(&task_id, cx);
-        }
-        return Ok(());
-    }
+    };
     let check = shell.read(cx).check_of(&claimed.repo);
     if template.needs_check() && check.is_none() {
         return Err(unstarted(
@@ -514,8 +577,8 @@ fn start(mut claimed: Claimed, cx: &mut App) -> Result<(), Unstarted> {
     let picked = claimed.picked_by_hand();
     let setup = Setup {
         repo: claimed.repo.clone(),
-        dir: claimed.dir.clone(),
-        branch: Some(claimed.branch.clone()),
+        dir,
+        branch: Some(branch),
         agent,
         check,
         // Left empty, the agent stays in the mode it starts in, which asks
@@ -531,7 +594,7 @@ fn start(mut claimed: Claimed, cx: &mut App) -> Result<(), Unstarted> {
         number: claimed.issue.number,
         forge_ref: claimed.issue.forge_ref().map(str::to_string),
         forge: claimed.forge.map(|forge| forge.name().to_string()),
-        base: claimed.base.clone(),
+        base,
         picked,
         unsent: Vec::new(),
     });
@@ -548,6 +611,34 @@ fn start(mut claimed: Claimed, cx: &mut App) -> Result<(), Unstarted> {
     // task counted; it goes at the next start of onehand.
     if asked.is_err() {
         super::placed(&task_id, cx);
+    }
+    Ok(())
+}
+
+/// Retry issue task `task` to answer the review on its pull request, telling
+/// its new run `note`, from the step its status checks send back to; then ask
+/// for its place in `window`.
+fn answer_review(
+    claimed: Claimed,
+    task: String,
+    note: String,
+    window: gpui::AnyWindowHandle,
+    shell: &gpui::Entity<crate::shell::Shell>,
+    cx: &mut App,
+) -> Result<(), Unstarted> {
+    let Some(last) = crate::task::task(&task, cx).and_then(|t| t.runs.last().cloned()) else {
+        return Err(unstarted(claimed, "the task of its pull request is gone"));
+    };
+    let from = last.template.repair_step().map(str::to_string);
+    if !crate::task::retry(&task, last.template, from.as_deref(), Some(note), cx) {
+        return Err(unstarted(claimed, "a run is still working on it"));
+    }
+    with(cx, |u| u.starting.insert(task.clone()));
+    let asked = window.update(cx, |_, window, cx| {
+        shell.update(cx, |_, cx| crate::task::request(task.clone(), window, cx))
+    });
+    if asked.is_err() {
+        super::placed(&task, cx);
     }
     Ok(())
 }

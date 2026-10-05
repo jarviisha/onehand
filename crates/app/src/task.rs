@@ -111,6 +111,19 @@ impl Tasks {
         self.working(id).is_some()
     }
 
+    /// Whether task `id` holds a slot of the cap on unattended runs: queued
+    /// or running, and not waiting on its pull request's status checks.
+    fn holds_slot(&self, id: &str) -> bool {
+        match self.working(id) {
+            Some(Working::Running) => !self
+                .live
+                .values()
+                .any(|d| d.task == id && d.run.awaiting_status_checks()),
+            Some(Working::Queued) => true,
+            Some(Working::Waiting) | None => false,
+        }
+    }
+
     /// What task `id` is doing, if anything.
     fn working(&self, id: &str) -> Option<Working> {
         if self.queue.queued(id) {
@@ -489,15 +502,14 @@ pub(crate) fn shown(uid: u64, cx: &App) -> Option<Shown> {
     })
 }
 
-/// What `look` makes of each task that is not working, oldest first.
-pub(crate) fn idle<R>(cx: &App, look: impl Fn(&Task) -> Option<R>) -> Vec<R> {
+/// What `look` makes of each task, told whether it is working, oldest first.
+pub(crate) fn each<R>(cx: &App, look: impl Fn(&Task, bool) -> Option<R>) -> Vec<R> {
     let Some(t) = cx.try_global::<Tasks>() else {
         return Vec::new();
     };
     t.tasks
         .iter()
-        .filter(|task| !t.busy(&task.id))
-        .filter_map(look)
+        .filter_map(|task| look(task, t.busy(&task.id)))
         .collect()
 }
 
@@ -774,14 +786,7 @@ pub(crate) fn issues_working(cx: &App) -> Vec<String> {
     };
     t.tasks
         .iter()
-        .filter(|task| match t.working(&task.id) {
-            Some(Working::Running) => !t
-                .live
-                .values()
-                .any(|d| d.task == task.id && d.run.awaiting_checks()),
-            Some(Working::Queued) => true,
-            Some(Working::Waiting) | None => false,
-        })
+        .filter(|task| t.holds_slot(&task.id))
         .filter_map(|task| task.issue().map(|issue| issue.shown()))
         .collect()
 }

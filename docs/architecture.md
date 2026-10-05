@@ -592,7 +592,7 @@ kept on screen when it ends. *Look now* in Settings runs the search at once. **A
 task** (`Source::Issue(IssueSource)`) of the `[unattended]` workflow, its timeout put over the
 workflow's own, driven by the one task driver like any other and listed on the Tasks page with
 Stop, Resume, Retry and Dismiss. Its forge steps push the commit the check passed on, open a draft
-pull request and wait for its status checks (`task::driver::on_forge`, `checks`); the label put
+pull request and wait for its status checks (`task::driver::on_forge`, `watch_status_checks`); the label put
 back on an issue whose pull request is open retries its task to answer the review. A run the search finds claims its issue by removing the label, branches a
 worktree off `origin/<default>` (`launch::prepare_blocking`), builds the task (`core::brief_for`)
 and asks for its place (`task::add` + `task::request`) in the window holding the project.

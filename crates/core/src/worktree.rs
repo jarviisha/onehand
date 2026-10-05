@@ -258,14 +258,28 @@ pub fn branch_off_blocking(
 /// password, a passphrase or a host key nobody is there to accept fails rather
 /// than asks.
 pub fn fetch_blocking(root: &Path, branch: &str) -> Result<(), String> {
+    with_origin_blocking(root, &["fetch", "--quiet", "origin", branch], "fetch")
+}
+
+/// Put `commit` on `origin` as `branch`, the way [`fetch_blocking`] reaches
+/// it, and never by force: a branch that moved on the forge is refused rather
+/// than written over.
+pub fn push_blocking(root: &Path, commit: &str, branch: &str) -> Result<(), String> {
+    let refspec = format!("{commit}:refs/heads/{branch}");
+    with_origin_blocking(root, &["push", "--quiet", "origin", &refspec], "push")
+}
+
+/// Run git's `args` against `origin` at `root`, as `git <verb>` says when it
+/// cannot be run at all.
+fn with_origin_blocking(root: &Path, args: &[&str], verb: &str) -> Result<(), String> {
     let mut cmd = git(root);
-    cmd.args(["fetch", "--quiet", "origin", branch]);
+    cmd.args(args);
     // Only when nothing chose an ssh command already: overriding one would
     // throw away whatever the user configured it to do.
     if std::env::var_os("GIT_SSH_COMMAND").is_none() {
         cmd.env("GIT_SSH_COMMAND", "ssh -o BatchMode=yes");
     }
-    let out = output_within(&mut cmd, FETCH_LIMIT).map_err(|err| format!("git fetch {err}"))?;
+    let out = output_within(&mut cmd, FETCH_LIMIT).map_err(|err| format!("git {verb} {err}"))?;
     if out.status.success() {
         Ok(())
     } else {
@@ -273,21 +287,14 @@ pub fn fetch_blocking(root: &Path, branch: &str) -> Result<(), String> {
     }
 }
 
-/// Put `commit` on `origin` as `branch`, the way [`fetch_blocking`] reaches
-/// it, and never by force: a branch that moved on the forge is refused rather
-/// than written over.
-pub fn push_blocking(root: &Path, commit: &str, branch: &str) -> Result<(), String> {
-    let mut cmd = git(root);
-    cmd.args([
-        "push",
-        "--quiet",
-        "origin",
-        &format!("{commit}:refs/heads/{branch}"),
-    ]);
-    if std::env::var_os("GIT_SSH_COMMAND").is_none() {
-        cmd.env("GIT_SSH_COMMAND", "ssh -o BatchMode=yes");
-    }
-    let out = output_within(&mut cmd, FETCH_LIMIT).map_err(|err| format!("git push {err}"))?;
+/// Bring the branch checked out at `dir` up to `to` without a merge commit:
+/// refused when the two went their own ways, as git says.
+pub fn fast_forward_blocking(dir: &Path, to: &str) -> Result<(), String> {
+    let out = output_within(
+        git(dir).args(["merge", "--ff-only", "--quiet", to]),
+        LOCAL_LIMIT,
+    )
+    .map_err(|err| format!("git merge {err}"))?;
     if out.status.success() {
         Ok(())
     } else {
@@ -702,6 +709,46 @@ mod tests {
     /// The rename, against a real repository for the same reason: what it does
     /// is one argument order, and the two failures worth having are both git's
     /// rather than ours.
+    #[test]
+    fn a_fast_forward_catches_up_and_refuses_a_branch_that_went_its_own_way() {
+        let git = |dir: &Path, args: &[&str]| {
+            std::process::Command::new("git")
+                .arg("-C")
+                .arg(dir)
+                .args(args)
+                .output()
+                .expect("git must be installed to run this test")
+        };
+        let commit = |dir: &Path, file: &str| {
+            std::fs::write(dir.join(file), file).unwrap();
+            git(dir, &["add", file]);
+            git(dir, &["commit", "-qm", file]);
+        };
+        let repo = std::env::temp_dir().join(format!("onehand-ff-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&repo);
+        std::fs::create_dir_all(&repo).unwrap();
+        git(&repo, &["init", "-q", "-b", "main"]);
+        git(&repo, &["config", "user.email", "t@example.com"]);
+        git(&repo, &["config", "user.name", "T"]);
+        commit(&repo, "a");
+        git(&repo, &["branch", "theirs"]);
+        git(&repo, &["checkout", "-q", "theirs"]);
+        commit(&repo, "b");
+        git(&repo, &["checkout", "-q", "main"]);
+
+        fast_forward_blocking(&repo, "theirs").unwrap();
+        assert!(repo.join("b").exists(), "main caught up with theirs");
+
+        commit(&repo, "c");
+        git(&repo, &["checkout", "-q", "theirs"]);
+        commit(&repo, "d");
+        assert!(
+            fast_forward_blocking(&repo, "main").is_err(),
+            "two branches that went their own ways are never merged"
+        );
+        let _ = std::fs::remove_dir_all(&repo);
+    }
+
     #[test]
     fn rename_moves_the_checked_out_branch_and_refuses_a_collision() {
         let git = |dir: &Path, args: &[&str]| {

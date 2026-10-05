@@ -286,7 +286,11 @@ impl Sending {
         if let Some(forge) = self.forge
             && let Some(pr) = forge.pull_request_for_blocking(&self.repo, &self.branch)?
         {
-            return Ok(Verdict::PullRequest(pr.url));
+            return Ok(Verdict::PullRequest {
+                url: pr.url,
+                state: pr.state,
+                draft: pr.draft,
+            });
         }
         worktree::commits_since_blocking(&self.dir, &self.base).map(Verdict::Commits)
     }

@@ -70,8 +70,9 @@ pub(super) struct Driven {
     _answered: Subscription,
     _release: Subscription,
     _clock: Task<()>,
-    /// Looking at the pull request's checks, while the run waits on them.
-    _checks: Option<Task<()>>,
+    /// Looking at the pull request's status checks, while the run waits on
+    /// them.
+    _status_checks: Option<Task<()>>,
 }
 
 impl Driven {
@@ -154,7 +155,7 @@ pub(crate) fn start(
         _answered: answered,
         _release: release,
         _clock: clock(uid, limit, cx),
-        _checks: None,
+        _status_checks: None,
     };
     cx.default_global::<Tasks>().live.insert(uid, driven);
     act(uid, first, cx);
@@ -394,15 +395,22 @@ fn carry_out(uid: u64, action: Action, cx: &mut App) {
             note(&session, "Opening the pull request".to_string(), cx);
             on_forge(uid, None, cx);
         }
-        Action::AwaitChecks(limit) => {
-            with(uid, cx, |d| d.budget.pause(Instant::now()));
+        Action::AwaitStatusChecks { wait, pushed } => {
+            let task = with(uid, cx, |d| {
+                d.budget.pause(Instant::now());
+                d.task.clone()
+            });
             note(
                 &session,
-                "Waiting for the pull request's checks".to_string(),
+                "Waiting for the pull request's status checks".to_string(),
                 cx,
             );
-            let looking = checks(uid, Instant::now(), limit, cx);
-            with(uid, cx, |d| d._checks = Some(looking));
+            let watching = watch_status_checks(uid, pushed, Instant::now(), wait, cx);
+            with(uid, cx, |d| d._status_checks = Some(watching));
+            // Its slot is free now, for another issue to take up.
+            if let Some(task) = task {
+                crate::unattended::waiting(&task, cx);
+            }
         }
         Action::Finish(outcome) => return finish(uid, Some(&session), outcome, cx),
         Action::Idle => return,
@@ -422,7 +430,7 @@ fn ends_run(action: &Action) -> bool {
         | Action::AwaitApproval
         | Action::Push(_)
         | Action::OpenPullRequest
-        | Action::AwaitChecks(_)
+        | Action::AwaitStatusChecks { .. }
         | Action::Idle => false,
     }
 }
@@ -638,12 +646,14 @@ fn run_command(uid: u64, session: &Entity<ChatSession>, command: String, cx: &mu
     .detach();
 }
 
-/// How often a run waiting on its pull request's checks looks at them.
-// ponytail: the session stays open while the checks run, and a restart waits
-// afresh; park the run with no session once idle adapters cost something.
-const CHECKS_EVERY: Duration = Duration::from_secs(60);
+/// How often a run waiting on its pull request's status checks looks at
+/// them.
+// ponytail: the session stays open while the status checks run, and a
+// restart waits afresh; park the run with no session once idle adapters cost
+// something.
+const STATUS_CHECKS_EVERY: Duration = Duration::from_secs(60);
 
-/// How many failing checks' logs a repair is handed.
+/// How many failing status checks' logs a repair is handed.
 const LOGS_MAX: usize = 3;
 
 /// A commit as a person reads it.
@@ -651,10 +661,16 @@ fn short(commit: &str) -> &str {
     &commit[..commit.len().min(10)]
 }
 
-/// Where the run's forge steps go: its work, its branch, and the connector
-/// its setup names, or why there is none.
-type Forge = (std::path::PathBuf, String, &'static dyn Connector);
+/// Where a run's forge steps go.
+struct Forge {
+    /// The run's work.
+    dir: std::path::PathBuf,
+    branch: String,
+    connector: &'static dyn Connector,
+}
 
+/// Where the run on session `uid` goes on the forge: its setup's connector,
+/// or why there is none.
 fn forge_of(uid: u64, cx: &App) -> Option<Result<Forge, String>> {
     read(uid, cx, |d| {
         let setup = &d.run.setup;
@@ -663,14 +679,20 @@ fn forge_of(uid: u64, cx: &App) -> Option<Result<Forge, String>> {
             .clone()
             .ok_or_else(|| "the run has no branch of its own".to_string())?;
         let name = setup.forge.as_deref().unwrap_or_default();
-        let forge = connector::named(crate::plugins::connectors(), name)
+        let connector = connector::named(crate::plugins::connectors(), name)
             .ok_or_else(|| format!("no connector called {name} is built into this onehand"))?;
-        Ok((setup.dir.clone(), branch, forge))
+        Ok(Forge {
+            dir: setup.dir.clone(),
+            branch,
+            connector,
+        })
     })
 }
 
 /// Push `commit` as the run's branch, or, with none, open its pull request
-/// unless one is open on the branch already; then report how it went.
+/// unless one is open on the branch already; then report how it went. One
+/// closed without being merged is refused: a person turned it down, and a
+/// second beside it would ask again.
 fn on_forge(uid: u64, commit: Option<String>, cx: &mut App) {
     let Some(forge) = forge_of(uid, cx) else {
         return;
@@ -686,18 +708,27 @@ fn on_forge(uid: u64, commit: Option<String>, cx: &mut App) {
         let done = cx
             .background_executor()
             .spawn(async move {
-                let (dir, branch, forge) = forge?;
+                let Forge {
+                    dir,
+                    branch,
+                    connector,
+                } = forge?;
                 if let Some(commit) = commit {
-                    return forge.push_blocking(&dir, &commit, &branch);
+                    return connector.push_blocking(&dir, &commit, &branch);
                 }
-                if forge
-                    .pull_request_for_blocking(&dir, &branch)?
-                    .is_some_and(|pr| pr.state == PrState::Open)
-                {
-                    return Ok(());
+                match connector.pull_request_for_blocking(&dir, &branch)? {
+                    Some(pr) if pr.state == PrState::Open => return Ok(()),
+                    Some(pr) if pr.state == PrState::Closed => {
+                        return Err(format!(
+                            "its pull request {} was closed without being merged, and \
+                             onehand does not open another",
+                            pr.url
+                        ));
+                    }
+                    Some(_) | None => {}
                 }
                 let (title, body) = text.unwrap_or_default();
-                forge.open_pull_request_blocking(&dir, &branch, &title, &body)
+                connector.open_pull_request_blocking(&dir, &branch, &title, &body)
             })
             .await;
         cx.update(|cx| advance(uid, cx, move |run| run.forge_done(done)));
@@ -705,33 +736,49 @@ fn on_forge(uid: u64, commit: Option<String>, cx: &mut App) {
     .detach();
 }
 
-/// Look at the pull request's checks every [`CHECKS_EVERY`] until they say
-/// something other than pending, waiting at most `limit` from `since`. A look
-/// that fails waits for the next one. Failing checks carry their logs; all
-/// passing takes a draft out of draft first, and a look that could not waits.
-fn checks(uid: u64, since: Instant, limit: Duration, cx: &mut App) -> Task<()> {
+/// Look at the pull request's status checks on `pushed` every
+/// [`STATUS_CHECKS_EVERY`] until they say something other than pending,
+/// waiting at most `wait` from `since`. Failing ones carry their logs; all
+/// passing takes a draft out of draft first, and one that could not be is
+/// waited on like a forge that could not be read.
+fn watch_status_checks(
+    uid: u64,
+    pushed: Option<String>,
+    since: Instant,
+    wait: Duration,
+    cx: &mut App,
+) -> Task<()> {
     cx.spawn(async move |cx| {
         loop {
-            cx.background_executor().timer(CHECKS_EVERY).await;
+            cx.background_executor().timer(STATUS_CHECKS_EVERY).await;
             let Some(forge) = cx.update(|cx| forge_of(uid, cx)) else {
                 return;
             };
+            let pushed = pushed.clone();
             let seen = cx
                 .background_executor()
                 .spawn(async move {
-                    let (dir, branch, forge) = match forge {
+                    let Forge {
+                        dir,
+                        branch,
+                        connector,
+                    } = match forge {
                         Ok(forge) => forge,
-                        Err(why) => return Seen::Stalled(why),
+                        Err(why) => return Seen::Fail(why),
                     };
-                    let Ok(pr) = forge.pull_request_for_blocking(&dir, &branch) else {
-                        return Seen::Pending;
-                    };
-                    let mut seen = judge(pr.as_ref(), since.elapsed(), limit);
-                    match (&mut seen, pr) {
-                        (Seen::Failing(said), Some(pr)) => {
+                    let read = connector.pull_request_for_blocking(&dir, &branch);
+                    let pr = read.as_ref().ok().cloned().flatten();
+                    let seen = judge(
+                        read.as_ref().map(Option::as_ref).map_err(Clone::clone),
+                        pushed.as_deref(),
+                        since.elapsed(),
+                        wait,
+                    );
+                    match (seen, pr) {
+                        (Seen::Repair(mut said), Some(pr)) => {
                             let failed = pr.checks.iter().filter(|c| c.state == CheckState::Failed);
                             for check in failed.take(LOGS_MAX) {
-                                let log = forge
+                                let log = connector
                                     .check_log_blocking(&dir, check)
                                     .unwrap_or_else(|why| format!("(no log: {why})"));
                                 said.push_str(&format!(
@@ -740,15 +787,21 @@ fn checks(uid: u64, since: Instant, limit: Duration, cx: &mut App) -> Task<()> {
                                     log.trim()
                                 ));
                             }
+                            Seen::Repair(said)
                         }
-                        (Seen::Passed, Some(pr))
-                            if pr.draft && forge.mark_ready_blocking(&dir, pr.number).is_err() =>
-                        {
-                            seen = Seen::Pending;
+                        (Seen::Passed, Some(pr)) if pr.draft => {
+                            match connector.mark_ready_blocking(&dir, pr.number) {
+                                Ok(()) => Seen::Passed,
+                                Err(why) => judge(
+                                    Err(format!("it could not be taken out of draft: {why}")),
+                                    pushed.as_deref(),
+                                    since.elapsed(),
+                                    wait,
+                                ),
+                            }
                         }
-                        _ => {}
+                        (seen, _) => seen,
                     }
-                    seen
                 })
                 .await;
             if seen == Seen::Pending {
@@ -756,7 +809,7 @@ fn checks(uid: u64, since: Instant, limit: Duration, cx: &mut App) -> Task<()> {
             }
             cx.update(|cx| {
                 with(uid, cx, |d| d.budget.resume(Instant::now()));
-                advance(uid, cx, move |run| run.checks_seen(seen));
+                advance(uid, cx, move |run| run.status_checks_seen(seen));
             });
             return;
         }

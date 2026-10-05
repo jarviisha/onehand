@@ -55,7 +55,7 @@ label = "Pull request"
 kind = "pull_request"
 
 [[steps]]
-id = "checks"
+id = "status_checks"
 label = "Status checks"
 kind = "status_checks"
 on_fail = "implement"

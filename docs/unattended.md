@@ -535,13 +535,18 @@ had by hand.
 
 ## Answering a review
 
-`launch::prepare_blocking` looks, before it cuts a worktree, for the issue's
-newest task that is not working and asks the forge for the pull request on its
-branch:
+Before it claims an issue, `launch::taking_blocking` looks for the issue's newest
+task with a branch of its own. **One still working is never taken again**: the
+search passes the issue over, and a pick is refused, so an issue is never worked
+twice on two branches. Otherwise it asks the forge for the pull request on that
+task's branch:
 
-- **Open**: the label put back is a reviewer asking for changes. No worktree is
-  cut; the task is retried (`crate::task::retry`) from the step its status
-  checks send back to, its new run told how to read the review
+- **Open**: the label put back is a reviewer asking for changes, and the claim
+  comment says it answers the review. No worktree is cut: the old one is fetched
+  and fast-forwarded to the branch on the forge, which a reviewer may have
+  pushed to (one that went its own way is refused, never pushed over); then the
+  task is retried (`Template::repair_step`, `crate::task::retry`) from the step
+  its status checks send back to, its new run told how to read the review
   (`core::review_note`, `Connector::read_review_with`) as a revision note. It
   pushes to the same pull request.
 - **Closed without being merged**: refused. The issue is told onehand will not

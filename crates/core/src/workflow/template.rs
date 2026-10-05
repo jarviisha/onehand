@@ -103,6 +103,19 @@ impl Template {
         }
     }
 
+    /// The step that repairs what the forge's status checks found, and so
+    /// answers a review of the pull request too, by id.
+    pub fn repair_step(&self) -> Option<&str> {
+        self.steps.iter().find_map(|step| match &step.kind {
+            StepKind::StatusChecks { on_fail, .. } => Some(on_fail.as_str()),
+            StepKind::Agent { .. }
+            | StepKind::Command { .. }
+            | StepKind::Approval { .. }
+            | StepKind::Push
+            | StepKind::PullRequest => None,
+        })
+    }
+
     /// Where the step `id` is, if the template has one.
     pub fn index_of(&self, id: &str) -> Option<usize> {
         self.steps.iter().position(|step| step.id == id)
@@ -216,11 +229,22 @@ pub enum StepKind {
     },
 }
 
+/// How long status checks are waited on when a step does not say.
+pub const DEFAULT_WAIT: &str = "1h";
+
 fn default_wait() -> String {
-    "1h".to_string()
+    DEFAULT_WAIT.to_string()
 }
 
 impl StepKind {
+    /// The step what this one checks goes back to when it fails, by id.
+    pub(crate) fn sends_back_to(&self) -> Option<&str> {
+        match self {
+            Self::Command { on_fail, .. } | Self::StatusChecks { on_fail, .. } => Some(on_fail),
+            Self::Agent { .. } | Self::Approval { .. } | Self::Push | Self::PullRequest => None,
+        }
+    }
+
     /// Whether onehand does the step on the forge itself.
     pub(crate) fn on_forge(&self) -> bool {
         match self {

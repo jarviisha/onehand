@@ -1056,7 +1056,7 @@ fn a_command_passes_on_its_exit_status_with_or_without_a_commit() {
     assert_eq!(run.marks.verified_at, None);
 }
 
-/// The shipped issue template, on a worktree served by a forge when
+/// The shipped issue workflow, on a worktree served by a forge when
 /// `forge`, run until its check has passed on `verified`.
 fn issue_past_check(forge: bool, verified: &str) -> (Run, Action) {
     let template = builtin::all().remove(2);
@@ -1069,6 +1069,14 @@ fn issue_past_check(forge: bool, verified: &str) -> (Run, Action) {
     run.turn_ended(&facts("b", false, 1, "d0"), "");
     let next = run.command_finished(Ok(Some(verified.into())));
     (run, next)
+}
+
+/// [`issue_past_check`], pushed and with its pull request open.
+fn at_status_checks() -> Run {
+    let (mut run, _) = issue_past_check(true, "b");
+    run.forge_done(Ok(()));
+    run.forge_done(Ok(()));
+    run
 }
 
 fn pull_request(state: PrState, checks: &[(&str, CheckState)], conflicting: bool) -> PullRequest {
@@ -1098,13 +1106,20 @@ fn the_push_carries_the_commit_the_check_passed_on() {
     let (mut run, next) = issue_past_check(true, "b");
     assert_eq!(next, Action::Push("b".into()));
     assert_eq!(run.forge_done(Ok(())), Action::OpenPullRequest);
+    // The status checks are watched on the commit that was pushed.
     assert_eq!(
         run.forge_done(Ok(())),
-        Action::AwaitChecks(Duration::from_secs(3600))
+        Action::AwaitStatusChecks {
+            wait: Duration::from_secs(3600),
+            pushed: Some("b".into()),
+        }
     );
-    assert!(run.awaiting_checks());
-    assert_eq!(run.checks_seen(Seen::Pending), Action::Idle);
-    assert_eq!(run.checks_seen(Seen::Passed), Action::Finish(Outcome::Done));
+    assert!(run.awaiting_status_checks());
+    assert_eq!(run.status_checks_seen(Seen::Pending), Action::Idle);
+    assert_eq!(
+        run.status_checks_seen(Seen::Passed),
+        Action::Finish(Outcome::Done)
+    );
 }
 
 #[test]
@@ -1120,7 +1135,7 @@ fn with_no_forge_the_branch_is_the_result() {
             "verify",
             "push",
             "pull_request",
-            "checks"
+            "status_checks"
         ]
     );
 }
@@ -1142,12 +1157,10 @@ fn a_push_with_nothing_checked_fails_and_a_failed_push_ends_the_run() {
 }
 
 #[test]
-fn failing_checks_go_back_to_the_change_with_what_failed_until_misses_run_out() {
-    let (mut run, _) = issue_past_check(true, "b");
-    run.forge_done(Ok(()));
-    run.forge_done(Ok(()));
+fn failing_status_checks_go_back_to_the_change_with_what_failed_until_misses_run_out() {
+    let mut run = at_status_checks();
     assert_eq!(
-        run.checks_seen(Seen::Failing("Lint failed".into())),
+        run.status_checks_seen(Seen::Repair("Lint failed".into())),
         Action::Measure
     );
     assert_eq!(run.current().unwrap().id, "implement");
@@ -1163,7 +1176,7 @@ fn failing_checks_go_back_to_the_change_with_what_failed_until_misses_run_out() 
         );
         run.forge_done(Ok(()));
         run.forge_done(Ok(()));
-        run.checks_seen(Seen::Failing("Lint failed".into()));
+        run.status_checks_seen(Seen::Repair("Lint failed".into()));
         prompt_of(run.measured(mark("b", "d0")));
     }
     run.turn_ended(&facts("c4", false, 1, "d0"), "");
@@ -1171,37 +1184,34 @@ fn failing_checks_go_back_to_the_change_with_what_failed_until_misses_run_out() 
     run.forge_done(Ok(()));
     run.forge_done(Ok(()));
     assert!(matches!(
-        run.checks_seen(Seen::Failing("Lint failed".into())),
+        run.status_checks_seen(Seen::Repair("Lint failed".into())),
         Action::Finish(Outcome::Exhausted { .. })
     ));
 }
 
 #[test]
-fn a_merged_pull_request_is_done_and_a_closed_one_failed() {
-    let (mut run, _) = issue_past_check(true, "b");
-    run.forge_done(Ok(()));
-    run.forge_done(Ok(()));
-    assert_eq!(run.checks_seen(Seen::Merged), Action::Finish(Outcome::Done));
+fn a_merged_pull_request_is_done_and_a_failure_ends_the_run() {
+    let mut run = at_status_checks();
+    assert_eq!(
+        run.status_checks_seen(Seen::Merged),
+        Action::Finish(Outcome::Done)
+    );
 
-    let (mut run, _) = issue_past_check(true, "b");
-    run.forge_done(Ok(()));
-    run.forge_done(Ok(()));
-    assert!(matches!(
-        run.checks_seen(Seen::Closed),
-        Action::Finish(Outcome::Failed(_))
-    ));
+    let mut run = at_status_checks();
+    assert_eq!(
+        run.status_checks_seen(Seen::Fail("it was closed".into())),
+        Action::Finish(Outcome::Failed("it was closed".into()))
+    );
 }
 
 #[test]
-fn a_stop_while_checks_run_ends_the_run_and_a_late_look_changes_nothing() {
-    let (mut run, _) = issue_past_check(true, "b");
-    run.forge_done(Ok(()));
-    run.forge_done(Ok(()));
+fn a_stop_while_status_checks_run_ends_the_run_and_a_late_look_changes_nothing() {
+    let mut run = at_status_checks();
     assert_eq!(
         run.stopped(Stop::ByPerson),
         Action::Finish(Outcome::Stopped(Stop::ByPerson))
     );
-    assert_eq!(run.checks_seen(Seen::Passed), Action::Idle);
+    assert_eq!(run.status_checks_seen(Seen::Passed), Action::Idle);
 }
 
 #[test]
@@ -1214,43 +1224,69 @@ fn a_retry_keeps_the_commit_that_was_checked() {
 }
 
 #[test]
-fn only_every_check_passing_on_an_open_pull_request_is_ready() {
+fn a_review_is_answered_at_the_step_status_checks_send_back_to() {
+    assert_eq!(builtin::all().remove(2).repair_step(), Some("implement"));
+    assert_eq!(checkout().repair_step(), None);
+}
+
+#[test]
+fn only_every_check_passing_on_the_pushed_commit_is_ready() {
     let hour = Duration::from_secs(3600);
     let minute = Duration::from_secs(60);
+    let judged = |pr: &PullRequest, waited| judge(Ok(Some(pr)), Some("b"), waited, hour);
     let pr = |checks: &[(&str, CheckState)], conflicting| {
         pull_request(PrState::Open, checks, conflicting)
     };
     let passed = pr(&[("Build", CheckState::Passed)], false);
-    assert_eq!(judge(Some(&passed), minute, hour), Seen::Passed);
+    assert_eq!(judged(&passed, minute), Seen::Passed);
+    // Checks on another head say nothing about what was pushed.
+    let behind = PullRequest {
+        head: "a".into(),
+        ..passed.clone()
+    };
+    assert_eq!(judged(&behind, minute), Seen::Pending);
+    assert!(matches!(judged(&behind, hour), Seen::Fail(_)));
     let running = pr(
         &[("Build", CheckState::Passed), ("Test", CheckState::Pending)],
         false,
     );
-    assert_eq!(judge(Some(&running), minute, hour), Seen::Pending);
-    assert!(matches!(
-        judge(Some(&running), hour, hour),
-        Seen::Stalled(_)
-    ));
+    assert_eq!(judged(&running, minute), Seen::Pending);
+    assert!(matches!(judged(&running, hour), Seen::Fail(_)));
     // A failure wins over a check still running.
     let failing = pr(
         &[("Lint", CheckState::Failed), ("Test", CheckState::Pending)],
         false,
     );
-    let Seen::Failing(said) = judge(Some(&failing), minute, hour) else {
+    let Seen::Repair(said) = judged(&failing, minute) else {
         panic!("a failing check is to be repaired");
     };
     assert!(said.contains("Lint") && !said.contains("Test"), "{said}");
-    let Seen::Failing(said) = judge(Some(&pr(&[], true)), minute, hour) else {
+    let Seen::Repair(said) = judged(&pr(&[], true), minute) else {
         panic!("a conflict is to be repaired");
     };
     assert!(said.contains("conflicts"), "{said}");
     // No checks at all: none yet within the grace, none at all after it.
     let none = pr(&[], false);
-    assert_eq!(judge(Some(&none), minute, hour), Seen::Pending);
-    assert_eq!(judge(Some(&none), checks::CHECKS_GRACE, hour), Seen::Passed);
+    assert_eq!(judged(&none, minute), Seen::Pending);
+    assert_eq!(
+        judged(&none, status_checks::STATUS_CHECKS_GRACE),
+        Seen::Passed
+    );
     let merged = pull_request(PrState::Merged, &[], false);
-    assert_eq!(judge(Some(&merged), minute, hour), Seen::Merged);
+    assert_eq!(judged(&merged, minute), Seen::Merged);
     let closed = pull_request(PrState::Closed, &[], false);
-    assert_eq!(judge(Some(&closed), minute, hour), Seen::Closed);
-    assert_eq!(judge(None, minute, hour), Seen::Closed);
+    assert!(matches!(judged(&closed, minute), Seen::Fail(why) if why.contains("closed")));
+    let Seen::Fail(why) = judge(Ok(None), Some("b"), minute, hour) else {
+        panic!("a pull request gone is the end");
+    };
+    assert!(why.contains("no pull request"), "{why}");
+    // A forge that cannot be read is waited on, but never past the wait.
+    assert_eq!(
+        judge(Err("offline".into()), Some("b"), minute, hour),
+        Seen::Pending
+    );
+    assert!(matches!(
+        judge(Err("offline".into()), Some("b"), hour, hour),
+        Seen::Fail(why) if why.contains("offline")
+    ));
 }

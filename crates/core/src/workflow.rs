@@ -12,19 +12,19 @@
 //!   word for it.
 
 pub mod builtin;
-mod checks;
 mod facts;
 mod prompt;
 mod run;
+mod status_checks;
 pub mod store;
 mod template;
 mod validate;
 
-pub use checks::{judge, Seen};
 pub use facts::{run_command_blocking, Facts, Mark};
 pub use prompt::first_prompt;
 pub use run::{Action, Brief, Outcome, Run, Setup, Stop, Visit};
-pub use template::{GateKind, Place, StepKind, StepSpec, Template, SCHEMA_VERSION};
+pub use status_checks::{judge, Seen};
+pub use template::{GateKind, Place, StepKind, StepSpec, Template, DEFAULT_WAIT, SCHEMA_VERSION};
 pub use validate::validate;
 
 /// The branch a run on a worktree works on: `workflow/<title words>`, built

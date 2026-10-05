@@ -77,7 +77,7 @@ label = "Pull request"
 kind = "pull_request"     # a draft, or the one already open on the branch
 
 [[steps]]
-id = "checks"
+id = "status_checks"
 label = "Status checks"
 kind = "status_checks"
 on_fail = "implement"     # a failing check or a conflict goes back here
@@ -153,9 +153,9 @@ one line per gate saying what onehand will check.
 ## The engine
 
 `workflow::Run` is the only place a transition is decided. The driver reports what happened —
-`measured`, `turn_ended`, `command_finished`, `approved`, `revised`, `forge_done`, `checks_seen`,
+`measured`, `turn_ended`, `command_finished`, `approved`, `revised`, `forge_done`, `status_checks_seen`,
 `stopped`, `failed`, `resume` — and gets back the next `Action`: `Measure`, `Prompt`, `RunCommand`,
-`AwaitApproval`, `Push`, `OpenPullRequest`, `AwaitChecks`, `Finish` or `Idle` (the report did not
+`AwaitApproval`, `Push`, `OpenPullRequest`, `AwaitStatusChecks`, `Finish` or `Idle` (the report did not
 fit what the run waits for). Each report also appends a `Transition` to
 the run's history, capped at 200.
 
@@ -173,13 +173,16 @@ the run's history, capped at 200.
   result. **A push carries the commit the check passed on**: `Push` is `marks.verified_at`, never
   the head, so what lands is what was checked, and a push with nothing verified fails. A retry keeps
   `verified_at`. *Pull request* takes the one open on the branch, or opens a draft
-  (`unattended::pull_request_text`: it closes the issue only where the forge knows it). Either
-  failing ends the run as failed; a retry starts at that step again. *Status checks* is judged by
-  `workflow::judge` from the forge's pull request: a failing check or a conflict wins over one still
-  running and goes back to `on_fail` as a miss, carrying what failed and up to three logs as
-  `{check_output}`; all passing takes the pull request out of draft and goes on; none at all after a
-  ten-minute grace counts as passing; still running past `wait` fails the run; merged ends it done,
-  closed fails it. Repairs are bounded by `misses`, like a failing command.
+  (`unattended::pull_request_text`: it closes the issue only where the forge knows it); one closed
+  without being merged is refused, never opened again beside. Either failing ends the run as
+  failed; a retry starts at that step again. *Status checks* is judged by `workflow::judge` from the
+  forge's pull request, **on the commit that was pushed**: checks on any other head are waited
+  past. A failing check or a conflict wins over one still running and goes back to `on_fail` as a
+  miss, carrying what failed and up to three logs as `{check_output}`; all passing takes the pull
+  request out of draft and goes on; none at all after a ten-minute grace counts as passing. A forge
+  that cannot be read, or a draft that cannot be taken out of draft, is waited on like a check still
+  running, and nothing is waited on past `wait`: the run fails. Merged ends it done; closed, or no
+  pull request at all, fails it. Repairs are bounded by `misses`, like a failing command.
 - **An approval step** waits. *Continue* goes on; *Revise…* goes back to the step it approves, whose
   prompt then carries the note and its last answer. A revision is not a miss.
 - **Misses are counted per stretch**: they reset only when the run reaches a step further on than it
@@ -203,7 +206,7 @@ subscribes to the session and maps its events onto the engine:
 | *Stop* on the strip | the turn is cancelled, then `stopped(ByPerson)` |
 | The timeout runs out | the turn is cancelled, then `stopped(TimedOut)` |
 | A push or a pull request is done, or fails | `forge_done` |
-| A look at the pull request's checks, every minute, says something other than pending | `checks_seen` |
+| A look at the pull request's status checks, every minute, says something other than pending | `status_checks_seen` |
 
 **Every one of these goes through one `end`, and a step's command is stopped first.** While a
 command runs, the run holds the flag that calls it off (`process::output_until`): ending sets it,
@@ -362,10 +365,11 @@ change (`git checkout . && git clean -fd`).
 | An issue found by its label | Switch the scratch project on for unattended runs, keep an issue in its Issues tab labelled `auto`, set `[unattended] agent = "Mock workflow"` and `mode = ""` (the mock offers no modes), then *Look now* | A task *#… · Work an issue* is under *Running*; a worktree on `onehand/local-<n>-<title>` is a project of its own and no session moves on screen. When it ends the project goes from the rail, the task is under *Finished*, and the issue has a note: *onehand left 1 commit on …* |
 | An issue picked by hand | *Work an issue…* from the project's menu, pick an issue | The session comes up on screen as it starts, and its project stays when it ends |
 | Two at once | With `at_once = 1`, *Work an issue…* while an issue task runs | Refused, naming the issue being worked |
-| Push and pull request | On a GitHub project with CI, an issue task through Verify | `git ls-remote origin <branch>` shows the commit Verify passed on, a draft pull request is open on the branch closing the issue, and once its checks pass it is out of draft; the issue says *onehand opened …* |
+| Push and pull request | On a GitHub project with CI, an issue task through Verify | `git ls-remote origin <branch>` shows the commit Verify passed on, a draft pull request is open on the branch closing the issue, and once its status checks pass it is out of draft; the issue says *onehand opened … It is ready for review.* |
 | A failing check is repaired | As above, with a check that fails on the change | The run goes back to Implement with the check's name and log in its prompt, pushes again, and waits again |
 | No checks at all | As above, on a repository with no CI | The run waits ten minutes, then the pull request leaves draft |
 | No forge | An issue task on a project with no GitHub `origin` | Push, Pull request and Status checks each pass at once; the branch is the result |
 | A review answered | Put the trigger label back on an issue whose pull request is open | The issue's task gets a new run from Implement, its prompt saying how to read the review; it pushes to the same pull request |
 | A closed pull request | Close the pull request unmerged, then put the label back | No run; the issue says the pull request was closed and onehand will not open another |
+| The label put back mid-run | Put the label back while the issue's task waits on its status checks; also *Work an issue…* on it | The tick passes it over; the pick is refused, *A run is already working on issue #…* |
 | A report that could not be sent | On a project served by GitHub, sign `gh` out (`gh auth logout`) before an issue task ends, then sign in again | The task's file keeps the report under `unsent`; the next tick, or the next start, comments it on the issue and empties `unsent` |

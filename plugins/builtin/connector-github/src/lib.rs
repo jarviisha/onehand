@@ -189,31 +189,11 @@ impl Connector for GitHub {
     /// `git push` as ever, and, when that fails on an ssh `origin`, over HTTPS
     /// with `gh`'s own sign-in, for the reason [`Self::fetch_blocking`] gives.
     fn push_blocking(&self, root: &Path, commit: &str, branch: &str) -> Result<(), String> {
-        let Err(over_origin) = onehand_core::worktree::push_blocking(root, commit, branch) else {
-            return Ok(());
-        };
-        let Some(url) = origin_url(root)
-            .ok()
-            .and_then(|origin| https_url(&origin, ssh_resolve_blocking))
-        else {
-            return Err(over_origin);
-        };
-        let out = onehand_core::process::output_within(
-            Command::new("git")
-                .arg("-C")
-                .arg(root)
-                .args(https_push_args(&url, commit, branch))
-                .env("GIT_TERMINAL_PROMPT", "0"),
-            onehand_core::worktree::FETCH_LIMIT,
-        );
-        let why = match out {
-            Ok(out) if out.status.success() => return Ok(()),
-            Ok(out) => String::from_utf8_lossy(&out.stderr).trim().to_string(),
-            Err(err) => format!("git push {err}"),
-        };
-        Err(format!(
-            "{over_origin} — and over HTTPS with gh's sign-in: {why}"
-        ))
+        onehand_core::worktree::push_blocking(root, commit, branch).or_else(|over_origin| {
+            over_https_blocking(root, over_origin, "push", |url| {
+                https_args("push", url, format!("{commit}:refs/heads/{branch}"))
+            })
+        })
     }
 
     fn issue_url_blocking(&self, root: &Path, key: &str) -> Result<String, String> {
@@ -233,31 +213,11 @@ impl Connector for GitHub {
     /// HTTPS needs. An https `origin` is not tried twice: there is nothing
     /// different to try.
     fn fetch_blocking(&self, root: &Path, branch: &str) -> Result<(), String> {
-        let Err(over_origin) = onehand_core::worktree::fetch_blocking(root, branch) else {
-            return Ok(());
-        };
-        let Some(url) = origin_url(root)
-            .ok()
-            .and_then(|origin| https_url(&origin, ssh_resolve_blocking))
-        else {
-            return Err(over_origin);
-        };
-        let out = onehand_core::process::output_within(
-            Command::new("git")
-                .arg("-C")
-                .arg(root)
-                .args(https_fetch_args(&url, branch))
-                .env("GIT_TERMINAL_PROMPT", "0"),
-            onehand_core::worktree::FETCH_LIMIT,
-        );
-        let why = match out {
-            Ok(out) if out.status.success() => return Ok(()),
-            Ok(out) => String::from_utf8_lossy(&out.stderr).trim().to_string(),
-            Err(err) => format!("git fetch {err}"),
-        };
-        Err(format!(
-            "{over_origin} — and over HTTPS with gh's sign-in: {why}"
-        ))
+        onehand_core::worktree::fetch_blocking(root, branch).or_else(|over_origin| {
+            over_https_blocking(root, over_origin, "fetch", |url| {
+                https_fetch_args(url, branch)
+            })
+        })
     }
 
     /// The open issues, then every issue changed since `since` — asked
@@ -619,31 +579,59 @@ const GH_LIMIT: Duration = Duration::from_secs(60);
 /// signed in by `gh` alone: the empty helper first clears any the user set,
 /// so nothing else is asked and nothing waits on a prompt.
 fn https_fetch_args(url: &str, branch: &str) -> Vec<String> {
+    https_args(
+        "fetch",
+        url,
+        format!("+refs/heads/{branch}:refs/remotes/origin/{branch}"),
+    )
+}
+
+/// `git <verb>` of `refspec` with `url`, signed in by `gh` alone.
+fn https_args(verb: &str, url: &str, refspec: String) -> Vec<String> {
     vec![
         "-c".into(),
         "credential.helper=".into(),
         "-c".into(),
         "credential.helper=!gh auth git-credential".into(),
-        "fetch".into(),
+        verb.into(),
         "--quiet".into(),
         url.into(),
-        format!("+refs/heads/{branch}:refs/remotes/origin/{branch}"),
+        refspec,
     ]
 }
 
-/// `git push` of `commit` to `url` as `branch`, signed in through `gh`
-/// alone, as [`https_fetch_args`] fetches.
-fn https_push_args(url: &str, commit: &str, branch: &str) -> Vec<String> {
-    vec![
-        "-c".into(),
-        "credential.helper=".into(),
-        "-c".into(),
-        "credential.helper=!gh auth git-credential".into(),
-        "push".into(),
-        "--quiet".into(),
-        url.into(),
-        format!("{commit}:refs/heads/{branch}"),
-    ]
+/// After `git <verb>` failed over `origin` for `over_origin`, the same again
+/// over HTTPS with `gh`'s sign-in when `origin` is an ssh remote, its
+/// arguments `args` of the HTTPS address. An https `origin` is not tried
+/// twice: there is nothing different to try.
+fn over_https_blocking(
+    root: &Path,
+    over_origin: String,
+    verb: &str,
+    args: impl FnOnce(&str) -> Vec<String>,
+) -> Result<(), String> {
+    let Some(url) = origin_url(root)
+        .ok()
+        .and_then(|origin| https_url(&origin, ssh_resolve_blocking))
+    else {
+        return Err(over_origin);
+    };
+    let out = onehand_core::process::output_within(
+        Command::new("git")
+            .arg("-C")
+            .arg(root)
+            .args(args(&url))
+            .env("GIT_TERMINAL_PROMPT", "0"),
+        onehand_core::worktree::FETCH_LIMIT,
+    );
+    let why = match out {
+        Ok(out) if out.status.success() => return Ok(()),
+        Ok(out) => String::from_utf8_lossy(&out.stderr).trim().to_string(),
+        Err(err) => format!("git {verb} {err}"),
+    };
+    Err(format!(
+        "{over_origin} — and over HTTPS with gh's sign-in: {why}"
+    ))
 }
 
 /// How long a question answered from this machine alone may take — the
