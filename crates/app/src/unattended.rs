@@ -251,6 +251,19 @@ fn why_not(cx: &App) -> (Option<String>, Option<String>) {
         .unwrap_or_default()
 }
 
+/// Why issue task `id` may not start now: the cap is reached. A task the
+/// tick or a pick has just kept is counted already, and one already queued or
+/// running holds its slot; every other start of an issue's task, a Resume or
+/// a Retry, is held to the cap like the tick.
+pub(crate) fn over_cap(id: &str, cx: &App) -> Option<String> {
+    let u = Shared::global(cx).unattended.as_ref()?;
+    let issue = crate::task::task(id, cx).is_some_and(|task| task.issue().is_some());
+    if !issue || u.starting.contains(id) || crate::task::is_working(id, cx) {
+        return None;
+    }
+    at_cap(u, cx)
+}
+
 /// Issue task `id` now waits for its place or holds it, and counts against
 /// the cap as such.
 pub(crate) fn placed(id: &str, cx: &mut App) {
@@ -440,6 +453,10 @@ fn with<R>(cx: &mut App, act: impl FnOnce(&mut Unattended) -> R) -> Option<R> {
 /// them as old as the run was long — and left an account signed in on screen after it
 /// had been signed out.
 fn tick(asked_from: Option<gpui::AnyWindowHandle>, cx: &mut App) {
+    // A report that could not reach its issue is tried again at every tick,
+    // switched on or not: an issue picked by hand needs no switch, and its
+    // report must not wait for one.
+    deliver_all(cx);
     let roots = opted_in_roots(cx);
     // Nothing switched on is nothing to look at and nothing to search, so a
     // tick asks no connector anything at all — the feature costs nobody who has not
@@ -447,8 +464,6 @@ fn tick(asked_from: Option<gpui::AnyWindowHandle>, cx: &mut App) {
     if roots.is_empty() {
         return;
     }
-    // A report that could not reach its issue is tried again at every tick.
-    deliver_all(cx);
     let stopped = Shared::global(cx)
         .unattended
         .as_ref()

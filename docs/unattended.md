@@ -229,7 +229,10 @@ Picking one runs the same path as a found issue, with four differences:
 window (`task::issues_working`: issue tasks running or queued). A run waiting on
 a card or an approval does not count, and starting to wait looks for the next
 issue at once (`unattended::waiting`) rather than at the next tick. A pick while
-the cap is reached is refused with the issues being worked. Beside *Check
+the cap is reached is refused with the issues being worked, and so is a Resume
+or a Retry of an issue's task from the Tasks page (`unattended::over_cap`, asked
+in `task::request`, which every start goes through); a refused Retry drops the
+run it was about to start. Beside *Check
 again* in Settings, *Look now* runs the search at once and always says what came
 of it: nothing switched on, the cap reached, what blocks every run, or that no
 issue of yours carries the label.
@@ -492,7 +495,8 @@ there is no task to keep it in.
 `IssueSource::unsent`, and the task's file is saved, before anything reaches the
 network: even the verdict is looked for only when the report is sent. `deliver` sends the unsent reports oldest first and drops each only once
 the issue has it; the first that fails stops the rest, so the issue never hears
-them out of order. What is left is sent again at every tick and at the next
+them out of order. What is left is sent again at every tick, whether or not any
+project is switched on, and at the next
 start (`deliver_all`), and the history cap never removes a task whose report is
 unsent. A forge that cannot be reached, or a quit, never loses one.
 

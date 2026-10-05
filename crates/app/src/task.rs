@@ -215,6 +215,21 @@ pub(crate) fn resumable_run(id: &str, cx: &App) -> Option<Run> {
 /// nobody works there, or after the task that does, saying so. A task
 /// already running or waiting is left as it is.
 pub(crate) fn request(id: String, window: &mut Window, cx: &mut Context<Shell>) {
+    if let Some(why) = crate::unattended::over_cap(&id, cx) {
+        // A retry's new run never began: dropped, the task is as it was.
+        cx.update_global::<Tasks, _>(|t, _| {
+            let Some(task) = t.task_mut(&id) else {
+                return;
+            };
+            if task.runs.len() > 1 && task.runs.last().is_some_and(|run| !run.begun()) {
+                task.runs.pop();
+                t.save(&id);
+            }
+        });
+        window.push_notification(Notification::warning(why), cx);
+        cx.refresh_windows();
+        return;
+    }
     let Some(dir) = cx
         .try_global::<Tasks>()
         .and_then(|t| t.task(&id))
@@ -725,6 +740,11 @@ pub(crate) fn removed(roots: &[PathBuf], cx: &App) -> usize {
     cx.try_global::<Tasks>().map_or(0, |t| {
         roots.iter().filter_map(|root| t.removed.get(root)).sum()
     })
+}
+
+/// Whether task `id` is queued, running or waiting on a person.
+pub(crate) fn is_working(id: &str, cx: &App) -> bool {
+    cx.try_global::<Tasks>().is_some_and(|t| t.busy(id))
 }
 
 /// How each issue task working or queued is shown, oldest first: what the
