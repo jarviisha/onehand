@@ -244,13 +244,16 @@ pub fn run_workflow(shell: &Shell, window: &Window, cx: &mut Context<Shell>) -> 
         .as_ref()
         .and_then(|entry| entry.template.clone().ok());
     let picker_name = picked.map_or_else(|| "Pick a workflow".to_string(), |e| e.name());
-    // The dialog sits a tenth of the window down; the form takes what is left
-    // below the heading and above the footer, and scrolls past that, so an
-    // open preview never pushes Run off screen.
-    let room = (window.viewport_size().height * 0.8 - window.rem_size() * 10.)
-        .max(window.rem_size() * 10.);
+    // The dialog keeps the same margin above and below it; the form takes what
+    // is left under the heading and over the footer, and scrolls past that, so
+    // an open preview never pushes Run off screen.
+    let rem = window.rem_size();
+    let margin = rem * LAUNCHER_MARGIN;
+    let room = (window.viewport_size().height - margin * 2. - rem * LAUNCHER_CHROME)
+        .max(rem * LAUNCHER_CHROME);
 
     Dialog::new(cx)
+        .margin_top(margin)
         .close_button(false)
         .content(move |content, _, cx: &mut App| {
             // Read here, as it is typed, so the preview follows the brief.
@@ -362,6 +365,13 @@ pub fn run_workflow(shell: &Shell, window: &Window, cx: &mut Context<Shell>) -> 
             shell.cancel_workflow(cx);
         }))
 }
+
+/// The launcher's margin above and below it, in rems.
+const LAUNCHER_MARGIN: f32 = 3.;
+
+/// What the launcher takes besides its form, in rems: its heading, its footer
+/// and the padding between them. The form is never shorter than this either.
+const LAUNCHER_CHROME: f32 = 10.;
 
 /// How many steps the launcher's preview lists before saying how many more
 /// there are.

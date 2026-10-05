@@ -520,18 +520,20 @@ impl Shell {
                 .description(said)
                 .children(menu)
                 .footer(
-                    // Wrapped, for a narrow window; the library's close box is
-                    // full width and would take a row of its own, so Cancel
-                    // closes the dialog itself.
+                    // Wrapped, for a narrow window. Cancel still closes through
+                    // the library's close box, so a cancel handler would run;
+                    // the box is full width, and a box of its own sized to the
+                    // button keeps it from taking a row of its own.
                     gpui_component::dialog::DialogFooter::new()
                         .flex_wrap()
                         .child(
-                            crate::controls::action("retry-cancel")
-                                .ghost()
-                                .label("Cancel")
-                                .on_click(|_, window: &mut Window, cx: &mut gpui::App| {
-                                    window.close_dialog(cx)
-                                }),
+                            gpui::div().flex_none().child(
+                                gpui_component::dialog::DialogClose::new().child(
+                                    crate::controls::action("retry-cancel")
+                                        .ghost()
+                                        .label("Cancel"),
+                                ),
+                            ),
                         )
                         .children(with_newer)
                         .child(
