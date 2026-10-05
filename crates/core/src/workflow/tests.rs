@@ -923,8 +923,14 @@ fn a_retry_ignores_a_step_it_lacks_or_one_past_its_start() {
 
 #[test]
 fn a_done_run_retries_from_past_its_last_step_and_offers_the_first() {
-    let mut prev = exhausted_at_implement();
-    prev.step = prev.template.steps.len();
+    let mut prev = at_approval();
+    prev.approved();
+    prompt_of(prev.measured(mark("a", "d0")));
+    prev.turn_ended(&facts("a", true, 0, "d1"), "");
+    assert_eq!(
+        prev.command_finished(Ok(Some("a".into()))),
+        Action::Finish(Outcome::Done)
+    );
     assert_eq!(
         Run::retry_start(&prev, &prev.template),
         prev.template.steps.len()

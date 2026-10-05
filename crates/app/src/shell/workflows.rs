@@ -3,7 +3,9 @@
 
 use super::Shell;
 use crate::state::Shared;
-use gpui::{AppContext as _, Context, Entity, ParentElement as _, SharedString, Window};
+use gpui::{
+    AppContext as _, Context, Entity, ParentElement as _, SharedString, Styled as _, Window,
+};
 use gpui_component::WindowExt as _;
 use gpui_component::button::ButtonVariants as _;
 use gpui_component::input::{InputState, TextareaState};
@@ -454,6 +456,15 @@ impl Shell {
             if changed {
                 said.push_str(" The work changed since the last run stopped.");
             }
+            // Said here rather than on its button, which would outgrow the
+            // dialog with a long step name.
+            if let Some(template) = &newer {
+                let at = starts(template, from.as_deref()).0;
+                said.push_str(&format!(
+                    " The newer workflow, version {}, starts at {at}.",
+                    template.version
+                ));
+            }
             let retry = {
                 let (shell, id, same, from) =
                     (shell.clone(), id.clone(), same.clone(), from.clone());
@@ -463,13 +474,9 @@ impl Shell {
                 }
             };
             let with_newer = newer.clone().map(|template| {
-                let at = starts(&template, from.as_deref()).0;
                 let (shell, id, from) = (shell.clone(), id.clone(), from.clone());
                 crate::controls::action("retry-newer")
-                    .label(format!(
-                        "Retry with the newer workflow (version {}), from {at}",
-                        template.version
-                    ))
+                    .label(format!("Retry with version {}", template.version))
                     .on_click(move |_, window: &mut Window, cx: &mut gpui::App| {
                         window.close_dialog(cx);
                         retry_now(
@@ -513,13 +520,18 @@ impl Shell {
                 .description(said)
                 .children(menu)
                 .footer(
+                    // Wrapped, for a narrow window; the library's close box is
+                    // full width and would take a row of its own, so Cancel
+                    // closes the dialog itself.
                     gpui_component::dialog::DialogFooter::new()
+                        .flex_wrap()
                         .child(
-                            gpui_component::dialog::DialogClose::new().child(
-                                crate::controls::action("retry-cancel")
-                                    .ghost()
-                                    .label("Cancel"),
-                            ),
+                            crate::controls::action("retry-cancel")
+                                .ghost()
+                                .label("Cancel")
+                                .on_click(|_, window: &mut Window, cx: &mut gpui::App| {
+                                    window.close_dialog(cx)
+                                }),
                         )
                         .children(with_newer)
                         .child(

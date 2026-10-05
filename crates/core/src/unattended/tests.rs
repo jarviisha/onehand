@@ -292,6 +292,25 @@ fn an_issue_is_shown_by_its_forge_number_and_a_kept_one_as_a_draft() {
 }
 
 #[test]
+fn an_issue_is_named_by_its_forge_number_and_a_draft_by_its_title() {
+    assert_eq!(forge().named(&issue(7, "a")), "#7");
+    let (kept, dir) = local("named", &[]);
+    assert_eq!(kept.named(&issue(3, "Fix it")), "\u{201c}Fix it\u{201d}");
+    assert_eq!(kept.named(&issue(3, "a").at("#41".into())), "#41");
+    let source = IssueSource {
+        tracker: kept.to_ref(),
+        number: 3,
+        forge_ref: None,
+        forge: None,
+        base: "main".into(),
+        picked: false,
+        unsent: Vec::new(),
+    };
+    assert_eq!(source.named("Fix it"), kept.named(&issue(3, "Fix it")));
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+#[test]
 fn every_title_makes_a_valid_branch() {
     let long = "word ".repeat(60);
     for title in [

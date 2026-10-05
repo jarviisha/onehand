@@ -198,7 +198,7 @@ pub fn pick_issue(shell: &Shell, cx: &mut Context<Shell>) -> Dialog {
 ///
 /// Where the run works is the template's to say, and said under its name, so
 /// nobody presses *Run* expecting a checkout and gets a new worktree.
-pub fn run_workflow(shell: &Shell, cx: &mut Context<Shell>) -> Dialog {
+pub fn run_workflow(shell: &Shell, window: &Window, cx: &mut Context<Shell>) -> Dialog {
     let Some(launcher) = shell.workflow_launcher() else {
         return Dialog::new(cx);
     };
@@ -244,6 +244,11 @@ pub fn run_workflow(shell: &Shell, cx: &mut Context<Shell>) -> Dialog {
         .as_ref()
         .and_then(|entry| entry.template.clone().ok());
     let picker_name = picked.map_or_else(|| "Pick a workflow".to_string(), |e| e.name());
+    // The dialog sits a tenth of the window down; the form takes what is left
+    // below the heading and above the footer, and scrolls past that, so an
+    // open preview never pushes Run off screen.
+    let room = (window.viewport_size().height * 0.8 - window.rem_size() * 10.)
+        .max(window.rem_size() * 10.);
 
     Dialog::new(cx)
         .close_button(false)
@@ -286,24 +291,36 @@ pub fn run_workflow(shell: &Shell, cx: &mut Context<Shell>) -> Dialog {
                 },
             );
             let label = |text: &'static str| div().text_sm().child(text);
+            // The column sits in the scrolling box rather than being it, or
+            // its fields would shrink to fit instead of scrolling.
             content.child(title_row(heading.clone())).child(
                 div()
-                    .v_flex()
-                    .gap_2()
+                    .id("workflow-launcher-body")
                     .w_full()
-                    .child(label("Workflow"))
-                    .child(div().h_flex().child(picker))
-                    .child(div().text_xs().text_color(muted).child(about.clone()))
-                    .children(shown)
-                    .child(label("Title"))
-                    .child(Input::new(&title))
-                    .child(label("Details"))
-                    .child(gpui_component::input::Textarea::new(&body).h(gpui::rems(8.)))
-                    .child(label("Instructions"))
-                    .child(gpui_component::input::Textarea::new(&instructions).h(gpui::rems(4.)))
-                    .when_some(error.clone(), |col, why| {
-                        col.child(div().text_xs().text_color(danger).child(why))
-                    }),
+                    .max_h(room)
+                    .overflow_y_scroll()
+                    .child(
+                        div()
+                            .v_flex()
+                            .gap_2()
+                            .w_full()
+                            .child(label("Workflow"))
+                            .child(div().h_flex().child(picker))
+                            .child(div().text_xs().text_color(muted).child(about.clone()))
+                            .children(shown)
+                            .child(label("Title"))
+                            .child(Input::new(&title))
+                            .child(label("Details"))
+                            .child(gpui_component::input::Textarea::new(&body).h(gpui::rems(8.)))
+                            .child(label("Instructions"))
+                            .child(
+                                gpui_component::input::Textarea::new(&instructions)
+                                    .h(gpui::rems(4.)),
+                            )
+                            .when_some(error.clone(), |col, why| {
+                                col.child(div().text_xs().text_color(danger).child(why))
+                            }),
+                    ),
             )
         })
         .footer(

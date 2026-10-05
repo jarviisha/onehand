@@ -556,6 +556,7 @@ fn form(handle: &Entity<Shell>, draft: &crate::settings::WorkflowDraft, cx: &App
     .child(
         div()
             .h_flex()
+            .flex_wrap()
             .gap_2()
             .children(Kind::ALL.into_iter().enumerate().map(|(at, kind)| {
                 crate::controls::action(("add-step", at))

@@ -568,6 +568,33 @@ fn a_listing_reads_by_group_then_age() {
 }
 
 #[test]
+fn a_task_stopped_before_it_ran_is_as_new_as_when_it_was_made() {
+    let (f1, f3) = (finished("1", "/a", 30), finished("3", "/a", 10));
+    let mut never = task(&(20 * 1_000_000_000u128).to_string());
+    never.runs.clear();
+    let mut listed = [Some(&f3), Some(&never), Some(&f1)];
+    sort_listed(&mut listed, |task| (Group::Finished, *task));
+    let ids: Vec<&str> = listed.iter().map(|t| t.unwrap().id.as_str()).collect();
+    assert_eq!(ids, ["1", never.id.as_str(), "3"]);
+}
+
+#[test]
+fn a_check_says_whether_it_passed() {
+    let mut t = Task::check("1".into(), "true".into(), task("1").setup);
+    assert_eq!(t.ended_said(), None);
+    t.runs[0].resume();
+    t.runs[0].command_finished(Ok(None));
+    assert_eq!(t.ended_said().as_deref(), Some("Check passed"));
+    t.runs[0].outcome = Some(Outcome::Failed("exit 1".into()));
+    assert_eq!(t.ended_said().as_deref(), Some("Check failed: exit 1"));
+    t.runs[0].outcome = Some(Outcome::Stopped(Stop::ByPerson));
+    assert_eq!(t.ended_said().as_deref(), Some("Stopped by hand"));
+    let mut w = task("2");
+    w.runs[0].outcome = Some(Outcome::Done);
+    assert_eq!(w.ended_said(), Some(Outcome::Done.said()));
+}
+
+#[test]
 fn a_retry_with_a_note_tells_its_first_step_what_to_change() {
     let mut t = task("1");
     t.runs[0].resume();

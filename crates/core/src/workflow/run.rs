@@ -166,7 +166,7 @@ pub enum Stop {
 }
 
 impl Stop {
-    fn said(self) -> &'static str {
+    pub(crate) fn said(self) -> &'static str {
         match self {
             Self::ByPerson => "stopped by hand",
             Self::TakenOver => "taken over by hand",
@@ -293,10 +293,12 @@ impl Run {
         };
         // Passed means passed in the last run's own template: a step dropped
         // earlier on in `template` must not move one it failed into the past.
+        // A run that ended done passed them all, its last step included,
+        // though finishing never moves `step` past it.
         let passed = |step: &str| {
             prev.template
                 .index_of(step)
-                .is_some_and(|at| at < prev.step)
+                .is_some_and(|at| at < prev.step || prev.outcome == Some(Outcome::Done))
         };
         template
             .steps

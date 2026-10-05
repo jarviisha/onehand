@@ -119,6 +119,17 @@ impl Tracker {
         )
     }
 
+    /// How `issue` is named in a sentence: as [`Tracker::shown`] says, and by
+    /// its title where it is kept in onehand only, since *Draft* names none.
+    pub fn named(&self, issue: &Issue) -> String {
+        named(
+            lives_on_forge(self.to_ref()),
+            issue.number,
+            issue.forge_ref(),
+            &issue.title,
+        )
+    }
+
     /// How a run's brief names `issue`, in what every step is asked.
     fn names(&self, issue: &Issue) -> String {
         let number = issue.number;
@@ -510,6 +521,17 @@ impl IssueSource {
             self.forge_ref.as_deref(),
         )
     }
+
+    /// How the issue titled `title` is named in a sentence, as
+    /// [`Tracker::named`] says.
+    pub fn named(&self, title: &str) -> String {
+        named(
+            lives_on_forge(self.tracker.clone()),
+            self.number,
+            self.forge_ref.as_deref(),
+            title,
+        )
+    }
 }
 
 /// Whether an issue living in `tracker` lives on the forge itself.
@@ -529,6 +551,15 @@ fn shown(on_forge: bool, number: u64, forge_ref: Option<&str>) -> String {
         (true, _) => format!("#{number}"),
         (false, Some(reference)) => reference.to_string(),
         (false, None) => "Draft".to_string(),
+    }
+}
+
+/// How an issue is named in a sentence: as [`shown`], or by its title in
+/// quotes where it is a draft.
+fn named(on_forge: bool, number: u64, forge_ref: Option<&str>, title: &str) -> String {
+    match (on_forge, forge_ref) {
+        (false, None) => format!("\u{201c}{title}\u{201d}"),
+        _ => shown(on_forge, number, forge_ref),
     }
 }
 

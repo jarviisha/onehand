@@ -209,11 +209,11 @@ enum Skip {
 }
 
 impl Skip {
-    /// What a person who picked issue `number` is told.
-    fn said(&self, number: u64) -> String {
+    /// What a person who picked the issue `named` is told.
+    fn said(&self, named: &str) -> String {
         match self {
-            Self::Busy => format!("A run is already working on issue #{number}."),
-            Self::Unread(why) => format!("Could not start on issue #{number}: {why}"),
+            Self::Busy => format!("A run is already working on issue {named}."),
+            Self::Unread(why) => format!("Could not start on issue {named}: {why}"),
         }
     }
 }
@@ -451,32 +451,44 @@ pub fn start_picked(
     let earlier = earlier(cx);
     cx.spawn(async move |cx| {
         let number = row.issue.number;
+        let named = tracker.named(&row.issue);
         let begun = cx
             .background_executor()
-            .spawn(async move {
-                std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                    // An issue on the forge goes back to that forge; one kept
-                    // here goes to whichever forge serves the project, if any.
-                    let forge = match &tracker {
-                        Tracker::Forge(forge) | Tracker::Synced { forge, .. } => Some(*forge),
-                        Tracker::Local(_) => connector_for(&repo).ok(),
-                    };
-                    // Refused before the claim: claimed twice, it would be
-                    // worked twice, on two branches.
-                    let taking = taking_blocking(&earlier, &tracker, number, &repo, forge)
-                        .map_err(|skip| skip.said(number))?;
-                    core::claim_picked_blocking(&tracker, &repo, &row, &label, taking.answering())
-                        .map_err(|why| format!("Could not start on issue #{number}: {why}"))?;
-                    Ok(prepare_blocking(
-                        repo,
-                        tracker,
-                        forge,
-                        row.issue,
-                        taking,
-                        Some(window),
-                    ))
-                }))
-                .unwrap_or_else(|_| Err("onehand panicked while claiming the issue".to_string()))
+            .spawn({
+                let named = named.clone();
+                async move {
+                    std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                        // An issue on the forge goes back to that forge; one kept
+                        // here goes to whichever forge serves the project, if any.
+                        let forge = match &tracker {
+                            Tracker::Forge(forge) | Tracker::Synced { forge, .. } => Some(*forge),
+                            Tracker::Local(_) => connector_for(&repo).ok(),
+                        };
+                        // Refused before the claim: claimed twice, it would be
+                        // worked twice, on two branches.
+                        let taking = taking_blocking(&earlier, &tracker, number, &repo, forge)
+                            .map_err(|skip| skip.said(&named))?;
+                        core::claim_picked_blocking(
+                            &tracker,
+                            &repo,
+                            &row,
+                            &label,
+                            taking.answering(),
+                        )
+                        .map_err(|why| format!("Could not start on issue {named}: {why}"))?;
+                        Ok(prepare_blocking(
+                            repo,
+                            tracker,
+                            forge,
+                            row.issue,
+                            taking,
+                            Some(window),
+                        ))
+                    }))
+                    .unwrap_or_else(|_| {
+                        Err("onehand panicked while claiming the issue".to_string())
+                    })
+                }
             })
             .await;
         cx.update(|cx| {
@@ -493,7 +505,7 @@ pub fn start_picked(
             if let Err(Unstarted { why, .. }) = &unstarted {
                 warn(
                     window,
-                    format!("Could not start on issue #{number}: {why}"),
+                    format!("Could not start on issue {named}: {why}"),
                     cx,
                 );
             }

@@ -163,14 +163,15 @@ impl Task {
         self.id.parse().unwrap_or(0)
     }
 
-    /// When it last moved, then when it was made.
+    /// When it last moved, then when it was made. One stopped before it ran
+    /// last moved when it was made.
     pub(crate) fn recency(&self) -> (u64, u128) {
         let moved = self
             .runs
             .iter()
             .filter_map(|run| run.history.last().map(|t| t.at))
             .max()
-            .unwrap_or(0);
+            .unwrap_or((self.created() / 1_000_000_000) as u64);
         (moved, self.created())
     }
 
@@ -201,6 +202,25 @@ impl Task {
             Some(run) => run.outcome.clone(),
             None => Some(Outcome::Stopped(Stop::ByPerson)),
         }
+    }
+
+    /// How it ended, as its line in a list; `None` while it has not. A check
+    /// says whether it passed, any other task how its workflow ended.
+    pub fn ended_said(&self) -> Option<String> {
+        let outcome = self.outcome()?;
+        Some(match self.source {
+            Source::Check => match outcome {
+                Outcome::Done => "Check passed".to_string(),
+                Outcome::Failed(why) => format!("Check failed: {why}"),
+                Outcome::Exhausted { .. } => "Check failed".to_string(),
+                Outcome::Stopped(stop) => {
+                    let mut said = stop.said().to_string();
+                    said[..1].make_ascii_uppercase();
+                    said
+                }
+            },
+            Source::Workflow | Source::Issue(_) => outcome.said(),
+        })
     }
 
     /// Whether it may be picked up again where it was: not let go, and its
