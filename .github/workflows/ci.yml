@@ -10,7 +10,8 @@
 #   core    — `onehand-core` is framework-free by design: 120 crates instead of
 #             616. Most of the test suite lives there, so this job is where a
 #             real failure usually shows up, minutes before the heavy ones land.
-#   app     — the front end plus the vendored terminal. Pays the full gpui build.
+#   app     — all other workspace members, including plugins and the vendored
+#             terminal. Pays the full gpui build.
 #   clippy  — a job of its own, not a step inside `app`, because cargo records
 #             RUSTC_WRAPPER in a unit's fingerprint: clippy re-compiles the whole
 #             dependency graph whatever it is placed next to. Since the second
@@ -119,11 +120,12 @@ jobs:
       # grid code. CI renders no frames, so it pays that cost for nothing —
       # dropping it roughly halves a cold build.
       #
-      # `-p gpui-terminal` is deliberate: the vendored terminal has real tests
-      # of its own, and it is already compiled here as a dependency.
+      # Run each member's own tests: compiling a plugin as an app dependency
+      # does not run its unit tests. Core has its own job; all other members,
+      # including future plugins and the vendored terminal, belong here.
       - name: Tests
         run: |
-          cargo test --locked -p onehand -p gpui-terminal \
+          cargo test --locked --workspace --exclude onehand-core \
             --config 'profile.dev.package."*".opt-level=0'
       - name: Terminal profiling probe compiles
         run: |
@@ -153,7 +155,7 @@ jobs:
         with:
           save-if: ${{ github.ref == 'refs/heads/main' }}
 
-      # Through the Makefile again: it scopes clippy to our two crates and adds
+      # Through the Makefile again: it scopes clippy to first-party crates and adds
       # `--no-deps`, without which the vendor's upstream warnings arrive on every
       # run and a warning of ours has nine of them to hide behind.
       - name: Clippy

@@ -147,6 +147,7 @@ loading, IPC or marketplace for onehand's own plugins.
 - [docs/](docs/): workflows, tasks and unattended runs end to end, the known
   gaps, and the reasons behind the repository's rules.
 - [CLAUDE.md](CLAUDE.md): working in the repository.
+- [AGENTS.md](AGENTS.md): discovery entrypoint for coding agents; routes to the same shared guide.
 - [CHANGELOG.md](CHANGELOG.md): what changed in each release.
 
 ## Licence

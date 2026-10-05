@@ -55,22 +55,49 @@ The full text behind the short forms in `CLAUDE.md`, with the reason for each.
   `dock/tab_panel.rs:775`, an upstream rev. Those are checkable, and rustdoc links break the build
   when they rot. The rule is about prose that lives in a document.
 
-  The traffic runs one way: **documents point at code, code does not point back.** Enforced by
-  `guards::tests::code_never_cites_a_document`.
+  The traffic runs one way: **documents point at code, code does not point back.** Line comments
+  are checked by `guards::tests::code_never_cites_a_document`; other forms need review.
 - **Every `.md` file in this repo is written in English.** Not a style preference: these documents are
   the binding contracts, they are read alongside source that is entirely in English, and half of what
   they explain is quoted identifiers, compiler messages and upstream prose that has no translation.
   A file split across two languages is one that gets read in neither — the reader has to switch, and
   the terms stop matching the code they name. This covers prose, headings, tables and comments inside
   fenced blocks; a quoted string that is itself Vietnamese (a test fixture, a bug report being cited)
-  is data and stays as it is. Enforced by `guards::tests::documents_are_written_in_english`.
+  is data and stays as it is. `guards::tests::documents_are_written_in_english` detects a subset
+  of Vietnamese diacritics, not languages or quotation boundaries; a legitimate quoted fixture
+  may need a narrowly scoped guard adjustment rather than a translation.
 - **DESIGN.md is binding.** Read the theme; never hard-code a colour, radius or
   size. Sizes are rems.
 - **Reuse gpui-component before building.** A hand-rolled equivalent will not follow the theme, will
   not follow the focus rules, and becomes ours to maintain.
 - **Keep rendering bounded**, and say on screen when a bound bit.
+- **Split a file before about 800 lines of production code, excluding tests.** The limit is a
+  prompt to check responsibilities: a reader should be able to understand a strip, dialog,
+  page section or parser without loading the rest of a growing file. Move inline tests to
+  `foo/tests.rs` first, then extract a responsibility into `foo/bar.rs` or a sibling module
+  when the production code needs it. Keep the interface narrow and the implementation private.
+  Make the split in the change that would cross the limit, so the next change starts with a
+  usable seam. The number is approximate; splitting one coherent operation arbitrarily only
+  makes its control flow harder to follow. Source guards do not enforce a line-count limit.
 - **Don't self-verify UI by launching or screenshotting.** Make the change, make sure it builds and
   tests pass, then stop — the user inspects the result visually.
+
+## Guard coverage
+
+The source guards catch recurring mistakes; passing them does not establish the whole contract.
+Review the uncovered part when changing the relevant area:
+
+| Rule | Automated coverage | Still needs review |
+|---|---|---|
+| Exhaustive handling of our events | Finds `matches!` naming discovered `pub enum *Event` types in UI sources | Partial `if let`, wildcard match arms, aliases and other enum declarations |
+| Code does not cite documents | Checks `//` lines against document names and citation patterns | Block comments, runtime strings and citations outside those patterns |
+| Fields have readers | Scans field-name uses; comments in the guard explain exceptions | Collection mutation counted as a read and unrelated fields sharing a name |
+| Registry icons and button wrapper | Finds listed glyph literals and direct `Button::new(` spelling | Other glyphs, aliases and differently formatted construction |
+| English documents | Detects selected Vietnamese diacritics | Other languages and quoted data |
+| Theme, bounded rendering, module size and UI contract | Dedicated tests cover individual behaviours | No general guard proves these rules or synchronizes documentation with code |
+
+Keep the checks that catch real regressions. Add a targeted check when a concrete failure
+justifies it, and describe its limits rather than treating a source scan as a Rust parser.
 
 ## Gotchas
 
