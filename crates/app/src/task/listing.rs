@@ -123,6 +123,29 @@ pub(crate) fn issue_works(kept: &[(PathBuf, PathBuf)], cx: &App) -> Vec<IssueWor
         .collect()
 }
 
+/// Every issue task whose issue `of` takes, each with what it is doing,
+/// oldest first: what a start on an issue reads its earlier tasks from.
+pub(crate) fn issue_tasks(
+    cx: &App,
+    of: impl Fn(&onehand_core::unattended::IssueSource) -> bool,
+) -> Vec<(Task, Option<onehand_core::task::Working>)> {
+    let Some(t) = cx.try_global::<Tasks>() else {
+        return Vec::new();
+    };
+    t.tasks
+        .iter()
+        .filter(|task| task.issue().is_some_and(&of))
+        .map(|task| (task.clone(), t.working(&task.id)))
+        .collect()
+}
+
+/// The title of the task holding the place task `id` waits for, if it waits.
+pub(crate) fn queued_behind(id: &str, cx: &App) -> Option<String> {
+    let t = cx.try_global::<Tasks>()?;
+    let holder = t.queue.holder_of(id)?;
+    Some(t.task(holder)?.brief.title.clone())
+}
+
 /// The session task `id`'s run is driven in, and the window holding it.
 pub(crate) fn session_of(id: &str, cx: &App) -> Option<(u64, AnyWindowHandle)> {
     let t = cx.try_global::<Tasks>()?;

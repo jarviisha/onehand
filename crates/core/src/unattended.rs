@@ -508,6 +508,11 @@ pub struct IssueSource {
     /// tried again rather than lost with the run.
     #[serde(default)]
     pub unsent: Vec<PendingReport>,
+    /// What the start found worth telling whoever reads why the run went
+    /// wrong, when nobody was there to read it before: handed to the first
+    /// report, and gone from here once it is.
+    #[serde(default)]
+    pub notes: Vec<String>,
 }
 
 impl IssueSource {
@@ -607,6 +612,28 @@ impl Tracker {
 /// person.
 pub fn room(working: usize, at_once: u32) -> bool {
     working < at_once as usize
+}
+
+/// Why no more runs may start while the issues `working` are worked and
+/// `starting` more are on their way, under the cap of `at_once`: said with the
+/// issues it is waiting on, so a person knows whom they wait for.
+pub fn full(working: &[String], starting: usize, at_once: u32) -> Option<String> {
+    if room(working.len() + starting, at_once) {
+        return None;
+    }
+    Some(match working {
+        [] if at_once == 0 => {
+            "Unattended runs are capped at none at once (unattended.at_once).".to_string()
+        }
+        [] => "An unattended run is starting.".to_string(),
+        [one] => {
+            format!("An unattended run is already working on issue {one} — {at_once} at a time.")
+        }
+        many => format!(
+            "Unattended runs are already working on issues {} — {at_once} at a time.",
+            many.join(", ")
+        ),
+    })
 }
 
 /// How much of its timeout a run has left, counting only the time it spent

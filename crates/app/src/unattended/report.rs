@@ -26,19 +26,25 @@ pub(crate) fn spec_for(agent: Option<&str>, cx: &App) -> Option<AgentSpec> {
         .and_then(|name| agents.iter().find(|spec| spec.name == name))
         .or_else(|| agents.first())?
         .clone();
+    Some(wrapped(base))
+}
+
+/// `base` as a run starts it: with the shared build directory in its
+/// environment, where there is one.
+pub(super) fn wrapped(base: AgentSpec) -> AgentSpec {
     let Some(target) = core::target_dir() else {
-        return Some(base);
+        return base;
     };
     let mut args = vec![
         format!("CARGO_TARGET_DIR={}", target.display()),
         base.command,
     ];
     args.extend(base.args);
-    Some(AgentSpec {
+    AgentSpec {
         name: base.name,
         command: "env".to_string(),
         args,
-    })
+    }
 }
 
 /// The agent does not offer the mode runs start in: every later run would
@@ -129,8 +135,12 @@ pub(crate) fn keep(id: &str, run: &Run, started: bool, asked: Option<String>, cx
         started,
         ended_on: run.visits().last().and_then(|visit| visit.output.clone()),
         asked,
+        notes: Vec::new(),
     };
-    crate::task::update_issue(id, cx, |issue| issue.unsent.push(pending));
+    crate::task::update_issue(id, cx, |issue| {
+        let notes = std::mem::take(&mut issue.notes);
+        issue.unsent.push(PendingReport { notes, ..pending });
+    });
 }
 
 /// What a card still waiting in `session` asks, in its own words.

@@ -3,9 +3,11 @@ use super::{Project, Served, label, with};
 use crate::state::Shared;
 use gpui::App;
 use onehand_core::connector::{Connector, PrState};
+use onehand_core::preflight::{self, Check, Facts, Forge, Kind};
+use onehand_core::task::Working;
 use onehand_core::task::{Source, Task};
 use onehand_core::unattended::{self as core, Issue, IssueSource, Tracker, TrackerRef};
-use onehand_core::workflow::{self as flow, Place, Setup, Template};
+use onehand_core::workflow::{self as flow, Setup, Template};
 use onehand_core::worktree;
 use std::collections::{BTreeMap, HashSet};
 use std::path::Path;
@@ -39,6 +41,9 @@ pub(super) struct Claimed {
     /// What the person who picked it added for this run, after the brief's
     /// own instructions; empty for one the search found.
     instructions: String,
+    /// What the start found for the first report to say, for a run nobody
+    /// was there to start.
+    notes: Vec<String>,
 }
 
 impl Claimed {
@@ -123,18 +128,25 @@ pub(super) struct Unstarted {
 /// chosen as `choosing` says, and on a project with no check command an issue
 /// whose workflow runs one is passed over, its label left on, while the next
 /// may still be taken.
+///
+/// **A new task is preflighted before its claim**, as a pick is: what blocks
+/// it is said on the project's row, and the issue keeps its label for when
+/// it is fixed. A review answered is judged by its own refusals instead.
 pub(super) fn begin_blocking(
     roots: &[Workable],
     label: &str,
     choosing: &Choosing,
     earlier: &[Earlier],
+    judging: &Judging,
     checked: &mut Vec<(PathBuf, Served)>,
 ) -> Option<Result<Claimed, Unstarted>> {
     // The oldest labelled issue no task is still working on: one being
     // worked is passed over, never claimed twice, and never in the way of
     // the next.
+    let mut notes = Vec::new();
     let (repo, tracker, forge, row, taking) = roots.iter().find_map(|w| {
         let (project, forge) = (&w.project, &w.forge);
+        let mut checked_out = None;
         for tracker in trackers_blocking(project.issues.clone(), *forge) {
             match core::candidates_blocking(&tracker, &project.root, label) {
                 Ok(found) => {
@@ -159,6 +171,43 @@ pub(super) fn begin_blocking(
                                 );
                                 continue;
                             }
+                            Ok(Taking::Fresh) => {
+                                let at = checked_out.get_or_insert_with(|| {
+                                    super::facts::checked_out_blocking(&project.root)
+                                });
+                                let facts = judging.facts(
+                                    choosing.workflow_for(&row.labels, label),
+                                    &tracker,
+                                    &row.issue,
+                                    w.has_check,
+                                    at.clone(),
+                                    *forge,
+                                );
+                                let found = preflight::preflight(Kind::NewIssueRun, &facts);
+                                match found.iter().find(|f| f.blocks) {
+                                    // Another run on it is passed over, as
+                                    // above.
+                                    Some(f) if f.check == Check::Issue => continue,
+                                    Some(f) => {
+                                        checked.push((project.root.clone(), Err(f.text.clone())));
+                                        return None;
+                                    }
+                                    None => {}
+                                }
+                                notes = facts
+                                    .issue
+                                    .as_ref()
+                                    .and_then(|issue| preflight::earlier_note(&issue.tasks))
+                                    .into_iter()
+                                    .collect();
+                                return Some((
+                                    project.root.clone(),
+                                    tracker,
+                                    *forge,
+                                    row,
+                                    Taking::Fresh,
+                                ));
+                            }
                             Ok(taking) => {
                                 return Some((project.root.clone(), tracker, *forge, row, taking));
                             }
@@ -180,16 +229,61 @@ pub(super) fn begin_blocking(
         return None;
     }
     let workflow = choosing.workflow_for(&row.labels, label).to_string();
-    Some(prepare_blocking(
-        repo,
-        tracker,
-        forge,
-        row.issue,
-        workflow,
-        taking,
-        None,
-        String::new(),
-    ))
+    Some(
+        prepare_blocking(
+            repo,
+            tracker,
+            forge,
+            row.issue,
+            workflow,
+            taking,
+            None,
+            String::new(),
+        )
+        .map(|claimed| Claimed { notes, ..claimed }),
+    )
+}
+
+/// What a search judges each new task by, gathered before it goes off the
+/// UI loop: the configuration's own facts, every workflow an issue may be
+/// given, and the issue tasks there are.
+pub(super) struct Judging {
+    pub(super) common: Facts,
+    pub(super) templates: Vec<(String, Result<Template, String>)>,
+    pub(super) tasks: Vec<(Task, Option<Working>)>,
+}
+
+impl Judging {
+    /// A new run of workflow `id` on `issue`, as [`super::facts::issue_run`]
+    /// gathers it in a window.
+    fn facts(
+        &self,
+        id: &str,
+        tracker: &Tracker,
+        issue: &Issue,
+        has_check: bool,
+        checked_out: Option<String>,
+        forge: Option<&'static dyn Connector>,
+    ) -> Facts {
+        let workflow = self.templates.iter().find(|(at, _)| at == id).map_or_else(
+            || Err(format!("there is no workflow `{id}`")),
+            |(_, t)| t.clone(),
+        );
+        Facts {
+            workflow,
+            has_check,
+            in_git: checked_out.is_some(),
+            checked_out,
+            // The look before the search asked the account; a project whose
+            // account failed is not searched.
+            forge: forge.map(|forge| Forge {
+                name: forge.name().to_string(),
+                account: None,
+            }),
+            issue: Some(super::facts::on_issue(tracker, issue, self.tasks.clone())),
+            ..self.common.clone()
+        }
+    }
 }
 
 /// A project a search may look in: the forge its work goes to, if any, and
@@ -398,6 +492,7 @@ fn prepare_blocking(
             work,
             picked_in,
             instructions,
+            notes: Vec::new(),
         }),
         Err(why) => Err(Unstarted {
             repo,
@@ -550,6 +645,7 @@ fn start(claimed: Claimed, cx: &mut App) -> Result<(), Unstarted> {
         base,
         picked,
         unsent: Vec::new(),
+        notes: claimed.notes,
     });
     // Counted against the cap until it has asked for its place.
     with(cx, |u| u.starting.insert(task_id.clone()));
@@ -601,19 +697,10 @@ fn answer_review(
 /// worktree of its own, and a workflow meant for a checkout run there leaves
 /// its work uncommitted where nobody looks and reports that nothing landed.
 pub(super) fn workflow(id: &str, timeout: &str, cx: &App) -> Result<Template, String> {
-    let mut template = crate::workflow::templates(cx)
-        .into_iter()
-        .filter_map(|entry| entry.template.ok())
-        .find(|template| template.id == id)
-        .ok_or_else(|| format!("there is no workflow `{id}`"))?;
-    if template.place != Place::Worktree {
-        return Err(format!(
-            "the workflow `{}` works in the checkout, and an issue is worked on a \
-             worktree of its own",
-            template.name
-        ));
+    let template = found(id, timeout, cx)?;
+    if let Some(why) = onehand_core::preflight::unfit_for_issue(&template) {
+        return Err(why);
     }
-    template.timeout = timeout.to_string();
     let problems = flow::validate(&template);
     if !problems.is_empty() {
         let said: Vec<String> = problems.iter().map(ToString::to_string).collect();
@@ -623,6 +710,18 @@ pub(super) fn workflow(id: &str, timeout: &str, cx: &App) -> Result<Template, St
             said.join("; ")
         ));
     }
+    Ok(template)
+}
+
+/// The workflow `id` with its timeout put to `timeout`, not yet judged, or
+/// why there is none.
+pub(super) fn found(id: &str, timeout: &str, cx: &App) -> Result<Template, String> {
+    let mut template = crate::workflow::templates(cx)
+        .into_iter()
+        .filter_map(|entry| entry.template.ok())
+        .find(|template| template.id == id)
+        .ok_or_else(|| format!("there is no workflow `{id}`"))?;
+    template.timeout = timeout.to_string();
     Ok(template)
 }
 

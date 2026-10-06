@@ -380,8 +380,10 @@ fn issue_task(id: &str, at: u64, unsent: &[&str]) -> Task {
                 started: true,
                 ended_on: None,
                 asked: None,
+                notes: Vec::new(),
             })
             .collect(),
+        notes: Vec::new(),
     });
     t
 }

@@ -21,6 +21,7 @@ use std::path::Path;
 use std::path::PathBuf;
 use std::time::Duration;
 
+mod facts;
 mod launch;
 mod report;
 pub use launch::{Pickable, look_now, pickable_blocking, pickable_one_blocking, start_picked};
@@ -123,25 +124,11 @@ pub fn connector_for(root: &Path) -> Result<&'static dyn Connector, String> {
 // ponytail: waiting runs are not capped; each keeps an adapter alive. Cap
 // them when a pile of unanswered runs is seen to cost something.
 fn at_cap(u: &Unattended, cx: &App) -> Option<String> {
-    let working = crate::task::issues_working(cx);
-    if core::room(working.len() + u.starting.len(), u.at_once) {
-        return None;
-    }
-    Some(match working.as_slice() {
-        [] if u.at_once == 0 => {
-            "Unattended runs are capped at none at once (unattended.at_once).".to_string()
-        }
-        [] => "An unattended run is starting.".to_string(),
-        [one] => format!(
-            "An unattended run is already working on issue {one} — {} at a time.",
-            u.at_once
-        ),
-        many => format!(
-            "Unattended runs are already working on issues {} — {} at a time.",
-            many.join(", "),
-            u.at_once
-        ),
-    })
+    core::full(
+        &crate::task::issues_working(cx),
+        u.starting.len(),
+        u.at_once,
+    )
 }
 
 /// Why nothing at all may start, picked or found: the agent does not offer
@@ -197,6 +184,19 @@ fn choosing(u: &Unattended, cx: &App) -> launch::Choosing {
         default: u.workflow.clone(),
         by_label: u.workflows.clone(),
         need_check,
+    }
+}
+
+/// What a search judges each new task by, gathered on the UI loop.
+fn judging(u: &Unattended, cx: &App) -> launch::Judging {
+    let templates = std::iter::once(&u.workflow)
+        .chain(u.workflows.values())
+        .map(|id| (id.clone(), launch::found(id, &u.timeout, cx)))
+        .collect();
+    launch::Judging {
+        common: facts::common(cx),
+        templates,
+        tasks: crate::task::issue_tasks(cx, |_| true),
     }
 }
 
@@ -496,19 +496,10 @@ pub fn workflow_for(labels: &[String], cx: &App) -> String {
         .unwrap_or_default()
 }
 
-/// The workflow `id` as an issue's run of it would start, with the runs'
-/// timeout, or why it cannot run.
-pub(crate) fn issue_template(
-    id: &str,
-    cx: &App,
-) -> Result<onehand_core::workflow::Template, String> {
-    let timeout = Shared::global(cx)
-        .unattended
-        .as_ref()
-        .map(|u| u.timeout.clone())
-        .ok_or("unattended runs are not set up")?;
-    launch::workflow(id, &timeout, cx)
-}
+/// What a new run of workflow `id` on `issue` in `tracker` is checked
+/// against, in a window that knows whether the project `has_check`, what it
+/// has `checked_out` and the `forge` serving it.
+pub(crate) use facts::issue_run as issue_facts;
 
 /// The agent an issue's run starts, by name: the one set for runs, else the
 /// first configured.
@@ -611,7 +602,7 @@ fn tick(asked_from: Option<gpui::AnyWindowHandle>, cx: &mut App) {
     let chosen = Shared::global(cx)
         .unattended
         .as_ref()
-        .map(|u| choosing(u, cx));
+        .map(|u| (choosing(u, cx), judging(u, cx)));
     let earlier = launch::earlier(cx);
     let search = with(cx, |u| {
         let idle = !u.claiming && u.blocked.is_none() && stopped.is_none();
@@ -650,8 +641,15 @@ fn tick(asked_from: Option<gpui::AnyWindowHandle>, cx: &mut App) {
                             })
                         })
                         .collect();
-                    let begun = search.and_then(|(label, choosing)| {
-                        begin_blocking(&workable, &label, &choosing, &earlier, &mut checked)
+                    let begun = search.and_then(|(label, (choosing, judging))| {
+                        begin_blocking(
+                            &workable,
+                            &label,
+                            &choosing,
+                            &earlier,
+                            &judging,
+                            &mut checked,
+                        )
                     });
                     // Said after the look, which would otherwise say the
                     // project is fine.

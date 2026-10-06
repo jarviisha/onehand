@@ -236,19 +236,22 @@ impl Shell {
             chosen: None,
             instructions,
             preview: false,
+            forge: None,
         });
         cx.notify();
         cx.spawn(async move |shell, cx| {
-            let found = {
+            let (found, forge) = {
                 let path = path.clone();
                 cx.background_executor()
                     .spawn(async move {
-                        match only {
+                        let forge = crate::unattended::connector_for(&path).ok();
+                        let found = match only {
                             Some(number) => {
                                 crate::unattended::pickable_one_blocking(&path, issues, number)
                             }
                             None => crate::unattended::pickable_blocking(&path, issues),
-                        }
+                        };
+                        (found, forge)
                     })
                     .await
             };
@@ -263,6 +266,7 @@ impl Shell {
                             picker.chosen = Some(0);
                         }
                         picker.found = Some(std::rc::Rc::new(found));
+                        picker.forge = Some(forge);
                         cx.notify();
                     }
                 })
@@ -389,25 +393,27 @@ impl Shell {
     /// Work the issue chosen in the picker, now, and close it. The person
     /// stays where they were: the issue says the run is starting, and leads
     /// to its session.
+    ///
+    /// Judged again here, since what blocks it may have changed since the form
+    /// was drawn: a block keeps the form up, saying it.
     pub fn commit_pick(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let Some((findings, _)) = self.pick_preflight(cx) else {
+            return;
+        };
+        if findings.iter().any(|f| f.blocks) {
+            cx.notify();
+            return;
+        }
         let Some(picker) = self.issue_picker.take() else {
             return;
         };
         cx.notify();
-        let (Some(found), Some(index)) = (picker.found, picker.chosen) else {
-            return;
-        };
-        let Ok((rows, _, _)) = &*found else {
-            return;
-        };
-        let Some((tracker, row)) = rows.get(index).cloned() else {
+        let Some((tracker, row)) = picker.chosen() else {
             return;
         };
         let handle = window.window_handle();
         let has_check = self.check_of(&picker.root).is_some();
-        let workflow = picker
-            .workflow
-            .unwrap_or_else(|| crate::unattended::workflow_for(&row.labels, cx));
+        let workflow = picker.workflow_for(&row, cx);
         let instructions = picker.instructions.read(cx).value().to_string();
         if let Err(why) = crate::unattended::start_picked(
             picker.root,
@@ -421,6 +427,34 @@ impl Shell {
         ) {
             window.push_notification(Notification::warning(why), cx);
         }
+    }
+
+    /// What the preflight finds of a run on the issue chosen in the picker,
+    /// and the workflow it would run; `None` with nothing chosen yet.
+    pub fn pick_preflight(
+        &self,
+        cx: &App,
+    ) -> Option<(
+        Vec<onehand_core::preflight::Finding>,
+        Result<onehand_core::workflow::Template, String>,
+    )> {
+        let picker = self.issue_picker.as_ref()?;
+        let (tracker, row) = picker.chosen()?;
+        let facts = crate::unattended::issue_facts(
+            &picker.workflow_for(&row, cx),
+            &tracker,
+            &row.issue,
+            self.check_of(&picker.root).is_some(),
+            self.window
+                .git
+                .get(&picker.root)
+                .map(|git| git.branch.clone()),
+            picker.forge.flatten(),
+            cx,
+        );
+        let findings =
+            onehand_core::preflight::preflight(onehand_core::preflight::Kind::NewIssueRun, &facts);
+        Some((findings, facts.workflow))
     }
 
     /// Close the picker without working anything.

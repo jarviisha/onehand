@@ -286,6 +286,34 @@ with where it works, its timeout, its misses and its version; a line per step
 (`StepSpec::summary`); and the first prompt as the agent would receive it
 (`workflow::first_prompt`), filled with the brief as it is typed, in a scrolling box.
 
+**A start is preflighted before anything of its own** (`onehand_core::preflight`): one pure
+function, given the kind of start and the facts the app holds, returns findings, each blocking
+the start or only saying something, with where it is changed. It never claims, cuts or starts;
+whoever carries the start out still does, after it. It judges the configuration that will
+actually run, and the app gathers the facts without reaching the disk or the network in a
+render: `gh`'s sign-in is the state last seen, the forge serving a project is found when the form
+opens. What it checks, for a new issue run:
+
+| Check | Blocks when | Says |
+|---|---|---|
+| Workflow | it is not there, works in the checkout, or `workflow::validate` finds problems (each listed, first) | |
+| Agent | none is configured, or the one named is no longer | |
+| Mode | the agent's current offer, learned in this process from the spec as it is now, does not hold it | the mode is not known yet |
+| Check command | the workflow runs the project's check command and there is none | the workflow runs no command: nothing verifies the work |
+| Place | `HEAD` is detached and no forge serves the project | |
+| Base | | what the branch is cut off: the default branch on `origin`, fetched first, or the branch checked out |
+| Forge | `gh` missing or signed out, as last seen | |
+| Issue | another run works on it | |
+| Earlier task | | the issue's last task needs attention: starting makes a second task, and *Show task* leads to that one |
+| Slot | `at_once` is reached, naming the issues holding the slots | |
+
+**What an agent offers is learned whenever it comes up**, a person's session included, and kept
+per agent spec (its command and arguments, compared whole) for the life of the process
+(`Shared::modes_seen`). A spec edited since is another spec, so what was learned of it stops
+counting; a restart forgets, so an upgraded adapter is never judged by an old list. Only a list
+that is current blocks; otherwise the mode is *not known yet*, and the driver's check when the
+agent comes up stays the authority.
+
 **Every start goes through the queue** (`task::request`), Resume included. A place is the
 checkout git sees: the canonical top level of the repository, or a folder's own canonical path
 outside git (`task::queue::place_blocking`), so two projects that are folders of one checkout share
@@ -387,6 +415,9 @@ change (`git checkout . && git clean -fd`).
 | The trigger label refused | Add `auto` as a workflow label | Refused under the row, nothing written |
 | A checkout workflow refused | Set `workflow = "builtin:checkout"` under `[unattended]` and restart | Settings says nothing will be picked up, naming the checkout; the Workflow menus do not offer it |
 | From the Issues tab | Select an open issue, *Run workflow…* | The start form opens on that issue with no row to pick: *Workflow*, *Where it works* naming the branch and agent, *Instructions for this run*, the limits, *Preview*; *Run* starts the run, the dialog closes and the issue stays on screen, saying the run is starting with *Open session* |
+| A mode not offered | Open a session on an agent that offers modes, set `[unattended] mode` to one it does not offer, then *Run workflow…* on an issue | *Before it starts* says, in the danger ink, that the agent offers no such mode and what it offers; *Run* is spent and says one thing blocks; the issue keeps its labels. Edit the agent's spec in Settings ▸ Agents and open the form again: the mode reads *not known yet*, muted, and *Run* is offered |
+| A full slot | With `at_once = 1` and an issue task running, *Run workflow…* on another issue | *Before it starts* names the issue being worked; *Run* is spent |
+| An earlier task needing attention | On an issue whose last task ended exhausted, *Run workflow…* | Muted: the last task ended and a new start makes a second task, with *Show task*, which closes the form and opens that task |
 | Instructions for this run | In that form type `Keep the old flag.` under *Instructions for this run*, open *Preview*; *Run*; later *Retry* the task | The first prompt in the preview ends its instructions with the line as it is typed; the run's first prompt carries it, and so does the retry's; the issue's body is unchanged |
 | Where the work stands | While that run works, look at the issue | Above the body: *Running · Plan · step 1 of N*, *Working on Plan, started …*, no primary action, *Open session* and *Stop*. Below it: *What the work left* names the branch |
 | A long body waiting for approval | Give an issue a body several screens long, run on it, with the mock workflow agent, a duplicate of *Implement on a branch* given an approval step after its first, until it waits there | Without scrolling: *Waiting for approval · <the approval step> · step 2 of N*, *Approving starts …* and *Review…*, which opens the run's session with the step strip |

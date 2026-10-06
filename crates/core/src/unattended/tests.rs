@@ -348,6 +348,7 @@ fn an_issue_is_named_by_its_forge_number_and_a_draft_by_its_title() {
         base: "main".into(),
         picked: false,
         unsent: Vec::new(),
+        notes: Vec::new(),
     };
     assert_eq!(source.named("Fix it"), kept.named(&issue(3, "Fix it")));
     let _ = std::fs::remove_dir_all(dir);
@@ -427,6 +428,7 @@ fn ran(outcome: Outcome) -> PendingReport {
         started: true,
         ended_on: None,
         asked: None,
+        notes: Vec::new(),
     }
 }
 
@@ -578,6 +580,7 @@ fn every_tracker_kept_by_name_resolves_back() {
             base: "main".into(),
             picked: false,
             unsent: Vec::new(),
+            notes: Vec::new(),
         };
         assert_eq!(source.shown(), tracker.shown(&issue(7, "a")));
     }
@@ -602,6 +605,7 @@ fn a_pull_request_closes_the_issue_only_where_the_forge_knows_it() {
         base: "origin/main".into(),
         picked: false,
         unsent: Vec::new(),
+        notes: Vec::new(),
     };
     let brief = brief_for(&forge(), &issue(3, "Fix it"), "");
     let body = |s: &IssueSource| pull_request_text(&brief, Some(s)).1;
@@ -677,4 +681,14 @@ fn instructions_for_the_run_follow_the_briefs_own_into_the_first_prompt_and_a_re
         .instructions
         .unwrap()
         .ends_with('\n'));
+}
+
+#[test]
+fn what_the_start_noted_is_said_last() {
+    let noted = PendingReport {
+        notes: vec!["An earlier task on this issue ended: too many misses at Implement. Its worktree is kept.".into()],
+        ..ran(Outcome::Done)
+    };
+    let said = report(&noted, &Ok(Verdict::Commits(1)), "b");
+    assert!(said.ends_with("Its worktree is kept."), "{said}");
 }

@@ -11,6 +11,7 @@ use gpui_component::button::ButtonVariants;
 use gpui_component::dialog::Dialog;
 use gpui_component::input::{Textarea, TextareaState};
 use gpui_component::{ActiveTheme, Disableable, Icon, IconName, Sizable as _, StyledExt};
+use onehand_core::preflight::{Check, Finding};
 use onehand_core::unattended::{self as core, IssueRow, Tracker};
 use onehand_core::workflow::Template;
 
@@ -40,18 +41,15 @@ pub fn pick_issue(shell: &Shell, window: &Window, cx: &mut Context<Shell>) -> Di
     let (at, narrowed, preview) = (picker.chosen, picker.only.is_some(), picker.preview);
     let instructions = picker.instructions.clone();
     let picked = picker.workflow.clone();
-    let chosen = found
-        .as_deref()
-        .and_then(|found| found.as_ref().ok())
-        .zip(at)
-        .and_then(|((rows, _, _), at)| rows.get(at).cloned());
-    let template = chosen.as_ref().map(|(_, row)| {
-        let id = picked
-            .clone()
-            .unwrap_or_else(|| crate::unattended::workflow_for(&row.labels, cx));
-        crate::unattended::issue_template(&id, cx)
-    });
-    let runnable = matches!(template, Some(Ok(_)));
+    let chosen = picker.chosen();
+    // Judged on every frame from what the app holds, so a block fixed
+    // elsewhere (an agent come up, a slot let go) clears as it happens.
+    let judged = shell.pick_preflight(cx);
+    let blocking = judged
+        .as_ref()
+        .map_or(0, |(found, _)| found.iter().filter(|f| f.blocks).count());
+    let runnable = judged.is_some() && blocking == 0;
+    let danger = crate::theme::status_ink(cx).danger;
     let (margin, room) = super::form_room(window);
     let handle = cx.entity();
     Dialog::new(cx)
@@ -73,13 +71,13 @@ pub fn pick_issue(shell: &Shell, window: &Window, cx: &mut Context<Shell>) -> Di
             });
             let form = chosen
                 .as_ref()
-                .zip(template.as_ref())
-                .map(|((tracker, row), template)| {
+                .zip(judged.as_ref())
+                .map(|((tracker, row), judged)| {
                     start_form(
                         tracker,
                         row,
                         picked.as_deref(),
-                        template,
+                        judged,
                         &instructions,
                         preview,
                         &handle,
@@ -110,6 +108,14 @@ pub fn pick_issue(shell: &Shell, window: &Window, cx: &mut Context<Shell>) -> Di
                 .gap_2()
                 .justify_end()
                 .w_full()
+                // Why *Run* is spent, beside it; what each block is, and
+                // where it is changed, is in the form above.
+                .when(blocking > 0, |row| {
+                    row.child(div().text_xs().text_color(danger).child(match blocking {
+                        1 => "One thing above blocks the start.".to_string(),
+                        n => format!("{n} things above block the start."),
+                    }))
+                })
                 .child(
                     crate::controls::action("cancel-pick")
                         .ghost()
@@ -138,19 +144,20 @@ pub fn pick_issue(shell: &Shell, window: &Window, cx: &mut Context<Shell>) -> Di
 }
 
 /// The form that starts a run on `row`: the workflow and what it is, where it
-/// works and with which agent, what the person adds to the brief, the limits,
-/// and the preview of the first prompt.
+/// works, what the preflight `judged` blocks or says, what the person adds to
+/// the brief, the limits, and the preview of the first prompt.
 #[allow(clippy::too_many_arguments)]
 fn start_form(
     tracker: &Tracker,
     row: &IssueRow,
     picked: Option<&str>,
-    template: &Result<Template, String>,
+    judged: &(Vec<Finding>, Result<Template, String>),
     instructions: &Entity<TextareaState>,
     preview: bool,
     handle: &Entity<Shell>,
     cx: &App,
 ) -> AnyElement {
+    let (findings, template) = judged;
     let (muted, danger) = (
         cx.theme().muted_foreground,
         crate::theme::status_ink(cx).danger,
@@ -164,16 +171,12 @@ fn start_form(
         move |id, _, cx| shell.update(cx, |shell, cx| shell.pick_issue_workflow(id, cx)),
         cx,
     );
-    let about = match template {
-        Ok(template) => div()
+    let about = template.as_ref().ok().map(|template| {
+        div()
             .text_xs()
             .text_color(muted)
-            .child(template.description.trim().to_string()),
-        Err(why) => div()
-            .text_xs()
-            .text_color(danger)
-            .child(format!("This workflow cannot run: {why}")),
-    };
+            .child(template.description.trim().to_string())
+    });
     let agent = crate::unattended::run_agent(cx).map_or_else(
         || "no agent configured".to_string(),
         |name| format!("with {name}"),
@@ -182,15 +185,29 @@ fn start_form(
         "On a new branch, {}, in a worktree of its own, {agent}.",
         core::branch_for(tracker, &row.issue)
     );
+    let base = findings
+        .iter()
+        .filter(|f| f.check == Check::Base)
+        .map(|f| div().text_xs().text_color(muted).child(f.text.clone()));
+    let said: Vec<&Finding> = findings.iter().filter(|f| f.check != Check::Base).collect();
+    let lines: Vec<_> = said
+        .iter()
+        .enumerate()
+        .map(|(at, finding)| finding_line(at, finding, danger, muted, handle))
+        .collect();
     let column = div()
         .v_flex()
         .gap_2()
         .w_full()
         .child(label("Workflow"))
         .child(div().h_flex().child(menu))
-        .child(about)
+        .children(about)
         .child(label("Where it works"))
         .child(div().text_xs().text_color(muted).child(place))
+        .children(base)
+        .when(!lines.is_empty(), |col| {
+            col.child(label("Before it starts")).children(lines)
+        })
         .child(label("Instructions for this run"))
         .child(Textarea::new(instructions).h(gpui::rems(4.)));
     let Ok(template) = template else {
@@ -212,6 +229,48 @@ fn start_form(
             cx,
         ))
         .into_any_element()
+}
+
+/// One thing the preflight found: in the danger ink when it blocks, muted
+/// when it only says, with where it is changed, and *Show task* for an
+/// earlier task worth retrying instead.
+fn finding_line(
+    at: usize,
+    finding: &Finding,
+    danger: gpui::Hsla,
+    muted: gpui::Hsla,
+    handle: &Entity<Shell>,
+) -> impl IntoElement {
+    let text = match finding.change {
+        Some(change) => format!("{} Changed in {change}.", finding.text),
+        None => finding.text.clone(),
+    };
+    let shell = handle.clone();
+    div()
+        .h_flex()
+        .gap_2()
+        .items_center()
+        .w_full()
+        .child(
+            div()
+                .flex_1()
+                .min_w_0()
+                .text_xs()
+                .text_color(if finding.blocks { danger } else { muted })
+                .child(text),
+        )
+        .children(finding.task.clone().map(|task| {
+            crate::controls::action(("pick-show-task", at))
+                .ghost()
+                .small()
+                .label("Show task")
+                .on_click(move |_, window: &mut Window, cx: &mut App| {
+                    shell.update(cx, |shell, cx| {
+                        shell.cancel_pick(cx);
+                        shell.show_task(&task, window, cx);
+                    });
+                })
+        }))
 }
 
 /// A menu of the workflows an issue can be worked with, its trigger naming

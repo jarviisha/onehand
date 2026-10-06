@@ -104,6 +104,14 @@ pub struct Shared {
     /// Global for the reason the remote bridge is: a tick per window would be
     /// two agents on one issue. `None` unless the config turned it on.
     pub unattended: Option<crate::unattended::Unattended>,
+    /// The modes each agent offered when it last came up, by the spec it
+    /// was started with, a person's session or a run alike.
+    ///
+    /// **For this process only.** A restart forgets, so an adapter upgraded
+    /// in between is never judged by what an older one offered; and a spec
+    /// edited since is another spec, so what was learned of it stops
+    /// counting with the edit.
+    pub modes_seen: Vec<(AgentSpec, Vec<String>)>,
 }
 
 impl Global for Shared {}
@@ -129,7 +137,15 @@ impl Shared {
             away: false,
             _remote_pump: None,
             unattended: None,
+            modes_seen: Vec::new(),
         }
+    }
+
+    /// `spec` came up offering `modes`: what was learned of it before is
+    /// replaced.
+    pub fn saw_modes(&mut self, spec: AgentSpec, modes: Vec<String>) {
+        self.modes_seen.retain(|(seen, _)| *seen != spec);
+        self.modes_seen.push((spec, modes));
     }
 
     /// Hand out the next session uid.

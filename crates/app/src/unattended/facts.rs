@@ -1,0 +1,144 @@
+//! What a start on an issue is checked against: the facts the app holds,
+//! gathered for the preflight core decides with.
+
+use super::{Unattended, launch};
+use crate::state::Shared;
+use gpui::App;
+use onehand_core::config::AgentSpec;
+use onehand_core::connector::Connector;
+use onehand_core::preflight::{DETACHED, Facts, Forge, IssueFacts, Slots};
+use onehand_core::task::{Task, Working};
+use onehand_core::unattended::{Issue, Tracker, TrackerRef};
+use onehand_core::workflow::Template;
+use std::path::Path;
+
+/// What every new issue run on the configuration as it stands shares: the
+/// agent, its mode and what is known of it, and the slots. The workflow, the
+/// project and the issue are the caller's to fill in.
+pub(crate) fn common(cx: &App) -> Facts {
+    let shared = Shared::global(cx);
+    let u = shared.unattended.as_ref();
+    let agent = super::run_agent(cx);
+    let spec = agent
+        .as_deref()
+        .and_then(|name| shared.agents.iter().find(|spec| spec.name == name));
+    Facts {
+        workflow: Err("no workflow is chosen yet".to_string()),
+        agent_configured: spec.is_some(),
+        offered: spec.and_then(|spec| offered(spec, cx)),
+        agent,
+        mode: u.map(|u| u.mode.clone()).filter(|m| !m.trim().is_empty()),
+        has_check: false,
+        in_git: false,
+        checked_out: None,
+        forge: None,
+        issue: None,
+        slots: u.map(|u| slots(u, cx)),
+        queued_behind: None,
+    }
+}
+
+/// A new issue run of workflow `id` on `issue`, living in `tracker`, in the
+/// project whose check command exists or not as `has_check` says, on
+/// `checked_out` (`None` outside git), its work going to `forge`.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn issue_run(
+    id: &str,
+    tracker: &Tracker,
+    issue: &Issue,
+    has_check: bool,
+    checked_out: Option<String>,
+    forge: Option<&'static dyn Connector>,
+    cx: &App,
+) -> Facts {
+    Facts {
+        workflow: template(id, cx),
+        has_check,
+        in_git: checked_out.is_some(),
+        checked_out,
+        forge: forge.map(|forge| Forge {
+            name: forge.name().to_string(),
+            account: account(forge, cx),
+        }),
+        // Only this issue's tasks are copied: this is asked on every frame
+        // the form is drawn.
+        issue: Some(on_issue(
+            tracker,
+            issue,
+            crate::task::issue_tasks(cx, |of| {
+                of.tracker == tracker.to_ref() && of.number == issue.number
+            }),
+        )),
+        ..common(cx)
+    }
+}
+
+/// `issue` in `tracker`, named, with those of `tasks` that worked it.
+pub(crate) fn on_issue(
+    tracker: &Tracker,
+    issue: &Issue,
+    tasks: Vec<(Task, Option<Working>)>,
+) -> IssueFacts {
+    let at: TrackerRef = tracker.to_ref();
+    IssueFacts {
+        named: tracker.named(issue),
+        tasks: tasks
+            .into_iter()
+            .filter(|(task, _)| {
+                task.issue()
+                    .is_some_and(|i| i.tracker == at && i.number == issue.number)
+            })
+            .collect(),
+    }
+}
+
+/// The branch checked out at `root`, [`DETACHED`] when none is, or `None`
+/// outside git. Blocking: it asks git.
+pub(crate) fn checked_out_blocking(root: &Path) -> Option<String> {
+    onehand_core::worktree::repo_top_blocking(root)?;
+    Some(
+        onehand_core::worktree::current_branch_blocking(root)
+            .unwrap_or_else(|_| DETACHED.to_string()),
+    )
+}
+
+/// The workflow `id` as an issue's run would take it, its timeout the runs'
+/// own, not yet judged: the preflight says what is wrong with it.
+pub(crate) fn template(id: &str, cx: &App) -> Result<Template, String> {
+    let timeout = Shared::global(cx)
+        .unattended
+        .as_ref()
+        .map(|u| u.timeout.clone())
+        .ok_or("unattended runs are not set up")?;
+    launch::found(id, &timeout, cx)
+}
+
+/// What `forge`'s account said when last asked: `None` before it answered.
+fn account(forge: &'static dyn Connector, cx: &App) -> Option<Result<String, String>> {
+    super::accounts(cx)?
+        .into_iter()
+        .find(|(c, _)| c.name() == forge.name())
+        .map(|(_, said)| said)
+}
+
+fn slots(u: &Unattended, cx: &App) -> Slots {
+    Slots {
+        working: crate::task::issues_working(cx),
+        starting: u.starting.len(),
+        at_once: u.at_once,
+    }
+}
+
+/// The modes the agent `spec` offered when it last came up in this process,
+/// started as it is configured now; `None` when it has not.
+///
+/// A run's agent is started through the spec runs wrap it in, so what it
+/// offered counts as the configured spec's too.
+pub(crate) fn offered(spec: &AgentSpec, cx: &App) -> Option<Vec<String>> {
+    let wrapped = super::report::wrapped(spec.clone());
+    Shared::global(cx)
+        .modes_seen
+        .iter()
+        .find(|(seen, _)| seen == spec || *seen == wrapped)
+        .map(|(_, modes)| modes.clone())
+}

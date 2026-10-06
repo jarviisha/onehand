@@ -151,6 +151,12 @@ step it was at, with its marks kept. It goes through the queue like any start. N
 run by itself.
 _Avoid_: restart, retry
 
+**Preflight**:
+What onehand checks before a start claims an issue, cuts a worktree or starts an agent, and what it
+found: each finding blocks the start or only says something, and says where it is changed. It
+judges the configuration that will actually run, which for a Resume or a Retry is the run's own.
+_Avoid_: precheck, validation (that is the workflow's own)
+
 ## Unattended runs
 
 **Unattended run**:

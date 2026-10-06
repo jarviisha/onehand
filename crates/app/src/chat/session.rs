@@ -7,7 +7,10 @@
 
 use crate::state::Shared;
 use futures::StreamExt as _;
-use gpui::{App, AppContext, Context, Entity, EventEmitter, Subscription, Task, Window};
+use gpui::{
+    App, AppContext, BorrowAppContext as _, Context, Entity, EventEmitter, Subscription, Task,
+    Window,
+};
 use gpui_component::input::{InputEvent, InputState};
 use gpui_component::text::TextViewState;
 use onehand_core::acp::ElicitKind;
@@ -272,6 +275,7 @@ impl ChatSession {
         cx: &mut App,
     ) -> Entity<Self> {
         let (events, started) = Shared::global(cx).acp.connect(spec, root.clone(), resume);
+        let seen = spec.clone();
 
         cx.new(|cx| {
             // `@`-mention candidates. Bounded and off the UI loop: a deep tree
@@ -314,6 +318,15 @@ impl ChatSession {
                 _pump: cx.spawn(async move |session, cx| {
                     let mut events = events;
                     while let Some(event) = events.next().await {
+                        // What the agent offers is kept for every start that
+                        // asks before it brings an agent up.
+                        if let onehand_core::acp::AcpEvent::Modes { available, .. } = &event {
+                            let modes = available.iter().map(|m| m.id.clone()).collect();
+                            let spec = seen.clone();
+                            cx.update(|cx| {
+                                cx.update_global::<Shared, _>(|s, _| s.saw_modes(spec, modes))
+                            });
+                        }
                         let delivered = session.update(cx, |session: &mut Self, cx| {
                             // What the event did is the reducer's answer, not a
                             // second match on the event here -- two copies of

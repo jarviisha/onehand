@@ -383,6 +383,30 @@ pub struct IssuePicker {
     pub instructions: gpui::Entity<gpui_component::input::TextareaState>,
     /// The preview of what the run starts with is open.
     pub preview: bool,
+    /// The forge the project's work goes to, `Some(None)` for none; `None`
+    /// while it is being found out.
+    pub forge: Option<Option<&'static dyn onehand_core::connector::Connector>>,
+}
+
+impl IssuePicker {
+    /// The issue chosen, and where it lives.
+    pub fn chosen(
+        &self,
+    ) -> Option<(
+        onehand_core::unattended::Tracker,
+        onehand_core::unattended::IssueRow,
+    )> {
+        let (rows, _, _) = self.found.as_deref()?.as_ref().ok()?;
+        rows.get(self.chosen?).cloned()
+    }
+
+    /// The workflow a run on `row` takes: the one picked, else the one its
+    /// labels choose.
+    pub fn workflow_for(&self, row: &onehand_core::unattended::IssueRow, cx: &gpui::App) -> String {
+        self.workflow
+            .clone()
+            .unwrap_or_else(|| crate::unattended::workflow_for(&row.labels, cx))
+    }
 }
 
 /// A `Ctrl+Tab` walk in progress.

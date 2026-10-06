@@ -48,6 +48,10 @@ pub struct PendingReport {
     pub ended_on: Option<String>,
     /// What a card still waiting asked when the run ended.
     pub asked: Option<String>,
+    /// What the start found, said last: an earlier task left needing
+    /// attention, what the issue's text lacks.
+    #[serde(default)]
+    pub notes: Vec<String>,
 }
 
 /// What a run left behind: a pull request on its branch, or how many commits
@@ -99,12 +103,18 @@ pub fn report(pending: &PendingReport, found: &Result<Verdict, String>, branch: 
         );
     }
     let done = pending.outcome == Some(Outcome::Done);
-    match pending.ended_on.as_deref().map(str::trim) {
-        Some(tail) if !tail.is_empty() && !done => {
-            format!("{said}\n\nIts last step ended on:\n\n{}", quoted(tail))
-        }
-        Some(_) | None => said,
+    if let Some(tail) = pending
+        .ended_on
+        .as_deref()
+        .map(str::trim)
+        .filter(|tail| !tail.is_empty() && !done)
+    {
+        said += &format!("\n\nIts last step ended on:\n\n{}", quoted(tail));
     }
+    for note in &pending.notes {
+        said += &format!("\n\n{note}");
+    }
+    said
 }
 
 /// How a run ended, as a sentence for the issue.

@@ -231,6 +231,17 @@ does not offer stops every run. The reason is kept, and every switched-on row
 and Settings show it in the warning ink, while the projects and `gh` are still
 looked at.
 
+**Every new task is preflighted before its claim**, picked or found
+(`onehand_core::preflight`, kind *new issue run*; its checks are in
+[workflows.md](workflows.md#starting-queueing-and-resuming)). The start form
+lists what it found under *Before it starts*, blocks in the danger ink, and
+*Run* is spent while one remains, saying so beside it. The search runs the same
+function on each issue it would take: a block is said on the project's row,
+nothing is claimed, and the issue keeps its label for when it is fixed. A
+search that starts an issue whose last task needs attention says so in the new
+task's first report, and that its worktree is kept: nobody was there to read it
+before.
+
 **A run can be picked by hand, and started now.** A project's ••• menu (on the
 rail and on the project page) offers *Work an issue…* on any repository that is
 not a run's own worktree. It lists every open issue — anybody's, not only yours,
@@ -565,8 +576,11 @@ finishes, and the run's own timeout already bounds that.
 (`unattended::refuse_mode`). Every later run would fail the same way on a fresh
 issue, each one spending a claim to say so, so the first fails and the tick
 stops until the config is fixed and the app restarted. **That first issue is
-spent**: modes are only known once the adapter is up, which is after the claim,
-so the check cannot run before one is made. Its report names the mode and what
+spent only when nothing knew the modes yet**: what the agent offers is learned
+whenever it comes up, a person's session included, and kept per agent spec for
+the life of the process, so a mode known not to be offered refuses before any
+claim. The first issue is still spent by a search after a start of onehand, or
+an edit of the agent's spec, before the agent has come up anywhere. Its report names the mode and what
 was offered, and re-adding the label once the config is fixed is the way to try
 again.
 
