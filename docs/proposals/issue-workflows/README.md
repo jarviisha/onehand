@@ -49,8 +49,21 @@ keep yet (see *What is read and what is new* below).
    opening on the issue it was pressed on.
 5. **Review in place** (piece 4) on the page, with the approval guarded by the visit it was read
    from, and the persistence it needs (piece 1, part B). The dock offers *Review…*, which opens
-   the page; the full review is never built in the dock first.
-6. Then the Workflows page (piece 5's other half) and the rest of operations (piece 6).
+   the page; the full review is never built in the dock first. It also takes **answering a pull
+   request review** into the preflight as a kind of its own: step 4 left that kind's refusals
+   where they are, since they already come before the claim and judging them in the preflight
+   needs the pull request's state, which this step reads anyway.
+6. Then the Workflows page (piece 5's other half) and the rest of operations (piece 6), with
+   three parts step 4 left for it:
+   - ***Check the agent*** ([preflight.md](preflight.md#the-mode-known-without-spending-an-issue)):
+     the mode remembered from any time the agent comes up covers most starts, and the driver's
+     check covers the rest, as before; the button needs a way to start an adapter with no session.
+   - **The remaining informs rows** ([preflight.md](preflight.md#one-function-a-kind-in-its-input)):
+     a checkout shared with a person's own session, which needs a fact nothing tracks yet; *no
+     forge serves the project*; and *Limits*, which the issue's start form already shows.
+   - **A project's own issue templates** ([issue-brief.md](issue-brief.md#templates-for-an-issue)):
+     no project uses them yet; the body reader step 4 builds takes any template, so this is
+     reading the files.
 
 Each step is one pull request with its document changes in it.
 
@@ -64,7 +77,7 @@ documents and its row here names the pull request.
 | 1 | none: a bug fix, specified in [operations.md](operations.md) item 1 | [#91](https://github.com/jarviisha/onehand/pull/91) |
 | 2 | [#90](https://github.com/jarviisha/onehand/issues/90) | [#96](https://github.com/jarviisha/onehand/pull/96) |
 | 3 | [#97](https://github.com/jarviisha/onehand/issues/97) | [#104](https://github.com/jarviisha/onehand/pull/104) |
-| 4 | | |
+| 4 | [#105](https://github.com/jarviisha/onehand/issues/105) | |
 | 5 | | |
 | 6 | | |
 
