@@ -70,9 +70,9 @@ impl WorkbenchMode for Mode {
                 self.view.update(cx, |view, cx| view.set_live(ids, cx));
                 true
             }
-            Request::IssueRuns { runs, offered } => {
+            Request::IssueWork { works, offered } => {
                 self.view
-                    .update(cx, |view, cx| view.set_runs(runs, offered, cx));
+                    .update(cx, |view, cx| view.set_works(works, offered, cx));
                 true
             }
             Request::ShowIssue(number) => {

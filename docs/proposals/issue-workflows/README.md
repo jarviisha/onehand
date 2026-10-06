@@ -40,8 +40,8 @@ Smaller first steps than the pieces suggest, because pieces 1 and 4 each need da
 keep yet (see *What is read and what is new* below).
 
 1. ~~**The slot kept when a window closes mid-lookup**~~: a bug, fixed on its own. Built.
-2. **Issue progress, read-only** (piece 1, part A): the next action, the step, the runs kept, and
-   the header's one primary action. Drawn in the Issues tab in its short form. Nothing new stored.
+2. ~~**Issue progress, read-only** (piece 1, part A)~~: the next action, the step, the runs kept,
+   and the header's one primary action, in the Issues tab's short form. Built.
 3. **The Issues page** (piece 5, the Issues half): the issues lifted into one owner, then the page
    with the list, the filters on progress and piece 1 in full. From here the dock is the glance and
    the page the place to work.
@@ -62,7 +62,7 @@ documents and its row here names the pull request.
 | Step | Spec | Built |
 |---|---|---|
 | 1 | none: a bug fix, specified in [operations.md](operations.md) item 1 | [#91](https://github.com/jarviisha/onehand/pull/91) |
-| 2 | [#90](https://github.com/jarviisha/onehand/issues/90) | |
+| 2 | [#90](https://github.com/jarviisha/onehand/issues/90) | [#96](https://github.com/jarviisha/onehand/pull/96) |
 | 3 | | |
 | 4 | | |
 | 5 | | |

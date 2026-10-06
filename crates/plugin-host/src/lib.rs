@@ -13,7 +13,7 @@
 mod menu;
 mod workbench;
 pub use menu::{menu_below, menu_item, menu_row};
-pub use workbench::{Ask, IssueRun, Request, WorkbenchMode};
+pub use workbench::{Ask, Request, WorkbenchMode};
 
 use gpui::prelude::FluentBuilder as _;
 use gpui::{

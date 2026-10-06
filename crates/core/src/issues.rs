@@ -496,6 +496,15 @@ pub fn file_for(storage: &Path, root: &Path) -> PathBuf {
         .join(format!("{}.json", crate::workspace::stem_for(root)))
 }
 
+/// An issue onehand keeps, named by the file it is kept in ([`file_for`]) and
+/// its number there. Never by the project and number alone: two workspaces
+/// can open one project, and each keeps an issue 12 of its own.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct IssueKey {
+    pub file: PathBuf,
+    pub number: u64,
+}
+
 /// The issues kept in `file`. A file that is not there yet is a project with
 /// no issues, not a failure.
 pub fn load_blocking(file: &Path) -> Result<Issues, String> {

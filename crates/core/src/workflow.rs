@@ -22,6 +22,8 @@ mod validate;
 
 pub use facts::{run_command_blocking, Facts, Mark};
 pub use prompt::first_prompt;
+#[cfg(test)]
+pub(crate) use run::Transition;
 pub use run::{Action, Brief, Outcome, Run, Setup, Stop, Visit};
 pub use status_checks::{judge, waited_on, with_logs, Seen};
 pub use template::{GateKind, Place, StepKind, StepSpec, Template, DEFAULT_WAIT, SCHEMA_VERSION};

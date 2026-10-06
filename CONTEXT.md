@@ -73,6 +73,12 @@ agent parked), and one **ended** on something nobody chose (cut off, exhausted, 
 or its agent or session gone). Done, stopped by a person and dismissed tasks are finished instead.
 _Avoid_: failed (one kind only), errors, inbox
 
+**Next action**:
+What an issue's work waits on, in one sentence, and the one thing to press about it, if any: worked
+out each time from the task, its runs and the issue, never stored. The issue's state only gates a
+new start.
+_Avoid_: todo, call to action, status
+
 **Step visit**:
 One stay of a run at a step, with its times, its marks at start and end, what it kept and how it
 came out. Going back to a step, or resuming at one, is a new visit, never a rewrite of the last.

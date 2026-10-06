@@ -42,6 +42,8 @@ fn one_task_works_in_a_place_and_the_rest_wait_in_order() {
     assert!(!queue.ask(a.clone(), "3".into()));
     assert!(!queue.ask(a.clone(), "4".into()));
     assert!(queue.queued("3") && queue.holds("1") && !queue.queued("1"));
+    assert_eq!(queue.holder_of("3"), Some("1"));
+    assert_eq!(queue.holder_of("1"), None, "a holder waits behind nobody");
     // Only the holder frees a place.
     assert_eq!(queue.release("4"), None);
     assert_eq!(queue.release("1").as_deref(), Some("3"));
