@@ -1,7 +1,8 @@
 # Piece 5: issues and workflows as pages of their own
 
-- Status: proposal, wave 2. **Needs a design decision first**: it changes a principle of
-  [DESIGN.md](../../../DESIGN.md). Part of [the proposal](README.md).
+- Status: proposal. Option A below is chosen (2026-10-06). The **Issues page** is wave 1, built
+  right after piece 1's short form; the **Workflows page** is wave 2. Both wait on the reworded
+  principle of [DESIGN.md](../../../DESIGN.md) being agreed. Part of [the proposal](README.md).
 - Contracts it touches: DESIGN.md (*Chat is the centre*, the rail, *Pages without a session*, the
   Workbench's Issues mode, Settings ▸ Workflows).
 
@@ -35,26 +36,86 @@ pattern, and the principle should say so rather than be bent quietly.
 | DESIGN.md | *Chat is the centre* becomes: the conversation is the centre **while a session shows**; pages take the agent pane and put the docks away | unchanged | unchanged |
 | Cost | two pages, two rail rows, the principle reworded | a layout per width | none |
 
-**Recommended: A.** It follows the shape the overview and Tasks already have, keeps the dock mode
-for reading one issue beside a conversation, and moves workflows out of a dialog, which is the wrong
-place for something a person writes and runs from.
+**Chosen: A.** It follows the shape the overview and Tasks already have, keeps the dock mode for
+reading one issue beside a conversation, and moves workflows out of a dialog, which is the wrong
+place for something a person writes and runs from. B was weighed and left out: a dock widened into
+two columns is the page drawn smaller, and still has to give way to the conversation.
 
-## If A is chosen
+## The page and the dock
+
+Two views of the same issues for two situations, not one view at two sizes:
+
+| | The Issues page | The Issues tab (Workbench) |
+|---|---|---|
+| For | finding, choosing and working through many issues | keeping one issue in view while working in a session |
+| Layout | list and detail side by side when the page is wide enough; list, then detail, when it is not | one column: the list or one issue, never both |
+| The issue | piece 1 in full, the review block (piece 4), the run form (piece 3) | piece 1's short form: title and state, the work's one line, the primary action, the body |
+| Leads to | the run's session, the task detail | *Open in Issues*, the same issue on the page |
+
+What the tab does not draw, it leads to: an approval's *Review…* and *Open in Issues* both open the
+page on that issue, with no filter changed. Nothing built for the page is first built smaller in the
+tab.
+
+## The Issues page
 
 - **Rail**: *Issues* and *Workflows* below *Tasks*, highlighted like it; *Issues* carries no count
   (*Tasks* already counts what needs a person).
-- **The Issues page**: the list across the workspace's projects (`issues::Across` exists for the
-  overview's card), filters by project, label, open or closed, and by progress (piece 1's state:
-  working, waits on me, done with the issue still open, nothing yet); the issue on the right, with piece 1's *Work*
-  section in full and diffs opened in place.
-- **The Workflows page**: the list as Settings has it, *Run…* on each (the launcher on the project
-  on screen), and the editor as a list of steps, each showing its prompt, its gates or command, what
-  it keeps, and where a failure sends it back (`on_fail`), with the arrows drawn in the margin.
-  No canvas, no dragging between lanes. Settings ▸ Workflows keeps only the project check commands,
-  or moves them to the project menu.
-- **Glossary**: no new words; *page* is not a glossary term.
+- **Across the workspace.** The list covers every project of the workspace (`issues::Across` exists
+  for the overview's card); the issue on the right is the one picked, drawn in piece 1's order.
+  Diffs open in place.
+- **Narrow.** Below the width that holds both columns, the page shows the list, and picking an
+  issue shows it alone with *Back*. *Back* returns to the list with its filters, search and scroll
+  as they were, and the issue just read still selected.
 
-### What the pages have to settle
+### A row says whether to open it
+
+Each row is enough to choose from without opening it:
+
+- **the title**, the strongest line;
+- **the project and the issue's number**, muted, since the list spans projects;
+- **one line of work**, the next action's state in the Tasks page's words: *Waiting for approval*,
+  *Running · Verify*, *Ended · failed*, *Done · pull request open*; the warning ink only for what
+  needs the person. *No run recorded* is not drawn on the row, to keep rows without work quiet;
+- **labels**, as many as fit after the rest, then a count.
+
+### Filters
+
+- **Open** and **Closed** stay a filter of their own, beside the others.
+- **Progress**: *All*, *Needs attention* (the glossary's: waiting on a person, or ended on
+  something nobody chose), *Running*, *Queued*, *No run recorded*. A run waiting for its pull
+  request's status checks is *Running*: it waits on the forge, not on the person, and never counts
+  as *Needs attention*.
+- **Project** and **label**.
+
+### The list does not move under a person
+
+- A run changing state updates its row where it is. The selected row is never moved, re-sorted
+  away or dropped while it is selected.
+- Under a progress filter, an issue that stops matching (approved under *Needs attention*, say)
+  stays in the list, its line saying where it went (*now Running*), until another issue is picked
+  or the filter changes. Then it leaves.
+- A new issue that comes to match a filter is added below what is on screen, never above the
+  selected row.
+
+### Coming back
+
+The page's state (the selected issue, filters, search, scroll, and an open review's reading
+position) lives on the page's entity, not in the render. Opening the run's session, a diff or the
+task detail and then picking *Issues* in the rail finds the page as it was left. From a run's session, the rail's `auto · #N`
+pill is the way back to its issue: it opens the issue on the page (open question 1 of
+[issue-progress.md](issue-progress.md#open-questions), answered yes once the page exists).
+
+## The Workflows page
+
+The list as Settings has it, *Run…* on each (the launcher on the project on screen), and the editor
+as a list of steps, each showing its prompt, its gates or command, what it keeps, and where a
+failure sends it back (`on_fail`), with the arrows drawn in the margin. No canvas, no dragging
+between lanes. Settings ▸ Workflows keeps only the project check commands, or moves them to the
+project menu.
+
+Glossary: no new words; *page* is not a glossary term.
+
+## What the pages have to settle
 
 - **Which project a run starts on.** A page across the workspace has no project on screen. An
   issue's *Run workflow…* uses the issue's project. A workflow's *Run…* asks for the project first,
@@ -74,11 +135,26 @@ place for something a person writes and runs from.
 
 ## Questions for the decision
 
-1. Is *Chat is the centre while a session shows* the principle you want, or should pages stay
-   limited to overview-like summaries?
-2. Does the Issues Workbench mode stay once the page exists? Recommended: yes, as the glance beside a
-   session.
+1. ~~Is *Chat is the centre while a session shows* the principle you want?~~ Yes, with A; the
+   wording is agreed before the Issues page is built.
+2. ~~Does the Issues Workbench mode stay once the page exists?~~ Yes, in the role above.
 3. Where do project check commands live once Settings ▸ Workflows goes?
+
+## Done when
+
+The Issues page:
+
+- From the list alone, with twenty issues across two projects, the ones that need the person are
+  told apart from the ones running and the ones with no run recorded, without opening any.
+- Approving an issue picked under *Needs attention* leaves it in the list, saying *now Running*,
+  until another is picked; the selected row never moves while a run under it changes state.
+- Opening the run's session from an issue, then *Issues* in the rail, shows the same issue, filters,
+  search and scroll. The same after opening a diff or the task detail.
+- Narrowed below two columns, the page shows the list, then the issue with *Back*; *Back* restores
+  the list as it was. At the largest zoom step a row still shows its title and its line of work.
+- In the tab, *Review…* and *Open in Issues* open the page on that issue.
+
+The Workflows page: as the list above says; its checks are written when it is next in line.
 
 ## Documents to change when built
 

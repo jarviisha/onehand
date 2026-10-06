@@ -13,10 +13,10 @@ Existing parts are plain; what the proposal adds is marked `+`, what it changes 
 crates/core (GUI-free, blocking)            crates/app (GPUI)                       plugins/builtin/workbench-issues
 ───────────────────────────────────         ─────────────────────────────────       ────────────────────────────────
 workflow::run                               task (the Tasks global)                 view/detail.rs
-  Run, Visit, Marks, Outcome (unchanged)      rows, attention, issue_runs             ~ runs_view → Work section
-  ~ approved(visit) / revised(visit, note)    ~ approve / revise: task, run, visit      + three facts, steps, next action
+  Run, Visit, Marks, Outcome (unchanged)      rows, attention, issue_runs             ~ runs_view → five regions, one order
+  ~ approved(visit) / revised(visit, note)    ~ approve / revise: task, run, visit      + facts, step N of M, next action
   + Run::failure: Option<kind>     (B)          (run id checked before visit)         + Refresh, "read Xm ago"
-  + Run::pull_request              (B)        + work_summary(task) → plugin           + review block (piece 4)
+  + Run::pull_request              (B)        + work_summary(task) → plugin           + short form (tab), full (page)
   + Visit::command                 (B)        + retry_with_current(task)              + template picker in the form
   retry_of, retry_plan                      task::driver                            view.rs
   + changed_commands(old, new) → start        ~ routes actions by task id             RootIssues: data, sync
@@ -56,11 +56,11 @@ Today **the plugin owns them**: each `IssuesView` holds a `RootIssues` per proje
 (`plugins/builtin/workbench-issues/src/view.rs`), with the issues, the sync state and the view's own
 selection, filter and draft. Nothing else in the app holds an issue.
 
-Wave 1 keeps that: piece 1 draws in that one view, and the app sends it work summaries keyed by
-`IssueKey`.
+Piece 1's short form keeps that: it draws in that one view, and the app sends it work summaries
+keyed by `IssueKey`.
 
-Pages (piece 5) need a second view of the same issues, and that is **a refactor of its own**, done
-before the pages and in their PR:
+The Issues page (piece 5, wave 1) needs a second view of the same issues, and that is **a refactor
+of its own**, done before the page and in its PR:
 
 | Shared, one per `IssueKey`'s file, owned by the app | Per view, owned by each view |
 |---|---|
@@ -91,7 +91,7 @@ flowchart LR
         Launch["unattended::launch, launcher,<br/>pick_issue, Retry dialog"]
     end
     subgraph plugin["Issues plugin: draws"]
-        Work["Work section<br/>facts, steps, next action,<br/>review block, Refresh"]
+        Work["Issue view, tab or page<br/>facts, step, next action,<br/>review block (page), Refresh"]
     end
 
     Work -- "IssueWork(IssueKey, task, run, gen)" --> Tasks
@@ -112,7 +112,7 @@ flowchart LR
 
 ## Flow: an issue opened
 
-What the Work section draws, and where each line comes from. In memory per frame, except the reads
+What the issue's view draws, and where each line comes from. In memory per frame, except the reads
 that need git or the forge.
 
 ```mermaid

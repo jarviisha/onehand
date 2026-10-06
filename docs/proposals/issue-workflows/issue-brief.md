@@ -72,8 +72,9 @@ How a body is read:
 ### The brief, shown and added to
 
 The issue picker, once an issue is chosen, shows the same collapsed *Preview* the launcher has:
-the workflow's steps and limits, and the first prompt filled with this issue's brief. Under it,
-**Instructions for this run**, empty, which goes into the brief's instructions after the ones
+the workflow's steps, and the first prompt filled with this issue's brief. Above it,
+**Instructions for this run**, empty (where each sits in the form is in
+[preflight.md](preflight.md#starting-from-an-issue)), which goes into the brief's instructions after the ones
 `brief_for` writes. It is kept on the task's brief, not on the issue, so a retry carries it and the
 issue's text is never rewritten behind its author.
 

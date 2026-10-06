@@ -7,10 +7,11 @@
 
 ## Goal
 
-Open an issue and know, without going anywhere else:
+Open an issue and know, first and without going anywhere else, **whether it waits on you and what
+to do**; then:
 
 - which workflow is working it, and at which step;
-- whether it is running, queued, waiting on a person or ended, and **what the person should do next**;
+- whether it is running, queued, waiting on a person or ended;
 - what the work left: the branch, the pull request, the check, the files changed;
 - every earlier run and how each ended;
 - the issue's own state beside all of it, never folded into the run's.
@@ -41,31 +42,73 @@ recorded* or leaves it out, so B changes what is drawn, not the shape.
 
 ## Part A: what the issue shows
 
-Under the body, where *Runs* is now, a **Work** section. Its first block is the **latest task**,
-drawn in full; earlier runs and earlier tasks are lines under it.
+### One order, whatever the state
+
+An issue's view is five regions, always in this order, so a person coming back to an issue finds
+what it waits on before its description, however long that is:
+
+1. **Who it is**: the project, the issue's number, its title, and its state (*Open*, *Closed*)
+   beside the title. The issue's state is drawn here and nowhere else.
+2. **Where the work stands**: the latest run's progress in one line, the next action's sentence,
+   and the one primary action (below). Nothing when no run is recorded and the issue is open,
+   except *Run workflow…* as the primary action.
+3. **What it asks for**: the body, its acceptance included.
+4. **What the work left**: the branch, the check, the files changed, the pull request.
+5. **Before**: earlier runs and earlier tasks.
+
+A run moving on changes what regions 2 and 4 say; it never reorders the regions, inserts one above
+the body that was not there, or scrolls the view. Region 2 keeps its height while a task is working
+(one line of progress, one of next action, the actions), so the body does not jump under a reader
+when a step ends.
+
+On the Issues page ([pages.md](pages.md)), with room:
 
 ```
-Work                                                   read 2m ago  [Refresh]
-  Issue: Open   Run: waiting for approval   Pull request: none yet
-  Work an issue · run 2
-  Plan ✓ › Implement ✓ › Verify ✓ › Approve ›  Push › Pull request › Status checks
-  Next: approve the change, or send it back with a note    [Open session]
-  ─
-  Branch   onehand/local-12-fix-the-thing   3 commits past main
+onehand · #42 · Fix session reconnect                                   Open
+Waiting for approval · Plan · step 1 of 6
+Approving starts Implement: the agent edits the code.
+[Review plan]                                   Open session   Stop   ⋯
+─
+Description
+  Problem, scope, acceptance…
+─
+Results                                                   read 2m ago  [Refresh]
+  Branch   onehand/local-42-fix-reconnect   3 commits past main
   Check    passed on 4f2c1e0
-  This run changed  5 files  +120 −14                       [Show in task]
-  ─
-  Run 1 · exhausted at Implement · yesterday                [Show]
-  Show task
+  This run changed  5 files  +120 −14                            [Show in task]
+─
+Before
+  Run 1 · exhausted at Implement · yesterday                     [Show]
 ```
 
-- **The three facts**, on one line: the issue (*Open*, *Closed*), the latest run (its group or
-  outcome, in the Tasks page's words), and the pull request (*none yet*, *open, draft*, *open*,
-  *merged*, *closed unmerged*, *could not be read*), the last only on a project a forge serves.
-  Nothing combines them.
-- **Steps**: the step strip's shape, read from the run's snapshot, so the issue and the strip
-  cannot disagree. Clipped by width.
-- **Next action**: one sentence and at most one button (below).
+In the Issues tab, the short form, in the same order: region 2 drops the step list for the one line
+and adds *Open in Issues*; region 4 keeps the branch and the pull request only; region 5 is one line
+with a count. The tab never draws the review block (piece 4): its primary action at an approval is
+*Review…*, which opens the issue on the page.
+
+```
+#42 · Fix session reconnect                         Open
+Waiting for approval · Plan · step 1 of 6
+[Review…]                             Open in Issues  ⋯
+─
+Problem, scope, acceptance…
+```
+
+These sketches show the order, not a finished design; sizes and inks are the theme's.
+
+### Where each fact goes
+
+- **The issue's state** beside the title (region 1).
+- **The run's progress** in region 2: its group or outcome in the Tasks page's words, then the
+  step, then where the step stands in the workflow, *Verify · step 3 of 6*. The current step is
+  never clipped away: where there is room the strip's shape is drawn after it, read from the run's
+  snapshot so the issue and the strip cannot disagree, and where there is not, the one line stays
+  and the full list opens from it. No percentage: a step that sends the work back makes one go
+  down.
+- **The pull request** in region 4, only on a project a forge serves: *open, draft*, *open*,
+  *merged*, *closed unmerged*, or *could not be read*. Before the run reaches the step that opens
+  one, or for a workflow without one, nothing is drawn; a pull request that should be there and
+  cannot be read is said, in the warning ink.
 - **Branch** and commits past its base (`IssueSource::base`).
 - **Check**: from `Marks::verified_at` only, *passed on <commit>*, or the last failed command
   visit's `output`. A pass's output is part B.
@@ -79,25 +122,37 @@ Work                                                   read 2m ago  [Refresh]
 
 ### The next action
 
-A pure function in core, beside `Task::group`, from what a task keeps and what the app knows of it
-(`Working`), matched exhaustively over the groups and `Outcome`:
+A pure function in core, beside `Task::group`, from what a task keeps, what the app knows of it
+(`Working`) and the issue's state, matched exhaustively over the groups and `Outcome`. It returns
+the sentence and the primary action; the secondary actions come with it, so the header and the
+tab cannot each pick their own.
 
-| The task | Next action |
-|---|---|
-| Running | none; the step and how long it has worked |
-| Queued | none; the task holding its place. A task never queues for a slot: a full slot refuses the start |
-| Waiting, approval | approve or revise; *Open session* until piece 4 brings the actions here |
-| Waiting, card | answer the card in the session (*Open session*) |
-| Ended, resumable (agent stopped, session gone, cut off) | *Resume* |
-| Ended, exhausted or timed out | look at the last visit, then *Retry* (piece 4 says from where) |
-| Ended, failed | the failure's text, then *Retry*; part B tells a configuration failure apart, and piece 4 offers *Retry with current settings* for it, since a plain retry keeps the run's setup |
-| Done, pull request open | review it on the forge; put the label back to have a review answered |
-| Done, pull request merged | none; the issue's own state says whether anything is left |
-| Done, pull request closed unmerged | the pull request was closed unmerged; **reopen the pull request** (not the issue) and put the label back to have it answered, as `launch::taking_blocking` says |
-| Done, a forge serves the project, the workflow has no pull request step | look at the branch on the forge; the branch is the result. Not *could not be read*: no pull request is the expected end |
-| Done, no forge | look at the branch; close the issue when satisfied |
-| Done, pull request could not be read | *Refresh* |
-| Finished by a person (stopped, taken over, dismissed) | none |
+| The task | Said | Primary | Secondary |
+|---|---|---|---|
+| No run recorded, issue open | *no run recorded* | *Run workflow…* | *Work here*, *Edit* |
+| Running | the step, step N of M, how long it has worked | none | *Open session*, *Stop* |
+| Running, at the step that waits for status checks | waiting for the forge's checks, not for you | none | *Open pull request*, *Stop* |
+| Queued | the task holding its place. A task never queues for a slot: a full slot refuses the start | none | *Show task* |
+| Waiting, approval | what approving starts next (piece 4) | *Review…* | *Open session* |
+| Waiting, card | the agent asks something in its session | *Open session to answer* | *Stop* |
+| Ended, resumable (agent stopped, session gone, cut off) | it can go on where it was | *Resume* | *Retry…* |
+| Ended, exhausted or timed out | the step and what its last visit ended on | *Retry…* (piece 4 says from where) | *Show task* |
+| Ended, failed | the failure's text | *Retry…*; for a configuration failure (part B), *Retry with current settings*, since a plain retry keeps the run's setup | *Show task* |
+| Done, pull request open | review it on the forge | *Open pull request* | *Answer the review* (piece 4) |
+| Done, pull request merged | none; the issue's own state says whether anything is left | none | *Run workflow…* |
+| Done, pull request closed unmerged | the pull request was closed unmerged; **reopen the pull request** (not the issue) and put the label back to have it answered, as `launch::taking_blocking` says | *Open pull request* | *Show task* |
+| Done, a forge serves the project, the workflow has no pull request step | the branch is the result. Not *could not be read*: no pull request is the expected end | *Open branch* | *Show task* |
+| Done, no forge | look at the branch; close the issue when satisfied | none | *Show task* |
+| Done, pull request could not be read | what failed | *Refresh* | *Show task* |
+| Finished by a person (stopped, taken over, dismissed) | none | none | *Run workflow…* |
+| Any task, issue closed | the task's line as above, muted | none | *Reopen issue*, *Show task* |
+
+- *Work here* opens a session on the project's checkout as it is, with no workflow; its menu entry
+  says so in one line, so it is not taken for a second way to run a workflow.
+- *Edit*, *Publish to …* and *Reopen issue* are always secondary, wherever the state puts them.
+- The secondary actions sit in one place that does not move: after the primary one, then ⋯ for
+  what does not fit. With no primary action the place is kept empty, not filled by a secondary
+  one, so a button is not where another was a moment ago.
 
 ### Refresh, and how old it is
 
@@ -157,7 +212,7 @@ reads again unchanged; a file with the new fields round-trips; the failure kind 
 
 ## What stays
 
-- *Show task* and the task detail stay the full record; this section is a summary of them.
+- *Show task* and the task detail stay the full record; regions 2, 4 and 5 are a summary of them.
 - Approving still happens on the run (piece 4 moves the buttons, not the rule).
 - The Tasks page stays where every task in the workspace is seen; this is one issue's view.
 - No field is added to `LocalIssue` or the issue's file.
@@ -166,6 +221,8 @@ reads again unchanged; a file with the new fields round-trips; the failure kind 
 ## Open questions
 
 1. Does the rail's `auto · #N` pill open the issue, now that the issue says more than the task row?
+   Once the Issues page exists, yes, on the page ([pages.md](pages.md#coming-back)); before it,
+   open.
 2. Is focus-regained refresh worth its `gh` call per focus? Recommended: yes, behind the
    one-minute age, and only for the issue on screen.
 
@@ -174,9 +231,16 @@ reads again unchanged; a file with the new fields round-trips; the failure kind 
 Part A:
 
 - Every row of the next-action table is reachable with the mock workflow agent and shows its
-  sentence and button.
-- A done run on an open issue shows *Issue: Open*, *Run: done*, *Pull request: open*; closing the
-  issue changes only the first; merging on the forge changes the third at the next refresh.
+  sentence, its one primary action and its secondary ones in their fixed place.
+- An issue whose body is several screens long, waiting for an approval, shows *Waiting for
+  approval* and *Review…* without scrolling, in the tab and on the page.
+- A step ending while the body is being read moves nothing under the reader: the regions keep
+  their order and region 2 its height.
+- A done run on an open issue shows *Open* beside the title, *Done* in region 2 and *open* on the
+  pull request in region 4; closing the issue changes only the first; merging on the forge changes
+  the third at the next refresh. A run not yet at its pull request step draws no pull request line.
+- At the dock's narrowest width and at the largest zoom step, the primary action and the current
+  step (*Verify · step 3 of 6*) are still drawn whole; the step list is what gives way.
 - With the network pulled, *Refresh* says the pull request could not be read and keeps the rest.
 - Switching issues while a read is in flight never shows the first issue's answer on the second;
   two refreshes of one issue answering out of order show the later request's answer; a Retry
@@ -190,7 +254,9 @@ Part B:
 
 ## Documents to change when built
 
-- `DESIGN.md`: the Issues tab bullet under *Docks*.
+- `DESIGN.md`: the Issues tab bullet under *Docks*: the issue's header is its title and state, then
+  one primary action from the next action, with *Work here*, *Run workflow…*, *Edit* and ⋯ no
+  longer drawn side by side at one weight.
 - `docs/unattended.md`: the *Runs* paragraph becomes this section.
 - `docs/tasks.md`: the next-action rule, beside the group rule; part B's fields in *The model*.
 - `docs/workflows.md`: part B, what the engine records on a command and a pull request.

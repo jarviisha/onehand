@@ -1,6 +1,7 @@
 # Proposal: issues and workflows as one way of working
 
-- Date: 2026-10-06, revised the same day after a review against the code.
+- Date: 2026-10-06, revised the same day after a review against the code, and again after a
+  review of the layout: what a person must do comes before what the engine knows.
 - Status: proposal. Nothing here is a requirement until a task asks for it; once a piece is built,
   its document moves into the owning documents and leaves this folder. The contracts are
   [CONTEXT.md](../../../CONTEXT.md), [DESIGN.md](../../../DESIGN.md), [workflows.md](../../../docs/workflows.md),
@@ -27,7 +28,7 @@ follow it, judge what it left and send it back, without going looking for it.**
 | 2 | An issue written to be worked, and the brief shown before it is | [issue-brief.md](issue-brief.md) | 1 |
 | 3 | Everything a start needs, checked before it claims or cuts anything | [preflight.md](preflight.md) | 1 |
 | 4 | Approve, revise, resume or retry next to what is judged | [review-in-place.md](review-in-place.md) | 1 |
-| 5 | Issues and workflows as pages of their own | [pages.md](pages.md) | 2 (a design decision first) |
+| 5 | Issues and workflows as pages of their own | [pages.md](pages.md) | the Issues page 1, the Workflows page 2 |
 | 6 | Unattended runs when there are many issues | [operations.md](operations.md) | 2, except its first item |
 | 7 | Workflows past a straight line | below | 3 |
 
@@ -40,14 +41,32 @@ keep yet (see *What is read and what is new* below).
 
 1. **The slot kept when a window closes mid-lookup** ([operations.md](operations.md#1-a-slot-kept-when-a-window-closes-mid-lookup)):
    a bug, fixed on its own.
-2. **Issue progress, read-only** (piece 1, part A): state, current step, the runs kept, the next
-   action. Nothing new stored.
-3. **Brief preview** (piece 2) and **preflight per kind of start** (piece 3).
-4. **Review in place** (piece 4), with the approval guarded by the visit it was read from, and the
-   persistence it needs (piece 1, part B).
-5. Then pages (piece 5) and the rest of operations (piece 6).
+2. **Issue progress, read-only** (piece 1, part A): the next action, the step, the runs kept, and
+   the header's one primary action. Drawn in the Issues tab in its short form. Nothing new stored.
+3. **The Issues page** (piece 5, the Issues half): the issues lifted into one owner, then the page
+   with the list, the filters on progress and piece 1 in full. From here the dock is the glance and
+   the page the place to work.
+4. **Brief preview** (piece 2) and **preflight per kind of start** (piece 3), with *Run workflow…*
+   opening on the issue it was pressed on.
+5. **Review in place** (piece 4) on the page, with the approval guarded by the visit it was read
+   from, and the persistence it needs (piece 1, part B). The dock offers *Review…*, which opens
+   the page; the full review is never built in the dock first.
+6. Then the Workflows page (piece 5's other half) and the rest of operations (piece 6).
 
 Each step is one pull request with its document changes in it.
+
+## Five questions every layout answers
+
+The pieces are judged by what a person can do, not by how much they are shown. Each question is a
+*Done when* line in the piece that owns it.
+
+| Question | Owned by |
+|---|---|
+| An issue with a very long description is opened: is it seen at once that it waits on me? | [issue-progress.md](issue-progress.md#done-when) |
+| With many issues: can the ones that need me be found without opening each? | [pages.md](pages.md#done-when) |
+| A failed run is retried: is it clear where it starts again and which configuration it keeps? | [review-in-place.md](review-in-place.md#done-when) |
+| A session or a diff is opened and left: is the same issue, filter and scroll still there? | [pages.md](pages.md#done-when) |
+| The window is narrowed or zoomed in: can the action and the current step still be read? | [issue-progress.md](issue-progress.md#done-when), [pages.md](pages.md#done-when) |
 
 ## What is read and what is new
 
@@ -66,8 +85,8 @@ view says *not recorded for this run*, never a guess.
 
 | Wave | Scope | Done when |
 |---|---|---|
-| **1: one issue, end to end** | 1, 2, 3, 4, and item 1 of 6 | From one issue a person starts a run, sees where it is, judges its verdict and sends it back or lets it go. Two things still go elsewhere, on purpose: a card is answered in the run's session, and a file's diff opens in the task detail, until piece 5 gives the issue room |
-| **2: many issues** | 5, the rest of 6, filters on progress | A person sees which issues need them and which can go on alone, and who holds each slot |
+| **1: one issue, end to end** | 1, 2, 3, 4, the Issues page of 5, and item 1 of 6 | From one issue a person starts a run, sees where it is, judges its verdict and sends it back or lets it go, on the Issues page; the dock says where it stands and leads there. One thing still goes elsewhere, on purpose: a card is answered in the run's session |
+| **2: many issues** | the Workflows page of 5, the rest of 6 | A person sees who holds each slot, and writes workflows on a page of their own |
 | **3: richer workflows** | structured step outputs, steps that run only on a condition, an agent per step | The cases a straight-line workflow cannot serve, each named by a real workflow that needs it |
 
 ## Rules every piece keeps
@@ -77,11 +96,21 @@ These are the contracts the pieces must not bend; each document says where it co
 - **Progress is read, never stored twice.** What an issue shows of its work is worked out from its
   tasks and their runs, the way the Tasks page's groups are (`Task::group`, `task::rows`). No field
   on an issue repeats a run's step or outcome; a second copy is a copy that disagrees.
-- **Three facts, shown apart.** The issue's state (open, closed), the latest run's outcome, and,
-  where a forge serves the project, its pull request's state (open, merged, closed, or *could not
-  be read*). No word folds them into one: a run done on an open issue, an issue reopened after its
-  pull request merged, and an issue closed without the work are all different, and each is said
-  as its facts.
+- **Three facts, shown apart, each where it is used.** The issue's state (open, closed) beside its
+  title; the latest run's progress where the work stands; and, where a forge serves the project,
+  its pull request's state (open, merged, closed, or *could not be read*) with the results. No word
+  folds them into one: a run done on an open issue, an issue reopened after its pull request
+  merged, and an issue closed without the work are all different, and each is said as its facts.
+  A fact with nothing to say yet (no pull request before the step that opens one) is left out; one
+  that should be there and cannot be read is said.
+- **What to do before what is known.** An issue's view has a fixed order: who it is, where its
+  work stands and what to do next, what it asks for, what the work left, the runs before. A state
+  change changes what a region says, never the order of the regions, and never moves the selected
+  row of a list.
+- **One primary action.** Wherever an issue or a task is drawn, at most one action is primary, the
+  one the next action names; the others sit quieter, in a place that does not move with the state.
+- **Not recorded is not never.** Task history is capped, so an issue with no task found says *no
+  run recorded*, never *never run*.
 - **Retry keeps the run's configuration.** `Run::retry_of` copies the last run's setup (agent,
   mode, check command) and, by default, its workflow snapshot. Running with what Settings says now
   is a different action, shown with what changed (piece 4).
@@ -105,7 +134,7 @@ These are the contracts the pieces must not bend; each document says where it co
 
 | Word | Meaning | Avoid |
 |---|---|---|
-| **Next action** | The one thing a task waits on a person for, worked out from its group and outcome: answer a card, approve, resume, retry, change the configuration, look at the verdict | todo, call to action |
+| **Next action** | The one thing a task waits on a person for, worked out from its group and outcome: answer a card, approve, resume, retry, change the configuration, look at the verdict. It names the primary action, or none | todo, call to action |
 | **Preflight** | What onehand checks before a start claims an issue, cuts a worktree or starts an agent, and what it found | precheck, validation (that is the workflow's own) |
 | **Acceptance** (in a brief) | How a person will judge the work, written into the issue; read by the agent, never checked by onehand as a gate | definition of done, criteria on their own |
 
@@ -127,10 +156,13 @@ worth deciding. `workflows.md` already lists the straight line as not built. The
 
 ## Decisions to take before wave 1
 
-1. Whether the issue's progress (piece 1) is drawn in the Issues tab first and moves to the page of
-   piece 5 later, or waits for piece 5. Recommended: the tab first; piece 5 then mounts the same
-   view in more room.
-2. Whether forge issues (not kept in onehand) get piece 1 too. Today the *Runs* section shows only
+1. ~~Whether the issue's progress (piece 1) is drawn in the Issues tab first or waits for piece 5.~~
+   Taken: the tab first, in its short form; the Issues page comes in wave 1, right after, and holds
+   the full view and the review. The tab and the page are two views of one model, not one view
+   shrunk ([pages.md](pages.md#the-page-and-the-dock)).
+2. *Chat is the centre while a session shows*, the principle the Issues page needs
+   ([pages.md](pages.md#the-conflict)), is agreed before step 3 of the order of work.
+3. Whether forge issues (not kept in onehand) get piece 1 too. Today the *Runs* section shows only
    issues a project keeps, since a forge's numbers are its own. Recommended: kept issues first.
-3. Whether issue templates (piece 2) are per project files or shipped with onehand. Recommended:
+4. Whether issue templates (piece 2) are per project files or shipped with onehand. Recommended:
    shipped, with a project's own `.github/ISSUE_TEMPLATE/` read when it has one.

@@ -1,7 +1,8 @@
 # Piece 4: approve, revise, resume or retry next to what is judged
 
-- Status: proposal, wave 1. Builds on [issue-progress.md](issue-progress.md), part B included.
-  Part of [the proposal](README.md).
+- Status: proposal, wave 1. Builds on [issue-progress.md](issue-progress.md), part B included, and
+  on the Issues page of [pages.md](pages.md), where its block is drawn. Part of
+  [the proposal](README.md).
 - Contracts it touches: [tasks.md](../../../docs/tasks.md) (the task detail, *Retry and Resume*),
   [workflows.md](../../../docs/workflows.md) (the approval step, the driver),
   [unattended.md](../../../docs/unattended.md) (*Answering a review*), the step strip in
@@ -59,14 +60,32 @@ it*. The strip goes through the same call, so there is one path.
 
 ### One review block
 
-Where a task waits for approval, the task detail and the issue's *Work* section draw one block:
+Where a task waits for approval, the task detail and the issue on the Issues page draw one block,
+in region 2 of the issue's order ([issue-progress.md](issue-progress.md#one-order-whatever-the-state)).
+The Issues tab draws none: its *Review…* opens the issue on the page.
 
-- the answer under review, from the run (`Run::under_review`);
+- **what approving starts**, beside *Continue*, read from the step after the approval in the run's
+  snapshot: *Continue starts Implement: the agent edits the code*, *Continue starts Push*. Beside
+  *Revise…*, the step under review by name: *Plan runs again with your note*. The person never
+  works it out from the strip;
+- the answer under review, from the run (`Run::under_review`). A long one opens in full in place;
+  when what is shown is cut (the last 60 lines), the block says so above the actions, *showing the
+  last 60 of 240 lines*, so nothing is approved half read without knowing it;
 - **what the work changed** since the step it approves started: the files with their counts, each
-  opening its diff, read off the UI thread as the detail already does;
+  opening its diff, read off the UI thread as the detail already does. **Drawn only when there is
+  something**: an approval after a plan that changed no file draws no files region and no check,
+  rather than empty ones;
 - **the check**, when a command step ran since: from piece 1 part B's command result (passed or
-  failed, its tail, the commit). A run from before part B says *not recorded*;
+  failed, its tail, the commit). The commit is compared with the worktree's head: a check on an
+  older commit says *passed on 4f2c1e0, 2 commits before the work now*, so an old pass is not read
+  as a pass of the new code. A run from before part B says *not recorded*;
+- **the issue's acceptance**, collapsed, one click from the changes, so the work is judged against
+  it without scrolling back to the body;
 - *Revise…* and *Continue*, carrying the visit id above.
+
+After *Continue* or *Revise…*, the block answers at once: the action shows it was sent and the
+block keeps its place and its scroll until the engine's answer redraws region 2. It does not
+collapse or jump to the top under the reader.
 
 ### Which way out, said
 
@@ -83,6 +102,12 @@ When a task has ended, the block under its head says which way out fits, from th
 
 This is the next-action function of [issue-progress.md](issue-progress.md#the-next-action), drawn
 with its reason: one function, two views.
+
+**The Retry dialog says what it will do before it does it**: the step it starts at and why (the
+carry-over rule, or the step the person picked), and what it keeps, one line each: the agent, the
+mode, the check command, the timeout and the workflow's version, all from the last run. Where one
+of them differs from what Settings says now, the line says so and points at *Retry with current
+settings*, so a person who changed Settings is not surprised by a retry that ignores it.
 
 ### Retry with current settings
 
@@ -137,6 +162,12 @@ path.
   refused once the visit closes. Each is a test against the engine and one against the driver.
 - The review block shows the answer, the files changed and the check together; a pre-part-B run
   says *not recorded* for the check.
+- Beside *Continue* the block names the step it starts, from the snapshot; a plan approval with no
+  file changed draws no files and no check; an answer longer than what is shown says it is cut
+  before the actions; a check on a commit older than the worktree's head says how much older.
+- After *Continue*, the block shows it was sent at once and the reader's scroll is where it was.
+- A failed run's Retry dialog names the step it starts at and the agent, mode, check command,
+  timeout and version it keeps; with Settings changed since, the differing lines say so.
 - A run failed on a mode not offered: *Retry* fails again the same way, *Retry with current
   settings* shows the old and new mode and runs with the new one.
 - With `Verify (project check) → Package (own command)`, a changed project check starts *Retry
@@ -148,7 +179,7 @@ path.
 ## Documents to change when built
 
 - `docs/tasks.md`: the task detail (*Awaiting approval* becomes the review block), *Retry and
-  Resume* (the second action and what it re-checks).
+  Resume* (the second action and what it re-checks, and what the Retry dialog says it keeps).
 - `docs/workflows.md`: the approval step and the driver (actions carry the visit).
 - `docs/unattended.md`: *Answering a review* (the action beside the label).
 - `DESIGN.md`: the step strip bullet, the Issues tab bullet.

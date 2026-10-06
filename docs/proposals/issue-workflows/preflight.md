@@ -103,6 +103,32 @@ adapter still offers it, so what is remembered has an owner and an end:
 The first-issue-spent case in *The brief* of `unattended.md` remains for a tick when nothing has
 learned the mode since the start of onehand; the pause it leads to stays as it is.
 
+### Starting from an issue
+
+Today *Run workflow…* on an issue opens the issue picker narrowed to that one issue
+(`dialogs::pick_issue` with `only`): a workflow menu, then the issue as a row, and clicking the row
+is what starts it. The issue is chosen already, so the form drops the row and reads top to bottom
+in the order a person decides:
+
+1. **The workflow**, the menu as today (*By the issue's labels* first), with the picked one's
+   description in one muted line.
+2. **Where it works**: the worktree and the branch it will be cut as, off which base (the *Base*
+   finding), and the agent that will run it.
+3. **What blocks**, the preflight's findings for kind *new issue run*, blocks first. While one
+   remains, *Run* is disabled and says why beside it.
+4. **Instructions for this run**, optional ([issue-brief.md](issue-brief.md#the-brief-shown-and-added-to)).
+5. **Preview**, collapsed: the steps, and the first prompt filled with this issue's brief. The
+   limits (timeout, misses allowed) are one line above it, not inside.
+6. **Run** in the footer, the primary action, with *Cancel* beside it.
+
+Once started, the dialog closes and the person stays on the issue, whose region 2 shows the run
+starting with *Open session* among its actions; the session is no longer put on screen in their
+place, as the picker does today.
+*Open session* leads there, and the rail's pill leads back ([pages.md](pages.md#coming-back)).
+
+The launcher, started from the rail with no issue, keeps its own form; only the issue's start
+changes.
+
 ## What stays
 
 - `workflow::validate` stays the workflow's own check, run where it runs now.
@@ -123,6 +149,8 @@ learned the mode since the start of onehand; the pause it leads to stays as it i
 - A full slot refuses an issue start and names who holds the slots; a taken place informs and the
   start queues.
 - `preflight` has a test per row per kind it applies to.
+- *Run workflow…* on an issue opens on that issue with no row to pick, in the order above; a
+  block disables *Run* and says why; once started, the issue stays on screen showing the run.
 
 ## Documents to change when built
 
