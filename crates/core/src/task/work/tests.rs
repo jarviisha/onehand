@@ -151,7 +151,7 @@ fn acts(next: &Next) -> (Option<Act>, Vec<Act>) {
 #[test]
 fn no_run_recorded_offers_a_run_workflow() {
     let next = next_action(None, open());
-    assert_eq!(next.said.as_deref(), Some("No run recorded"));
+    assert_eq!(next.said, None, "the progress line says it");
     assert_eq!(
         acts(&next),
         (Some(Act::RunWorkflow), vec![Act::WorkHere, Act::Edit])
@@ -289,13 +289,21 @@ fn a_run_its_agent_or_a_restart_cut_off_resumes() {
 
 #[test]
 fn an_exhausted_or_timed_out_run_says_where_and_what_its_last_visit_ended_on() {
-    let task = ended(
+    let mut task = ended(
         at(task("1", forge_flow(), None), 3, 900),
         Outcome::Exhausted {
             step: "verify".into(),
         },
-        Some("make test failed"),
+        Some("Workflow stopped: too many misses at the Verify step"),
     );
+    // What the visit kept, not why it ended, which the outcome says already.
+    task.runs
+        .last_mut()
+        .unwrap()
+        .visits
+        .last_mut()
+        .unwrap()
+        .output = Some("running 3 tests\nmake test failed\n".into());
     let next = next_of(&task, None, open());
     assert_eq!(
         next.said.as_deref(),
@@ -503,6 +511,15 @@ fn an_ended_task_on_a_closed_issue_mutes() {
         acts(&next),
         (None, vec![Act::ReopenIssue, Act::ShowTask, Act::Edit])
     );
+    // Done where no forge serves: the issue is closed already, so closing it
+    // is no longer asked.
+    let done = ended(
+        at(self::task("2", forge_flow(), None), 6, 900),
+        Outcome::Done,
+        None,
+    );
+    let next = next_of(&done, None, closed());
+    assert_eq!(next.said.as_deref(), Some("Look at the branch"));
 }
 
 #[test]

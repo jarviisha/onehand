@@ -224,9 +224,17 @@ fn step_label(run: Option<&Run>, id: Option<&str>) -> String {
     spec.map_or_else(|| id.unwrap_or_default().to_string(), |s| s.label.clone())
 }
 
-/// What the run's last visit ended on.
+/// What the run's last visit ended on: the last line of what it kept, a
+/// failed command's output or an answer. Not why it ended, which is the
+/// outcome already said.
 fn last_why(run: Option<&Run>) -> Option<String> {
-    run?.visits().last()?.why.clone()
+    let output = run?.visits().last()?.output.as_deref()?;
+    let line = output
+        .lines()
+        .rev()
+        .map(str::trim)
+        .find(|l| !l.is_empty())?;
+    Some(line.to_string())
 }
 
 fn pr_step(run: &Run) -> PrStep {
@@ -398,7 +406,8 @@ pub fn next_action(work: Option<&Work>, around: Around<'_>) -> Next {
             true => Act::OpenWorkingSession,
             false => Act::WorkHere,
         };
-        let mut next = row(Some("No run recorded".into()), None, &[here]);
+        // The progress line already says no run is recorded.
+        let mut next = row(None, None, &[here]);
         if around.open && around.can_start {
             next.primary = Some(Act::RunWorkflow);
         }
@@ -418,6 +427,10 @@ pub fn next_action(work: Option<&Work>, around: Around<'_>) -> Next {
             next.primary = None;
             next.secondary = vec![Act::ReopenIssue, Act::ShowTask];
             next.muted = true;
+            // Closing it was what the row asked for.
+            if work.stand == Stand::Done && work.forge.is_none() {
+                next.said = Some("Look at the branch".into());
+            }
         }
     }
     if !around.can_start {
