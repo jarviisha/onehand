@@ -439,7 +439,9 @@ pub fn start_picked(
     cx: &mut App,
 ) -> Result<(), String> {
     let (full, refused) = why_not(cx);
-    let refused = refused.or_else(|| lacks_check_given(has_check, &workflow, cx));
+    // Said apart from what stops every run: this is the one workflow picked,
+    // on this one project, and another pick may well start.
+    let unfit = lacks_check_given(has_check, &workflow, cx);
     let label = with(cx, |u| {
         if let Some(why) = full {
             return Err(why);
@@ -451,6 +453,9 @@ pub fn start_picked(
         // be claimed and commented on for nothing.
         if let Some(why) = refused {
             return Err(format!("Nothing can be started: {why}"));
+        }
+        if let Some(why) = unfit {
+            return Err(format!("Cannot start on this project: {why}"));
         }
         u.claiming = true;
         Ok(u.label.clone())
