@@ -493,6 +493,7 @@ mod tests {
             name: name.into(),
             command: "x".into(),
             args: vec![],
+            auth: Default::default(),
         }
     }
 
@@ -555,6 +556,7 @@ mod tests {
             name: "x".into(),
             command: "x".into(),
             args: vec![],
+            auth: Default::default(),
         };
         let idx = ws.add_transient_root("/run", spec.clone(), 7).unwrap();
         assert_eq!(

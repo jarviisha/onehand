@@ -168,6 +168,11 @@ impl Shell {
         cx.notify();
     }
 
+    pub fn set_agent_auth(&mut self, auth: onehand_core::agent::AgentAuth, cx: &mut Context<Self>) {
+        self.agent_draft.auth = auth;
+        cx.notify();
+    }
+
     pub fn clear_agent_draft(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.agent_draft.clear(window, cx);
         cx.notify();

@@ -29,7 +29,7 @@ async fn main() {
     };
 
     let cwd = std::env::current_dir().unwrap();
-    let stream = connect(command, args, cwd, None);
+    let stream = connect(command, args, Default::default(), cwd, None);
     let mut stream = std::pin::pin!(stream);
     let mut tx_keep = None;
 

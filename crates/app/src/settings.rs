@@ -15,6 +15,7 @@ use gpui_component::button::ButtonVariants;
 use gpui_component::input::InputState;
 use gpui_component::tag::Tag;
 use gpui_component::{ActiveTheme, Icon, IconName, Sizable as _, StyledExt};
+use onehand_core::agent::AgentAuth;
 use onehand_core::config::AgentSpec;
 
 mod agents;
@@ -34,6 +35,7 @@ pub struct AgentDraft {
     pub name: Entity<InputState>,
     pub command: Entity<InputState>,
     pub args: Entity<InputState>,
+    pub auth: AgentAuth,
 }
 
 impl AgentDraft {
@@ -45,6 +47,7 @@ impl AgentDraft {
             args: cx.new(|cx| {
                 InputState::new(window, cx).placeholder("-y @agentclientprotocol/claude-agent-acp")
             }),
+            auth: AgentAuth::Inherit,
         }
     }
 
@@ -57,11 +60,13 @@ impl AgentDraft {
             .update(cx, |s, cx| s.set_value(&spec.command, window, cx));
         self.args
             .update(cx, |s, cx| s.set_value(spec.args_line(), window, cx));
+        self.auth = spec.auth;
     }
 
     /// Clear the form back to "adding a new agent".
     pub fn clear(&mut self, window: &mut Window, cx: &mut App) {
         self.editing = None;
+        self.auth = AgentAuth::Inherit;
         for field in [&self.name, &self.command, &self.args] {
             field.update(cx, |s, cx| s.set_value("", window, cx));
         }
@@ -72,9 +77,12 @@ impl AgentDraft {
     pub fn dirty(&self, agents: &[AgentSpec], cx: &App) -> bool {
         match self.editing {
             Some(idx) => self.to_spec(cx).as_ref() != agents.get(idx),
-            None => [&self.name, &self.command, &self.args]
-                .iter()
-                .any(|field| !field.read(cx).value().trim().is_empty()),
+            None => {
+                !self.auth.is_inherit()
+                    || [&self.name, &self.command, &self.args]
+                        .iter()
+                        .any(|field| !field.read(cx).value().trim().is_empty())
+            }
         }
     }
 
@@ -94,6 +102,7 @@ impl AgentDraft {
             // Core's parser, paired with `args_line` on the way in, so an
             // argument containing a space survives being edited.
             args: onehand_core::config::split_args(&self.args.read(cx).value()),
+            auth: self.auth,
         })
     }
 }

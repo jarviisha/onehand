@@ -38,6 +38,7 @@ pub(crate) fn spec_for(agent: Option<&str>, cx: &App) -> Option<AgentSpec> {
         name: base.name,
         command: "env".to_string(),
         args,
+        auth: base.auth,
     })
 }
 

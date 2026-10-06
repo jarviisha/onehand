@@ -176,6 +176,7 @@ mod tests {
                 name: "claude".to_string(),
                 command: "npx".to_string(),
                 args: Vec::new(),
+                auth: Default::default(),
             },
         )
     }

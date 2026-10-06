@@ -9,6 +9,7 @@ fn a_test_result_belongs_to_the_whole_command_line() {
         name: "a".into(),
         command: "npx".into(),
         args: args.iter().map(|a| a.to_string()).collect(),
+        auth: Default::default(),
     };
     assert_ne!(
         check_key(&spec(&["-y", "one"])),
