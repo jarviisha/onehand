@@ -12,6 +12,15 @@ use crate::connector::{PrState, PullRequest};
 use crate::issues::IssueKey;
 use crate::workflow::{Outcome, Run, StepKind, Stop};
 
+/// What a task waiting on a person waits for, in the words every view of
+/// it uses: an approval, or an answer to a card.
+pub fn waiting_said(approval: bool) -> &'static str {
+    match approval {
+        true => "Waiting for approval",
+        false => "Waiting for an answer",
+    }
+}
+
 /// A step, as where it stands in its run's workflow: *Verify · step 3 of 6*.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct StepAt {
@@ -56,7 +65,7 @@ pub(crate) enum Stand {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum PrStep {
     /// Its workflow has no pull request step.
-    None,
+    Absent,
     /// It has not reached it yet.
     NotYet,
     Reached,
@@ -92,8 +101,8 @@ impl Work {
         let run = task.runs.last();
         let stand = stand(task, run, working, behind);
         let said = match (&stand, working) {
-            (Stand::Approval { .. }, _) => "Waiting for approval".to_string(),
-            (Stand::Card, _) => "Waiting for an answer".to_string(),
+            (Stand::Approval { .. }, _) => waiting_said(true).to_string(),
+            (Stand::Card, _) => waiting_said(false).to_string(),
             (_, Some(Working::Running)) => "Running".to_string(),
             (_, Some(Working::Queued)) => "Queued".to_string(),
             (_, Some(Working::Waiting) | None) => {
@@ -123,7 +132,7 @@ impl Work {
             branch: task.setup.branch.clone(),
             dir: task.setup.dir.clone(),
             forge: task.setup.forge.clone(),
-            pull_request: run.map_or(PrStep::None, pr_step),
+            pull_request: run.map_or(PrStep::Absent, pr_step),
             stand,
         }
     }
@@ -157,7 +166,14 @@ fn stand(
         Some(Working::Queued) => Stand::Queued { behind },
         Some(Working::Running) => match kind {
             Some(StepKind::StatusChecks { .. }) => Stand::StatusChecks,
-            _ => Stand::Running,
+            Some(
+                StepKind::Agent { .. }
+                | StepKind::Command { .. }
+                | StepKind::Approval { .. }
+                | StepKind::Push
+                | StepKind::PullRequest,
+            )
+            | None => Stand::Running,
         },
         // An approval step's open visit is an approval; anything else that
         // waits on a person is a card.
@@ -220,7 +236,7 @@ fn pr_step(run: &Run) -> PrStep {
         .iter()
         .find(|step| step.kind == StepKind::PullRequest)
     else {
-        return PrStep::None;
+        return PrStep::Absent;
     };
     let reached = run.outcome == Some(Outcome::Done)
         || run.visits().iter().any(|visit| visit.step == step.id);
@@ -291,6 +307,9 @@ pub fn issue_work<'a>(
 pub enum Act {
     RunWorkflow,
     WorkHere,
+    /// Show the session *Work here* started, still working the issue: a
+    /// second one there would be two agents editing one checkout.
+    OpenWorkingSession,
     Edit,
     OpenSession,
     AnswerInSession,
@@ -311,6 +330,7 @@ impl Act {
         match self {
             Self::RunWorkflow => "Run workflow…",
             Self::WorkHere => "Work here",
+            Self::OpenWorkingSession => "Open session",
             Self::Edit => "Edit",
             Self::OpenSession => "Open session",
             Self::AnswerInSession => "Open session to answer",
@@ -345,6 +365,8 @@ pub struct Around<'a> {
     pub open: bool,
     /// A run may be started on its project.
     pub can_start: bool,
+    /// A session *Work here* started still works the issue.
+    pub session: bool,
     pub pr: PrSeen<'a>,
     /// Seconds past the epoch, for how long a step has worked.
     pub now: u64,
@@ -372,7 +394,11 @@ pub struct Next {
 /// *Run workflow…*, and never hides what an active run needs.
 pub fn next_action(work: Option<&Work>, around: Around<'_>) -> Next {
     let Some(work) = work else {
-        let mut next = row(Some("No run recorded".into()), None, &[Act::WorkHere]);
+        let here = match around.session {
+            true => Act::OpenWorkingSession,
+            false => Act::WorkHere,
+        };
+        let mut next = row(Some("No run recorded".into()), None, &[here]);
         if around.open && around.can_start {
             next.primary = Some(Act::RunWorkflow);
         }
@@ -475,7 +501,7 @@ fn by_stand(work: &Work, around: Around<'_>) -> Next {
 fn done(work: &Work, pr: PrSeen<'_>) -> Next {
     let Some(forge) = &work.forge else {
         return row(
-            Some("Look at the branch; close the issue when satisfied, from ⋯ ▸ Close issue".into()),
+            Some("Look at the branch; close the issue when satisfied".into()),
             None,
             &[Act::ShowTask],
         );

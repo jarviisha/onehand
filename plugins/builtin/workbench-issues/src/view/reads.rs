@@ -10,8 +10,17 @@ use onehand_core::issues::{self, IssueKey};
 use onehand_core::task::work::{IssueWork, PrSeen};
 use std::path::Path;
 
-/// What a read of a pull request is about: the issue, the task and its run.
-pub(super) type PrAbout = (IssueKey, String, Option<String>);
+/// What a read of a pull request is about: a Retry that keeps the task but
+/// starts a new run makes every read of the old run stale.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(super) struct PrAbout {
+    issue: IssueKey,
+    task: String,
+    run: Option<String>,
+}
+
+/// A pull request as read, if there is one, and when it was read.
+pub(super) type PrRead = (Option<onehand_core::connector::PullRequest>, u64);
 
 impl IssuesView {
     /// The issue `number` of `root`, named by the file it is kept in.
@@ -27,16 +36,16 @@ impl IssuesView {
     /// has reached its pull request step.
     pub(super) fn pr_about(work: &IssueWork) -> Option<PrAbout> {
         let w = &work.work;
-        w.has_pull_request()
-            .then(|| (work.key.clone(), w.task.clone(), w.run.clone()))
+        w.has_pull_request().then(|| PrAbout {
+            issue: work.key.clone(),
+            task: w.task.clone(),
+            run: w.run.clone(),
+        })
     }
 
     /// What was last read of `work`'s pull request and when, if the reads are
     /// about it: never another issue's, task's or run's.
-    pub(super) fn pr_value(
-        &self,
-        work: Option<&IssueWork>,
-    ) -> Option<&(Option<onehand_core::connector::PullRequest>, u64)> {
+    pub(super) fn pr_value(&self, work: Option<&IssueWork>) -> Option<&PrRead> {
         let about = work.and_then(Self::pr_about)?;
         (self.pr.about() == Some(&about)).then_some(self.pr.value.as_ref())?
     }

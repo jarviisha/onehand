@@ -25,10 +25,9 @@ pub(super) struct Doing<'a> {
     pub(super) offered: bool,
     pub(super) work: Option<IssueWork>,
     pub(super) pr: PrSeen<'a>,
-    /// When the pull request was last read.
-    pub(super) read_at: Option<u64>,
-    /// The last pull request read, in words, kept beside a failed read.
-    pub(super) stale: Option<String>,
+    /// The pull request as last read for this work, kept beside a failed
+    /// read, and when it was read.
+    pub(super) last: Option<&'a super::reads::PrRead>,
 }
 
 /// One issue, read, in one fixed order whatever the state, so what it waits

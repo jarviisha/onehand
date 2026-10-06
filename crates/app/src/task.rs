@@ -12,7 +12,7 @@ use gpui::{
 use gpui_component::WindowExt as _;
 use gpui_component::notification::Notification;
 use onehand_core::issues::IssueKey;
-use onehand_core::task::work::{IssueWork, issue_work};
+use onehand_core::task::work::{IssueWork, issue_work, waiting_said};
 use onehand_core::task::{Group, Task, Working, files, history, marks, queue, sort_listed};
 use onehand_core::unattended::TrackerRef;
 use onehand_core::workflow::{Action, Run, Stop, Template, run_command_blocking};
@@ -892,11 +892,9 @@ pub(crate) fn live_issues(cx: &App) -> Vec<LiveRun> {
         .filter_map(|(uid, d)| {
             let task = t.task(&d.task)?;
             let issue = task.issue()?;
-            let waiting = match (d.run.awaiting_approval(), d.waits_on_person()) {
-                (true, _) => Some("Waiting for approval".to_string()),
-                (false, true) => Some("Waiting for an answer".to_string()),
-                (false, false) => None,
-            };
+            let waiting = d
+                .waits_on_person()
+                .then(|| waiting_said(d.run.awaiting_approval()).to_string());
             let run = LiveRun {
                 repo: task.setup.repo.clone(),
                 name: issue.shown(),

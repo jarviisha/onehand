@@ -24,6 +24,13 @@ use std::path::Path;
 /// one; the rest are in the ⋯ menu, with what is done to the issue itself.
 const SECONDARY_SHOWN: usize = 2;
 
+/// The primary action's place, in rems, kept with nothing in it so the
+/// secondary actions do not move into it.
+const PRIMARY_MIN_W: f32 = 6.;
+
+/// The width of a fact's name below the body, in rems, so the values line up.
+const FACT_NAME_W: f32 = 6.;
+
 /// What `doing` says to do next about `issue`, as core decides it.
 pub(super) fn next_for(issue: &LocalIssue, doing: &Doing) -> Next {
     next_action(
@@ -32,6 +39,7 @@ pub(super) fn next_for(issue: &LocalIssue, doing: &Doing) -> Next {
             open: issue.open,
             can_start: doing.offered,
             pr: doing.pr,
+            session: doing.session.is_some(),
             now: onehand_core::issues::now(),
         },
     )
@@ -150,7 +158,12 @@ fn actions_row(
         .items_center()
         .gap_1()
         .min_w_0()
-        .child(div().flex_none().min_w(gpui::rems(6.)).children(primary))
+        .child(
+            div()
+                .flex_none()
+                .min_w(gpui::rems(PRIMARY_MIN_W))
+                .children(primary),
+        )
         .child(
             div()
                 .h_flex()
@@ -166,21 +179,9 @@ fn actions_row(
         .into_any_element()
 }
 
-/// What `act` is called where it is drawn: *Work here* is *Open session*
-/// while a session it started still works the issue, since a second one
-/// there would be two agents editing one checkout.
-fn label(act: Act, doing: &Doing) -> &'static str {
+fn tooltip(act: Act) -> Option<&'static str> {
     match act {
-        Act::WorkHere if doing.session.is_some() => "Open session",
-        act => act.label(),
-    }
-}
-
-fn tooltip(act: Act, doing: &Doing) -> Option<&'static str> {
-    match act {
-        Act::WorkHere if doing.session.is_some() => {
-            Some("A session is working this issue; show it")
-        }
+        Act::OpenWorkingSession => Some("A session is working this issue; show it"),
         Act::WorkHere => Some(WORK_HERE),
         Act::RunWorkflow => Some(
             "Choose a workflow and work the issue with it as a task, on a branch and worktree \
@@ -214,8 +215,8 @@ fn act_button(
     cx: &mut Context<IssuesView>,
 ) -> Button {
     let pressed = Pressed::of(act, number, doing);
-    let button = action(id).xsmall().label(label(act, doing));
-    let button = match tooltip(act, doing) {
+    let button = action(id).xsmall().label(act.label());
+    let button = match tooltip(act) {
         Some(tip) => button.tooltip(tip),
         None => button,
     };
@@ -257,10 +258,12 @@ impl Pressed {
         let task = self.task;
         match self.act {
             Act::RunWorkflow => view.run_workflow(number, window, cx),
-            Act::WorkHere => match self.session {
-                Some(session) => view.open_session(session, window, cx),
-                None => view.work_here(number, window, cx),
-            },
+            Act::WorkHere => view.work_here(number, window, cx),
+            Act::OpenWorkingSession => {
+                if let Some(session) = self.session {
+                    view.open_session(session, window, cx);
+                }
+            }
             Act::Edit => view.open_form(Some(number), window, cx),
             Act::OpenSession | Act::AnswerInSession | Act::Review => {
                 if let Some(id) = task {
@@ -318,14 +321,14 @@ fn more_menu(
     let open = issue.open;
     let forge = issue.link.as_ref().map(|link| link.connector.clone());
     let view = cx.entity();
-    let overflow: Vec<(String, Pressed)> = overflow
+    let overflow: Vec<(&'static str, Pressed)> = overflow
         .into_iter()
         .map(|act| {
+            // A menu row has no tooltip: *Work here* says what it does in
+            // its own words.
             let said = match act {
-                Act::WorkHere if doing.session.is_none() => {
-                    "Work here: a session on this checkout, no workflow".to_string()
-                }
-                act => label(act, doing).to_string(),
+                Act::WorkHere => "Work here: a session on this checkout, no workflow",
+                act => act.label(),
             };
             (said, Pressed::of(act, number, doing))
         })
@@ -344,12 +347,10 @@ fn more_menu(
             let mut menu = menu;
             for (said, pressed) in &overflow {
                 let (view, pressed) = (view.clone(), pressed.clone());
-                menu = menu.item(menu_item(said.clone()).on_click(
-                    move |_, window, cx: &mut App| {
-                        let pressed = pressed.clone();
-                        view.update(cx, |view, cx| pressed.run(view, window, cx))
-                    },
-                ));
+                menu = menu.item(menu_item(*said).on_click(move |_, window, cx: &mut App| {
+                    let pressed = pressed.clone();
+                    view.update(cx, |view, cx| pressed.run(view, window, cx))
+                }));
             }
             if let Some(forge) = publish_to {
                 let view = view.clone();
@@ -442,7 +443,7 @@ pub(super) fn left_view(doing: &Doing, cx: &mut Context<IssuesView>) -> Option<A
             .child(
                 div()
                     .flex_none()
-                    .w(gpui::rems(6.))
+                    .w(gpui::rems(FACT_NAME_W))
                     .text_color(muted)
                     .child(name),
             )
@@ -460,8 +461,8 @@ pub(super) fn left_view(doing: &Doing, cx: &mut Context<IssuesView>) -> Option<A
         PrSeen::Failed(why) => div()
             .truncate()
             .text_color(warning)
-            .child(match &doing.stale {
-                Some(stale) => format!("{stale} (stale) · could not be read: {why}"),
+            .child(match doing.last.and_then(|(pr, _)| pr.as_ref()) {
+                Some(stale) => format!("{} (stale) · could not be read: {why}", pr_named(stale)),
                 None => format!("could not be read: {why}"),
             })
             .into_any_element(),
@@ -483,10 +484,10 @@ pub(super) fn left_view(doing: &Doing, cx: &mut Context<IssuesView>) -> Option<A
                     .text_xs()
                     .child(div().flex_1().text_color(muted).child("What the work left"))
                     .when(has_pr, |head| {
-                        head.children(doing.read_at.map(|at| {
+                        head.children(doing.last.map(|(_, at)| {
                             div()
                                 .text_color(muted)
-                                .child(format!("read {}", onehand_core::rel_time(now, at)))
+                                .child(format!("read {}", onehand_core::rel_time(now, *at)))
                         }))
                         .child(
                             action("issue-pr-refresh")

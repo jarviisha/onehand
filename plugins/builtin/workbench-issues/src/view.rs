@@ -522,11 +522,7 @@ impl IssuesView {
             session: working_in(&issue, &self.live).map(str::to_string),
             offered: self.offered.iter().any(|offered| offered == root),
             pr: self.pr_seen(work.as_ref()),
-            read_at: self.pr_value(work.as_ref()).map(|(_, at)| *at),
-            stale: self
-                .pr_value(work.as_ref())
-                .and_then(|(pr, _)| pr.as_ref())
-                .map(onehand_core::task::work::pr_named),
+            last: self.pr_value(work.as_ref()),
             work,
         };
         issue_view(root, &issue, body, publish_to, doing, window, cx)

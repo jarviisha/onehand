@@ -115,6 +115,7 @@ fn open() -> Around<'static> {
     Around {
         open: true,
         can_start: true,
+        session: false,
         pr: PrSeen::Unread,
         now: 1_000,
     }
@@ -164,6 +165,21 @@ fn no_run_recorded_offers_a_run_workflow() {
         },
     );
     assert_eq!(acts(&next), (None, vec![Act::WorkHere, Act::Edit]));
+    // A session it started still works it: that is offered, not a second.
+    let next = next_action(
+        None,
+        Around {
+            session: true,
+            ..open()
+        },
+    );
+    assert_eq!(
+        acts(&next),
+        (
+            Some(Act::RunWorkflow),
+            vec![Act::OpenWorkingSession, Act::Edit]
+        )
+    );
 }
 
 #[test]
@@ -390,7 +406,7 @@ fn a_workflow_with_no_pull_request_step_ends_on_its_branch() {
         None,
     );
     let work = Work::of(&task, None, None);
-    assert_eq!(work.pull_request, PrStep::None);
+    assert_eq!(work.pull_request, PrStep::Absent);
     // Never "could not be read": no pull request is the expected end.
     let next = next_action(
         Some(&work),
@@ -414,7 +430,11 @@ fn a_done_run_where_no_forge_serves_is_looked_at_on_its_branch() {
         None,
     );
     let next = next_of(&task, None, open());
-    assert!(next.said.clone().unwrap().contains("Close issue"));
+    assert!(next
+        .said
+        .clone()
+        .unwrap()
+        .contains("close the issue when satisfied"));
     assert_eq!(acts(&next), (None, vec![Act::ShowTask, Act::Edit]));
 }
 
