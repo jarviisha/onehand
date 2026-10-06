@@ -530,9 +530,14 @@ fn trackers_blocking(
 }
 
 /// The claim came back: start the session, or say why not.
+///
+/// `held` is why nothing was started where something was looked for, when
+/// that is so: a search somebody asked for says it rather than that there was
+/// nothing to find.
 pub(super) fn landed(
     begun: Option<Result<Claimed, Unstarted>>,
     asked_from: Option<gpui::AnyWindowHandle>,
+    held: Option<String>,
     cx: &mut App,
 ) {
     with(cx, |u| u.claiming = false);
@@ -542,13 +547,12 @@ pub(super) fn landed(
             // tick ran says nothing, as a quiet half hour always has.
             if let Some(window) = asked_from {
                 let label = label(cx);
-                warn(
-                    window,
+                let said = held.unwrap_or_else(|| {
                     format!(
                         "No open issue of yours labelled `{label}` in the projects switched on."
-                    ),
-                    cx,
-                );
+                    )
+                });
+                warn(window, said, cx);
             }
             return;
         }

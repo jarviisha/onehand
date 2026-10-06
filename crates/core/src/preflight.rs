@@ -179,7 +179,7 @@ pub fn preflight(kind: Kind, facts: &Facts) -> Vec<Finding> {
     if let Some(mode) = facts.mode.as_deref().filter(|m| !m.trim().is_empty()) {
         let change = match own {
             true => None,
-            false => Some("unattended.mode in onehand.toml"),
+            false => Some("unattended.mode, in the config file"),
         };
         match &facts.offered {
             Some(offered) => {

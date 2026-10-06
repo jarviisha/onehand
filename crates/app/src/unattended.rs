@@ -622,7 +622,7 @@ fn tick(asked_from: Option<gpui::AnyWindowHandle>, cx: &mut App) {
         // A panic in there would otherwise leave `claiming` set for the life of
         // the process, and no issue would be looked for again. Said and treated
         // as nothing found.
-        let (accounts, checked, begun) = cx
+        let (accounts, checked, begun, held) = cx
             .background_executor()
             .spawn(async move {
                 std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
@@ -655,16 +655,25 @@ fn tick(asked_from: Option<gpui::AnyWindowHandle>, cx: &mut App) {
                             &mut checked,
                         )
                     });
+                    // Why nothing was started where something was looked
+                    // for: the look refused the project, or what the search
+                    // found was blocked. Taken before the line below, which
+                    // passes issues over rather than stopping a project.
+                    let held = checked.iter().find_map(|(root, served)| {
+                        let why = served.as_ref().err()?;
+                        let name = root.file_name()?.to_string_lossy().into_owned();
+                        Some(format!("Nothing was picked up in {name}: {why}"))
+                    });
                     // Said after the look, which would otherwise say the
                     // project is fine.
                     checked.extend(lacking.into_iter().map(|(root, why)| (root, Err(why))));
-                    (Some(accounts), checked, begun)
+                    (Some(accounts), checked, begun, held)
                 }))
                 .unwrap_or_else(|_| {
                     // The look, the search and the claim are all in here, and
                     // none of them has taken a label unless it finished.
                     eprintln!("onehand: looking for an unattended run panicked");
-                    (None, Vec::new(), None)
+                    (None, Vec::new(), None, None)
                 })
             })
             .await;
@@ -674,7 +683,7 @@ fn tick(asked_from: Option<gpui::AnyWindowHandle>, cx: &mut App) {
                 record(checked, true, cx);
             }
             if searching {
-                landed(begun, asked_from, cx);
+                landed(begun, asked_from, held, cx);
             }
         });
     })
