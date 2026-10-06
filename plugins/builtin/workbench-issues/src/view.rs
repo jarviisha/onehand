@@ -258,10 +258,17 @@ impl IssuesView {
         offered: &[PathBuf],
         cx: &mut Context<Self>,
     ) {
-        if self.works != works {
-            self.works = works.to_vec();
+        // Only the issue on screen moving reads its pull request again.
+        let shown = |all: &[IssueWork]| {
+            let root = self.root.as_deref()?;
+            let number = self.roots.get(root)?.selected?;
+            let key = self.key(root, number)?;
+            all.iter().find(|work| work.key == key).cloned()
+        };
+        if shown(&self.works) != shown(works) {
             self.moved = true;
         }
+        self.works = works.to_vec();
         self.offered = offered.to_vec();
         cx.notify();
     }
@@ -427,6 +434,8 @@ impl Render for IssuesView {
             }));
         }
         let body = self.body(window, cx);
+        // Coming back to the front reads only what is on screen then.
+        self.returned = false;
         div()
             .flex_1()
             .min_h_0()

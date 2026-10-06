@@ -492,7 +492,10 @@ fn an_active_task_on_a_closed_issue_keeps_its_controls() {
     assert!(next.still_active && !next.muted);
     assert_eq!(
         acts(&next),
-        (Some(Act::AnswerInSession), vec![Act::Stop, Act::Edit])
+        (
+            Some(Act::AnswerInSession),
+            vec![Act::Stop, Act::ReopenIssue, Act::Edit]
+        )
     );
 }
 

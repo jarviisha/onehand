@@ -218,7 +218,8 @@ unattended      (the issue a task works,  Tasks page in the agent pane, rail row
   the project, the pull request as last read, and the issue's state, it returns one sentence, at most
   one primary action and the secondary ones in their order, so no caller picks its own. It matches
   the groups, `Outcome` and `Stop` exhaustively. The issue's state only gates a new start: a closed
-  issue offers no *Run workflow…*, keeps every control of a run still active on it and says so, and
+  issue offers no *Run workflow…*, keeps every control of a run still active on it, says so and
+  offers *Reopen issue*, and
   mutes a run that is over to *Reopen issue* and *Show task*. *Edit* is always last.
 - **The history cap is pure** (`task::history::over_cap`): the ids of the *Finished* tasks past the
   newest `KEPT` (200) of each project a task was started from (`setup.repo`, never a worktree).

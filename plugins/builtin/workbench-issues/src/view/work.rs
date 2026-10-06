@@ -1,6 +1,6 @@
 //! Where an issue's work stands, as the app tells the view of it: the
-//! progress and the next action above the body (region 2), what the work
-//! left below it (region 4), and what came before (region 5).
+//! progress and the next action above the body, what the work left below
+//! it, and what came before.
 //!
 //! What to say and what to offer is core's (`onehand_core::task::work`);
 //! what is here draws it, and turns a press into the request it names.
@@ -16,9 +16,7 @@ use gpui_component::button::{Button, ButtonVariants as _};
 use gpui_component::menu::PopupMenu;
 use gpui_component::{ActiveTheme, Icon, IconName, Sizable as _, StyledExt};
 use onehand_core::issues::LocalIssue;
-use onehand_core::task::work::{
-    Act, Around, IssueWork, Next, PrSeen, PrStep, Stand, next_action, pr_said,
-};
+use onehand_core::task::work::{Act, Around, IssueWork, Next, PrSeen, next_action, pr_said};
 use onehand_plugin_host::{Request, action, menu_below, menu_item, status_ink};
 use std::path::Path;
 
@@ -39,7 +37,7 @@ pub(super) fn next_for(issue: &LocalIssue, doing: &Doing) -> Next {
     )
 }
 
-/// Region 2: the latest run's progress in one line, the next action in one
+/// Above the body: the latest run's progress in one line, the next action in one
 /// more, and the actions. Always these three lines, whatever the state, so
 /// the body under it never moves when a step ends.
 pub(super) fn progress_view(
@@ -236,7 +234,7 @@ impl Pressed {
             session: doing.session.clone(),
             pr_url: match doing.pr {
                 PrSeen::Read(Some(pr)) => Some(pr.url.clone()),
-                _ => None,
+                PrSeen::Read(None) | PrSeen::Unread | PrSeen::Failed(_) => None,
             },
             dir: work.map(|work| work.dir.clone()),
         }
@@ -411,7 +409,7 @@ fn issue_items(
     menu
 }
 
-/// Region 4, short: the branch the work is on and, on a project a forge
+/// Below the body, short: the branch the work is on and, on a project a forge
 /// serves once the run has reached its pull request step, the pull
 /// request's state, how old that reading is and *Refresh*. `None` with no
 /// branch to say.
@@ -420,8 +418,7 @@ pub(super) fn left_view(doing: &Doing, cx: &mut Context<IssuesView>) -> Option<A
     let branch = work.branch.clone()?;
     let muted = cx.theme().muted_foreground;
     let warning = status_ink(cx).warning;
-    let has_pr = work.forge.is_some()
-        && (work.pull_request == PrStep::Reached || work.stand == Stand::StatusChecks);
+    let has_pr = work.has_pull_request();
     let now = onehand_core::issues::now();
     let line = |name: &'static str, value: AnyElement| {
         div()
@@ -507,7 +504,7 @@ pub(super) fn left_view(doing: &Doing, cx: &mut Context<IssuesView>) -> Option<A
     )
 }
 
-/// Region 5: one line counting the earlier runs of the issue's task, and
+/// Last before the history: one line counting the earlier runs of the issue's task, and
 /// one line per earlier task, newest first, any needing attention in the
 /// warning ink. Each leads to its task. `None` when nothing came before.
 pub(super) fn before_view(work: &IssueWork, cx: &mut Context<IssuesView>) -> Option<AnyElement> {

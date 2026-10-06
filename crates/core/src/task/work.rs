@@ -74,7 +74,7 @@ pub struct Work {
     /// The step it is at, or where it stopped; `None` once done.
     pub step: Option<StepAt>,
     /// When its open step visit started, in seconds past the epoch.
-    pub since: Option<u64>,
+    since: Option<u64>,
     pub branch: Option<String>,
     /// Where its work stands: the worktree, or the project itself.
     pub dir: std::path::PathBuf,
@@ -88,7 +88,7 @@ pub struct Work {
 impl Work {
     /// `task` as its issue's view draws it, given what the app says it is
     /// doing and, when it is queued, the title of the task holding its place.
-    pub fn of(task: &Task, working: Option<Working>, behind: Option<String>) -> Self {
+    pub(crate) fn of(task: &Task, working: Option<Working>, behind: Option<String>) -> Self {
         let run = task.runs.last();
         let stand = stand(task, run, working, behind);
         let said = match (&stand, working) {
@@ -126,6 +126,15 @@ impl Work {
             pull_request: run.map_or(PrStep::None, pr_step),
             stand,
         }
+    }
+
+    /// Whether it should have a pull request to read: a forge serves its
+    /// project and the run has reached its pull request step, or waits on
+    /// its status checks.
+    pub fn has_pull_request(&self) -> bool {
+        self.forge.is_some()
+            && self.branch.is_some()
+            && (self.pull_request == PrStep::Reached || self.stand == Stand::StatusChecks)
     }
 
     /// Whether it is running, queued or waiting, rather than over.
@@ -375,6 +384,7 @@ pub fn next_action(work: Option<&Work>, around: Around<'_>) -> Next {
         next.secondary.retain(|act| *act != Act::RunWorkflow);
         if work.active() {
             next.still_active = true;
+            next.secondary.push(Act::ReopenIssue);
         } else {
             next.primary = None;
             next.secondary = vec![Act::ReopenIssue, Act::ShowTask];

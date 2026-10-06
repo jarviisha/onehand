@@ -46,7 +46,7 @@ pub(super) fn issue_view(
     let number = issue.number;
     let open = issue.open;
     let muted = cx.theme().muted_foreground;
-    // Region 1: the title wraps rather than cutting, since it is the one
+    // Who it is: the title wraps rather than cutting, since it is the one
     // place the whole of it is read, and the issue's state is beside it and
     // nowhere else, so it is never taken for its run's.
     let header = div()

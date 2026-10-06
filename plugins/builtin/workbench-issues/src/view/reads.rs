@@ -7,7 +7,7 @@ use super::{IssuesView, READ_AGE};
 use gpui::Context;
 use onehand_core::connector;
 use onehand_core::issues::{self, IssueKey};
-use onehand_core::task::work::{IssueWork, PrSeen, PrStep, Stand};
+use onehand_core::task::work::{IssueWork, PrSeen};
 use std::path::Path;
 
 /// What a read of a pull request is about: the issue, the task and its run.
@@ -27,8 +27,7 @@ impl IssuesView {
     /// has reached its pull request step.
     pub(super) fn pr_about(work: &IssueWork) -> Option<PrAbout> {
         let w = &work.work;
-        let reached = w.pull_request == PrStep::Reached || w.stand == Stand::StatusChecks;
-        (w.forge.is_some() && w.branch.is_some() && reached)
+        w.has_pull_request()
             .then(|| (work.key.clone(), w.task.clone(), w.run.clone()))
     }
 
@@ -56,7 +55,7 @@ impl IssuesView {
         work: Option<&IssueWork>,
         cx: &mut Context<Self>,
     ) {
-        let returned = std::mem::take(&mut self.returned);
+        let returned = self.returned;
         let moved = std::mem::take(&mut self.moved);
         let Some(work) = work else {
             return;
