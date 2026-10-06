@@ -98,7 +98,7 @@ These are the contracts the pieces must not bend; each document says where it co
   on an issue repeats a run's step or outcome; a second copy is a copy that disagrees.
 - **Three facts, shown apart, each where it is used.** The issue's state (open, closed) beside its
   title; the latest run's progress where the work stands; and, where a forge serves the project,
-  its pull request's state (open, merged, closed, or *could not be read*) with the results. No word
+  its pull request's state (open, merged, closed, or *could not be read*) with what the work left. No word
   folds them into one: a run done on an open issue, an issue reopened after its pull request
   merged, and an issue closed without the work are all different, and each is said as its facts.
   A fact with nothing to say yet (no pull request before the step that opens one) is left out; one
@@ -160,9 +160,20 @@ worth deciding. `workflows.md` already lists the straight line as not built. The
    Taken: the tab first, in its short form; the Issues page comes in wave 1, right after, and holds
    the full view and the review. The tab and the page are two views of one model, not one view
    shrunk ([pages.md](pages.md#the-page-and-the-dock)).
-2. *Chat is the centre while a session shows*, the principle the Issues page needs
-   ([pages.md](pages.md#the-conflict)), is agreed before step 3 of the order of work.
-3. Whether forge issues (not kept in onehand) get piece 1 too. Today the *Runs* section shows only
-   issues a project keeps, since a forge's numbers are its own. Recommended: kept issues first.
-4. Whether issue templates (piece 2) are per project files or shipped with onehand. Recommended:
-   shipped, with a project's own `.github/ISSUE_TEMPLATE/` read when it has one.
+2. ~~The principle the Issues page needs ([pages.md](pages.md#the-conflict)).~~ Taken: *The
+   conversation is the centre while a session shows; pages take the agent pane and put the docks
+   away. A page never opens over a session by itself; only a person picking it does.*
+3. ~~Whether forge issues (not kept in onehand) get piece 1 too.~~ Taken: kept issues only. A
+   forge's issue has no issues file, so no `IssueKey`; it goes into `docs/known-gaps.md` when
+   piece 1 is built.
+4. ~~Whether issue templates (piece 2) are per project files or shipped with onehand.~~ Taken:
+   three shipped; a project's own `.github/ISSUE_TEMPLATE/*.md` replaces them whole.
+
+Taken in the review of 2026-10-06, and written into the pieces: region 2 follows the newest task
+of an issue; *Pull request open* is a progress filter of its own, not part of *Needs attention*;
+the forge's review is always *pull request review*, and region 4 is *What the work left*, never
+*Results*; before the Issues page exists the tab's *Review…* opens the run's session; *Retry*
+loses *Retry with version N* to *Retry with current settings*; the Issues page reads pull
+requests once per project, never per row; a configuration failure is a preflight block found late;
+a re-added label still starts a new task, and its report names the earlier one left; project check
+commands move to the project page.

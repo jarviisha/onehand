@@ -115,7 +115,8 @@ A second action beside *Retry*, never a change to what *Retry* does. Its dialog 
 anything starts:
 
 - **what changed**, one line each, old → new: the agent, the mode, the check command, the timeout,
-  the workflow's version (already offered today as *Retry with version N*, folded in here);
+  the workflow's version. *Retry with version N* leaves the *Retry* dialog for this one, so
+  *Retry* means only "as the last run was";
 - **where it starts**, the earlier of two points:
   - the carry-over rule (`Run::retry_plan`) for the workflow version it runs;
   - **the earliest step it would carry over whose command actually changes.** A command step's
@@ -137,12 +138,12 @@ workflow whose id is gone, or that no longer validates, blocks, said in the pref
 
 **The rest of current settings** come from where a new task of that kind takes them: for an issue
 task, `[unattended]` (agent, mode, timeout) and the project's check command; for a launcher task,
-Settings' default agent and the project's check command. *Answer the review* keeps its task's own
+Settings' default agent and the project's check command. *Answer the pull request review* keeps its task's own
 configuration, as the label path does.
 
-### Answer the review, as an action
+### Answer the pull request review, as an action
 
-On an issue, or its task, whose latest run is done with a pull request open: **Answer the review**.
+On an issue, or its task, whose latest run is done with a pull request open: **Answer the pull request review**.
 It runs the path a re-added trigger label runs (`launch::taking_blocking` → fetch and fast-forward
 → `crate::task::retry` from `Template::repair_step` with `core::review_note`), with the same
 refusals. The trigger label keeps working; this is a second door to the same path, not a second
@@ -174,7 +175,7 @@ path.
   with current settings* at Verify; a changed Package command alone starts it at Package; neither
   changed leaves the carry-over start. A test per case, in core.
 - An action carrying a visit id of an earlier run of the same task is refused.
-- *Answer the review* starts a new run at the repair step, refused with the label path's words.
+- *Answer the pull request review* starts a new run at the repair step, refused with the label path's words.
 
 ## Documents to change when built
 

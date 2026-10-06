@@ -44,7 +44,7 @@ Markdown with the same four headings, worded for its kind:
 - A template only fills the body in. It adds no field to the issue and no state; an issue written
   without one is worked as it is today.
 - A project with its own `.github/ISSUE_TEMPLATE/*.md` offers those instead (front matter read for
-  the name and labels, the rest as the body). Decision 3 of [the proposal](README.md).
+  the name and labels, the rest as the body). Decision 4 of [the proposal](README.md).
 - A template may carry labels (a bug template the `bug` label), which is how it can choose the
   workflow through a workflow label, with nothing new.
 
@@ -99,10 +99,9 @@ worktree; worth its own proposal once templates show which parts are usually mis
 
 ## Open questions
 
-1. Does a project's template replace the shipped three, or sit beside them? Recommended: replace;
-   a project that wrote its own has chosen.
-2. Is half of a template's headings the right line for a match? Recommended: start there, and
-   count the advice a person dismisses before moving it.
+1. ~~Does a project's template replace the shipped three?~~ Yes, whole; a project that wrote its
+   own has chosen.
+2. ~~Is half of a template's headings the right line for a match?~~ Start there, unmeasured.
 
 ## Done when
 

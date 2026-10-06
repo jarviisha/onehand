@@ -36,7 +36,8 @@ unattended                                    + preview + instructions for this 
   brief_for, Verdict, report                workbench/panel.rs
   ~ brief_for(.., extra instructions)         ~ broadcast + answer generation-checked reads
 connector                                   + issue_reads (background)
-  pull request by branch, merged head         PR state, branch counts, diffs
+  pull request by branch, merged head
+  + pull requests of a repo, one call (pages)         PR state, branch counts, diffs
 ```
 
 `(B)` is piece 1 part B: new persistence, optional fields beside the existing ones; no existing
@@ -187,7 +188,7 @@ flowchart TD
         IP -->|no block| IC["claim: label off, comment"]
         IC --> IW["cut worktree off origin/default<br/>or the branch checked out"]
         IW --> IK["keep the task"]
-        V0["answer a review"] --> VP["preflight(answer a review)"]
+        V0["answer a pull request review"] --> VP["preflight(answer a pull request review)"]
         VP -->|no block| VC["claim, fast-forward<br/>the existing worktree"]
         VC --> VK["retry from the repair step"]
     end

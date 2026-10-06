@@ -37,9 +37,9 @@ every start by one table. What is checked comes from the kind:
 | **New run** (launcher) | the workflow picked, Settings' agent, the project's check command | checkout: the project as it is. Worktree: a new `workflow/<title>` cut off the project's `HEAD` (`shell/workflows.rs`) | validation problems |
 | **New issue run** (pick or tick) | the workflow by pick, label or default; `[unattended]` agent, mode and timeout | a new worktree cut off `origin/<default>` after a fetch with a forge, else off the branch checked out; a detached HEAD without a forge is refused | checkout workflow, missing check command, slot, issue already worked, mode refused once learned |
 | **Resume** | the run's own snapshot and setup, unchanged | the run's existing place; the folder added back if it left the workspace | issue task past the slot |
-| **Retry** | the last run's setup (`Run::retry_of` copies it) and the snapshot chosen in the dialog (the run's own, or *Retry with version N*) | the task's existing place; another branch checked out refuses, changed work is said | issue task past the slot |
+| **Retry** | the last run's setup (`Run::retry_of` copies it) and its snapshot; a newer version is *Retry with current settings* | the task's existing place; another branch checked out refuses, changed work is said | issue task past the slot |
 | **Retry with current settings** | the task's workflow by id at its newest version; agent, mode, timeout and check command from where a new task of its kind takes them (piece 4) | as *Retry* | as *Retry*, and a workflow id no longer on offer |
-| **Answer a review** | the task's own snapshot and setup | the task's worktree, fast-forwarded to the forge's branch | no status checks step or no forge, pull request closed unmerged, branch gone its own way |
+| **Answer a pull request review** | the task's own snapshot and setup | the task's worktree, fast-forwarded to the forge's branch | no status checks step or no forge, pull request closed unmerged, branch gone its own way |
 
 ## Proposal
 
@@ -73,7 +73,8 @@ anything of theirs.
 | Place | new run, new issue run | a worktree workflow on a folder outside git; for an issue run, a detached HEAD with no forge | a checkout workflow while a person's own session works in the same checkout |
 | Base | new run (worktree), new issue run | | where the branch is cut from, by that kind's rule |
 | Forge | runs with forge steps | `gh` missing or signed out on a project GitHub serves | no forge serves the project: the forge steps pass at once, the branch is the result |
-| Issue | new issue run, answer a review | what `taking_blocking` refuses today | |
+| Issue | new issue run, answer a pull request review | what `taking_blocking` refuses today | |
+| Earlier task | new issue run | | the issue's last task ended under *Needs attention*: a new start makes a second task; *Retry* that one instead is offered. A tick has nobody to read this, so its new task's report says it instead: *an earlier task on this issue ended exhausted at Implement; its worktree is kept*. Whether a re-added label should retry rather than start anew is a change to `unattended.md`, not made here |
 | Slot | issue runs of every kind | `at_once` reached: refused, naming the runs that hold the slots | |
 | Place taken | all | | the start will queue, behind which task |
 | Limits | all | | the timeout and the misses allowed, from the snapshot that will run |

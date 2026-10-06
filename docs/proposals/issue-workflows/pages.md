@@ -81,8 +81,15 @@ Each row is enough to choose from without opening it:
 ### Filters
 
 - **Open** and **Closed** stay a filter of their own, beside the others.
+- **How the list knows a pull request's state.** One read per project, never per row: a connector
+  read of the repository's pull requests in one call (`gh pr list --state all`, capped), matched to
+  the tasks' branches, on opening the page, on *Refresh*, and on focus regained when older than a
+  minute. The list's head says *read Xm ago*; a row not read draws no pull request line, and a
+  project whose read failed is said beside the filter.
 - **Progress**: *All*, *Needs attention* (the glossary's: waiting on a person, or ended on
-  something nobody chose), *Running*, *Queued*, *No run recorded*. A run waiting for its pull
+  something nobody chose), *Running*, *Queued*, *Pull request open*, *No run recorded*. *Pull
+  request open* is a done run whose pull request waits on a person on the forge; it is its own
+  choice, so *Needs attention* keeps the glossary's meaning. A run waiting for its pull
   request's status checks is *Running*: it waits on the forge, not on the person, and never counts
   as *Needs attention*.
 - **Project** and **label**.
@@ -107,11 +114,13 @@ pill is the way back to its issue: it opens the issue on the page (open question
 
 ## The Workflows page
 
-The list as Settings has it, *Run…* on each (the launcher on the project on screen), and the editor
+The list as Settings has it, *Run…* on each, and the editor
 as a list of steps, each showing its prompt, its gates or command, what it keeps, and where a
 failure sends it back (`on_fail`), with the arrows drawn in the margin. No canvas, no dragging
-between lanes. Settings ▸ Workflows keeps only the project check commands, or moves them to the
-project menu.
+between lanes. Settings ▸ Workflows goes; the project check commands move to the project page, beside *Run
+check*, where the command is run. *Run…* opens the one launcher the rail and the keymap command open
+(asking for the project first, below); the rail keeps its way in, for a start from inside a
+session, and no second form is built.
 
 Glossary: no new words; *page* is not a glossary term.
 
@@ -135,10 +144,11 @@ Glossary: no new words; *page* is not a glossary term.
 
 ## Questions for the decision
 
-1. ~~Is *Chat is the centre while a session shows* the principle you want?~~ Yes, with A; the
-   wording is agreed before the Issues page is built.
+1. ~~Is *Chat is the centre while a session shows* the principle you want?~~ Yes, with A, worded
+   in decision 2 of [the proposal](README.md#decisions-to-take-before-wave-1).
 2. ~~Does the Issues Workbench mode stay once the page exists?~~ Yes, in the role above.
-3. Where do project check commands live once Settings ▸ Workflows goes?
+3. ~~Where do project check commands live once Settings ▸ Workflows goes?~~ On the project page,
+   beside *Run check*.
 
 ## Done when
 

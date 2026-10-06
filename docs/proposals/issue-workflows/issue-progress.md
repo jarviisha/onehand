@@ -49,12 +49,18 @@ what it waits on before its description, however long that is:
 
 1. **Who it is**: the project, the issue's number, its title, and its state (*Open*, *Closed*)
    beside the title. The issue's state is drawn here and nowhere else.
-2. **Where the work stands**: the latest run's progress in one line, the next action's sentence,
+2. **Where the work stands**: the latest run of the issue's newest task (by when it last moved)
+   in one line, the next action's sentence,
    and the one primary action (below). Nothing when no run is recorded and the issue is open,
    except *Run workflow…* as the primary action.
 3. **What it asks for**: the body, its acceptance included.
 4. **What the work left**: the branch, the check, the files changed, the pull request.
 5. **Before**: earlier runs and earlier tasks.
+
+An issue can hold several tasks: a pick on an issue whose last task ended, even under *Needs
+attention*, makes a new task beside it (`taking_blocking` refuses only a working one). The newest
+task is the issue's work; an older one under *Needs attention* stays in region 5, in the warning
+ink, and the preflight says so before a new start (its *Earlier task* row).
 
 A run moving on changes what regions 2 and 4 say; it never reorders the regions, inserts one above
 the body that was not there, or scrolls the view. Region 2 keeps its height while a task is working
@@ -72,7 +78,7 @@ Approving starts Implement: the agent edits the code.
 Description
   Problem, scope, acceptance…
 ─
-Results                                                   read 2m ago  [Refresh]
+What the work left                                        read 2m ago  [Refresh]
   Branch   onehand/local-42-fix-reconnect   3 commits past main
   Check    passed on 4f2c1e0
   This run changed  5 files  +120 −14                            [Show in task]
@@ -138,7 +144,7 @@ tab cannot each pick their own.
 | Ended, resumable (agent stopped, session gone, cut off) | it can go on where it was | *Resume* | *Retry…* |
 | Ended, exhausted or timed out | the step and what its last visit ended on | *Retry…* (piece 4 says from where) | *Show task* |
 | Ended, failed | the failure's text | *Retry…*; for a configuration failure (part B), *Retry with current settings*, since a plain retry keeps the run's setup | *Show task* |
-| Done, pull request open | review it on the forge | *Open pull request* | *Answer the review* (piece 4) |
+| Done, pull request open | review it on the forge | *Open pull request* | *Answer the pull request review* (piece 4) |
 | Done, pull request merged | none; the issue's own state says whether anything is left | none | *Run workflow…* |
 | Done, pull request closed unmerged | the pull request was closed unmerged; **reopen the pull request** (not the issue) and put the label back to have it answered, as `launch::taking_blocking` says | *Open pull request* | *Show task* |
 | Done, a forge serves the project, the workflow has no pull request step | the branch is the result. Not *could not be read*: no pull request is the expected end | *Open branch* | *Show task* |
@@ -185,7 +191,7 @@ later request's answer wins even when the earlier one lands last.
 
 | Field | On | Written by | Read before it existed |
 |---|---|---|---|
-| Failure kind (configuration, forge, other) | the run, as `failure`, **beside** `Outcome::Failed(String)`, which keeps its shape | where the failure is made: the mode refusal, the missing check command, the forge steps | absent → *other* |
+| Failure kind (configuration, forge, other) | the run, as `failure`, **beside** `Outcome::Failed(String)`, which keeps its shape | where the failure is made, by one rule: **a configuration failure is a preflight block found late** (the agent no longer configured, a mode not offered, an empty check command, a workflow that no longer validates); a forge step or `gh` failing is *forge*; anything else *other*. A test maps every block row of the preflight to *configuration* | absent → *other* |
 | Pull request (number, url) | the run | the engine on `forge_done` from *Pull request* | absent; part A's lookup by branch still answers |
 | Command result (passed or failed, exit, the tail of its output, the commit it ran on) | the command step's visit | the engine on `command_finished` | absent; *not recorded for this run* |
 
@@ -216,15 +222,15 @@ reads again unchanged; a file with the new fields round-trips; the failure kind 
 - Approving still happens on the run (piece 4 moves the buttons, not the rule).
 - The Tasks page stays where every task in the workspace is seen; this is one issue's view.
 - No field is added to `LocalIssue` or the issue's file.
-- A forge's issue still gets no section until decision 2 of [the proposal](README.md) is taken.
+- A forge's issue still gets no section (decision 3 of [the proposal](README.md): kept issues only).
 
 ## Open questions
 
-1. Does the rail's `auto · #N` pill open the issue, now that the issue says more than the task row?
-   Once the Issues page exists, yes, on the page ([pages.md](pages.md#coming-back)); before it,
-   open.
-2. Is focus-regained refresh worth its `gh` call per focus? Recommended: yes, behind the
-   one-minute age, and only for the issue on screen.
+1. ~~Does the rail's `auto · #N` pill open the issue?~~ Once the Issues page exists, yes, on the
+   page ([pages.md](pages.md#coming-back)). Before it, the pill and the tab's *Review…* open the
+   run's session, whose step strip holds the approval; the page's PR moves both.
+2. ~~Is focus-regained refresh worth its `gh` call per focus?~~ Yes, behind the one-minute age,
+   and only for the issue on screen.
 
 ## Done when
 
