@@ -63,7 +63,7 @@ pub fn shipped() -> Vec<IssueTemplate> {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Lacking {
     /// The matched template's headings the body lacks, as the template writes them.
-    pub missing: Vec<String>,
+    missing: Vec<String>,
 }
 
 impl Lacking {

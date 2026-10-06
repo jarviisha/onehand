@@ -299,12 +299,7 @@ pub fn preflight(kind: Kind, facts: &Facts) -> Vec<Finding> {
     // The issue and its earlier tasks.
     if let Some(issue) = facts.issue.as_ref().filter(|_| issue_kind) {
         if issue.tasks.iter().any(|(_, working)| working.is_some()) {
-            say(
-                Check::Issue,
-                true,
-                format!("A run is already working on issue {}.", issue.named),
-                None,
-            );
+            say(Check::Issue, true, already_working(&issue.named), None);
         } else if let Some((task, said)) = earlier_ended(&issue.tasks) {
             found.push(Finding {
                 check: Check::EarlierTask,
@@ -359,6 +354,11 @@ pub fn unfit_for_issue(template: &Template) -> Option<String> {
             template.name
         )
     })
+}
+
+/// Why the issue `named` is not started again: a run already works on it.
+pub fn already_working(named: &str) -> String {
+    format!("A run is already working on issue {named}.")
 }
 
 /// Why an agent offering `offered` cannot start in `mode`, if it cannot.

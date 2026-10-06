@@ -266,10 +266,8 @@ impl Judging {
             || Err(format!("there is no workflow `{id}`")),
             |(_, t)| t.clone(),
         );
-        Facts {
-            workflow,
+        let project = super::facts::ProjectFacts {
             has_check,
-            in_git: checked_out.is_some(),
             checked_out,
             // The look before the search asked the account; a project whose
             // account failed is not searched.
@@ -277,9 +275,15 @@ impl Judging {
                 name: forge.name().to_string(),
                 account: None,
             }),
-            issue: Some(super::facts::on_issue(tracker, issue, self.tasks.clone())),
-            ..self.common.clone()
-        }
+        };
+        super::facts::new_issue_run(
+            self.common.clone(),
+            workflow,
+            tracker,
+            issue,
+            project,
+            self.tasks.clone(),
+        )
     }
 }
 
@@ -356,7 +360,7 @@ impl Skip {
     /// What a person who picked the issue `named` is told.
     fn said(&self, named: &str) -> String {
         match self {
-            Self::Busy => format!("A run is already working on issue {named}."),
+            Self::Busy => preflight::already_working(named),
             Self::Unread(why) => format!("Could not start on issue {named}: {why}"),
         }
     }

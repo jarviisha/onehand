@@ -50,34 +50,54 @@ pub(crate) fn issue_run(
     forge: Option<&'static dyn Connector>,
     cx: &App,
 ) -> Facts {
-    Facts {
-        workflow: template(id, cx),
+    let project = ProjectFacts {
         has_check,
-        in_git: checked_out.is_some(),
         checked_out,
         forge: forge.map(|forge| Forge {
             name: forge.name().to_string(),
             account: account(forge, cx),
         }),
-        // Only this issue's tasks are copied: this is asked on every frame
-        // the form is drawn.
-        issue: Some(on_issue(
-            tracker,
-            issue,
-            crate::task::issue_tasks(cx, |of| {
-                of.tracker == tracker.to_ref() && of.number == issue.number
-            }),
-        )),
-        ..common(cx)
+    };
+    // Only this issue's tasks are copied: this is asked on every frame the
+    // form is drawn.
+    let tasks = crate::task::issue_tasks(cx, |of| {
+        of.tracker == tracker.to_ref() && of.number == issue.number
+    });
+    new_issue_run(common(cx), template(id, cx), tracker, issue, project, tasks)
+}
+
+/// What a new issue run knows of the project it works in.
+pub(crate) struct ProjectFacts {
+    pub(crate) has_check: bool,
+    /// The branch checked out, `None` outside git.
+    pub(crate) checked_out: Option<String>,
+    pub(crate) forge: Option<Forge>,
+}
+
+/// A new issue run of `workflow` on `issue` in `tracker`, in `project`, over
+/// what every run shares, with those of `tasks` that worked the issue: the
+/// one assembly a window and the search both use.
+pub(crate) fn new_issue_run(
+    common: Facts,
+    workflow: Result<Template, String>,
+    tracker: &Tracker,
+    issue: &Issue,
+    project: ProjectFacts,
+    tasks: Vec<(Task, Option<Working>)>,
+) -> Facts {
+    Facts {
+        workflow,
+        has_check: project.has_check,
+        in_git: project.checked_out.is_some(),
+        checked_out: project.checked_out,
+        forge: project.forge,
+        issue: Some(on_issue(tracker, issue, tasks)),
+        ..common
     }
 }
 
 /// `issue` in `tracker`, named, with those of `tasks` that worked it.
-pub(crate) fn on_issue(
-    tracker: &Tracker,
-    issue: &Issue,
-    tasks: Vec<(Task, Option<Working>)>,
-) -> IssueFacts {
+fn on_issue(tracker: &Tracker, issue: &Issue, tasks: Vec<(Task, Option<Working>)>) -> IssueFacts {
     let at: TrackerRef = tracker.to_ref();
     IssueFacts {
         named: tracker.named(issue),
