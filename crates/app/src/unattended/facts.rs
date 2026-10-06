@@ -41,7 +41,6 @@ pub(crate) fn common(cx: &App) -> Facts {
 /// A new issue run of workflow `id` on `issue`, living in `tracker`, in the
 /// project whose check command exists or not as `has_check` says, on
 /// `checked_out` (`None` outside git), its work going to `forge`.
-#[allow(clippy::too_many_arguments)]
 pub(crate) fn issue_run(
     id: &str,
     tracker: &Tracker,

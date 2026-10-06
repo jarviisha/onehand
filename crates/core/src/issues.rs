@@ -20,6 +20,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
 pub mod sync;
+pub mod template;
 
 /// Every issue a project has, and the number the next one takes.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]

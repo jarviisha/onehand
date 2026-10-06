@@ -11,6 +11,7 @@ use gpui_component::button::ButtonVariants;
 use gpui_component::dialog::Dialog;
 use gpui_component::input::{Textarea, TextareaState};
 use gpui_component::{ActiveTheme, Disableable, Icon, IconName, Sizable as _, StyledExt};
+use onehand_core::issues::template;
 use onehand_core::preflight::{Check, Finding};
 use onehand_core::unattended::{self as core, IssueRow, Tracker};
 use onehand_core::workflow::Template;
@@ -190,10 +191,15 @@ fn start_form(
         .enumerate()
         .map(|(at, finding)| super::finding_line(at, finding, danger, muted, handle))
         .collect();
+    // What the issue's text leaves out of the template it was written from:
+    // said, never in the way.
+    let lacks = template::lacking(row.issue.body_text(), &template::shipped())
+        .map(|lacks| div().text_xs().text_color(muted).child(lacks.said()));
     let column = div()
         .v_flex()
         .gap_2()
         .w_full()
+        .children(lacks)
         .child(label("Workflow"))
         .child(div().h_flex().child(menu))
         .children(about)

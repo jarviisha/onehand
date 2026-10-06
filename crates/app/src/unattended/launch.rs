@@ -3,6 +3,7 @@ use super::{Project, Served, label, with};
 use crate::state::Shared;
 use gpui::App;
 use onehand_core::connector::{Connector, PrState};
+use onehand_core::issues::template;
 use onehand_core::preflight::{self, Check, Facts, Forge, Kind};
 use onehand_core::task::Working;
 use onehand_core::task::{Source, Task};
@@ -194,11 +195,16 @@ pub(super) fn begin_blocking(
                                     }
                                     None => {}
                                 }
+                                // Nobody is there to read these before the
+                                // run: its first report says them instead.
+                                let lacks =
+                                    template::lacking(row.issue.body_text(), &template::shipped());
                                 notes = facts
                                     .issue
                                     .as_ref()
                                     .and_then(|issue| preflight::earlier_note(&issue.tasks))
                                     .into_iter()
+                                    .chain(lacks.map(|lacks| lacks.note()))
                                     .collect();
                                 return Some((
                                     project.root.clone(),
@@ -230,17 +236,8 @@ pub(super) fn begin_blocking(
     }
     let workflow = choosing.workflow_for(&row.labels, label).to_string();
     Some(
-        prepare_blocking(
-            repo,
-            tracker,
-            forge,
-            row.issue,
-            workflow,
-            taking,
-            None,
-            String::new(),
-        )
-        .map(|claimed| Claimed { notes, ..claimed }),
+        prepare_blocking(repo, tracker, forge, row.issue, workflow, taking, None)
+            .map(|claimed| Claimed { notes, ..claimed }),
     )
 }
 
@@ -438,7 +435,6 @@ fn prepare_blocking(
     workflow: String,
     taking: Taking,
     picked_in: Option<gpui::AnyWindowHandle>,
-    instructions: String,
 ) -> Result<Claimed, Unstarted> {
     let made = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         match taking {
@@ -491,7 +487,7 @@ fn prepare_blocking(
             workflow,
             work,
             picked_in,
-            instructions,
+            instructions: String::new(),
             notes: Vec::new(),
         }),
         Err(why) => Err(Unstarted {

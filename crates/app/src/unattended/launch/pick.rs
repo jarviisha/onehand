@@ -90,6 +90,7 @@ pub fn pickable_one_blocking(
 /// was picked from; after the claim, on the issue as well. `has_check` is
 /// whether the project has a check command, told by the window it was picked
 /// in, which is being updated and so cannot be asked.
+#[allow(clippy::too_many_arguments)]
 pub fn start_picked(
     repo: PathBuf,
     tracker: Tracker,
@@ -159,8 +160,11 @@ pub fn start_picked(
                             workflow,
                             taking,
                             Some(window),
+                        )
+                        .map(|claimed| super::Claimed {
                             instructions,
-                        ))
+                            ..claimed
+                        }))
                     }))
                     .unwrap_or_else(|_| {
                         Err("onehand panicked while claiming the issue".to_string())

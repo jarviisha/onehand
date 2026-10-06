@@ -56,6 +56,11 @@ impl Issue {
     pub fn title_text(&self) -> &str {
         &self.title
     }
+
+    /// What the issue says, word for word.
+    pub fn body_text(&self) -> &str {
+        &self.body
+    }
 }
 
 /// An issue kept here, as a run reads it.

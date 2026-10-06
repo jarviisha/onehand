@@ -45,8 +45,8 @@ keep yet (see *What is read and what is new* below).
 3. ~~**The Issues page** (piece 5, the Issues half): the issues lifted into one owner, then the page
    with the list, the filters on progress and piece 1 in full. From here the dock is the glance and
    the page the place to work.~~ Built.
-4. **Brief preview** (piece 2) and **preflight per kind of start** (piece 3), with *Run workflow…*
-   opening on the issue it was pressed on.
+4. ~~**Brief preview** (piece 2) and **preflight per kind of start** (piece 3), with *Run workflow…*
+   opening on the issue it was pressed on.~~ Built, except the parts steps 5 and 6 take below.
 5. **Review in place** (piece 4) on the page, with the approval guarded by the visit it was read
    from, and the persistence it needs (piece 1, part B). The dock offers *Review…*, which opens
    the page; the full review is never built in the dock first. It also takes **answering a pull
@@ -61,7 +61,7 @@ keep yet (see *What is read and what is new* below).
    - **The remaining informs rows** ([preflight.md](preflight.md#the-remaining-informs-rows-step-6)):
      a checkout shared with a person's own session, which needs a fact nothing tracks yet; *no
      forge serves the project*; and *Limits*, which the issue's start form already shows.
-   - **A project's own issue templates** ([issue-brief.md](issue-brief.md#templates-for-an-issue)):
+   - **A project's own issue templates** ([issue-brief.md](issue-brief.md#a-projects-own-templates-step-6)):
      no project uses them yet; the body reader step 4 builds takes any template, so this is
      reading the files.
 

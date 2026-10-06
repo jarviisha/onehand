@@ -118,6 +118,12 @@ _Avoid_: retry, failure
 What a run is asked to do: a title, the details, and instructions asked of every step.
 _Avoid_: task, ticket, prompt
 
+**Acceptance** (in a brief):
+How a person will judge the work, written into the issue under its own heading; read by the agent,
+never checked by onehand as a gate. An issue written from a template that leaves it empty is told
+so, as advice.
+_Avoid_: definition of done, criteria on their own
+
 **Mark**:
 A point in the work a run measures from: where an agent step started (the commit and the
 fingerprint of the uncommitted work), and the commit a command last passed on. Each step visit's

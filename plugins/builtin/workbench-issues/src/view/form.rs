@@ -8,7 +8,7 @@ use gpui::{
 use gpui_component::button::ButtonVariants as _;
 use gpui_component::input::{Input, InputState, Textarea, TextareaState};
 use gpui_component::{ActiveTheme, Sizable as _, StyledExt};
-use onehand_core::issues::{self, Draft};
+use onehand_core::issues::{self, Draft, template};
 use onehand_plugin_host::action;
 
 /// The form a new issue or an edit is written in.
@@ -97,6 +97,33 @@ impl IssuesView {
         cx.notify();
     }
 
+    /// Fill the new issue's body from shipped template `at`, and add the
+    /// labels it carries to those typed. Only a body still empty, or still
+    /// another template's untouched, is filled: nothing typed is replaced.
+    fn apply_template(&mut self, at: usize, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(form) = self.state_mut().and_then(|state| state.form.as_ref()) else {
+            return;
+        };
+        let Some(template) = template::shipped().into_iter().nth(at) else {
+            return;
+        };
+        if !fillable(&form.body.read(cx).value()) {
+            return;
+        }
+        let mut labels = issues::parse_labels(&form.labels.read(cx).value());
+        for label in template.labels {
+            if !labels.contains(&label) {
+                labels.push(label);
+            }
+        }
+        form.body
+            .update(cx, |body, cx| body.set_value(template.body, window, cx));
+        form.labels.update(cx, |input, cx| {
+            input.set_value(labels.join(", "), window, cx)
+        });
+        cx.notify();
+    }
+
     pub(super) fn cancel_form(&mut self, cx: &mut Context<Self>) {
         if let Some(state) = self.state_mut() {
             state.form = None;
@@ -126,6 +153,38 @@ impl IssuesView {
             cx,
         );
     }
+}
+
+/// Whether a new issue's `body` may be filled from a template: it is empty, or
+/// a template's untouched.
+fn fillable(body: &str) -> bool {
+    body.trim().is_empty() || template::shipped().iter().any(|t| t.body == body)
+}
+
+/// The templates a new issue can be started from, while its body is still
+/// fillable; a template fills in the body only, and adds no field.
+fn templates_row(form: &Form, cx: &mut Context<IssuesView>) -> Option<AnyElement> {
+    if form.editing.is_some() || !fillable(&form.body.read(cx).value()) {
+        return None;
+    }
+    let muted = cx.theme().muted_foreground;
+    Some(
+        div()
+            .h_flex()
+            .gap_1()
+            .items_center()
+            .child(div().text_xs().text_color(muted).child("Template"))
+            .children(template::shipped().into_iter().enumerate().map(|(at, t)| {
+                action(("issue-form-template", at))
+                    .small()
+                    .ghost()
+                    .label(t.name)
+                    .on_click(cx.listener(move |view, _: &ClickEvent, window, cx| {
+                        view.apply_template(at, window, cx)
+                    }))
+            }))
+            .into_any_element(),
+    )
 }
 
 /// The form: title, labels, body, then Save and Cancel under what they act on.
@@ -163,6 +222,7 @@ pub(super) fn form_view(
         )
         .child(Input::new(&form.title))
         .child(Input::new(&form.labels))
+        .children(templates_row(form, cx))
         .child(
             div()
                 .flex_1()

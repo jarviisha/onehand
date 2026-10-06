@@ -563,6 +563,23 @@ brief filled in; onehand adds what it adds to every step — where the work is (
 branch of its own, *do not push or open a pull request*: onehand does that), to
 read the repository's own instructions, and the rule each gate checks.
 
+**An issue can be written to be worked.** The new-issue form offers three
+shipped templates while its body is empty (`issues::template::shipped`):
+*Bug*, *Feature* and *Refactor*, each the same four headings, *Problem*,
+*Scope*, *Acceptance* and *How to check*, with a hint comment under each; *Bug*
+also puts the `bug` label on, which is how a template can choose the workflow
+through a workflow label. A template fills the body in and nothing else: no
+field, no state, and an issue written without one is worked as it always was.
+A pure reader (`issues::template::lacking`) says which of a template's headings
+a body leaves empty or out, against the template it matches: one carrying at
+least half its headings, ATX headings of any level matched on their text with
+case and space ignored, fenced code skipped, and a section empty when nothing
+but HTML comments, whitespace and sub-headings is left in it. A body that
+matches no template gets no advice at all. The advice (*No acceptance
+written*) is muted, in the issue's facts line and the start form, and never
+stops a run; a search that starts such an issue says it in the run's first
+report instead, since nobody read the form.
+
 It deliberately does **not** restate the commit convention or the test
 commands. Those are in the repository's own instructions, which the agent reads
 anyway, and a second copy here is a copy that goes stale silently.
@@ -609,7 +626,10 @@ Failed(why)        → "The run failed: <why>"
 ```
 
 then the question of a card nobody answered, and, for any outcome but `Done`,
-what the last step ended on, quoted. A run that failed before it asked its agent
+what the last step ended on, quoted. The first report of a task the search
+started ends on what its preflight noted for nobody to read at the time
+(`PendingReport::notes`, handed over from `IssueSource::notes`): an earlier task
+left needing attention, and what the issue's text lacks of its template. A run that failed before it asked its agent
 anything (a mode the agent does not offer) is told only *"onehand could not start
 the run: <why>"*. A run cut off by a quit and then dismissed is told it was cut
 off and let go, and a queued task stopped before its run began is told it was
