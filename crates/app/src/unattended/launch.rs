@@ -9,7 +9,7 @@ use onehand_core::task::{Source, Task};
 use onehand_core::unattended::{self as core, Issue, IssueRow, IssueSource, Tracker, TrackerRef};
 use onehand_core::workflow::{self as flow, Place, Setup, Template};
 use onehand_core::worktree;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashSet};
 use std::path::Path;
 use std::path::PathBuf;
 
@@ -113,23 +113,29 @@ pub(super) struct Unstarted {
 /// A project whose search failed has the reason added to `checked`, so its
 /// row says why rather than showing it as workable.
 /// Within a project the issues it keeps itself are searched before its forge's:
-/// they are the ones written for onehand to work. The issue's other labels
-/// choose its workflow from `by_label`, `default` when none does.
+/// they are the ones written for onehand to work. Each issue's workflow is
+/// chosen as `choosing` says, and on a project with no check command an issue
+/// whose workflow runs one is passed over, its label left on, while the next
+/// may still be taken.
 pub(super) fn begin_blocking(
-    roots: &[(Project, Option<&'static dyn Connector>)],
+    roots: &[Workable],
     label: &str,
-    (default, by_label): (&str, &BTreeMap<String, String>),
+    choosing: &Choosing,
     earlier: &[Earlier],
     checked: &mut Vec<(PathBuf, Served)>,
 ) -> Option<Result<Claimed, Unstarted>> {
     // The oldest labelled issue no task is still working on: one being
     // worked is passed over, never claimed twice, and never in the way of
     // the next.
-    let (repo, tracker, forge, row, taking) = roots.iter().find_map(|(project, forge)| {
+    let (repo, tracker, forge, row, taking) = roots.iter().find_map(|w| {
+        let (project, forge) = (&w.project, &w.forge);
         for tracker in trackers_blocking(project.issues.clone(), *forge) {
             match core::candidates_blocking(&tracker, &project.root, label) {
                 Ok(found) => {
                     for row in found {
+                        if !w.has_check && choosing.needs_check(&row.labels, label) {
+                            continue;
+                        }
                         match taking_blocking(
                             earlier,
                             &tracker,
@@ -167,10 +173,40 @@ pub(super) fn begin_blocking(
         eprintln!("onehand: could not claim issue #{number}: {why}");
         return None;
     }
-    let workflow = core::workflow_for(&row.labels, by_label, default, label).to_string();
+    let workflow = choosing.workflow_for(&row.labels, label).to_string();
     Some(prepare_blocking(
         repo, tracker, forge, row.issue, workflow, taking, None,
     ))
+}
+
+/// A project a search may look in: the forge its work goes to, if any, and
+/// whether it has a check command.
+pub(super) struct Workable {
+    pub(super) project: Project,
+    pub(super) forge: Option<&'static dyn Connector>,
+    pub(super) has_check: bool,
+}
+
+/// How a search chooses each issue's workflow: the default, the workflow
+/// labels, and which of the workflows those name run the project's check
+/// command.
+pub(super) struct Choosing {
+    pub(super) default: String,
+    pub(super) by_label: BTreeMap<String, String>,
+    pub(super) need_check: HashSet<String>,
+}
+
+impl Choosing {
+    /// The id of the workflow an issue carrying `labels` is worked with, the
+    /// trigger label being `trigger`.
+    fn workflow_for(&self, labels: &[String], trigger: &str) -> &str {
+        core::workflow_for(labels, &self.by_label, &self.default, trigger)
+    }
+
+    /// Whether that workflow runs the project's check command.
+    fn needs_check(&self, labels: &[String], trigger: &str) -> bool {
+        self.need_check.contains(self.workflow_for(labels, trigger))
+    }
 }
 
 /// What claiming an issue comes to, given the tasks it had before.
@@ -390,6 +426,43 @@ pub fn pickable_blocking(root: &Path, issues: Option<PathBuf>) -> Result<Pickabl
     match (rows.is_empty(), unread, forge) {
         (true, Some(why), _) | (true, None, Err(why)) => Err(why),
         (_, unread, _) => Ok((rows, cut, unread)),
+    }
+}
+
+/// Issue `number` of the ones `root` keeps itself, in `issues`, to pick, or
+/// why it cannot be. Blocking.
+///
+/// Only the project's own issues are read, never its forge's: the Issues tab
+/// numbers the issues it keeps, and a forge's numbers are its own. So the list
+/// being cut is that list's, and an issue missing from it is said to be older
+/// than the newest it holds, or else one a run may not take.
+pub fn pickable_one_blocking(
+    root: &Path,
+    issues: Option<PathBuf>,
+    number: u64,
+) -> Result<Pickable, String> {
+    let forge = connector_for(root).ok();
+    let tracker = trackers_blocking(issues, forge)
+        .into_iter()
+        .find(|tracker| !matches!(tracker, Tracker::Forge(_)))
+        .ok_or("this workspace keeps no issues of its own")?;
+    let (found, cut) = core::open_issues_blocking(&tracker, root)?;
+    let rows: Vec<_> = found
+        .into_iter()
+        .filter(|row| row.issue.number == number)
+        .map(|row| (tracker.clone(), row))
+        .collect();
+    match (rows.is_empty(), cut) {
+        (false, _) => Ok((rows, false, None)),
+        (true, true) => Err(format!(
+            "issue {number} is not among the newest {} open issues a pick reads; close \
+             some of the newer ones to reach it",
+            core::ISSUES_SHOWN
+        )),
+        (true, false) => Err(format!(
+            "issue {number} cannot be worked by a run: it is closed, or it was brought in \
+             from a forge the project is no longer kept in step with"
+        )),
     }
 }
 

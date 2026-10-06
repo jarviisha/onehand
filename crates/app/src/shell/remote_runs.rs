@@ -229,12 +229,15 @@ impl Shell {
             let found = {
                 let path = path.clone();
                 cx.background_executor()
-                    .spawn(async move { crate::unattended::pickable_blocking(&path, issues) })
-                    .await
-                    .and_then(|found| match only {
-                        Some(number) => narrowed(found, number),
-                        None => Ok(found),
+                    .spawn(async move {
+                        match only {
+                            Some(number) => {
+                                crate::unattended::pickable_one_blocking(&path, issues, number)
+                            }
+                            None => crate::unattended::pickable_blocking(&path, issues),
+                        }
                     })
+                    .await
             };
             shell
                 .update(cx, |shell: &mut Self, cx| {
@@ -448,35 +451,4 @@ impl Shell {
         self.chat
             .update(cx, |pane, cx| pane.remote_answer(press, cx))
     }
-}
-
-/// `found` narrowed to issue `number` of the project's own, or why it cannot
-/// be picked: the Issues tab numbers only the issues it keeps, and one there
-/// that a run may not take (brought in from a forge and no longer kept in step
-/// with it) is not on the list at all.
-fn narrowed(
-    (rows, cut, _): crate::unattended::Pickable,
-    number: u64,
-) -> Result<crate::unattended::Pickable, String> {
-    use onehand_core::unattended::Tracker;
-    let rows: Vec<_> = rows
-        .into_iter()
-        .filter(|(tracker, row)| {
-            !matches!(tracker, Tracker::Forge(_)) && row.issue.number == number
-        })
-        .collect();
-    if rows.is_empty() && cut {
-        return Err(format!(
-            "issue {number} is not among the newest {} open issues a pick reads; close \
-             some of the newer ones to reach it",
-            onehand_core::unattended::ISSUES_SHOWN
-        ));
-    }
-    if rows.is_empty() {
-        return Err(format!(
-            "issue {number} cannot be worked by a run: it is closed, or it was brought in \
-             from a forge the project is no longer kept in step with"
-        ));
-    }
-    Ok((rows, false, None))
 }

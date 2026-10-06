@@ -636,12 +636,12 @@ impl Shell {
     /// since it was last told. Asked when the tasks move and when the git
     /// sweep lands, which is also when the projects have changed.
     pub(super) fn tell_issue_runs(&mut self, cx: &mut Context<Self>) {
-        let roots: Vec<_> = self
+        let kept: Vec<_> = self
             .window
             .workspace
             .roots
             .iter()
-            .map(|root| root.path.clone())
+            .filter_map(|root| Some((root.path.clone(), self.issues_file(&root.path)?)))
             .collect();
         // The rule the project menu offers *Work an issue…* by: a repository,
         // not a run's own worktree, with unattended runs set up.
@@ -654,7 +654,7 @@ impl Shell {
             .filter(|root| set_up && !root.transient && self.window.git.contains_key(&root.path))
             .map(|root| root.path.clone())
             .collect();
-        let told = (crate::task::issue_runs(&roots, cx), offered);
+        let told = (crate::task::issue_runs(&kept, cx), offered);
         if told != self.issue_runs {
             self.workbench
                 .update(cx, |panel, cx| panel.issue_runs(&told.0, &told.1, cx));

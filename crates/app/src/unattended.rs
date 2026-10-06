@@ -23,7 +23,7 @@ use std::time::Duration;
 
 mod launch;
 mod report;
-pub use launch::{Pickable, look_now, pickable_blocking, start_picked};
+pub use launch::{Pickable, look_now, pickable_blocking, pickable_one_blocking, start_picked};
 use launch::{begin_blocking, landed};
 pub(crate) use report::{
     card_question, deliver, deliver_all, ended, keep, opening, refuse_mode, spec_for, started,
@@ -172,20 +172,32 @@ fn cannot_start(u: &Unattended, cx: &App) -> Option<String> {
         })
 }
 
-/// Why the project at `root` cannot be worked by the default workflow, when
-/// that workflow runs the project's check command and the project has none.
-/// Asked before a claim, so no issue is claimed for a run that cannot start.
-// ponytail: a workflow label's workflow is checked for this only once its
-// issue is claimed (`launch::start` tells the issue); look per issue before
-// the claim if that is seen to happen.
-fn lacks_check(root: &Path, cx: &App) -> Option<String> {
-    let has = Shared::global(cx)
+/// Whether the project at `root` has a check command, in whichever window
+/// holds it.
+fn has_check(root: &Path, cx: &App) -> bool {
+    Shared::global(cx)
         .windows
         .iter()
         .filter_map(|w| w.shell.upgrade())
-        .any(|shell| shell.read(cx).check_of(root).is_some());
-    let id = Shared::global(cx).unattended.as_ref()?.workflow.clone();
-    lacks_check_given(has, &id, cx)
+        .any(|shell| shell.read(cx).check_of(root).is_some())
+}
+
+/// How the search chooses each issue's workflow, with the ids among them
+/// that run the project's check command, which a project with none passes
+/// over before any claim.
+fn choosing(u: &Unattended, cx: &App) -> launch::Choosing {
+    let need_check = std::iter::once(&u.workflow)
+        .chain(u.workflows.values())
+        .filter(|id| {
+            launch::workflow(id, &u.timeout, cx).is_ok_and(|template| template.needs_check())
+        })
+        .cloned()
+        .collect();
+    launch::Choosing {
+        default: u.workflow.clone(),
+        by_label: u.workflows.clone(),
+        need_check,
+    }
 }
 
 /// Why a project that `has` a check command or not cannot be worked by the
@@ -553,19 +565,38 @@ fn tick(asked_from: Option<gpui::AnyWindowHandle>, cx: &mut App) {
         .unattended
         .as_ref()
         .and_then(|u| at_cap(u, cx).or_else(|| cannot_start(u, cx)));
-    let lacking: Vec<(PathBuf, String)> = roots
+    // A project with no check command is still searched, for the issues
+    // whose workflow runs none; its row says what the default workflow lacks.
+    let checks: Vec<(PathBuf, bool)> = roots
         .iter()
-        .filter_map(|p| Some((p.root.clone(), lacks_check(&p.root, cx)?)))
+        .map(|p| (p.root.clone(), has_check(&p.root, cx)))
         .collect();
+    let lacking: Vec<(PathBuf, String)> = Shared::global(cx)
+        .unattended
+        .as_ref()
+        .map(|u| {
+            checks
+                .iter()
+                .filter_map(|(root, has)| {
+                    Some((root.clone(), lacks_check_given(*has, &u.workflow, cx)?))
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+    let chosen = Shared::global(cx)
+        .unattended
+        .as_ref()
+        .map(|u| choosing(u, cx));
     let earlier = launch::earlier(cx);
     let search = with(cx, |u| {
         let idle = !u.claiming && u.blocked.is_none() && stopped.is_none();
         idle.then(|| {
             u.claiming = true;
-            (u.label.clone(), u.workflow.clone(), u.workflows.clone())
+            u.label.clone()
         })
     })
-    .flatten();
+    .flatten()
+    .zip(chosen);
     cx.spawn(async move |cx| {
         let searching = search.is_some();
         // A panic in there would otherwise leave `claiming` set for the life of
@@ -578,30 +609,28 @@ fn tick(asked_from: Option<gpui::AnyWindowHandle>, cx: &mut App) {
                     let (accounts, mut checked) = look_blocking(roots.clone());
                     // Only the projects that passed the look are searched, each
                     // with the forge the look found for it, if any.
-                    let workable: Vec<(Project, Option<&'static dyn Connector>)> = roots
+                    let workable: Vec<launch::Workable> = roots
                         .into_iter()
                         .filter_map(|project| {
-                            if let Some((root, why)) =
-                                lacking.iter().find(|(root, _)| *root == project.root)
-                            {
-                                checked.push((root.clone(), Err(why.clone())));
-                                return None;
-                            }
                             let (_, served) =
                                 checked.iter().find(|(root, _)| *root == project.root)?;
                             let forge = *served.as_ref().ok()?;
-                            Some((project, forge))
+                            let has_check = checks
+                                .iter()
+                                .any(|(root, has)| *root == project.root && *has);
+                            Some(launch::Workable {
+                                project,
+                                forge,
+                                has_check,
+                            })
                         })
                         .collect();
-                    let begun = search.and_then(|(label, default, by_label)| {
-                        begin_blocking(
-                            &workable,
-                            &label,
-                            (&default, &by_label),
-                            &earlier,
-                            &mut checked,
-                        )
+                    let begun = search.and_then(|(label, choosing)| {
+                        begin_blocking(&workable, &label, &choosing, &earlier, &mut checked)
                     });
+                    // Said after the look, which would otherwise say the
+                    // project is fine.
+                    checked.extend(lacking.into_iter().map(|(root, why)| (root, Err(why))));
                     (Some(accounts), checked, begun)
                 }))
                 .unwrap_or_else(|_| {

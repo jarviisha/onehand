@@ -255,9 +255,12 @@ its workflow and its step or how it ended, a waiting one in the warning ink,
 and *Show task*, which opens the task's detail. Only issues a project keeps
 show them: a forge's issue numbers are its own.
 
-A workflow label's workflow that runs the project's check command is checked
-against a project with none only after the claim, and the issue is told why
-the run could not start; the default workflow is checked before.
+**A project with no check command is still searched**, issue by issue: one
+whose workflow (the default or its workflow label's) runs the check command is
+passed over before any claim, its label left on, and the next may be taken.
+The project's row says what the default workflow lacks. A pick of such a
+workflow there is refused before the claim, said as this project's problem
+rather than as something stopping every run.
 
 **`at_once` runs work at a time**, picked and found alike, counted across every
 window (`task::issues_working`: issue tasks running or queued). A run waiting on

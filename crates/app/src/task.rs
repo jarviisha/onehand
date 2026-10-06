@@ -759,22 +759,31 @@ pub(crate) fn rows(roots: &[PathBuf], cx: &App) -> Vec<Row> {
     rows.into_iter().map(|(_, row)| row).collect()
 }
 
-/// Every task of the projects at `roots` that works an issue those projects
-/// keep themselves, in the Tasks page's order.
+/// Every task that works an issue kept in one of `kept`'s files, each
+/// beside its project's root, in the Tasks page's order.
 ///
-/// **An issue on the forge is left out**: its number is the forge's, and the
-/// issues a project keeps are numbered apart, so one would be shown on the
-/// wrong issue.
-pub(crate) fn issue_runs(roots: &[PathBuf], cx: &App) -> Vec<onehand_plugin_host::IssueRun> {
+/// **Matched by the file, not only the project and the number.** A forge's
+/// issue numbers are its own, and two workspaces holding one repository keep
+/// their issues apart, each numbered from one: either way the number alone
+/// would show a run on somebody else's issue.
+pub(crate) fn issue_runs(
+    kept: &[(PathBuf, PathBuf)],
+    cx: &App,
+) -> Vec<onehand_plugin_host::IssueRun> {
     let Some(t) = cx.try_global::<Tasks>() else {
         return Vec::new();
     };
-    rows(roots, cx)
+    let roots: Vec<PathBuf> = kept.iter().map(|(root, _)| root.clone()).collect();
+    rows(&roots, cx)
         .into_iter()
         .filter_map(|row| {
             let task = t.task(&row.id)?;
             let issue = task.issue()?;
-            if matches!(issue.tracker, TrackerRef::Forge { .. }) {
+            let file = match &issue.tracker {
+                TrackerRef::Local { file } | TrackerRef::Synced { file, .. } => file,
+                TrackerRef::Forge { .. } => return None,
+            };
+            if !kept.contains(&(row.project.clone(), file.clone())) {
                 return None;
             }
             Some(onehand_plugin_host::IssueRun {
