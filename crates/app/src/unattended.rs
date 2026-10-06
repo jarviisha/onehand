@@ -505,6 +505,9 @@ pub(crate) use facts::issue_run as issue_facts;
 /// last run's own setup.
 pub(crate) use facts::of_task as task_facts;
 
+/// A forge as a preflight reads it, its account as last seen.
+pub(crate) use facts::forge as forge_facts;
+
 /// The agent an issue's run starts, by name: the one set for runs, else the
 /// first configured.
 pub(crate) fn run_agent(cx: &App) -> Option<String> {

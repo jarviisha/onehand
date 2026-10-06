@@ -107,10 +107,17 @@ impl IssuesView {
         let Some(template) = template::shipped().into_iter().nth(at) else {
             return;
         };
-        if !fillable(&form.body.read(cx).value()) {
+        let body = form.body.read(cx).value().to_string();
+        if !fillable(&body) {
             return;
         }
         let mut labels = issues::parse_labels(&form.labels.read(cx).value());
+        // The template being replaced takes its own labels with it: a body
+        // switched from Bug to Feature is no bug.
+        if let Some(before) = template::shipped().into_iter().find(|t| t.body == body) {
+            labels
+                .retain(|label| !before.labels.contains(label) || template.labels.contains(label));
+        }
         for label in template.labels {
             if !labels.contains(&label) {
                 labels.push(label);

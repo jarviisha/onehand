@@ -236,8 +236,12 @@ looked at.
 [workflows.md](workflows.md#starting-queueing-and-resuming)). The start form
 lists what it found under *Before it starts*, blocks in the danger ink, and
 *Run* is spent while one remains, saying so beside it. The search runs the same
-function on each issue it would take: a block is said on the project's row,
-nothing is claimed, and the issue keeps its label for when it is fixed. A
+function on each issue it would take, and nothing is claimed while a block
+remains. What blocks one issue alone (another run on it, its workflow, a check
+command its workflow needs) passes that issue over, its label left on, and the
+next may still be taken; anything else would block every issue there, so it is
+said on the project's row, and a search somebody asked for says it in the
+window rather than that nothing was found. A
 search that starts an issue whose last task needs attention says so in the new
 task's first report, and that its worktree is kept: nobody was there to read it
 before.
@@ -568,7 +572,8 @@ shipped templates while its body is empty (`issues::template::shipped`):
 *Bug*, *Feature* and *Refactor*, each the same four headings, *Problem*,
 *Scope*, *Acceptance* and *How to check*, with a hint comment under each; *Bug*
 also puts the `bug` label on, which is how a template can choose the workflow
-through a workflow label. A template fills the body in and nothing else: no
+through a workflow label; switching to another template takes the first one's
+labels off again. A template fills the body in and nothing else: no
 field, no state, and an issue written without one is worked as it always was.
 A pure reader (`issues::template::lacking`) says which of a template's headings
 a body leaves empty or out, against the template it matches: one carrying at
@@ -627,7 +632,7 @@ Failed(why)        → "The run failed: <why>"
 
 then the question of a card nobody answered, and, for any outcome but `Done`,
 what the last step ended on, quoted. A task's first report ends on what its
-start noted (`PendingReport::notes`, handed over from `IssueSource::notes`):
+start noted, a report that only says the run could not start included (`PendingReport::notes`, handed over from `IssueSource::notes`):
 what the issue's text lacks of its template, and, for a task the search
 started, an earlier task left needing attention, since nobody read the form. A run that failed before it asked its agent
 anything (a mode the agent does not offer) is told only *"onehand could not start

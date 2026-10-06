@@ -186,9 +186,21 @@ pub(super) fn begin_blocking(
                                 );
                                 let found = preflight::preflight(Kind::NewIssueRun, &facts);
                                 match found.iter().find(|f| f.blocks) {
-                                    // Another run on it is passed over, as
-                                    // above.
-                                    Some(f) if f.check == Check::Issue => continue,
+                                    // What blocks this issue alone (another
+                                    // run on it, its workflow, a check
+                                    // command its workflow needs) passes it
+                                    // over, its label left on, as above; the
+                                    // next may still be taken.
+                                    Some(f)
+                                        if matches!(
+                                            f.check,
+                                            Check::Issue | Check::Workflow | Check::CheckCommand
+                                        ) =>
+                                    {
+                                        continue;
+                                    }
+                                    // Anything else would block every issue
+                                    // here: said on the project's row.
                                     Some(f) => {
                                         checked.push((project.root.clone(), Err(f.text.clone())));
                                         return None;

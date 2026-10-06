@@ -38,6 +38,13 @@ pub struct WorkflowLauncher {
     pub busy: bool,
     /// The preview of what the run starts with is open.
     pub preview: bool,
+    /// Whether the project is in git and the forge serving it, `None` while
+    /// they are being found out; the cached git status cannot say, since it
+    /// is empty until its first read lands.
+    pub ground: Option<(
+        bool,
+        Option<&'static dyn onehand_core::connector::Connector>,
+    )>,
 }
 
 impl Shell {
@@ -76,8 +83,37 @@ impl Shell {
             error: None,
             busy: false,
             preview: false,
+            ground: None,
         });
         cx.notify();
+        let root = self.workflow_launcher.as_ref().map(|l| l.root.clone());
+        cx.spawn(async move |shell, cx| {
+            let Some(root) = root else {
+                return;
+            };
+            let ground = cx
+                .background_executor()
+                .spawn({
+                    let root = root.clone();
+                    async move {
+                        let in_git = worktree::repo_top_blocking(&root).is_some();
+                        (in_git, crate::unattended::connector_for(&root).ok())
+                    }
+                })
+                .await;
+            shell
+                .update(cx, |shell: &mut Self, cx| {
+                    // Only the launcher this read was for.
+                    if let Some(launcher) =
+                        shell.workflow_launcher.as_mut().filter(|l| l.root == root)
+                    {
+                        launcher.ground = Some(ground);
+                        cx.notify();
+                    }
+                })
+                .ok();
+        })
+        .detach();
     }
 
     pub fn pick_workflow_template(&mut self, template: usize, cx: &mut Context<Self>) {
@@ -118,6 +154,8 @@ impl Shell {
         };
         let shared = Shared::global(cx);
         let git = self.window.git.get(&launcher.root);
+        // Not known yet blocks nothing: the cut says so itself if it fails.
+        let (in_git, forge) = launcher.ground.unwrap_or((true, None));
         let facts = preflight::Facts {
             workflow,
             agent: shared.agents.first().map(|spec| spec.name.clone()),
@@ -125,9 +163,9 @@ impl Shell {
             mode: None,
             offered: None,
             has_check: self.check_of(&launcher.root).is_some(),
-            in_git: git.is_some(),
+            in_git,
             checked_out: git.map(|git| git.branch.clone()),
-            forge: None,
+            forge: forge.map(|forge| crate::unattended::forge_facts(forge, cx)),
             issue: None,
             slots: None,
             queued_behind: None,

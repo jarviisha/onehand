@@ -76,8 +76,17 @@ pub enum Verdict {
 /// A lookup that *failed* is said as a failure and never as "nothing": that is
 /// a claim, and one nobody checked. A run that failed before it asked its
 /// agent anything says only that it could not start: it left nothing to look
-/// for.
+/// for. What the start noted is said last either way.
 pub fn report(pending: &PendingReport, found: &Result<Verdict, String>, branch: &str) -> String {
+    let mut said = said_of(pending, found, branch);
+    for note in &pending.notes {
+        said += &format!("\n\n{note}");
+    }
+    said
+}
+
+/// [`report`] before what the start noted.
+fn said_of(pending: &PendingReport, found: &Result<Verdict, String>, branch: &str) -> String {
     if let (Some(Outcome::Failed(why)), false) = (&pending.outcome, pending.started) {
         return could_not_start(why);
     }
@@ -110,9 +119,6 @@ pub fn report(pending: &PendingReport, found: &Result<Verdict, String>, branch: 
         .filter(|tail| !tail.is_empty() && !done)
     {
         said += &format!("\n\nIts last step ended on:\n\n{}", quoted(tail));
-    }
-    for note in &pending.notes {
-        said += &format!("\n\n{note}");
     }
     said
 }

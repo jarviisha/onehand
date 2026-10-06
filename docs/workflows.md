@@ -295,8 +295,10 @@ render: `gh`'s sign-in is the state last seen, the forge serving a project is fo
 opens. What it checks, for a new issue run:
 
 A new run from the launcher is judged the same way (kind *new run*): its workflow, the agent,
-the project's check command, a worktree workflow on a folder outside git (blocked), and that its
-branch is cut off `HEAD`. The launcher lists what it found under its fields, and *Run* is spent
+the project's check command, a worktree workflow on a folder outside git (blocked), the forge's
+account when the workflow has forge steps (blocked when `gh` is missing or signed out, as last
+seen), and that its branch is cut off `HEAD`. Whether the folder is in git and which forge serves
+it are read off the UI loop when the launcher opens; until they land, neither blocks. The launcher lists what it found under its fields, and *Run* is spent
 while a block remains. A Resume and a Retry are judged by the run's own setup
 ([tasks.md](tasks.md#retry-and-resume)).
 

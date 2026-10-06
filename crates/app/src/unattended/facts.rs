@@ -53,10 +53,7 @@ pub(crate) fn issue_run(
     let project = ProjectFacts {
         has_check,
         checked_out,
-        forge: forge.map(|forge| Forge {
-            name: forge.name().to_string(),
-            account: account(forge, cx),
-        }),
+        forge: forge.map(|f| self::forge(f, cx)),
     };
     // Only this issue's tasks are copied: this is asked on every frame the
     // form is drawn.
@@ -130,6 +127,14 @@ pub(crate) fn template(id: &str, cx: &App) -> Result<Template, String> {
         .map(|u| u.timeout.clone())
         .ok_or("unattended runs are not set up")?;
     launch::found(id, &timeout, cx)
+}
+
+/// `forge` as a preflight reads it: its name, and its account as last seen.
+pub(crate) fn forge(forge: &'static dyn Connector, cx: &App) -> Forge {
+    Forge {
+        name: forge.name().to_string(),
+        account: account(forge, cx),
+    }
 }
 
 /// What `forge`'s account said when last asked: `None` before it answered.

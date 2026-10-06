@@ -692,3 +692,21 @@ fn what_the_start_noted_is_said_last() {
     let said = report(&noted, &Ok(Verdict::Commits(1)), "b");
     assert!(said.ends_with("Its worktree is kept."), "{said}");
 }
+
+#[test]
+fn what_the_start_noted_is_said_even_when_the_run_could_not_start() {
+    let refused = PendingReport {
+        started: false,
+        notes: vec!["The issue has no acceptance written.".into()],
+        ..ran(Outcome::Failed("the agent offers no mode `x`".into()))
+    };
+    let said = report(&refused, &Ok(Verdict::Commits(0)), "b");
+    assert!(
+        said.starts_with("onehand could not start the run"),
+        "{said}"
+    );
+    assert!(
+        said.ends_with("The issue has no acceptance written."),
+        "{said}"
+    );
+}
