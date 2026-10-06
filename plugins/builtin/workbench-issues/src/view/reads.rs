@@ -129,6 +129,14 @@ impl IssuesView {
         .detach();
     }
 
+    /// The work of the issue on screen, as the app last told it.
+    pub(super) fn shown_work(&self) -> Option<IssueWork> {
+        let root = self.root.as_deref()?;
+        let number = self.roots.get(root)?.selected?;
+        let key = self.key(root, number)?;
+        self.works.iter().find(|work| work.key == key).cloned()
+    }
+
     /// Read the pull request of the issue on screen again, asked by a person.
     pub(super) fn refresh(&mut self, cx: &mut Context<Self>) {
         let Some(root) = self.root.clone() else {

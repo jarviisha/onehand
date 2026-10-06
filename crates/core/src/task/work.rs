@@ -12,6 +12,9 @@ use crate::connector::{PrState, PullRequest};
 use crate::issues::IssueKey;
 use crate::workflow::{Outcome, Run, StepKind, Stop};
 
+pub mod left;
+pub mod list;
+
 /// What a task waiting on a person waits for, in the words every view of
 /// it uses: an approval, or an answer to a card.
 pub fn waiting_said(approval: bool) -> &'static str {
@@ -92,6 +95,16 @@ pub struct Work {
     pub forge: Option<String>,
     pull_request: PrStep,
     stand: Stand,
+    /// The steps after the one it is at, by label; empty once it is over.
+    pub rest: Vec<String>,
+    /// The commit a command last passed on, in this run.
+    pub(crate) verified_at: Option<String>,
+    /// The work as this run found it and as it last left it, as two marks;
+    /// `None` until both are pinned.
+    pub span: Option<(String, String)>,
+    /// The work as the task's first run found it, as a mark: what the branch
+    /// is measured from.
+    pub base: Option<String>,
 }
 
 impl Work {
@@ -122,7 +135,29 @@ impl Work {
             .and_then(|run| run.visits().last())
             .filter(|visit| visit.ended_at.is_none())
             .map(|visit| visit.started_at);
+        let rest = run
+            .filter(|run| !run.over())
+            .map(|run| {
+                run.template
+                    .steps
+                    .iter()
+                    .skip(run.step + 1)
+                    .map(|step| step.label.clone())
+                    .collect()
+            })
+            .unwrap_or_default();
+        let first = |run: &Run| run.visits().first().and_then(|visit| visit.start.clone());
+        let last = |run: &Run| {
+            run.visits()
+                .iter()
+                .rev()
+                .find_map(|visit| visit.end.clone().or_else(|| visit.start.clone()))
+        };
         Self {
+            rest,
+            verified_at: run.and_then(|run| run.marks.verified_at.clone()),
+            span: run.and_then(|run| first(run).zip(last(run))),
+            base: task.runs.first().and_then(first),
             task: task.id.clone(),
             run: run.map(|run| run.id.clone()),
             group: task.group(working),
@@ -571,7 +606,7 @@ pub fn pr_named(pr: &PullRequest) -> String {
 
 /// A pull request's state in a word or two: *open, draft*, *open*,
 /// *merged*, *closed unmerged*.
-fn pr_said(pr: &PullRequest) -> &'static str {
+pub(crate) fn pr_said(pr: &PullRequest) -> &'static str {
     match (pr.state, pr.draft) {
         (PrState::Open, true) => "open, draft",
         (PrState::Open, false) => "open",

@@ -189,6 +189,10 @@ pub enum Request<'a> {
     /// `root` with it, on a worktree of its own, as a task. Only ever travels
     /// **upward**.
     RunIssueWorkflow { root: &'a Path, number: u64 },
+    /// Put issue `number` of project `root` on the Issues page, where there
+    /// is room to work it, its filters left as they are. Only ever travels
+    /// **upward**.
+    OpenInIssues { root: &'a Path, number: u64 },
     /// Put task `id` on screen, in the Tasks page's detail. Only ever travels
     /// **upward**.
     OpenTask(&'a str),

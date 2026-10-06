@@ -484,6 +484,22 @@ pub fn open_across(files: Vec<(PathBuf, Issues)>, cap: usize) -> Across {
     across
 }
 
+/// Whether `issue` is found by the search `query`. A query starting with `#`
+/// is a forge reference and matches by its start, so `#1` finds `#12` while
+/// typing; anything else is looked for in the title, case aside.
+pub fn matches_query(issue: &LocalIssue, query: &str) -> bool {
+    let query = query.trim();
+    if query.is_empty() {
+        true
+    } else if query.starts_with('#') {
+        issue
+            .reference()
+            .is_some_and(|reference| reference.starts_with(query))
+    } else {
+        issue.title.to_lowercase().contains(&query.to_lowercase())
+    }
+}
+
 /// Where the issues of the project at `root` are kept, in the workspace whose
 /// storage directory is `storage`.
 ///

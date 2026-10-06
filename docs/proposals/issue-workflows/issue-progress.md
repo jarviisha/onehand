@@ -38,9 +38,10 @@ Part A is built and lives in its owning documents: the order and what each regio
 [unattended.md](../../unattended.md) (*An issue says where its work stands before what it says*),
 the next-action rule beside the group rule in [tasks.md](../../tasks.md), *Next action* in
 [CONTEXT.md](../../../CONTEXT.md), what it leaves out in [known-gaps.md](../../known-gaps.md), and
-its checks as rows of the by-hand list in [workflows.md](../../workflows.md). What remains here is
-part B, and what the Issues page (piece 5) adds to the short form: the step list after the current
-step, the check, the files changed and the commits past the base in region 4, and *Open in Issues*.
+its checks as rows of the by-hand list in [workflows.md](../../workflows.md). What the Issues page
+adds to the short form (the steps still to come, the check, the files changed and the commits past
+the base in region 4, and *Open in Issues*) is built too, and lives in the same documents. What
+remains here is part B.
 
 ## Part B: what runs start keeping
 
@@ -81,9 +82,9 @@ reads again unchanged; a file with the new fields round-trips; the failure kind 
 
 ## Open questions
 
-1. ~~Does the rail's `auto · #N` pill open the issue?~~ Once the Issues page exists, yes, on the
-   page ([pages.md](pages.md#coming-back)). Before it, the pill and the tab's *Review…* open the
-   run's session, whose step strip holds the approval; the page's PR moves both.
+1. ~~Does the rail's `auto · #N` pill open the issue?~~ Yes, on the Issues page, as built
+   ([unattended.md](../../unattended.md)). *Review…* keeps opening the run's session, whose step
+   strip holds the approval, until the page can judge an answer in place (piece 4).
 2. ~~Is focus-regained refresh worth its `gh` call per focus?~~ Yes, behind the one-minute age,
    and only for the issue on screen.
 

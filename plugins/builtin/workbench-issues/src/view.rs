@@ -26,14 +26,17 @@ use std::time::Duration;
 mod detail;
 mod file;
 mod form;
+mod full;
 mod list;
 mod mentions;
+mod page;
 mod reads;
+mod store;
 mod work;
 use detail::{Doing, issue_view};
-use file::keep_newer;
 use form::{Form, form_view};
 use list::Showing;
+use store::IssuesFile;
 
 /// How often a project kept in step with its forge is synced while it is the
 /// one this mode is on, if nothing else has synced it sooner.
@@ -84,18 +87,12 @@ pub(crate) struct IssuesView {
     /// nothing, which keeps no issues — said on screen rather than offering a
     /// form whose work would be thrown away.
     storage: Option<PathBuf>,
-    /// What each project has, as last read, and what is open in it.
+    /// Each project's issues file, and what is open in it.
     roots: HashMap<PathBuf, RootIssues>,
-    /// Whether the active project's file needs reading again before it is next
-    /// drawn. Read when drawn rather than when marked, so a workspace of a
-    /// dozen projects does not read a dozen files for a mode nobody opened.
-    stale: bool,
     split: Entity<gpui_component::ResizableState>,
     /// A read or a write that could not be done, as a standing line under the
     /// body. Cleared by the next one that works.
     status: Option<String>,
-    /// The read in flight, held so that starting another drops it.
-    _load: Option<Task<()>>,
     /// The connectors a project may be kept in step with, in the order one is
     /// offered them.
     connectors: &'static [&'static dyn Connector],
@@ -129,44 +126,24 @@ pub(crate) struct IssuesView {
     _activation: Option<Subscription>,
     /// The projects a run may be started on.
     offered: Vec<PathBuf>,
+    /// What the Issues page holds beside what the tab does: `None` for the
+    /// Workbench's Issues mode, which draws one project at the dock's width.
+    page: Option<page::PageState>,
 }
 
-/// One project's issues and what is open among them.
-#[derive(Default)]
+/// One project's issues file, shared with every other view of it, and what
+/// this view has open in it.
 struct RootIssues {
-    /// `None` until the first read lands.
-    issues: Option<Issues>,
+    file: Entity<IssuesFile>,
+    /// Draws this view again whenever the file moves.
+    _watch: Subscription,
     selected: Option<u64>,
+    /// A new issue or an edit being written: kept across a switch of project
+    /// or of page, and asked about before it is dropped.
     form: Option<Form>,
     /// The selected issue's body, parsed — so it is parsed again when the
     /// issue changes and never on a frame when it has not.
     body: Option<Body>,
-    /// The forge that serves this project, if one does — found when its
-    /// issues are read, since asking reads the project's git remote.
-    forge: Option<&'static dyn Connector>,
-    /// A sync is on its way; a second is not started beside it.
-    syncing: bool,
-    /// Something asked for a sync while one was running — an edit saved
-    /// meanwhile — so another runs as soon as it lands, rather than leaving
-    /// the edit for the timer.
-    again: bool,
-    /// When the last sync finished, in seconds since the epoch, and what it
-    /// came to: what moved, in one line, or what it could not do.
-    synced: Option<(u64, Result<String, String>)>,
-}
-
-impl RootIssues {
-    fn show(&mut self, number: u64) {
-        self.selected = Some(number);
-        self.form = None;
-    }
-
-    /// Take a read that has landed. Only the issues move: what is selected
-    /// stays, so an issue asked for before the read arrived is still the one
-    /// shown once it has.
-    fn land(&mut self, read: Issues) {
-        keep_newer(&mut self.issues, read);
-    }
 }
 
 /// An issue's body as drawn: parsed, and the project's files it names.
@@ -181,19 +158,21 @@ struct Body {
 }
 
 impl IssuesView {
+    /// The view the Workbench's Issues mode draws, or with `page` the one
+    /// the Issues page does, across every project of the workspace.
     pub(crate) fn new(
         connectors: &'static [&'static dyn Connector],
         ask: Ask,
+        page: bool,
         cx: &mut App,
     ) -> Entity<Self> {
         cx.new(|cx| Self {
+            page: page.then(page::PageState::default),
             root: None,
             storage: None,
             roots: HashMap::new(),
-            stale: false,
             split: cx.new(|_| gpui_component::ResizableState::default()),
             status: None,
-            _load: None,
             connectors,
             query: None,
             showing: Showing::default(),
@@ -231,7 +210,11 @@ impl IssuesView {
         }
         self.root = Some(root.to_path_buf());
         self.label = None;
-        self.stale = true;
+        // Arriving reads the project's file again: a run may have written it
+        // while another project was on screen.
+        if let Some(state) = self.roots.get(root) {
+            state.file.update(cx, |file, _| file.mark_stale());
+        }
         cx.notify();
     }
 
@@ -251,7 +234,6 @@ impl IssuesView {
         }
         self.storage = storage;
         self.roots.clear();
-        self.stale = true;
         cx.notify();
     }
 
@@ -281,9 +263,44 @@ impl IssuesView {
         cx.notify();
     }
 
+    /// Read every file this view holds again the next time it draws it.
     pub(crate) fn mark_stale(&mut self, cx: &mut Context<Self>) {
-        self.stale = true;
+        for state in self.roots.values() {
+            state.file.update(cx, |file, _| file.mark_stale());
+        }
         cx.notify();
+    }
+
+    /// `root`'s entry, made on first use with the file every view of it
+    /// shares. `None` for a workspace that keeps nothing.
+    fn state_for(&mut self, root: &Path, cx: &mut Context<Self>) -> Option<&mut RootIssues> {
+        if !self.roots.contains_key(root) {
+            let path = issues::file_for(self.storage.as_deref()?, root);
+            let file = IssuesFile::get(root, path, self.connectors, cx);
+            let watch = cx.observe(&file, |_, _, cx| cx.notify());
+            self.roots.insert(
+                root.to_path_buf(),
+                RootIssues {
+                    file,
+                    _watch: watch,
+                    selected: None,
+                    form: None,
+                    body: None,
+                },
+            );
+        }
+        self.roots.get_mut(root)
+    }
+
+    /// The issues of `root` as last read, if they have been.
+    fn issues_of<'a>(&'a self, root: &Path, cx: &'a App) -> Option<&'a Issues> {
+        self.roots.get(root)?.file.read(cx).issues.as_ref()
+    }
+
+    /// The forge serving the active project, if one does.
+    fn forge(&self, cx: &App) -> Option<&'static dyn Connector> {
+        let root = self.root.as_deref()?;
+        self.roots.get(root)?.file.read(cx).forge
     }
 
     /// The active project's file, if this workspace keeps one.
@@ -298,22 +315,70 @@ impl IssuesView {
         self.roots.get_mut(&root)
     }
 
-    fn select(&mut self, number: u64, cx: &mut Context<Self>) {
-        if let Some(state) = self.state_mut() {
-            state.show(number);
+    /// Pick issue `number` of the active project. A draft with changes in it
+    /// is asked about before it is dropped; one with none goes quietly.
+    fn select(&mut self, number: u64, window: &mut Window, cx: &mut Context<Self>) {
+        self.unless_drafting(window, cx, move |view, _, cx| {
+            if let Some(state) = view.state_mut() {
+                state.selected = Some(number);
+                state.form = None;
+            }
             cx.notify();
+        });
+    }
+
+    /// Do `then`, unless a draft with changes in it is open in the active
+    /// project: then ask, in a modal, whether to drop it first.
+    fn unless_drafting(
+        &mut self,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+        then: impl Fn(&mut Self, &mut Window, &mut Context<Self>) + 'static,
+    ) {
+        let changed = self
+            .state_mut()
+            .and_then(|state| state.form.as_ref())
+            .is_some_and(|form| form.changed(cx));
+        if !changed {
+            then(self, window, cx);
+            return;
         }
+        let view = cx.entity();
+        let then = std::rc::Rc::new(then);
+        window.open_alert_dialog(cx, move |alert, _, _| {
+            let (view, then) = (view.clone(), then.clone());
+            alert
+                .title("Drop this draft?")
+                .description("What is written in the issue form has not been saved.")
+                .button_props(
+                    DialogButtonProps::default()
+                        .ok_text("Drop draft")
+                        .show_cancel(true),
+                )
+                .on_ok(move |_, window, cx| {
+                    view.update(cx, |view, cx| {
+                        if let Some(state) = view.state_mut() {
+                            state.form = None;
+                        }
+                        then(view, window, cx)
+                    });
+                    true
+                })
+        });
     }
 
     /// Select issue `number` of the active project, asked from outside the
     /// mode. The project's entry is made here if its first read has not
-    /// started yet, and the read only fills that entry in, so a selection
-    /// made before the issues arrive is the one drawn once they do.
+    /// started yet, and the read only fills the file in, so a selection made
+    /// before the issues arrive is the one drawn once they do. A draft is
+    /// kept: the form stays in front until it is saved or cancelled.
     pub(crate) fn show_issue(&mut self, number: u64, cx: &mut Context<Self>) {
         let Some(root) = self.root.clone() else {
             return;
         };
-        self.roots.entry(root).or_default().show(number);
+        if let Some(state) = self.state_for(&root, cx) {
+            state.selected = Some(number);
+        }
         cx.notify();
     }
 
@@ -321,10 +386,10 @@ impl IssuesView {
     /// leaves the work, and on a project kept in step it closes on the forge
     /// too. Reopening is not asked about — it takes nothing away.
     fn confirm_close(&mut self, number: u64, window: &mut Window, cx: &mut Context<Self>) {
-        let Some(state) = self.state_mut() else {
+        let Some(root) = self.root.clone() else {
             return;
         };
-        let Some(issue) = state.issues.as_ref().and_then(|kept| kept.get(number)) else {
+        let Some(issue) = self.issues_of(&root, cx).and_then(|kept| kept.get(number)) else {
             return;
         };
         let mut description = match &issue.link {
@@ -378,18 +443,17 @@ impl IssuesView {
         let Some(root) = self.root.clone() else {
             return;
         };
-        let Some(state) = self.roots.get(&root) else {
-            return;
-        };
-        let Some(link) = state
-            .issues
-            .as_ref()
+        let Some(link) = self
+            .issues_of(&root, cx)
             .and_then(|kept| kept.get(number))
             .and_then(|issue| issue.link.clone())
         else {
             return;
         };
-        let Some(forge) = state.forge.filter(|forge| forge.name() == link.connector) else {
+        let Some(forge) = self
+            .forge(cx)
+            .filter(|forge| forge.name() == link.connector)
+        else {
             self.status = Some(format!(
                 "{} {} cannot be reached from this project",
                 link.connector, link.reference
@@ -424,9 +488,10 @@ impl IssuesView {
 
 impl Render for IssuesView {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        if self.stale {
-            self.stale = false;
-            self.load(cx);
+        if let Some(root) = self.root.clone()
+            && let Some(state) = self.state_for(&root, cx)
+        {
+            state.file.update(cx, |file, cx| file.load_if_stale(cx));
         }
         if self._activation.is_none() {
             self._activation = Some(cx.observe_window_activation(window, |view, window, cx| {
@@ -444,12 +509,24 @@ impl Render for IssuesView {
             .min_h_0()
             .v_flex()
             .child(body)
-            .children(self.status.clone().map(|status| status_line(status, cx)))
+            .children(self.standing(cx).map(|status| status_line(status, cx)))
     }
 }
 
 impl IssuesView {
+    /// The standing line under the body: what a write or a lookup could not
+    /// do, else what reading the active project's file could not.
+    fn standing(&self, cx: &App) -> Option<String> {
+        self.status.clone().or_else(|| {
+            let root = self.root.as_deref()?;
+            self.roots.get(root)?.file.read(cx).failed.clone()
+        })
+    }
+
     fn body(&mut self, window: &mut Window, cx: &mut Context<Self>) -> AnyElement {
+        if self.page.is_some() {
+            return self.page_body(window, cx);
+        }
         let Some(root) = self.root.clone() else {
             return hint("No project root", cx);
         };
@@ -459,7 +536,7 @@ impl IssuesView {
                 cx,
             );
         }
-        let Some(issues) = self.roots.get(&root).and_then(|s| s.issues.clone()) else {
+        let Some(issues) = self.issues_of(&root, cx).cloned() else {
             return hint("Reading issues…", cx);
         };
 
@@ -507,6 +584,8 @@ impl IssuesView {
         // Publishing is offered where it can land: a project kept in step with
         // a forge, on an issue not already there.
         let publish_to = state
+            .file
+            .read(cx)
             .forge
             .filter(|forge| issues.in_step_with(forge.name()))
             .filter(|_| issue.link.is_none())
@@ -518,7 +597,9 @@ impl IssuesView {
             .and_then(|key| self.works.iter().find(|work| work.key == *key))
             .cloned();
         self.read_pr_if_due(root, work.as_ref(), cx);
+        self.read_left_if_due(work.as_ref(), cx);
         let doing = Doing {
+            full: self.page.as_ref().map(page::PageState::full),
             session: working_in(&issue, &self.live).map(str::to_string),
             offered: self.offered.iter().any(|offered| offered == root),
             pr: self.pr_seen(work.as_ref()),
@@ -549,8 +630,9 @@ impl IssuesView {
     /// on, with issue `number` as its first message.
     fn work_here(&mut self, number: u64, window: &mut Window, cx: &mut Context<Self>) {
         let Some(prompt) = self
-            .state_mut()
-            .and_then(|state| state.issues.as_ref()?.get(number))
+            .root
+            .as_deref()
+            .and_then(|root| self.issues_of(root, cx)?.get(number))
             .map(issues::work_here_prompt)
         else {
             return;
@@ -570,6 +652,13 @@ impl IssuesView {
     fn run_workflow(&mut self, number: u64, window: &mut Window, cx: &mut Context<Self>) {
         self.ask_later(window, cx, move |ask, root, window, cx| {
             ask(&Request::RunIssueWorkflow { root, number }, window, cx)
+        });
+    }
+
+    /// Put issue `number` of the project on screen on the Issues page.
+    fn open_in_issues(&mut self, number: u64, window: &mut Window, cx: &mut Context<Self>) {
+        self.ask_later(window, cx, move |ask, root, window, cx| {
+            ask(&Request::OpenInIssues { root, number }, window, cx)
         });
     }
 

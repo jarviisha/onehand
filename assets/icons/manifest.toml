@@ -100,3 +100,8 @@ log-out = "lucide:log-out"
 # key of any kind; its nearest shapes are `square-terminal`, which is the
 # terminal the app already has a dock for, and `asterisk`, a character.
 keyboard = "lucide:keyboard"
+# The rail's *Issues* row, which opens the Issues page. The bundled set draws
+# no issue mark of any kind: its nearest shapes are `circle-check`, which says
+# something passed, and `inbox`, which the *Tasks* row right above it already
+# wears.
+circle-dot = "lucide:circle-dot"

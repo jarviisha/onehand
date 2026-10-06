@@ -65,6 +65,7 @@ impl Shell {
         let was = self.window.workspace.storage_dir.take();
         self.workbench
             .update(cx, |panel, cx| panel.set_storage(None, cx));
+        self.tell_issues_page(&onehand_plugin_host::Request::SetStorage(None), cx);
         self.set_window_identity(None, window, cx);
         // Forget the recent too, or the next launch reopens the workspace that
         // was just unbound -- `recent_workspaces[0]` takes precedence over
@@ -92,6 +93,7 @@ impl Shell {
         self.window.workspace.storage_dir = Some(dir.clone());
         self.workbench
             .update(cx, |panel, cx| panel.set_storage(Some(&dir), cx));
+        self.tell_issues_page(&onehand_plugin_host::Request::SetStorage(Some(&dir)), cx);
         if self.settings_open {
             self.workspace_note_wanted = true;
         }

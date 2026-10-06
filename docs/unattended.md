@@ -97,7 +97,12 @@ background executor, one interval in the config, no cron expressions.
 | `crates/app/src/dialogs.rs` | `pick_issue` and `issue_workflow_menu`, the workflow menu the picker and Settings share |
 | `crates/app/src/settings/pages.rs` | the default workflow and the workflow labels in Settings |
 | `crates/core/src/task/work.rs` | where an issue's work stands and its next action (`Work`, `issue_work`, `next_action`), and the generation rule for what is read of it (`Reading`) |
-| `crates/app/src/task.rs` (`issue_works`) and `plugins/builtin/workbench-issues/src/view/work.rs`, `view/reads.rs` | each issue's work, told to the Issues tab through `Request::IssueWork`, drawn there, and its pull request read |
+| `crates/app/src/task/listing.rs` (`issue_works`) and `plugins/builtin/workbench-issues/src/view/work.rs`, `view/reads.rs` | each issue's work, told to the Issues tab and the Issues page through `Request::IssueWork`, drawn there, and its pull request read |
+| `crates/core/src/task/work/list.rs` | the Issues page's list: its filters, what each row says, and how it is held still (`list`, `PrReads`, `Held`) |
+| `crates/core/src/task/work/left.rs` | what the work left, read off git for the page: the check against the work as it is, the files of the run and of the branch, the commits past where the task started |
+| `plugins/builtin/workbench-issues/src/view/page.rs`, `view/page/prs.rs`, `view/full.rs` | the Issues page: its list, its pull request reads, one per project, and the issue in full |
+| `plugins/builtin/workbench-issues/src/view/store.rs` | one issues file shared by every view of it, with its sync |
+| `crates/app/src/shell/issues_page.rs` | the page as a window holds it, and what it asks of the shell |
 
 The split is the one the crate boundary already forces: everything that can be
 decided without a window — which issue, what branch, what the run is asked, what
@@ -265,7 +270,8 @@ percentage: a step that sends the work back would make one go down), the
 next action in one sentence, and its one primary action, all three lines kept
 whatever the state. What to say and offer is core's `next_action`, the rule
 beside the group rule in [tasks.md](tasks.md). *Review…* opens the run's
-session, whose step strip holds the approval.
+session, whose step strip holds the approval, on the tab and on the Issues
+page alike, until the page can judge an answer in place.
 
 Below the body, *What the work left* names the branch and, on a project a
 forge serves once the run has reached its pull request step, the pull
@@ -283,6 +289,32 @@ last value, marked stale in the warning ink with the failure beside it.
 most, one needing attention in the warning ink, each leading to its task.
 Closing an issue whose run is active says *A run is still working on it;
 closing does not stop it*; closing never stops a run.
+
+**Where an issue's runs are seen with many issues: the Issues page.** The rail's
+*Issues* opens a page of the agent pane listing the issues every project of the
+workspace keeps, each row saying where its work stands in the Tasks page's
+words, so the ones that need a person are told apart from the ones running and
+the ones with no run recorded without opening any. Its filters are the issue's
+state, the work's progress (*Needs attention* takes an issue when any of its
+tasks needs attention, as the Tasks page counts; *Pull request open* is a done
+run whose pull request is open, and is not part of *Needs attention*; a run
+waiting on its pull request's status checks is *Running*), the project and a
+label, and the list is decided in core (`task::work::list`). The pull requests
+are read once per project, never per row: one connector read of the
+repository's pull requests, capped, matched to the tasks' branches, on opening
+the page, on *Refresh*, and on the window coming back with the reading older
+than a minute. A branch a capped read did not find is looked up on its own, up
+to a cap per read; past it the row is *not read*, and under *Pull request open*
+the list says how many were not read rather than showing as complete. The
+picked issue is drawn as the tab draws it, plus the steps still to come and,
+read off git in the background, whether the check still vouches for the work as
+it is, the files this run and the branch changed, each opening its diff in
+place, and the commits past where the task started. The tab's ⋯ ▸ *Open in
+Issues*, and a project row's *auto · #N* pill, open the issue on the page,
+pinned at the top when its filters leave it out. Both views hold one shared
+copy of each issues file (`view/store.rs`), so an edit in one shows in the
+other at once and a sync runs once per file; a changed draft in either is kept
+across a switch of project or page and asked about before it is dropped.
 
 **A project with no check command is still searched**, issue by issue: one
 whose workflow (the default or its workflow label's) runs the check command is

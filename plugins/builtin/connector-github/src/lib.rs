@@ -10,11 +10,16 @@
 // a working feature.
 #![warn(unreachable_pub)]
 
+mod pulls;
+mod remote;
+
 use onehand_core::connector::{
-    Check, CheckState, Connector, PrState, PullRequest, RemoteIssue, SyncListing,
+    Check, Connector, PullRequest, PullRequests, RemoteIssue, SyncListing,
 };
 use onehand_core::issues::Snapshot;
 use onehand_core::unattended::{Issue, IssueRow};
+use pulls::{LIST_FIELDS, pull_request, pull_requests};
+use remote::{github_remote, https_url, origin_url, ssh_resolve_blocking};
 use serde::Deserialize;
 use std::path::Path;
 use std::process::Command;
@@ -142,6 +147,23 @@ impl Connector for GitHub {
             ],
         )?;
         pull_request(&json)
+    }
+
+    fn pull_requests_blocking(&self, root: &Path, limit: usize) -> Result<PullRequests, String> {
+        let json = gh(
+            root,
+            &[
+                "pr",
+                "list",
+                "--state",
+                "all",
+                "--limit",
+                &limit.to_string(),
+                "--json",
+                LIST_FIELDS,
+            ],
+        )?;
+        pull_requests(&json, limit)
     }
 
     fn mark_ready_blocking(&self, root: &Path, number: u64) -> Result<(), String> {
@@ -398,88 +420,6 @@ fn without_escapes(text: &str) -> String {
 fn last_lines(text: &str, n: usize) -> String {
     let lines: Vec<&str> = text.lines().collect();
     lines[lines.len().saturating_sub(n)..].join("\n")
-}
-
-/// `gh pr list --json url,number,state,isDraft,headRefOid,mergeable,statusCheckRollup`
-/// as the first pull request in it, if any.
-///
-/// A rollup holds two kinds of entry: an Actions check run, which has a
-/// status and, once completed, a conclusion; and a commit status, which has a
-/// state alone. Only success, neutral and skipped pass — a cancelled or timed
-/// out check is no evidence the change works.
-fn pull_request(json: &str) -> Result<Option<PullRequest>, String> {
-    #[derive(Deserialize)]
-    #[serde(rename_all = "camelCase")]
-    struct Entry {
-        #[serde(default)]
-        name: Option<String>,
-        #[serde(default)]
-        context: Option<String>,
-        #[serde(default)]
-        status: Option<String>,
-        #[serde(default)]
-        conclusion: Option<String>,
-        #[serde(default)]
-        state: Option<String>,
-        #[serde(default)]
-        details_url: Option<String>,
-        #[serde(default)]
-        target_url: Option<String>,
-    }
-    #[derive(Deserialize)]
-    #[serde(rename_all = "camelCase")]
-    struct Row {
-        url: String,
-        number: u64,
-        state: String,
-        is_draft: bool,
-        head_ref_oid: String,
-        #[serde(default)]
-        mergeable: String,
-        #[serde(default)]
-        status_check_rollup: Vec<Entry>,
-    }
-    let rows: Vec<Row> = serde_json::from_str(json)
-        .map_err(|err| format!("gh printed something unreadable: {err}"))?;
-    let Some(row) = rows.into_iter().next() else {
-        return Ok(None);
-    };
-    let checks = row
-        .status_check_rollup
-        .into_iter()
-        .map(|e| {
-            let state = match (
-                e.status.as_deref(),
-                e.conclusion.as_deref(),
-                e.state.as_deref(),
-            ) {
-                (Some(status), _, _) if status != "COMPLETED" => CheckState::Pending,
-                (Some(_), Some("SUCCESS" | "NEUTRAL" | "SKIPPED"), _) => CheckState::Passed,
-                (Some(_), _, _) => CheckState::Failed,
-                (None, _, Some("SUCCESS")) => CheckState::Passed,
-                (None, _, Some("PENDING" | "EXPECTED") | None) => CheckState::Pending,
-                (None, _, Some(_)) => CheckState::Failed,
-            };
-            Check {
-                name: e.name.or(e.context).unwrap_or_default(),
-                state,
-                link: e.details_url.or(e.target_url).filter(|l| !l.is_empty()),
-            }
-        })
-        .collect();
-    Ok(Some(PullRequest {
-        url: row.url,
-        number: row.number,
-        state: match row.state.as_str() {
-            "MERGED" => PrState::Merged,
-            "CLOSED" => PrState::Closed,
-            _ => PrState::Open,
-        },
-        draft: row.is_draft,
-        head: row.head_ref_oid,
-        conflicting: row.mergeable == "CONFLICTING",
-        checks,
-    }))
 }
 
 /// What a sync reads of an issue.
@@ -770,114 +710,29 @@ fn account_blocking() -> Account {
     }
 }
 
-/// The URL of `root`'s `origin`, read locally.
-fn origin_url(root: &Path) -> Result<String, String> {
-    let out = onehand_core::process::output_within(
-        Command::new("git")
-            .arg("-C")
-            .arg(root)
-            .args(["remote", "get-url", "origin"]),
-        LOCAL_LIMIT,
-    )
-    .map_err(|err| format!("git {err}"))?;
-    if !out.status.success() {
-        return Err("it has no `origin` remote to open a pull request against".to_string());
-    }
-    Ok(String::from_utf8_lossy(&out.stdout).trim().to_string())
-}
-
-/// The HTTPS URL of the repository an ssh remote `url` names, on the host ssh
-/// would actually reach — an alias such as `github-work` is `resolve`d first.
-/// `None` for a remote that is not over ssh, where there is nothing different
-/// to try.
-fn https_url(url: &str, resolve: impl Fn(&str) -> Option<String>) -> Option<String> {
-    if !over_ssh(url) {
-        return None;
-    }
-    let host = remote_host(url)?;
-    let path = match url.split_once("://") {
-        // `ssh://user@host[:port]/path`: everything after the host.
-        Some((_, rest)) => rest.split_once('/')?.1,
-        // `user@host:path`.
-        None => url.split_once(':')?.1,
-    };
-    let host = resolve(host).unwrap_or_else(|| host.to_string());
-    Some(format!("https://{host}/{}", path.trim_start_matches('/')))
-}
-
-/// The host a git remote URL points at: `https://host/…`, `ssh://user@host:port/…`
-/// and the scp-like `user@host:path`. `None` for a local path.
-fn remote_host(url: &str) -> Option<&str> {
-    let rest = match url.split_once("://") {
-        Some((_, rest)) => rest,
-        // scp-like: a colon before any slash, and the part before it is a host.
-        None => match url.split_once(':') {
-            Some((host, _)) if !host.contains('/') => host,
-            _ => return None,
-        },
-    };
-    let host = rest.split('/').next()?;
-    let host = host.rsplit('@').next()?;
-    let host = host.split(':').next()?;
-    (!host.is_empty()).then_some(host)
-}
-
-/// Whether `url` is a remote a run can work: one on github.com.
-///
-/// **An ssh remote is judged by the host ssh would actually reach**, which
-/// `resolve` answers. The host in an ssh URL can be an alias from the user's ssh
-/// configuration — `git@github-work:me/repo`, which is how one machine keeps
-/// two GitHub accounts apart — and reading the word in the URL refused every
-/// such project as not being on GitHub. An https remote has no alias and is
-/// read as written.
-fn github_remote(url: &str, resolve: impl Fn(&str) -> Option<String>) -> Result<(), String> {
-    let refuse = |host: &str| Err(format!("its remote is on {host}, not GitHub"));
-    let Some(host) = remote_host(url) else {
-        return Err("its remote is not on GitHub".to_string());
-    };
-    if host == "github.com" {
-        return Ok(());
-    }
-    if !over_ssh(url) {
-        return refuse(host);
-    }
-    match resolve(host) {
-        Some(real) if real == "github.com" => Ok(()),
-        Some(real) => refuse(&real),
-        None => refuse(host),
-    }
-}
-
-/// Whether `url` reaches its host over ssh: the scp-like form, or an `ssh`
-/// scheme.
-fn over_ssh(url: &str) -> bool {
-    match url.split_once("://") {
-        Some((scheme, _)) => scheme.contains("ssh"),
-        None => true,
-    }
-}
-
-/// The `hostname` line of what `ssh -G` printed: the host an alias stands for,
-/// after the user's ssh configuration has been applied.
-fn ssh_hostname(said: &str) -> Option<&str> {
-    said.lines()
-        .find_map(|line| line.strip_prefix("hostname "))
-        .map(str::trim)
-}
-
-/// Ask ssh which host `alias` stands for. `ssh -G` only prints the settled
-/// configuration; it connects to nothing.
-fn ssh_resolve_blocking(alias: &str) -> Option<String> {
-    let out =
-        onehand_core::process::output_within(Command::new("ssh").arg("-G").arg(alias), LOCAL_LIMIT)
-            .ok()?;
-    out.status.success().then_some(())?;
-    ssh_hostname(&String::from_utf8_lossy(&out.stdout)).map(str::to_string)
-}
-
 #[cfg(test)]
 mod tests {
+    use super::remote::{remote_host, ssh_hostname};
     use super::*;
+    use onehand_core::connector::{CheckState, PrState};
+
+    #[test]
+    fn a_repositorys_pull_requests_read_by_branch_and_say_when_capped() {
+        let json = r#"[
+            {"url":"u1","number":8,"state":"OPEN","isDraft":true,"headRefOid":"a","headRefName":"onehand/x","mergeable":"MERGEABLE"},
+            {"url":"u2","number":7,"state":"MERGED","isDraft":false,"headRefOid":"b","headRefName":"onehand/y","mergeable":""}
+        ]"#;
+        let read = pull_requests(json, 2).unwrap();
+        assert!(read.capped);
+        let (branch, pr) = &read.by_branch[0];
+        assert_eq!(
+            (branch.as_str(), pr.number, pr.state, pr.draft),
+            ("onehand/x", 8, PrState::Open, true)
+        );
+        assert_eq!(read.by_branch[1].1.state, PrState::Merged);
+        assert!(!pull_requests(json, 3).unwrap().capped);
+        assert!(pull_requests("not json", 3).is_err());
+    }
 
     #[test]
     fn a_job_log_loses_its_colours() {

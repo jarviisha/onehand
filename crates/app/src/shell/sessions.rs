@@ -599,8 +599,10 @@ impl Shell {
     pub fn show_workspace(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let projects = self.page_projects();
         self.docks_aside(window, cx);
-        self.chat
-            .update(cx, |pane, cx| pane.show_workspace(projects, window, cx));
+        self.chat.update(cx, |pane, cx| {
+            pane.leave_issues_page(window, cx);
+            pane.show_workspace(projects, window, cx)
+        });
         // No session is showing now, so there is no running agent to be
         // behind on anything.
         self.sync_agent_started(cx);
@@ -617,8 +619,10 @@ impl Shell {
     ) {
         let projects = self.page_projects();
         self.docks_aside(window, cx);
-        self.chat
-            .update(cx, |pane, cx| pane.show_tasks(projects, filter, window, cx));
+        self.chat.update(cx, |pane, cx| {
+            pane.leave_issues_page(window, cx);
+            pane.show_tasks(projects, filter, window, cx)
+        });
         self.sync_agent_started(cx);
         cx.notify();
     }
@@ -658,15 +662,23 @@ impl Shell {
         if told != self.issue_works {
             self.workbench
                 .update(cx, |panel, cx| panel.issue_works(&told.0, &told.1, cx));
+            self.tell_issues_page(
+                &onehand_plugin_host::Request::IssueWork {
+                    works: &told.0,
+                    offered: &told.1,
+                },
+                cx,
+            );
             self.issue_works = told;
         }
+        self.tell_issues_page_projects(cx);
     }
 
     /// Both docks hold one project's things, and a page is about all of
     /// them. Put away, not closed: the terminal's state is filed under its
     /// project and `terminal_root` let go, so the next arrival is a handover
     /// that restores it, and the Workbench comes back on leaving.
-    fn docks_aside(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+    pub(super) fn docks_aside(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if self.page_shown(cx) {
             return;
         }

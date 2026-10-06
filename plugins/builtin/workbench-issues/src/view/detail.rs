@@ -28,6 +28,9 @@ pub(super) struct Doing<'a> {
     /// The pull request as last read for this work, kept beside a failed
     /// read, and when it was read.
     pub(super) last: Option<&'a super::reads::PrRead>,
+    /// On the Issues page, what the full form adds: the steps to come, and
+    /// what the work left as read off git.
+    pub(super) full: Option<super::full::Full<'a>>,
 }
 
 /// One issue, read, in one fixed order whatever the state, so what it waits

@@ -72,6 +72,15 @@ pub enum CheckState {
     Failed,
 }
 
+/// A repository's pull requests as one read found them, and whether the read
+/// reached its cap: then a branch missing from it proves nothing.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct PullRequests {
+    /// Each with the branch it was opened from. Their checks are not read.
+    pub by_branch: Vec<(String, PullRequest)>,
+    pub capped: bool,
+}
+
 /// What a forge lists for a sync. Two lists because they answer different
 /// questions: a cut in `open` only means fewer imports, while a cut in
 /// `changed` means a change may be missing, and the sync has to ask about
@@ -132,6 +141,12 @@ pub trait Connector: Send + Sync + 'static {
         root: &Path,
         branch: &str,
     ) -> Result<Option<PullRequest>, String>;
+
+    /// The repository's pull requests, open or not, at most `limit` of them,
+    /// the newest first: one read for a list of many branches.
+    fn pull_requests_blocking(&self, _root: &Path, _limit: usize) -> Result<PullRequests, String> {
+        Err(format!("{} gives no list of pull requests.", self.name()))
+    }
 
     /// Put `commit` on the forge as `branch`. Plain `git push` to `origin`
     /// unless a connector knows another way in, as with [`Self::fetch_blocking`].

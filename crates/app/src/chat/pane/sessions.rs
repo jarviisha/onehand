@@ -56,6 +56,7 @@ impl ChatPane {
             self.leave_shown_session(window, cx);
             self.restore_draft(uid, window, cx);
         }
+        self.leave_issues_page(window, cx);
         self.page = None;
         self.active = Some(uid);
         // The header's menu is about the project, so it follows the project
@@ -441,6 +442,7 @@ impl ChatPane {
         if unchanged {
             return;
         }
+        self.leave_issues_page(window, cx);
         self.page = None;
         self.empty = root.map(|(label, path)| EmptyProject {
             label,
