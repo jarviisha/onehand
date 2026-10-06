@@ -29,6 +29,11 @@ impl Shell {
             panel.set_storage(workspace.storage_dir.as_deref(), cx)
         });
         let terminal = TerminalPanel::new(cx);
+        let issues_page = Self::new_issues_page(cx);
+        issues_page.handle(
+            &onehand_plugin_host::Request::SetStorage(workspace.storage_dir.as_deref()),
+            cx,
+        );
 
         // Restored from the workspace, which supplies the built-in arrangement
         // when there is nothing saved: both docks closed, because the
@@ -245,6 +250,7 @@ impl Shell {
                 shell
                     .workbench
                     .update(cx, |panel, cx| panel.live_conversations(&live, cx));
+                shell.tell_issues_page(&onehand_plugin_host::Request::LiveConversations(&live), cx);
                 shell.live_conversations = live;
             }
         })
@@ -297,37 +303,7 @@ impl Shell {
             &workbench,
             window,
             |shell: &mut Self, _, event: &crate::workbench::WorkbenchEvent, window, cx| {
-                use crate::workbench::WorkbenchEvent as E;
-                match event {
-                    E::Hide => shell.hide_workbench(window, cx),
-                    E::RestartAgent => shell.restart_session(window, cx),
-                    E::WorkIssueHere {
-                        root,
-                        number,
-                        prompt,
-                    } => shell.work_issue_here(root, *number, prompt, window, cx),
-                    E::OpenConversation(session) => shell.open_conversation(session, window, cx),
-                    E::RunIssueWorkflow { root, number } => {
-                        if let Some(idx) = shell.root_index(root) {
-                            shell.begin_pick(idx, Some(*number), cx);
-                        }
-                    }
-                    E::OpenTask(id) => shell.show_task(id, window, cx),
-                    E::OpenTaskSession(id) => {
-                        if let Some((uid, at)) = crate::task::session_of(id, cx) {
-                            shell.show_session_in(uid, at, window, cx);
-                        }
-                    }
-                    E::ResumeTask(id) => crate::task::request(id.clone(), window, cx),
-                    E::RetryTask(id) => shell.begin_retry(id.clone(), window, cx),
-                    E::StopTask(id) => {
-                        let id = id.clone();
-                        cx.defer(move |cx| crate::task::stop_task(&id, cx));
-                    }
-                    E::ToggleMaximize => {
-                        shell.toggle_maximize_panel(FocusedPanel::Workbench, window, cx);
-                    }
-                }
+                shell.on_workbench_event(event, window, cx)
             },
         )
         .detach();
@@ -467,6 +443,7 @@ impl Shell {
             dock,
             chat,
             workbench,
+            issues_page,
             terminal,
             _pending_save: None,
             _pending_warm: None,

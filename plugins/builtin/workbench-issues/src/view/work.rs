@@ -129,6 +129,11 @@ pub(super) fn progress_view(
         .border_b_1()
         .border_color(cx.theme().border)
         .child(progress)
+        // The page names the steps still to come, always on a line of its
+        // own so the body under it does not move when one is done.
+        .when(doing.full.is_some(), |region| {
+            region.child(super::full::rest_line(work, cx))
+        })
         .child(sentence)
         .child(actions_row(root, issue, doing, next, publish_to, cx))
         .into_any_element()
@@ -333,6 +338,8 @@ fn more_menu(
             (said, Pressed::of(act, number, doing))
         })
         .collect();
+    // The tab leads to the page, where there is room to work the issue.
+    let in_tab = doing.full.is_none();
     let trigger = action("issue-more")
         .xsmall()
         .ghost()
@@ -363,7 +370,17 @@ fn more_menu(
                     }),
                 );
             }
-            if !overflow.is_empty() || publish_to.is_some() {
+            if in_tab {
+                let view = view.clone();
+                menu = menu.item(
+                    menu_item("Open in Issues")
+                        .icon(Icon::new(IconName::Maximize))
+                        .on_click(move |_, window, cx: &mut App| {
+                            view.update(cx, |view, cx| view.open_in_issues(number, window, cx))
+                        }),
+                );
+            }
+            if !overflow.is_empty() || publish_to.is_some() || in_tab {
                 menu = menu.separator();
             }
             issue_items(menu, &view, number, open, forge.as_deref())
@@ -433,10 +450,10 @@ pub(super) fn left_view(doing: &Doing, cx: &mut Context<IssuesView>) -> Option<A
     let warning = status_ink(cx).warning;
     let has_pr = work.has_pull_request();
     let now = onehand_core::issues::now();
-    let line = |name: &'static str, value: AnyElement| {
+    let line = move |name: &'static str, value: AnyElement| {
         div()
             .h_flex()
-            .items_center()
+            .items_start()
             .gap_2()
             .min_w_0()
             .text_xs()
@@ -448,7 +465,14 @@ pub(super) fn left_view(doing: &Doing, cx: &mut Context<IssuesView>) -> Option<A
                     .child(name),
             )
             .child(div().flex_1().min_w_0().child(value))
+            .into_any_element()
     };
+    let full = doing
+        .full
+        .as_ref()
+        .map(|full| super::full::left_lines(full, work, &line, cx))
+        .unwrap_or_default();
+    let on_page = doing.full.is_some();
     let pr_value = has_pr.then(|| match doing.pr {
         PrSeen::Unread => div().text_color(muted).child("reading…").into_any_element(),
         PrSeen::Read(None) => div()
@@ -483,7 +507,7 @@ pub(super) fn left_view(doing: &Doing, cx: &mut Context<IssuesView>) -> Option<A
                     .gap_2()
                     .text_xs()
                     .child(div().flex_1().text_color(muted).child("What the work left"))
-                    .when(has_pr, |head| {
+                    .when(has_pr || on_page, |head| {
                         head.children(doing.last.map(|(_, at)| {
                             div()
                                 .text_color(muted)
@@ -494,10 +518,15 @@ pub(super) fn left_view(doing: &Doing, cx: &mut Context<IssuesView>) -> Option<A
                                 .xsmall()
                                 .ghost()
                                 .label("Refresh")
-                                .tooltip("Read the pull request again")
-                                .on_click(
-                                    cx.listener(|view, _: &ClickEvent, _, cx| view.refresh(cx)),
-                                ),
+                                .tooltip(match on_page {
+                                    true => "Read what the work left again",
+                                    false => "Read the pull request again",
+                                })
+                                .on_click(cx.listener(|view, _: &ClickEvent, _, cx| {
+                                    view.refresh(cx);
+                                    let work = view.shown_work();
+                                    view.refresh_left(work.as_ref(), cx);
+                                })),
                         )
                     }),
             )
@@ -510,6 +539,7 @@ pub(super) fn left_view(doing: &Doing, cx: &mut Context<IssuesView>) -> Option<A
                     .into_any_element(),
             ))
             .children(pr_value.map(|value| line("Pull request", value)))
+            .children(full)
             .into_any_element(),
     )
 }

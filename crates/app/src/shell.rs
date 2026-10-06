@@ -20,6 +20,7 @@ mod confirm;
 mod docks;
 mod drafts;
 mod issue_work;
+mod issues_page;
 mod remote_runs;
 mod render;
 mod roots;
@@ -350,6 +351,9 @@ pub struct Shell {
     workbench: Entity<Workbench>,
     /// The bottom dock. Per-root shells, so it follows the selection too.
     terminal: Entity<TerminalPanel>,
+    /// The Issues page, made once so it is found as it was left whenever it
+    /// is picked again.
+    issues_page: onehand_workbench_issues::Page,
 }
 
 /// What reading a project's open issues came to: the issues and whether the

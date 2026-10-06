@@ -41,17 +41,7 @@ impl Narrowing<'_> {
     /// reference and matches by its start, so `#1` finds `#12` while typing;
     /// anything else is looked for in the title, case aside.
     fn lets_through(&self, issue: &LocalIssue) -> bool {
-        let query = self.query.trim();
-        let found = if query.is_empty() {
-            true
-        } else if query.starts_with('#') {
-            issue
-                .reference()
-                .is_some_and(|reference| reference.starts_with(query))
-        } else {
-            issue.title.to_lowercase().contains(&query.to_lowercase())
-        };
-        found
+        issues::matches_query(issue, self.query)
             && self
                 .label
                 .is_none_or(|label| issue.labels.iter().any(|l| l == label))
@@ -93,16 +83,28 @@ fn listed<'a>(
 
 impl IssuesView {
     /// The search box, made on first draw since an input needs a window.
-    fn query(&mut self, window: &mut Window, cx: &mut Context<Self>) -> Entity<InputState> {
+    pub(super) fn query(
+        &mut self,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> Entity<InputState> {
         if let Some(query) = &self.query {
             return query.clone();
         }
-        let query =
-            cx.new(|cx| InputState::new(window, cx).placeholder("Search titles, or #6 to jump"));
+        // The page narrows to a reference; only the tab jumps to it.
+        let hint = match self.page {
+            Some(_) => "Search titles, or #6",
+            None => "Search titles, or #6 to jump",
+        };
+        let query = cx.new(|cx| InputState::new(window, cx).placeholder(hint));
         cx.subscribe(&query, |view, query, event: &InputEvent, cx| {
             if matches!(event, InputEvent::Change) {
                 let text = query.read(cx).value().to_string();
-                view.jump(&text);
+                match view.page.as_mut() {
+                    None => view.jump(&text, cx),
+                    // A search is a filter: the page's list is drawn afresh.
+                    Some(page) => page.refilter(),
+                }
             }
             cx.notify();
         })
@@ -114,22 +116,23 @@ impl IssuesView {
     /// Select the issue `query` names outright, and turn the filters so its
     /// row is in the list. Not while a form is open: a search is not a reason
     /// to throw away what is being written.
-    fn jump(&mut self, query: &str) {
-        let Some(state) = self.state_mut() else {
+    fn jump(&mut self, query: &str, cx: &App) {
+        let Some(root) = self.root.clone() else {
             return;
         };
-        if state.form.is_some() {
+        if self.state_mut().is_none_or(|state| state.form.is_some()) {
             return;
         }
-        let Some((number, open, labels)) = state
-            .issues
-            .as_ref()
+        let Some((number, open, labels)) = self
+            .issues_of(&root, cx)
             .and_then(|kept| named(kept, query))
             .map(|issue| (issue.number, issue.open, issue.labels.clone()))
         else {
             return;
         };
-        state.show(number);
+        if let Some(state) = self.state_mut() {
+            state.selected = Some(number);
+        }
         self.showing = if open { Showing::Open } else { Showing::Closed };
         if self
             .label
@@ -359,8 +362,8 @@ impl IssuesView {
     /// pause. Drawn only where a forge serves the project; elsewhere there is
     /// nothing to be in step with.
     fn sync_footer(&self, issues: &Issues, cx: &mut Context<Self>) -> Option<AnyElement> {
-        let state = self.roots.get(self.root.as_ref()?)?;
-        let forge = state.forge?;
+        let file = self.roots.get(self.root.as_ref()?)?.file.read(cx);
+        let (forge, syncing, synced) = (file.forge?, file.syncing, file.synced.clone());
         let name = forge.name();
         let on = issues.in_step_with(name);
         let muted = cx.theme().muted_foreground;
@@ -368,7 +371,7 @@ impl IssuesView {
         // A project that was kept in step once still holds its links, which is
         // what tells a pause from never having started.
         let paused = issues.listed().iter().any(|issue| issue.link.is_some());
-        let (icon, ink, line, detail) = match (on, state.syncing, &state.synced) {
+        let (icon, ink, line, detail) = match (on, syncing, &synced) {
             (true, true, _) => (
                 IconName::LoaderCircle,
                 muted,
@@ -411,7 +414,7 @@ impl IssuesView {
                 format!("These issues are kept here only; resume to keep them in step with {name}"),
             ),
         };
-        let failed = on && !state.syncing && matches!(state.synced, Some((_, Err(_))));
+        let failed = on && !syncing && matches!(synced, Some((_, Err(_))));
         let status = div()
             .id("issues-sync-status")
             .flex_1()
@@ -443,7 +446,7 @@ impl IssuesView {
             .child(status)
             // A sync is not offered while one runs: pressed then it would do
             // nothing, and a control that answers with nothing reads as broken.
-            .when(on && !state.syncing, |footer| {
+            .when(on && !syncing, |footer| {
                 footer.child(
                     if failed {
                         action("issues-sync-retry")
@@ -569,7 +572,11 @@ impl IssuesView {
                     .child(issue.title.clone()),
             )
             .child(meta)
-            .on_click(cx.listener(move |view, _: &ClickEvent, _, cx| view.select(number, cx)))
+            .on_click(
+                cx.listener(move |view, _: &ClickEvent, window, cx| {
+                    view.select(number, window, cx)
+                }),
+            )
             .into_any_element()
     }
 }

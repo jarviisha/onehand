@@ -107,31 +107,6 @@ impl Workbench {
         match request {
             Request::OpenFile(path) => self.open_file(path, window, cx),
             Request::RestartAgent => cx.emit(WorkbenchEvent::RestartAgent),
-            Request::WorkIssueHere {
-                root,
-                number,
-                prompt,
-            } => cx.emit(WorkbenchEvent::WorkIssueHere {
-                root: root.to_path_buf(),
-                number: *number,
-                prompt: prompt.to_string(),
-            }),
-            Request::OpenConversation(session) => {
-                cx.emit(WorkbenchEvent::OpenConversation(session.to_string()))
-            }
-            Request::RunIssueWorkflow { root, number } => {
-                cx.emit(WorkbenchEvent::RunIssueWorkflow {
-                    root: root.to_path_buf(),
-                    number: *number,
-                })
-            }
-            Request::OpenTask(id) => cx.emit(WorkbenchEvent::OpenTask(id.to_string())),
-            Request::OpenTaskSession(id) => {
-                cx.emit(WorkbenchEvent::OpenTaskSession(id.to_string()))
-            }
-            Request::ResumeTask(id) => cx.emit(WorkbenchEvent::ResumeTask(id.to_string())),
-            Request::RetryTask(id) => cx.emit(WorkbenchEvent::RetryTask(id.to_string())),
-            Request::StopTask(id) => cx.emit(WorkbenchEvent::StopTask(id.to_string())),
             // The caret is the panel's half of reaping: a view dropped while it
             // holds focus leaves the window pointing at an element no frame
             // contains, and GPUI resolves a key along the path down to the
@@ -146,9 +121,12 @@ impl Workbench {
                     self.focus_active(window, cx);
                 }
             }
-            other => {
-                self.broadcast(other, cx);
-            }
+            other => match issue_event(other) {
+                Some(event) => cx.emit(event),
+                None => {
+                    self.broadcast(other, cx);
+                }
+            },
         }
     }
 
@@ -403,6 +381,11 @@ pub enum WorkbenchEvent {
         root: std::path::PathBuf,
         number: u64,
     },
+    /// Show issue `number` of project `root` on the Issues page.
+    OpenInIssues {
+        root: std::path::PathBuf,
+        number: u64,
+    },
     /// Show task `id` on the Tasks page.
     OpenTask(String),
     /// Show the session task `id` runs in.
@@ -416,6 +399,51 @@ pub enum WorkbenchEvent {
 }
 
 impl EventEmitter<WorkbenchEvent> for Workbench {}
+
+/// What an Issues view asks of the shell, as the event the shell answers:
+/// the same whether the Workbench's Issues mode or the Issues page raised it.
+/// `None` for a request that is not one of those.
+pub fn issue_event(request: &Request<'_>) -> Option<WorkbenchEvent> {
+    Some(match request {
+        Request::WorkIssueHere {
+            root,
+            number,
+            prompt,
+        } => WorkbenchEvent::WorkIssueHere {
+            root: root.to_path_buf(),
+            number: *number,
+            prompt: prompt.to_string(),
+        },
+        Request::OpenConversation(session) => WorkbenchEvent::OpenConversation(session.to_string()),
+        Request::RunIssueWorkflow { root, number } => WorkbenchEvent::RunIssueWorkflow {
+            root: root.to_path_buf(),
+            number: *number,
+        },
+        Request::OpenInIssues { root, number } => WorkbenchEvent::OpenInIssues {
+            root: root.to_path_buf(),
+            number: *number,
+        },
+        Request::OpenTask(id) => WorkbenchEvent::OpenTask(id.to_string()),
+        Request::OpenTaskSession(id) => WorkbenchEvent::OpenTaskSession(id.to_string()),
+        Request::ResumeTask(id) => WorkbenchEvent::ResumeTask(id.to_string()),
+        Request::RetryTask(id) => WorkbenchEvent::RetryTask(id.to_string()),
+        Request::StopTask(id) => WorkbenchEvent::StopTask(id.to_string()),
+        Request::OpenFile(_)
+        | Request::Save
+        | Request::Start
+        | Request::Rescan
+        | Request::Shown
+        | Request::Reap
+        | Request::SetGit(_)
+        | Request::SetStorage(_)
+        | Request::SetFontSize(_)
+        | Request::ShowIssue(_)
+        | Request::AgentStarted(_)
+        | Request::LiveConversations(_)
+        | Request::RestartAgent
+        | Request::IssueWork { .. } => return None,
+    })
+}
 
 impl Focusable for Workbench {
     fn focus_handle(&self, _: &App) -> FocusHandle {

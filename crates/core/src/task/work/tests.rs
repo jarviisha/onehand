@@ -2,7 +2,7 @@ use super::*;
 use crate::workflow::{Brief, Setup, StepSpec, Template, Transition, Visit};
 use std::path::PathBuf;
 
-fn step(id: &str, kind: StepKind) -> StepSpec {
+pub(super) fn step(id: &str, kind: StepKind) -> StepSpec {
     StepSpec {
         id: id.into(),
         label: {
@@ -14,7 +14,7 @@ fn step(id: &str, kind: StepKind) -> StepSpec {
     }
 }
 
-fn agent() -> StepKind {
+pub(super) fn agent() -> StepKind {
     StepKind::Agent {
         prompt: "do it".into(),
         gates: Vec::new(),
@@ -23,7 +23,7 @@ fn agent() -> StepKind {
 }
 
 /// Plan, approve, implement, verify, push, a pull request, its checks.
-fn forge_flow() -> Template {
+pub(super) fn forge_flow() -> Template {
     let mut template = Template::blank("Issue");
     template.steps = vec![
         step("plan", agent()),
@@ -50,13 +50,13 @@ fn forge_flow() -> Template {
 }
 
 /// Implement and verify, the branch being the result.
-fn branch_flow() -> Template {
+pub(super) fn branch_flow() -> Template {
     let mut template = forge_flow();
     template.steps.truncate(4);
     template
 }
 
-fn task(id: &str, template: Template, forge: Option<&str>) -> Task {
+pub(super) fn task(id: &str, template: Template, forge: Option<&str>) -> Task {
     Task::new(
         id.into(),
         template,
@@ -78,7 +78,7 @@ fn task(id: &str, template: Template, forge: Option<&str>) -> Task {
 }
 
 /// `task`'s run moved to step `at`, with an open visit there begun at `since`.
-fn at(mut task: Task, at: usize, since: u64) -> Task {
+pub(super) fn at(mut task: Task, at: usize, since: u64) -> Task {
     let run = task.runs.last_mut().unwrap();
     let id = run.template.steps[at].id.clone();
     run.step = at;
@@ -101,7 +101,7 @@ fn at(mut task: Task, at: usize, since: u64) -> Task {
     task
 }
 
-fn ended(mut task: Task, outcome: Outcome, why: Option<&str>) -> Task {
+pub(super) fn ended(mut task: Task, outcome: Outcome, why: Option<&str>) -> Task {
     let run = task.runs.last_mut().unwrap();
     if let Some(visit) = run.visits.last_mut() {
         visit.ended_at = Some(visit.started_at + 1);
@@ -128,7 +128,7 @@ fn closed() -> Around<'static> {
     }
 }
 
-fn pr(state: PrState, draft: bool) -> PullRequest {
+pub(super) fn pr(state: PrState, draft: bool) -> PullRequest {
     PullRequest {
         url: "https://forge/pr/7".into(),
         number: 7,
@@ -640,4 +640,57 @@ fn a_done_run_with_no_branch_is_never_left_reading_a_pull_request() {
     assert!(!work.has_pull_request());
     let next = next_action(Some(&work), open());
     assert_eq!(next.said.as_deref(), Some("The branch is the result"));
+}
+
+#[test]
+fn the_steps_to_come_are_the_ones_after_the_step_it_is_at() {
+    let task = at(task("1", forge_flow(), Some("GitHub")), 4, 900);
+    let work = Work::of(&task, Some(Working::Running), None);
+    assert_eq!(work.rest, ["Pr", "Checks"]);
+    // Sent back, the steps to come are counted from where it is again.
+    let task = at(task, 2, 950);
+    let work = Work::of(&task, Some(Working::Running), None);
+    assert_eq!(work.rest, ["Verify", "Push", "Pr", "Checks"]);
+    let done = ended(task, Outcome::Done, None);
+    assert!(Work::of(&done, None, None).rest.is_empty());
+}
+
+#[test]
+fn the_run_and_the_branch_are_measured_from_their_first_marks() {
+    let mut task = at(task("1", forge_flow(), Some("GitHub")), 0, 900);
+    assert_eq!(Work::of(&task, Some(Working::Running), None).span, None);
+    {
+        let visit = &mut task.runs[0].visits[0];
+        visit.start = Some("s1".into());
+        visit.end = Some("e1".into());
+        visit.ended_at = Some(901);
+    }
+    let mut task = at(task, 2, 902);
+    task.runs[0].visits[1].start = Some("s2".into());
+    let work = Work::of(&task, Some(Working::Running), None);
+    assert_eq!(work.span, Some(("s1".to_string(), "s2".to_string())));
+    assert_eq!(work.base.as_deref(), Some("s1"));
+}
+
+#[test]
+fn a_check_vouches_only_for_the_work_it_passed_on() {
+    use super::left::{check_stands, CheckStands};
+    assert_eq!(check_stands(None, "abc", false), CheckStands::NotRecorded);
+    assert_eq!(
+        check_stands(Some("abc"), "abc", false),
+        CheckStands::OnThis("abc".into())
+    );
+    // Uncommitted work beside the same commit is not what passed.
+    assert_eq!(
+        check_stands(Some("abc"), "abc", true),
+        CheckStands::Moved("abc".into())
+    );
+    assert_eq!(
+        check_stands(Some("abc"), "def", false),
+        CheckStands::Moved("abc".into())
+    );
+    assert_eq!(
+        CheckStands::Moved("0123456789abcdef".into()).said(),
+        "passed on 0123456789; the work has changed since"
+    );
 }

@@ -355,6 +355,14 @@ pub(super) fn folder_row(
             .map(|run| (run.repo.as_path(), run.name.as_str(), run.waiting.is_some())),
         &root.path,
     );
+    // The kept issue of the run the pill names, which pressing it opens on
+    // the Issues page; a forge's own issue has no page to open on.
+    let pill_issue = run.and_then(|(name, waiting)| {
+        runs.iter()
+            .find(|r| r.repo == root.path && r.name == name && r.waiting.is_some() == waiting)?
+            .kept
+    });
+    let pill_root = root.path.clone();
     let auto = auto_status(
         unattended,
         run,
@@ -509,6 +517,7 @@ pub(super) fn folder_row(
             let auto_badge = auto.as_ref().map(|auto| (auto.badge.clone(), auto.stuck));
             let warning = crate::theme::status_ink(cx).warning;
             let (suffix_target, fold_target) = (suffix_target.clone(), fold_target.clone());
+            let (pill_target, pill_root) = (suffix_target.clone(), pill_root.clone());
             let fold_path = fold_path.clone();
             let radius = cx.theme().radius;
             let (badge_bg, badge_fg) = (cx.theme().secondary, cx.theme().secondary_foreground);
@@ -572,15 +581,30 @@ pub(super) fn folder_row(
                 // worst thing this row could hide.
                 // Stuck takes the warning ink and keeps the word: the colour
                 // says "look here", and the hover says what is wrong.
+                // A run's pill opens its issue on the Issues page: the way
+                // back from the run to what it works.
                 .when_some(auto_badge, |row, (badge, stuck)| {
                     row.child(
                         div()
+                            .id(("project-auto", root_idx))
                             .flex_none()
                             .px_1()
                             .rounded(radius)
                             .bg(badge_bg)
                             .text_color(if stuck { warning } else { badge_fg })
-                            .child(badge),
+                            .child(badge)
+                            .when_some(pill_issue, |pill, number| {
+                                pill.occlude().cursor_pointer().on_click(
+                                    move |_, window, cx: &mut App| {
+                                        let root = pill_root.clone();
+                                        pill_target
+                                            .update(cx, |shell: &mut Shell, cx| {
+                                                shell.open_issue_on_page(&root, number, window, cx)
+                                            })
+                                            .ok();
+                                    },
+                                )
+                            }),
                     )
                 })
                 .when_some(rollup, |row, signal| row.child(signal_mark(signal, cx)))

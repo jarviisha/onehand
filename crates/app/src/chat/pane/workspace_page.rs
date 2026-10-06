@@ -143,7 +143,7 @@ impl ChatPane {
         // A filter survives the page being shown again, while its project does.
         let filter = match self.page.take() {
             Some(Page::Workspace(page)) => page.filter,
-            Some(Page::Tasks(_)) | None => None,
+            Some(Page::Tasks(_) | Page::Issues(_)) | None => None,
         }
         .filter(|only| projects.iter().any(|project| &project.root == only));
         self.page = Some(Page::Workspace(WorkspacePage {
@@ -227,7 +227,7 @@ impl ChatPane {
                 }
                 page.projects = projects;
             }
-            None => return,
+            Some(Page::Issues(_)) | None => return,
         }
         cx.notify();
     }
@@ -236,7 +236,7 @@ impl ChatPane {
     pub fn showing_workspace(&self) -> bool {
         match self.page {
             Some(Page::Workspace(_)) => true,
-            Some(Page::Tasks(_)) | None => false,
+            Some(Page::Tasks(_) | Page::Issues(_)) | None => false,
         }
     }
 
@@ -244,7 +244,52 @@ impl ChatPane {
     pub fn showing_tasks(&self) -> bool {
         match self.page {
             Some(Page::Tasks(_)) => true,
-            Some(Page::Workspace(_)) | None => false,
+            Some(Page::Workspace(_) | Page::Issues(_)) | None => false,
+        }
+    }
+
+    /// Whether the Issues page is what the pane shows.
+    pub fn showing_issues(&self) -> bool {
+        match self.page {
+            Some(Page::Issues(_)) => true,
+            Some(Page::Workspace(_) | Page::Tasks(_)) | None => false,
+        }
+    }
+
+    /// Show the Issues page, `view`, as it was left. Leaves the shown session
+    /// the way the other pages do.
+    pub fn show_issues(
+        &mut self,
+        view: gpui::AnyView,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.page = Some(Page::Issues(view));
+        self.leave_shown_session(window, cx);
+        self.active = None;
+        self.empty = None;
+        cx.notify();
+    }
+
+    /// The Issues page under the pane's header, as the other pages are drawn.
+    pub(super) fn issues_page(
+        &self,
+        view: gpui::AnyView,
+        cx: &mut Context<Self>,
+    ) -> gpui::AnyElement {
+        div()
+            .size_full()
+            .v_flex()
+            .child(self.header(cx))
+            .child(div().flex_1().min_h_0().v_flex().child(view))
+            .into_any_element()
+    }
+
+    /// Take the caret back before the Issues page leaves the frame: its
+    /// search may hold it, and a caret in nothing answers no key.
+    pub fn leave_issues_page(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.showing_issues() {
+            self.focus_handle.clone().focus(window, cx);
         }
     }
 

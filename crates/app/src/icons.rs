@@ -100,6 +100,7 @@ impl IconNamed for Icon {
 icons! {
     ArrowUpLight => "arrow-up-light",
     AtSign => "at-sign",
+    CircleDot => "circle-dot",
     GitBranch => "git-branch",
     Keyboard => "keyboard",
     LogOut => "log-out",

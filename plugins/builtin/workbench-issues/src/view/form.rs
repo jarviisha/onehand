@@ -2,8 +2,8 @@
 
 use super::IssuesView;
 use gpui::{
-    AnyElement, AppContext as _, ClickEvent, Context, Entity, IntoElement, ParentElement, Styled,
-    Window, div,
+    AnyElement, App, AppContext as _, ClickEvent, Context, Entity, IntoElement, ParentElement,
+    SharedString, Styled, Window, div,
 };
 use gpui_component::button::ButtonVariants as _;
 use gpui_component::input::{Input, InputState, Textarea, TextareaState};
@@ -21,21 +21,43 @@ pub(super) struct Form {
     title: Entity<InputState>,
     labels: Entity<InputState>,
     body: Entity<TextareaState>,
+    /// What the three said when the form opened, so a form nobody changed is
+    /// dropped without asking.
+    opened: (String, String, String),
+}
+
+impl Form {
+    /// Whether anything was typed since the form opened.
+    pub(super) fn changed(&self, cx: &App) -> bool {
+        let now = (
+            self.title.read(cx).value().to_string(),
+            self.labels.read(cx).value().to_string(),
+            self.body.read(cx).value().to_string(),
+        );
+        now != self.opened
+    }
 }
 
 impl IssuesView {
     /// Open the form, empty for a new issue or holding what issue `editing`
-    /// says now.
+    /// says now, once a draft already open with changes in it has been asked
+    /// about.
     pub(super) fn open_form(
         &mut self,
         editing: Option<u64>,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let Some(state) = self.state_mut() else {
+        self.unless_drafting(window, cx, move |view, window, cx| {
+            view.open_form_now(editing, window, cx)
+        });
+    }
+
+    fn open_form_now(&mut self, editing: Option<u64>, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(root) = self.root.clone() else {
             return;
         };
-        let current = editing.and_then(|n| state.issues.as_ref()?.get(n).cloned());
+        let current = editing.and_then(|n| self.issues_of(&root, cx)?.get(n).cloned());
         let (title, labels, body) = match &current {
             Some(issue) => (
                 issue.title.clone(),
@@ -44,7 +66,9 @@ impl IssuesView {
             ),
             None => Default::default(),
         };
+        let opened = (title.clone(), labels.clone(), body.clone());
         let form = Form {
+            opened,
             editing,
             editing_reference: current
                 .as_ref()
@@ -105,7 +129,13 @@ impl IssuesView {
 }
 
 /// The form: title, labels, body, then Save and Cancel under what they act on.
-pub(super) fn form_view(form: &Form, cx: &mut Context<IssuesView>) -> AnyElement {
+/// `project` names where the issue is kept, on the page, where the list spans
+/// projects.
+pub(super) fn form_view(
+    form: &Form,
+    project: Option<SharedString>,
+    cx: &mut Context<IssuesView>,
+) -> AnyElement {
     div()
         .flex_1()
         .min_w_0()
@@ -117,12 +147,18 @@ pub(super) fn form_view(form: &Form, cx: &mut Context<IssuesView>) -> AnyElement
             div()
                 .text_xs()
                 .text_color(cx.theme().muted_foreground)
-                .child(match form.editing {
-                    Some(_) => match &form.editing_reference {
-                        Some(reference) => format!("Editing {reference}"),
-                        None => "Editing draft".to_string(),
-                    },
-                    None => "New issue".to_string(),
+                .child({
+                    let said = match form.editing {
+                        Some(_) => match &form.editing_reference {
+                            Some(reference) => format!("Editing {reference}"),
+                            None => "Editing draft".to_string(),
+                        },
+                        None => "New issue".to_string(),
+                    };
+                    match project {
+                        Some(project) => format!("{said} in {project}"),
+                        None => said,
+                    }
                 }),
         )
         .child(Input::new(&form.title))

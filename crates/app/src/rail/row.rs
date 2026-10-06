@@ -521,7 +521,7 @@ pub(super) fn ellipsize(s: &str, max: usize) -> SharedString {
 /// debug when it is set twice.
 pub(crate) fn rail_row(
     id: &'static str,
-    icon: IconName,
+    icon: impl Into<Icon>,
     label: &'static str,
     cx: &App,
 ) -> Stateful<Div> {
@@ -535,7 +535,7 @@ pub(crate) fn rail_row(
 /// the fill does not move under the pointer on a row that is already chosen.
 pub(crate) fn rail_row_marked(
     id: &'static str,
-    icon: IconName,
+    icon: impl Into<Icon>,
     label: &'static str,
     cx: &App,
 ) -> Stateful<Div> {
@@ -571,7 +571,7 @@ pub(crate) fn rail_row_marked(
 /// caller's call.
 pub(crate) fn rail_row_filled(
     id: &'static str,
-    icon: IconName,
+    icon: impl Into<Icon>,
     label: &'static str,
     cx: &App,
 ) -> Stateful<Div> {
@@ -587,7 +587,12 @@ pub(crate) fn rail_row_filled(
 }
 
 /// The column every row tone shares: everything but the fill and the hover.
-fn row_shape(id: &'static str, icon: IconName, label: &'static str, cx: &App) -> Stateful<Div> {
+fn row_shape(
+    id: &'static str,
+    icon: impl Into<Icon>,
+    label: &'static str,
+    cx: &App,
+) -> Stateful<Div> {
     let radius = cx.theme().radius;
     div()
         .id(id)
@@ -600,7 +605,7 @@ fn row_shape(id: &'static str, icon: IconName, label: &'static str, cx: &App) ->
         .rounded(radius)
         .cursor_pointer()
         .text_sm()
-        .child(Icon::new(icon).size_4())
+        .child(icon.into().size_4())
         .child(div().flex_1().min_w_0().truncate().child(label))
 }
 

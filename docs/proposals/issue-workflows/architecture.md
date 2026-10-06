@@ -72,6 +72,11 @@ as the panel already hands it requests; the Workbench mode and the Issues page e
 it. A sync then runs once per file whatever the number of views, and an edit in one view is seen in
 the other at once.
 
+**As built**, the shared part is the Issues plugin's own (`view/store.rs`): one entity per issues
+file for the whole process, kept in a registry of weak handles, since both views are the plugin's
+and nothing in the app reads an issue. The app holds the page itself, once per window
+(`shell/issues_page.rs`).
+
 ## The parts and who calls whom
 
 ```mermaid

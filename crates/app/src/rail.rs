@@ -263,6 +263,29 @@ pub fn rail(
                         },
                     ))
                 })
+                // Below Tasks: every issue of the window's projects, on a
+                // page with room to work through them. No count: Tasks
+                // already counts what needs a person.
+                .child(
+                    {
+                        let (id, icon, label) =
+                            ("rail-issues", crate::icons::Icon::CircleDot, "Issues");
+                        match window_state_shell.issues_shown(cx) {
+                            true => rail_row_marked(id, icon, label, cx),
+                            false => rail_row(id, icon, label, cx)
+                                .text_color(cx.theme().muted_foreground),
+                        }
+                    }
+                    .tooltip(|window, cx| {
+                        Tooltip::new("Every issue of every project, and where its work stands")
+                            .build(window, cx)
+                    })
+                    .on_click(cx.listener(
+                        |shell: &mut Shell, _: &ClickEvent, window, cx| {
+                            shell.show_issues(window, cx);
+                        },
+                    )),
+                )
                 .child(new_session_block(window_state_shell, window_state, cx))
                 // The hairline is where the header stops being about the
                 // workspace and starts being about the list: everything above

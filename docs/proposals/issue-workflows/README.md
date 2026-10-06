@@ -42,9 +42,9 @@ keep yet (see *What is read and what is new* below).
 1. ~~**The slot kept when a window closes mid-lookup**~~: a bug, fixed on its own. Built.
 2. ~~**Issue progress, read-only** (piece 1, part A)~~: the next action, the step, the runs kept,
    and the header's one primary action, in the Issues tab's short form. Built.
-3. **The Issues page** (piece 5, the Issues half): the issues lifted into one owner, then the page
+3. ~~**The Issues page** (piece 5, the Issues half): the issues lifted into one owner, then the page
    with the list, the filters on progress and piece 1 in full. From here the dock is the glance and
-   the page the place to work.
+   the page the place to work.~~ Built.
 4. **Brief preview** (piece 2) and **preflight per kind of start** (piece 3), with *Run workflow…*
    opening on the issue it was pressed on.
 5. **Review in place** (piece 4) on the page, with the approval guarded by the visit it was read
@@ -63,7 +63,7 @@ documents and its row here names the pull request.
 |---|---|---|
 | 1 | none: a bug fix, specified in [operations.md](operations.md) item 1 | [#91](https://github.com/jarviisha/onehand/pull/91) |
 | 2 | [#90](https://github.com/jarviisha/onehand/issues/90) | [#96](https://github.com/jarviisha/onehand/pull/96) |
-| 3 | | |
+| 3 | [#97](https://github.com/jarviisha/onehand/issues/97) | [#104](https://github.com/jarviisha/onehand/pull/104) |
 | 4 | | |
 | 5 | | |
 | 6 | | |
@@ -76,10 +76,10 @@ The pieces are judged by what a person can do, not by how much they are shown. E
 | Question | Owned by |
 |---|---|
 | An issue with a very long description is opened: is it seen at once that it waits on me? | [issue-progress.md](issue-progress.md#done-when) |
-| With many issues: can the ones that need me be found without opening each? | [pages.md](pages.md#done-when) |
+| With many issues: can the ones that need me be found without opening each? | built: the Issues page rows of the by-hand list in [workflows.md](../../workflows.md#checking-it-by-hand) |
 | A failed run is retried: is it clear where it starts again and which configuration it keeps? | [review-in-place.md](review-in-place.md#done-when) |
-| A session or a diff is opened and left: is the same issue, filter and scroll still there? | [pages.md](pages.md#done-when) |
-| The window is narrowed or zoomed in: can the action and the current step still be read? | [issue-progress.md](issue-progress.md#done-when), [pages.md](pages.md#done-when) |
+| A session or a diff is opened and left: is the same issue, filter and scroll still there? | built: *Coming back* in the by-hand list in [workflows.md](../../workflows.md#checking-it-by-hand) |
+| The window is narrowed or zoomed in: can the action and the current step still be read? | [issue-progress.md](issue-progress.md#done-when); built for the page: *Narrow* in the by-hand list in [workflows.md](../../workflows.md#checking-it-by-hand) |
 
 ## What is read and what is new
 
@@ -172,8 +172,8 @@ worth deciding. `workflows.md` already lists the straight line as not built. The
 1. ~~Whether the issue's progress (piece 1) is drawn in the Issues tab first or waits for piece 5.~~
    Taken: the tab first, in its short form; the Issues page comes in wave 1, right after, and holds
    the full view and the review. The tab and the page are two views of one model, not one view
-   shrunk ([pages.md](pages.md#the-page-and-the-dock)).
-2. ~~The principle the Issues page needs ([pages.md](pages.md#the-conflict)).~~ Taken: *The
+   shrunk (DESIGN.md's Issues tab and Issues page bullets).
+2. ~~The principle the Issues page needs.~~ Taken: *The
    conversation is the centre while a session shows; pages take the agent pane and put the docks
    away. A page never opens over a session by itself; only a person picking it does.*
 3. ~~Whether forge issues (not kept in onehand) get piece 1 too.~~ Taken: kept issues only. A

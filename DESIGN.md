@@ -12,8 +12,10 @@ when it looks right, because a theme switch cannot reach it.
 
 ## Principles
 
-1. **Chat is the centre.** The conversation is the only region that flexes. The Workbench and
-   terminal are docks that start closed, open on demand, and never crowd the conversation.
+1. **The conversation is the centre while a session shows.** It is then the only region that
+   flexes. The Workbench and terminal are docks that start closed, open on demand, and never crowd
+   the conversation. Pages take the agent pane and put the docks away. A page never opens over a
+   session by itself; only a person picking it does.
 2. **Separate by hairline, not shadow.** A 1px `border` separates panels. Shadows are only for
    surfaces that really float: dialogs, popovers, the composer popup, and what floats over the
    transcript (the composer card, the cards pinned above it, the attachment tray and the
@@ -41,6 +43,7 @@ monospace font.
 │ Add project...   │                                    │                  │
 │ Overview         │ workflow > step > step   Stop      │                  │
 │ Tasks         2  │                                    │                  │
+│ Issues           │                                    │                  │
 │ [+ New session v]│                                    │    Workbench     │
 │ ──────────────── │          agent pane                │  (right dock,    │
 │ Projects | All   │        (centre, flexes)            │   full height)   │
@@ -62,6 +65,8 @@ monospace font.
   - *Workspace overview*, highlighted while that page shows;
   - *Tasks*, highlighted the same way, with a count pill of the tasks that need attention (no pill
     at zero);
+  - *Issues*, highlighted the same way, with no count (*Tasks* already counts what needs a
+    person);
   - *New session*, a filled split button whose caret picks the project and agent (shown only when
     there is a choice);
   - a hairline;
@@ -72,7 +77,7 @@ monospace font.
 
   A project row carries its folder icon and name, then any of: a pin, the branch (selected row
   only), the change count, an unattended-run pill (*auto*, *auto · N*, *auto · N waiting*), the
-  most urgent session mark, the ellipsis menu (selected row only; every row has it on right-click)
+  most urgent session mark (a run's pill opens its issue on the Issues page), the ellipsis menu (selected row only; every row has it on right-click)
   and the fold chevron, which alone folds. A session row carries its name, its mark only when it
   has one, and a muted agent footnote only when the project's sessions use different agents
   and the conversation has a title.
@@ -91,8 +96,8 @@ monospace font.
   - the terminal, with a dot while a shell is alive;
   - always last, the Workbench.
 
-  On the workspace overview and the Tasks page the header reads *Workspace* or *Tasks*, with no
-  dots menu and no dock buttons.
+  On the workspace overview, the Tasks page and the Issues page the header reads *Workspace*,
+  *Tasks* or *Issues*, with no dots menu and no dock buttons.
 
   When the pane narrows, the name gives way first, down to a minimum width; the controls keep
   their size. Without a session, the row names the project, and its dots menu holds the project's
@@ -125,7 +130,9 @@ monospace font.
     place that does not move, then ⋯); then its body; then what the work left (the branch and,
     on a project a forge serves, the pull request's state with *read 2m ago* and *Refresh*);
     then *Before*, its earlier runs and tasks (capped); then its history. The work's three lines
-    keep their height while a step ends, so the body never moves under a reader.
+    keep their height while a step ends, so the body never moves under a reader. The tab is the
+    glance beside a session; ⋯ ▸ *Open in Issues* opens the same issue on the Issues page, its
+    filters left as they are.
   - Hiding a dock keeps its buffers and processes.
   - A hidden terminal is unmounted and takes no room.
   - The terminal's open state follows the selected project.
@@ -144,6 +151,22 @@ monospace font.
     with a count, an empty line and a cap. A row is the task's title over a muted line (workflow,
     step or outcome, project) with ghost actions at its end: *Open session*, *Stop*, *Resume*,
     *Retry*, *Dismiss*, by state. Pressing a row's text opens the task's detail in the same column.
+  - *Issues* lists the issues of every project of the workspace, with the one picked beside the
+    list, or alone under *Back* when the page is too narrow for both. Above the list: the search and
+    *New issue* (in the project filtered to, else the one picked, its form saying which),
+    an *Open N | Closed N* switch, then the progress (*All*, *Needs attention*, *Running*,
+    *Queued*, *Pull request open*, *No run recorded*), project and label filters, how old the
+    pull request reading is and *Refresh*. A row is the title over a muted line (project,
+    reference), its line of work in the Tasks page's words (the warning ink only for what needs
+    the person, none for *No run recorded*) and the labels that fit with a count. The list never
+    moves under a person: a row keeps its place while its run changes, one that stops matching
+    stays saying *now …* until another issue is picked, new matches go below, and an issue
+    opened from elsewhere that the filters leave out is pinned on top, *Outside current
+    filters*, with *Clear filters*. The issue is the tab's order with the steps still to come
+    under its progress, and in *What the work left* the check, the files this run and the branch
+    changed (each opening its diff in place) and the commits past where the task started. The
+    page keeps its filters, search, selection and scroll while a session or the task detail is
+    looked at.
 - **No top bar, no status bar, no right toolbar.** Transient status goes in a toast. Modals are
   `Dialog`s. Settings is a large dialog: a nav column with Appearance, Workspace, Agents,
   Connections, Workflows and Shortcuts. Groups are separated by hairlines, not boxes.
