@@ -773,8 +773,6 @@ fn start(claimed: Claimed, cx: &mut App) -> Result<(), Unstarted> {
             shell.update(cx, |_, cx| crate::task::request(task_id, window, cx))
         })
     };
-    // ponytail: a window closed while the place is looked up also leaves the
-    // task counted; it goes at the next start of onehand.
     if asked.is_err() {
         super::placed(&task_id, cx);
     }

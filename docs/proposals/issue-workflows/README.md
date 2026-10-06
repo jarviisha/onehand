@@ -39,8 +39,7 @@ How they fit together in the code, with the flows: [architecture.md](architectur
 Smaller first steps than the pieces suggest, because pieces 1 and 4 each need data the runs do not
 keep yet (see *What is read and what is new* below).
 
-1. **The slot kept when a window closes mid-lookup** ([operations.md](operations.md#1-a-slot-kept-when-a-window-closes-mid-lookup)):
-   a bug, fixed on its own.
+1. ~~**The slot kept when a window closes mid-lookup**~~: a bug, fixed on its own. Built.
 2. **Issue progress, read-only** (piece 1, part A): the next action, the step, the runs kept, and
    the header's one primary action. Drawn in the Issues tab in its short form. Nothing new stored.
 3. **The Issues page** (piece 5, the Issues half): the issues lifted into one owner, then the page
@@ -54,6 +53,20 @@ keep yet (see *What is read and what is new* below).
 6. Then the Workflows page (piece 5's other half) and the rest of operations (piece 6).
 
 Each step is one pull request with its document changes in it.
+
+**Specs.** Each step gets a spec issue before it is built, written from this folder as it stands
+then, one step at a time and in this order. The next step to specify is the first without an
+issue below; publishing one writes its number here. A step built moves its text into the owning
+documents and its row here names the pull request.
+
+| Step | Spec | Built |
+|---|---|---|
+| 1 | none: a bug fix, specified in [operations.md](operations.md) item 1 | [#91](https://github.com/jarviisha/onehand/pull/91) |
+| 2 | [#90](https://github.com/jarviisha/onehand/issues/90) | |
+| 3 | | |
+| 4 | | |
+| 5 | | |
+| 6 | | |
 
 ## Five questions every layout answers
 

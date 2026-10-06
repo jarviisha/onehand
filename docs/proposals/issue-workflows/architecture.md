@@ -173,8 +173,9 @@ sequenceDiagram
     A->>T: reload, shows visit 6
 ```
 
-An action naming a run that is not the task's live run is refused in the `Tasks` global and never
-reaches the engine.
+An action naming a run that is not the task's live run is refused before it reaches the engine.
+The rule is a pure function in core (the task, the action's run and visit → taken or refused), so
+its tests live in core; the `Tasks` global only calls it.
 
 ## Flow: a start, through the preflight
 
