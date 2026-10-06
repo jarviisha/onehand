@@ -619,9 +619,6 @@ accumulate one row per issue ever worked.
   told apart from two different failures.
 - **A pull request as a task's source.** A review is answered only by putting the
   trigger label back on the issue the pull request came from.
-- **Letting go of a slot whose window closed mid-lookup.** A run can stay counted
-  against `at_once` until onehand restarts, when the window it was started in
-  closes in the moment its place is being looked up.
 - **Cleaning up after a merged pull request.** The worktree and its branch stay
   on disk; a merged pull request is the first signal clear enough to act on.
 - **A cap on waiting runs.** `at_once` counts working runs only; each waiting

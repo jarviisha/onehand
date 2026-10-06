@@ -253,6 +253,7 @@ pub(crate) fn request(id: String, window: &mut Window, cx: &mut Context<Shell>) 
         .and_then(|t| t.task(&id))
         .map(|task| task.setup.dir.clone())
     else {
+        crate::unattended::placed(&id, cx);
         return;
     };
     cx.spawn_in(window, async move |shell, cx| {
@@ -260,7 +261,8 @@ pub(crate) fn request(id: String, window: &mut Window, cx: &mut Context<Shell>) 
             .background_executor()
             .spawn(async move { queue::place_blocking(&dir) })
             .await;
-        let _ = shell.update_in(cx, |shell: &mut Shell, window, cx| {
+        let asked = id.clone();
+        let landed = shell.update_in(cx, |shell: &mut Shell, window, cx| {
             let handle = window.window_handle();
             let weak = cx.entity().downgrade();
             let free = cx.update_global::<Tasks, _>(|t, _| {
@@ -298,6 +300,12 @@ pub(crate) fn request(id: String, window: &mut Window, cx: &mut Context<Shell>) 
                 None => {}
             }
         });
+        // The window went while the place was looked up, so nothing asks for
+        // it: the cap lets go here, and the task reads cut off, as after a
+        // restart, rather than holding a slot until one.
+        if landed.is_err() {
+            gpui::AsyncApp::update(cx, |cx| crate::unattended::placed(&asked, cx));
+        }
     })
     .detach();
 }

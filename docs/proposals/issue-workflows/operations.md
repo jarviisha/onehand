@@ -11,21 +11,8 @@ out of that list in the same PR.
 
 ## 1. A slot kept when a window closes mid-lookup
 
-**Today.** An issue task the tick or a pick has just kept goes into `Unattended::starting`
-(`crates/app/src/unattended.rs`), counted against `at_once` until `placed` takes it out once it
-waits for or holds its place. `launch.rs` takes it out when `window.update` fails at once. But a
-window that closes *during* `task::request`'s place lookup (`task::queue::place_blocking`, run in
-the background) leaves the task in `starting`: it never asks, so it never reaches `placed`, and the
-slot is held until onehand restarts. Marked `ponytail:` at `crates/app/src/unattended/launch.rs`
-(the task kept, then its place asked for).
-
-**Fix.** The root is that `starting` is let go of on the paths that reach a place, and not on the
-one that does not. One rule at the one place every outcome of a request passes: when
-`task::request`'s lookup comes back to a window that is gone, it calls `unattended::placed` for the
-task (and the task reads interrupted, under *Needs attention*, as after a restart). A test drives a
-request whose window is dropped before the lookup returns and asserts the cap has room again.
-
-**Size.** Small; the first step of the proposal's order of work.
+Built: `task::request` lets the cap go when its window is gone by the time the place lookup
+returns. It left this proposal and the *Not built* list of `unattended.md`.
 
 ## 2. Say who holds each slot
 
@@ -108,7 +95,6 @@ The task's marks stay until the history cap drops them.
 
 ## Done when
 
-- Item 1: the test above, and the `ponytail:` comment gone.
 - Item 2: a refused issue start and Settings both name who holds each slot.
 - Item 3 and 4: each with its own *Checking it by hand* rows in `unattended.md`; item 4 with a
   case for a squash merge, a deleted remote branch, and a terminal open in the worktree in
