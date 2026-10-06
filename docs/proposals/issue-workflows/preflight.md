@@ -38,13 +38,14 @@ every start by one table. What is checked comes from the kind:
 | **New issue run** (pick or tick) | the workflow by pick, label or default; `[unattended]` agent, mode and timeout | a new worktree cut off `origin/<default>` after a fetch with a forge, else off the branch checked out; a detached HEAD without a forge is refused | checkout workflow, missing check command, slot, issue already worked, mode refused once learned |
 | **Resume** | the run's own snapshot and setup, unchanged | the run's existing place; the folder added back if it left the workspace | issue task past the slot |
 | **Retry** | the last run's setup (`Run::retry_of` copies it) and the snapshot chosen in the dialog (the run's own, or *Retry with version N*) | the task's existing place; another branch checked out refuses, changed work is said | issue task past the slot |
+| **Retry with current settings** | the task's workflow by id at its newest version; agent, mode, timeout and check command from where a new task of its kind takes them (piece 4) | as *Retry* | as *Retry*, and a workflow id no longer on offer |
 | **Answer a review** | the task's own snapshot and setup | the task's worktree, fast-forwarded to the forge's branch | no status checks step or no forge, pull request closed unmerged, branch gone its own way |
 
 ## Proposal
 
 ### One function, a kind in its input
 
-A pure function in core, `preflight(kind, facts)`. `kind` is one of the five above; `facts` is what
+A pure function in core, `preflight(kind, facts)`. `kind` is one of the six above; `facts` is what
 the app knows when the start is asked for: the configuration that kind runs with (above), the
 project's forge and its sign-in as last seen, the slot count and who holds the slots, the tasks on
 the issue, and what is known of the agent's modes (below). It returns findings, each:
@@ -54,9 +55,18 @@ the issue, and what is known of the agent's modes (below). It returns findings, 
 - **where it is changed**: the Settings page or menu entry, or, for a Resume or Retry whose own
   setup is the problem, *Retry with current settings* (piece 4).
 
+**The preflight decides; it does not claim or cut.** Who carries a start out stays as it is: for a
+new issue run, `unattended::launch` claims the issue and cuts the worktree, and for a new worktree
+run the launcher cuts it (`shell/workflows.rs`); each then keeps the task and calls
+`task::request`. Resume and both Retries call `task::request` on a task whose place already
+exists, and never claim or cut. Answering a review goes through `unattended::launch` too: it claims
+the issue (the label off, a comment saying it answers the review) and fast-forwards the task's
+existing worktree, but cuts nothing. The preflight runs first in each of those callers, before
+anything of theirs.
+
 | Check | Applies to | Blocks when | Informs |
 |---|---|---|---|
-| Workflow | new run, new issue run, Retry with a newer version | `workflow::validate` finds problems (listed first, not repeated) | |
+| Workflow | new run, new issue run, Retry with a newer version, Retry with current settings | `workflow::validate` finds problems (listed first, not repeated) | |
 | Agent | all | the agent the setup names is no longer configured | |
 | Mode | runs with a mode | the agent's current offer (below) does not hold it | the mode is not known yet |
 | Check command | runs with a command step naming none | the setup's check command is empty | a workflow with no command step: nothing verifies the work |

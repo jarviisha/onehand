@@ -93,7 +93,8 @@ A pure function in core, beside `Task::group`, from what a task keeps and what t
 | Ended, failed | the failure's text, then *Retry*; part B tells a configuration failure apart, and piece 4 offers *Retry with current settings* for it, since a plain retry keeps the run's setup |
 | Done, pull request open | review it on the forge; put the label back to have a review answered |
 | Done, pull request merged | none; the issue's own state says whether anything is left |
-| Done, pull request closed unmerged | the pull request was closed; reopen the issue to have it answered, as the label path says |
+| Done, pull request closed unmerged | the pull request was closed unmerged; **reopen the pull request** (not the issue) and put the label back to have it answered, as `launch::taking_blocking` says |
+| Done, a forge serves the project, the workflow has no pull request step | look at the branch on the forge; the branch is the result. Not *could not be read*: no pull request is the expected end |
 | Done, no forge | look at the branch; close the issue when satisfied |
 | Done, pull request could not be read | *Refresh* |
 | Finished by a person (stopped, taken over, dismissed) | none |
@@ -112,21 +113,47 @@ Never on a timer of its own. A pull request merged on the forge after the run en
 next of these. What failed to read keeps the last value, drawn as stale with the failure beside it,
 so *could not be read* is said on a request that failed, not inferred from silence.
 
-**Each read is keyed to what asked for it**: the project, the issue number, the task id, and a
-counter bumped whenever the issue on screen changes. A result whose key is not the current one is
-dropped, so a slow read of issue 12 never lands on issue 13.
+**Each read is keyed to what asked for it, and to when.** A request carries:
+
+- **the issue's identity**: the issues file it is kept in (`issues::file_for`) and its number, the
+  pair `task::issue_runs` already matches on. Never the project and number alone: two workspaces
+  can open one project and each keep an issue 12 of its own;
+- **the task id and the run id** the read is about, so a Retry that keeps the task but starts a new
+  run makes every read of the old run stale;
+- **a generation**, bumped every time a read is sent, whatever the reason.
+
+Only an answer carrying the current generation is taken; any other is dropped. That covers a
+switch to another issue and two refreshes of the same issue answering out of order alike: the
+later request's answer wins even when the earlier one lands last.
 
 ## Part B: what runs start keeping
 
 | Field | On | Written by | Read before it existed |
 |---|---|---|---|
-| Failure kind (configuration, forge, other) | `Outcome::Failed`, beside its text | where the failure is made: the mode refusal, the missing check command, the forge steps | *other* |
+| Failure kind (configuration, forge, other) | the run, as `failure`, **beside** `Outcome::Failed(String)`, which keeps its shape | where the failure is made: the mode refusal, the missing check command, the forge steps | absent → *other* |
 | Pull request (number, url) | the run | the engine on `forge_done` from *Pull request* | absent; part A's lookup by branch still answers |
 | Command result (passed or failed, exit, the tail of its output, the commit it ran on) | the command step's visit | the engine on `command_finished` | absent; *not recorded for this run* |
 
-The output tail is capped as a visit's output is (the last 60 lines shown). The task file keeps its
-`schema_version`; the new fields are optional, so an older file reads and an older build reading a
-newer file is refused as now.
+The output tail is capped as a visit's output is (the last 60 lines shown).
+
+**Compatibility, as the task file works today.** A task file has no `schema_version`: `Task` is
+written and read with serde directly (`task::files`), and no task type refuses unknown keys. So:
+
+- **No existing shape changes.** `Outcome` stays as it is, `{"Failed": "reason"}` included; the
+  kind is a separate optional field on the run, `#[serde(default, skip_serializing_if =
+  "Option::is_none")]`, as `Setup::mode` and `Setup::forge` were added. Changing `Failed(String)`
+  into `Failed { kind, why }` would make every older file unreadable, and is not done.
+- **An older file reads** with every new field absent.
+- **An older build reading a newer file** ignores the new fields, and drops them the next time it
+  saves that task. Nothing refuses it, since nothing can: no version is written today, and adding
+  one now would only protect against builds after it. `tasks.md` already accepts no way back to an
+  older build in this pre-release; the loss is these fields, never the task.
+- **The outcomes in unsent reports** (`IssueSource::unsent`, `PendingReport::outcome`) are
+  `Outcome` too, and are covered by the same rule; they gain nothing.
+
+Tests: a task file from before part B, with a failed run and an unsent report, reads, saves and
+reads again unchanged; a file with the new fields round-trips; the failure kind absent reads as
+*other*.
 
 ## What stays
 
@@ -151,12 +178,14 @@ Part A:
 - A done run on an open issue shows *Issue: Open*, *Run: done*, *Pull request: open*; closing the
   issue changes only the first; merging on the forge changes the third at the next refresh.
 - With the network pulled, *Refresh* says the pull request could not be read and keeps the rest.
-- Switching issues while a read is in flight never shows the first issue's answer on the second.
+- Switching issues while a read is in flight never shows the first issue's answer on the second;
+  two refreshes of one issue answering out of order show the later request's answer; a Retry
+  drops reads of the run before it.
 - The next-action function has a test per row.
 
 Part B:
 
-- A task file from before part B reads, and its lines say *not recorded*.
+- A task file from before part B, with an unsent report, reads; its lines say *not recorded*.
 - A passed check shows its tail; a mode refusal reads as a configuration failure.
 
 ## Documents to change when built

@@ -39,6 +39,12 @@ id and the visit id of the approval step's open visit** it was drawn from. The e
 for approval **at that visit**. The driver and the `Tasks` global route by task id rather than by
 session uid, so a window other than the session's can act.
 
+**The run id is checked before the visit id goes on.** Visit ids count from 1 in every run, so
+visit 4 of run 1 and visit 4 of run 2 are both "4". The `Tasks` global refuses an action whose task
+has no live run, or whose live run is not the run id the action carries, and only then hands the
+visit id to the driver and the engine. A view of a run a Retry has replaced is refused like a view
+of a closed visit.
+
 What that settles:
 
 | Case | Without the id | With it |
@@ -85,15 +91,29 @@ anything starts:
 
 - **what changed**, one line each, old → new: the agent, the mode, the check command, the timeout,
   the workflow's version (already offered today as *Retry with version N*, folded in here);
-- **where it starts**, by the carry-over rule (`Run::retry_plan`) for the workflow, and further:
-  a changed check command holds the start at or before the last command step up to it, as
-  `Run::recheck` does for changed work, since what the old command passed proves nothing about the
-  new one. A changed agent, mode or timeout moves no start;
-- the preflight for that configuration ([preflight.md](preflight.md), kind *Retry*).
+- **where it starts**, the earlier of two points:
+  - the carry-over rule (`Run::retry_plan`) for the workflow version it runs;
+  - **the earliest step it would carry over whose command actually changes.** A command step's
+    command is its own `command`, or, when it names none, the setup's check command. Each command
+    step before the carry-over start is compared, old command against new, and the first that
+    differs is where the retry starts. Not the last command step: in
+    `Implement → Verify (project check) → Package (own command) → Push`, a changed project check
+    starts the retry at **Verify**, since starting at Package would push work the new check never
+    ran on. A step whose own command is unchanged is not a reason to go back;
+  a changed agent, mode or timeout moves no start;
+- the preflight for that configuration ([preflight.md](preflight.md), kind *Retry with current
+  settings*).
 
-For an issue task, current settings are `[unattended]` and the workflow its labels or default
-choose now; for a launcher task, Settings' agent and the project's check command now. *Answer the
-review* keeps its task's own configuration, as the label path does.
+**Which workflow it runs: the task's own, by id, at its newest version.** The workflow the last
+run's snapshot names (`Template::id`) is looked up among the workflows on offer now, as *Retry with
+version N* already does (`Template::newer_than`). An issue's labels or `[unattended] workflow` are
+**not** asked again: they choose the workflow of a new task, and a retry is the same task. A
+workflow whose id is gone, or that no longer validates, blocks, said in the preflight.
+
+**The rest of current settings** come from where a new task of that kind takes them: for an issue
+task, `[unattended]` (agent, mode, timeout) and the project's check command; for a launcher task,
+Settings' default agent and the project's check command. *Answer the review* keeps its task's own
+configuration, as the label path does.
 
 ### Answer the review, as an action
 
@@ -119,7 +139,10 @@ path.
   says *not recorded* for the check.
 - A run failed on a mode not offered: *Retry* fails again the same way, *Retry with current
   settings* shows the old and new mode and runs with the new one.
-- A changed check command moves *Retry with current settings*' start back to the last command step.
+- With `Verify (project check) → Package (own command)`, a changed project check starts *Retry
+  with current settings* at Verify; a changed Package command alone starts it at Package; neither
+  changed leaves the carry-over start. A test per case, in core.
+- An action carrying a visit id of an earlier run of the same task is refused.
 - *Answer the review* starts a new run at the repair step, refused with the label path's words.
 
 ## Documents to change when built

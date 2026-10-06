@@ -62,10 +62,12 @@ place for something a person writes and runs from.
 - **An unsaved workflow when the page changes.** The editor's draft lives on the page's entity, not
   in the render, so leaving for another page and coming back finds it as it was. Closing the window
   or picking another workflow with changes unsaved asks, in a modal, whether to drop them.
-- **One source for the page and the dock.** The Issues page and the Issues mode read and write the
-  same project's issues file. Both go through one owner per project in the app (the one the mode
-  uses now), so an edit in one is seen in the other at once and a sync never runs twice. Neither
-  keeps its own copy of an issue.
+- **One source for the page and the dock, which is new work.** Today each `IssuesView` owns its
+  `RootIssues`: the issues, the sync and its own selection and draft. A second view needs the data
+  and the sync lifted into one owner in the app per issues file, while selection, filters and
+  drafts stay with each view. That refactor is laid out in
+  [architecture.md](architecture.md#who-owns-the-issues) and lands before the page, in its PR.
+  Issues are named by `IssueKey` (the issues file and the number), never by project and number.
 - **Closed issues.** `issues::open_across` lists open issues only, counting closed ones, for the
   overview's card. The page's *Closed* filter needs a reader of its own: the same walk with the
   state as an argument, capped and saying what it left out.
