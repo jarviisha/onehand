@@ -1,6 +1,6 @@
 # Piece 6: unattended runs when there are many issues
 
-- Status: proposal, wave 2. Part of [the proposal](README.md).
+- Status: proposal; item 1 in wave 1, the rest in wave 2. Part of [the proposal](README.md).
 - Contracts it touches: [unattended.md](../../../docs/unattended.md) (*Not built, on purpose*, `at_once`,
   the rule that worktrees are left on disk), [tasks.md](../../../docs/tasks.md) (*Worktrees are never
   removed by onehand*).
@@ -25,18 +25,33 @@ one that does not. One rule at the one place every outcome of a request passes: 
 task (and the task reads interrupted, under *Needs attention*, as after a restart). A test drives a
 request whose window is dropped before the lookup returns and asserts the cap has room again.
 
-**Size.** Small; worth doing in wave 1 if it is touched anyway.
+**Size.** Small; the first step of the proposal's order of work.
 
-## 2. Say what holds each slot, and why a run waits
+## 2. Say who holds each slot
 
-**Today.** *Look for an issue now* says the cap is reached; a refused pick names the issues being
-worked. The Tasks page shows queued tasks, but not whether one waits for its place or for a slot.
+**Today.** A full slot refuses: an issue pick, a Resume or a Retry of an issue's task past
+`at_once` is refused in `task::request` (`unattended::over_cap`), and the refusal names the issues
+being worked. *Look for an issue now* says the cap is reached. Nothing shows the slots standing.
 
-**Proposal.** One line on the Tasks page's *Queued* card and in Settings ▸ Workspace ▸ Unattended
-runs: *Slots: 1 of 1 — #12 · Work an issue (Implement)*, each opening its task. A queued issue task
-says *waits for a slot* or *waits for its place, behind …*. Read from `issues_working` and the queue;
-nothing stored. This is the *Waiting* row of the preflight ([preflight.md](preflight.md)) shown after
-the start.
+**Proposal.** One line in Settings ▸ Workspace ▸ Unattended runs, and in the refusal itself:
+*Slots: 1 of 1 — #12 · Work an issue (Implement)*, each opening its task. Read from
+`issues_working` and `starting`; nothing stored. A queued issue task waits for its place only, and
+says which task holds it. This is the *Slot* row of the preflight ([preflight.md](preflight.md))
+shown outside a start.
+
+### A queue for slots, not in this proposal
+
+Turning a full slot into a wait is a change to the start, not a status line, and is left for its
+own proposal. It would have to settle, at least:
+
+- **when the claim happens**: before the wait (the label is gone, the issue is told a run started
+  while nothing runs) or after (the issue can be taken by another start meanwhile);
+- **what holds the slot**: whether a task waiting for a slot counts against the cap of waiting
+  runs (item 3);
+- **cancelling**: *Stop* on a task waiting for a slot, and what the issue is told;
+- **a restart**: whether a slot wait survives it, given that nothing starts by itself after one;
+- **the order**: first in first out across windows and projects, against the pinned-project order
+  the tick uses today.
 
 ## 3. A cap on waiting runs
 
@@ -59,27 +74,45 @@ A merged pull request is named in `unattended.md` as the first signal clear enou
 
 **Proposal.** Never automatic. On a task whose pull request is merged (piece 1 reads it), the task
 detail and the issue offer **Remove worktree…**, a destructive action in the danger tint with a
-modal naming the folder and the branch. Before it asks, a check in core, off the UI thread:
+modal naming the folder and the branch. A check in core, off the UI thread, runs **when the modal
+opens and again when it is confirmed**, since anything can change between the two:
 
 - uncommitted or untracked files in the worktree;
-- commits on the branch not on the forge's branch, or not in the merged pull request;
-- a session of the workspace still open on the worktree.
+- commits on the branch past the head the forge says the pull request merged (below);
+- anything of onehand's still using the folder, **across every window**: a task holding or
+  waiting for its place there, a session on it, a terminal or a Neovim whose directory is in it, a
+  command step still running there.
 
-Any of these is listed in the modal and the removal is refused until the person deals with it; a
-session open there is closed first only by the person. The removal itself is `git worktree remove`
-and `git branch -d` (never `-D`), and the task's marks stay until the history cap drops them.
+Any finding is listed and the removal refused until the person deals with it; onehand closes
+nothing on the person's behalf.
+
+**The branch, after the forge's merge.** `git branch -d` refuses a branch whose commits are not
+reachable from its upstream or `HEAD`, which is the usual state after a squash or rebase merge, and
+the forge's branch may already be deleted. So the branch is judged by the forge instead: the
+pull request's merged head commit, as the forge reports it, against the local branch's head.
+
+| Local branch head | Forge's remote branch | What happens |
+|---|---|---|
+| the merged head | any | the worktree is removed, and the branch with `git branch -D`, the modal saying the forge's merged head is why |
+| past the merged head | any | the worktree is refused (commits past the merge are work); nothing removed |
+| the forge cannot be read | any | refused, said; nothing removed |
+| `-D` itself fails | | the worktree stays removed, the branch is kept, and the failure is said |
+
+The task's marks stay until the history cap drops them.
 
 ## What stays
 
 - Nothing here starts, stops, answers or removes anything a person did not ask for.
-- `at_once` keeps meaning working runs.
+- `at_once` keeps meaning working runs, and a full slot keeps refusing.
 - A worktree is never removed for a run that did not end merged.
 
 ## Done when
 
 - Item 1: the test above, and the `ponytail:` comment gone.
-- Item 2: a queued issue task says which it waits for.
-- Item 3 and 4: each with its own *Checking it by hand* rows in `unattended.md`.
+- Item 2: a refused issue start and Settings both name who holds each slot.
+- Item 3 and 4: each with its own *Checking it by hand* rows in `unattended.md`; item 4 with a
+  case for a squash merge, a deleted remote branch, and a terminal open in the worktree in
+  another window.
 
 ## Documents to change when built
 

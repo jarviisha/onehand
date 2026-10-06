@@ -50,10 +50,24 @@ Markdown with the same four headings, worded for its kind:
 
 ### What an issue lacks, said before it runs
 
-A pure function in core reads an issue's body and says which of the four headings are missing or
-empty. It is advice, never a refusal: the picker and the issue's detail show *No acceptance
-written* in the muted ink, and the run still starts. Onehand does not judge whether acceptance is
-met: that stays the reviewer's, as the forge steps and gates leave it.
+A pure function in core reads an issue's body against **the template it was written from** and
+says which of that template's headings are missing or empty. It is advice, never a refusal: the
+picker and the issue's detail show *No acceptance written* in the muted ink, and the run still
+starts. Onehand does not judge whether acceptance is met: that stays the reviewer's.
+
+How a body is read:
+
+- **Which headings count** are the template's own: the shipped four, or the headings of the
+  project template the body matches. A body that matches no known template gets **no advice at
+  all**: an issue written its own way, or under other headings, is never told it lacks acceptance.
+- **A body matches a template** when it carries at least half of that template's headings.
+  Headings are ATX lines (`#` to `######`), matched on their text with case and surrounding space
+  ignored; the level does not matter, so a template's `##` and a body's `###` agree.
+- **A section is empty** when, between its heading and the next heading of the same or a higher
+  level, nothing is left once HTML comments (`<!-- … -->`, the template's hints) and whitespace are
+  taken out. A section holding only a sub-heading is empty.
+- **Fenced code blocks are skipped** when looking for headings, so a `# comment` in a shell
+  sample is not one.
 
 ### The brief, shown and added to
 
@@ -63,8 +77,8 @@ the workflow's steps and limits, and the first prompt filled with this issue's b
 `brief_for` writes. It is kept on the task's brief, not on the issue, so a retry carries it and the
 issue's text is never rewritten behind its author.
 
-For an unattended run found by its label nothing is shown, since nobody is there; the missing
-headings go into the report instead, so the person reading why a run went wrong sees *the issue had
+For an unattended run found by its label nothing is shown, since nobody is there; for a body that
+matches a template, the missing headings go into the report instead, so the person reading why a run went wrong sees *the issue had
 no acceptance* beside it.
 
 ### Later, not in this piece
@@ -84,18 +98,20 @@ worktree; worth its own proposal once templates show which parts are usually mis
 
 ## Open questions
 
-1. Are the four headings matched by their text, so a translated template still counts? Recommended:
-   by the shipped words and the project template's own headings only.
-2. Does a project's template replace the shipped three, or sit beside them? Recommended: replace;
+1. Does a project's template replace the shipped three, or sit beside them? Recommended: replace;
    a project that wrote its own has chosen.
+2. Is half of a template's headings the right line for a match? Recommended: start there, and
+   count the advice a person dismisses before moving it.
 
 ## Done when
 
 - A new issue from each template has the four headings; one without a template is unchanged.
 - The picker's preview shows this issue's body inside the first prompt, and what is typed under
   *Instructions for this run* reaches the agent's first prompt and a retry's.
-- An issue with no *Acceptance* says so in the picker and the detail, starts all the same, and an
-  unattended report on it names the missing part.
+- An issue from a template whose *Acceptance* holds only its hint comment says so in the picker
+  and the detail, starts all the same, and an unattended report on it names the missing part.
+- An issue written without a template, or under its own headings, gets no advice.
+- The body reader has a test per rule above: heading levels, comments, fences, the match line.
 
 ## Documents to change when built
 

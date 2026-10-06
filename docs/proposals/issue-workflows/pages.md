@@ -45,7 +45,7 @@ place for something a person writes and runs from.
   (*Tasks* already counts what needs a person).
 - **The Issues page**: the list across the workspace's projects (`issues::Across` exists for the
   overview's card), filters by project, label, open or closed, and by progress (piece 1's state:
-  working, waits on me, done not settled, nothing yet); the issue on the right, with piece 1's *Work*
+  working, waits on me, done with the issue still open, nothing yet); the issue on the right, with piece 1's *Work*
   section in full and diffs opened in place.
 - **The Workflows page**: the list as Settings has it, *Run…* on each (the launcher on the project
   on screen), and the editor as a list of steps, each showing its prompt, its gates or command, what
@@ -53,6 +53,22 @@ place for something a person writes and runs from.
   No canvas, no dragging between lanes. Settings ▸ Workflows keeps only the project check commands,
   or moves them to the project menu.
 - **Glossary**: no new words; *page* is not a glossary term.
+
+### What the pages have to settle
+
+- **Which project a run starts on.** A page across the workspace has no project on screen. An
+  issue's *Run workflow…* uses the issue's project. A workflow's *Run…* asks for the project first,
+  defaulting to the one selected in the rail, and the launcher then opens on it as today.
+- **An unsaved workflow when the page changes.** The editor's draft lives on the page's entity, not
+  in the render, so leaving for another page and coming back finds it as it was. Closing the window
+  or picking another workflow with changes unsaved asks, in a modal, whether to drop them.
+- **One source for the page and the dock.** The Issues page and the Issues mode read and write the
+  same project's issues file. Both go through one owner per project in the app (the one the mode
+  uses now), so an edit in one is seen in the other at once and a sync never runs twice. Neither
+  keeps its own copy of an issue.
+- **Closed issues.** `issues::open_across` lists open issues only, counting closed ones, for the
+  overview's card. The page's *Closed* filter needs a reader of its own: the same walk with the
+  state as an argument, capped and saying what it left out.
 
 ## Questions for the decision
 
