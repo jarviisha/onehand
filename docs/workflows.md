@@ -310,7 +310,7 @@ while a block remains. A Resume and a Retry are judged by the run's own setup
 | Base | | what the branch is cut off: the default branch on `origin`, fetched first, or the branch checked out |
 | Forge | `gh` missing or signed out, as last seen | |
 | Issue | another run works on it | |
-| Earlier task | | the issue's last task needs attention: starting makes a second task, and *Show task* leads to that one |
+| Earlier task | | the issue's last task needs attention: starting makes a second task, and *Retry…* opens that task's Retry dialog instead |
 | Slot | `at_once` is reached, naming the issues holding the slots | |
 
 **What an agent offers is learned whenever it comes up**, a person's session included, and kept
@@ -356,6 +356,10 @@ is written in full and on disk before its old one goes, and the folder goes once
   step that runs only sometimes, and no two steps at once; a command's failure going back to an
   earlier step is the only way back, besides a revision. One session carries every step, so a step
   cannot use a different agent from the rest.
+- **A start does not say beforehand that its place is taken.** The preflight has the row, but
+  finding the place means asking git where the checkout's top is, which no render may do; a start
+  that queues says so in a notification once it has asked. An issue's new run is cut a worktree of
+  its own and never queues.
 
 ## Checking it by hand
 
@@ -425,10 +429,10 @@ change (`git checkout . && git clean -fd`).
 | A worktree run outside git | Open the launcher on a folder that is not a git repository and pick a worktree workflow | Under the fields, in the danger ink: no worktree can be cut; *Run* is spent. A checkout workflow there is offered |
 | A Retry whose mode is gone | Run an issue task with `mode` set to one the agent offers, let it end exhausted, then make the agent offer other modes (or change the spec's mode list) and open a session on it; *Retry* the task | The dialog lists, in the danger ink, that the agent offers no such mode and that the run keeps its own setup; *Retry* is spent. Changing `[unattended] mode` does not clear it |
 | A full slot | With `at_once = 1` and an issue task running, *Run workflow…* on another issue | *Before it starts* names the issue being worked; *Run* is spent |
-| An earlier task needing attention | On an issue whose last task ended exhausted, *Run workflow…* | Muted: the last task ended and a new start makes a second task, with *Show task*, which closes the form and opens that task |
+| An earlier task needing attention | On an issue whose last task ended exhausted, *Run workflow…* | Muted: the last task ended and a new start makes a second task, with *Retry…*, which closes the form and opens that task's Retry dialog |
 | A template | *New issue* in the tab, press *Bug* in the *Template* row | The body holds *Problem*, *Scope*, *Acceptance* and *How to check*, each with its hint; the labels field gains `bug`; the row goes once anything is typed in the body. Save with only *Problem* filled: the issue's facts line says *No scope, acceptance or how to check written*, muted |
 | No advice | An issue whose body is a sentence, or written under other headings | No *No … written* line, in the detail or the start form |
-| Advice on a run | Run a workflow on the templated issue above, by hand and by its label | The start form says the same muted line and *Run* is offered; the search's run reports, last, *The issue has no … written.* |
+| Advice on a run | Run a workflow on the templated issue above, by hand and by its label | The start form says the same muted line and *Run* is offered; each run's first report ends on *The issue has no … written.* |
 | Instructions for this run | In that form type `Keep the old flag.` under *Instructions for this run*, open *Preview*; *Run*; later *Retry* the task | The first prompt in the preview ends its instructions with the line as it is typed; the run's first prompt carries it, and so does the retry's; the issue's body is unchanged |
 | Where the work stands | While that run works, look at the issue | Above the body: *Running · Plan · step 1 of N*, *Working on Plan, started …*, no primary action, *Open session* and *Stop*. Below it: *What the work left* names the branch |
 | A long body waiting for approval | Give an issue a body several screens long, run on it, with the mock workflow agent, a duplicate of *Implement on a branch* given an approval step after its first, until it waits there | Without scrolling: *Waiting for approval · <the approval step> · step 2 of N*, *Approving starts …* and *Review…*, which opens the run's session with the step strip |

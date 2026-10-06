@@ -355,8 +355,8 @@ fn form_room(window: &Window) -> (gpui::Pixels, gpui::Pixels) {
 }
 
 /// One thing the preflight found: in the danger ink when it blocks, muted
-/// when it only says, with where it is changed, and *Show task* for an
-/// earlier task worth retrying instead.
+/// when it only says, with where it is changed, and *Retry…* for an earlier
+/// task worth retrying instead, which opens its Retry dialog.
 pub(crate) fn finding_line(
     at: usize,
     finding: &onehand_core::preflight::Finding,
@@ -383,14 +383,14 @@ pub(crate) fn finding_line(
                 .child(text),
         )
         .children(finding.task.clone().map(|task| {
-            crate::controls::action(("pick-show-task", at))
+            crate::controls::action(("pick-retry-task", at))
                 .ghost()
                 .small()
-                .label("Show task")
+                .label("Retry…")
                 .on_click(move |_, window: &mut Window, cx: &mut App| {
                     shell.update(cx, |shell, cx| {
                         shell.cancel_pick(cx);
-                        shell.show_task(&task, window, cx);
+                        shell.begin_retry(task.clone(), window, cx);
                     });
                 })
         }))

@@ -1819,3 +1819,20 @@ fn a_turn_that_said_nothing_answers_nothing_rather_than_the_turn_before() {
     assert_eq!(chat.prose_since(from), "changed");
     assert_eq!(chat.prose_since(from + 10), "");
 }
+
+/// The moment an agent says which modes it offers is reported, so the app can
+/// keep the list for starts that ask before the agent comes up again.
+#[test]
+fn the_modes_an_agent_offers_are_reported_when_it_says_them() {
+    let (mut chat, _rx) = chat_with_tx();
+    assert!(!chat.apply(AcpEvent::AgentChunk("hi".into())).modes_offered);
+    let offered = chat.apply(AcpEvent::Modes {
+        current: Some("default".into()),
+        available: vec![crate::acp::Mode {
+            id: "default".into(),
+            name: "Default".into(),
+        }],
+    });
+    assert!(offered.modes_offered);
+    assert_eq!(chat.modes[0].id, "default");
+}

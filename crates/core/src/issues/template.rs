@@ -62,9 +62,7 @@ pub fn shipped() -> Vec<IssueTemplate> {
 /// The sections a body leaves empty or out, by the template it matches.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Lacking {
-    /// The template matched.
-    pub template: String,
-    /// Its headings the body lacks, as the template writes them.
+    /// The matched template's headings the body lacks, as the template writes them.
     pub missing: Vec<String>,
 }
 
@@ -102,7 +100,7 @@ pub fn lacking(body: &str, templates: &[IssueTemplate]) -> Option<Lacking> {
         .iter()
         .filter_map(|line| line.heading.as_ref())
         .collect();
-    let (template, wanted) = templates
+    let wanted = templates
         .iter()
         .map(|template| (template, headings(&template.body)))
         .filter(|(_, wanted)| !wanted.is_empty())
@@ -121,16 +119,13 @@ pub fn lacking(body: &str, templates: &[IssueTemplate]) -> Option<Lacking> {
                 _ => Some(next),
             },
         )
-        .map(|(template, wanted, _)| (template, wanted))?;
+        .map(|(_, wanted, _)| wanted)?;
     let missing: Vec<String> = wanted
         .into_iter()
         .filter(|w| !written(&lines, &w.text))
         .map(|w| w.raw)
         .collect();
-    (!missing.is_empty()).then(|| Lacking {
-        template: template.name.clone(),
-        missing,
-    })
+    (!missing.is_empty()).then_some(Lacking { missing })
 }
 
 /// A heading as read: its level, its text compared lowercase, and its text

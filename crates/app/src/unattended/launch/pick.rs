@@ -4,6 +4,7 @@
 use super::super::{connector_for, lacks_check_given, opted_in_roots, tick, why_not, with};
 use super::{Unstarted, earlier, landed, prepare_blocking, taking_blocking, trackers_blocking};
 use gpui::App;
+use onehand_core::issues::template;
 use onehand_core::unattended::{self as core, IssueRow, Tracker};
 use std::path::{Path, PathBuf};
 
@@ -125,6 +126,8 @@ pub fn start_picked(
     })
     .ok_or("Unattended runs are not set up.")??;
     let earlier = earlier(cx);
+    let lacks =
+        template::lacking(row.issue.body_text(), &template::shipped()).map(|lacks| lacks.note());
     cx.spawn(async move |cx| {
         let number = row.issue.number;
         let named = tracker.named(&row.issue);
@@ -163,6 +166,9 @@ pub fn start_picked(
                         )
                         .map(|claimed| super::Claimed {
                             instructions,
+                            // The form said it, but its report is read later,
+                            // by whoever judges why the run went wrong.
+                            notes: lacks.into_iter().collect(),
                             ..claimed
                         }))
                     }))

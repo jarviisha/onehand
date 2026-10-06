@@ -36,8 +36,8 @@ pub(super) struct Claimed {
     /// What the claim works on.
     work: Work,
     /// The window a person picked it in, rather than the search finding it.
-    /// Such a run is put on screen there as it starts and stays when it ends —
-    /// somebody asked for it and is watching — so a card it parks is theirs.
+    /// Such a run is placed from there and its project stays when it ends —
+    /// somebody asked for it — so a card it parks is theirs.
     picked_in: Option<gpui::AnyWindowHandle>,
     /// What the person who picked it added for this run, after the brief's
     /// own instructions; empty for one the search found.
