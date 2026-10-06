@@ -65,6 +65,7 @@ fn a_missing_config_starts_from_defaults() {
             name: "Only".into(),
             command: "echo".into(),
             args: vec![],
+            auth: Default::default(),
         }]
     })
     .expect("first save must succeed");

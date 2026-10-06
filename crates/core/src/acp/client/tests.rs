@@ -522,6 +522,7 @@ async fn a_child_that_dies_before_speaking_carries_its_stderr_into_the_failure()
                 // and failed on a loaded one.
                 "exec 1>&-; sleep 0.1; echo 'npm error code ETARGET' >&2; exit 1".into(),
             ],
+            Default::default(),
             std::env::temp_dir(),
             None,
         ));
@@ -550,6 +551,7 @@ async fn a_line_that_is_not_utf8_does_not_stop_the_drain() {
             "-c".into(),
             r"printf '\377\376 garbage\n' >&2; echo 'npm error code ETARGET' >&2; exit 1".into(),
         ],
+        Default::default(),
         std::env::temp_dir(),
         None,
     ));

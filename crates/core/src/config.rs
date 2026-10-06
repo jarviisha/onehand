@@ -11,6 +11,7 @@
 //! opts into `deny_unknown_fields`, which is the attribute that would turn a
 //! setting left over from an older build into a refusal to load at all.
 
+use crate::acp::AgentAuth;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::io::Write as _;
@@ -26,6 +27,10 @@ pub struct AgentSpec {
     pub command: String,
     #[serde(default)]
     pub args: Vec<String>,
+    /// Which credential a Claude Code agent signs in with; left out of the
+    /// file while it is the default.
+    #[serde(default, skip_serializing_if = "AgentAuth::is_inherit")]
+    pub auth: AgentAuth,
 }
 
 impl AgentSpec {
@@ -456,6 +461,7 @@ pub(crate) fn default_agents() -> Vec<AgentSpec> {
         name: "Claude Code".into(),
         command: "npx".into(),
         args: default_adapter_args(),
+        auth: AgentAuth::Inherit,
     }]
 }
 

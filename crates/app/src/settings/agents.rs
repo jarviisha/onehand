@@ -9,6 +9,7 @@ use gpui::{
 use gpui_component::button::ButtonVariants;
 use gpui_component::input::Input;
 use gpui_component::{ActiveTheme, Icon, Sizable as _, StyledExt};
+use onehand_core::acp::{AgentAuth, OAUTH_TOKEN};
 use onehand_core::config::AgentSpec;
 
 /// One row in the agent list: name + command, with edit and delete actions.
@@ -51,6 +52,14 @@ fn agent_row(shell: &Entity<Shell>, idx: usize, spec: &AgentSpec, cx: &App) -> i
                 .font_family(cx.theme().mono_font_family.clone())
                 .text_xs()
                 .child(line),
+        )
+        .children(
+            match spec.auth {
+                AgentAuth::Inherit => None,
+                AgentAuth::Login => Some("Signs in with the stored claude login".to_string()),
+                AgentAuth::Token => Some(format!("Signs in with {OAUTH_TOKEN}")),
+            }
+            .map(|line| div().text_xs().text_color(muted).child(line)),
         )
         .children(check.map(|(line, ink)| div().text_xs().text_color(ink).child(line)))
         .into_any_element();
@@ -175,6 +184,7 @@ pub(super) fn agents_page(handle: &Entity<Shell>, cx: &App) -> AnyElement {
         draft.command.clone(),
         draft.args.clone(),
     );
+    let auth = draft.auth;
     let saveable = draft.to_spec(cx).is_some();
     let editing = draft.editing.is_some();
 
@@ -183,7 +193,8 @@ pub(super) fn agents_page(handle: &Entity<Shell>, cx: &App) -> AnyElement {
         .enumerate()
         .map(|(i, spec)| agent_row(handle, i, spec, cx).into_any_element())
         .collect::<Vec<_>>();
-    let (clear, save) = (handle.clone(), handle.clone());
+    let (clear, save, pick) = (handle.clone(), handle.clone(), handle.clone());
+    let auths = AgentAuth::ALL.map(|auth| SharedString::from(auth.label()));
 
     let list = section(None, None, cx)
         .gap_3()
@@ -224,6 +235,32 @@ pub(super) fn agents_page(handle: &Entity<Shell>, cx: &App) -> AnyElement {
         "Arguments",
         about("Separated by spaces; quote one that holds a space."),
         Input::new(&args),
+        cx,
+    ))
+    .child(field(
+        "Sign-in",
+        Some(
+            format!(
+                "For Claude Code. Claude login uses the login claude stored on this machine. \
+                 OAuth token uses {OAUTH_TOKEN} from the environment onehand was started in: \
+                 a token from claude setup-token, on a Pro, Max, Team or Enterprise plan, \
+                 valid for a year, ignored under --bare, and without claude.ai connectors or \
+                 Remote Control. Either clears the API keys and base URL that would otherwise \
+                 win; an apiKeyHelper in Claude Code's own settings still can."
+            )
+            .into_any_element(),
+        ),
+        onehand_plugin_host::switch(
+            "agent-auth",
+            &auths,
+            AgentAuth::ALL.iter().position(|a| *a == auth).unwrap_or(0),
+            gpui_component::Size::Small,
+            move |at: &usize, _: &mut Window, cx: &mut App| {
+                let auth = AgentAuth::ALL[*at];
+                pick.update(cx, |shell, cx| shell.set_agent_auth(auth, cx));
+            },
+            cx,
+        ),
         cx,
     ))
     .child(

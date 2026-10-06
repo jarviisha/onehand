@@ -48,6 +48,7 @@ mod tests {
             name: "Claude Code".into(),
             command: "npx".into(),
             args: vec![],
+            auth: Default::default(),
         }
     }
 

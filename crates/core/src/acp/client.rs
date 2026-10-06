@@ -34,6 +34,7 @@ use super::types::{
     AcpEvent, AcpRequest, Attachment, ElicitChoice, ElicitField, ElicitKind, ElicitOutcome,
     ElicitValue, Elicitation, Mode, PermissionOption, PermissionRequest, ToolKind,
 };
+use crate::acp::AgentAuth;
 use crate::attachment::{inline_image_mime, MAX_INLINE_IMAGE_BYTES};
 use futures::channel::mpsc::Sender as EventTx;
 use futures::stream::{self, Stream, StreamExt};
@@ -62,13 +63,14 @@ const HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(90);
 pub fn connect(
     command: String,
     args: Vec<String>,
+    auth: AgentAuth,
     cwd: PathBuf,
     resume: Option<String>,
 ) -> impl Stream<Item = AcpEvent> {
     // Spawning is deferred into the stream rather than done here, so a command
     // that does not exist surfaces as `Disconnected` on the stream the caller is
     // already reading instead of as a second failure mode at the call site.
-    let spawned = Transport::spawn(command, args, cwd.clone());
+    let spawned = Transport::spawn(command, args, auth, cwd.clone());
     connect_over_result(spawned, cwd, resume)
 }
 
@@ -238,8 +240,20 @@ fn explain(what: String, tail: &StderrTail) -> String {
 
 impl Transport {
     /// Run `command` as a child process and talk to it over its stdio.
-    fn spawn(command: String, args: Vec<String>, cwd: PathBuf) -> Result<Self, String> {
-        let mut child = Command::new(&command)
+    fn spawn(
+        command: String,
+        args: Vec<String>,
+        auth: AgentAuth,
+        cwd: PathBuf,
+    ) -> Result<Self, String> {
+        let mut cmd = Command::new(&command);
+        for var in auth.env_to_clear(
+            |var| std::env::var(var).ok(),
+            |path| std::fs::read_to_string(path),
+        )? {
+            cmd.env_remove(var);
+        }
+        let mut child = cmd
             .args(&args)
             .current_dir(&cwd)
             .stdin(Stdio::piped())

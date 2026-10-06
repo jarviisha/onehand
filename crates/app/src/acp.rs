@@ -19,6 +19,7 @@
 
 use futures::channel::mpsc;
 use futures::{SinkExt as _, StreamExt as _};
+use onehand_core::acp::AgentAuth;
 use onehand_core::acp::{self, AcpEvent};
 use onehand_core::config::AgentSpec;
 use std::cell::RefCell;
@@ -52,6 +53,7 @@ pub struct AcpRuntime {
 struct Warm {
     command: String,
     args: Vec<String>,
+    auth: AgentAuth,
     cwd: PathBuf,
     events: mpsc::Receiver<AcpEvent>,
     /// When its process was started, which is when the agent read what it
@@ -65,7 +67,10 @@ impl Warm {
     /// name: renaming an agent does not change the process, and two agents
     /// pointed at one command are interchangeable to the adapter.
     fn matches(&self, spec: &AgentSpec, cwd: &PathBuf) -> bool {
-        self.command == spec.command && self.args == spec.args && &self.cwd == cwd
+        self.command == spec.command
+            && self.args == spec.args
+            && self.auth == spec.auth
+            && &self.cwd == cwd
     }
 }
 
@@ -112,6 +117,7 @@ impl AcpRuntime {
         *self.warm.borrow_mut() = Some(Warm {
             command: spec.command.clone(),
             args: spec.args.clone(),
+            auth: spec.auth,
             cwd,
             events,
             started: Instant::now(),
@@ -169,10 +175,10 @@ impl AcpRuntime {
         resume: Option<String>,
     ) -> mpsc::Receiver<AcpEvent> {
         let (mut tx, rx) = mpsc::channel(EVENT_BUFFER);
-        let (command, args) = (spec.command.clone(), spec.args.clone());
+        let (command, args, auth) = (spec.command.clone(), spec.args.clone(), spec.auth);
 
         self.rt.spawn(async move {
-            let stream = acp::connect(command, args, cwd, resume);
+            let stream = acp::connect(command, args, auth, cwd, resume);
             futures::pin_mut!(stream);
             while let Some(event) = stream.next().await {
                 if tx.send(event).await.is_err() {
