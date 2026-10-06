@@ -34,7 +34,7 @@ use super::types::{
     AcpEvent, AcpRequest, Attachment, ElicitChoice, ElicitField, ElicitKind, ElicitOutcome,
     ElicitValue, Elicitation, Mode, PermissionOption, PermissionRequest, ToolKind,
 };
-use crate::agent::AgentAuth;
+use crate::acp::AgentAuth;
 use crate::attachment::{inline_image_mime, MAX_INLINE_IMAGE_BYTES};
 use futures::channel::mpsc::Sender as EventTx;
 use futures::stream::{self, Stream, StreamExt};
@@ -247,7 +247,7 @@ impl Transport {
         cwd: PathBuf,
     ) -> Result<Self, String> {
         let mut cmd = Command::new(&command);
-        for var in auth.cleared(|var| std::env::var(var).ok())? {
+        for var in auth.env_to_clear(|var| std::env::var(var).ok())? {
             cmd.env_remove(var);
         }
         let mut child = cmd

@@ -48,7 +48,8 @@ minor bump may break any of them.
   Connections, Workflows and Shortcuts. Shortcuts are edited there and persisted under `[keymap]`.
 - An agent picks how Claude Code signs in (`auth` in `[[agents]]`): as launched, the stored
   `claude` login, or `CLAUDE_CODE_OAUTH_TOKEN` from onehand's environment. The last two clear the
-  API keys and provider switches that would outrank them; onehand never stores the token.
+  API keys, provider switches and base URL that would outrank them; onehand never stores the
+  token.
 - The transcript reads the agent's work as one line per stretch, and a turn ends on the files it
   changed. The composer is one surface above the conversation.
 - The rail keeps the user's order, splits into two lists, and fades a name that runs out of room.

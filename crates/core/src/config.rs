@@ -11,7 +11,7 @@
 //! opts into `deny_unknown_fields`, which is the attribute that would turn a
 //! setting left over from an older build into a refusal to load at all.
 
-use crate::agent::AgentAuth;
+use crate::acp::AgentAuth;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::io::Write as _;

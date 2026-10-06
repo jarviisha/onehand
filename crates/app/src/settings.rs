@@ -15,7 +15,7 @@ use gpui_component::button::ButtonVariants;
 use gpui_component::input::InputState;
 use gpui_component::tag::Tag;
 use gpui_component::{ActiveTheme, Icon, IconName, Sizable as _, StyledExt};
-use onehand_core::agent::AgentAuth;
+use onehand_core::acp::AgentAuth;
 use onehand_core::config::AgentSpec;
 
 mod agents;

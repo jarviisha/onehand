@@ -168,7 +168,7 @@ impl Shell {
         cx.notify();
     }
 
-    pub fn set_agent_auth(&mut self, auth: onehand_core::agent::AgentAuth, cx: &mut Context<Self>) {
+    pub fn set_agent_auth(&mut self, auth: onehand_core::acp::AgentAuth, cx: &mut Context<Self>) {
         self.agent_draft.auth = auth;
         cx.notify();
     }

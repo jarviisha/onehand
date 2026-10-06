@@ -19,8 +19,8 @@
 
 use futures::channel::mpsc;
 use futures::{SinkExt as _, StreamExt as _};
+use onehand_core::acp::AgentAuth;
 use onehand_core::acp::{self, AcpEvent};
-use onehand_core::agent::AgentAuth;
 use onehand_core::config::AgentSpec;
 use std::cell::RefCell;
 use std::path::PathBuf;
