@@ -62,7 +62,7 @@ documents and its row here names the pull request.
 | Step | Spec | Built |
 |---|---|---|
 | 1 | none: a bug fix, specified in [operations.md](operations.md) item 1 | [#91](https://github.com/jarviisha/onehand/pull/91) |
-| 2 | [#90](https://github.com/jarviisha/onehand/issues/90) | |
+| 2 | [#90](https://github.com/jarviisha/onehand/issues/90) | [#96](https://github.com/jarviisha/onehand/pull/96) |
 | 3 | | |
 | 4 | | |
 | 5 | | |
