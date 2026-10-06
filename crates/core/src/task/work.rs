@@ -24,7 +24,7 @@ pub struct StepAt {
 /// How a task stands, as the next action is decided from: the task groups
 /// and every [`Outcome`], with waiting told apart into its two kinds.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum Stand {
+pub(crate) enum Stand {
     Running,
     /// Running, at the step that waits for the forge's status checks.
     StatusChecks,
@@ -54,7 +54,7 @@ pub enum Stand {
 
 /// Where a run is about its pull request.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum PrStep {
+pub(crate) enum PrStep {
     /// Its workflow has no pull request step.
     None,
     /// It has not reached it yet.
@@ -81,8 +81,8 @@ pub struct Work {
     /// The connector the branch goes to; `None` where no forge serves the
     /// project, whose work stays on the branch.
     pub forge: Option<String>,
-    pub pull_request: PrStep,
-    pub stand: Stand,
+    pull_request: PrStep,
+    stand: Stand,
 }
 
 impl Work {
@@ -237,6 +237,8 @@ pub struct Earlier {
     /// Its workflow and how it stands.
     pub line: String,
     pub attention: bool,
+    /// Running, queued or waiting: a retry put it back to work.
+    pub active: bool,
 }
 
 /// One issue's work: its newest task, and what came before it.
@@ -272,6 +274,7 @@ pub fn issue_work<'a>(
                 task: task.id.clone(),
                 line: format!("{workflow} · {said}"),
                 attention: task.group(working).needs_attention(),
+                active: Work::of(task, working, None).active(),
             }
         })
         .collect();
@@ -477,7 +480,9 @@ fn done(work: &Work, pr: PrSeen<'_>) -> Next {
             &[Act::ShowTask],
         );
     };
-    if work.pull_request == PrStep::None {
+    // No pull request step, or no branch to have opened one from: the
+    // branch, or the work itself, is the result.
+    if !work.has_pull_request() {
         return row(
             Some("The branch is the result".into()),
             Some(Act::OpenBranch),
@@ -520,9 +525,14 @@ fn done(work: &Work, pr: PrSeen<'_>) -> Next {
     }
 }
 
+/// A pull request as one line names it: *#7 · open, draft*.
+pub fn pr_named(pr: &PullRequest) -> String {
+    format!("#{} · {}", pr.number, pr_said(pr))
+}
+
 /// A pull request's state in a word or two: *open, draft*, *open*,
 /// *merged*, *closed unmerged*.
-pub fn pr_said(pr: &PullRequest) -> &'static str {
+fn pr_said(pr: &PullRequest) -> &'static str {
     match (pr.state, pr.draft) {
         (PrState::Open, true) => "open, draft",
         (PrState::Open, false) => "open",

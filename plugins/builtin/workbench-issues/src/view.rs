@@ -16,7 +16,7 @@ use gpui_component::input::InputState;
 use gpui_component::text::TextViewState;
 use gpui_component::{StyledExt, h_resizable, resizable_panel};
 use onehand_core::connector::{Connector, PullRequest};
-use onehand_core::issues::{self, Issues, LocalIssue};
+use onehand_core::issues::{self, IssueKey, Issues, LocalIssue};
 use onehand_core::task::work::{IssueWork, Reading};
 use onehand_plugin_host::{Ask, Request, hint, status_line};
 use std::collections::HashMap;
@@ -123,6 +123,8 @@ pub(crate) struct IssuesView {
     moved: bool,
     /// The window came back to the front since the issue was last drawn.
     returned: bool,
+    /// The issue whose work was last drawn, so opening one reads it.
+    shown: Option<IssueKey>,
     /// Watches the window coming back to the front, made on the first draw.
     _activation: Option<Subscription>,
     /// The projects a run may be started on.
@@ -202,6 +204,7 @@ impl IssuesView {
             pr: Reading::default(),
             moved: false,
             returned: false,
+            shown: None,
             _activation: None,
             offered: Vec::new(),
             _sync_every: cx.spawn(async move |view, cx| {
@@ -519,13 +522,11 @@ impl IssuesView {
             session: working_in(&issue, &self.live).map(str::to_string),
             offered: self.offered.iter().any(|offered| offered == root),
             pr: self.pr_seen(work.as_ref()),
-            read_at: self.pr.value.as_ref().map(|(_, at)| *at),
+            read_at: self.pr_value(work.as_ref()).map(|(_, at)| *at),
             stale: self
-                .pr
-                .value
-                .as_ref()
+                .pr_value(work.as_ref())
                 .and_then(|(pr, _)| pr.as_ref())
-                .map(|pr| format!("#{} · {}", pr.number, onehand_core::task::work::pr_said(pr))),
+                .map(onehand_core::task::work::pr_named),
             work,
         };
         issue_view(root, &issue, body, publish_to, doing, window, cx)

@@ -332,7 +332,7 @@ fn a_done_run_with_its_pull_request_open_is_reviewed_on_the_forge() {
     );
     assert_eq!(next.said.as_deref(), Some("Review it on GitHub"));
     assert_eq!(acts(&next), (Some(Act::OpenPullRequest), vec![Act::Edit]));
-    assert_eq!(pr_said(&open_pr), "open, draft");
+    assert_eq!(pr_named(&open_pr), "#7 · open, draft");
 }
 
 #[test]
@@ -543,7 +543,7 @@ fn the_newest_task_is_the_issues_work_and_an_older_one_needing_attention_is_coun
     assert_eq!(work.key, key);
     assert_eq!(work.work.task, "2");
     assert_eq!(work.earlier.len(), 1);
-    assert!(work.earlier[0].attention);
+    assert!(work.earlier[0].attention && !work.earlier[0].active);
     assert_eq!(work.earlier[0].task, "1");
     assert_eq!(work.earlier_runs, 0);
     assert!(issue_work(key, []).is_none());
@@ -588,4 +588,19 @@ fn a_new_run_makes_older_reads_stale_and_a_failure_keeps_the_last_value() {
     assert_eq!(reading.value, None);
     assert!(!reading.land(old, Ok(9), 30));
     assert!(reading.land(asked, Ok(2), 31));
+}
+
+#[test]
+fn a_done_run_with_no_branch_is_never_left_reading_a_pull_request() {
+    let mut task = ended(
+        at(task("1", forge_flow(), Some("GitHub")), 6, 900),
+        Outcome::Done,
+        None,
+    );
+    task.runs.last_mut().unwrap().setup.branch = None;
+    let mut work = Work::of(&task, None, None);
+    work.branch = None;
+    assert!(!work.has_pull_request());
+    let next = next_action(Some(&work), open());
+    assert_eq!(next.said.as_deref(), Some("The branch is the result"));
 }

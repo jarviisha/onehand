@@ -16,7 +16,7 @@ use gpui_component::button::{Button, ButtonVariants as _};
 use gpui_component::menu::PopupMenu;
 use gpui_component::{ActiveTheme, Icon, IconName, Sizable as _, StyledExt};
 use onehand_core::issues::LocalIssue;
-use onehand_core::task::work::{Act, Around, IssueWork, Next, PrSeen, next_action, pr_said};
+use onehand_core::task::work::{Act, Around, IssueWork, Next, PrSeen, next_action, pr_named};
 use onehand_plugin_host::{Request, action, menu_below, menu_item, status_ink};
 use std::path::Path;
 
@@ -78,27 +78,39 @@ pub(super) fn progress_view(
                 step.label, step.at, step.of
             ))
         }));
-    let mut said = next.said.clone().unwrap_or_default();
-    if next.still_active {
-        if !said.is_empty() {
-            said.push_str(". ");
-        }
-        said.push_str("Issue is closed; this run is still active.");
-    }
+    let said = next.said.clone().unwrap_or_default();
+    let ink = if next.muted {
+        muted
+    } else {
+        cx.theme().foreground
+    };
+    // The run's own sentence keeps its ink on a closed issue; only the note
+    // that the issue is closed is quieter.
     let sentence = div()
+        .h_flex()
+        .gap_1()
         .min_w_0()
-        .truncate()
         .text_xs()
-        .text_color(if next.muted || next.still_active {
-            muted
-        } else {
-            cx.theme().foreground
-        })
-        // A space keeps the line's height when there is nothing to say.
-        .child(if said.is_empty() {
-            "\u{a0}".to_string()
-        } else {
-            said
+        .child(
+            div()
+                .min_w_0()
+                .truncate()
+                .text_color(ink)
+                // A space keeps the line's height when there is nothing to say.
+                .child(if said.is_empty() {
+                    "\u{a0}".to_string()
+                } else {
+                    said
+                }),
+        )
+        .when(next.still_active, |line| {
+            line.child(
+                div()
+                    .min_w_0()
+                    .truncate()
+                    .text_color(muted)
+                    .child("Issue is closed; this run is still active."),
+            )
         });
     div()
         .flex_none()
@@ -442,10 +454,7 @@ pub(super) fn left_view(doing: &Doing, cx: &mut Context<IssuesView>) -> Option<A
             .text_color(muted)
             .child("none for this branch")
             .into_any_element(),
-        PrSeen::Read(Some(pr)) => div()
-            .truncate()
-            .child(format!("#{} · {}", pr.number, pr_said(pr)))
-            .into_any_element(),
+        PrSeen::Read(Some(pr)) => div().truncate().child(pr_named(pr)).into_any_element(),
         // The last value stays, marked stale, with what failed beside it:
         // silence is never taken for an answer.
         PrSeen::Failed(why) => div()

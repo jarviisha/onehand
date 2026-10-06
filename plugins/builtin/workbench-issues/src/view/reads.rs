@@ -31,6 +31,16 @@ impl IssuesView {
             .then(|| (work.key.clone(), w.task.clone(), w.run.clone()))
     }
 
+    /// What was last read of `work`'s pull request and when, if the reads are
+    /// about it: never another issue's, task's or run's.
+    pub(super) fn pr_value(
+        &self,
+        work: Option<&IssueWork>,
+    ) -> Option<&(Option<onehand_core::connector::PullRequest>, u64)> {
+        let about = work.and_then(Self::pr_about)?;
+        (self.pr.about() == Some(&about)).then_some(self.pr.value.as_ref())?
+    }
+
     /// The pull request of `work`, as last read for it.
     pub(super) fn pr_seen(&self, work: Option<&IssueWork>) -> PrSeen<'_> {
         let Some(about) = work.and_then(Self::pr_about) else {
@@ -58,8 +68,12 @@ impl IssuesView {
         let returned = self.returned;
         let moved = std::mem::take(&mut self.moved);
         let Some(work) = work else {
+            self.shown = None;
             return;
         };
+        // Opening an issue reads it, even one read before another was shown.
+        let opened = self.shown.as_ref() != Some(&work.key);
+        self.shown = Some(work.key.clone());
         let Some(about) = Self::pr_about(work) else {
             return;
         };
@@ -68,10 +82,10 @@ impl IssuesView {
             .value
             .as_ref()
             .is_none_or(|(_, at)| issues::now().saturating_sub(*at) >= READ_AGE.as_secs());
-        if self.pr.about() == Some(&about) && !moved && !(returned && old) {
-            return;
+        let due = self.pr.about() != Some(&about) || opened || moved || (returned && old);
+        if due {
+            self.read_pr(root, work, about, cx);
         }
-        self.read_pr(root, work, about, cx);
     }
 
     /// Read the pull request of `work` now, whatever was read before.
@@ -85,10 +99,12 @@ impl IssuesView {
         let (Some(name), Some(branch)) = (&work.work.forge, work.work.branch.clone()) else {
             return;
         };
+        let generation = self.pr.ask(about);
         let Some(forge) = connector::named(self.connectors, name) else {
+            let why = format!("{name} is not a connector this build has");
+            self.pr.land(generation, Err(why), issues::now());
             return;
         };
-        let generation = self.pr.ask(about);
         let root = root.to_path_buf();
         cx.spawn(async move |view, cx| {
             let answer = cx
@@ -130,8 +146,9 @@ impl IssuesView {
         let Some(key) = self.root.as_deref().and_then(|root| self.key(root, number)) else {
             return false;
         };
-        self.works
-            .iter()
-            .any(|work| work.key == key && work.work.active())
+        self.works.iter().any(|work| {
+            work.key == key
+                && (work.work.active() || work.earlier.iter().any(|earlier| earlier.active))
+        })
     }
 }
