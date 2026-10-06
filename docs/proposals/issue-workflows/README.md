@@ -169,11 +169,16 @@ worth deciding. `workflows.md` already lists the straight line as not built. The
 4. ~~Whether issue templates (piece 2) are per project files or shipped with onehand.~~ Taken:
    three shipped; a project's own `.github/ISSUE_TEMPLATE/*.md` replaces them whole.
 
-Taken in the review of 2026-10-06, and written into the pieces: region 2 follows the newest task
+Taken in the reviews of 2026-10-06, and written into the pieces: region 2 follows the newest task
 of an issue; *Pull request open* is a progress filter of its own, not part of *Needs attention*;
 the forge's review is always *pull request review*, and region 4 is *What the work left*, never
 *Results*; before the Issues page exists the tab's *Review…* opens the run's session; *Retry*
 loses *Retry with version N* to *Retry with current settings*; the Issues page reads pull
 requests once per project, never per row; a configuration failure is a preflight block found late;
 a re-added label still starts a new task, and its report names the earlier one left; project check
-commands move to the project page.
+commands move to the project page. After a second review: a closed issue only gates a new start, never a
+live run's actions; a check is judged against the commit and the uncommitted work it ran on; a
+capped pull request read says what it did not read; the review block opens below region 2, only on
+a press; an issue opened outside the page's filters is pinned, not unfiltered; *Needs attention*
+takes an issue when any of its tasks needs it; an issue draft is kept, and asked about before it
+is dropped.

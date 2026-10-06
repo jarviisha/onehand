@@ -60,7 +60,9 @@ what it waits on before its description, however long that is:
 An issue can hold several tasks: a pick on an issue whose last task ended, even under *Needs
 attention*, makes a new task beside it (`taking_blocking` refuses only a working one). The newest
 task is the issue's work; an older one under *Needs attention* stays in region 5, in the warning
-ink, and the preflight says so before a new start (its *Earlier task* row).
+ink, and the preflight says so before a new start (its *Earlier task* row). Such an issue still
+counts under the page's *Needs attention* filter, as the Tasks page counts every task, and its
+row says *earlier task needs attention* ([pages.md](pages.md#filters)).
 
 A run moving on changes what regions 2 and 4 say; it never reorders the regions, inserts one above
 the body that was not there, or scrolls the view. Region 2 keeps its height while a task is working
@@ -148,14 +150,19 @@ tab cannot each pick their own.
 | Done, pull request merged | none; the issue's own state says whether anything is left | none | *Run workflow…* |
 | Done, pull request closed unmerged | the pull request was closed unmerged; **reopen the pull request** (not the issue) and put the label back to have it answered, as `launch::taking_blocking` says | *Open pull request* | *Show task* |
 | Done, a forge serves the project, the workflow has no pull request step | the branch is the result. Not *could not be read*: no pull request is the expected end | *Open branch* | *Show task* |
-| Done, no forge | look at the branch; close the issue when satisfied | none | *Show task* |
+| Done, no forge | look at the branch; close the issue when satisfied, from ⋯ ▸ *Close issue* | none | *Show task* |
 | Done, pull request could not be read | what failed | *Refresh* | *Show task* |
 | Finished by a person (stopped, taken over, dismissed) | none | none | *Run workflow…* |
-| Any task, issue closed | the task's line as above, muted | none | *Reopen issue*, *Show task* |
+| An ended or finished task, issue closed | the task's line as above, muted | none | *Reopen issue*, *Show task* |
+| A running, queued or waiting task, issue closed | its row above, unchanged, and *Issue is closed; this run is still active.* muted | its row's | its row's |
 
 - *Work here* opens a session on the project's checkout as it is, with no workflow; its menu entry
   says so in one line, so it is not taken for a second way to run a workflow.
 - *Edit*, *Publish to …* and *Reopen issue* are always secondary, wherever the state puts them.
+- **The issue's state only gates a new start.** A closed issue offers no *Run workflow…* and no
+  *Answer the pull request review*; it never hides *Stop*, *Open session to answer* or *Review…*
+  from a run still active on it. Closing does not stop a run: *Close issue* stays in ⋯, with its
+  confirm, which says *A run is still working on it; closing does not stop it* when one is.
 - The secondary actions sit in one place that does not move: after the primary one, then ⋯ for
   what does not fit. With no primary action the place is kept empty, not filled by a secondary
   one, so a button is not where another was a moment ago.
@@ -193,7 +200,7 @@ later request's answer wins even when the earlier one lands last.
 |---|---|---|---|
 | Failure kind (configuration, forge, other) | the run, as `failure`, **beside** `Outcome::Failed(String)`, which keeps its shape | where the failure is made, by one rule: **a configuration failure is a preflight block found late** (the agent no longer configured, a mode not offered, an empty check command, a workflow that no longer validates); a forge step or `gh` failing is *forge*; anything else *other*. A test maps every block row of the preflight to *configuration* | absent → *other* |
 | Pull request (number, url) | the run | the engine on `forge_done` from *Pull request* | absent; part A's lookup by branch still answers |
-| Command result (passed or failed, exit, the tail of its output, the commit it ran on) | the command step's visit | the engine on `command_finished` | absent; *not recorded for this run* |
+| Command result (passed or failed, exit, the tail of its output, the commit it ran on and the fingerprint of the uncommitted work, untracked files included, as `workflow::facts` takes it for a mark) | the command step's visit | the engine on `command_finished` | absent; *not recorded for this run* |
 
 The output tail is capped as a visit's output is (the last 60 lines shown).
 
@@ -252,6 +259,9 @@ Part A:
   two refreshes of one issue answering out of order show the later request's answer; a Retry
   drops reads of the run before it.
 - The next-action function has a test per row.
+- An issue closed on the forge while its run waits on a card still shows *Open session to answer*
+  and *Stop*, with *Issue is closed; this run is still active*; once the run ends, the line mutes
+  and only *Reopen issue* and *Show task* are left.
 
 Part B:
 

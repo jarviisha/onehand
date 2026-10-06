@@ -60,9 +60,11 @@ it*. The strip goes through the same call, so there is one path.
 
 ### One review block
 
-Where a task waits for approval, the task detail and the issue on the Issues page draw one block,
-in region 2 of the issue's order ([issue-progress.md](issue-progress.md#one-order-whatever-the-state)).
-The Issues tab draws none: its *Review…* opens the issue on the page.
+Where a task waits for approval, region 2 keeps its height: the summary and *Review…*. Pressing
+*Review…* on the issue on the Issues page or in the task detail opens one block **below region 2**
+([issue-progress.md](issue-progress.md#one-order-whatever-the-state)), pushing the body down; a
+person did that, so it is not content moving under them. The engine never opens or closes it. The
+Issues tab draws none: its *Review…* opens the issue on the page.
 
 - **what approving starts**, beside *Continue*, read from the step after the approval in the run's
   snapshot: *Continue starts Implement: the agent edits the code*, *Continue starts Push*. Beside
@@ -76,16 +78,21 @@ The Issues tab draws none: its *Review…* opens the issue on the page.
   something**: an approval after a plan that changed no file draws no files region and no check,
   rather than empty ones;
 - **the check**, when a command step ran since: from piece 1 part B's command result (passed or
-  failed, its tail, the commit). The commit is compared with the worktree's head: a check on an
-  older commit says *passed on 4f2c1e0, 2 commits before the work now*, so an old pass is not read
-  as a pass of the new code. A run from before part B says *not recorded*;
+  failed, its tail, the commit and the fingerprint of the uncommitted work). Both are compared
+  with the work now, read off the UI thread: the same says *passed on 4f2c1e0*; another commit
+  says *passed on 4f2c1e0, 2 commits before the work now*; the same commit with other uncommitted
+  or untracked work says *the work changed since the check passed*. So an old pass is never read
+  as a pass of the code under review. A run from before part B has the commit only
+  (`Marks::verified_at`): on a worktree with uncommitted work it says *cannot tell whether the
+  check covers the work now*, and with no command run at all, *not recorded*;
 - **the issue's acceptance**, collapsed, one click from the changes, so the work is judged against
   it without scrolling back to the body;
 - *Revise…* and *Continue*, carrying the visit id above.
 
-After *Continue* or *Revise…*, the block answers at once: the action shows it was sent and the
-block keeps its place and its scroll until the engine's answer redraws region 2. It does not
-collapse or jump to the top under the reader.
+After *Continue* or *Revise…*, the block answers at once: the action shows it was sent, then what
+came of it (*the run moved on to Implement*), and the block keeps its place and its scroll. It
+closes only when the person closes it or picks another issue; it never collapses or jumps to the
+top under the reader.
 
 ### Which way out, said
 
@@ -166,7 +173,11 @@ path.
 - Beside *Continue* the block names the step it starts, from the snapshot; a plan approval with no
   file changed draws no files and no check; an answer longer than what is shown says it is cut
   before the actions; a check on a commit older than the worktree's head says how much older.
-- After *Continue*, the block shows it was sent at once and the reader's scroll is where it was.
+- After *Continue*, the block shows it was sent at once and the reader's scroll is where it was;
+  the block stays open until closed by the person, and a run reaching an approval never opens it.
+- A check passed, then a tracked file edited without a commit: the block says *the work changed
+  since the check passed*; the same with only an untracked file added. A pre-part-B run on a dirty
+  worktree says *cannot tell*. A test per case.
 - A failed run's Retry dialog names the step it starts at and the agent, mode, check command,
   timeout and version it keeps; with Settings changed since, the differing lines say so.
 - A run failed on a mode not offered: *Retry* fails again the same way, *Retry with current

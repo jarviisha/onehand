@@ -86,12 +86,20 @@ Each row is enough to choose from without opening it:
   the tasks' branches, on opening the page, on *Refresh*, and on focus regained when older than a
   minute. The list's head says *read Xm ago*; a row not read draws no pull request line, and a
   project whose read failed is said beside the filter.
+  The read says whether it reached its cap. A pull request missing from it proves nothing, so a
+  task's branch not found there is looked up on its own (`pull_request_for_blocking`), up to a named
+  cap per read; past it the row is *not read*. While any row is *not read*, or the read is stale,
+  *Pull request open* says *N issues not read; the list may be incomplete* with *Read them*, and
+  never draws as a complete list.
 - **Progress**: *All*, *Needs attention* (the glossary's: waiting on a person, or ended on
   something nobody chose), *Running*, *Queued*, *Pull request open*, *No run recorded*. *Pull
   request open* is a done run whose pull request waits on a person on the forge; it is its own
   choice, so *Needs attention* keeps the glossary's meaning. A run waiting for its pull
   request's status checks is *Running*: it waits on the forge, not on the person, and never counts
   as *Needs attention*.
+- *Needs attention* takes an issue when **any** of its tasks needs attention, as the Tasks page
+  counts; the row says the newest task's state, and *earlier task needs attention* in the warning
+  ink when it is an older one.
 - **Project** and **label**.
 
 ### The list does not move under a person
@@ -103,6 +111,10 @@ Each row is enough to choose from without opening it:
   or the filter changes. Then it leaves.
 - A new issue that comes to match a filter is added below what is on screen, never above the
   selected row.
+- An issue opened from the tab (*Review…*, *Open in Issues*, the rail's pill) that the filters
+  leave out is pinned at the top of the list, muted *Outside current filters*, with *Clear
+  filters*. The filters stay; the pinned row leaves when another issue is picked or a filter
+  changes. Narrow, the issue shows alone and *Back* returns to the list, the pinned row at its top.
 
 ### Coming back
 
@@ -129,6 +141,10 @@ Glossary: no new words; *page* is not a glossary term.
 - **Which project a run starts on.** A page across the workspace has no project on screen. An
   issue's *Run workflow…* uses the issue's project. A workflow's *Run…* asks for the project first,
   defaulting to the one selected in the rail, and the launcher then opens on it as today.
+- **An issue draft (new or edited) when the view changes.** The draft lives on the view's state,
+  per project, not in the render. Leaving the page, opening a session or switching project keeps
+  it. Picking another issue with a changed draft asks, in a modal, whether to drop it; an unchanged
+  draft is dropped without asking. Today `RootIssues::show` drops it silently; this changes that.
 - **An unsaved workflow when the page changes.** The editor's draft lives on the page's entity, not
   in the render, so leaving for another page and coming back finds it as it was. Closing the window
   or picking another workflow with changes unsaved asks, in a modal, whether to drop them.
@@ -163,6 +179,15 @@ The Issues page:
 - Narrowed below two columns, the page shows the list, then the issue with *Back*; *Back* restores
   the list as it was. At the largest zoom step a row still shows its title and its line of work.
 - In the tab, *Review…* and *Open in Issues* open the page on that issue.
+- With the page filtered to project A and *Closed*, *Open in Issues* on an open issue of project B
+  shows it pinned *Outside current filters*; the filters are unchanged, and *Back* (narrow) finds
+  the list as it was.
+- An issue whose newest task is done and an older task exhausted is found under *Needs attention*,
+  its row saying *earlier task needs attention*.
+- With more open pull requests than the read's cap, *Pull request open* says how many issues were
+  not read rather than leaving them out silently.
+- A changed issue draft survives leaving the page and coming back; picking another issue asks
+  before dropping it.
 
 The Workflows page: as the list above says; its checks are written when it is next in line.
 
