@@ -501,6 +501,10 @@ pub fn workflow_for(labels: &[String], cx: &App) -> String {
 /// has `checked_out` and the `forge` serving it.
 pub(crate) use facts::issue_run as issue_facts;
 
+/// What a Resume or a Retry of a task on a workflow is checked against: its
+/// last run's own setup.
+pub(crate) use facts::of_task as task_facts;
+
 /// The agent an issue's run starts, by name: the one set for runs, else the
 /// first configured.
 pub(crate) fn run_agent(cx: &App) -> Option<String> {

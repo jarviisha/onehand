@@ -139,13 +139,6 @@ pub(crate) fn issue_tasks(
         .collect()
 }
 
-/// The title of the task holding the place task `id` waits for, if it waits.
-pub(crate) fn queued_behind(id: &str, cx: &App) -> Option<String> {
-    let t = cx.try_global::<Tasks>()?;
-    let holder = t.queue.holder_of(id)?;
-    Some(t.task(holder)?.brief.title.clone())
-}
-
 /// The session task `id`'s run is driven in, and the window holding it.
 pub(crate) fn session_of(id: &str, cx: &App) -> Option<(u64, AnyWindowHandle)> {
     let t = cx.try_global::<Tasks>()?;

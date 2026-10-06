@@ -142,3 +142,42 @@ pub(crate) fn offered(spec: &AgentSpec, cx: &App) -> Option<Vec<String>> {
         .find(|(seen, _)| seen == spec || *seen == wrapped)
         .map(|(_, modes)| modes.clone())
 }
+
+/// A Resume or a Retry of `task` on `template`: judged by its last run's own
+/// setup, never what Settings says now, since that is what will run.
+pub(crate) fn of_task(task: &Task, template: Template, cx: &App) -> Facts {
+    let shared = Shared::global(cx);
+    let setup = task.runs.last().map_or(&task.setup, |run| &run.setup);
+    // A setup naming no agent starts the first one configured.
+    let agent = setup
+        .agent
+        .clone()
+        .or_else(|| shared.agents.first().map(|spec| spec.name.clone()));
+    let spec = agent
+        .as_deref()
+        .and_then(|name| shared.agents.iter().find(|spec| spec.name == name));
+    let forge = setup.forge.as_deref().map(|name| Forge {
+        name: name.to_string(),
+        account: onehand_core::connector::named(crate::plugins::connectors(), name)
+            .and_then(|forge| account(forge, cx)),
+    });
+    // Held to the cap as the tick is: an issue's task not already counted.
+    let slots = shared.unattended.as_ref().and_then(|u| {
+        let counted = u.starting.contains(&task.id) || crate::task::is_working(&task.id, cx);
+        (task.issue().is_some() && !counted).then(|| slots(u, cx))
+    });
+    Facts {
+        workflow: Ok(template),
+        agent_configured: spec.is_some(),
+        offered: spec.and_then(|spec| offered(spec, cx)),
+        agent,
+        mode: setup.mode.clone().filter(|m| !m.trim().is_empty()),
+        has_check: setup.check.is_some(),
+        in_git: true,
+        checked_out: None,
+        forge,
+        issue: None,
+        slots,
+        queued_behind: None,
+    }
+}

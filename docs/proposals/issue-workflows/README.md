@@ -55,10 +55,10 @@ keep yet (see *What is read and what is new* below).
    needs the pull request's state, which this step reads anyway.
 6. Then the Workflows page (piece 5's other half) and the rest of operations (piece 6), with
    three parts step 4 left for it:
-   - ***Check the agent*** ([preflight.md](preflight.md#the-mode-known-without-spending-an-issue)):
+   - ***Check the agent*** ([preflight.md](preflight.md#check-the-agent-step-6)):
      the mode remembered from any time the agent comes up covers most starts, and the driver's
      check covers the rest, as before; the button needs a way to start an adapter with no session.
-   - **The remaining informs rows** ([preflight.md](preflight.md#one-function-a-kind-in-its-input)):
+   - **The remaining informs rows** ([preflight.md](preflight.md#the-remaining-informs-rows-step-6)):
      a checkout shared with a person's own session, which needs a fact nothing tracks yet; *no
      forge serves the project*; and *Limits*, which the issue's start form already shows.
    - **A project's own issue templates** ([issue-brief.md](issue-brief.md#templates-for-an-issue)):

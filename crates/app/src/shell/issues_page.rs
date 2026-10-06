@@ -59,7 +59,7 @@ impl Shell {
                     self.show_session_in(uid, at, window, cx);
                 }
             }
-            E::ResumeTask(id) => crate::task::request(id.clone(), window, cx),
+            E::ResumeTask(id) => self.resume_task(id.clone(), window, cx),
             E::RetryTask(id) => self.begin_retry(id.clone(), window, cx),
             E::StopTask(id) => {
                 let id = id.clone();

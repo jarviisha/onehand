@@ -305,3 +305,129 @@ fn a_taken_place_informs_naming_the_task_ahead() {
     let finding = found(Kind::Resume, &facts, Check::PlaceTaken).unwrap();
     assert!(!finding.blocks && finding.text.contains("Fix the parser"));
 }
+
+/// What a start that is not an issue's knows: no issue, no slots.
+fn plain() -> Facts {
+    Facts {
+        issue: None,
+        slots: None,
+        forge: None,
+        ..healthy()
+    }
+}
+
+#[test]
+fn a_new_run_on_a_worktree_says_head_and_one_outside_git_blocks() {
+    let facts = plain();
+    let base = found(Kind::NewRun, &facts, Check::Base).unwrap();
+    assert!(base.text.contains("`HEAD`"));
+    let outside = Facts {
+        in_git: false,
+        checked_out: None,
+        ..plain()
+    };
+    assert!(found(Kind::NewRun, &outside, Check::Place).unwrap().blocks);
+    assert_eq!(found(Kind::NewRun, &outside, Check::Base), None);
+    let checkout = Facts {
+        workflow: Ok(builtin::all().remove(0)),
+        in_git: false,
+        ..plain()
+    };
+    assert_eq!(blocks(Kind::NewRun, &checkout), Vec::<Check>::new());
+    assert_eq!(found(Kind::NewRun, &checkout, Check::Base), None);
+}
+
+#[test]
+fn a_resume_says_nothing_of_a_base_and_judges_no_workflow_anew() {
+    let mut broken = worktree();
+    broken.steps.clear();
+    let facts = Facts {
+        workflow: Ok(broken),
+        ..plain()
+    };
+    assert_eq!(found(Kind::Resume, &facts, Check::Base), None);
+    assert_eq!(found(Kind::Resume, &facts, Check::Workflow), None);
+    assert_eq!(
+        found(Kind::Retry { newer: false }, &facts, Check::Workflow),
+        None
+    );
+    assert!(
+        found(Kind::Retry { newer: true }, &facts, Check::Workflow)
+            .unwrap()
+            .blocks
+    );
+}
+
+#[test]
+fn a_retry_whose_own_mode_is_not_offered_blocks_and_says_it_keeps_its_setup() {
+    let facts = Facts {
+        mode: Some("plan".into()),
+        offered: Some(vec!["default".into()]),
+        ..plain()
+    };
+    for kind in [
+        Kind::Retry { newer: false },
+        Kind::Retry { newer: true },
+        Kind::Resume,
+    ] {
+        let finding = found(kind, &facts, Check::Mode).unwrap();
+        assert!(finding.blocks);
+        assert!(
+            finding.text.contains("keeps its own setup"),
+            "{}",
+            finding.text
+        );
+        assert_eq!(finding.change, None);
+    }
+    let new = found(Kind::NewIssueRun, &facts, Check::Mode).unwrap();
+    assert!(!new.text.contains("keeps its own setup"));
+}
+
+#[test]
+fn a_run_with_forge_steps_needs_its_forge_and_one_without_does_not() {
+    let out = Some(Forge {
+        name: "GitHub".into(),
+        account: Some(Err("signed out".into())),
+    });
+    let with_steps = Facts {
+        forge: out.clone(),
+        ..plain()
+    };
+    let has_steps = worktree()
+        .steps
+        .iter()
+        .any(|s| matches!(s.kind, crate::workflow::StepKind::PullRequest));
+    assert_eq!(
+        found(Kind::Retry { newer: false }, &with_steps, Check::Forge).is_some(),
+        has_steps
+    );
+    let mut bare = worktree();
+    bare.steps.retain(|s| {
+        !matches!(
+            s.kind,
+            crate::workflow::StepKind::Push
+                | crate::workflow::StepKind::PullRequest
+                | crate::workflow::StepKind::StatusChecks { .. }
+        )
+    });
+    let without = Facts {
+        workflow: Ok(bare),
+        forge: out,
+        ..plain()
+    };
+    assert_eq!(
+        found(Kind::Retry { newer: false }, &without, Check::Forge),
+        None
+    );
+}
+
+#[test]
+fn an_issue_check_applies_to_an_issue_run_only() {
+    let mut facts = healthy();
+    facts.issue.as_mut().unwrap().tasks = vec![(task_on_issue(None), Some(Working::Running))];
+    assert_eq!(found(Kind::Resume, &facts, Check::Issue), None);
+    assert_eq!(
+        found(Kind::Retry { newer: false }, &facts, Check::EarlierTask),
+        None
+    );
+}

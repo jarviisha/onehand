@@ -110,12 +110,7 @@ pub fn pick_issue(shell: &Shell, window: &Window, cx: &mut Context<Shell>) -> Di
                 .w_full()
                 // Why *Run* is spent, beside it; what each block is, and
                 // where it is changed, is in the form above.
-                .when(blocking > 0, |row| {
-                    row.child(div().text_xs().text_color(danger).child(match blocking {
-                        1 => "One thing above blocks the start.".to_string(),
-                        n => format!("{n} things above block the start."),
-                    }))
-                })
+                .children(super::blocking_note(blocking, danger))
                 .child(
                     crate::controls::action("cancel-pick")
                         .ghost()
@@ -193,7 +188,7 @@ fn start_form(
     let lines: Vec<_> = said
         .iter()
         .enumerate()
-        .map(|(at, finding)| finding_line(at, finding, danger, muted, handle))
+        .map(|(at, finding)| super::finding_line(at, finding, danger, muted, handle))
         .collect();
     let column = div()
         .v_flex()
@@ -229,48 +224,6 @@ fn start_form(
             cx,
         ))
         .into_any_element()
-}
-
-/// One thing the preflight found: in the danger ink when it blocks, muted
-/// when it only says, with where it is changed, and *Show task* for an
-/// earlier task worth retrying instead.
-fn finding_line(
-    at: usize,
-    finding: &Finding,
-    danger: gpui::Hsla,
-    muted: gpui::Hsla,
-    handle: &Entity<Shell>,
-) -> impl IntoElement {
-    let text = match finding.change {
-        Some(change) => format!("{} Changed in {change}.", finding.text),
-        None => finding.text.clone(),
-    };
-    let shell = handle.clone();
-    div()
-        .h_flex()
-        .gap_2()
-        .items_center()
-        .w_full()
-        .child(
-            div()
-                .flex_1()
-                .min_w_0()
-                .text_xs()
-                .text_color(if finding.blocks { danger } else { muted })
-                .child(text),
-        )
-        .children(finding.task.clone().map(|task| {
-            crate::controls::action(("pick-show-task", at))
-                .ghost()
-                .small()
-                .label("Show task")
-                .on_click(move |_, window: &mut Window, cx: &mut App| {
-                    shell.update(cx, |shell, cx| {
-                        shell.cancel_pick(cx);
-                        shell.show_task(&task, window, cx);
-                    });
-                })
-        }))
 }
 
 /// A menu of the workflows an issue can be worked with, its trigger naming

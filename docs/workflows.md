@@ -294,6 +294,12 @@ actually run, and the app gathers the facts without reaching the disk or the net
 render: `gh`'s sign-in is the state last seen, the forge serving a project is found when the form
 opens. What it checks, for a new issue run:
 
+A new run from the launcher is judged the same way (kind *new run*): its workflow, the agent,
+the project's check command, a worktree workflow on a folder outside git (blocked), and that its
+branch is cut off `HEAD`. The launcher lists what it found under its fields, and *Run* is spent
+while a block remains. A Resume and a Retry are judged by the run's own setup
+([tasks.md](tasks.md#retry-and-resume)).
+
 | Check | Blocks when | Says |
 |---|---|---|
 | Workflow | it is not there, works in the checkout, or `workflow::validate` finds problems (each listed, first) | |
@@ -416,6 +422,8 @@ change (`git checkout . && git clean -fd`).
 | A checkout workflow refused | Set `workflow = "builtin:checkout"` under `[unattended]` and restart | Settings says nothing will be picked up, naming the checkout; the Workflow menus do not offer it |
 | From the Issues tab | Select an open issue, *Run workflow…* | The start form opens on that issue with no row to pick: *Workflow*, *Where it works* naming the branch and agent, *Instructions for this run*, the limits, *Preview*; *Run* starts the run, the dialog closes and the issue stays on screen, saying the run is starting with *Open session* |
 | A mode not offered | Open a session on an agent that offers modes, set `[unattended] mode` to one it does not offer, then *Run workflow…* on an issue | *Before it starts* says, in the danger ink, that the agent offers no such mode and what it offers; *Run* is spent and says one thing blocks; the issue keeps its labels. Edit the agent's spec in Settings ▸ Agents and open the form again: the mode reads *not known yet*, muted, and *Run* is offered |
+| A worktree run outside git | Open the launcher on a folder that is not a git repository and pick a worktree workflow | Under the fields, in the danger ink: no worktree can be cut; *Run* is spent. A checkout workflow there is offered |
+| A Retry whose mode is gone | Run an issue task with `mode` set to one the agent offers, let it end exhausted, then make the agent offer other modes (or change the spec's mode list) and open a session on it; *Retry* the task | The dialog lists, in the danger ink, that the agent offers no such mode and that the run keeps its own setup; *Retry* is spent. Changing `[unattended] mode` does not clear it |
 | A full slot | With `at_once = 1` and an issue task running, *Run workflow…* on another issue | *Before it starts* names the issue being worked; *Run* is spent |
 | An earlier task needing attention | On an issue whose last task ended exhausted, *Run workflow…* | Muted: the last task ended and a new start makes a second task, with *Show task*, which closes the form and opens that task |
 | Instructions for this run | In that form type `Keep the old flag.` under *Instructions for this run*, open *Preview*; *Run*; later *Retry* the task | The first prompt in the preview ends its instructions with the line as it is typed; the run's first prompt carries it, and so does the retry's; the issue's body is unchanged |

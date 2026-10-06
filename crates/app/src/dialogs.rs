@@ -166,6 +166,8 @@ pub fn run_workflow(shell: &Shell, window: &Window, cx: &mut Context<Shell>) -> 
         launcher.instructions.clone(),
     );
     let (error, busy, preview) = (launcher.error.clone(), launcher.busy, launcher.preview);
+    let found = shell.launcher_preflight(cx).unwrap_or_default();
+    let blocking = found.iter().filter(|f| f.blocks).count();
     let (muted, danger) = (
         cx.theme().muted_foreground,
         crate::theme::status_ink(cx).danger,
@@ -219,6 +221,11 @@ pub fn run_workflow(shell: &Shell, window: &Window, cx: &mut Context<Shell>) -> 
                     cx,
                 )
             });
+            let lines: Vec<_> = found
+                .iter()
+                .enumerate()
+                .map(|(at, finding)| finding_line(at, finding, danger, muted, &handle))
+                .collect();
             let handle = handle.clone();
             let names = names.clone();
             let picker = crate::controls::menu_below(
@@ -278,6 +285,7 @@ pub fn run_workflow(shell: &Shell, window: &Window, cx: &mut Context<Shell>) -> 
                                 gpui_component::input::Textarea::new(&instructions)
                                     .h(gpui::rems(4.)),
                             )
+                            .children(lines)
                             .when_some(error.clone(), |col, why| {
                                 col.child(div().text_xs().text_color(danger).child(why))
                             }),
@@ -290,6 +298,7 @@ pub fn run_workflow(shell: &Shell, window: &Window, cx: &mut Context<Shell>) -> 
                 .gap_2()
                 .justify_end()
                 .w_full()
+                .children(blocking_note(blocking, danger))
                 .child(
                     crate::controls::action("cancel-workflow")
                         .ghost()
@@ -307,7 +316,7 @@ pub fn run_workflow(shell: &Shell, window: &Window, cx: &mut Context<Shell>) -> 
                         } else {
                             "Run"
                         });
-                    match busy {
+                    match busy || blocking > 0 {
                         true => crate::controls::resting(run).disabled(true),
                         false => run.on_click(cx.listener(
                             |shell: &mut Shell, _: &ClickEvent, window, cx| {
@@ -343,6 +352,59 @@ fn form_room(window: &Window) -> (gpui::Pixels, gpui::Pixels) {
         - rem * LAUNCHER_CHROME)
         .max(gpui::px(0.));
     (margin, room)
+}
+
+/// One thing the preflight found: in the danger ink when it blocks, muted
+/// when it only says, with where it is changed, and *Show task* for an
+/// earlier task worth retrying instead.
+pub(crate) fn finding_line(
+    at: usize,
+    finding: &onehand_core::preflight::Finding,
+    danger: gpui::Hsla,
+    muted: gpui::Hsla,
+    handle: &Entity<Shell>,
+) -> impl IntoElement {
+    let text = match finding.change {
+        Some(change) => format!("{} Changed in {change}.", finding.text),
+        None => finding.text.clone(),
+    };
+    let shell = handle.clone();
+    div()
+        .h_flex()
+        .gap_2()
+        .items_center()
+        .w_full()
+        .child(
+            div()
+                .flex_1()
+                .min_w_0()
+                .text_xs()
+                .text_color(if finding.blocks { danger } else { muted })
+                .child(text),
+        )
+        .children(finding.task.clone().map(|task| {
+            crate::controls::action(("pick-show-task", at))
+                .ghost()
+                .small()
+                .label("Show task")
+                .on_click(move |_, window: &mut Window, cx: &mut App| {
+                    shell.update(cx, |shell, cx| {
+                        shell.cancel_pick(cx);
+                        shell.show_task(&task, window, cx);
+                    });
+                })
+        }))
+}
+
+/// Why *Run* is spent, said beside it: how many things above block the
+/// start. What each is, and where it is changed, is in the form.
+fn blocking_note(blocking: usize, danger: gpui::Hsla) -> Option<impl IntoElement> {
+    (blocking > 0).then(|| {
+        div().text_xs().text_color(danger).child(match blocking {
+            1 => "One thing above blocks the start.".to_string(),
+            n => format!("{n} things above block the start."),
+        })
+    })
 }
 
 /// The launcher's margin above it, and the least below it, in rems.
