@@ -94,7 +94,7 @@ background executor, one interval in the config, no cron expressions.
 | `crates/app/src/shell/remote_runs.rs` | `run_unattended`, `end_unattended`, `adopt_unattended` |
 | `crates/app/src/shell/roots.rs` | `forget_root`, the half of `remove_root` that asks nothing and moves nothing |
 | `crates/app/src/chat/pane/sessions.rs` | `open_unshown` |
-| `crates/app/src/dialogs.rs` | `pick_issue` and `issue_workflow_menu`, the workflow menu the picker and Settings share |
+| `crates/app/src/dialogs/issue.rs` | `pick_issue`, the list and the start form, and `issue_workflow_menu`, the workflow menu the picker and Settings share |
 | `crates/app/src/settings/pages.rs` | the default workflow and the workflow labels in Settings |
 | `crates/core/src/task/work.rs` | where an issue's work stands and its next action (`Work`, `issue_work`, `next_action`), and the generation rule for what is read of it (`Reading`) |
 | `crates/app/src/task/listing.rs` (`issue_works`) and `plugins/builtin/workbench-issues/src/view/work.rs`, `view/reads.rs` | each issue's work, told to the Issues tab and the Issues page through `Request::IssueWork`, drawn there, and its pull request read |
@@ -237,25 +237,36 @@ not a run's own worktree. It lists every open issue — anybody's, not only your
 since a person reading the list is the check the automatic search stands in for
 — with who opened each one on its row, because the body is handed to the agent
 word for word. The list holds the newest 100 and says so when it was cut.
-Picking one runs the same path as a found issue, with four differences:
+Choosing one opens the start form below the list; *Run* there runs the same
+path as a found issue, with four differences:
 - the claim takes the trigger label off only if the issue carries it, and its
   comment says to pick the issue again to retry, since re-adding a label means
   nothing for an issue the search would never take;
-- the session is put on screen as it starts, in the window it was picked from,
-  so the person who picked it is reading it as it works;
+- the brief carries what the person typed under *Instructions for this run*,
+  after its own instructions;
 - when it ends, the session stays where it is and its project is kept for good,
   as a taken-over one is, since somebody who watched it end may carry on in it;
 - what stops every run — a mode the agent does not offer, once learned, or a
   workflow that cannot run — refuses the pick *before* the claim, rather than
   claiming an issue for a run that would fail.
 
-The picker has a *Workflow* menu above the list: *By the issue's labels* (the
-default, as the tick chooses) or any workflow that works on a worktree. The
-same picker opens from an issue in the Issues tab, by *Run workflow…* (offered
-where *Work an issue…* is: a repository that is not a run's own worktree),
-narrowed to that one issue; an issue a run may not take (closed, brought in
-from a forge the project is no longer kept in step with, or older than the
-newest 100 the list reads) is said there instead of a row.
+The start form reads top to bottom in the order a person decides: the
+*Workflow* menu, *By the issue's labels* first (the default, as the tick
+chooses) or any workflow that works on a worktree, with what the workflow does
+in one muted line; where it works, the branch it will be cut as and the agent;
+*Instructions for this run*; the limits on one line; and a collapsed *Preview*
+of the steps and the first prompt, filled with this issue's brief and what was
+typed. *Run* is the footer's one primary action, refused while the workflow
+cannot run. The same form opens from an issue in the Issues tab or the Issues
+page, by *Run workflow…* (offered where *Work an issue…* is: a repository that
+is not a run's own worktree), on that one issue with no row to pick; an issue a
+run may not take (closed, brought in from a forge the project is no longer kept
+in step with, or older than the newest 100 the list reads) is said there
+instead of the form.
+
+**The person stays where they were.** Once started, the dialog closes and the
+run's session comes up off screen, as a found issue's does; the issue says the
+run is starting, with *Open session* among its actions.
 
 **An issue says where its work stands before what it says.** The app tells the
 Issues tab one summary per issue (`Request::IssueWork`), named by its
@@ -530,10 +541,13 @@ POSIX-only, which is marked where it is done.
 
 ## The brief
 
-`brief_for(&Tracker, &Issue)` gives the run's brief: the issue's title and body
-word for word, and instructions asked of every step that name the issue and say
-nobody is watching, so a decision the issue needs is asked through the agent's
-question tool and not guessed. Each step's prompt is the workflow's, with the
+`brief_for(&Tracker, &Issue, added)` gives the run's brief: the issue's title
+and body word for word, and instructions asked of every step that name the
+issue and say nobody is watching, so a decision the issue needs is asked
+through the agent's question tool and not guessed. What a person typed under
+*Instructions for this run* (`added`) follows them; it is kept on the task's
+brief, never written into the issue, so every Retry carries it and the issue's
+text is never rewritten behind its author. Each step's prompt is the workflow's, with the
 brief filled in; onehand adds what it adds to every step — where the work is (a
 branch of its own, *do not push or open a pull request*: onehand does that), to
 read the repository's own instructions, and the rule each gate checks.

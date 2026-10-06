@@ -199,20 +199,7 @@ pub fn run_workflow(shell: &Shell, window: &Window, cx: &mut Context<Shell>) -> 
         .as_ref()
         .and_then(|entry| entry.template.clone().ok());
     let picker_name = picked.map_or_else(|| "Pick a workflow".to_string(), |e| e.name());
-    // The dialog sits its margin down from the top of the window, inside any
-    // frame the window draws, and keeps at least that margin under it; the
-    // form takes what is left under the heading and over the footer, and
-    // scrolls past that, so an open preview never pushes Run off screen. The
-    // padding is in rems, so the room set aside for the rest is too.
-    let rem = window.rem_size();
-    let frame = gpui_component::window_paddings(window);
-    let margin = rem * LAUNCHER_MARGIN;
-    let room = (window.viewport_size().height
-        - frame.top
-        - frame.bottom
-        - margin * 2.
-        - rem * LAUNCHER_CHROME)
-        .max(gpui::px(0.));
+    let (margin, room) = form_room(window);
 
     Dialog::new(cx)
         .margin_top(margin)
@@ -222,7 +209,15 @@ pub fn run_workflow(shell: &Shell, window: &Window, cx: &mut Context<Shell>) -> 
             // Read here, as it is typed, so the preview follows the brief.
             let shown = runnable.as_ref().map(|template| {
                 let brief = crate::shell::brief(&title, &body, &instructions, cx);
-                workflow_preview(template, &brief, preview, &handle, cx)
+                workflow_preview(
+                    template,
+                    &brief,
+                    preview,
+                    Shell::toggle_workflow_preview,
+                    true,
+                    &handle,
+                    cx,
+                )
             });
             let handle = handle.clone();
             let names = names.clone();
@@ -329,6 +324,27 @@ pub fn run_workflow(shell: &Shell, window: &Window, cx: &mut Context<Shell>) -> 
         }))
 }
 
+/// A form dialog's margin from the top of the window, and the room its form
+/// has under the heading and over the footer.
+///
+/// The dialog sits its margin down from the top of the window, inside any
+/// frame the window draws, and keeps at least that margin under it; the form
+/// takes what is left and scrolls past that, so an open preview never pushes
+/// *Run* off screen. The padding is in rems, so the room set aside for the
+/// rest is too.
+fn form_room(window: &Window) -> (gpui::Pixels, gpui::Pixels) {
+    let rem = window.rem_size();
+    let frame = gpui_component::window_paddings(window);
+    let margin = rem * LAUNCHER_MARGIN;
+    let room = (window.viewport_size().height
+        - frame.top
+        - frame.bottom
+        - margin * 2.
+        - rem * LAUNCHER_CHROME)
+        .max(gpui::px(0.));
+    (margin, room)
+}
+
 /// The launcher's margin above it, and the least below it, in rems.
 const LAUNCHER_MARGIN: f32 = 3.;
 
@@ -340,13 +356,16 @@ const LAUNCHER_CHROME: f32 = 10.;
 /// there are.
 const PREVIEW_STEPS: usize = 12;
 
-/// What a run of `template` on `brief` starts with, behind a toggle: where
-/// it works and its limits, a line per step, and the first prompt exactly as
-/// the agent would receive it.
+/// What a run of `template` on `brief` starts with, behind a toggle that
+/// calls `toggle`: where it works and its limits when `head` asks for them
+/// (a form that shows them above leaves them out), a line per step, and the
+/// first prompt exactly as the agent would receive it.
 fn workflow_preview(
     template: &onehand_core::workflow::Template,
     brief: &onehand_core::workflow::Brief,
     open: bool,
+    toggle: fn(&mut Shell, &mut Context<Shell>),
+    head: bool,
     handle: &Entity<Shell>,
     cx: &App,
 ) -> AnyElement {
@@ -366,9 +385,7 @@ fn workflow_preview(
                 false => IconName::ChevronRight,
             }))
             .on_click(move |_, _, cx: &mut App| {
-                handle.update(cx, |shell: &mut Shell, cx| {
-                    shell.toggle_workflow_preview(cx)
-                });
+                handle.update(cx, toggle);
             })
     };
     let column = div()
@@ -379,13 +396,15 @@ fn workflow_preview(
     if !open {
         return column.into_any_element();
     }
-    let head = format!(
-        "{} · times out after {} · {} misses allowed · version {}",
-        template.place.label(),
-        template.timeout,
-        template.misses,
-        template.version
-    );
+    let head = head.then(|| {
+        format!(
+            "{} · times out after {} · {} misses allowed · version {}",
+            template.place.label(),
+            template.timeout,
+            template.misses,
+            template.version
+        )
+    });
     let left_out = template.steps.len().saturating_sub(PREVIEW_STEPS);
     let steps = template
         .steps
@@ -400,7 +419,7 @@ fn workflow_preview(
     let prompt = onehand_core::workflow::first_prompt(template, brief)
         .unwrap_or_else(|| "No step prompts the agent.".to_string());
     column
-        .child(div().text_xs().text_color(muted).child(head))
+        .children(head.map(|head| div().text_xs().text_color(muted).child(head)))
         .children(steps)
         .when(left_out > 0, |col| {
             col.child(

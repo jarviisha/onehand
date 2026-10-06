@@ -496,6 +496,31 @@ pub fn workflow_for(labels: &[String], cx: &App) -> String {
         .unwrap_or_default()
 }
 
+/// The workflow `id` as an issue's run of it would start, with the runs'
+/// timeout, or why it cannot run.
+pub(crate) fn issue_template(
+    id: &str,
+    cx: &App,
+) -> Result<onehand_core::workflow::Template, String> {
+    let timeout = Shared::global(cx)
+        .unattended
+        .as_ref()
+        .map(|u| u.timeout.clone())
+        .ok_or("unattended runs are not set up")?;
+    launch::workflow(id, &timeout, cx)
+}
+
+/// The agent an issue's run starts, by name: the one set for runs, else the
+/// first configured.
+pub(crate) fn run_agent(cx: &App) -> Option<String> {
+    let shared = Shared::global(cx);
+    shared
+        .unattended
+        .as_ref()
+        .and_then(|u| u.agent.clone())
+        .or_else(|| shared.agents.first().map(|spec| spec.name.clone()))
+}
+
 /// The default workflow and the workflow labels, as the config has them.
 pub fn workflows(cx: &App) -> (String, BTreeMap<String, String>) {
     Shared::global(cx)

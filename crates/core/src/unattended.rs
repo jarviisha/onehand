@@ -448,20 +448,28 @@ pub fn target_dir() -> Option<std::path::PathBuf> {
 /// and, asked of every step, how to name the issue and what to do with a
 /// decision nobody is there to make.
 ///
+/// What a person `added` for this run, if anything, follows those
+/// instructions: the issue's own text is never rewritten to carry it, and a
+/// retry carries it because it is kept on the brief.
+///
 /// It does not restate the repository's conventions, the commit format or
 /// the test commands. Those are in the repository's own instructions, which
 /// every step tells the agent to read, and a second copy here would go stale
 /// without anybody noticing.
-pub fn brief_for(tracker: &Tracker, issue: &Issue) -> Brief {
+pub fn brief_for(tracker: &Tracker, issue: &Issue, added: &str) -> Brief {
+    let mut instructions = format!(
+        "This is {}. Nobody is watching this session: if the issue turns out to need a \
+         decision from a person, ask it with your tool for asking the user a question, \
+         not in your answer, and carry on once it is answered. Do not guess.",
+        tracker.names(issue)
+    );
+    if !added.trim().is_empty() {
+        instructions = format!("{instructions}\n\n{}", added.trim());
+    }
     Brief {
         title: issue.title.clone(),
         body: issue.body.trim().to_string(),
-        instructions: Some(format!(
-            "This is {}. Nobody is watching this session: if the issue turns out to need a \
-             decision from a person, ask it with your tool for asking the user a question, \
-             not in your answer, and carry on once it is answered. Do not guess.",
-            tracker.names(issue)
-        )),
+        instructions: Some(instructions),
     }
 }
 

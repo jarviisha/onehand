@@ -298,16 +298,14 @@ impl Shell {
         let session = match task.issue() {
             // An issue's run comes up off screen, on a project of its own that
             // the workspace file never holds unless it was kept, so nothing the
-            // person is looking at moves; one they picked by hand is put in
-            // front of them.
-            Some(issue) => {
+            // person is looking at moves. One picked by hand too: the person
+            // stays on the issue, which says the run is starting and leads to
+            // its session.
+            Some(_) => {
                 let spec = crate::unattended::spec_for(run.setup.agent.as_deref(), cx);
                 let started = spec.and_then(|spec| self.run_unattended(dir, spec, cx));
-                if let Some((uid, session)) = &started {
+                if let Some((_, session)) = &started {
                     crate::unattended::opening(&task, session, cx);
-                    if issue.picked {
-                        self.show_session(*uid, window, cx);
-                    }
                 }
                 started
             }

@@ -241,7 +241,7 @@ fn a_synced_project_runs_only_what_the_user_wrote_and_claims_it_on_both_sides() 
     assert!(comments[0].1.contains("started"));
 
     // And the run names it by the forge's number, not onehand's.
-    let brief = brief_for(&tracker, &second);
+    let brief = brief_for(&tracker, &second, "");
     assert!(brief.instructions.unwrap().contains("Forge issue #7"));
     assert_eq!(branch_for(&tracker, &second), "onehand/forge-7-mine");
     let _ = std::fs::remove_dir_all(dir);
@@ -407,14 +407,14 @@ fn the_brief_keeps_the_body_whole_and_names_the_issue() {
         body: body.to_string(),
         ..issue(42, "Crash on open")
     };
-    let brief = brief_for(&forge(), &issue);
+    let brief = brief_for(&forge(), &issue, "");
     assert_eq!(brief.title, "Crash on open");
     assert_eq!(brief.body, body);
     let asked = brief.instructions.unwrap();
     assert!(asked.contains("Forge issue #42"), "{asked}");
     assert!(asked.contains("question"), "{asked}");
     let (kept, dir) = local("brief", &[]);
-    let asked = brief_for(&kept, &issue).instructions.unwrap();
+    let asked = brief_for(&kept, &issue, "").instructions.unwrap();
     assert!(asked.contains("kept in onehand"), "{asked}");
     let _ = std::fs::remove_dir_all(dir);
 }
@@ -603,7 +603,7 @@ fn a_pull_request_closes_the_issue_only_where_the_forge_knows_it() {
         picked: false,
         unsent: Vec::new(),
     };
-    let brief = brief_for(&forge(), &issue(3, "Fix it"));
+    let brief = brief_for(&forge(), &issue(3, "Fix it"), "");
     let body = |s: &IssueSource| pull_request_text(&brief, Some(s)).1;
     let on_forge = TrackerRef::Forge {
         connector: "Forge".into(),
@@ -640,4 +640,41 @@ fn a_branch_taken_on_the_forge_is_passed_over_too() {
         free_branch_blocking(&root, "onehand/github-3-x", |_| Err("offline".into())),
         Err("offline".to_string())
     );
+}
+
+#[test]
+fn instructions_for_the_run_follow_the_briefs_own_into_the_first_prompt_and_a_retry() {
+    let issue = issue(7, "Fix the parser");
+    let added = "Keep the old flag working.";
+    let brief = brief_for(&forge(), &issue, added);
+    let asked = brief.instructions.clone().unwrap();
+    let (own, theirs) = (
+        asked.find("Forge issue #7").unwrap(),
+        asked.find(added).unwrap(),
+    );
+    assert!(own < theirs, "the run's own instructions lead: {asked}");
+    let template = crate::workflow::builtin::all().remove(0);
+    let prompt = crate::workflow::first_prompt(&template, &brief).unwrap();
+    assert!(prompt.contains(added), "{prompt}");
+    let setup = crate::workflow::Setup {
+        repo: "/repo".into(),
+        dir: "/repo".into(),
+        branch: None,
+        agent: None,
+        check: None,
+        mode: None,
+        forge: None,
+    };
+    let first = crate::workflow::Run::new("1".into(), template.clone(), brief, setup);
+    let retry = crate::workflow::Run::retry_of(&first, "2".into(), template, None);
+    assert!(retry.brief.instructions.unwrap().contains(added));
+    // Nothing typed changes nothing.
+    assert_eq!(
+        brief_for(&forge(), &issue, "  \n"),
+        brief_for(&forge(), &issue, "")
+    );
+    assert!(!brief_for(&forge(), &issue, "")
+        .instructions
+        .unwrap()
+        .ends_with('\n'));
 }

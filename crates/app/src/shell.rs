@@ -376,6 +376,13 @@ pub struct IssuePicker {
     /// The one issue the list is narrowed to, when it was asked for from that
     /// issue in the Issues tab.
     pub only: Option<u64>,
+    /// The issue the form below the list starts, by its place in the list:
+    /// chosen by a press, or at once when the list is narrowed to one.
+    pub chosen: Option<usize>,
+    /// What the person adds to this run's brief.
+    pub instructions: gpui::Entity<gpui_component::input::TextareaState>,
+    /// The preview of what the run starts with is open.
+    pub preview: bool,
 }
 
 /// A `Ctrl+Tab` walk in progress.

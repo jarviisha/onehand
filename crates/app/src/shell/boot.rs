@@ -129,7 +129,7 @@ impl Shell {
                         match action {
                             P::TogglePin => shell.toggle_pin(root_idx, window, cx),
                             P::ToggleUnattended => shell.toggle_unattended(root_idx, window, cx),
-                            P::PickIssue => shell.begin_pick(root_idx, None, cx),
+                            P::PickIssue => shell.begin_pick(root_idx, None, window, cx),
                             P::Worktree => shell.begin_worktree(root_idx, window, cx),
                             P::RenameBranch => shell.begin_branch_rename(window, cx),
                             P::CopyPath => shell.copy_root_path(root_idx, window, cx),

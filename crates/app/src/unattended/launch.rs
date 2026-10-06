@@ -36,6 +36,9 @@ pub(super) struct Claimed {
     /// Such a run is put on screen there as it starts and stays when it ends —
     /// somebody asked for it and is watching — so a card it parks is theirs.
     picked_in: Option<gpui::AnyWindowHandle>,
+    /// What the person who picked it added for this run, after the brief's
+    /// own instructions; empty for one the search found.
+    instructions: String,
 }
 
 impl Claimed {
@@ -178,7 +181,14 @@ pub(super) fn begin_blocking(
     }
     let workflow = choosing.workflow_for(&row.labels, label).to_string();
     Some(prepare_blocking(
-        repo, tracker, forge, row.issue, workflow, taking, None,
+        repo,
+        tracker,
+        forge,
+        row.issue,
+        workflow,
+        taking,
+        None,
+        String::new(),
     ))
 }
 
@@ -334,6 +344,7 @@ fn prepare_blocking(
     workflow: String,
     taking: Taking,
     picked_in: Option<gpui::AnyWindowHandle>,
+    instructions: String,
 ) -> Result<Claimed, Unstarted> {
     let made = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         match taking {
@@ -386,6 +397,7 @@ fn prepare_blocking(
             workflow,
             work,
             picked_in,
+            instructions,
         }),
         Err(why) => Err(Unstarted {
             repo,
@@ -464,17 +476,10 @@ pub(super) fn landed(
 /// when that one does, so its session comes up in front of the person who
 /// asked for it.
 fn start(claimed: Claimed, cx: &mut App) -> Result<(), Unstarted> {
-    let Some((mode, agent, timeout)) =
-        with(cx, |u| (u.mode.clone(), u.agent.clone(), u.timeout.clone()))
-    else {
+    let Some((mode, timeout)) = with(cx, |u| (u.mode.clone(), u.timeout.clone())) else {
         return Err(unstarted(claimed, "unattended runs are off"));
     };
-    let agent = agent.or_else(|| {
-        Shared::global(cx)
-            .agents
-            .first()
-            .map(|spec| spec.name.clone())
-    });
+    let agent = super::run_agent(cx);
     let holding: Vec<_> = Shared::global(cx)
         .windows
         .iter()
@@ -534,7 +539,7 @@ fn start(claimed: Claimed, cx: &mut App) -> Result<(), Unstarted> {
         mode: Some(mode).filter(|mode| !mode.trim().is_empty()),
         forge: claimed.forge.map(|forge| forge.name().to_string()),
     };
-    let brief = core::brief_for(&claimed.tracker, &claimed.issue);
+    let brief = core::brief_for(&claimed.tracker, &claimed.issue, &claimed.instructions);
     let task_id = onehand_core::task::new_id();
     let mut task = Task::new(task_id.clone(), template, brief, setup);
     task.source = Source::Issue(IssueSource {

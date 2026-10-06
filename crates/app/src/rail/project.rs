@@ -221,9 +221,9 @@ fn project_menu(
             }))
         })
         .when(is_repo && unattended.is_some(), |menu| {
-            menu.item(pick_item(move |_, _, cx: &mut App| {
+            menu.item(pick_item(move |_, window, cx: &mut App| {
                 pick.update(cx, |shell: &mut Shell, cx| {
-                    shell.begin_pick(root_idx, None, cx)
+                    shell.begin_pick(root_idx, None, window, cx)
                 })
                 .ok();
             }))

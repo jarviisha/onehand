@@ -81,7 +81,7 @@ pub fn pickable_one_blocking(
 }
 
 /// Work `row`, picked by hand from a project's open issues, now, with the
-/// workflow `workflow`.
+/// workflow `workflow`, adding `instructions` to what its brief asks.
 ///
 /// **Refused while the cap is reached**, the rule for picked and found alike —
 /// a run waiting on a person does not count — and the refusal names the
@@ -95,6 +95,7 @@ pub fn start_picked(
     tracker: Tracker,
     row: IssueRow,
     workflow: String,
+    instructions: String,
     has_check: bool,
     window: gpui::AnyWindowHandle,
     cx: &mut App,
@@ -158,6 +159,7 @@ pub fn start_picked(
                             workflow,
                             taking,
                             Some(window),
+                            instructions,
                         ))
                     }))
                     .unwrap_or_else(|_| {

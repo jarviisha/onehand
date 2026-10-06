@@ -1,8 +1,8 @@
 use super::{IssuePicker, Shell};
 use crate::state::Shared;
-use gpui::{App, BorrowAppContext, Context, Entity, SharedString, Window};
+use gpui::{App, AppContext as _, BorrowAppContext, Context, Entity, SharedString, Window};
 use gpui_component::WindowExt as _;
-use gpui_component::input::InputState;
+use gpui_component::input::{InputState, TextareaState};
 use gpui_component::notification::Notification;
 use onehand_core::config::AgentSpec;
 use std::path::{Path, PathBuf};
@@ -211,18 +211,31 @@ impl Shell {
     /// The list is read off the UI loop and the dialog is up while it is:
     /// saying "reading" in the place the list will be is better than a menu
     /// entry that does nothing visible for the seconds `gh` takes.
-    pub fn begin_pick(&mut self, root_idx: usize, only: Option<u64>, cx: &mut Context<Self>) {
+    pub fn begin_pick(
+        &mut self,
+        root_idx: usize,
+        only: Option<u64>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         let Some(root) = self.window.workspace.roots.get(root_idx) else {
             return;
         };
         let (path, label) = (root.path.clone(), SharedString::from(root.label.clone()));
         let issues = self.issues_file(&path);
+        let instructions = cx.new(|cx| {
+            TextareaState::new(window, cx)
+                .placeholder("Optional: added to what every step is asked")
+        });
         self.issue_picker = Some(IssuePicker {
             root: path.clone(),
             project: label,
             found: None,
             workflow: None,
             only,
+            chosen: None,
+            instructions,
+            preview: false,
         });
         cx.notify();
         cx.spawn(async move |shell, cx| {
@@ -244,6 +257,11 @@ impl Shell {
                     // Only the picker this read was for: one closed and opened
                     // on another project in the meantime is not its to fill.
                     if let Some(picker) = shell.issue_picker.as_mut().filter(|p| p.root == path) {
+                        // Narrowed to one, the issue is chosen already.
+                        if only.is_some() && found.as_ref().is_ok_and(|(rows, ..)| rows.len() == 1)
+                        {
+                            picker.chosen = Some(0);
+                        }
                         picker.found = Some(std::rc::Rc::new(found));
                         cx.notify();
                     }
@@ -353,13 +371,30 @@ impl Shell {
         self.issue_picker.as_ref()
     }
 
-    /// Work the `index`th issue in the picker's list, now, and close it.
-    pub fn pick_issue(&mut self, index: usize, window: &mut Window, cx: &mut Context<Self>) {
+    /// Choose the `index`th issue in the picker's list, for the form below it.
+    pub fn choose_issue(&mut self, index: usize, cx: &mut Context<Self>) {
+        if let Some(picker) = self.issue_picker.as_mut() {
+            picker.chosen = Some(index);
+            cx.notify();
+        }
+    }
+
+    pub fn toggle_pick_preview(&mut self, cx: &mut Context<Self>) {
+        if let Some(picker) = self.issue_picker.as_mut() {
+            picker.preview = !picker.preview;
+            cx.notify();
+        }
+    }
+
+    /// Work the issue chosen in the picker, now, and close it. The person
+    /// stays where they were: the issue says the run is starting, and leads
+    /// to its session.
+    pub fn commit_pick(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let Some(picker) = self.issue_picker.take() else {
             return;
         };
         cx.notify();
-        let Some(found) = picker.found else {
+        let (Some(found), Some(index)) = (picker.found, picker.chosen) else {
             return;
         };
         let Ok((rows, _, _)) = &*found else {
@@ -373,11 +408,13 @@ impl Shell {
         let workflow = picker
             .workflow
             .unwrap_or_else(|| crate::unattended::workflow_for(&row.labels, cx));
+        let instructions = picker.instructions.read(cx).value().to_string();
         if let Err(why) = crate::unattended::start_picked(
             picker.root,
             tracker,
             row,
             workflow,
+            instructions,
             has_check,
             handle,
             cx,
