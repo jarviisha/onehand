@@ -41,9 +41,11 @@ the comments beside its code, starting from each module's header; `crates/app/sr
   a contract to fit it. Surface a conflict; preserve the contract unless the requested change
   authorizes changing it. Update the owning document alongside an authorized behaviour change.
 - `docs/known-gaps.md` records deliberate omissions; listing one does not request implementing it.
-  `CHANGELOG.md` is history. `localDocs/` contains local proposals and superseded notes, never
-  current requirements. Consult a proposal only when the task explicitly calls for it, and
-  reconcile it with the current contracts before implementation.
+  `CHANGELOG.md` is history. `docs/proposals/` holds shared proposals, and `localDocs/` local
+  proposals and superseded notes; neither is a current requirement. Consult a proposal only when
+  the task explicitly calls for it, and reconcile it with the current contracts before
+  implementation. A proposal that is built moves into its owning documents and leaves
+  `docs/proposals/` in the same PR.
 - Keep a rule in one owning document. Link to it from entrypoints and skills rather than
   copying it or creating a competing design system.
 
