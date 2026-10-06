@@ -247,7 +247,10 @@ impl Transport {
         cwd: PathBuf,
     ) -> Result<Self, String> {
         let mut cmd = Command::new(&command);
-        for var in auth.env_to_clear(|var| std::env::var(var).ok())? {
+        for var in auth.env_to_clear(
+            |var| std::env::var(var).ok(),
+            |path| std::fs::read_to_string(path),
+        )? {
             cmd.env_remove(var);
         }
         let mut child = cmd
