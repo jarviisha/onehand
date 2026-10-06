@@ -8,16 +8,17 @@
 
 use gpui::{
     AnyElement, App, AppContext as _, Context, Entity, IntoElement, ParentElement, Render, Styled,
-    Task, Window, div,
+    Subscription, Task, Window, div,
 };
 use gpui_component::WindowExt as _;
 use gpui_component::dialog::DialogButtonProps;
 use gpui_component::input::InputState;
 use gpui_component::text::TextViewState;
 use gpui_component::{StyledExt, h_resizable, resizable_panel};
-use onehand_core::connector::Connector;
+use onehand_core::connector::{Connector, PullRequest};
 use onehand_core::issues::{self, Issues, LocalIssue};
-use onehand_plugin_host::{Ask, IssueRun, Request, hint, status_line};
+use onehand_core::task::work::{IssueWork, Reading};
+use onehand_plugin_host::{Ask, Request, hint, status_line};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
@@ -27,6 +28,7 @@ mod file;
 mod form;
 mod list;
 mod mentions;
+mod reads;
 mod work;
 use detail::{Doing, issue_view};
 use file::keep_newer;
@@ -68,9 +70,13 @@ const FILES_SHOWN: usize = 20;
 /// since the last thing that happened to it is the one read first.
 const HISTORY_SHOWN: usize = 50;
 
-/// How many of the tasks working an issue are drawn under it, the working
-/// ones first; the rest are on the Tasks page, and the list says so.
-const RUNS_SHOWN: usize = 5;
+/// How many of an issue's earlier tasks are drawn under it, newest first;
+/// the rest are on the Tasks page, and the list says so.
+const EARLIER_SHOWN: usize = 5;
+
+/// How old what is read of an issue's pull request may be before the window
+/// coming back to the front reads it again.
+const READ_AGE: Duration = Duration::from_secs(60);
 
 pub(crate) struct IssuesView {
     root: Option<PathBuf>,
@@ -108,9 +114,17 @@ pub(crate) struct IssuesView {
     /// The conversations with a live session in this window, by the agent's
     /// session id: an issue whose history names one of them is being worked.
     live: Vec<String>,
-    /// Every task working an issue this window's projects keep, as the app
-    /// last told it.
-    runs: Vec<IssueRun>,
+    /// The work on every issue this window's projects keep that a task
+    /// works, as the app last told it.
+    works: Vec<IssueWork>,
+    /// The pull request of the work of the issue on screen, as last read.
+    pr: Reading<reads::PrAbout, Option<PullRequest>>,
+    /// The work moved since the pull request was last read.
+    moved: bool,
+    /// The window came back to the front since the issue was last drawn.
+    returned: bool,
+    /// Watches the window coming back to the front, made on the first draw.
+    _activation: Option<Subscription>,
     /// The projects a run may be started on.
     offered: Vec<PathBuf>,
 }
@@ -184,7 +198,11 @@ impl IssuesView {
             label: None,
             ask,
             live: Vec::new(),
-            runs: Vec::new(),
+            works: Vec::new(),
+            pr: Reading::default(),
+            moved: false,
+            returned: false,
+            _activation: None,
             offered: Vec::new(),
             _sync_every: cx.spawn(async move |view, cx| {
                 let every = (SYNC_EVERY.as_secs() / TICK.as_secs()).max(1);
@@ -234,13 +252,16 @@ impl IssuesView {
         cx.notify();
     }
 
-    pub(crate) fn set_runs(
+    pub(crate) fn set_works(
         &mut self,
-        runs: &[IssueRun],
+        works: &[IssueWork],
         offered: &[PathBuf],
         cx: &mut Context<Self>,
     ) {
-        self.runs = runs.to_vec();
+        if self.works != works {
+            self.works = works.to_vec();
+            self.moved = true;
+        }
         self.offered = offered.to_vec();
         cx.notify();
     }
@@ -296,7 +317,7 @@ impl IssuesView {
         let Some(issue) = state.issues.as_ref().and_then(|kept| kept.get(number)) else {
             return;
         };
-        let description = match &issue.link {
+        let mut description = match &issue.link {
             Some(link) => format!(
                 "\u{201c}{}\u{201d} moves to the closed list here and closes on {} at the next sync. It can be reopened.",
                 issue.title, link.connector
@@ -306,6 +327,9 @@ impl IssuesView {
                 issue.title
             ),
         };
+        if self.work_active(number) {
+            description.push_str(" A run is still working on it; closing does not stop it.");
+        }
         // The project is held so a dialog left open across a switch closes the
         // issue it was opened for, never the same number in another project.
         let root = self.root.clone();
@@ -394,6 +418,14 @@ impl Render for IssuesView {
             self.stale = false;
             self.load(cx);
         }
+        if self._activation.is_none() {
+            self._activation = Some(cx.observe_window_activation(window, |view, window, cx| {
+                if window.is_window_active() {
+                    view.returned = true;
+                    cx.notify();
+                }
+            }));
+        }
         let body = self.body(window, cx);
         div()
             .flex_1()
@@ -468,15 +500,24 @@ impl IssuesView {
             .filter(|_| issue.link.is_none())
             .map(|forge| forge.name());
         let body = self.parsed_body(root, &issue, cx);
+        let key = self.key(root, issue.number);
+        let work = key
+            .as_ref()
+            .and_then(|key| self.works.iter().find(|work| work.key == *key))
+            .cloned();
+        self.read_pr_if_due(root, work.as_ref(), cx);
         let doing = Doing {
             session: working_in(&issue, &self.live).map(str::to_string),
             offered: self.offered.iter().any(|offered| offered == root),
-            runs: self
-                .runs
-                .iter()
-                .filter(|run| run.root == root && run.number == issue.number)
-                .cloned()
-                .collect(),
+            pr: self.pr_seen(work.as_ref()),
+            read_at: self.pr.value.as_ref().map(|(_, at)| *at),
+            stale: self
+                .pr
+                .value
+                .as_ref()
+                .and_then(|(pr, _)| pr.as_ref())
+                .map(|pr| format!("#{} · {}", pr.number, onehand_core::task::work::pr_said(pr))),
+            work,
         };
         issue_view(root, &issue, body, publish_to, doing, window, cx)
     }
@@ -523,6 +564,19 @@ impl IssuesView {
     fn run_workflow(&mut self, number: u64, window: &mut Window, cx: &mut Context<Self>) {
         self.ask_later(window, cx, move |ask, root, window, cx| {
             ask(&Request::RunIssueWorkflow { root, number }, window, cx)
+        });
+    }
+
+    /// Ask the app about task `id`, by `request`.
+    fn ask_task(
+        &mut self,
+        id: String,
+        request: fn(&str) -> Request<'_>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.ask_later(window, cx, move |ask, _, window, cx| {
+            ask(&request(&id), window, cx)
         });
     }
 

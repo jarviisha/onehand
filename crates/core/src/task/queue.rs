@@ -59,6 +59,12 @@ impl Queue {
         self.waiting.iter().any(|(_, waiting)| waiting == task)
     }
 
+    /// The task holding the place `task` waits for, while it waits.
+    pub fn holder_of(&self, task: &str) -> Option<&str> {
+        let (place, _) = self.waiting.iter().find(|(_, waiting)| waiting == task)?;
+        self.held.get(place).map(String::as_str)
+    }
+
     /// Whether `task` holds a place.
     pub fn holds(&self, task: &str) -> bool {
         self.held.values().any(|holder| holder == task)

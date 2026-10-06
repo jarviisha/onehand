@@ -96,7 +96,8 @@ background executor, one interval in the config, no cron expressions.
 | `crates/app/src/chat/pane/sessions.rs` | `open_unshown` |
 | `crates/app/src/dialogs.rs` | `pick_issue` and `issue_workflow_menu`, the workflow menu the picker and Settings share |
 | `crates/app/src/settings/pages.rs` | the default workflow and the workflow labels in Settings |
-| `crates/app/src/task.rs` (`issue_runs`) and `plugins/builtin/workbench-issues/src/view/detail.rs` (`runs_view`) | the tasks working an issue, told to the Issues tab through `Request::IssueRuns` |
+| `crates/core/src/task/work.rs` | where an issue's work stands and its next action (`Work`, `issue_work`, `next_action`), and the generation rule for what is read of it (`Reading`) |
+| `crates/app/src/task.rs` (`issue_works`) and `plugins/builtin/workbench-issues/src/view/work.rs`, `view/reads.rs` | each issue's work, told to the Issues tab through `Request::IssueWork`, drawn there, and its pull request read |
 
 The split is the one the crate boundary already forces: everything that can be
 decided without a window — which issue, what branch, what the run is asked, what
@@ -249,11 +250,39 @@ same picker opens from an issue in the Issues tab, by *Run workflow…* (offered
 where *Work an issue…* is: a repository that is not a run's own worktree),
 narrowed to that one issue; an issue a run may not take (closed, brought in
 from a forge the project is no longer kept in step with, or older than the
-newest 100 the list reads) is said there instead of a row. Below its body, the Issues tab lists the tasks working the issue, working
-ones first, five at most and saying how many more are on the Tasks page: each
-its workflow and its step or how it ended, a waiting one in the warning ink,
-and *Show task*, which opens the task's detail. Only issues a project keeps
-show them: a forge's issue numbers are its own.
+newest 100 the list reads) is said there instead of a row.
+
+**An issue says where its work stands before what it says.** The app tells the
+Issues tab one summary per issue (`Request::IssueWork`), named by its
+`IssueKey`: the issues file it is kept in and its number, never the project
+and number alone, since two workspaces can each keep an issue 12 of one
+project, and a forge's issue numbers are its own. Only issues a project keeps
+get one. The summary is the issue's newest task, by when it last moved, and
+what came before it; it is told again whenever a task starts, moves a step or
+ends. Above the body the tab draws the task's progress in the Tasks page's
+words with *Verify · step 3 of 6* read from the run's own snapshot (no
+percentage: a step that sends the work back would make one go down), the
+next action in one sentence, and its one primary action, all three lines kept
+whatever the state. What to say and offer is core's `next_action`, the rule
+beside the group rule in [tasks.md](tasks.md). *Review…* opens the run's
+session, whose step strip holds the approval.
+
+Below the body, *What the work left* names the branch and, on a project a
+forge serves once the run has reached its pull request step, the pull
+request's state (*open, draft*, *open*, *merged*, *closed unmerged*), how
+old that reading is and *Refresh*. It is read off the UI thread, by the
+connector's lookup by branch, when the issue is opened, when its task moves,
+on *Refresh*, and when the window comes back to the front with the issue on
+screen and what is shown older than a minute; never on a timer of its own.
+Every read carries the issue, the task, the run and a generation bumped on
+every request, and only the answer of the current generation is taken, so
+another issue's answer, an older refresh landing last and a read of a run a
+Retry replaced are all dropped the same way. A read that fails keeps the
+last value, marked stale in the warning ink with the failure beside it.
+*Before* counts the task's earlier runs and lists its earlier tasks, five at
+most, one needing attention in the warning ink, each leading to its task.
+Closing an issue whose run is active says *A run is still working on it;
+closing does not stop it*; closing never stops a run.
 
 **A project with no check command is still searched**, issue by issue: one
 whose workflow (the default or its workflow label's) runs the check command is

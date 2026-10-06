@@ -141,8 +141,13 @@ sequenceDiagram
 
 The generation is bumped by every read sent, so another issue, an out-of-order refresh and a Retry
 that replaced the run are all dropped the same way. Reads are sent on opening, on *Refresh*, on the
-task moving (`IssueRuns` broadcast), and on the window regaining focus when what is shown is older
+task moving (`IssueWork` broadcast), and on the window regaining focus when what is shown is older
 than a minute.
+
+**As built for piece 1 part A**, the reads are the Issues view's own (`view/reads.rs` in the
+plugin), not the panel's: the view already holds the forge serving the project and the issue's
+state, and the next action needs both, so the view calls `next_action` with what the app told it.
+The generation rule is core's (`task::work::Reading`).
 
 ## Flow: an approval from anywhere
 

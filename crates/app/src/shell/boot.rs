@@ -252,7 +252,7 @@ impl Shell {
         // What the Issues tab says of the runs on each issue moves with the
         // tasks, which change on every step; told only when it changed.
         cx.observe_global::<crate::task::Tasks>(|shell: &mut Self, cx| {
-            shell.tell_issue_runs(cx);
+            shell.tell_issue_works(cx);
         })
         .detach();
 
@@ -313,6 +313,17 @@ impl Shell {
                         }
                     }
                     E::OpenTask(id) => shell.show_task(id, window, cx),
+                    E::OpenTaskSession(id) => {
+                        if let Some((uid, at)) = crate::task::session_of(id, cx) {
+                            shell.show_session_in(uid, at, window, cx);
+                        }
+                    }
+                    E::ResumeTask(id) => crate::task::request(id.clone(), window, cx),
+                    E::RetryTask(id) => shell.begin_retry(id.clone(), window, cx),
+                    E::StopTask(id) => {
+                        let id = id.clone();
+                        cx.defer(move |cx| crate::task::stop_task(&id, cx));
+                    }
                     E::ToggleMaximize => {
                         shell.toggle_maximize_panel(FocusedPanel::Workbench, window, cx);
                     }
@@ -462,7 +473,7 @@ impl Shell {
             git_generation: 0,
             rail_sessions: Vec::new(),
             live_conversations: Vec::new(),
-            issue_runs: (Vec::new(), Vec::new()),
+            issue_works: (Vec::new(), Vec::new()),
             rail_tab: crate::rail::RailTab::Projects,
             folds: HashMap::new(),
             last_panel: FocusedPanel::Chat,

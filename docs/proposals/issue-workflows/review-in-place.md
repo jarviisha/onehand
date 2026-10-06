@@ -62,7 +62,7 @@ it*. The strip goes through the same call, so there is one path.
 
 Where a task waits for approval, region 2 keeps its height: the summary and *Review…*. Pressing
 *Review…* on the issue on the Issues page or in the task detail opens one block **below region 2**
-([issue-progress.md](issue-progress.md#one-order-whatever-the-state)), pushing the body down; a
+([unattended.md](../../unattended.md)), pushing the body down; a
 person did that, so it is not content moving under them. The engine never opens or closes it. The
 Issues tab draws none: its *Review…* opens the issue on the page.
 
@@ -107,7 +107,7 @@ When a task has ended, the block under its head says which way out fits, from th
 | Failed, forge | the forge's reason | *Retry* (it starts at the forge step) |
 | Failed, other | the failure's text | *Retry* |
 
-This is the next-action function of [issue-progress.md](issue-progress.md#the-next-action), drawn
+This is `task::work::next_action` ([tasks.md](../../tasks.md)), drawn
 with its reason: one function, two views.
 
 **The Retry dialog says what it will do before it does it**: the step it starts at and why (the

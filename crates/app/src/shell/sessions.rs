@@ -631,11 +631,11 @@ impl Shell {
             .update(cx, |pane, cx| pane.open_task(Some(id), cx));
     }
 
-    /// Tell the Workbench which tasks work the issues this window's projects
-    /// keep, and which projects a run may be started on, when either changed
-    /// since it was last told. Asked when the tasks move and when the git
+    /// Tell the Workbench where the work on the issues this window's projects
+    /// keep stands, and which projects a run may be started on, when either
+    /// changed since it was last told. Asked when the tasks move and when the git
     /// sweep lands, which is also when the projects have changed.
-    pub(super) fn tell_issue_runs(&mut self, cx: &mut Context<Self>) {
+    pub(super) fn tell_issue_works(&mut self, cx: &mut Context<Self>) {
         let kept: Vec<_> = self
             .window
             .workspace
@@ -654,11 +654,11 @@ impl Shell {
             .filter(|root| set_up && !root.transient && self.window.git.contains_key(&root.path))
             .map(|root| root.path.clone())
             .collect();
-        let told = (crate::task::issue_runs(&kept, cx), offered);
-        if told != self.issue_runs {
+        let told = (crate::task::issue_works(&kept, cx), offered);
+        if told != self.issue_works {
             self.workbench
-                .update(cx, |panel, cx| panel.issue_runs(&told.0, &told.1, cx));
-            self.issue_runs = told;
+                .update(cx, |panel, cx| panel.issue_works(&told.0, &told.1, cx));
+            self.issue_works = told;
         }
     }
 

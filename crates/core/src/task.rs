@@ -6,12 +6,14 @@
 //! - [`marks`] pins the work at each step visit's start and end as a commit
 //!   the repository keeps;
 //! - [`files`] keeps every task, one file each, written in order;
-//! - [`history`] says which finished tasks are old enough to let go.
+//! - [`history`] says which finished tasks are old enough to let go;
+//! - [`work`] says where an issue's work stands and what to do next.
 
 pub mod files;
 pub mod history;
 pub mod marks;
 pub mod queue;
+pub mod work;
 
 use crate::unattended::IssueSource;
 use crate::workflow::{Brief, Outcome, Run, Setup, StepKind, StepSpec, Stop, Template};

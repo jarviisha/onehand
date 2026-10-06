@@ -1,163 +1,75 @@
 use super::list::{chip, identity};
 use super::mentions::FILE_LINK;
-use super::work::runs_view;
+use super::work;
 use super::{FILES_SHOWN, HISTORY_SHOWN, IssuesView};
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
-    AnyElement, App, ClickEvent, ClipboardItem, Context, Entity, HighlightStyle,
-    InteractiveElement as _, IntoElement, ParentElement, SharedString,
-    StatefulInteractiveElement as _, Styled, WeakEntity, Window, div,
+    AnyElement, App, ClickEvent, Context, Entity, HighlightStyle, InteractiveElement as _,
+    IntoElement, ParentElement, SharedString, StatefulInteractiveElement as _, Styled, WeakEntity,
+    Window, div,
 };
 use gpui_component::button::ButtonVariants as _;
 use gpui_component::text::{TextView, TextViewState, TextViewStyle};
 use gpui_component::tooltip::Tooltip;
 use gpui_component::{ActiveTheme, Icon, IconName, Sizable as _, StyledExt};
 use onehand_core::issues::{LocalIssue, sync};
-use onehand_plugin_host::{IssueRun, action, menu_below, menu_item, status_ink};
+use onehand_core::task::work::{IssueWork, PrSeen};
+use onehand_plugin_host::{action, status_ink};
 use std::path::Path;
 
 /// What is being done with an issue: the live session its history names,
-/// whether a run may be started on its project, and the tasks working it.
-pub(super) struct Doing {
+/// whether a run may be started on its project, and its work as the app told
+/// it, with the pull request as last read.
+pub(super) struct Doing<'a> {
     pub(super) session: Option<String>,
     pub(super) offered: bool,
-    pub(super) runs: Vec<IssueRun>,
+    pub(super) work: Option<IssueWork>,
+    pub(super) pr: PrSeen<'a>,
+    /// When the pull request was last read.
+    pub(super) read_at: Option<u64>,
+    /// The last pull request read, in words, kept beside a failed read.
+    pub(super) stale: Option<String>,
 }
 
-/// One issue, read: how it is named and its title with what can be done to it,
-/// its labels, its body, and the tasks working it.
+/// One issue, read, in one fixed order whatever the state, so what it waits
+/// on comes before what it says: who it is, where its work stands, what it
+/// asks for, what the work left, and what came before.
 pub(super) fn issue_view(
     root: &Path,
     issue: &LocalIssue,
     body: Option<(Entity<TextViewState>, Vec<String>)>,
     publish_to: Option<&'static str>,
-    doing: Doing,
+    doing: Doing<'_>,
     window: &mut Window,
     cx: &mut Context<IssuesView>,
 ) -> AnyElement {
-    let Doing {
-        session: working,
-        offered,
-        runs,
-    } = doing;
     let number = issue.number;
     let open = issue.open;
     let muted = cx.theme().muted_foreground;
-    // The title wraps rather than cutting: it is the one place the whole of
-    // it is read, and what is done to the issue stays to its right.
-    let header =
-        div()
-            .h_flex()
-            .items_start()
-            .gap_2()
-            .w_full()
-            .flex_none()
-            .px_3()
-            .pt_2()
-            .child(
-                div()
-                    .flex_1()
-                    .min_w_0()
-                    .font_semibold()
-                    .child(issue.title.clone()),
-            )
-            .child(
-                div()
-                    .h_flex()
-                    .flex_none()
-                    .items_center()
-                    .gap_1()
-                    .children(publish_to.map(|forge| {
-                        action("issue-publish")
-                            .xsmall()
-                            .ghost()
-                            .label(format!("Publish to {forge}"))
-                            .tooltip("Open it there too, and keep the two in step")
-                            .on_click(cx.listener(move |view, _: &ClickEvent, _, cx| {
-                                view.publish(number, cx)
-                            }))
-                    }))
-                    // A session still going on it is where the work is: a
-                    // second one started here would be two agents editing
-                    // one checkout from two conversations.
-                    .map(|actions| match working {
-                        Some(session) => actions.child(
-                            action("issue-open-working")
-                                .xsmall()
-                                .ghost()
-                                .icon(Icon::new(IconName::Bot))
-                                .label("Open session")
-                                .tooltip("A session is working this issue; show it")
-                                .on_click(cx.listener(move |view, _: &ClickEvent, window, cx| {
-                                    view.open_session(session.clone(), window, cx)
-                                })),
-                        ),
-                        None if open => actions.child(
-                            action("issue-work-here")
-                                .xsmall()
-                                .ghost()
-                                .icon(Icon::new(IconName::Bot))
-                                .label("Work here")
-                                .tooltip(
-                                    "Start a session on this checkout with the issue as its \
-                                     prompt. No branch or worktree; changes are left uncommitted",
-                                )
-                                .on_click(cx.listener(move |view, _: &ClickEvent, window, cx| {
-                                    view.work_here(number, window, cx)
-                                })),
-                        ),
-                        None => actions,
-                    })
-                    // A workflow works it on a worktree of its own, so it may
-                    // go beside a session here; the app refuses a second run
-                    // on an issue one is already working.
-                    .when(open && offered, |actions| {
-                        actions.child(
-                            action("issue-run-workflow")
-                                .xsmall()
-                                .ghost()
-                                .icon(Icon::new(IconName::Play))
-                                .label("Run workflow…")
-                                .tooltip(
-                                    "Choose a workflow and work the issue with it as a task, \
-                                     on a branch and worktree of its own",
-                                )
-                                .on_click(cx.listener(move |view, _: &ClickEvent, window, cx| {
-                                    view.run_workflow(number, window, cx)
-                                })),
-                        )
-                    })
-                    .child(
-                        action("issue-edit")
-                            .xsmall()
-                            .ghost()
-                            .label("Edit")
-                            .on_click(cx.listener(move |view, _: &ClickEvent, window, cx| {
-                                view.open_form(Some(number), window, cx)
-                            })),
-                    )
-                    .child(more_menu(root, issue, cx)),
-            );
-
-    // What it is at a glance: open or closed, where it lives, its labels, and
-    // how urgent the body says it is.
-    let facts = div()
+    // Region 1: the title wraps rather than cutting, since it is the one
+    // place the whole of it is read, and the issue's state is beside it and
+    // nowhere else, so it is never taken for its run's.
+    let header = div()
         .h_flex()
-        .flex_wrap()
-        .items_center()
-        .gap_1()
+        .items_start()
+        .gap_2()
+        .w_full()
         .flex_none()
         .px_3()
-        .pt_1()
-        .pb_2()
-        .border_b_1()
-        .border_color(cx.theme().border)
-        .text_xs()
+        .pt_2()
+        .child(
+            div()
+                .flex_1()
+                .min_w_0()
+                .font_semibold()
+                .child(issue.title.clone()),
+        )
         .child(
             div()
                 .flex_none()
                 .px_1p5()
                 .rounded(cx.theme().radius)
+                .text_xs()
                 // The status fill for work still open; a closed one takes
                 // the quiet chip every other tag here wears.
                 .map(|badge| {
@@ -172,7 +84,21 @@ pub(super) fn issue_view(
                     }
                 })
                 .child(if open { "Open" } else { "Closed" }),
-        )
+        );
+
+    // Where it lives, its labels, and how urgent the body says it is.
+    let facts = div()
+        .h_flex()
+        .flex_wrap()
+        .items_center()
+        .gap_1()
+        .flex_none()
+        .px_3()
+        .pt_1()
+        .pb_2()
+        .border_b_1()
+        .border_color(cx.theme().border)
+        .text_xs()
         .child(match (issue.reference(), &issue.link) {
             (Some(reference), Some(link)) => div()
                 .id("issue-reference")
@@ -200,7 +126,10 @@ pub(super) fn issue_view(
         }));
     let conflict = conflict_view(issue, cx);
 
-    let runs = runs_view(runs, cx);
+    let next = work::next_for(issue, &doing);
+    let progress = work::progress_view(root, issue, &doing, &next, publish_to, cx);
+    let left = work::left_view(&doing, cx);
+    let before = doing.work.as_ref().and_then(|w| work::before_view(w, cx));
     let history = history(issue, cx);
 
     div()
@@ -211,6 +140,7 @@ pub(super) fn issue_view(
         .child(header)
         .child(facts)
         .children(conflict)
+        .child(progress)
         .child(match &body {
             Some((parsed, _)) => div()
                 .flex_1()
@@ -233,7 +163,8 @@ pub(super) fn issue_view(
                 .into_any_element(),
         })
         .children(body.and_then(|(_, files)| referenced(files, cx)))
-        .children(runs)
+        .children(left)
+        .children(before)
         .child(history)
         .into_any_element()
 }
@@ -348,69 +279,6 @@ fn priority(body: &str) -> Option<String> {
         .replace("__", "");
     let first = first.trim();
     (!first.is_empty()).then(|| first.to_string())
-}
-
-/// The ⋯ menu beside *Edit*: where the issue lives on its forge, and closing
-/// or reopening it. Closing is here rather than a button of its own because a
-/// bare *Close* beside an issue reads as closing the view.
-fn more_menu(root: &Path, issue: &LocalIssue, cx: &mut Context<IssuesView>) -> AnyElement {
-    let number = issue.number;
-    let open = issue.open;
-    let forge = issue.link.as_ref().map(|link| link.connector.clone());
-    let view = cx.entity();
-    let trigger = action("issue-more")
-        .xsmall()
-        .ghost()
-        .icon(Icon::new(IconName::Ellipsis))
-        .tooltip("More actions");
-    // Named by the project and the issue, so a menu held open across a switch
-    // is one for this issue and never for whichever took its place.
-    let id = SharedString::from(format!("issue-more-menu-{}-{number}", root.display()));
-    menu_below(id, trigger, move |menu, _, _| {
-        let mut menu = menu;
-        if let Some(forge) = &forge {
-            let (open_view, copy_view) = (view.clone(), view.clone());
-            menu = menu
-                .item(
-                    menu_item(format!("Open on {forge}"))
-                        .icon(Icon::new(IconName::ExternalLink))
-                        .on_click(move |_, _, cx: &mut App| {
-                            open_view.update(cx, |view, cx| {
-                                view.with_url(number, |url, cx| cx.open_url(&url), cx)
-                            })
-                        }),
-                )
-                .item(
-                    menu_item("Copy link")
-                        .icon(Icon::new(IconName::Copy))
-                        .on_click(move |_, _, cx: &mut App| {
-                            copy_view.update(cx, |view, cx| {
-                                view.with_url(
-                                    number,
-                                    |url, cx| cx.write_to_clipboard(ClipboardItem::new_string(url)),
-                                    cx,
-                                )
-                            })
-                        }),
-                )
-                .separator();
-        }
-        let view = view.clone();
-        menu.item(if open {
-            menu_item("Close issue")
-                .icon(Icon::new(IconName::CircleX))
-                .on_click(move |_, window, cx: &mut App| {
-                    view.update(cx, |view, cx| view.confirm_close(number, window, cx))
-                })
-        } else {
-            menu_item("Reopen issue")
-                .icon(Icon::new(IconName::Redo))
-                .on_click(move |_, _, cx: &mut App| {
-                    view.update(cx, |view, cx| view.set_open(number, true, cx))
-                })
-        })
-    })
-    .into_any_element()
 }
 
 /// What a person has to decide about an issue both sides changed: each field in

@@ -212,6 +212,14 @@ unattended      (the issue a task works,  Tasks page in the agent pane, rail row
   `Running` or `Waiting`, which maps straight to its group. Otherwise a task not dismissed whose
   outcome is unset (cut off) or `Outcome::needs_attention` (exhausted, failed, timed out, agent or
   session gone) is *Ended*, and everything else is *Finished*.
+- **The next action is pure** (`task::work::next_action`), beside the group rule. From an issue's
+  newest task as `Work::of` reads it (the group, with *waiting* told apart into an approval, an
+  approval step's open visit, and a card, anything else waiting on a person), whether a forge serves
+  the project, the pull request as last read, and the issue's state, it returns one sentence, at most
+  one primary action and the secondary ones in their order, so no caller picks its own. It matches
+  the groups, `Outcome` and `Stop` exhaustively. The issue's state only gates a new start: a closed
+  issue offers no *Run workflow…*, keeps every control of a run still active on it and says so, and
+  mutes a run that is over to *Reopen issue* and *Show task*. *Edit* is always last.
 - **The history cap is pure** (`task::history::over_cap`): the ids of the *Finished* tasks past the
   newest `KEPT` (200) of each project a task was started from (`setup.repo`, never a worktree).
   Recency is the latest move across a task's runs, then its id, which is the nanos it was made at.

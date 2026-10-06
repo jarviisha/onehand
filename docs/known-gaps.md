@@ -163,3 +163,10 @@ the ones that exist. What workflows, tasks and unattended runs do not do is list
   typed as text); no page gathering what unattended runs need; and no export or import of the
   whole configuration. Connections lists connectors and their sign-in only; managing MCP servers
   would be a group of its own. There is no search across Settings, and none is planned.
+- **A forge's own issue says nothing of its work in the Issues tab.** Only issues a project keeps
+  (local, or kept in step with a forge) get the work summary, the next action and the pull request
+  line: an issue's work is matched by the issues file it is kept in and its number, and a forge's
+  issue has no such file. Its task is on the Tasks page. The tab's issue view also leaves out what
+  runs do not keep yet: a failure's kind (so no *Retry with current settings*), a passed check's
+  output, the pull request a run opened (it is looked up by branch instead), the files changed and
+  commits past the base, and *Answer the pull request review* as an action.

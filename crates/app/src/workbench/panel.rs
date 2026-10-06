@@ -126,6 +126,12 @@ impl Workbench {
                 })
             }
             Request::OpenTask(id) => cx.emit(WorkbenchEvent::OpenTask(id.to_string())),
+            Request::OpenTaskSession(id) => {
+                cx.emit(WorkbenchEvent::OpenTaskSession(id.to_string()))
+            }
+            Request::ResumeTask(id) => cx.emit(WorkbenchEvent::ResumeTask(id.to_string())),
+            Request::RetryTask(id) => cx.emit(WorkbenchEvent::RetryTask(id.to_string())),
+            Request::StopTask(id) => cx.emit(WorkbenchEvent::StopTask(id.to_string())),
             // The caret is the panel's half of reaping: a view dropped while it
             // holds focus leaves the window pointing at an element no frame
             // contains, and GPUI resolves a key along the path down to the
@@ -298,15 +304,15 @@ impl Workbench {
         self.broadcast(&Request::LiveConversations(ids), cx);
     }
 
-    /// Tell the modes which tasks work the issues this window's projects keep,
-    /// and on which projects a run may be started.
-    pub fn issue_runs(
+    /// Tell the modes where the work on the issues this window's projects
+    /// keep stands, and on which projects a run may be started.
+    pub fn issue_works(
         &mut self,
-        runs: &[onehand_plugin_host::IssueRun],
+        works: &[onehand_core::task::work::IssueWork],
         offered: &[PathBuf],
         cx: &mut Context<Self>,
     ) {
-        self.broadcast(&Request::IssueRuns { runs, offered }, cx);
+        self.broadcast(&Request::IssueWork { works, offered }, cx);
     }
 
     /// Tell the modes when the agent on screen started, or that none is.
@@ -399,6 +405,14 @@ pub enum WorkbenchEvent {
     },
     /// Show task `id` on the Tasks page.
     OpenTask(String),
+    /// Show the session task `id` runs in.
+    OpenTaskSession(String),
+    /// Carry task `id` on where it was.
+    ResumeTask(String),
+    /// Choose how to run task `id` again.
+    RetryTask(String),
+    /// Stop task `id`.
+    StopTask(String),
 }
 
 impl EventEmitter<WorkbenchEvent> for Workbench {}

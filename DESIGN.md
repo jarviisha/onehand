@@ -118,8 +118,14 @@ monospace font.
   - The terminal strip has its shell tabs and `+`, then the same maximize and hide.
   - Each dock is a card, inset on three sides and flush on the side it is dragged by, on the same
     reading surface as the conversation.
-  - The Issues tab's issue shows its title with *Work here*, *Run workflow…*, *Edit* and ⋯, its
-    facts, its body, the tasks working it (not drawn without any, capped) and its history.
+  - The Issues tab's issue is drawn in one fixed order whatever the state, so what it waits on
+    comes before what it says: its title with its state (*Open*, *Closed*) beside it and nowhere
+    else, and its facts; then where its work stands (the newest task's progress with *step N of
+    M*, the next action in one sentence, at most one primary action, the secondary ones in a
+    place that does not move, then ⋯); then its body; then what the work left (the branch and,
+    on a project a forge serves, the pull request's state with *read 2m ago* and *Refresh*);
+    then *Before*, its earlier runs and tasks (capped); then its history. The work's three lines
+    keep their height while a step ends, so the body never moves under a reader.
   - Hiding a dock keeps its buffers and processes.
   - A hidden terminal is unmounted and takes no room.
   - The terminal's open state follows the selected project.

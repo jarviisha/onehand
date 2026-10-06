@@ -278,7 +278,7 @@ pub struct Shell {
     live_conversations: Vec<String>,
     /// What the Workbench was last told of the tasks working issues.
     /// And of the projects a run may be started on.
-    issue_runs: (Vec<onehand_plugin_host::IssueRun>, Vec<PathBuf>),
+    issue_works: (Vec<onehand_core::task::work::IssueWork>, Vec<PathBuf>),
     /// Which of the rail's two lists is showing.
     ///
     /// Not persisted: it is where the user is looking right now, and a launch
