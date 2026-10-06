@@ -124,7 +124,7 @@ impl Shell {
                         match action {
                             P::TogglePin => shell.toggle_pin(root_idx, window, cx),
                             P::ToggleUnattended => shell.toggle_unattended(root_idx, window, cx),
-                            P::PickIssue => shell.begin_pick(root_idx, cx),
+                            P::PickIssue => shell.begin_pick(root_idx, None, cx),
                             P::Worktree => shell.begin_worktree(root_idx, window, cx),
                             P::RenameBranch => shell.begin_branch_rename(window, cx),
                             P::CopyPath => shell.copy_root_path(root_idx, window, cx),
@@ -249,6 +249,12 @@ impl Shell {
             }
         })
         .detach();
+        // What the Issues tab says of the runs on each issue moves with the
+        // tasks, which change on every step; told only when it changed.
+        cx.observe_global::<crate::task::Tasks>(|shell: &mut Self, cx| {
+            shell.tell_issue_runs(cx);
+        })
+        .detach();
 
         // The conversation header's terminal dot is a fact the docks have no
         // idea anyone outside them wants. Guarded the same way and for the same
@@ -301,6 +307,12 @@ impl Shell {
                         prompt,
                     } => shell.work_issue_here(root, *number, prompt, window, cx),
                     E::OpenConversation(session) => shell.open_conversation(session, window, cx),
+                    E::RunIssueWorkflow { root, number } => {
+                        if let Some(idx) = shell.root_index(root) {
+                            shell.begin_pick(idx, Some(*number), cx);
+                        }
+                    }
+                    E::OpenTask(id) => shell.show_task(id, window, cx),
                     E::ToggleMaximize => {
                         shell.toggle_maximize_panel(FocusedPanel::Workbench, window, cx);
                     }
@@ -433,6 +445,9 @@ impl Shell {
             worktree_draft: None,
             branch_draft: None,
             issue_picker: None,
+            label_input: cx.new(|cx| InputState::new(window, cx).placeholder("bug")),
+            label_workflow: None,
+            label_refused: None,
             workflow_draft: None,
             check_inputs: HashMap::new(),
             workflow_launcher: None,
@@ -447,6 +462,7 @@ impl Shell {
             git_generation: 0,
             rail_sessions: Vec::new(),
             live_conversations: Vec::new(),
+            issue_runs: (Vec::new(), Vec::new()),
             rail_tab: crate::rail::RailTab::Projects,
             folds: HashMap::new(),
             last_panel: FocusedPanel::Chat,

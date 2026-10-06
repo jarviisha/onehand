@@ -16,14 +16,14 @@ use gpui::{App, BorrowAppContext as _, Task, WeakEntity};
 use onehand_core::config::UnattendedConfig;
 use onehand_core::connector::{self, Connector};
 use onehand_core::unattended as core;
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::path::Path;
 use std::path::PathBuf;
 use std::time::Duration;
 
 mod launch;
 mod report;
-pub use launch::{Pickable, look_now, pickable_blocking, start_picked};
+pub use launch::{Pickable, look_now, pickable_blocking, pickable_one_blocking, start_picked};
 use launch::{begin_blocking, landed};
 pub(crate) use report::{
     card_question, deliver, deliver_all, ended, keep, opening, refuse_mode, spec_for, started,
@@ -37,8 +37,11 @@ pub struct Unattended {
     timeout: String,
     mode: String,
     agent: Option<String>,
-    /// The id of the workflow an issue is worked with.
+    /// The id of the workflow an issue is worked with, unless a workflow
+    /// label on it names another.
     workflow: String,
+    /// Workflow label → workflow id.
+    workflows: BTreeMap<String, String>,
     /// How many runs may work at once.
     at_once: u32,
     /// A claim is on its way to the connector and the worktree is being made. A tick
@@ -142,11 +145,26 @@ fn at_cap(u: &Unattended, cx: &App) -> Option<String> {
 }
 
 /// Why nothing at all may start, picked or found: the agent does not offer
-/// the mode runs start in, or the workflow they run is missing or cannot run.
+/// the mode runs start in, or a workflow runs may be given — the default or
+/// one a workflow label names — is missing or cannot run.
+///
+/// **A label's workflow stops every run**, not only its issues': it is the
+/// same broken config either way, and said before any claim it costs no issue
+/// a comment.
 fn cannot_start(u: &Unattended, cx: &App) -> Option<String> {
     u.mode_refused
         .clone()
-        .or_else(|| launch::workflow(&u.workflow, &u.timeout, cx).err())
+        .or_else(|| {
+            launch::workflow(&u.workflow, &u.timeout, cx)
+                .err()
+                .map(|why| format!("{why} (unattended.workflow)"))
+        })
+        .or_else(|| {
+            u.workflows.iter().find_map(|(label, id)| {
+                let why = launch::workflow(id, &u.timeout, cx).err()?;
+                Some(format!("{why} (unattended.workflows, label `{label}`)"))
+            })
+        })
         .or_else(|| {
             spec_for(u.agent.as_deref(), cx)
                 .is_none()
@@ -154,24 +172,44 @@ fn cannot_start(u: &Unattended, cx: &App) -> Option<String> {
         })
 }
 
-/// Why the project at `root` cannot be worked by the workflow runs use, when
-/// that workflow runs the project's check command and the project has none.
-/// Asked before a claim, so no issue is claimed for a run that cannot start.
-fn lacks_check(root: &Path, cx: &App) -> Option<String> {
-    let has = Shared::global(cx)
+/// Whether the project at `root` has a check command, in whichever window
+/// holds it.
+fn has_check(root: &Path, cx: &App) -> bool {
+    Shared::global(cx)
         .windows
         .iter()
         .filter_map(|w| w.shell.upgrade())
-        .any(|shell| shell.read(cx).check_of(root).is_some());
-    lacks_check_given(has, cx)
+        .any(|shell| shell.read(cx).check_of(root).is_some())
 }
 
-/// [`lacks_check`] for a project that `has` a check command or not, for a
-/// caller that already knows: one inside its own window's update, whose shell
-/// cannot be read again while it is being updated.
-fn lacks_check_given(has: bool, cx: &App) -> Option<String> {
+/// How the search chooses each issue's workflow, with the ids among them
+/// that run the project's check command, which a project with none passes
+/// over before any claim.
+fn choosing(u: &Unattended, cx: &App) -> launch::Choosing {
+    let need_check = std::iter::once(&u.workflow)
+        .chain(u.workflows.values())
+        .filter(|id| {
+            launch::workflow(id, &u.timeout, cx).is_ok_and(|template| template.needs_check())
+        })
+        .cloned()
+        .collect();
+    launch::Choosing {
+        default: u.workflow.clone(),
+        by_label: u.workflows.clone(),
+        need_check,
+    }
+}
+
+/// Why a project that `has` a check command or not cannot be worked by the
+/// workflow `id` — or why that workflow cannot run anywhere — for a caller
+/// that already knows whether it has one: one inside its own window's update,
+/// whose shell cannot be read again while it is being updated.
+fn lacks_check_given(has: bool, id: &str, cx: &App) -> Option<String> {
     let u = Shared::global(cx).unattended.as_ref()?;
-    let template = launch::workflow(&u.workflow, &u.timeout, cx).ok()?;
+    let template = match launch::workflow(id, &u.timeout, cx) {
+        Ok(template) => template,
+        Err(why) => return Some(why),
+    };
     (template.needs_check() && !has).then(|| {
         format!(
             "the workflow `{}` runs the project's check command, and it has none; set one \
@@ -227,6 +265,7 @@ pub fn boot(cfg: &UnattendedConfig, cx: &mut App) {
             mode: cfg.mode.clone(),
             agent: cfg.agent.clone(),
             workflow: cfg.workflow.clone(),
+            workflows: cfg.workflows.clone(),
             at_once: cfg.at_once,
             claiming: false,
             blocked,
@@ -447,6 +486,57 @@ pub fn label(cx: &App) -> String {
         .unwrap_or_default()
 }
 
+/// The id of the workflow an issue carrying `labels` is worked with: the one
+/// its first workflow label names, else the default.
+pub fn workflow_for(labels: &[String], cx: &App) -> String {
+    Shared::global(cx)
+        .unattended
+        .as_ref()
+        .map(|u| core::workflow_for(labels, &u.workflows, &u.workflow, &u.label).to_string())
+        .unwrap_or_default()
+}
+
+/// The default workflow and the workflow labels, as the config has them.
+pub fn workflows(cx: &App) -> (String, BTreeMap<String, String>) {
+    Shared::global(cx)
+        .unattended
+        .as_ref()
+        .map(|u| (u.workflow.clone(), u.workflows.clone()))
+        .unwrap_or_default()
+}
+
+/// Every workflow an issue can be worked with, as `(id, name, shipped)`:
+/// the readable ones that work on a worktree, in the library's order.
+pub fn issue_workflows(cx: &App) -> Vec<(String, String, bool)> {
+    crate::workflow::templates(cx)
+        .into_iter()
+        .filter_map(|entry| {
+            let template = entry.template.ok()?;
+            (template.place == onehand_core::workflow::Place::Worktree)
+                .then(|| (template.id, template.name, entry.file.is_none()))
+        })
+        .collect()
+}
+
+/// Make `default` the workflow issues are worked with and `by_label` the
+/// workflow labels, for every run from now on, and write both to the config
+/// at `path`. A run already working keeps the workflow it started with.
+pub fn set_workflows(
+    default: String,
+    by_label: BTreeMap<String, String>,
+    path: &Path,
+    cx: &mut App,
+) -> Result<(), String> {
+    with(cx, |u| {
+        u.workflow = default.clone();
+        u.workflows = by_label.clone();
+    });
+    onehand_core::config::AppConfig::update_in_place(path, |cfg| {
+        cfg.unattended.workflow = default;
+        cfg.unattended.workflows = by_label;
+    })
+}
+
 /// Act on the unattended state, if there is one.
 fn with<R>(cx: &mut App, act: impl FnOnce(&mut Unattended) -> R) -> Option<R> {
     cx.update_global::<Shared, _>(|shared, _| shared.unattended.as_mut().map(act))
@@ -475,10 +565,28 @@ fn tick(asked_from: Option<gpui::AnyWindowHandle>, cx: &mut App) {
         .unattended
         .as_ref()
         .and_then(|u| at_cap(u, cx).or_else(|| cannot_start(u, cx)));
-    let lacking: Vec<(PathBuf, String)> = roots
+    // A project with no check command is still searched, for the issues
+    // whose workflow runs none; its row says what the default workflow lacks.
+    let checks: Vec<(PathBuf, bool)> = roots
         .iter()
-        .filter_map(|p| Some((p.root.clone(), lacks_check(&p.root, cx)?)))
+        .map(|p| (p.root.clone(), has_check(&p.root, cx)))
         .collect();
+    let lacking: Vec<(PathBuf, String)> = Shared::global(cx)
+        .unattended
+        .as_ref()
+        .map(|u| {
+            checks
+                .iter()
+                .filter_map(|(root, has)| {
+                    Some((root.clone(), lacks_check_given(*has, &u.workflow, cx)?))
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+    let chosen = Shared::global(cx)
+        .unattended
+        .as_ref()
+        .map(|u| choosing(u, cx));
     let earlier = launch::earlier(cx);
     let search = with(cx, |u| {
         let idle = !u.claiming && u.blocked.is_none() && stopped.is_none();
@@ -487,7 +595,8 @@ fn tick(asked_from: Option<gpui::AnyWindowHandle>, cx: &mut App) {
             u.label.clone()
         })
     })
-    .flatten();
+    .flatten()
+    .zip(chosen);
     cx.spawn(async move |cx| {
         let searching = search.is_some();
         // A panic in there would otherwise leave `claiming` set for the life of
@@ -500,24 +609,28 @@ fn tick(asked_from: Option<gpui::AnyWindowHandle>, cx: &mut App) {
                     let (accounts, mut checked) = look_blocking(roots.clone());
                     // Only the projects that passed the look are searched, each
                     // with the forge the look found for it, if any.
-                    let workable: Vec<(Project, Option<&'static dyn Connector>)> = roots
+                    let workable: Vec<launch::Workable> = roots
                         .into_iter()
                         .filter_map(|project| {
-                            if let Some((root, why)) =
-                                lacking.iter().find(|(root, _)| *root == project.root)
-                            {
-                                checked.push((root.clone(), Err(why.clone())));
-                                return None;
-                            }
                             let (_, served) =
                                 checked.iter().find(|(root, _)| *root == project.root)?;
                             let forge = *served.as_ref().ok()?;
-                            Some((project, forge))
+                            let has_check = checks
+                                .iter()
+                                .any(|(root, has)| *root == project.root && *has);
+                            Some(launch::Workable {
+                                project,
+                                forge,
+                                has_check,
+                            })
                         })
                         .collect();
-                    let begun = search.and_then(|label| {
-                        begin_blocking(&workable, &label, &earlier, &mut checked)
+                    let begun = search.and_then(|(label, choosing)| {
+                        begin_blocking(&workable, &label, &choosing, &earlier, &mut checked)
                     });
+                    // Said after the look, which would otherwise say the
+                    // project is fine.
+                    checked.extend(lacking.into_iter().map(|(root, why)| (root, Err(why))));
                     (Some(accounts), checked, begun)
                 }))
                 .unwrap_or_else(|_| {

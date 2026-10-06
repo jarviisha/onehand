@@ -154,12 +154,24 @@ pub fn pick_issue(shell: &Shell, cx: &mut Context<Shell>) -> Dialog {
     let Some(picker) = shell.issue_picker() else {
         return Dialog::new(cx);
     };
-    let heading = format!("Open issues in {}", picker.project);
+    let heading = match picker.only {
+        Some(number) => format!("Run a workflow on issue {number} in {}", picker.project),
+        None => format!("Open issues in {}", picker.project),
+    };
     let found = picker.found.clone();
+    let chosen = picker.workflow.clone();
     let handle = cx.entity();
     Dialog::new(cx)
         .close_button(false)
         .content(move |content, _, cx: &mut App| {
+            let shell = handle.clone();
+            let menu = issue_workflow_menu(
+                "pick-workflow",
+                chosen.as_deref(),
+                Some("By the issue's labels"),
+                move |id, _, cx| shell.update(cx, |shell, cx| shell.pick_issue_workflow(id, cx)),
+                cx,
+            );
             content
                 .child(title_row(heading.clone()))
                 .child(
@@ -168,8 +180,17 @@ pub fn pick_issue(shell: &Shell, cx: &mut Context<Shell>) -> Dialog {
                         .text_color(cx.theme().muted_foreground)
                         .child(
                             "Picking one claims it where it lives, starts an agent on it in \
-                             a worktree of its own and shows you the session.",
+                             a worktree of its own with the workflow below, and shows you the \
+                             session.",
                         ),
+                )
+                .child(
+                    div()
+                        .h_flex()
+                        .gap_2()
+                        .items_center()
+                        .child(div().text_sm().child("Workflow"))
+                        .child(menu),
                 )
                 .child(issue_list(found.as_deref(), &handle, cx))
         })
@@ -188,6 +209,77 @@ pub fn pick_issue(shell: &Shell, cx: &mut Context<Shell>) -> Dialog {
         .on_close(cx.listener(|shell: &mut Shell, _, _, cx| {
             shell.cancel_pick(cx);
         }))
+}
+
+/// A menu of the workflows an issue can be worked with, its trigger naming
+/// `picked`. With `any` it starts with an entry for no workflow in particular,
+/// picked when `picked` is `None`; `on_pick` hears the id, or `None` for it.
+///
+/// A workflow that works in the checkout is not offered: an issue's run is cut
+/// a worktree of its own. One named that is no longer in the library shows its
+/// id, so a choice gone stale is seen rather than shown as another.
+pub(crate) fn issue_workflow_menu<F>(
+    id: &'static str,
+    picked: Option<&str>,
+    any: Option<&'static str>,
+    on_pick: F,
+    cx: &App,
+) -> impl IntoElement + use<F>
+where
+    F: Fn(Option<String>, &mut Window, &mut App) + 'static,
+{
+    let all = crate::unattended::issue_workflows(cx);
+    let left_out = all.len().saturating_sub(crate::workflow::TEMPLATES_SHOWN);
+    let shown: Vec<_> = all
+        .iter()
+        .take(crate::workflow::TEMPLATES_SHOWN)
+        .cloned()
+        .collect();
+    let name = match picked {
+        None => any.unwrap_or_default().to_string(),
+        Some(picked) => all
+            .iter()
+            .find(|(id, _, _)| id == picked)
+            .map_or_else(|| picked.to_string(), |(_, name, _)| name.clone()),
+    };
+    let picked = picked.map(str::to_string);
+    let on_pick = std::rc::Rc::new(on_pick);
+    crate::controls::menu_below(
+        id,
+        crate::controls::action((id, 0usize))
+            .outline()
+            .small()
+            .label(name)
+            .icon(Icon::new(IconName::ChevronDown)),
+        move |mut menu, _, _| {
+            if let Some(any) = any {
+                let on_pick = on_pick.clone();
+                menu = menu.item(
+                    crate::controls::menu_item(any)
+                        .checked(picked.is_none())
+                        .on_click(move |_, window, cx: &mut App| on_pick(None, window, cx)),
+                );
+            }
+            for (id, name, shipped) in &shown {
+                let (on_pick, id) = (on_pick.clone(), id.clone());
+                let label = match shipped {
+                    true => format!("{name} (built in)"),
+                    false => name.clone(),
+                };
+                menu = menu.item(
+                    crate::controls::menu_item(label)
+                        .checked(picked.as_ref() == Some(&id))
+                        .on_click(move |_, window, cx: &mut App| {
+                            on_pick(Some(id.clone()), window, cx)
+                        }),
+                );
+            }
+            if left_out > 0 {
+                menu = menu.label(format!("{left_out} more workflows not shown"));
+            }
+            menu
+        },
+    )
 }
 
 /// The workflow launcher: which template, what to do, and what to ask of
@@ -575,7 +667,7 @@ fn issue_list(
         Some(Err(why)) => {
             return div()
                 .text_color(crate::theme::status_ink(cx).warning)
-                .child(format!("They could not be read: {why}"))
+                .child(format!("Nothing to pick: {why}"))
                 .into_any_element();
         }
         Some(Ok((rows, _, _))) if rows.is_empty() => {

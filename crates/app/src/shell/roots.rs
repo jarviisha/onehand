@@ -508,6 +508,7 @@ impl Shell {
                     // a repository", which decides whether its page offers to
                     // split it into a worktree.
                     shell.sync_project_facts(cx);
+                    shell.tell_issue_runs(cx);
                     cx.notify();
                 })
                 .ok();

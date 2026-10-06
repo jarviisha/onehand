@@ -36,7 +36,8 @@ fn candidate_blocking(
 ) -> Result<Option<Issue>, String> {
     Ok(candidates_blocking(tracker, root, label)?
         .into_iter()
-        .next())
+        .next()
+        .map(|row| row.issue))
 }
 
 fn issue(number: u64, title: &str) -> Issue {
@@ -101,6 +102,46 @@ fn the_oldest_issue_is_taken_first() {
         ),
         Ok(None)
     );
+}
+
+#[test]
+fn a_found_issue_keeps_every_label_it_carries() {
+    let (tracker, _dir) = local("labels", &[("first", &["auto", "bug"])]);
+    let found = candidates_blocking(&tracker, &std::env::temp_dir(), "auto").unwrap();
+    assert_eq!(found[0].labels, ["auto", "bug"]);
+}
+
+#[test]
+fn a_workflow_label_chooses_the_workflow_in_the_table_order() {
+    let by_label: std::collections::BTreeMap<String, String> = [
+        ("bug".to_string(), "fix".to_string()),
+        ("docs".to_string(), "write".to_string()),
+    ]
+    .into();
+    let labels = |l: &[&str]| l.iter().map(|s| s.to_string()).collect::<Vec<_>>();
+    let pick = |l: &[&str]| workflow_for(&labels(l), &by_label, "d", "auto").to_string();
+    assert_eq!(pick(&["auto"]), "d");
+    assert_eq!(pick(&["auto", "docs"]), "write");
+    assert_eq!(
+        pick(&["docs", "bug"]),
+        "fix",
+        "the table's order, not the issue's"
+    );
+    assert_eq!(workflow_for(&[], &Default::default(), "d", "auto"), "d");
+}
+
+#[test]
+fn the_trigger_label_never_chooses_a_workflow() {
+    let by_label: std::collections::BTreeMap<String, String> =
+        [("auto".to_string(), "x".to_string())].into();
+    let labels = ["auto".to_string()];
+    assert_eq!(workflow_for(&labels, &by_label, "d", "auto"), "d");
+    assert!(workflow_label_refused("auto", "auto", &by_label).is_some());
+    assert!(workflow_label_refused("", "auto", &by_label).is_some());
+    assert!(workflow_label_refused("bug", "auto", &by_label).is_none());
+    let taken: std::collections::BTreeMap<String, String> =
+        [("bug".to_string(), "x".to_string())].into();
+    assert!(workflow_label_refused("bug", "auto", &taken).is_some());
 }
 
 #[test]

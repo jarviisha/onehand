@@ -12,6 +12,7 @@ use gpui::{
 use gpui_component::WindowExt as _;
 use gpui_component::notification::Notification;
 use onehand_core::task::{Group, Task, Working, files, history, marks, queue, sort_listed};
+use onehand_core::unattended::TrackerRef;
 use onehand_core::workflow::{Action, Run, Stop, Template, run_command_blocking};
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -756,6 +757,49 @@ pub(crate) fn rows(roots: &[PathBuf], cx: &App) -> Vec<Row> {
     }
     sort_listed(&mut rows, |(task, row)| (row.group, *task));
     rows.into_iter().map(|(_, row)| row).collect()
+}
+
+/// Every task that works an issue kept in one of `kept`'s files, each
+/// beside its project's root, in the Tasks page's order.
+///
+/// **Matched by the file, not only the project and the number.** A forge's
+/// issue numbers are its own, and two workspaces holding one repository keep
+/// their issues apart, each numbered from one: either way the number alone
+/// would show a run on somebody else's issue.
+pub(crate) fn issue_runs(
+    kept: &[(PathBuf, PathBuf)],
+    cx: &App,
+) -> Vec<onehand_plugin_host::IssueRun> {
+    let Some(t) = cx.try_global::<Tasks>() else {
+        return Vec::new();
+    };
+    let roots: Vec<PathBuf> = kept.iter().map(|(root, _)| root.clone()).collect();
+    rows(&roots, cx)
+        .into_iter()
+        .filter_map(|row| {
+            let task = t.task(&row.id)?;
+            let issue = task.issue()?;
+            let file = match &issue.tracker {
+                TrackerRef::Local { file } | TrackerRef::Synced { file, .. } => file,
+                TrackerRef::Forge { .. } => return None,
+            };
+            if !kept.contains(&(row.project.clone(), file.clone())) {
+                return None;
+            }
+            Some(onehand_plugin_host::IssueRun {
+                root: row.project,
+                number: issue.number,
+                workflow: task
+                    .runs
+                    .last()
+                    .map_or_else(String::new, |run| run.template.name.clone()),
+                at: row.at,
+                waiting: row.group == Group::Waiting,
+                working: matches!(row.group, Group::Running | Group::Queued | Group::Waiting),
+                task: row.id,
+            })
+        })
+        .collect()
 }
 
 /// How many tasks of the projects at `roots` need a person: waiting on one,

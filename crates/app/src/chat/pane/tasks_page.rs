@@ -117,7 +117,7 @@ impl ChatPane {
     }
 
     /// Show task `id` in place of the cards, or the cards again for `None`.
-    fn open_task(&mut self, id: Option<String>, cx: &mut Context<Self>) {
+    pub(crate) fn open_task(&mut self, id: Option<String>, cx: &mut Context<Self>) {
         if let Some(Page::Tasks(page)) = self.page.as_mut() {
             page.open = id.map(|id| TaskDetail {
                 id,

@@ -222,8 +222,10 @@ fn project_menu(
         })
         .when(is_repo && unattended.is_some(), |menu| {
             menu.item(pick_item(move |_, _, cx: &mut App| {
-                pick.update(cx, |shell: &mut Shell, cx| shell.begin_pick(root_idx, cx))
-                    .ok();
+                pick.update(cx, |shell: &mut Shell, cx| {
+                    shell.begin_pick(root_idx, None, cx)
+                })
+                .ok();
             }))
         })
         .item(

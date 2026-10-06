@@ -251,6 +251,11 @@ pub struct Shell {
     /// The workflow launcher, while it is on screen. Opened from a menu entry
     /// or a key, so this being `Some` is what puts it up.
     workflow_launcher: Option<WorkflowLauncher>,
+    /// Settings' new workflow label: the label typed, the workflow picked for
+    /// it, and why the last *Add* was refused.
+    label_input: Entity<InputState>,
+    label_workflow: Option<String>,
+    label_refused: Option<String>,
     /// The field the new branch name is typed into.
     branch_input: Entity<InputState>,
     /// The new branch's name field.
@@ -271,6 +276,9 @@ pub struct Shell {
     /// The conversations with a live session here, as the Workbench was last
     /// told them.
     live_conversations: Vec<String>,
+    /// What the Workbench was last told of the tasks working issues.
+    /// And of the projects a run may be started on.
+    issue_runs: (Vec<onehand_plugin_host::IssueRun>, Vec<PathBuf>),
     /// Which of the rail's two lists is showing.
     ///
     /// Not persisted: it is where the user is looking right now, and a launch
@@ -358,6 +366,12 @@ pub struct IssuePicker {
     /// owned, because the dialog is rebuilt every frame and a hundred issues
     /// with their bodies is not a thing to copy sixty times a second.
     pub found: Option<std::rc::Rc<PickerAnswer>>,
+    /// The id of the workflow picked for it, or `None` to let each issue's
+    /// workflow labels choose, as the tick does.
+    pub workflow: Option<String>,
+    /// The one issue the list is narrowed to, when it was asked for from that
+    /// issue in the Issues tab.
+    pub only: Option<u64>,
 }
 
 /// A `Ctrl+Tab` walk in progress.
