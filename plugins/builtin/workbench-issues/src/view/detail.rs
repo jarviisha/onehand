@@ -1,6 +1,7 @@
 use super::list::{chip, identity};
 use super::mentions::FILE_LINK;
-use super::{FILES_SHOWN, Form, HISTORY_SHOWN, IssuesView, RUNS_SHOWN};
+use super::work::runs_view;
+use super::{FILES_SHOWN, HISTORY_SHOWN, IssuesView};
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
     AnyElement, App, ClickEvent, ClipboardItem, Context, Entity, HighlightStyle,
@@ -8,7 +9,6 @@ use gpui::{
     StatefulInteractiveElement as _, Styled, WeakEntity, Window, div,
 };
 use gpui_component::button::ButtonVariants as _;
-use gpui_component::input::{Input, Textarea};
 use gpui_component::text::{TextView, TextViewState, TextViewStyle};
 use gpui_component::tooltip::Tooltip;
 use gpui_component::{ActiveTheme, Icon, IconName, Sizable as _, StyledExt};
@@ -236,76 +236,6 @@ pub(super) fn issue_view(
         .children(runs)
         .child(history)
         .into_any_element()
-}
-
-/// The tasks working the issue, working ones first: each its workflow and the
-/// step it is at or how it ended, the ones waiting on a person in the warning
-/// ink, with a way to the task. Not drawn when there are none.
-fn runs_view(runs: Vec<IssueRun>, cx: &mut Context<IssuesView>) -> Option<AnyElement> {
-    if runs.is_empty() {
-        return None;
-    }
-    let muted = cx.theme().muted_foreground;
-    let warning = status_ink(cx).warning;
-    let left_out = runs.len().saturating_sub(RUNS_SHOWN);
-    Some(
-        div()
-            .flex_none()
-            .v_flex()
-            .gap_1()
-            .px_3()
-            .py_2()
-            .border_t_1()
-            .border_color(cx.theme().border)
-            .child(div().text_xs().text_color(muted).child("Runs"))
-            .children(
-                runs.into_iter()
-                    .take(RUNS_SHOWN)
-                    .enumerate()
-                    .map(|(i, run)| {
-                        let ink = match (run.waiting, run.working) {
-                            (true, _) => warning,
-                            (false, true) => cx.theme().foreground,
-                            (false, false) => muted,
-                        };
-                        let task = run.task;
-                        div()
-                            .h_flex()
-                            .items_center()
-                            .gap_2()
-                            .text_xs()
-                            .child(
-                                div()
-                                    .flex_1()
-                                    .min_w_0()
-                                    .truncate()
-                                    .text_color(ink)
-                                    .child(format!("{} · {}", run.workflow, run.at)),
-                            )
-                            .child(
-                                action(("issue-run-task", i))
-                                    .xsmall()
-                                    .ghost()
-                                    .label("Show task")
-                                    .tooltip("Open the task on the Tasks page")
-                                    .on_click(cx.listener(
-                                        move |view, _: &ClickEvent, window, cx| {
-                                            view.open_task(task.clone(), window, cx)
-                                        },
-                                    )),
-                            )
-                    }),
-            )
-            .when(left_out > 0, |list| {
-                list.child(
-                    div()
-                        .text_xs()
-                        .text_color(muted)
-                        .child(format!("… {left_out} more on the Tasks page")),
-                )
-            })
-            .into_any_element(),
-    )
 }
 
 /// Everything that happened to the issue, oldest first under its arrival:
@@ -564,61 +494,6 @@ fn conflict_view(issue: &LocalIssue, cx: &mut Context<IssuesView>) -> Option<Any
             )
             .into_any_element(),
     )
-}
-
-/// The form: title, labels, body, then Save and Cancel under what they act on.
-pub(super) fn form_view(form: &Form, cx: &mut Context<IssuesView>) -> AnyElement {
-    div()
-        .flex_1()
-        .min_w_0()
-        .h_full()
-        .v_flex()
-        .gap_2()
-        .p_2()
-        .child(
-            div()
-                .text_xs()
-                .text_color(cx.theme().muted_foreground)
-                .child(match form.editing {
-                    Some(_) => match &form.editing_reference {
-                        Some(reference) => format!("Editing {reference}"),
-                        None => "Editing draft".to_string(),
-                    },
-                    None => "New issue".to_string(),
-                }),
-        )
-        .child(Input::new(&form.title))
-        .child(Input::new(&form.labels))
-        .child(
-            div()
-                .flex_1()
-                .min_h_0()
-                .child(Textarea::new(&form.body).h_full()),
-        )
-        .child(
-            div()
-                .h_flex()
-                .gap_2()
-                .justify_end()
-                .child(
-                    action("issue-form-cancel")
-                        .small()
-                        .ghost()
-                        .label("Cancel")
-                        .on_click(cx.listener(|view, _: &ClickEvent, _, cx| view.cancel_form(cx))),
-                )
-                .child(
-                    action("issue-form-save")
-                        .small()
-                        .primary()
-                        .label(match form.editing {
-                            Some(_) => "Save",
-                            None => "Create issue",
-                        })
-                        .on_click(cx.listener(|view, _: &ClickEvent, _, cx| view.save_form(cx))),
-                ),
-        )
-        .into_any_element()
 }
 
 /// What pressing a link in the body does: a file it names opens in the editor,
