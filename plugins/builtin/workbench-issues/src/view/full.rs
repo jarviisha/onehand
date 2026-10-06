@@ -226,7 +226,7 @@ pub(super) fn left_lines(
     };
     for (name, side, files) in [
         ("This run", Side::Run, &left.run_files),
-        ("Branch", Side::Branch, &left.branch_files),
+        ("Whole branch", Side::Branch, &left.branch_files),
     ] {
         let value = match files {
             None => div()

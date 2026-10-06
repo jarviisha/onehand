@@ -152,7 +152,8 @@ monospace font.
     step or outcome, project) with ghost actions at its end: *Open session*, *Stop*, *Resume*,
     *Retry*, *Dismiss*, by state. Pressing a row's text opens the task's detail in the same column.
   - *Issues* lists the issues of every project of the workspace, with the one picked beside the
-    list, or alone under *Back* when the page is too narrow for both. Above the list: the search,
+    list, or alone under *Back* when the page is too narrow for both. Above the list: the search and
+    *New issue* (in the project filtered to, else the one picked, its form saying which),
     an *Open N | Closed N* switch, then the progress (*All*, *Needs attention*, *Running*,
     *Queued*, *Pull request open*, *No run recorded*), project and label filters, how old the
     pull request reading is and *Refresh*. A row is the title over a muted line (project,

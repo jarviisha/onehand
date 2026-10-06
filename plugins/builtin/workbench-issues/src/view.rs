@@ -576,7 +576,8 @@ impl IssuesView {
             return hint("Reading issues…", cx);
         };
         if let Some(form) = &state.form {
-            return form_view(form, cx);
+            let project = self.page.as_ref().and_then(|page| page.label_of(root));
+            return form_view(form, project, cx);
         }
         let Some(issue) = state.selected.and_then(|n| issues.get(n)).cloned() else {
             return hint("Pick an issue, or start a new one", cx);

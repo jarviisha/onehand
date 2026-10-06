@@ -252,7 +252,7 @@ impl ChatPane {
         match &self.page {
             Some(super::Page::Workspace(_)) => return self.workspace_page(cx),
             Some(super::Page::Tasks(_)) => return self.tasks_page(cx),
-            Some(super::Page::Issues(view)) => return view.clone().into_any_element(),
+            Some(super::Page::Issues(view)) => return self.issues_page(view.clone(), cx),
             None => {}
         }
         // A session choosing which conversation to resume has no transcript and

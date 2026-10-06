@@ -271,6 +271,20 @@ impl ChatPane {
         cx.notify();
     }
 
+    /// The Issues page under the pane's header, as the other pages are drawn.
+    pub(super) fn issues_page(
+        &self,
+        view: gpui::AnyView,
+        cx: &mut Context<Self>,
+    ) -> gpui::AnyElement {
+        div()
+            .size_full()
+            .v_flex()
+            .child(self.header(cx))
+            .child(div().flex_1().min_h_0().v_flex().child(view))
+            .into_any_element()
+    }
+
     /// Take the caret back before the Issues page leaves the frame: its
     /// search may hold it, and a caret in nothing answers no key.
     pub fn leave_issues_page(&mut self, window: &mut Window, cx: &mut Context<Self>) {

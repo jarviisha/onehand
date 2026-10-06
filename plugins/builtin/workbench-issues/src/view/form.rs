@@ -3,7 +3,7 @@
 use super::IssuesView;
 use gpui::{
     AnyElement, App, AppContext as _, ClickEvent, Context, Entity, IntoElement, ParentElement,
-    Styled, Window, div,
+    SharedString, Styled, Window, div,
 };
 use gpui_component::button::ButtonVariants as _;
 use gpui_component::input::{Input, InputState, Textarea, TextareaState};
@@ -129,7 +129,13 @@ impl IssuesView {
 }
 
 /// The form: title, labels, body, then Save and Cancel under what they act on.
-pub(super) fn form_view(form: &Form, cx: &mut Context<IssuesView>) -> AnyElement {
+/// `project` names where the issue is kept, on the page, where the list spans
+/// projects.
+pub(super) fn form_view(
+    form: &Form,
+    project: Option<SharedString>,
+    cx: &mut Context<IssuesView>,
+) -> AnyElement {
     div()
         .flex_1()
         .min_w_0()
@@ -141,12 +147,18 @@ pub(super) fn form_view(form: &Form, cx: &mut Context<IssuesView>) -> AnyElement
             div()
                 .text_xs()
                 .text_color(cx.theme().muted_foreground)
-                .child(match form.editing {
-                    Some(_) => match &form.editing_reference {
-                        Some(reference) => format!("Editing {reference}"),
-                        None => "Editing draft".to_string(),
-                    },
-                    None => "New issue".to_string(),
+                .child({
+                    let said = match form.editing {
+                        Some(_) => match &form.editing_reference {
+                            Some(reference) => format!("Editing {reference}"),
+                            None => "Editing draft".to_string(),
+                        },
+                        None => "New issue".to_string(),
+                    };
+                    match project {
+                        Some(project) => format!("{said} in {project}"),
+                        None => said,
+                    }
                 }),
         )
         .child(Input::new(&form.title))
