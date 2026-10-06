@@ -49,8 +49,9 @@ pub(super) struct PageState {
     filters: Filters,
     /// The list as it was last drawn, kept still by core.
     held: Held,
-    /// What the order becomes once another issue is picked.
-    after_pick: Vec<IssueKey>,
+    /// The rows on screen that stopped matching, which leave once another
+    /// issue is picked.
+    stopped: Vec<IssueKey>,
     /// Narrow, the issue is shown alone; *Back* is the list again.
     alone: bool,
     /// The list's scroll, kept across leaving the page and *Back*.
@@ -129,9 +130,9 @@ impl IssuesView {
         self.state_for(&root, cx);
         self.unless_drafting(window, cx, move |view, _, cx| {
             if let Some(page) = view.page.as_mut() {
-                page.held.order = std::mem::take(&mut page.after_pick);
-                if page.held.pinned != key {
-                    page.held.pinned = None;
+                if let Some(key) = &key {
+                    let stopped = std::mem::take(&mut page.stopped);
+                    page.held.pick(key, &stopped);
                 }
                 page.alone = true;
             }
@@ -316,7 +317,7 @@ impl IssuesView {
         }
         let listed = list(&items, &filters, &page.prs, &page.held, issues::now());
         page.held.order = listed.order();
-        page.after_pick = listed.after_pick();
+        page.stopped = listed.stopped_matching();
         let scroll = page.scroll.clone();
         let labels: Vec<String> = items
             .iter()
@@ -583,11 +584,14 @@ impl IssuesView {
         if failed.is_empty() && listed.incomplete.is_none() {
             return None;
         }
+        // A stale reading or a project whose read failed is read again
+        // whole; otherwise the branches a capped read missed are looked up.
+        let again = !listed.failed.is_empty();
         let incomplete = listed.incomplete.map(|Incomplete { not_read, stale }| {
-            let said = match (not_read, stale) {
-                (0, _) => "The reading is old; the list may be incomplete".to_string(),
-                (1, _) => "1 issue not read; the list may be incomplete".to_string(),
-                (n, _) => format!("{n} issues not read; the list may be incomplete"),
+            let said = match not_read {
+                0 => "The reading is old; the list may be incomplete".to_string(),
+                1 => "1 issue not read; the list may be incomplete".to_string(),
+                n => format!("{n} issues not read; the list may be incomplete"),
             };
             div()
                 .h_flex()
@@ -600,7 +604,7 @@ impl IssuesView {
                         .ghost()
                         .label("Read them")
                         .on_click(cx.listener(move |view, _: &ClickEvent, _, cx| {
-                            if stale {
+                            if stale || again {
                                 view.read_prs(cx);
                             } else {
                                 view.read_missing(cx);

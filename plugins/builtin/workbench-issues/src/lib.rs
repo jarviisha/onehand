@@ -131,6 +131,24 @@ fn handle(view: &Entity<IssuesView>, request: &Request<'_>, cx: &mut App) -> boo
             view.update(cx, |view, cx| view.show_issue(*number, cx));
             true
         }
-        _ => false,
+        // Not an Issues view's to answer: a file to edit, a PTY, the agent,
+        // and what a view asks upward rather than is told.
+        Request::OpenFile(_)
+        | Request::Save
+        | Request::Start
+        | Request::Reap
+        | Request::SetGit(_)
+        | Request::SetFontSize(_)
+        | Request::AgentStarted(_)
+        | Request::RestartAgent
+        | Request::WorkIssueHere { .. }
+        | Request::OpenConversation(_)
+        | Request::RunIssueWorkflow { .. }
+        | Request::OpenInIssues { .. }
+        | Request::OpenTask(_)
+        | Request::OpenTaskSession(_)
+        | Request::ResumeTask(_)
+        | Request::RetryTask(_)
+        | Request::StopTask(_) => false,
     }
 }

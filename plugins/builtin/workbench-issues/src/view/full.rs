@@ -220,13 +220,9 @@ pub(super) fn left_lines(
         }
         .into_any_element(),
     )];
-    let span = work.span.clone();
-    let base = work.base.as_ref().map(|base| format!("{base}^"));
     let marks_of = |side: Side| match side {
-        Side::Run => span.clone(),
-        Side::Branch => base
-            .clone()
-            .zip(span.as_ref().map(|(_, last)| last.clone())),
+        Side::Run => work.span.clone(),
+        Side::Branch => work.branch_span(),
     };
     for (name, side, files) in [
         ("This run", Side::Run, &left.run_files),

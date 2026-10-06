@@ -245,10 +245,21 @@ fn an_approved_issue_stays_saying_where_it_went_until_another_is_picked() {
     assert_eq!(now.rows[1].left, None);
 
     // Another is picked: the row that left goes, and nothing else moves.
-    let held = Held {
-        order: now.after_pick(),
+    // Picking the row that left keeps it, selected where it is.
+    let mut held = Held {
+        order: now.order(),
         pinned: None,
     };
+    held.pick(&key(A, 1), &now.stopped_matching());
+    let kept = list(&items, &filters, &none(), &held, 1);
+    assert_eq!(titles(&kept), ["one", "two"]);
+    assert_eq!(
+        kept.rows[0].left.as_deref(),
+        Some("now Running · Implement")
+    );
+
+    // Another is picked: the row that left goes, and nothing else moves.
+    held.pick(&key(A, 2), &kept.stopped_matching());
     assert_eq!(titles(&list(&items, &filters, &none(), &held, 1)), ["two"]);
 }
 
@@ -303,10 +314,17 @@ fn an_issue_the_filters_leave_out_is_pinned_without_changing_them() {
     assert_eq!(titles(&listed), ["open in b", "closed in a"]);
     assert!(listed.rows[0].outside);
     assert!(!listed.rows[1].outside);
-    // Picking another lets it go: the pin is the page's, the order never
-    // holds it.
-    assert_eq!(listed.after_pick(), [key(A, 1)]);
+    // The order never holds the pin; picking the pinned issue keeps it,
+    // picking another lets it go.
     assert_eq!(listed.order(), [key(A, 1)]);
+    let mut held = Held {
+        order: listed.order(),
+        pinned: Some(key(B, 2)),
+    };
+    held.pick(&key(B, 2), &listed.stopped_matching());
+    assert_eq!(held.pinned, Some(key(B, 2)));
+    held.pick(&key(A, 1), &listed.stopped_matching());
+    assert_eq!(held.pinned, None);
 }
 
 #[test]

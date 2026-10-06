@@ -69,22 +69,32 @@ pub fn left_blocking(work: &Work) -> Left {
             Ok(check_stands(Some(at), &head, dirty))
         }),
     };
-    // The task's first mark is the work as it found it; its parent is the
-    // commit it started from.
-    let base = work.base.as_ref().map(|base| format!("{base}^"));
-    let last = work.span.as_ref().map(|(_, last)| last.clone());
     Left {
         check,
         run_files: work
             .span
             .as_ref()
             .map(|(first, last)| marks::changes_blocking(dir, first, last)),
-        branch_files: base
-            .as_ref()
-            .zip(last)
-            .map(|(base, last)| marks::changes_blocking(dir, base, &last)),
-        commits: base
-            .as_ref()
-            .map(|base| worktree::commits_since_blocking(dir, base)),
+        branch_files: work
+            .branch_span()
+            .map(|(base, last)| marks::changes_blocking(dir, &base, &last)),
+        commits: work
+            .started_from()
+            .map(|base| worktree::commits_since_blocking(dir, &base)),
+    }
+}
+
+impl Work {
+    /// The commit the task started from: the parent of its first mark, which
+    /// is the work as the task found it.
+    pub fn started_from(&self) -> Option<String> {
+        self.base.as_ref().map(|base| format!("{base}^"))
+    }
+
+    /// The branch's work as two marks: where the task started from, and
+    /// where this run last left the work.
+    pub fn branch_span(&self) -> Option<(String, String)> {
+        let last = self.span.as_ref().map(|(_, last)| last.clone());
+        self.started_from().zip(last)
     }
 }

@@ -20,7 +20,7 @@ use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
 /// How many rows the list draws. The rest are counted, and said.
-pub const LIST_CAP: usize = 500;
+pub(crate) const LIST_CAP: usize = 500;
 
 /// How old a project's pull request reading may be, in seconds, before the
 /// list stops trusting it to be complete.
@@ -108,10 +108,9 @@ pub struct PrReads {
 
 impl PrReads {
     /// The pull request of `branch`: `Some(Some(_))` found, `Some(None)` read
-    /// and none there, `None` not read.
-    /// A project whose last read failed vouches for nothing: its rows are not
-    /// read.
-    pub fn of(&self, branch: &str) -> Option<Option<&PullRequest>> {
+    /// and none there, `None` not read. A project whose last read failed
+    /// vouches for nothing: its rows are not read.
+    pub(crate) fn of(&self, branch: &str) -> Option<Option<&PullRequest>> {
         if self.failed.is_some() {
             return None;
         }
@@ -121,7 +120,7 @@ impl PrReads {
         if let Some(found) = self.looked_up.get(branch) {
             return Some(found.as_ref());
         }
-        (self.at.is_some() && self.failed.is_none() && !self.capped).then_some(None)
+        (self.at.is_some() && !self.capped).then_some(None)
     }
 
     /// Of `branches`, the ones a capped read did not find and nothing looked
@@ -209,14 +208,27 @@ impl Listed<'_> {
             .collect()
     }
 
-    /// The order once another issue is picked: the rows that stopped
-    /// matching leave, and nothing else moves.
-    pub fn after_pick(&self) -> Vec<IssueKey> {
+    /// The rows that stopped matching and stay until another issue is
+    /// picked.
+    pub fn stopped_matching(&self) -> Vec<IssueKey> {
         self.rows
             .iter()
-            .filter(|row| !row.outside && row.left.is_none())
+            .filter(|row| !row.outside && row.left.is_some())
             .map(|row| row.item.key.clone())
             .collect()
+    }
+}
+
+impl Held {
+    /// `picked` was picked: the rows of `stopped` that stopped matching
+    /// leave, but never the one picked, which stays selected where it is;
+    /// and a pin on another issue goes.
+    pub fn pick(&mut self, picked: &IssueKey, stopped: &[IssueKey]) {
+        self.order
+            .retain(|key| key == picked || !stopped.contains(key));
+        if self.pinned.as_ref() != Some(picked) {
+            self.pinned = None;
+        }
     }
 }
 

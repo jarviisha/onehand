@@ -170,8 +170,9 @@ impl IssuesView {
     }
 }
 
-/// Take a read of a project's pull requests: a failure keeps what was read
-/// before, marked with why.
+/// Take a read of a project's pull requests. A failure is marked with why
+/// and leaves `at` where the last good read put it, so the reading is not
+/// taken for fresh and *Read them* reads it again.
 fn landed(read: &mut PrReads, answer: Result<PullRequests, String>) {
     match answer {
         Ok(found) => {
@@ -179,8 +180,8 @@ fn landed(read: &mut PrReads, answer: Result<PullRequests, String>) {
             read.capped = found.capped;
             read.looked_up.clear();
             read.failed = None;
+            read.at = Some(issues::now());
         }
         Err(why) => read.failed = Some(why),
     }
-    read.at = Some(issues::now());
 }
