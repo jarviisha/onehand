@@ -67,6 +67,7 @@ Availability or installation does not authorize a skill's side effects.
 
 ```bash
 cargo run [-- /path/to/project]  # the app; the arg seeds the workspace's first project
+make dev [ROOT=/path]            # a debug build beside the app in use, data root ~/onehand-dev
 cargo check                      # fast type-check
 cargo test                       # everything; `cargo test <substring>` for one test
 cargo test -p onehand-core       # core only (fast, no GUI)
