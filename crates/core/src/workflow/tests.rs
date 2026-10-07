@@ -647,7 +647,7 @@ fn a_kept_field_reads_the_same_as_its_change() {
     let plan = Run::with_current(&prev, Ok(packaged()), &now, false).unwrap();
     let change = &plan.changes[0];
     assert_eq!(change.field, Field::Agent);
-    assert_eq!(change.old, Field::Agent.kept(&prev.template, &prev.setup));
+    assert_eq!(change.old, Field::Agent.shown(&prev.template, &prev.setup));
     assert_eq!(Field::Agent.label(), "Agent");
 }
 

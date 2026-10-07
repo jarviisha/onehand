@@ -86,11 +86,11 @@ impl ChatPane {
             None => page.projects.iter().map(|p| p.root.clone()).collect(),
         };
         // The rows come in group order, so waiting ones lead ended ones.
-        let (mut waiting, mut running, mut queued, mut finished) =
+        let (mut needs_attention, mut running, mut queued, mut finished) =
             (Vec::new(), Vec::new(), Vec::new(), Vec::new());
         for row in crate::task::rows(&roots, cx) {
             match row.group.section() {
-                Section::NeedsAttention => waiting.push(row),
+                Section::NeedsAttention => needs_attention.push(row),
                 Section::Running => running.push(row),
                 Section::Queued => queued.push(row),
                 Section::Finished => finished.push(row),
@@ -100,7 +100,7 @@ impl ChatPane {
         // An opened task is read per frame too; one let go meanwhile leaves
         // the cards on screen.
         let opened = page.open.as_ref().and_then(|detail| {
-            let row = [&waiting, &running, &queued, &finished]
+            let row = [&needs_attention, &running, &queued, &finished]
                 .into_iter()
                 .flatten()
                 .find(|row| row.id == detail.id)?;
@@ -173,7 +173,7 @@ impl ChatPane {
         let attention = card(
             "Needs attention",
             "tasks-attention",
-            waiting,
+            needs_attention,
             "Nothing needs you.",
             Some(filter.into_any_element()),
             cx,

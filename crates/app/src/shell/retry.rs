@@ -420,30 +420,33 @@ fn refused_elsewhere(against: &Option<Against>, window: &mut Window, cx: &mut Ap
 /// What a *Retry* keeps of `last`'s configuration, one line each, and
 /// whether Settings say otherwise now, which the line says.
 fn kept_lines(last: &Run, differs: &[Changed]) -> Vec<(String, bool)> {
-    [
-        Field::Agent,
-        Field::Mode,
-        Field::CheckCommand,
-        Field::Timeout,
-        Field::WorkflowVersion,
-    ]
-    .into_iter()
-    .map(|field| {
-        let (what, kept) = (field.label(), field.kept(&last.template, &last.setup));
-        match differs.iter().find(|c| c.field == field) {
-            Some(now) => (
-                format!(
-                    "Keeps {}: {kept}; Settings now say {}, which {} runs",
-                    what.to_lowercase(),
-                    now.new,
-                    preflight::RETRY_CURRENT
+    // Who runs it first, the workflow's own version last.
+    let mut fields = Field::ALL;
+    fields.sort_by_key(|field| match field {
+        Field::Agent => 0,
+        Field::Mode => 1,
+        Field::CheckCommand => 2,
+        Field::Timeout => 3,
+        Field::WorkflowVersion => 4,
+    });
+    fields
+        .into_iter()
+        .map(|field| {
+            let (what, kept) = (field.label(), field.shown(&last.template, &last.setup));
+            match differs.iter().find(|c| c.field == field) {
+                Some(now) => (
+                    format!(
+                        "Keeps {}: {kept}; Settings now say {}, which {} runs",
+                        what.to_lowercase(),
+                        now.new,
+                        preflight::RETRY_CURRENT
+                    ),
+                    true,
                 ),
-                true,
-            ),
-            None => (format!("Keeps {}: {kept}", what.to_lowercase()), false),
-        }
-    })
-    .collect()
+                None => (format!("Keeps {}: {kept}", what.to_lowercase()), false),
+            }
+        })
+        .collect()
 }
 
 /// A retry dialog's footer: *Cancel*, an action beside, and the confirm,

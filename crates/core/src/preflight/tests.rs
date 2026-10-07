@@ -194,10 +194,15 @@ fn a_check_command_missing_blocks_and_no_command_step_informs() {
         has_check: false,
         ..healthy()
     };
+    let finding = found(Kind::NewIssueRun, &missing, Check::CheckCommand).unwrap();
+    assert!(finding.blocks);
+    let why = needs.lacks_check(false).unwrap();
     assert!(
-        found(Kind::NewIssueRun, &missing, Check::CheckCommand)
-            .unwrap()
-            .blocks
+        finding
+            .text
+            .starts_with(&format!("{}.", super::capital(&why))),
+        "{}",
+        finding.text
     );
     needs
         .steps

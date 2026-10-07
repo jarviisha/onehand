@@ -36,6 +36,18 @@ pub enum Field {
 }
 
 impl Field {
+    /// Every field, in the order a retry plan lists what changed. A new
+    /// variant is added here as well as to the matches below, which make it
+    /// known.
+    pub const ALL: [Self; 5] = [
+        Self::WorkflowVersion,
+        Self::Agent,
+        Self::Mode,
+        Self::CheckCommand,
+        Self::Timeout,
+    ];
+
+    /// What a person calls it.
     pub fn label(self) -> &'static str {
         match self {
             Self::WorkflowVersion => "Workflow version",
@@ -47,7 +59,7 @@ impl Field {
     }
 
     /// What a run of `template` with `setup` has for this field, as said.
-    pub fn kept(self, template: &Template, setup: &Setup) -> String {
+    pub fn shown(self, template: &Template, setup: &Setup) -> String {
         let shown = |value: &Option<String>, none: &str| value.clone().unwrap_or(none.into());
         match self {
             Self::WorkflowVersion => format!("version {}", template.version),
@@ -281,20 +293,14 @@ impl Run {
         if changed && Run::recheck(&template, start) < start {
             (start, why) = (Run::recheck(&template, start), StartWhy::WorkChanged);
         }
-        let changes = [
-            Field::WorkflowVersion,
-            Field::Agent,
-            Field::Mode,
-            Field::CheckCommand,
-            Field::Timeout,
-        ]
-        .into_iter()
-        .filter_map(|field| {
-            let old = field.kept(&prev.template, &prev.setup);
-            let new = field.kept(&template, &setup);
-            (old != new).then_some(Changed { field, old, new })
-        })
-        .collect();
+        let changes = Field::ALL
+            .into_iter()
+            .filter_map(|field| {
+                let old = field.shown(&prev.template, &prev.setup);
+                let new = field.shown(&template, &setup);
+                (old != new).then_some(Changed { field, old, new })
+            })
+            .collect();
         Ok(WithCurrent {
             template,
             setup,
