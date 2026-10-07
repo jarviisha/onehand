@@ -2,7 +2,7 @@
 //! what it waits on approval for, its last run's visits with what each kept
 //! and changed, and its earlier runs.
 
-use super::super::step_strip::{open_review_of, open_revise, press_continue};
+use super::super::step_strip::{open_review, open_revise, press_continue};
 use super::super::workspace_page::{card_box, page_card};
 use super::super::{ChatPane, ChatPaneEvent, rel_time};
 use super::{Page, TasksPage, open_session, row_actions, row_said};
@@ -15,12 +15,13 @@ use gpui_component::button::ButtonVariants as _;
 use gpui_component::{ActiveTheme, Icon, IconName, Sizable as _, StyledExt};
 use onehand_core::chat::now_secs;
 use onehand_core::diff::Row as DiffRow;
+use onehand_core::task::Approval;
 use onehand_core::task::Group;
 use onehand_core::task::marks::{self, Change};
 use onehand_core::task::work::{
     ANSWER_LINES, Act, Around, PrSeen, UnderReview, Work, last_lines, next_action,
 };
-use onehand_core::workflow::{CommandResult, Run, Visit};
+use onehand_core::workflow::{Run, Visit};
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
@@ -396,7 +397,7 @@ fn visit_body(
 ) -> Vec<gpui::AnyElement> {
     let mut out = Vec::new();
     if let Some(ran) = &visit.command {
-        out.push(muted_line(&ran_said(ran), cx));
+        out.push(muted_line(&format!("The command {}", ran.said()), cx));
     }
     // A failed command's output is the visit's own; a passed one's only its
     // result kept.
@@ -512,11 +513,12 @@ fn visit_body(
     out
 }
 
-/// Whether `task` may answer a review on its pull request: one that can
-/// (`Task::answers_reviews`), whose last run is done having opened a pull
-/// request. Whether it is still open is the preflight's to read when pressed.
+/// Whether `task` offers to answer a review on its pull request: one it can
+/// have (`Task::reviewable`), its last run done having opened a pull request.
+/// Whether it is still open, and whether the review can be answered, is the
+/// preflight's to say when pressed.
 fn answers_review(task: &onehand_core::task::Task) -> bool {
-    task.answers_reviews()
+    task.reviewable()
         && task.runs.last().is_some_and(|run| {
             run.outcome == Some(onehand_core::workflow::Outcome::Done) && run.pull_request.is_some()
         })
@@ -589,13 +591,12 @@ fn review_card(
             ))
     });
     let pane = cx.entity().downgrade();
-    let (on_read, on_revise, on_continue) = (task.to_string(), task.to_string(), task.to_string());
-    let (revise_at, continue_at) = (review.at.clone(), review.at.clone());
-    let read = crate::task::Review {
-        of: review.of.clone().into(),
-        answer: review.answer.clone().into(),
+    let approval = Approval {
+        task: task.to_string(),
         at: review.at.clone(),
     };
+    let (on_read, revised, pressed, read) =
+        (task.to_string(), approval.clone(), approval, review.clone());
     let answer_row = |button: gpui_component::button::Button, said: String| {
         div()
             .h_flex()
@@ -616,7 +617,7 @@ fn review_card(
                     .on_click({
                         let pane = pane.clone();
                         move |_, window, cx| {
-                            open_review_of(&on_read, pane.clone(), read.clone(), window, cx)
+                            open_review(&on_read, pane.clone(), read.clone(), false, window, cx)
                         }
                     }),
             ),
@@ -626,9 +627,9 @@ fn review_card(
                 .ghost()
                 .small()
                 .label("Revise…")
-                .on_click(cx.listener(move |_, _, window, cx| {
-                    open_revise(&on_revise, revise_at.clone(), window, cx)
-                })),
+                .on_click(
+                    cx.listener(move |_, _, window, cx| open_revise(revised.clone(), window, cx)),
+                ),
             review.revise_said(),
         ))
         .child(answer_row(
@@ -637,32 +638,15 @@ fn review_card(
                 .small()
                 .icon(Icon::new(IconName::Check))
                 .label("Continue")
-                .on_click(move |_, window, cx| {
-                    press_continue(&on_continue, pane.clone(), &continue_at, window, cx)
-                }),
+                .on_click(move |_, window, cx| press_continue(pane.clone(), &pressed, window, cx)),
             review.continue_said(),
         ))
         .into_any_element()
 }
 
-/// How a visit's command came out, in one line.
-fn ran_said(ran: &CommandResult) -> String {
-    let on = ran
-        .commit
-        .as_deref()
-        .map(|commit| format!(" on {}", commit.get(..10).unwrap_or(commit)))
-        .unwrap_or_default();
-    match (ran.passed, ran.exit) {
-        (true, _) => format!("The command passed{on}"),
-        (false, Some(code)) => format!("The command failed, exiting {code}{on}"),
-        (false, None) => "The command did not finish".to_string(),
-    }
-}
-
 /// `text`'s last lines in a mono well, saying how many were left out.
 fn mono_well(text: &str, cx: &App) -> Vec<gpui::AnyElement> {
-    let lines: Vec<&str> = text.lines().collect();
-    let hidden = lines.len().saturating_sub(OUTPUT_LINES);
+    let (shown, hidden) = last_lines(text, OUTPUT_LINES);
     let well = div()
         .v_flex()
         .w_full()
@@ -672,7 +656,7 @@ fn mono_well(text: &str, cx: &App) -> Vec<gpui::AnyElement> {
         .bg(cx.theme().muted)
         .font_family(cx.theme().mono_font_family.clone())
         .text_xs()
-        .children(lines[hidden..].iter().map(|line| {
+        .children(shown.lines().map(|line| {
             // An empty line still takes its height.
             div().child(match line.is_empty() {
                 true => " ".to_string(),

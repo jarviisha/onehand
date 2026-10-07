@@ -25,8 +25,8 @@ mod facts;
 mod launch;
 mod report;
 pub use launch::{
-    Pickable, answer_review_by_hand, look_now, pickable_blocking, pickable_one_blocking,
-    start_picked,
+    Pickable, ReviewRead, look_now, pickable_blocking, pickable_one_blocking, read_review,
+    start_answer, start_picked,
 };
 use launch::{begin_blocking, landed};
 pub(crate) use report::{
@@ -563,7 +563,7 @@ pub(crate) fn timeout_moved(task: &onehand_core::task::Task, cx: &App) -> bool {
     // The check command moves no timeout, so it is not asked for.
     let now = now_for(task, None, cx);
     let newest = crate::workflow::newest(&last.template, cx);
-    onehand_core::workflow::Run::with_current(last, newest, &now)
+    onehand_core::workflow::Run::with_current(last, newest, &now, false)
         .is_ok_and(|plan| plan.changes.iter().any(|change| change.what == "Timeout"))
 }
 

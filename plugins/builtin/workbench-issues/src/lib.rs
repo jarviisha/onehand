@@ -153,7 +153,7 @@ fn handle(view: &Entity<IssuesView>, request: &Request<'_>, cx: &mut App) -> boo
         | Request::RunIssueWorkflow { .. }
         | Request::OpenInIssues { .. }
         | Request::ReviewInIssues { .. }
-        | Request::ApproveTask { .. }
+        | Request::ApproveTask(_)
         | Request::ReviseTask { .. }
         | Request::OpenTask(_)
         | Request::OpenTaskSession(_)

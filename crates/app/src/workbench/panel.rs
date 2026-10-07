@@ -28,7 +28,7 @@ use gpui_component::button::ButtonVariants as _;
 use gpui_component::dock::{Panel, PanelControl, PanelEvent};
 use gpui_component::{ActiveTheme, Icon, IconName, Sizable as _, StyledExt};
 use onehand_core::gitstat::GitStatus;
-use onehand_core::workflow::ApprovalAt;
+use onehand_core::task::Approval;
 use onehand_plugin_api::{PluginId, WorkbenchModeSpec};
 use onehand_plugin_host::{Ask, Request, WorkbenchMode};
 use std::collections::HashMap;
@@ -393,15 +393,11 @@ pub enum WorkbenchEvent {
         root: std::path::PathBuf,
         number: u64,
     },
-    /// Approve what task `task`'s run waits on, as read at `at`.
-    ApproveTask {
-        task: String,
-        at: ApprovalAt,
-    },
+    /// Approve what a run waits on, as read.
+    ApproveTask(Approval),
     /// Send it back with `note`.
     ReviseTask {
-        task: String,
-        at: ApprovalAt,
+        approval: Approval,
         note: String,
     },
     /// Show task `id` on the Tasks page.
@@ -449,13 +445,9 @@ pub fn issue_event(request: &Request<'_>) -> Option<WorkbenchEvent> {
             root: root.to_path_buf(),
             number: *number,
         },
-        Request::ApproveTask { task, at } => WorkbenchEvent::ApproveTask {
-            task: task.to_string(),
-            at: (*at).clone(),
-        },
-        Request::ReviseTask { task, at, note } => WorkbenchEvent::ReviseTask {
-            task: task.to_string(),
-            at: (*at).clone(),
+        Request::ApproveTask(approval) => WorkbenchEvent::ApproveTask((*approval).clone()),
+        Request::ReviseTask { approval, note } => WorkbenchEvent::ReviseTask {
+            approval: (*approval).clone(),
             note: note.to_string(),
         },
         Request::OpenTask(id) => WorkbenchEvent::OpenTask(id.to_string()),

@@ -364,10 +364,12 @@ pub(crate) fn finding_line(
     muted: gpui::Hsla,
     handle: &Entity<Shell>,
 ) -> impl IntoElement {
-    let text = match finding.change {
-        // The finding says so itself, and the dialog offers it.
-        Some(onehand_core::preflight::RETRY_CURRENT) | None => finding.text.clone(),
-        Some(change) => format!("{} Changed in {change}.", finding.text),
+    let text = match finding
+        .change
+        .and_then(onehand_core::preflight::Change::said)
+    {
+        Some(change) => format!("{}{change}", finding.text),
+        None => finding.text.clone(),
     };
     let shell = handle.clone();
     div()

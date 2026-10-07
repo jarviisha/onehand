@@ -12,10 +12,11 @@ use crate::chat::session::{ChatEvent, ChatSession, note};
 use gpui::{AnyWindowHandle, App, BorrowAppContext as _, Entity, Subscription, Task, WeakEntity};
 use onehand_core::chat::Link;
 use onehand_core::preflight::{Check, found_late};
+use onehand_core::task::Approval;
 use onehand_core::task::marks;
 use onehand_core::unattended::Budget;
 use onehand_core::workflow::{
-    Action, ApprovalAt, Facts, Failure, Mark, Outcome, Run, Stop, run_command_blocking,
+    Action, Facts, Failure, Mark, Outcome, Run, Stop, run_command_blocking,
 };
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -175,18 +176,17 @@ fn held(uid: u64, cx: &mut App, ends: bool, then: impl FnOnce(&mut App) + 'stati
     .unwrap_or(false)
 }
 
-/// A person approved what they read of task `task`'s run at `at`.
-pub(crate) fn approve(task: &str, at: ApprovalAt, cx: &mut App) {
-    if let Some(uid) = live_uid(task, cx) {
-        answer(uid, cx, move |run| run.approved(&at));
+/// A person approved what they read, as `approval` names it.
+pub(crate) fn approve(approval: Approval, cx: &mut App) {
+    if let Some(uid) = live_uid(&approval.task, cx) {
+        answer(uid, cx, move |run| run.approved(&approval.at));
     }
 }
 
-/// A person sent what they read of task `task`'s run at `at` back with
-/// `note`.
-pub(crate) fn revise(task: &str, at: ApprovalAt, note: String, cx: &mut App) {
-    if let Some(uid) = live_uid(task, cx) {
-        answer(uid, cx, move |run| run.revised(&at, note));
+/// A person sent what they read, as `approval` names it, back with `note`.
+pub(crate) fn revise(approval: Approval, note: String, cx: &mut App) {
+    if let Some(uid) = live_uid(&approval.task, cx) {
+        answer(uid, cx, move |run| run.revised(&approval.at, note));
     }
 }
 

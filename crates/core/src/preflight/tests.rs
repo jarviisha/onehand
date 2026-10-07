@@ -375,7 +375,10 @@ fn a_retry_whose_own_mode_is_not_offered_blocks_and_says_it_keeps_its_setup() {
         // Settings say now; a Resume carries the same run, and cannot be.
         let change = match kind {
             Kind::Resume => None,
-            _ => Some(RETRY_CURRENT),
+            Kind::Retry => Some(Change::RetryCurrent),
+            Kind::NewRun | Kind::NewIssueRun | Kind::RetryCurrent | Kind::AnswerReview => {
+                unreachable!()
+            }
         };
         assert_eq!(finding.change, change, "{kind:?}");
     }
@@ -508,6 +511,7 @@ fn answering_a_review_is_refused_before_the_claim() {
             pr,
             answers,
             diverged,
+            issue_open: Ok(true),
         }),
         ..healthy()
     };
@@ -555,6 +559,16 @@ fn answering_a_review_is_refused_before_the_claim() {
     assert!(refused(&review(Err("offline".into()), true, false))
         .unwrap()
         .contains("offline"));
+    let closed_issue = Facts {
+        review: Some(ReviewFacts {
+            pr: Ok(Some((PrState::Open, url.clone()))),
+            answers: true,
+            diverged: false,
+            issue_open: Ok(false),
+        }),
+        ..healthy()
+    };
+    assert!(refused(&closed_issue).unwrap().contains("issue is closed"));
     let no_forge = Facts {
         forge: None,
         ..review(Ok(None), true, false)

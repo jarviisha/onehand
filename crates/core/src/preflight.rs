@@ -34,9 +34,76 @@ pub enum Kind {
     AnswerReview,
 }
 
-/// Where what blocks a Retry by its own setup is changed: the retry that
-/// runs with what Settings say now.
+impl Kind {
+    /// It runs the task's last run's own setup, so what Settings say now
+    /// neither blocks it nor clears a block.
+    fn keeps_own(self) -> bool {
+        match self {
+            Self::Resume | Self::Retry | Self::AnswerReview => true,
+            Self::NewRun | Self::NewIssueRun | Self::RetryCurrent => false,
+        }
+    }
+
+    /// Its workflow is judged anew, validation included: it is not one a
+    /// run has already started on.
+    fn judges_workflow(self) -> bool {
+        match self {
+            Self::NewRun | Self::NewIssueRun | Self::RetryCurrent => true,
+            Self::Resume | Self::Retry | Self::AnswerReview => false,
+        }
+    }
+
+    /// What a block of its own setup adds, said after the block.
+    fn keeps(self) -> &'static str {
+        match self {
+            Self::Retry => {
+                " The run keeps its own setup; Retry with current settings runs with what \
+                 Settings say now."
+            }
+            Self::Resume | Self::AnswerReview => {
+                " The run keeps its own setup, so changing Settings does not change it."
+            }
+            Self::NewRun | Self::NewIssueRun | Self::RetryCurrent => "",
+        }
+    }
+
+    /// Where a block of its own setup is changed, when that is somewhere
+    /// else: a Retry's by the retry that runs with what Settings say now.
+    fn own_change(self) -> Option<Change> {
+        match self {
+            Self::Retry => Some(Change::RetryCurrent),
+            Self::NewRun
+            | Self::NewIssueRun
+            | Self::Resume
+            | Self::RetryCurrent
+            | Self::AnswerReview => None,
+        }
+    }
+}
+
+/// The name of the retry that runs with what Settings say now, as every
+/// sentence and button names it.
 pub const RETRY_CURRENT: &str = "Retry with current settings";
+
+/// Where what a finding blocks is changed, when that is somewhere else.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Change {
+    /// A place in Settings or the config file, by its name there.
+    At(&'static str),
+    /// The retry that runs with what Settings say now, which the finding
+    /// names itself and its dialog offers.
+    RetryCurrent,
+}
+
+impl Change {
+    /// What a finding's line adds for it, if anything.
+    pub fn said(self) -> Option<String> {
+        match self {
+            Self::At(place) => Some(format!(" Changed in {place}.")),
+            Self::RetryCurrent => None,
+        }
+    }
+}
 
 /// What a finding is about, in the order findings are listed.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -62,7 +129,7 @@ pub struct Finding {
     pub blocks: bool,
     pub text: String,
     /// Where it is changed, when that is somewhere else.
-    pub change: Option<&'static str>,
+    pub change: Option<Change>,
     /// The task it offers instead, for an earlier task worth retrying.
     pub task: Option<String>,
 }
@@ -107,6 +174,9 @@ pub struct ReviewFacts {
     /// The branch on the forge went its own way from the task's worktree, so
     /// bringing the worktree up to it is no fast-forward.
     pub diverged: bool,
+    /// The issue is among the open ones a pick reads, which is what a review
+    /// is answered through; `Err` when they could not be read.
+    pub issue_open: Result<bool, String>,
 }
 
 /// The branch a detached `HEAD` reads as.
@@ -157,26 +227,7 @@ pub fn preflight(kind: Kind, facts: &Facts) -> Vec<Finding> {
             task: None,
         })
     };
-    let own = matches!(kind, Kind::Resume | Kind::Retry | Kind::AnswerReview);
-    let keeps = match kind {
-        Kind::Retry => {
-            " The run keeps its own setup; Retry with current settings runs with what Settings \
-             say now."
-        }
-        Kind::Resume | Kind::AnswerReview => {
-            " The run keeps its own setup, so changing Settings does not change it."
-        }
-        Kind::NewRun | Kind::NewIssueRun | Kind::RetryCurrent => "",
-    };
-    // Where what the run's own setup blocks is changed, for a Retry.
-    let own_change = match kind {
-        Kind::Retry => Some(RETRY_CURRENT),
-        Kind::NewRun
-        | Kind::NewIssueRun
-        | Kind::Resume
-        | Kind::RetryCurrent
-        | Kind::AnswerReview => None,
-    };
+    let (own, keeps, own_change) = (kind.keeps_own(), kind.keeps(), kind.own_change());
     let issue_kind = kind == Kind::NewIssueRun;
 
     // The workflow.
@@ -187,8 +238,7 @@ pub fn preflight(kind: Kind, facts: &Facts) -> Vec<Finding> {
             None
         }
     };
-    let judged = matches!(kind, Kind::NewRun | Kind::NewIssueRun | Kind::RetryCurrent);
-    if let Some(template) = template.filter(|_| judged) {
+    if let Some(template) = template.filter(|_| kind.judges_workflow()) {
         if let Some(why) = unfit_for_issue(template).filter(|_| issue_kind) {
             say(Check::Workflow, true, capital(&why), None);
         }
@@ -197,7 +247,7 @@ pub fn preflight(kind: Kind, facts: &Facts) -> Vec<Finding> {
                 Check::Workflow,
                 true,
                 format!("The workflow cannot run: {problem}"),
-                Some("Settings ▸ Workflows"),
+                Some(Change::At("Settings ▸ Workflows")),
             );
         }
     }
@@ -208,20 +258,20 @@ pub fn preflight(kind: Kind, facts: &Facts) -> Vec<Finding> {
             Check::Agent,
             true,
             "No agent is configured to run it.".to_string(),
-            Some("Settings ▸ Agents"),
+            Some(Change::At("Settings ▸ Agents")),
         ),
         (Some(name), false) => say(
             Check::Agent,
             true,
             format!("The agent `{name}` is no longer configured.{keeps}"),
-            own_change.or(Some("Settings ▸ Agents")),
+            own_change.or(Some(Change::At("Settings ▸ Agents"))),
         ),
         (Some(_), true) => {}
     }
     if let Some(mode) = facts.mode.as_deref().filter(|m| !m.trim().is_empty()) {
         let change = match own {
             true => own_change,
-            false => Some("unattended.mode, in the config file"),
+            false => Some(Change::At("unattended.mode, in the config file")),
         };
         match &facts.offered {
             Some(offered) => {
@@ -261,7 +311,7 @@ pub fn preflight(kind: Kind, facts: &Facts) -> Vec<Finding> {
                      none.{keeps}",
                     template.name
                 ),
-                own_change.or(Some("Settings ▸ Workflows")),
+                own_change.or(Some(Change::At("Settings ▸ Workflows"))),
             );
         } else if !commands {
             say(
@@ -335,7 +385,7 @@ pub fn preflight(kind: Kind, facts: &Facts) -> Vec<Finding> {
             Check::Forge,
             true,
             format!("{name} cannot be used: {why}"),
-            Some("Settings ▸ Connections"),
+            Some(Change::At("Settings ▸ Connections")),
         );
     }
 
@@ -413,7 +463,13 @@ fn review_refused(review: &ReviewFacts, forge: bool) -> Option<String> {
         )),
         PrState::Open if !review.answers => Some(crate::unattended::review_unanswerable(url)),
         PrState::Open if review.diverged => Some(crate::unattended::review_diverged()),
-        PrState::Open => None,
+        PrState::Open => match &review.issue_open {
+            Ok(true) => None,
+            Ok(false) => {
+                Some("the issue is closed, or not among the open issues a pick reads".to_string())
+            }
+            Err(why) => Some(format!("the issue could not be read: {why}")),
+        },
     }
 }
 

@@ -25,8 +25,8 @@ pub use prompt::first_prompt;
 #[cfg(test)]
 pub(crate) use run::Transition;
 pub use run::{
-    Action, ApprovalAt, Brief, Changed, Failure, Now, Outcome, PrOpened, Run, Setup, Stop, Visit,
-    WithCurrent,
+    Action, ApprovalAt, Brief, Changed, Failure, Now, Outcome, PrOpened, Run, Setup, StartWhy,
+    Stop, Visit, WithCurrent,
 };
 pub use status_checks::{judge, waited_on, with_logs, Seen};
 pub use template::{GateKind, Place, StepKind, StepSpec, Template, DEFAULT_WAIT, SCHEMA_VERSION};

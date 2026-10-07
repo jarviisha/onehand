@@ -414,8 +414,8 @@ fn a_done_run_with_its_pull_request_open_is_reviewed_on_the_forge() {
         },
     );
     assert_eq!(next.said.as_deref(), Some("Review it on GitHub"));
-    // Its workflow repairs from its status checks, so a review left there is
-    // answered from here as well as by putting the label back.
+    // A review left there is answered from here as well as by putting the
+    // label back; whether it can be is the preflight's to say when pressed.
     assert_eq!(
         acts(&next),
         (
@@ -424,26 +424,6 @@ fn a_done_run_with_its_pull_request_open_is_reviewed_on_the_forge() {
         )
     );
     assert_eq!(pr_named(&open_pr), "#7 · open, draft");
-
-    // A workflow with nothing to repair from has no review to answer.
-    let mut plain = forge_flow();
-    plain
-        .steps
-        .retain(|step| !matches!(step.kind, StepKind::StatusChecks { .. }));
-    let task = ended(
-        at(self::task("1", plain, Some("GitHub")), 5, 900),
-        Outcome::Done,
-        None,
-    );
-    let next = next_of(
-        &task,
-        None,
-        Around {
-            pr: PrSeen::Read(Some(&open_pr)),
-            ..open()
-        },
-    );
-    assert_eq!(acts(&next), (Some(Act::OpenPullRequest), vec![Act::Edit]));
 }
 
 #[test]
@@ -905,7 +885,11 @@ fn an_approval_says_what_is_reviewed_and_what_each_answer_starts() {
     );
     assert_eq!(review.revise_said(), "Plan runs again with your note");
     assert_eq!(review.span, Some(("m1".to_string(), "m2".to_string())));
-    assert_eq!(review.ran, None, "no command ran since the plan started");
+    assert_eq!(
+        review.check,
+        Checked::NotRun,
+        "no command ran since the plan started"
+    );
 
     // A command that ran since the step under review began is what its
     // check says, failed as well as passed.
@@ -935,7 +919,14 @@ fn an_approval_says_what_is_reviewed_and_what_each_answer_starts() {
     let review = Work::of(&checked, Some(Working::Waiting), None)
         .review
         .unwrap();
-    assert_eq!(review.ran, Some(failed));
+    assert_eq!(review.check, Checked::Ran(failed));
+    // One from before results were kept is said as not kept, for the work's
+    // own check to judge.
+    checked.runs[0].visits[at].command = None;
+    let review = Work::of(&checked, Some(Working::Waiting), None)
+        .review
+        .unwrap();
+    assert_eq!(review.check, Checked::NotKept);
 
     // Nothing is under review once the run moved on, or for a run that is
     // not waiting.

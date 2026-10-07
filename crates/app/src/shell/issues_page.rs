@@ -59,13 +59,13 @@ impl Shell {
             }
             // Deferred: the run reaches into its session, and the answer
             // reaches back into this page.
-            E::ApproveTask { task, at } => {
-                let (task, at) = (task.clone(), at.clone());
-                cx.defer(move |cx| crate::task::approve(&task, at, cx));
+            E::ApproveTask(approval) => {
+                let approval = approval.clone();
+                cx.defer(move |cx| crate::task::approve(approval, cx));
             }
-            E::ReviseTask { task, at, note } => {
-                let (task, at, note) = (task.clone(), at.clone(), note.clone());
-                cx.defer(move |cx| crate::task::revise(&task, at, note, cx));
+            E::ReviseTask { approval, note } => {
+                let (approval, note) = (approval.clone(), note.clone());
+                cx.defer(move |cx| crate::task::revise(approval, note, cx));
             }
             E::OpenTask(id) => self.show_task(id, window, cx),
             E::OpenTaskSession(id) => {

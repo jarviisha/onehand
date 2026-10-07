@@ -3,7 +3,7 @@
 
 use gpui::SharedString;
 use onehand_core::chat::Link;
-use onehand_core::workflow::ApprovalAt;
+use onehand_core::task::Approval;
 use std::path::PathBuf;
 
 /// What a session is doing, when that is something the rail should say.
@@ -254,18 +254,14 @@ pub enum ChatPaneEvent {
         agent: SharedString,
         archive: PathBuf,
     },
-    /// Task `task`'s run waits for approval, and it is given for what was
-    /// read at `at`: go on. Announced, because the run is the shell's and
+    /// A run waits for approval, and it is given for what was read, as the
+    /// approval names it: go on. Announced, because the run is the shell's and
     /// what offers this only draws it.
-    ContinueWorkflow {
-        task: String,
-        at: ApprovalAt,
-    },
-    /// Send what that run waits on, as read at `at`, back with a `note` on
-    /// what to change.
+    ContinueWorkflow(Approval),
+    /// Send what that run waits on, as read, back with a `note` on what to
+    /// change.
     ReviseWorkflow {
-        task: String,
-        at: ApprovalAt,
+        approval: Approval,
         note: String,
     },
     /// Stop the run on session `uid`.

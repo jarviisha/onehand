@@ -16,7 +16,7 @@ pub mod left;
 pub mod list;
 mod review;
 
-pub use review::{last_lines, UnderReview, ANSWER_LINES};
+pub use review::{last_lines, Checked, UnderReview, ANSWER_CHANGED, ANSWER_LINES};
 
 /// What a task waiting on a person waits for, in the words every view of
 /// it uses: an approval, or an answer to a card.
@@ -119,8 +119,6 @@ pub struct Work {
     /// from the one its last run ran with. Told by the app, which knows
     /// Settings; `false` until it does.
     pub timeout_moved: bool,
-    /// A review on its pull request can be answered (`Task::answers_reviews`).
-    pub answers_reviews: bool,
 }
 
 impl Work {
@@ -176,7 +174,6 @@ impl Work {
                 .filter(|_| matches!(stand, Stand::Approval { .. }))
                 .and_then(UnderReview::of),
             timeout_moved: false,
-            answers_reviews: task.answers_reviews(),
             span: run.and_then(|run| first(run).zip(last(run))),
             base: task.runs.first().and_then(first),
             task: task.id.clone(),
@@ -569,7 +566,7 @@ fn by_stand(work: &Work, around: Around<'_>) -> Next {
             &[Act::Stop],
         ),
         Stand::Resumable(why) => row(
-            Some(format!("It can go on where it was: {why}")),
+            Some(format!("It can go on where it was, with its marks: {why}")),
             Some(Act::Resume),
             &[Act::Retry],
         ),
@@ -645,10 +642,9 @@ fn done(work: &Work, pr: PrSeen<'_>) -> Next {
             PrState::Open => row(
                 Some(format!("Review it on {forge}")),
                 Some(Act::OpenPullRequest),
-                match work.answers_reviews {
-                    true => &[Act::AnswerReview],
-                    false => &[],
-                },
+                // Whether it can be answered is the preflight's to say when it
+                // is pressed, as putting the label back would.
+                &[Act::AnswerReview],
             ),
             PrState::Merged => row(None, None, &[Act::RunWorkflow]),
             PrState::Closed => row(

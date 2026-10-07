@@ -690,6 +690,7 @@ fn a_retry_with_current_settings_runs_the_new_setup_from_its_start() {
         setup: setup.clone(),
         changes: Vec::new(),
         start: 0,
+        why: crate::workflow::StartWhy::CarriedOver,
     };
     let next = t.retry_with("2".into(), plan).unwrap();
     assert_eq!(next.setup, setup);

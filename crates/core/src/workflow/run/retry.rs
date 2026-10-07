@@ -34,8 +34,31 @@ pub struct WithCurrent {
     pub setup: Setup,
     /// What differs from the last run, in a fixed order.
     pub changes: Vec<Changed>,
-    /// The step it starts at.
+    /// The step it starts at, and why there.
     pub start: usize,
+    pub why: StartWhy,
+}
+
+/// Why a retry with current settings starts where it does.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum StartWhy {
+    /// The first step it cannot carry over, as a Retry would.
+    CarriedOver,
+    /// The first command step whose command changes.
+    CommandChanged,
+    /// The work changed since the last run stopped, and is checked again.
+    WorkChanged,
+}
+
+impl StartWhy {
+    /// As the dialog says it, after the step.
+    pub fn said(self) -> &'static str {
+        match self {
+            Self::CarriedOver => "the first it cannot carry over",
+            Self::CommandChanged => "the first step whose command changes",
+            Self::WorkChanged => "where the changed work is checked again",
+        }
+    }
 }
 
 impl Run {
@@ -43,7 +66,7 @@ impl Run {
     /// cannot carry over, one the last run had not passed, or one that
     /// differs in `template`, or reads a step that does. The step count when
     /// every step carries over.
-    pub fn retry_start(prev: &Run, template: &Template) -> usize {
+    pub(crate) fn retry_start(prev: &Run, template: &Template) -> usize {
         let same = |step: &str| {
             let find = |t: &Template| t.steps.iter().find(|s| s.id == step).cloned();
             find(template).is_some_and(|s| Some(s) == find(&prev.template))
@@ -79,7 +102,7 @@ impl Run {
     /// The step a retry of `prev` on `template` is offered from: where it
     /// would start, or the first step when the last run got to the end,
     /// since a retry that starts past the last step runs nothing.
-    pub fn retry_offered(prev: &Run, template: &Template) -> usize {
+    pub(crate) fn retry_offered(prev: &Run, template: &Template) -> usize {
         match Run::retry_start(prev, template) {
             at if at >= template.steps.len() => 0,
             at => at,
@@ -91,7 +114,7 @@ impl Run {
     /// step up to it. What that check passed on is no longer what is there,
     /// and a push past it would send the commit it passed on rather than the
     /// work. `start` itself when no command step comes up to it.
-    pub fn recheck(template: &Template, start: usize) -> usize {
+    pub(crate) fn recheck(template: &Template, start: usize) -> usize {
         let upto = (start + 1).min(template.steps.len());
         template.steps[..upto]
             .iter()
@@ -112,6 +135,19 @@ impl Run {
     pub fn retry_plan(prev: &Run, template: &Template, from: Option<&str>) -> (usize, usize) {
         let start = Run::retry_from(prev, template, from);
         (start, Run::carried(prev, template, start).count())
+    }
+
+    /// The steps a Retry of `prev` on its own `template` may start from, the
+    /// first up to the returned latest, and the one it offers first. With the
+    /// work `changed` since the last run stopped, nothing past the last
+    /// command step up to the start is offered: what that check passed on is
+    /// not what is there now, and a push past it would send the old commit.
+    pub fn retry_offer(prev: &Run, template: &Template, changed: bool) -> (usize, usize) {
+        let mut latest = Run::retry_start(prev, template);
+        if changed {
+            latest = Run::recheck(template, latest);
+        }
+        (latest, Run::retry_offered(prev, template).min(latest))
     }
 
     /// [`Run::retry_start`], or step `from` when `template` has it earlier.
@@ -161,6 +197,7 @@ impl Run {
         prev: &Run,
         newest: Result<Template, String>,
         now: &Now,
+        changed: bool,
     ) -> Result<WithCurrent, String> {
         let mut template = newest?;
         let problems = crate::workflow::validate(&template);
@@ -200,7 +237,13 @@ impl Run {
                 && command(&template, &step.id, &setup.check)
                     != command(&prev.template, &step.id, &prev.setup.check)
         });
-        let start = changed_command.map_or(carry, |at| at.min(carry));
+        let (mut start, mut why) = match changed_command {
+            Some(at) if at < carry => (at, StartWhy::CommandChanged),
+            Some(_) | None => (carry, StartWhy::CarriedOver),
+        };
+        if changed && Run::recheck(&template, start) < start {
+            (start, why) = (Run::recheck(&template, start), StartWhy::WorkChanged);
+        }
         let shown =
             |value: &Option<String>, none: &str| value.clone().unwrap_or_else(|| none.to_string());
         let mut changes = Vec::new();
@@ -239,6 +282,7 @@ impl Run {
             setup,
             changes,
             start,
+            why,
         })
     }
 }

@@ -365,6 +365,22 @@ impl Shell {
             cx.defer(move |cx| crate::task::drive_check(id, handle, cx));
             return;
         }
+        // A snapshot that no longer validates (a later build's rules) is what
+        // the preflight would have blocked, found late.
+        let problems = core::validate(&run.template);
+        if !problems.is_empty() {
+            let said: Vec<String> = problems.iter().map(ToString::to_string).collect();
+            return refused(
+                format!(
+                    "The workflow `{}` no longer validates: {}",
+                    run.template.name,
+                    said.join("; ")
+                ),
+                found_late(Check::Workflow),
+                window,
+                cx,
+            );
+        }
         let mut unstarted = Failure::Other;
         let session = match task.issue() {
             // An issue's run comes up off screen, on a project of its own that

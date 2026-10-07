@@ -17,7 +17,7 @@ use std::path::PathBuf;
 mod answer;
 mod pick;
 
-pub use answer::answer_review_by_hand;
+pub use answer::{ReviewRead, read_review, start_answer};
 use pick::warn;
 pub use pick::{Pickable, look_now, pickable_blocking, pickable_one_blocking, start_picked};
 

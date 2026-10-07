@@ -17,7 +17,7 @@ pub mod work;
 
 use crate::unattended::IssueSource;
 use crate::workflow::{
-    Brief, Outcome, Run, Setup, StepKind, StepSpec, Stop, Template, WithCurrent,
+    ApprovalAt, Brief, Outcome, Run, Setup, StepKind, StepSpec, Stop, Template, WithCurrent,
 };
 use serde::{Deserialize, Serialize};
 
@@ -29,6 +29,15 @@ pub enum Source {
     Workflow,
     Check,
     Issue(IssueSource),
+}
+
+/// A person's answer to the approval task `task`'s run waits on, drawn from
+/// what they read at `at`: what every press of *Continue* or *Revise…*
+/// carries to the run, whichever window it is made in.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Approval {
+    pub task: String,
+    pub at: ApprovalAt,
 }
 
 /// What a task is doing right now, which only the app driving it knows.
@@ -215,13 +224,17 @@ impl Task {
         self.runs.last()
     }
 
-    /// Whether a review on its pull request can be answered: an issue's task
-    /// on a branch a forge serves, whose last run's workflow repairs what the
+    /// Whether it can have a pull request review at all: an issue's task on a
+    /// branch a forge serves.
+    pub fn reviewable(&self) -> bool {
+        self.issue().is_some() && self.setup.forge.is_some() && self.setup.branch.is_some()
+    }
+
+    /// Whether a review on its pull request can be answered: one it can have
+    /// ([`Task::reviewable`]), its last run's workflow repairing what the
     /// status checks find, which is where a review is answered from.
     pub fn answers_reviews(&self) -> bool {
-        self.issue().is_some()
-            && self.setup.forge.is_some()
-            && self.setup.branch.is_some()
+        self.reviewable()
             && self
                 .runs
                 .last()

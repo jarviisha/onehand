@@ -11,10 +11,9 @@ use gpui::{
 };
 use gpui_component::WindowExt as _;
 use gpui_component::notification::Notification;
+use onehand_core::task::work::UnderReview;
 use onehand_core::task::{Group, Task, Working, files, history, marks, queue};
-use onehand_core::workflow::{
-    Action, ApprovalAt, Failure, Run, Stop, Template, run_command_blocking,
-};
+use onehand_core::workflow::{Action, Failure, Run, Stop, Template, run_command_blocking};
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -505,33 +504,12 @@ pub(crate) struct Shown {
     pub(crate) steps: Vec<SharedString>,
     pub(crate) at: usize,
     /// What it waits on *Continue* or *Revise…* for.
-    pub(crate) review: Option<Review>,
-}
-
-/// What a run waits for approval on, as a press is drawn from it.
-#[derive(Clone)]
-pub(crate) struct Review {
-    /// The label of the step that answered.
-    pub(crate) of: SharedString,
-    pub(crate) answer: SharedString,
-    /// The visit it is read at, which the press carries.
-    pub(crate) at: ApprovalAt,
-}
-
-impl Review {
-    fn of(run: &Run) -> Option<Self> {
-        let (step, answer) = run.under_review()?;
-        Some(Self {
-            of: step.label.clone().into(),
-            answer: answer.to_string().into(),
-            at: run.approval_at()?,
-        })
-    }
+    pub(crate) review: Option<UnderReview>,
 }
 
 /// What task `id`'s run, under way, waits for approval on now.
-pub(crate) fn review_of(id: &str, cx: &App) -> Option<Review> {
-    Review::of(&cx.try_global::<Tasks>()?.driven(id)?.run)
+pub(crate) fn review_of(id: &str, cx: &App) -> Option<UnderReview> {
+    UnderReview::of(&cx.try_global::<Tasks>()?.driven(id)?.run)
 }
 
 /// Where the run on session `uid` stands, if one drives it.
@@ -548,7 +526,7 @@ pub(crate) fn shown(uid: u64, cx: &App) -> Option<Shown> {
             .map(|step| step.label.clone().into())
             .collect(),
         at: run.step,
-        review: Review::of(run),
+        review: UnderReview::of(run),
     })
 }
 

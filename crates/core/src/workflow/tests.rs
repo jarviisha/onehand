@@ -1589,7 +1589,7 @@ fn same_now() -> Now {
 fn a_retry_with_current_settings_starts_where_a_command_changes() {
     let prev = failed_at_push();
     let index = |id: &str| prev.template.index_of(id).unwrap();
-    let carried = Run::with_current(&prev, Ok(packaged()), &same_now()).unwrap();
+    let carried = Run::with_current(&prev, Ok(packaged()), &same_now(), false).unwrap();
     assert_eq!(
         carried.start,
         index("push"),
@@ -1601,8 +1601,9 @@ fn a_retry_with_current_settings_starts_where_a_command_changes() {
         check: Some("make check2".into()),
         ..same_now()
     };
-    let plan = Run::with_current(&prev, Ok(packaged()), &now).unwrap();
+    let plan = Run::with_current(&prev, Ok(packaged()), &now, false).unwrap();
     assert_eq!(plan.start, index("verify"));
+    assert_eq!(plan.why, StartWhy::CommandChanged);
     assert_eq!(
         plan.changes,
         vec![Changed {
@@ -1618,7 +1619,7 @@ fn a_retry_with_current_settings_starts_where_a_command_changes() {
     if let StepKind::Command { command, .. } = &mut newer.steps[2].kind {
         *command = Some("make dist".into());
     }
-    let plan = Run::with_current(&prev, Ok(newer), &same_now()).unwrap();
+    let plan = Run::with_current(&prev, Ok(newer), &same_now(), false).unwrap();
     assert_eq!(plan.start, index("package"));
     assert_eq!(plan.changes[0].what, "Workflow version");
 
@@ -1629,7 +1630,7 @@ fn a_retry_with_current_settings_starts_where_a_command_changes() {
         timeout: Some("2h".into()),
         ..same_now()
     };
-    let plan = Run::with_current(&prev, Ok(packaged()), &now).unwrap();
+    let plan = Run::with_current(&prev, Ok(packaged()), &now, false).unwrap();
     assert_eq!(plan.start, index("push"));
     let what: Vec<&str> = plan.changes.iter().map(|c| c.what).collect();
     assert_eq!(what, ["Agent", "Mode", "Timeout"]);
@@ -1645,11 +1646,52 @@ fn a_retry_with_current_settings_needs_a_workflow_that_runs() {
         Run::with_current(
             &prev,
             Err("there is no workflow `packaged`".into()),
-            &same_now()
+            &same_now(),
+            false
         ),
         Err("there is no workflow `packaged`".into())
     );
     let mut broken = packaged();
     broken.steps.clear();
-    assert!(Run::with_current(&prev, Ok(broken), &same_now()).is_err());
+    assert!(Run::with_current(&prev, Ok(broken), &same_now(), false).is_err());
+}
+
+/// Work changed since the last run stopped is checked again before anything
+/// past the check, whichever retry runs.
+#[test]
+fn changed_work_is_checked_again_before_a_retry_goes_past_it() {
+    let prev = failed_at_push();
+    let index = |id: &str| prev.template.index_of(id).unwrap();
+    assert_eq!(
+        Run::retry_offer(&prev, &prev.template, false),
+        (index("push"), index("push"))
+    );
+    assert_eq!(
+        Run::retry_offer(&prev, &prev.template, true),
+        (index("package"), index("package"))
+    );
+    let plan = Run::with_current(&prev, Ok(packaged()), &same_now(), true).unwrap();
+    assert_eq!(
+        (plan.start, plan.why),
+        (index("package"), StartWhy::WorkChanged)
+    );
+    assert_eq!(
+        StartWhy::WorkChanged.said(),
+        "where the changed work is checked again"
+    );
+}
+
+/// A command's result, as a clause.
+#[test]
+fn a_command_result_says_how_it_came_out() {
+    assert_eq!(
+        passed(Some("0123456789abcdef".into())).said(),
+        "passed on 0123456789"
+    );
+    assert_eq!(failed("x".into()).said(), "failed, exiting 1");
+    let cut_off = CommandResult {
+        exit: None,
+        ..failed("x".into())
+    };
+    assert_eq!(cut_off.said(), "did not finish");
 }

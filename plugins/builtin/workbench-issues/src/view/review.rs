@@ -22,9 +22,11 @@ use gpui_component::text::TextView;
 use gpui_component::{ActiveTheme, Icon, IconName, Sizable as _, StyledExt};
 use onehand_core::issues::template::section;
 use onehand_core::issues::{IssueKey, LocalIssue};
+use onehand_core::task::Approval;
 use onehand_core::task::marks::{self, Change};
-use onehand_core::task::work::{ANSWER_LINES, IssueWork, Reading, UnderReview, Work, last_lines};
-use onehand_core::workflow::CommandResult;
+use onehand_core::task::work::{
+    ANSWER_CHANGED, ANSWER_LINES, Checked, IssueWork, Reading, UnderReview, Work, last_lines,
+};
 use onehand_plugin_host::{Request, action, status_ink};
 use std::path::{Path, PathBuf};
 
@@ -216,16 +218,9 @@ impl IssuesView {
         review.sent = Some(Sent::Continue);
         review.note = None;
         cx.notify();
-        let at = read.at;
+        let approval = Approval { task, at: read.at };
         self.ask_later(window, cx, move |ask, _, window, cx| {
-            ask(
-                &Request::ApproveTask {
-                    task: &task,
-                    at: &at,
-                },
-                window,
-                cx,
-            )
+            ask(&Request::ApproveTask(&approval), window, cx)
         });
     }
 
@@ -277,12 +272,11 @@ impl IssuesView {
         review.sent = Some(Sent::Revise);
         review.note = None;
         cx.notify();
-        let at = read.at;
+        let approval = Approval { task, at: read.at };
         self.ask_later(window, cx, move |ask, _, window, cx| {
             ask(
                 &Request::ReviseTask {
-                    task: &task,
-                    at: &at,
+                    approval: &approval,
                     note: &text,
                 },
                 window,
@@ -353,11 +347,7 @@ impl IssuesView {
             .text_sm()
             .child(head);
         if review.changed && review.sent.is_none() {
-            block = block.child(
-                div()
-                    .text_color(ink.warning)
-                    .child("The answer changed since you opened it."),
-            );
+            block = block.child(div().text_color(ink.warning).child(ANSWER_CHANGED));
         }
 
         // The answer, its last lines until all of it is asked for.
@@ -422,8 +412,8 @@ impl IssuesView {
 
         // The check that ran since the step under review began, passed or
         // failed; none ran after a plan, and none is drawn.
-        if let Some(ran) = &read.ran {
-            block = block.child(labelled("Check", check_line(&full, ran, work, cx), cx));
+        if let Some(line) = check_line(&full, &read.check, work, cx) {
+            block = block.child(labelled("Check", line, cx));
         }
 
         // How the work will be judged, one click away.
@@ -489,48 +479,54 @@ fn labelled(name: &'static str, value: AnyElement, cx: &Context<IssuesView>) -> 
 
 /// The check that ran since the step under review began: a pass as the
 /// full form last read it against the work now, a failure as it exited, and
-/// either way the last lines it printed.
+/// either way the last lines it printed. One that ran before results were
+/// kept is judged by the commit alone, as the work's own check says it
+/// (*not recorded*, or *cannot tell*); none ran, and nothing is drawn.
 fn check_line(
     full: &Full<'_>,
-    ran: &CommandResult,
+    check: &Checked,
     work: Option<&Work>,
     cx: &Context<IssuesView>,
-) -> AnyElement {
+) -> Option<AnyElement> {
     let muted = cx.theme().muted_foreground;
-    let said = match (ran.passed, ran.exit) {
-        (true, _) => match work.and_then(|work| full.check_for(work)) {
-            Some(Ok(check)) => check.said(),
-            Some(Err(why)) => format!("passed; could not be read against the work now: {why}"),
-            None => "passed; reading it against the work now…".to_string(),
-        },
-        (false, Some(code)) => format!("failed, exiting {code}"),
-        (false, None) => "did not finish".to_string(),
+    let against_now = |work: Option<&Work>| match work.and_then(|work| full.check_for(work)) {
+        Some(Ok(check)) => check.said(),
+        Some(Err(why)) => format!("could not be read against the work now: {why}"),
+        None => "reading it against the work now…".to_string(),
     };
-    let (printed, left_out) = last_lines(ran.tail.trim_end(), CHECK_LINES);
-    div()
-        .v_flex()
-        .gap_1()
-        .min_w_0()
-        .child(div().truncate().child(said))
-        .when(left_out > 0, |column| {
-            column.child(
-                div()
-                    .text_color(muted)
-                    .child(format!("{left_out} earlier lines not shown")),
-            )
-        })
-        .when(!printed.is_empty(), |column| {
-            column.child(
-                div()
-                    .p_1()
-                    .rounded(cx.theme().radius)
-                    .bg(cx.theme().muted)
-                    .font_family(cx.theme().mono_font_family.clone())
-                    .text_xs()
-                    .children(printed.lines().map(|line| div().child(line.to_string()))),
-            )
-        })
-        .into_any_element()
+    let (said, printed) = match check {
+        Checked::NotRun => return None,
+        Checked::NotKept => (against_now(work), ""),
+        Checked::Ran(ran) if ran.passed => (against_now(work), ran.tail.trim_end()),
+        Checked::Ran(ran) => (ran.said(), ran.tail.trim_end()),
+    };
+    let (printed, left_out) = last_lines(printed, CHECK_LINES);
+    Some(
+        div()
+            .v_flex()
+            .gap_1()
+            .min_w_0()
+            .child(div().truncate().child(said))
+            .when(left_out > 0, |column| {
+                column.child(
+                    div()
+                        .text_color(muted)
+                        .child(format!("{left_out} earlier lines not shown")),
+                )
+            })
+            .when(!printed.is_empty(), |column| {
+                column.child(
+                    div()
+                        .p_1()
+                        .rounded(cx.theme().radius)
+                        .bg(cx.theme().muted)
+                        .font_family(cx.theme().mono_font_family.clone())
+                        .text_xs()
+                        .children(printed.lines().map(|line| div().child(line.to_string()))),
+                )
+            })
+            .into_any_element(),
+    )
 }
 
 /// The answers, each with what it starts; once one is sent, what came of it.

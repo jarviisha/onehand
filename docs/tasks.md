@@ -186,7 +186,7 @@ configuration from where a new task of its kind takes it: an issue's task from `
 (agent, mode, the timeout put over the workflow's) and the project's check command; a launcher's
 the first agent configured, the workflow's own timeout and the project's check command. Its dialog
 says, before anything starts, what changes (*Mode: plan → auto*, one line each, or that nothing
-does), where it starts and why, and what its preflight (kind *Retry with current settings*, judged
+does), where it starts and why (`StartWhy`), and what its preflight (kind *Retry with current settings*, judged
 as a new start is, validation included) found. A workflow whose id is no longer on offer, or that
 no longer validates, blocks.
 
@@ -202,9 +202,11 @@ last run stopped, the start is held at the last command step up to it, as for *R
 it defaults to that start, or to the first step when the last run got to the end. The description
 says where the pick starts, why, and how many answers it carries; only the steps before it carry.
 
-In code: `Run::retry_start` (`crates/core/src/workflow/run.rs`) says where a retry would start,
-`Run::retry_offered` which step the dialog offers first, and `Run::retry_plan` where a retry from a
-picked step starts and how many answers it carries, which is what the dialog says. `Run::retry_of`
+In code: `Run::retry_offer` (`crates/core/src/workflow/run/retry.rs`) says the latest step a
+retry may start from and the one the dialog offers first, the work having changed or not; it is
+built on `Run::retry_start` (where a retry would start), `Run::retry_offered` and `Run::recheck`.
+`Run::retry_plan` says where a retry from a picked step starts and how many answers it carries,
+which is what the dialog says. `Run::retry_of`
 builds the new run from that plan, with `step` and `furthest` at its start and the outputs of the
 steps before it. A step counts as passed by where it stood in the last run's own template, so
 dropping an earlier step never moves a failed one into the past. `Task::retry` pushes it and

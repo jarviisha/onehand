@@ -91,6 +91,21 @@ pub struct CommandResult {
     pub digest: Option<String>,
 }
 
+impl CommandResult {
+    /// How it came out, as a clause: *passed on 4f2c1e0a9b*, *failed,
+    /// exiting 2*, *did not finish*.
+    pub fn said(&self) -> String {
+        match (self.passed, self.exit, &self.commit) {
+            (true, _, Some(commit)) => {
+                format!("passed on {}", commit.get(..10).unwrap_or(commit))
+            }
+            (true, _, None) => "passed".to_string(),
+            (false, Some(code), _) => format!("failed, exiting {code}"),
+            (false, None, _) => "did not finish".to_string(),
+        }
+    }
+}
+
 /// Run `command` in `dir`, stopping it and all it started once `cancel` is
 /// set, then read the work it ran on. Blocking: it returns only once nothing
 /// of the command is left running.

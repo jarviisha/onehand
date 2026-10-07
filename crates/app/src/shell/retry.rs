@@ -14,6 +14,7 @@ use gpui_component::{
 };
 use onehand_core::preflight;
 use onehand_core::task::marks::{self, Against};
+use onehand_core::task::work::Act;
 use onehand_core::task::{Source, Task};
 use onehand_core::workflow::{Changed, Run, Template, WithCurrent};
 use std::cell::Cell;
@@ -92,9 +93,13 @@ impl Shell {
     /// none: its own workflow by id at its newest version, the agent, mode
     /// and timeout a new task of its kind takes, and its project's check
     /// command.
+    ///
+    /// With the work `changed` since the last run stopped, it starts no later
+    /// than where that is checked again.
     pub(crate) fn plan_current(
         &self,
         task: &Task,
+        changed: bool,
         cx: &App,
     ) -> Option<Result<WithCurrent, String>> {
         let last = task.runs.last()?;
@@ -103,6 +108,7 @@ impl Shell {
             last,
             crate::workflow::newest(&last.template, cx),
             &now,
+            changed,
         ))
     }
 
@@ -122,14 +128,8 @@ impl Shell {
         let same = last.template.clone();
         let steps = same.steps.clone();
         let changed = against == Some(Against::Changed);
-        // Work that changed since the last run stopped is checked again before
-        // anything past the check: what it passed on is not what is there now,
-        // and a push past it would send the old commit.
-        let mut start = Run::retry_start(&last, &same);
-        if changed {
-            start = Run::recheck(&same, start);
-        }
-        let picked = Rc::new(Cell::new(Run::retry_offered(&last, &same).min(start)));
+        let (start, offered) = Run::retry_offer(&last, &same, changed);
+        let picked = Rc::new(Cell::new(offered));
         let choices: Vec<SharedString> = steps
             .iter()
             .take(start + 1)
@@ -154,7 +154,7 @@ impl Shell {
         let found = preflight::preflight(preflight::Kind::Retry, &facts);
         let blocked = found.iter().any(|f| f.blocks);
         // What it keeps, one line each, and where Settings say otherwise now.
-        let differs: Vec<Changed> = match self.plan_current(&task, cx) {
+        let differs: Vec<Changed> = match self.plan_current(&task, false, cx) {
             Some(Ok(plan)) => plan.changes,
             Some(Err(_)) | None => Vec::new(),
         };
@@ -194,7 +194,7 @@ impl Shell {
             let with_current = {
                 let (shell, id) = (shell.clone(), id.clone());
                 crate::controls::action("retry-current")
-                    .label("Retry with current settings…")
+                    .label(Act::RetryCurrent.label())
                     .on_click(move |_, window: &mut Window, cx: &mut App| {
                         window.close_dialog(cx);
                         let id = id.clone();
@@ -281,7 +281,8 @@ impl Shell {
         let Some(last) = task.runs.last().cloned() else {
             return;
         };
-        let Some(plan) = self.plan_current(&task, cx) else {
+        let changed = against == Some(Against::Changed);
+        let Some(plan) = self.plan_current(&task, changed, cx) else {
             return;
         };
         // Judged on what it will run: the setup Settings give now, on its
@@ -297,22 +298,12 @@ impl Shell {
         let facts = crate::unattended::setup_facts(&task, &setup, workflow, cx);
         let found = preflight::preflight(preflight::Kind::RetryCurrent, &facts);
         let blocked = found.iter().any(|f| f.blocks);
-        let changed = against == Some(Against::Changed);
         let (said, changes) = match &plan {
             Ok(plan) => {
-                let mut start = plan.start;
-                if changed {
-                    start = Run::recheck(&plan.template, start);
-                }
-                let step = plan.template.steps.get(start).map_or_else(
+                let step = plan.template.steps.get(plan.start).map_or_else(
                     || "the end".to_string(),
                     |s| format!("the {} step", s.label),
                 );
-                let why = match start < Run::retry_offered(&last, &plan.template) {
-                    true if changed => "where the changed work is checked again",
-                    true => "the first step whose command changes",
-                    false => "the first it cannot carry over",
-                };
                 let lines: Vec<String> = match plan.changes.is_empty() {
                     true => vec!["Nothing differs from the last run's configuration.".into()],
                     false => plan
@@ -321,16 +312,11 @@ impl Shell {
                         .map(|c| format!("{}: {} → {}", c.what, c.old, c.new))
                         .collect(),
                 };
-                (format!("It starts at {step}, {why}."), lines)
+                (format!("It starts at {step}, {}.", plan.why.said()), lines)
             }
             Err(_) => (String::new(), Vec::new()),
         };
-        let plan = plan.ok().map(|mut plan| {
-            if changed {
-                plan.start = Run::recheck(&plan.template, plan.start);
-            }
-            plan
-        });
+        let plan = plan.ok();
         let blocked = blocked || plan.is_none();
         let (id, title) = (task.id.clone(), task.brief.title.clone());
         let shell = cx.entity();
@@ -385,7 +371,7 @@ impl Shell {
                 .footer(footer(
                     "retry-current",
                     None,
-                    "Retry with current settings",
+                    preflight::RETRY_CURRENT,
                     blocked,
                     move |window, cx| retry(window, cx),
                 ))
@@ -428,10 +414,10 @@ fn kept_lines(last: &Run, differs: &[Changed]) -> Vec<(String, bool)> {
         |(what, kept)| match differs.iter().find(|c| c.what == what) {
             Some(now) => (
                 format!(
-                    "Keeps {}: {kept}; Settings now say {}, which Retry with current settings \
-                 runs",
+                    "Keeps {}: {kept}; Settings now say {}, which {} runs",
                     what.to_lowercase(),
-                    now.new
+                    now.new,
+                    preflight::RETRY_CURRENT
                 ),
                 true,
             ),
@@ -480,20 +466,96 @@ fn footer(
 }
 
 impl Shell {
-    /// Answer the review on issue task `id`'s open pull request, as putting
-    /// the trigger label back does, once its preflight finds nothing in the
-    /// way.
+    /// Ask whether to answer the review on issue task `id`'s open pull
+    /// request, as putting the trigger label back does: what would refuse it
+    /// is read first, off the UI loop, and listed as its preflight found it,
+    /// before anything is claimed.
     pub(crate) fn answer_review(
         &mut self,
         id: String,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let has_check = crate::task::task(&id, cx)
-            .is_some_and(|task| self.check_of(&task.setup.repo).is_some());
+        let Some(task) = crate::task::task(&id, cx) else {
+            return;
+        };
+        let has_check = self.check_of(&task.setup.repo).is_some();
+        let reading = crate::unattended::read_review(&id, cx);
+        cx.spawn_in(window, async move |shell, cx| {
+            let read = reading.await;
+            let _ = shell.update_in(cx, |shell: &mut Self, window, cx| match read {
+                Ok(read) => shell.confirm_answer(task, read, has_check, window, cx),
+                Err(why) => window.push_notification(Notification::warning(why), cx),
+            });
+        })
+        .detach();
+    }
+
+    fn confirm_answer(
+        &mut self,
+        task: Task,
+        read: crate::unattended::ReviewRead,
+        has_check: bool,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let found = preflight::preflight(preflight::Kind::AnswerReview, &read.facts);
+        let blocked = found.iter().any(|f| f.blocks);
+        let said = match &read.from {
+            Some(step) => format!(
+                "A new run starts at the {step} step, told how to read the review, on the \
+                 task's own setup, as putting the label back does."
+            ),
+            None => "Its workflow has no step to answer a review from.".to_string(),
+        };
+        let shell = cx.entity();
+        let read = Rc::new(Cell::new(Some(read)));
         let handle = window.window_handle();
-        // Deferred: a start reaches into the window this shell is drawing.
-        cx.defer(move |cx| crate::unattended::answer_review_by_hand(id, has_check, handle, cx));
+        window.open_alert_dialog(cx, move |alert, _, cx| {
+            let (danger, muted) = (
+                crate::theme::status_ink(cx).danger,
+                cx.theme().muted_foreground,
+            );
+            let lines: Vec<_> = found
+                .iter()
+                .enumerate()
+                .map(|(at, finding)| {
+                    crate::dialogs::finding_line(at, finding, danger, muted, &shell)
+                })
+                .collect();
+            let answer = {
+                let read = read.clone();
+                move |window: &mut Window, cx: &mut App| {
+                    let Some(read) = read.take() else {
+                        return;
+                    };
+                    if let Err(why) = crate::unattended::start_answer(read, has_check, handle, cx) {
+                        window.push_notification(Notification::warning(why), cx);
+                    }
+                }
+            };
+            alert
+                .title(format!("Answer the review on {}?", task.brief.title))
+                .description(said.clone())
+                .child(gpui::div().v_flex().gap_1().w_full().children(lines))
+                .on_ok({
+                    let answer = answer.clone();
+                    move |_, window, cx| {
+                        if blocked {
+                            return false;
+                        }
+                        answer(window, cx);
+                        true
+                    }
+                })
+                .footer(footer(
+                    "answer-review",
+                    None,
+                    "Answer the review",
+                    blocked,
+                    move |window, cx| answer(window, cx),
+                ))
+        });
     }
 
     /// Carry task `id` on where it stopped, once the preflight finds nothing
