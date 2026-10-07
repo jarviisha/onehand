@@ -130,6 +130,14 @@ impl Tasks {
         self.live.values().find(|d| d.task == id)
     }
 
+    /// The session task `id`'s run is driven on, if one is.
+    fn live_uid(&self, id: &str) -> Option<u64> {
+        self.live
+            .iter()
+            .find(|(_, d)| d.task == id)
+            .map(|(uid, _)| *uid)
+    }
+
     /// What task `id` is doing, if anything.
     fn working(&self, id: &str) -> Option<Working> {
         if self.queue.queued(id) {
@@ -540,12 +548,7 @@ pub(crate) fn stop_task(id: &str, cx: &mut App) {
     if t.queue.queued(id) {
         return stop_queued(id, cx);
     }
-    let live = t
-        .live
-        .iter()
-        .find(|(_, d)| d.task == id)
-        .map(|(uid, _)| *uid);
-    if let Some(uid) = live {
+    if let Some(uid) = t.live_uid(id) {
         return stop(uid, cx);
     }
     if let Some(cancel) = t.checks.get(id) {
