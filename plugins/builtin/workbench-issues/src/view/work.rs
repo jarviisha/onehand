@@ -192,9 +192,17 @@ fn tooltip(act: Act) -> Option<&'static str> {
             "Choose a workflow and work the issue with it as a task, on a branch and worktree \
              of its own",
         ),
-        Act::Review => Some("Open the run's session, whose step strip holds the approval"),
+        Act::Review => Some("Read what waits for approval, and approve it or send it back"),
         Act::OpenBranch => Some("Show the folder the branch is checked out in"),
-        Act::Retry => Some("Run it again in a new run"),
+        Act::Retry => Some("Run it again in a new run, as the last run was configured"),
+        Act::AnswerReview => Some(
+            "Run the task again from its repair step with the review as its note, as putting \
+             the label back does",
+        ),
+        Act::RetryCurrent => Some(
+            "Run it again with what Settings say now, saying first what changes and where it \
+             starts",
+        ),
         Act::Resume => Some("Carry on from that step in a new session"),
         Act::Refresh => Some("Read the pull request again"),
         Act::Edit
@@ -270,11 +278,12 @@ impl Pressed {
                 }
             }
             Act::Edit => view.open_form(Some(number), window, cx),
-            Act::OpenSession | Act::AnswerInSession | Act::Review => {
+            Act::OpenSession | Act::AnswerInSession => {
                 if let Some(id) = task {
                     view.ask_task(id, |id| Request::OpenTaskSession(id), window, cx);
                 }
             }
+            Act::Review => view.review(number, window, cx),
             Act::Stop => {
                 if let Some(id) = task {
                     view.ask_task(id, |id| Request::StopTask(id), window, cx);
@@ -293,6 +302,16 @@ impl Pressed {
             Act::Retry => {
                 if let Some(id) = task {
                     view.ask_task(id, |id| Request::RetryTask(id), window, cx);
+                }
+            }
+            Act::RetryCurrent => {
+                if let Some(id) = task {
+                    view.ask_task(id, |id| Request::RetryTaskCurrent(id), window, cx);
+                }
+            }
+            Act::AnswerReview => {
+                if let Some(id) = task {
+                    view.ask_task(id, |id| Request::AnswerReview(id), window, cx);
                 }
             }
             Act::OpenPullRequest => match self.pr_url {

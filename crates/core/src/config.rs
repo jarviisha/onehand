@@ -517,11 +517,20 @@ impl AppConfig {
     }
 }
 
-/// `<config_dir>/onehand/` — the per-user data root (config, sessions, state).
+/// `<config_dir>/onehand/` — the per-user data root (config, sessions, state),
+/// or `$ONEHAND_CONFIG_DIR` when it is set.
+///
+/// The variable lets a second onehand run beside the one in use on a root of
+/// its own: two on one root refuse each other at the instance lock. It names
+/// onehand's root only, where moving `XDG_CONFIG_HOME` would move every
+/// tool's, and `gh`, git and the agents a session starts read theirs there.
 pub fn config_dir() -> PathBuf {
-    dirs::config_dir()
-        .unwrap_or_else(|| PathBuf::from("."))
-        .join("onehand")
+    match std::env::var_os("ONEHAND_CONFIG_DIR").filter(|dir| !dir.is_empty()) {
+        Some(dir) => PathBuf::from(dir),
+        None => dirs::config_dir()
+            .unwrap_or_else(|| PathBuf::from("."))
+            .join("onehand"),
+    }
 }
 
 /// A workspace's own persisted shape — name + project roots + which is active

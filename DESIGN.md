@@ -107,7 +107,9 @@ monospace font.
   the current one is in full ink and weight), then at the far end *Review…*, *Revise…* and
   *Continue* (the one primary) while the run waits for approval, and *Stop* always. The step
   labels are clipped by width; the workflow's name and the controls never are. *Review…* reads the answer from the run, not the
-  transcript. *Revise…* asks for a note and refuses an empty one.
+  transcript. *Revise…* asks for a note and refuses an empty one. Each press carries the visit it
+  was drawn from; one the run no longer waits at shows the new answer, saying it changed, in the
+  warning ink, rather than approving it unread.
 - **Composer.** A card at the foot of the transcript. Inside it, one row: the `+` menu, *Fast*,
   the model chip (those two only when the agent offers them), and *Send* or *Stop*, with *Queue*
   beside *Stop* while a turn runs and there is a draft. Under the card, outside it, a strip shows standing state:
@@ -138,7 +140,8 @@ monospace font.
     then *Before*, its earlier runs and tasks (capped); then its history. The work's three lines
     keep their height while a step ends, so the body never moves under a reader. The tab is the
     glance beside a session; ⋯ ▸ *Open in Issues* opens the same issue on the Issues page, its
-    filters left as they are.
+    filters left as they are. The tab draws no review: its *Review…* opens the issue on the page
+    with the review block open.
   - Hiding a dock keeps its buffers and processes.
   - A hidden terminal is unmounted and takes no room.
   - The terminal's open state follows the selected project.
@@ -174,6 +177,23 @@ monospace font.
     changed (each opening its diff in place) and the commits past where the task started. The
     page keeps its filters, search, selection and scroll while a session or the task detail is
     looked at.
+  - The **review block** opens below where the work stands only when a person presses *Review…*,
+    pushing the body down; a run reaching an approval never opens it, and it closes only by its
+    *Close* or by picking another issue. In a hairline box that scrolls past its cap: *Review:
+    <step>*, the answer (its last 60 lines with *Show all N lines*), what the step under review
+    changed with each file opening its diff (drawn only when it changed something), the check
+    when a command ran since (passed or failed, with its last 20 lines in a mono well), the
+    issue's *Acceptance* collapsed, then
+    *Revise…* and *Continue* (the one primary), each beside what it starts: *Plan runs again
+    with your note*, *Continue starts Implement: the agent changes the code*. A cut answer says
+    *Showing the last 60 of N lines.* above them in the warning ink. *Revise…* writes its note in
+    the block. A press shows at once that it was sent, then what came of it (*The run moved on
+    to …*), without moving the reader's scroll; one the run no longer waits for reloads the
+    block, saying *The answer changed since you opened it.*
+  - The task detail's *Awaiting approval* draws the same answer, what each answer starts, and
+    *Review…*, *Revise…* and *Continue* through the same guarded call as the strip.
+    An ended task's detail draws *Way out*: why it ended in the issue's words, and *Retry with
+    current settings…* when that fits, primary for a configuration failure.
 - **No top bar, no status bar, no right toolbar.** Transient status goes in a toast. Modals are
   `Dialog`s. Settings is a large dialog: a nav column with Appearance, Workspace, Agents,
   Connections, Workflows and Shortcuts. Groups are separated by hairlines, not boxes.

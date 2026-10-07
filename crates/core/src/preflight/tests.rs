@@ -56,6 +56,7 @@ fn healthy() -> Facts {
             at_once: 2,
         }),
         queued_behind: None,
+        review: None,
     }
 }
 
@@ -347,12 +348,9 @@ fn a_resume_says_nothing_of_a_base_and_judges_no_workflow_anew() {
     };
     assert_eq!(found(Kind::Resume, &facts, Check::Base), None);
     assert_eq!(found(Kind::Resume, &facts, Check::Workflow), None);
-    assert_eq!(
-        found(Kind::Retry { newer: false }, &facts, Check::Workflow),
-        None
-    );
+    assert_eq!(found(Kind::Retry, &facts, Check::Workflow), None);
     assert!(
-        found(Kind::Retry { newer: true }, &facts, Check::Workflow)
+        found(Kind::RetryCurrent, &facts, Check::Workflow)
             .unwrap()
             .blocks
     );
@@ -365,11 +363,7 @@ fn a_retry_whose_own_mode_is_not_offered_blocks_and_says_it_keeps_its_setup() {
         offered: Some(vec!["default".into()]),
         ..plain()
     };
-    for kind in [
-        Kind::Retry { newer: false },
-        Kind::Retry { newer: true },
-        Kind::Resume,
-    ] {
+    for kind in [Kind::Retry, Kind::Resume] {
         let finding = found(kind, &facts, Check::Mode).unwrap();
         assert!(finding.blocks);
         assert!(
@@ -377,10 +371,63 @@ fn a_retry_whose_own_mode_is_not_offered_blocks_and_says_it_keeps_its_setup() {
             "{}",
             finding.text
         );
-        assert_eq!(finding.change, None);
+        // A Retry blocked by its own setup is changed by retrying with what
+        // Settings say now; a Resume carries the same run, and cannot be.
+        let change = match kind {
+            Kind::Resume => None,
+            Kind::Retry => Some(Change::RetryCurrent),
+            Kind::NewRun | Kind::NewIssueRun | Kind::RetryCurrent | Kind::AnswerReview => {
+                unreachable!()
+            }
+        };
+        assert_eq!(finding.change, change, "{kind:?}");
     }
     let new = found(Kind::NewIssueRun, &facts, Check::Mode).unwrap();
     assert!(!new.text.contains("keeps its own setup"));
+}
+
+/// A retry with current settings is judged as a new start is: on the
+/// configuration Settings give now, with the workflow judged anew.
+#[test]
+fn a_retry_with_current_settings_is_judged_on_what_settings_say() {
+    let refused = Facts {
+        mode: Some("plan".into()),
+        offered: Some(vec!["default".into()]),
+        ..plain()
+    };
+    let mode = found(Kind::RetryCurrent, &refused, Check::Mode).unwrap();
+    assert!(mode.blocks);
+    assert!(!mode.text.contains("keeps its own setup"));
+    let gone = Facts {
+        agent_configured: false,
+        ..plain()
+    };
+    assert!(
+        found(Kind::RetryCurrent, &gone, Check::Agent)
+            .unwrap()
+            .blocks
+    );
+    let mut broken = worktree();
+    broken.steps.clear();
+    let broken = Facts {
+        workflow: Ok(broken),
+        ..plain()
+    };
+    assert!(
+        found(Kind::RetryCurrent, &broken, Check::Workflow)
+            .unwrap()
+            .blocks
+    );
+    let missing = Facts {
+        workflow: Err("there is no workflow `fix`".into()),
+        ..plain()
+    };
+    assert!(
+        found(Kind::RetryCurrent, &missing, Check::Workflow)
+            .unwrap()
+            .blocks
+    );
+    assert_eq!(found(Kind::RetryCurrent, &plain(), Check::Base), None);
 }
 
 #[test]
@@ -398,7 +445,7 @@ fn a_run_with_forge_steps_needs_its_forge_and_one_without_does_not() {
         .iter()
         .any(|s| matches!(s.kind, crate::workflow::StepKind::PullRequest));
     assert_eq!(
-        found(Kind::Retry { newer: false }, &with_steps, Check::Forge).is_some(),
+        found(Kind::Retry, &with_steps, Check::Forge).is_some(),
         has_steps
     );
     let mut bare = worktree();
@@ -415,10 +462,7 @@ fn a_run_with_forge_steps_needs_its_forge_and_one_without_does_not() {
         forge: out,
         ..plain()
     };
-    assert_eq!(
-        found(Kind::Retry { newer: false }, &without, Check::Forge),
-        None
-    );
+    assert_eq!(found(Kind::Retry, &without, Check::Forge), None);
 }
 
 #[test]
@@ -426,8 +470,117 @@ fn an_issue_check_applies_to_an_issue_run_only() {
     let mut facts = healthy();
     facts.issue.as_mut().unwrap().tasks = vec![(task_on_issue(None), Some(Working::Running))];
     assert_eq!(found(Kind::Resume, &facts, Check::Issue), None);
+    assert_eq!(found(Kind::Retry, &facts, Check::EarlierTask), None);
+}
+
+/// Every block of the configuration that will run, found once the run ran,
+/// is a configuration failure: the agent, its mode, the check command and
+/// the workflow. Where the work goes and who holds the slot are not.
+#[test]
+fn a_configuration_block_found_late_is_a_configuration_failure() {
+    use crate::workflow::Failure;
+    for check in [
+        Check::Workflow,
+        Check::Agent,
+        Check::Mode,
+        Check::CheckCommand,
+    ] {
+        assert_eq!(found_late(check), Failure::Configuration, "{check:?}");
+    }
+    assert_eq!(found_late(Check::Forge), Failure::Forge);
+    for check in [
+        Check::Place,
+        Check::Base,
+        Check::Issue,
+        Check::EarlierTask,
+        Check::Slot,
+        Check::PlaceTaken,
+    ] {
+        assert_eq!(found_late(check), Failure::Other, "{check:?}");
+    }
+}
+
+/// What answering a pull request review is refused for, said before anything
+/// is claimed, in the words the label path uses.
+#[test]
+fn answering_a_review_is_refused_before_the_claim() {
+    use crate::connector::PrState;
+    let url = "https://forge/pr/7".to_string();
+    let review = |pr: Result<Option<(PrState, String)>, String>, answers, diverged| Facts {
+        review: Some(ReviewFacts {
+            pr,
+            answers,
+            diverged,
+            issue_open: Ok(true),
+        }),
+        ..healthy()
+    };
+    let refused = |facts: &Facts| {
+        found(Kind::AnswerReview, facts, Check::Issue)
+            .filter(|f| f.blocks)
+            .map(|f| f.text)
+    };
     assert_eq!(
-        found(Kind::Retry { newer: false }, &facts, Check::EarlierTask),
+        refused(&review(Ok(Some((PrState::Open, url.clone()))), true, false)),
+        None,
+        "an open pull request on a workflow that repairs is answered"
+    );
+    // The label path's own words, the first letter raised.
+    let raised = |said: String| said[..1].to_uppercase() + &said[1..];
+    assert_eq!(
+        refused(&review(
+            Ok(Some((PrState::Open, url.clone()))),
+            false,
+            false
+        )),
+        Some(raised(crate::unattended::review_unanswerable(&url)))
+    );
+    assert_eq!(
+        refused(&review(
+            Ok(Some((PrState::Closed, url.clone()))),
+            true,
+            false
+        )),
+        Some(raised(crate::unattended::review_closed(&url)))
+    );
+    assert!(
+        refused(&review(Ok(Some((PrState::Open, url.clone()))), true, true))
+            .unwrap()
+            .contains("went its own way")
+    );
+    assert!(refused(&review(
+        Ok(Some((PrState::Merged, url.clone()))),
+        true,
+        false
+    ))
+    .unwrap()
+    .contains("merged"));
+    assert!(refused(&review(Ok(None), true, false)).is_some());
+    assert!(refused(&review(Err("offline".into()), true, false))
+        .unwrap()
+        .contains("offline"));
+    let closed_issue = Facts {
+        review: Some(ReviewFacts {
+            pr: Ok(Some((PrState::Open, url.clone()))),
+            answers: true,
+            diverged: false,
+            issue_open: Ok(false),
+        }),
+        ..healthy()
+    };
+    assert!(refused(&closed_issue).unwrap().contains("issue is closed"));
+    let no_forge = Facts {
+        forge: None,
+        ..review(Ok(None), true, false)
+    };
+    assert!(refused(&no_forge).unwrap().contains("No forge"));
+    // Its own snapshot and setup, as a Retry: Settings changed do not judge it.
+    assert_eq!(
+        found(
+            Kind::AnswerReview,
+            &review(Ok(Some((PrState::Open, url))), true, false),
+            Check::Base
+        ),
         None
     );
 }

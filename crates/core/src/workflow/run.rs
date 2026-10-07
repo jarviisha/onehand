@@ -8,13 +8,18 @@
 //! finishing, an approval, a Stop and a resume each go through a method
 //! here, so no two callers can disagree about what a Stop means.
 
-use super::facts::{self, Facts, Mark};
+use super::facts::{self, CommandResult, Facts, Mark};
 use super::prompt::{self, Fill};
 use super::status_checks::Seen;
 use super::template::{Place, StepKind, StepSpec, Template};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::path::PathBuf;
+
+mod retry;
+mod visits;
+
+pub use retry::{Changed, Now, StartWhy, WithCurrent};
 
 /// What a run is asked to do: a title, a body, and what the person starting
 /// it asked of every step.
@@ -150,6 +155,26 @@ impl Outcome {
     }
 }
 
+/// What kind of thing a failed run failed on, which decides the way out.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Failure {
+    /// What its preflight would have blocked, found once it ran: the agent
+    /// no longer configured, a mode not offered, no check command, a workflow
+    /// that no longer validates. Changing the configuration is the way out.
+    Configuration,
+    /// A forge step, or the forge it asked, failed.
+    Forge,
+    Other,
+}
+
+/// The pull request a run's pull request step opened, or took up.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PrOpened {
+    pub number: u64,
+    pub url: String,
+}
+
 /// Why a run stopped before its steps were done.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Stop {
@@ -213,7 +238,31 @@ pub struct Visit {
     pub output: Option<String>,
     /// Why it ended, as its history says it.
     pub why: Option<String>,
+    /// How its command came out, on a command step's visit.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub command: Option<CommandResult>,
 }
+
+/// What a person's approval or revision was drawn from: the run, and the
+/// approval step's visit they read. Visit ids count from 1 in every run, so
+/// the run is named too: a press from a view of a run a retry replaced names
+/// a visit of the same number.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ApprovalAt {
+    pub run: String,
+    pub visit: u32,
+}
+
+/// Why a command step's visit ended when its command passed, and when it
+/// failed: what tells, in a run from before a visit kept its command's
+/// result, a command that came out from one cut off while it ran.
+pub(crate) const COMMAND_PASSED: &str = "the command passed";
+pub(crate) const COMMAND_FAILED: &str = "the command failed";
+
+/// Why a forge step's visit ended when the forge did what it asked: on a
+/// pull request step, what tells a run from before the pull request was
+/// kept that it opened one.
+pub(crate) const FORGE_DONE: &str = "done on the forge";
 
 /// How many transitions a run's history keeps, newest last.
 const HISTORY_MAX: usize = 200;
@@ -253,6 +302,13 @@ pub struct Run {
     /// means it was cut off.
     #[serde(default)]
     pub outcome: Option<Outcome>,
+    /// What a failed run failed on. Beside the outcome rather than in it, so
+    /// a file from before it reads; absent reads as [`Failure::Other`].
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub failure: Option<Failure>,
+    /// The pull request its pull request step opened or took up.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pull_request: Option<PrOpened>,
     #[serde(skip)]
     awaiting: Await,
 }
@@ -278,122 +334,19 @@ impl Run {
             history: Vec::new(),
             visits: Vec::new(),
             outcome: None,
+            failure: None,
+            pull_request: None,
             awaiting: Await::Nothing,
         }
     }
 
-    /// Where a retry of `prev` on `template` starts: the first step it
-    /// cannot carry over, one the last run had not passed, or one that
-    /// differs in `template`, or reads a step that does. The step count when
-    /// every step carries over.
-    pub fn retry_start(prev: &Run, template: &Template) -> usize {
-        let same = |step: &str| {
-            let find = |t: &Template| t.steps.iter().find(|s| s.id == step).cloned();
-            find(template).is_some_and(|s| Some(s) == find(&prev.template))
-        };
-        // Passed means passed in the last run's own template: a step dropped
-        // earlier on in `template` must not move one it failed into the past.
-        // A run that ended done passed them all, its last step included,
-        // though finishing never moves `step` past it.
-        let passed = |step: &str| {
-            prev.template
-                .index_of(step)
-                .is_some_and(|at| at < prev.step || prev.outcome == Some(Outcome::Done))
-        };
-        template
-            .steps
-            .iter()
-            .position(|step| {
-                let reads: Vec<&str> = match &step.kind {
-                    StepKind::Agent { prompt, .. } => prompt::refs(prompt)
-                        .into_iter()
-                        .filter_map(|name| name.strip_prefix("output."))
-                        .collect(),
-                    StepKind::Approval { of } => vec![of.as_str()],
-                    kind => kind.sends_back_to().into_iter().collect(),
-                };
-                !passed(&step.id)
-                    || !same(&step.id)
-                    || reads.iter().any(|read| !read.is_empty() && !same(read))
-            })
-            .unwrap_or(template.steps.len())
-    }
-
-    /// The step a retry of `prev` on `template` is offered from: where it
-    /// would start, or the first step when the last run got to the end,
-    /// since a retry that starts past the last step runs nothing.
-    pub fn retry_offered(prev: &Run, template: &Template) -> usize {
-        match Run::retry_start(prev, template) {
-            at if at >= template.steps.len() => 0,
-            at => at,
+    /// What the run failed on, once it ended failed; a run from before the
+    /// kind was kept failed on something other.
+    pub(crate) fn failed_on(&self) -> Option<Failure> {
+        match self.outcome {
+            Some(Outcome::Failed(_)) => Some(self.failure.unwrap_or(Failure::Other)),
+            Some(Outcome::Done | Outcome::Stopped(_) | Outcome::Exhausted { .. }) | None => None,
         }
-    }
-
-    /// Where a retry that would start at `start` on `template` starts instead
-    /// when the work changed since the last run stopped: at the last command
-    /// step up to it. What that check passed on is no longer what is there,
-    /// and a push past it would send the commit it passed on rather than the
-    /// work. `start` itself when no command step comes up to it.
-    pub fn recheck(template: &Template, start: usize) -> usize {
-        let upto = (start + 1).min(template.steps.len());
-        template.steps[..upto]
-            .iter()
-            .rposition(|step| match step.kind {
-                StepKind::Command { .. } => true,
-                StepKind::Agent { .. }
-                | StepKind::Approval { .. }
-                | StepKind::Push
-                | StepKind::PullRequest
-                | StepKind::StatusChecks { .. } => false,
-            })
-            .unwrap_or(start)
-    }
-
-    /// Where a retry of `prev` on `template` starts, [`Run::retry_start`] or
-    /// earlier at step `from` when `template` has it, and how many answers
-    /// of the steps before that it carries over.
-    pub fn retry_plan(prev: &Run, template: &Template, from: Option<&str>) -> (usize, usize) {
-        let start = Run::retry_from(prev, template, from);
-        (start, Run::carried(prev, template, start).count())
-    }
-
-    /// [`Run::retry_start`], or step `from` when `template` has it earlier.
-    fn retry_from(prev: &Run, template: &Template, from: Option<&str>) -> usize {
-        let start = Run::retry_start(prev, template);
-        from.and_then(|step| template.index_of(step))
-            .map_or(start, |at| at.min(start))
-    }
-
-    /// The answers `prev` kept for the steps of `template` before `start`.
-    fn carried<'a>(
-        prev: &'a Run,
-        template: &'a Template,
-        start: usize,
-    ) -> impl Iterator<Item = (String, String)> + 'a {
-        template.steps[..start]
-            .iter()
-            .filter_map(|step| Some((step.id.clone(), prev.outputs.get(&step.id)?.clone())))
-    }
-
-    /// A new run of the task `prev` was a run of, on `template`, starting
-    /// where [`Run::retry_plan`] says, with what the steps before the start
-    /// kept carried over.
-    pub(crate) fn retry_of(prev: &Run, id: String, template: Template, from: Option<&str>) -> Self {
-        let start = Run::retry_from(prev, &template, from);
-        let outputs = Run::carried(prev, &template, start).collect();
-        let mut run = Run::new(id, template, prev.brief.clone(), prev.setup.clone());
-        run.step = start;
-        run.furthest = start;
-        run.outputs = outputs;
-        // What was checked stays checked: a retry that starts at the push
-        // pushes the commit the last check passed on.
-        run.marks.verified_at = prev.marks.verified_at.clone();
-        run
-    }
-
-    /// Every stay at a step, oldest first.
-    pub fn visits(&self) -> &[Visit] {
-        &self.visits
     }
 
     /// The step the run is at.
@@ -435,66 +388,9 @@ impl Run {
         !self.history.is_empty()
     }
 
-    /// The last mark pinned of the work: where the run's last visit left
-    /// it, or where that visit found it when the run was cut off before the
-    /// visit ended.
-    pub fn last_mark(&self) -> Option<&str> {
-        let visit = self.visits.last()?;
-        visit.end.as_deref().or(visit.start.as_deref())
-    }
-
     /// The run has ended.
     pub fn over(&self) -> bool {
         self.outcome.is_some()
-    }
-
-    /// Every point a mark is pinned at, in order: each visit's start, then
-    /// its end once it has one. Only ever grows at its end, so a count of
-    /// how many were pinned stays true.
-    pub fn boundaries(&self) -> Vec<(u32, bool)> {
-        self.visits
-            .iter()
-            .flat_map(|visit| {
-                std::iter::once((visit.id, false)).chain(visit.ended_at.map(|_| (visit.id, true)))
-            })
-            .collect()
-    }
-
-    /// How many boundaries count as pinned: every one up to the last whose
-    /// mark landed. One after it, a mark that failed or that the app quit
-    /// before it landed, is pinned again by the next driver.
-    pub fn pinned_count(&self) -> usize {
-        let landed: Vec<bool> = self
-            .visits
-            .iter()
-            .flat_map(|visit| {
-                std::iter::once(visit.start.is_some())
-                    .chain(visit.ended_at.map(|_| visit.end.is_some()))
-            })
-            .collect();
-        landed.iter().rposition(|&at| at).map_or(0, |at| at + 1)
-    }
-
-    /// `commit` is the work at every boundary from the `from`th on: one
-    /// commit serves a visit's end and the next one's start.
-    pub fn pinned(&mut self, commit: &str, from: usize) {
-        let mut at = 0;
-        for visit in &mut self.visits {
-            for end in [false, true] {
-                if end && visit.ended_at.is_none() {
-                    continue;
-                }
-                if at >= from {
-                    let slot = if end {
-                        &mut visit.end
-                    } else {
-                        &mut visit.start
-                    };
-                    *slot = Some(commit.to_string());
-                }
-                at += 1;
-            }
-        }
     }
 
     /// The mark asked for: the step's prompt, or the carry-on waiting on it.
@@ -579,33 +475,38 @@ impl Run {
         }
     }
 
-    /// The step's command finished: `Ok` when it exited zero, with the commit
-    /// it passed on when the work has one, or `Err` with how its output
-    /// ended. Whether it passed is its exit status alone.
-    pub fn command_finished(&mut self, ran: Result<Option<String>, String>) -> Action {
+    /// The step's command finished as `ran` says, kept on its visit.
+    /// Whether it passed is its exit status alone.
+    pub fn command_finished(&mut self, ran: CommandResult) -> Action {
         if self.awaiting != Await::Command {
             return Action::Idle;
         }
-        match ran {
-            Ok(head) => {
-                self.marks.verified_at = head;
+        self.visit_command(ran.clone());
+        match ran.passed {
+            true => {
+                self.marks.verified_at = ran.commit;
                 self.check_output = None;
-                self.enter(self.step + 1, "the command passed")
+                self.enter(self.step + 1, COMMAND_PASSED)
             }
-            Err(out) => self.send_back(out, "the command failed"),
+            false => self.send_back(ran.tail, COMMAND_FAILED),
         }
     }
 
-    /// The push or the pull request the step asked for is done, or failed
-    /// for the reason given. A failure ends the run: a retry starts at the
-    /// step again.
-    pub fn forge_done(&mut self, done: Result<(), String>) -> Action {
+    /// The push or the pull request the step asked for is done, with the
+    /// pull request it opened or took up, or failed for the reason given. A
+    /// failure ends the run: a retry starts at the step again.
+    pub fn forge_done(&mut self, done: Result<Option<PrOpened>, String>) -> Action {
         if self.awaiting != Await::Forge {
             return Action::Idle;
         }
         match done {
-            Ok(()) => self.enter(self.step + 1, "done on the forge"),
-            Err(why) => self.finish(Outcome::Failed(why)),
+            Ok(opened) => {
+                if opened.is_some() {
+                    self.pull_request = opened;
+                }
+                self.enter(self.step + 1, FORGE_DONE)
+            }
+            Err(why) => self.fail(why, Failure::Forge),
         }
     }
 
@@ -622,7 +523,7 @@ impl Run {
             }
             // Past every step: whatever was left is moot once it landed.
             Seen::Merged => self.enter(self.template.steps.len(), "its pull request was merged"),
-            Seen::Fail(why) => self.finish(Outcome::Failed(why)),
+            Seen::Fail(why) => self.fail(why, Failure::Forge),
             Seen::Repair(out) => self.send_back(out, "its status checks failed"),
         }
     }
@@ -639,24 +540,38 @@ impl Run {
             .and_then(|step| step.kind.sends_back_to())
             .and_then(|id| self.template.index_of(id));
         let Some(back) = back else {
-            return self.finish(Outcome::Failed(why.to_string()));
+            return self.fail(why.to_string(), Failure::Other);
         };
         self.check_output = Some(out);
         self.enter(back, why)
     }
 
-    /// A person approved: go on.
-    pub fn approved(&mut self) -> Action {
+    /// What an approval press drawn from the run now names: the run, and the
+    /// approval step's open visit. `None` while nothing waits for approval.
+    pub fn approval_at(&self) -> Option<ApprovalAt> {
         if self.awaiting != Await::Approval {
+            return None;
+        }
+        let visit = self.visits.last().filter(|v| v.ended_at.is_none())?;
+        Some(ApprovalAt {
+            run: self.id.clone(),
+            visit: visit.id,
+        })
+    }
+
+    /// A person approved what they read at `at`: go on, unless the run no
+    /// longer waits there.
+    pub fn approved(&mut self, at: &ApprovalAt) -> Action {
+        if self.approval_at().as_ref() != Some(at) {
             return Action::Idle;
         }
         self.enter(self.step + 1, "approved")
     }
 
-    /// A person sent the answer back with `note`: the step it approves runs
-    /// again.
-    pub fn revised(&mut self, note: String) -> Action {
-        if self.awaiting != Await::Approval {
+    /// A person sent the answer they read at `at` back with `note`: the step
+    /// it approves runs again, unless the run no longer waits there.
+    pub fn revised(&mut self, at: &ApprovalAt, note: String) -> Action {
+        if self.approval_at().as_ref() != Some(at) {
             return Action::Idle;
         }
         let back = match self.current().map(|step| &step.kind) {
@@ -679,11 +594,17 @@ impl Run {
         self.finish(Outcome::Stopped(stop))
     }
 
-    /// The driver could not go on, for `why`.
-    pub fn failed(&mut self, why: String) -> Action {
+    /// The driver could not go on, for `why`, which was of `kind`.
+    pub fn failed(&mut self, why: String, kind: Failure) -> Action {
         if self.over() {
             return Action::Idle;
         }
+        self.fail(why, kind)
+    }
+
+    /// End failed, for `why`, of `kind`.
+    fn fail(&mut self, why: String, kind: Failure) -> Action {
+        self.failure = Some(kind);
         self.finish(Outcome::Failed(why))
     }
 
@@ -698,6 +619,7 @@ impl Run {
             return Action::Idle;
         }
         self.outcome = None;
+        self.failure = None;
         if !self.begun() {
             return self.enter(self.step, "started");
         }
@@ -751,9 +673,10 @@ impl Run {
                         self.awaiting = Await::Command;
                         Action::RunCommand(command)
                     }
-                    _ => self.finish(Outcome::Failed(
+                    _ => self.fail(
                         "the project has no check command to run".to_string(),
-                    )),
+                        Failure::Configuration,
+                    ),
                 }
             }
             Some(StepKind::Approval { .. }) => {
@@ -769,9 +692,10 @@ impl Run {
                     self.awaiting = Await::Forge;
                     Action::Push(commit)
                 }
-                None => self.finish(Outcome::Failed(
+                None => self.fail(
                     "no command has passed on a commit to push".to_string(),
-                )),
+                    Failure::Other,
+                ),
             },
             Some(StepKind::PullRequest) => {
                 self.awaiting = Await::Forge;
@@ -815,36 +739,6 @@ impl Run {
         self.awaiting = Await::Nothing;
         self.outcome = Some(outcome.clone());
         Action::Finish(outcome)
-    }
-
-    /// Start a visit of `step`.
-    fn open_visit(&mut self, step: String) {
-        let id = self.visits.last().map_or(1, |visit| visit.id + 1);
-        self.visits.push(Visit {
-            id,
-            step,
-            started_at: now(),
-            ended_at: None,
-            start: None,
-            end: None,
-            output: None,
-            why: None,
-        });
-    }
-
-    /// End the open visit, if there is one, for `why`.
-    fn close_visit(&mut self, why: &str) {
-        if let Some(visit) = self.visits.last_mut().filter(|v| v.ended_at.is_none()) {
-            visit.ended_at = Some(now());
-            visit.why = Some(why.to_string());
-        }
-    }
-
-    /// What the open visit answered or printed.
-    fn visit_output(&mut self, output: String) {
-        if let Some(visit) = self.visits.last_mut().filter(|v| v.ended_at.is_none()) {
-            visit.output = Some(output);
-        }
     }
 
     /// The prompt that starts the agent step at hand.

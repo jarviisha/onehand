@@ -4,6 +4,7 @@
 
 use super::Work;
 use crate::task::marks::{self, Change};
+use crate::workflow::{Run, COMMAND_PASSED};
 use crate::worktree;
 
 /// How a run's check stands against the work as it is now.
@@ -11,12 +12,17 @@ use crate::worktree;
 pub enum CheckStands {
     /// No command passed in this run, or none was recorded.
     NotRecorded,
-    /// It passed on the commit checked out, with nothing uncommitted beside
-    /// it: it vouches for the work as it is.
+    /// It passed on the work as it is: the same commit, and the same
+    /// uncommitted work beside it.
     OnThis(String),
-    /// It passed on a commit, and the work has moved since: another commit,
-    /// or changes not committed.
-    Moved(String),
+    /// It passed on another commit, `commits` before the one checked out.
+    Behind { at: String, commits: u64 },
+    /// It passed on the commit checked out, and the uncommitted work beside
+    /// it, tracked or not, changed since.
+    Changed(String),
+    /// It passed on the commit checked out, kept from before the uncommitted
+    /// work was fingerprinted, and there is uncommitted work now.
+    CannotTell(String),
 }
 
 impl CheckStands {
@@ -25,18 +31,69 @@ impl CheckStands {
         match self {
             Self::NotRecorded => "not recorded for this run".to_string(),
             Self::OnThis(at) => format!("passed on the work as it is ({})", short(at)),
-            Self::Moved(at) => format!("passed on {}; the work has changed since", short(at)),
+            Self::Behind { at, commits: 0 } => {
+                format!("passed on {}; the work is on another commit now", short(at))
+            }
+            Self::Behind { at, commits: 1 } => {
+                format!("passed on {}, 1 commit before the work now", short(at))
+            }
+            Self::Behind { at, commits } => {
+                format!(
+                    "passed on {}, {commits} commits before the work now",
+                    short(at)
+                )
+            }
+            Self::Changed(at) => {
+                format!(
+                    "passed on {}; the work changed since the check passed",
+                    short(at)
+                )
+            }
+            Self::CannotTell(at) => format!(
+                "passed on {}; cannot tell whether the check covers the work now",
+                short(at)
+            ),
         }
     }
 }
 
-/// How the check that passed on `verified_at` stands against the work at
-/// `head`, with `dirty` saying whether anything is not committed there.
-pub(crate) fn check_stands(verified_at: Option<&str>, head: &str, dirty: bool) -> CheckStands {
-    match verified_at {
-        None => CheckStands::NotRecorded,
-        Some(at) if at == head && !dirty => CheckStands::OnThis(at.to_string()),
-        Some(at) => CheckStands::Moved(at.to_string()),
+/// What a passed command vouches for: the commit it ran on, the fingerprint
+/// of the uncommitted work beside it when that was kept, and how its output
+/// ended.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Vouched {
+    pub commit: String,
+    pub digest: Option<String>,
+    pub tail: Option<String>,
+}
+
+/// The work as it is now, as a check is judged against it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct WorkNow {
+    pub(crate) head: String,
+    pub(crate) dirty: bool,
+    pub(crate) digest: String,
+    /// The commits from the check's to `head`.
+    pub(crate) behind: u64,
+}
+
+/// How the check that vouched for `vouched` stands against the work `now`.
+pub(crate) fn check_stands(vouched: Option<&Vouched>, now: &WorkNow) -> CheckStands {
+    let Some(vouched) = vouched else {
+        return CheckStands::NotRecorded;
+    };
+    let at = vouched.commit.clone();
+    if at != now.head {
+        return CheckStands::Behind {
+            at,
+            commits: now.behind,
+        };
+    }
+    match &vouched.digest {
+        Some(digest) if *digest == now.digest => CheckStands::OnThis(at),
+        Some(_) => CheckStands::Changed(at),
+        None if now.dirty => CheckStands::CannotTell(at),
+        None => CheckStands::OnThis(at),
     }
 }
 
@@ -62,11 +119,20 @@ pub struct Left {
 /// Read what `work` left, in its folder. Blocking: it runs git several times.
 pub fn left_blocking(work: &Work) -> Left {
     let dir = &work.dir;
-    let check = match &work.verified_at {
+    let check = match &work.vouched {
         None => Ok(CheckStands::NotRecorded),
-        Some(at) => worktree::head_blocking(dir).and_then(|head| {
-            let dirty = worktree::dirty_blocking(dir)?;
-            Ok(check_stands(Some(at), &head, dirty))
+        Some(vouched) => worktree::head_blocking(dir).and_then(|head| {
+            let behind = match head == vouched.commit {
+                true => 0,
+                false => worktree::commits_since_blocking(dir, &vouched.commit)?,
+            };
+            let now = WorkNow {
+                dirty: worktree::dirty_blocking(dir)?,
+                digest: worktree::work_digest_blocking(dir)?,
+                head,
+                behind,
+            };
+            Ok(check_stands(Some(vouched), &now))
         }),
     };
     Left {
@@ -97,4 +163,38 @@ impl Work {
         let last = self.span.as_ref().map(|(_, last)| last.clone());
         self.started_from().zip(last)
     }
+}
+
+/// What `run`'s check vouches for: its last passed command, as its visit
+/// kept it, or the commit alone for a run from before visits kept one.
+pub(crate) fn vouched(run: &Run) -> Option<Vouched> {
+    let kept = run
+        .visits()
+        .iter()
+        .rev()
+        .filter_map(|visit| visit.command.as_ref())
+        .find(|ran| ran.passed);
+    if let Some(ran) = kept {
+        return Some(Vouched {
+            commit: ran.commit.clone()?,
+            digest: ran.digest.clone(),
+            tail: Some(ran.tail.clone()),
+        });
+    }
+    // The commit alone, only for a run whose command passed before its
+    // visits kept how one came out. A retry carries the last run's commit for
+    // its push, and a visit cut off while its command ran passed nothing: a
+    // run that has not checked anything must not read as checked.
+    let ran_unkept = run
+        .visits()
+        .iter()
+        .any(|visit| visit.command.is_none() && visit.why.as_deref() == Some(COMMAND_PASSED));
+    if !ran_unkept {
+        return None;
+    }
+    Some(Vouched {
+        commit: run.marks.verified_at.clone()?,
+        digest: None,
+        tail: None,
+    })
 }

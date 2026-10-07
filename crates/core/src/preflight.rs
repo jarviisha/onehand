@@ -8,8 +8,9 @@
 //! back where the start is asked for; the callers that claim and cut still do
 //! that themselves, after this.
 
+use crate::connector::PrState;
 use crate::task::{Task, Working};
-use crate::workflow::{Place, StepKind, Template};
+use crate::workflow::{Failure, Place, StepKind, Template};
 
 /// What kind of start is checked: each has its own configuration and place.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -21,9 +22,87 @@ pub enum Kind {
     NewIssueRun,
     /// A run cut off, carried on where it stopped, on its own snapshot.
     Resume,
-    /// A task's next run; `newer` when it runs a newer version of the
-    /// workflow than its last run did, which is checked as a new one is.
-    Retry { newer: bool },
+    /// A task's next run, on its last run's own snapshot and setup.
+    Retry,
+    /// A task's next run with what Settings say now: its own workflow at
+    /// its newest version, judged as a new one is, on the configuration a
+    /// new task of its kind would take.
+    RetryCurrent,
+    /// An issue task's next run answering the review on its open pull
+    /// request, from its workflow's repair step, on its own snapshot and
+    /// setup, in its own worktree brought up to the forge's branch.
+    AnswerReview,
+}
+
+impl Kind {
+    /// It runs the task's last run's own setup, so what Settings say now
+    /// neither blocks it nor clears a block.
+    fn keeps_own(self) -> bool {
+        match self {
+            Self::Resume | Self::Retry | Self::AnswerReview => true,
+            Self::NewRun | Self::NewIssueRun | Self::RetryCurrent => false,
+        }
+    }
+
+    /// Its workflow is judged anew, validation included: it is not one a
+    /// run has already started on.
+    fn judges_workflow(self) -> bool {
+        match self {
+            Self::NewRun | Self::NewIssueRun | Self::RetryCurrent => true,
+            Self::Resume | Self::Retry | Self::AnswerReview => false,
+        }
+    }
+
+    /// What a block of its own setup adds, said after the block.
+    fn keeps(self) -> &'static str {
+        match self {
+            Self::Retry => {
+                " The run keeps its own setup; Retry with current settings runs with what \
+                 Settings say now."
+            }
+            Self::Resume | Self::AnswerReview => {
+                " The run keeps its own setup, so changing Settings does not change it."
+            }
+            Self::NewRun | Self::NewIssueRun | Self::RetryCurrent => "",
+        }
+    }
+
+    /// Where a block of its own setup is changed, when that is somewhere
+    /// else: a Retry's by the retry that runs with what Settings say now.
+    fn own_change(self) -> Option<Change> {
+        match self {
+            Self::Retry => Some(Change::RetryCurrent),
+            Self::NewRun
+            | Self::NewIssueRun
+            | Self::Resume
+            | Self::RetryCurrent
+            | Self::AnswerReview => None,
+        }
+    }
+}
+
+/// The name of the retry that runs with what Settings say now, as every
+/// sentence and button names it.
+pub const RETRY_CURRENT: &str = "Retry with current settings";
+
+/// Where what a finding blocks is changed, when that is somewhere else.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Change {
+    /// A place in Settings or the config file, by its name there.
+    At(&'static str),
+    /// The retry that runs with what Settings say now, which the finding
+    /// names itself and its dialog offers.
+    RetryCurrent,
+}
+
+impl Change {
+    /// What a finding's line adds for it, if anything.
+    pub fn said(self) -> Option<String> {
+        match self {
+            Self::At(place) => Some(format!(" Changed in {place}.")),
+            Self::RetryCurrent => None,
+        }
+    }
 }
 
 /// What a finding is about, in the order findings are listed.
@@ -50,7 +129,7 @@ pub struct Finding {
     pub blocks: bool,
     pub text: String,
     /// Where it is changed, when that is somewhere else.
-    pub change: Option<&'static str>,
+    pub change: Option<Change>,
     /// The task it offers instead, for an earlier task worth retrying.
     pub task: Option<String>,
 }
@@ -79,6 +158,25 @@ pub struct Slots {
     /// Issue tasks kept and not yet placed, which count too.
     pub starting: usize,
     pub at_once: u32,
+}
+
+/// What answering a pull request review knows of it, read off the UI thread
+/// before anything is claimed.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ReviewFacts {
+    /// The pull request on the task's branch as the forge says now, by its
+    /// state and address; `None` when there is none, `Err` when it could not
+    /// be read.
+    pub pr: Result<Option<(PrState, String)>, String>,
+    /// The workflow its task ran answers a review: its status checks send
+    /// back to a step that repairs.
+    pub answers: bool,
+    /// The branch on the forge went its own way from the task's worktree, so
+    /// bringing the worktree up to it is no fast-forward.
+    pub diverged: bool,
+    /// The issue is among the open ones a pick reads, which is what a review
+    /// is answered through; `Err` when they could not be read.
+    pub issue_open: Result<bool, String>,
 }
 
 /// The branch a detached `HEAD` reads as.
@@ -112,6 +210,8 @@ pub struct Facts {
     pub slots: Option<Slots>,
     /// The task whose place this start would queue behind.
     pub queued_behind: Option<String>,
+    /// The pull request a review is answered on, for that start.
+    pub review: Option<ReviewFacts>,
 }
 
 /// Everything `facts` says about a start of `kind`: blocks first, the
@@ -127,11 +227,7 @@ pub fn preflight(kind: Kind, facts: &Facts) -> Vec<Finding> {
             task: None,
         })
     };
-    let own = matches!(kind, Kind::Resume | Kind::Retry { .. });
-    let keeps = match own {
-        true => " The run keeps its own setup, so changing Settings does not change it.",
-        false => "",
-    };
+    let (own, keeps, own_change) = (kind.keeps_own(), kind.keeps(), kind.own_change());
     let issue_kind = kind == Kind::NewIssueRun;
 
     // The workflow.
@@ -142,11 +238,7 @@ pub fn preflight(kind: Kind, facts: &Facts) -> Vec<Finding> {
             None
         }
     };
-    let judged = matches!(
-        kind,
-        Kind::NewRun | Kind::NewIssueRun | Kind::Retry { newer: true }
-    );
-    if let Some(template) = template.filter(|_| judged) {
+    if let Some(template) = template.filter(|_| kind.judges_workflow()) {
         if let Some(why) = unfit_for_issue(template).filter(|_| issue_kind) {
             say(Check::Workflow, true, capital(&why), None);
         }
@@ -155,7 +247,7 @@ pub fn preflight(kind: Kind, facts: &Facts) -> Vec<Finding> {
                 Check::Workflow,
                 true,
                 format!("The workflow cannot run: {problem}"),
-                Some("Settings ▸ Workflows"),
+                Some(Change::At("Settings ▸ Workflows")),
             );
         }
     }
@@ -166,20 +258,20 @@ pub fn preflight(kind: Kind, facts: &Facts) -> Vec<Finding> {
             Check::Agent,
             true,
             "No agent is configured to run it.".to_string(),
-            Some("Settings ▸ Agents"),
+            Some(Change::At("Settings ▸ Agents")),
         ),
         (Some(name), false) => say(
             Check::Agent,
             true,
             format!("The agent `{name}` is no longer configured.{keeps}"),
-            Some("Settings ▸ Agents"),
+            own_change.or(Some(Change::At("Settings ▸ Agents"))),
         ),
         (Some(_), true) => {}
     }
     if let Some(mode) = facts.mode.as_deref().filter(|m| !m.trim().is_empty()) {
         let change = match own {
-            true => None,
-            false => Some("unattended.mode, in the config file"),
+            true => own_change,
+            false => Some(Change::At("unattended.mode, in the config file")),
         };
         match &facts.offered {
             Some(offered) => {
@@ -215,10 +307,11 @@ pub fn preflight(kind: Kind, facts: &Facts) -> Vec<Finding> {
                 Check::CheckCommand,
                 true,
                 format!(
-                    "The workflow `{}` runs the project's check command, and there is none.",
+                    "The workflow `{}` runs the project's check command, and there is \
+                     none.{keeps}",
                     template.name
                 ),
-                Some("Settings ▸ Workflows"),
+                own_change.or(Some(Change::At("Settings ▸ Workflows"))),
             );
         } else if !commands {
             say(
@@ -269,7 +362,7 @@ pub fn preflight(kind: Kind, facts: &Facts) -> Vec<Finding> {
             ),
             (None, false, None) => {}
         },
-        Kind::NewRun | Kind::Resume | Kind::Retry { .. } => {}
+        Kind::NewRun | Kind::Resume | Kind::Retry | Kind::RetryCurrent | Kind::AnswerReview => {}
     }
 
     // The forge: an issue's run asks it for the default branch whatever its
@@ -292,8 +385,15 @@ pub fn preflight(kind: Kind, facts: &Facts) -> Vec<Finding> {
             Check::Forge,
             true,
             format!("{name} cannot be used: {why}"),
-            Some("Settings ▸ Connections"),
+            Some(Change::At("Settings ▸ Connections")),
         );
+    }
+
+    // The pull request a review is answered on.
+    if let Some(review) = facts.review.as_ref().filter(|_| kind == Kind::AnswerReview) {
+        if let Some(why) = review_refused(review, facts.forge.is_some()) {
+            say(Check::Issue, true, capital(&why), None);
+        }
     }
 
     // The issue and its earlier tasks.
@@ -343,6 +443,36 @@ pub fn preflight(kind: Kind, facts: &Facts) -> Vec<Finding> {
     found
 }
 
+/// Why a review is not answered, in the words the label path uses where it
+/// has them; `None` when it can be.
+fn review_refused(review: &ReviewFacts, forge: bool) -> Option<String> {
+    if !forge {
+        return Some(
+            "no forge serves the project, so there is no pull request review to answer".to_string(),
+        );
+    }
+    let (state, url) = match &review.pr {
+        Err(why) => return Some(format!("the pull request could not be read: {why}")),
+        Ok(None) => return Some("there is no pull request on the task's branch".to_string()),
+        Ok(Some(pr)) => pr,
+    };
+    match state {
+        PrState::Closed => Some(crate::unattended::review_closed(url)),
+        PrState::Merged => Some(format!(
+            "its pull request {url} was merged: there is no review left to answer"
+        )),
+        PrState::Open if !review.answers => Some(crate::unattended::review_unanswerable(url)),
+        PrState::Open if review.diverged => Some(crate::unattended::review_diverged()),
+        PrState::Open => match &review.issue_open {
+            Ok(true) => None,
+            Ok(false) => {
+                Some("the issue is closed, or not among the open issues a pick reads".to_string())
+            }
+            Err(why) => Some(format!("the issue could not be read: {why}")),
+        },
+    }
+}
+
 /// Why `template` cannot work an issue: it works in the checkout, and an
 /// issue's run is cut a worktree of its own, where a checkout workflow leaves
 /// its work uncommitted where nobody looks.
@@ -359,6 +489,24 @@ pub fn unfit_for_issue(template: &Template) -> Option<String> {
 /// Why the issue `named` is not started again: a run already works on it.
 pub fn already_working(named: &str) -> String {
     format!("A run is already working on issue {named}.")
+}
+
+/// What a run fails on when what `check` would have blocked is found only
+/// once it runs: a configuration failure is a preflight block found late,
+/// so the way out offered is the one that changes the configuration.
+pub fn found_late(check: Check) -> Failure {
+    match check {
+        Check::Workflow | Check::Agent | Check::Mode | Check::CheckCommand => {
+            Failure::Configuration
+        }
+        Check::Forge => Failure::Forge,
+        Check::Place
+        | Check::Base
+        | Check::Issue
+        | Check::EarlierTask
+        | Check::Slot
+        | Check::PlaceTaken => Failure::Other,
+    }
 }
 
 /// Why an agent offering `offered` cannot start in `mode`, if it cannot.

@@ -364,8 +364,11 @@ pub(crate) fn finding_line(
     muted: gpui::Hsla,
     handle: &Entity<Shell>,
 ) -> impl IntoElement {
-    let text = match finding.change {
-        Some(change) => format!("{} Changed in {change}.", finding.text),
+    let text = match finding
+        .change
+        .and_then(onehand_core::preflight::Change::said)
+    {
+        Some(change) => format!("{}{change}", finding.text),
         None => finding.text.clone(),
     };
     let shell = handle.clone();

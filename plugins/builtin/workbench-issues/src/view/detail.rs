@@ -32,6 +32,8 @@ pub(super) struct Doing<'a> {
     /// On the Issues page, what the full form adds: the steps to come, and
     /// what the work left as read off git.
     pub(super) full: Option<super::full::Full<'a>>,
+    /// On the Issues page, the review block, while a person has it open.
+    pub(super) review: Option<AnyElement>,
 }
 
 /// One issue, read, in one fixed order whatever the state, so what it waits
@@ -140,6 +142,7 @@ pub(super) fn issue_view(
     let left = work::left_view(&doing, cx);
     let before = doing.work.as_ref().and_then(|w| work::before_view(w, cx));
     let history = history(issue, cx);
+    let review = doing.review;
 
     div()
         .flex_1()
@@ -150,6 +153,9 @@ pub(super) fn issue_view(
         .child(facts)
         .children(conflict)
         .child(progress)
+        // Below where the work stands, pushing the body down: a person
+        // opened it, so it is not content moving under them.
+        .children(review)
         .child(match &body {
             Some((parsed, _)) => div()
                 .flex_1()

@@ -3,24 +3,15 @@
 
 use super::Shell;
 use crate::state::Shared;
-use gpui::{
-    AppContext as _, Context, Entity, ParentElement as _, SharedString, Styled as _, Window,
-};
+use gpui::{AppContext as _, Context, Entity, SharedString, Window};
 use gpui_component::WindowExt as _;
-use gpui_component::button::ButtonVariants as _;
 use gpui_component::input::{InputState, TextareaState};
 use gpui_component::notification::Notification;
-use gpui_component::{
-    ActiveTheme as _, Disableable as _, Icon, IconName, Sizable as _, StyledExt as _,
-};
-use onehand_core::preflight;
-use onehand_core::task::marks::{self, Against};
+use onehand_core::preflight::{self, Check, found_late};
 use onehand_core::task::{Source, Task};
-use onehand_core::workflow::{self as core, Brief, Place, Run, Setup, Template};
+use onehand_core::workflow::{self as core, Brief, Failure, Place, Setup, Template};
 use onehand_core::worktree;
-use std::cell::Cell;
 use std::path::PathBuf;
-use std::rc::Rc;
 
 /// The launcher's fields, while it is on screen.
 pub struct WorkflowLauncher {
@@ -169,6 +160,7 @@ impl Shell {
             issue: None,
             slots: None,
             queued_behind: None,
+            review: None,
         };
         Some(preflight::preflight(preflight::Kind::NewRun, &facts))
     }
@@ -329,7 +321,7 @@ impl Shell {
     /// the step it was at. One that cannot start stays as it was, and its
     /// place passes on.
     pub fn drive_task(&mut self, id: String, window: &mut Window, cx: &mut Context<Self>) {
-        let refused = |why: String, window: &mut Window, cx: &mut Context<Self>| {
+        let refused = |why: String, kind: Failure, window: &mut Window, cx: &mut Context<Self>| {
             // An issue's run that cannot start ends failed, so its issue is
             // told rather than left claimed with nothing after the claim.
             let issue = crate::task::task(&id, cx).is_some_and(|task| task.issue().is_some());
@@ -337,23 +329,34 @@ impl Shell {
             // Deferred: handing the place on may start a task in this shell.
             let id = id.clone();
             cx.defer(move |cx| match issue {
-                true => crate::task::fail(id, why, cx),
+                true => crate::task::fail(id, why, kind, cx),
                 false => crate::task::release(id, cx),
             });
         };
         let Some(mut run) = crate::task::resumable_run(&id, cx) else {
-            return refused("That task has nothing left to run".to_string(), window, cx);
+            return refused(
+                "That task has nothing left to run".to_string(),
+                Failure::Other,
+                window,
+                cx,
+            );
         };
         let dir = run.setup.dir.clone();
         if !dir.is_dir() {
             return refused(
                 format!("The folder that task works in is gone: {}", dir.display()),
+                Failure::Other,
                 window,
                 cx,
             );
         }
         let Some(task) = crate::task::task(&id, cx) else {
-            return refused("That task has nothing left to run".to_string(), window, cx);
+            return refused(
+                "That task has nothing left to run".to_string(),
+                Failure::Other,
+                window,
+                cx,
+            );
         };
         if task.source == Source::Check {
             let handle = window.window_handle();
@@ -362,6 +365,23 @@ impl Shell {
             cx.defer(move |cx| crate::task::drive_check(id, handle, cx));
             return;
         }
+        // A snapshot that no longer validates (a later build's rules) is what
+        // the preflight would have blocked, found late.
+        let problems = core::validate(&run.template);
+        if !problems.is_empty() {
+            let said: Vec<String> = problems.iter().map(ToString::to_string).collect();
+            return refused(
+                format!(
+                    "The workflow `{}` no longer validates: {}",
+                    run.template.name,
+                    said.join("; ")
+                ),
+                found_late(Check::Workflow),
+                window,
+                cx,
+            );
+        }
+        let mut unstarted = Failure::Other;
         let session = match task.issue() {
             // An issue's run comes up off screen, on a project of its own that
             // the workspace file never holds unless it was kept, so nothing the
@@ -370,6 +390,11 @@ impl Shell {
             // its session.
             Some(_) => {
                 let spec = crate::unattended::spec_for(run.setup.agent.as_deref(), cx);
+                // No agent of that name configured any more is what the
+                // preflight would have blocked.
+                if spec.is_none() {
+                    unstarted = found_late(Check::Agent);
+                }
                 let started = spec.and_then(|spec| self.run_unattended(dir, spec, cx));
                 if let Some((_, session)) = &started {
                     crate::unattended::opening(&task, session, cx);
@@ -390,7 +415,12 @@ impl Shell {
             }
         };
         let Some((uid, session)) = session else {
-            return refused("The task's session did not start".to_string(), window, cx);
+            return refused(
+                "The task's session did not start".to_string(),
+                unstarted,
+                window,
+                cx,
+            );
         };
         // Counted from what landed, so a mark the app quit before pinning is
         // pinned now rather than taken as made.
@@ -425,275 +455,6 @@ impl Shell {
         crate::task::add(Task::check(id.clone(), check, setup), cx);
         crate::task::request(id, window, cx);
     }
-
-    /// Ask whether to retry task `id`, saying where the new run starts, what
-    /// it carries over, and whether the work moved since the last run left
-    /// it. A check is retried at once: it has one step and keeps nothing.
-    pub fn begin_retry(&mut self, id: String, window: &mut Window, cx: &mut Context<Self>) {
-        let Some(task) = crate::task::task(&id, cx) else {
-            return;
-        };
-        let Some(last) = task.runs.last() else {
-            return;
-        };
-        // From its one step: a check that passed would otherwise start past it.
-        if task.source == Source::Check {
-            let first = last.template.steps.first().map(|step| step.id.as_str());
-            if crate::task::retry(&id, last.template.clone(), first, None, cx) {
-                crate::task::request(id, window, cx);
-            }
-            return;
-        }
-        // A later save of the template the last run took, which reads and
-        // may run.
-        let newer = crate::workflow::templates(cx)
-            .into_iter()
-            .filter_map(|entry| entry.template.ok())
-            .find(|t| t.newer_than(&last.template) && core::validate(t).is_empty());
-        let (dir, end) = (last.setup.dir.clone(), last.last_mark().map(str::to_string));
-        cx.spawn_in(window, async move |shell, cx| {
-            let against = match end {
-                Some(end) => cx
-                    .background_executor()
-                    .spawn(async move { marks::against_blocking(&dir, &end) })
-                    .await
-                    .inspect_err(|why| eprintln!("onehand: the work was not read: {why}"))
-                    .ok(),
-                None => None,
-            };
-            let _ = shell.update_in(cx, |shell: &mut Self, window, cx| {
-                shell.confirm_retry(task, newer, against, window, cx)
-            });
-        })
-        .detach();
-    }
-
-    fn confirm_retry(
-        &mut self,
-        task: Task,
-        newer: Option<Template>,
-        against: Option<Against>,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        if let Some(Against::OtherBranch(branch)) = &against {
-            window.push_notification(
-                Notification::warning(format!(
-                    "Check out {branch} again to retry: the last run worked on it"
-                )),
-                cx,
-            );
-            return;
-        }
-        let Some(last) = task.runs.last().cloned() else {
-            return;
-        };
-        let same = last.template.clone();
-        let steps = same.steps.clone();
-        let changed = against == Some(Against::Changed);
-        // Work that changed since the last run stopped is checked again before
-        // anything past the check: what it passed on is not what is there now,
-        // and a push past it would send the old commit.
-        let mut start = Run::retry_start(&last, &same);
-        if changed {
-            start = Run::recheck(&same, start);
-        }
-        let picked = Rc::new(Cell::new(Run::retry_offered(&last, &same).min(start)));
-        let choices: Vec<SharedString> = steps
-            .iter()
-            .take(start + 1)
-            .map(|step| step.label.clone().into())
-            .collect();
-        // Where a retry on `template` from step `from` starts, and how many
-        // answers it carries.
-        let starts = move |template: &Template, from: Option<&str>| {
-            let (at, carried) = Run::retry_plan(&last, template, from);
-            let step = template.steps.get(at).map_or_else(
-                || "the end".to_string(),
-                |s| format!("the {} step", s.label),
-            );
-            (step, carried)
-        };
-        // Judged by the run's own setup, which is what a retry runs: what
-        // Settings says now neither blocks it nor clears a block.
-        let judge = |template: &Template, newer: bool| {
-            let facts = crate::unattended::task_facts(&task, template.clone(), cx);
-            preflight::preflight(preflight::Kind::Retry { newer }, &facts)
-        };
-        let mut found = judge(&same, false);
-        let blocked = found.iter().any(|f| f.blocks);
-        let newer_blocked = newer.as_ref().is_some_and(|template| {
-            // What blocks the newer version alone, said once and named.
-            let extra: Vec<_> = judge(template, true)
-                .into_iter()
-                .filter(|f| f.blocks && !found.contains(f))
-                .map(|f| preflight::Finding {
-                    text: format!("Version {}: {}", template.version, f.text),
-                    ..f
-                })
-                .collect();
-            let any = !extra.is_empty() || blocked;
-            found.extend(extra);
-            any
-        });
-        let (id, title) = (task.id.clone(), task.brief.title.clone());
-        let shell = cx.entity();
-        window.open_alert_dialog(cx, move |alert, _, cx| {
-            let (danger, muted) = (
-                crate::theme::status_ink(cx).danger,
-                cx.theme().muted_foreground,
-            );
-            let lines: Vec<_> = found
-                .iter()
-                .enumerate()
-                .map(|(at, finding)| {
-                    crate::dialogs::finding_line(at, finding, danger, muted, &shell)
-                })
-                .collect();
-            let from = steps.get(picked.get()).map(|step| step.id.clone());
-            let (step, carried) = starts(&same, from.as_deref());
-            let mut said = match carried {
-                0 => format!("It starts at {step}."),
-                1 => format!("It starts at {step}, carrying over 1 answer."),
-                n => format!("It starts at {step}, carrying over {n} answers."),
-            };
-            if changed {
-                said.push_str(" The work changed since the last run stopped.");
-            }
-            // Said here rather than on its button, which would outgrow the
-            // dialog with a long step name.
-            if let Some(template) = &newer {
-                let at = starts(template, from.as_deref()).0;
-                said.push_str(&format!(
-                    " The newer workflow, version {}, starts at {at}.",
-                    template.version
-                ));
-            }
-            let retry = {
-                let (shell, id, same, from) =
-                    (shell.clone(), id.clone(), same.clone(), from.clone());
-                move |window: &mut Window, cx: &mut gpui::App| {
-                    retry_now(&shell, id.clone(), same.clone(), from.clone(), window, cx);
-                }
-            };
-            let with_newer = newer.clone().map(|template| {
-                let (shell, id, from) = (shell.clone(), id.clone(), from.clone());
-                let button = crate::controls::action("retry-newer")
-                    .label(format!("Retry with version {}", template.version));
-                if newer_blocked {
-                    return crate::controls::resting(button).disabled(true);
-                }
-                button.on_click(move |_, window: &mut Window, cx: &mut gpui::App| {
-                    window.close_dialog(cx);
-                    retry_now(
-                        &shell,
-                        id.clone(),
-                        template.clone(),
-                        from.clone(),
-                        window,
-                        cx,
-                    );
-                })
-            });
-            let menu = (choices.len() > 1).then(|| {
-                let (choices, picked, shell) = (choices.clone(), picked.clone(), shell.clone());
-                let at = choices.get(picked.get()).cloned().unwrap_or_default();
-                crate::controls::menu_below(
-                    "retry-from",
-                    crate::controls::action("retry-from-trigger")
-                        .small()
-                        .label(format!("From {at}"))
-                        .icon(Icon::new(IconName::ChevronDown)),
-                    move |mut menu, _, _| {
-                        for (i, label) in choices.iter().enumerate() {
-                            let (picked, shell) = (picked.clone(), shell.clone());
-                            menu = menu.item(
-                                crate::controls::menu_item(label.clone())
-                                    .checked(i == picked.get())
-                                    .on_click(move |_, _, cx: &mut gpui::App| {
-                                        picked.set(i);
-                                        // The dialog is drawn by the shell.
-                                        shell.update(cx, |_, cx| cx.notify());
-                                    }),
-                            );
-                        }
-                        menu
-                    },
-                )
-            });
-            alert
-                .title(format!("Retry {title}?"))
-                .description(said)
-                .children(menu)
-                .child(gpui::div().v_flex().gap_1().w_full().children(lines))
-                // Enter is the dialog's confirm: it retries as the primary
-                // button does, rather than closing with nothing done; while
-                // something blocks it, the dialog stays.
-                .on_ok({
-                    let retry = retry.clone();
-                    move |_, window, cx| {
-                        if blocked {
-                            return false;
-                        }
-                        retry(window, cx);
-                        true
-                    }
-                })
-                .footer(
-                    // Wrapped, for a narrow window. Cancel closes through the
-                    // library's close box, as every cancel here does; that box
-                    // is full width, so a box of its own sized to the button
-                    // keeps it on the row.
-                    gpui_component::dialog::DialogFooter::new()
-                        .flex_wrap()
-                        .child(
-                            gpui::div().flex_none().child(
-                                gpui_component::dialog::DialogClose::new().child(
-                                    crate::controls::action("retry-cancel")
-                                        .ghost()
-                                        .label("Cancel"),
-                                ),
-                            ),
-                        )
-                        .children(with_newer)
-                        .child({
-                            let confirm = crate::controls::action("retry-confirm")
-                                .primary()
-                                .label("Retry");
-                            match blocked {
-                                true => crate::controls::resting(confirm).disabled(true),
-                                false => confirm.on_click(
-                                    move |_, window: &mut Window, cx: &mut gpui::App| {
-                                        window.close_dialog(cx);
-                                        retry(window, cx);
-                                    },
-                                ),
-                            }
-                        }),
-                )
-        });
-    }
-}
-
-impl Shell {
-    /// Carry task `id` on where it stopped, once the preflight finds nothing
-    /// in the way of its own setup; what blocks it is said in the window.
-    pub(crate) fn resume_task(&mut self, id: String, window: &mut Window, cx: &mut Context<Self>) {
-        let blocked = crate::task::task(&id, cx).and_then(|task| {
-            let template = task.runs.last()?.template.clone();
-            let facts = crate::unattended::task_facts(&task, template, cx);
-            preflight::preflight(preflight::Kind::Resume, &facts)
-                .into_iter()
-                .find(|f| f.blocks)
-        });
-        match blocked {
-            Some(block) => window.push_notification(
-                Notification::warning(format!("Not resumed: {}", block.text)),
-                cx,
-            ),
-            None => crate::task::request(id, window, cx),
-        }
-    }
 }
 
 /// The brief the launcher's fields say, as typed so far.
@@ -709,21 +470,4 @@ pub(crate) fn brief(
         body: body.read(cx).value().trim().to_string(),
         instructions: (!instructions.is_empty()).then_some(instructions),
     }
-}
-
-/// Give task `id` a new run of `template`, from step `from` when that is
-/// earlier than where it would start, and ask for its place.
-fn retry_now(
-    shell: &Entity<Shell>,
-    id: String,
-    template: Template,
-    from: Option<String>,
-    window: &mut Window,
-    cx: &mut gpui::App,
-) {
-    shell.update(cx, |_, cx| {
-        if crate::task::retry(&id, template, from.as_deref(), None, cx) {
-            crate::task::request(id, window, cx);
-        }
-    });
 }

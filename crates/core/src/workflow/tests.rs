@@ -69,6 +69,184 @@ fn at_approval() -> Run {
     run
 }
 
+/// A command that passed on `commit`.
+fn passed(commit: Option<String>) -> CommandResult {
+    CommandResult {
+        passed: true,
+        exit: Some(0),
+        tail: "ok".into(),
+        commit,
+        digest: Some("d1".into()),
+    }
+}
+
+/// A command that failed, printing `tail`.
+fn failed(tail: String) -> CommandResult {
+    CommandResult {
+        passed: false,
+        exit: Some(1),
+        tail,
+        commit: Some("a".into()),
+        digest: Some("d1".into()),
+    }
+}
+
+/// A command step's visit keeps how its command came out, a pass as well as
+/// a failure, with the work it ran on.
+#[test]
+fn a_command_visit_keeps_its_result() {
+    let mut run = at_approval();
+    approve(&mut run);
+    prompt_of(run.measured(mark("a", "d0")));
+    assert_eq!(
+        run.turn_ended(&facts("a", true, 0, "d1"), ""),
+        Action::RunCommand("make check".into())
+    );
+    run.command_finished(failed("test failed: x".into()));
+    let failed_visit = run.visits().iter().rfind(|v| v.step == "verify").unwrap();
+    let kept = failed_visit.command.as_ref().unwrap();
+    assert!(!kept.passed);
+    assert_eq!(kept.tail, "test failed: x");
+    prompt_of(run.measured(mark("a", "d1")));
+    run.turn_ended(&facts("a", true, 0, "d2"), "");
+    run.command_finished(passed(Some("a".into())));
+    let passed_visit = run.visits().iter().rfind(|v| v.step == "verify").unwrap();
+    let kept = passed_visit.command.as_ref().unwrap();
+    assert!(kept.passed);
+    assert_eq!(kept.tail, "ok", "a pass keeps its output too");
+    assert_eq!(kept.digest.as_deref(), Some("d1"));
+}
+
+/// A failed run keeps what it failed on: no check command is a preflight
+/// block found late, a forge failure is the forge's, the rest is other.
+#[test]
+fn a_failed_run_keeps_what_it_failed_on() {
+    let (mut run, _) = begin("1".into(), checkout(), brief(), setup(None));
+    prompt_of(run.measured(mark("a", "d0")));
+    run.turn_ended(&facts("a", false, 0, "d0"), "The plan.");
+    approve(&mut run);
+    prompt_of(run.measured(mark("a", "d0")));
+    assert!(matches!(
+        run.turn_ended(&facts("a", true, 0, "d1"), ""),
+        Action::Finish(Outcome::Failed(_))
+    ));
+    assert_eq!(run.failed_on(), Some(Failure::Configuration));
+
+    let mut run = at_approval();
+    run.failed("the agent did not take the prompt".into(), Failure::Other);
+    assert_eq!(run.failed_on(), Some(Failure::Other));
+
+    let mut run = at_approval();
+    run.stopped(Stop::ByPerson);
+    assert_eq!(
+        run.failed_on(),
+        None,
+        "only a failed run failed on something"
+    );
+}
+
+/// A run from before the kind was kept reads as failed on something other.
+#[test]
+fn a_failure_with_no_kind_kept_reads_as_other() {
+    let mut run = at_approval();
+    run.failed("boom".into(), Failure::Forge);
+    let mut json = serde_json::to_value(&run).unwrap();
+    assert_eq!(json["failure"], "forge");
+    json.as_object_mut().unwrap().remove("failure");
+    let back: Run = serde_json::from_value(json).unwrap();
+    assert_eq!(back.failed_on(), Some(Failure::Other));
+}
+
+/// Approve what `run` waits on, as a press drawn from it now does.
+fn approve(run: &mut Run) -> Action {
+    match run.approval_at() {
+        Some(at) => run.approved(&at),
+        None => Action::Idle,
+    }
+}
+
+/// Send what `run` waits on back with `note`, as a press drawn from it now
+/// does.
+fn revise(run: &mut Run, note: &str) -> Action {
+    match run.approval_at() {
+        Some(at) => run.revised(&at, note.to_string()),
+        None => Action::Idle,
+    }
+}
+
+/// Window A reads the plan, B revises it, the plan runs again and waits at a
+/// new approval visit: A's *Continue* names a visit that is no longer open,
+/// and approves nothing it did not read.
+#[test]
+fn an_approval_drawn_from_a_closed_visit_is_refused() {
+    let mut run = at_approval();
+    let read_by_a = run.approval_at().unwrap();
+    assert_eq!(read_by_a.run, "1");
+    assert_eq!(
+        run.revised(&read_by_a.clone(), "Smaller, please.".into()),
+        Action::Measure
+    );
+    prompt_of(run.measured(mark("a", "d0")));
+    assert_eq!(
+        run.turn_ended(&facts("a", false, 0, "d0"), "A smaller plan."),
+        Action::AwaitApproval
+    );
+    let now = run.approval_at().unwrap();
+    assert_ne!(now.visit, read_by_a.visit, "the plan waits at a new visit");
+    assert_eq!(run.approved(&read_by_a), Action::Idle);
+    assert_eq!(
+        run.revised(&read_by_a, "Again.".into()),
+        Action::Idle,
+        "a revision is refused the same way"
+    );
+    assert!(run.awaiting_approval(), "the run has not moved");
+    assert_eq!(run.approved(&now), Action::Measure);
+}
+
+/// A double press, or a second press held while the next step's mark was
+/// pinned, names the visit the first one closed.
+#[test]
+fn a_second_press_of_continue_approves_nothing() {
+    let mut run = at_approval();
+    let at = run.approval_at().unwrap();
+    assert_eq!(run.approved(&at), Action::Measure);
+    assert_eq!(run.approved(&at), Action::Idle);
+    assert_eq!(run.revised(&at, "Late.".into()), Action::Idle);
+    assert_eq!(run.current().unwrap().id, "implement");
+    assert!(run.approval_at().is_none(), "nothing waits on a person");
+}
+
+/// A run cut off while it waited has nothing to approve; it is resumed.
+#[test]
+fn an_approval_of_a_run_cut_off_is_refused() {
+    let mut run = at_approval();
+    let at = run.approval_at().unwrap();
+    assert!(matches!(run.stopped(Stop::LinkLost), Action::Finish(o) if o.resumable()));
+    assert_eq!(run.approved(&at), Action::Idle);
+    assert!(run.approval_at().is_none());
+}
+
+/// Visit ids count from 1 in every run: a press drawn from an earlier run of
+/// the same task, at a visit with the same number, is refused by its run.
+#[test]
+fn an_approval_drawn_from_an_earlier_run_is_refused() {
+    let mut first = at_approval();
+    let old = first.approval_at().unwrap();
+    first.stopped(Stop::TimedOut);
+    let mut next = Run::retry_of(&first, "2".into(), first.template.clone(), Some("plan"));
+    assert_eq!(next.resume(), Action::Measure);
+    prompt_of(next.measured(mark("a", "d0")));
+    assert_eq!(
+        next.turn_ended(&facts("a", false, 0, "d0"), "The plan."),
+        Action::AwaitApproval
+    );
+    let now = next.approval_at().unwrap();
+    assert_eq!(now.visit, old.visit, "the same number in another run");
+    assert_eq!(next.approved(&old), Action::Idle);
+    assert_eq!(next.revised(&old, "No.".into()), Action::Idle);
+    assert_eq!(next.approved(&now), Action::Measure);
+}
+
 #[test]
 fn every_shipped_template_parses_and_validates() {
     let all = builtin::all();
@@ -233,7 +411,7 @@ fn an_agent_step_passes_on_its_gates_and_keeps_its_answer() {
     let mut run = at_approval();
     assert!(run.awaiting_approval());
     assert_eq!(run.outputs["plan"], "The plan.");
-    assert_eq!(run.approved(), Action::Measure);
+    assert_eq!(approve(&mut run), Action::Measure);
     let text = prompt_of(run.measured(mark("a", "d0")));
     assert!(
         text.contains("The plan."),
@@ -244,7 +422,7 @@ fn an_agent_step_passes_on_its_gates_and_keeps_its_answer() {
         Action::RunCommand("make check".into())
     );
     assert_eq!(
-        run.command_finished(Ok(Some("a".into()))),
+        run.command_finished(passed(Some("a".into()))),
         Action::Finish(Outcome::Done)
     );
     assert_eq!(run.marks.verified_at.as_deref(), Some("a"));
@@ -294,11 +472,11 @@ fn a_change_in_a_checkout_plan_is_measured_again_so_a_persons_edit_may_stay() {
 #[test]
 fn a_failed_command_goes_back_with_its_output_and_keeps_counting() {
     let mut run = at_approval();
-    run.approved();
+    approve(&mut run);
     prompt_of(run.measured(mark("a", "d0")));
     run.turn_ended(&facts("a", true, 0, "d1"), "");
     assert_eq!(
-        run.command_finished(Err("test failed: x".into())),
+        run.command_finished(failed("test failed: x".into())),
         Action::Measure
     );
     assert_eq!(run.current().unwrap().id, "implement");
@@ -308,12 +486,12 @@ fn a_failed_command_goes_back_with_its_output_and_keeps_counting() {
     for n in 2..4 {
         let digest = format!("d{n}");
         run.turn_ended(&facts("a", true, 0, &digest), "");
-        run.command_finished(Err("again".into()));
+        run.command_finished(failed("again".into()));
         prompt_of(run.measured(mark("a", &digest)));
     }
     run.turn_ended(&facts("a", true, 0, "d9"), "");
     assert!(matches!(
-        run.command_finished(Err("again".into())),
+        run.command_finished(failed("again".into())),
         Action::Finish(Outcome::Exhausted { .. })
     ));
 }
@@ -321,7 +499,7 @@ fn a_failed_command_goes_back_with_its_output_and_keeps_counting() {
 #[test]
 fn a_revision_sends_the_plan_back_with_the_note_and_the_old_plan() {
     let mut run = at_approval();
-    assert_eq!(run.revised("Smaller, please.".into()), Action::Measure);
+    assert_eq!(revise(&mut run, "Smaller, please."), Action::Measure);
     assert_eq!(run.current().unwrap().id, "plan");
     let text = prompt_of(run.measured(mark("a", "d0")));
     assert!(text.contains("> Smaller, please."));
@@ -360,7 +538,7 @@ fn every_stop_ends_the_run_without_judging_the_turn() {
     }
     let mut run = at_approval();
     assert!(matches!(run.stopped(Stop::ByPerson), Action::Finish(_)));
-    assert_eq!(run.approved(), Action::Idle);
+    assert_eq!(approve(&mut run), Action::Idle);
 }
 
 /// Finding #3: a resumed run keeps the mark its step was measured from, so
@@ -368,7 +546,7 @@ fn every_stop_ends_the_run_without_judging_the_turn() {
 #[test]
 fn resume_keeps_where_the_step_started() {
     let mut run = at_approval();
-    run.approved();
+    approve(&mut run);
     prompt_of(run.measured(mark("a", "d0")));
     let text = serde_json::to_string(&run).unwrap();
     let mut back: Run = serde_json::from_str(&text).unwrap();
@@ -390,7 +568,7 @@ fn resume_keeps_where_the_step_started() {
     // What it waits on comes back with it, for the new session to show.
     let (step, answer) = waiting.under_review().unwrap();
     assert_eq!((step.id.as_str(), answer), ("plan", "The plan."));
-    waiting.approved();
+    approve(&mut waiting);
     assert!(waiting.under_review().is_none());
     let (fresh, _) = begin("1".into(), checkout(), brief(), setup(None));
     let mut fresh: Run = serde_json::from_str(&serde_json::to_string(&fresh).unwrap()).unwrap();
@@ -403,7 +581,7 @@ fn resume_keeps_where_the_step_started() {
 fn a_run_parked_in_this_process_resumes() {
     for stop in [Stop::LinkLost, Stop::Closed] {
         let mut run = at_approval();
-        run.approved();
+        approve(&mut run);
         prompt_of(run.measured(mark("a", "d0")));
         assert!(matches!(run.stopped(stop), Action::Finish(outcome) if outcome.resumable()));
         let mut parked = run.clone();
@@ -441,7 +619,7 @@ fn a_run_keeps_the_template_it_began_with() {
 fn a_command_step_with_no_command_and_no_check_fails() {
     let mut run = at_approval();
     run.setup.check = None;
-    run.approved();
+    approve(&mut run);
     prompt_of(run.measured(mark("a", "d0")));
     assert!(matches!(
         run.turn_ended(&facts("a", true, 0, "d1"), ""),
@@ -452,7 +630,7 @@ fn a_command_step_with_no_command_and_no_check_fails() {
 #[test]
 fn every_move_is_in_the_history() {
     let mut run = at_approval();
-    run.approved();
+    approve(&mut run);
     let moves: Vec<(&str, &str)> = run
         .history
         .iter()
@@ -482,10 +660,10 @@ fn a_run_not_started_has_no_visits_and_starts_on_resume() {
 #[test]
 fn going_back_is_a_new_visit_and_each_keeps_how_it_came_out() {
     let mut run = at_approval();
-    run.approved();
+    approve(&mut run);
     prompt_of(run.measured(mark("a", "d0")));
     run.turn_ended(&facts("a", true, 0, "d1"), "");
-    run.command_finished(Err("test failed".into()));
+    run.command_finished(failed("test failed".into()));
     let steps: Vec<&str> = run.visits.iter().map(|v| v.step.as_str()).collect();
     assert_eq!(
         steps,
@@ -677,37 +855,20 @@ fn a_key_onehand_does_not_read_is_refused() {
     assert!(store::parse(&text).is_ok());
 }
 
+/// A run's workflow is found again by its id, whatever it was renamed to;
+/// one kept before ids by its name.
 #[test]
-fn a_newer_template_is_one_saved_later_under_the_same_id() {
+fn a_workflow_is_found_again_by_its_id() {
     let mut snapshot = checkout();
     let mut later = snapshot.clone();
     later.name = "Renamed".into();
     later.version = 2;
-    assert!(later.newer_than(&snapshot), "found by id after a rename");
-    assert!(
-        !snapshot.newer_than(&later),
-        "an older version is not newer"
-    );
+    assert!(later.same_workflow(&snapshot), "found by id after a rename");
     later.id = "other".into();
-    assert!(!later.newer_than(&snapshot));
-
-    // A file edited by hand keeps its version, and still counts.
-    let mut by_hand = snapshot.clone();
-    assert!(!by_hand.newer_than(&snapshot), "the same, unchanged");
-    by_hand.misses += 1;
-    assert!(by_hand.newer_than(&snapshot));
-    by_hand.version = 0;
-    assert!(!by_hand.newer_than(&snapshot), "an older version never is");
-
-    // A run kept before ids falls back to the name and what it says.
+    assert!(!later.same_workflow(&snapshot));
     snapshot.id.clear();
-    let mut same_name = checkout();
-    assert!(
-        !same_name.newer_than(&snapshot),
-        "the same, only with an id"
-    );
-    same_name.misses += 1;
-    assert!(same_name.newer_than(&snapshot));
+    assert!(checkout().same_workflow(&snapshot), "by name, before ids");
+    assert!(!later.same_workflow(&snapshot));
 }
 
 #[test]
@@ -875,7 +1036,7 @@ fn only_an_ending_nobody_chose_needs_attention() {
 /// misses at the change.
 fn exhausted_at_implement() -> Run {
     let mut run = at_approval();
-    run.approved();
+    approve(&mut run);
     prompt_of(run.measured(mark("a", "d0")));
     for _ in 0..4 {
         run.turn_ended(&facts("a", false, 0, "d0"), "");
@@ -924,11 +1085,11 @@ fn a_retry_ignores_a_step_it_lacks_or_one_past_its_start() {
 #[test]
 fn a_done_run_retries_from_past_its_last_step_and_offers_the_first() {
     let mut prev = at_approval();
-    prev.approved();
+    approve(&mut prev);
     prompt_of(prev.measured(mark("a", "d0")));
     prev.turn_ended(&facts("a", true, 0, "d1"), "");
     assert_eq!(
-        prev.command_finished(Ok(Some("a".into()))),
+        prev.command_finished(passed(Some("a".into()))),
         Action::Finish(Outcome::Done)
     );
     assert_eq!(
@@ -970,12 +1131,12 @@ fn a_retry_plan_says_where_it_starts_and_what_it_carries() {
 /// ran out of misses at the check.
 fn exhausted_at_verify() -> Run {
     let mut run = at_approval();
-    run.approved();
+    approve(&mut run);
     prompt_of(run.measured(mark("a", "d0")));
     for n in 0..4 {
         let digest = format!("d{}", n + 1);
         run.turn_ended(&facts("a", true, 0, &digest), "");
-        if let Action::Measure = run.command_finished(Err("again".into())) {
+        if let Action::Measure = run.command_finished(failed("again".into())) {
             prompt_of(run.measured(mark("a", &digest)));
         }
     }
@@ -1069,7 +1230,7 @@ fn a_command_passes_on_its_exit_status_with_or_without_a_commit() {
     let run = &mut t.runs[0];
     assert!(matches!(run.resume(), Action::RunCommand(_)));
     assert_eq!(
-        run.command_finished(Ok(None)),
+        run.command_finished(passed(None)),
         Action::Finish(Outcome::Done)
     );
     assert_eq!(run.marks.verified_at, None);
@@ -1086,15 +1247,15 @@ fn issue_past_check(forge: bool, verified: &str) -> (Run, Action) {
     run.turn_ended(&facts("a", false, 0, "d0"), "The plan.");
     prompt_of(run.measured(mark("a", "d0")));
     run.turn_ended(&facts("b", false, 1, "d0"), "");
-    let next = run.command_finished(Ok(Some(verified.into())));
+    let next = run.command_finished(passed(Some(verified.into())));
     (run, next)
 }
 
 /// [`issue_past_check`], pushed and with its pull request open.
 fn at_status_checks() -> Run {
     let (mut run, _) = issue_past_check(true, "b");
-    run.forge_done(Ok(()));
-    run.forge_done(Ok(()));
+    run.forge_done(Ok(None));
+    run.forge_done(Ok(None));
     run
 }
 
@@ -1124,16 +1285,25 @@ use std::time::Duration;
 fn the_push_carries_the_commit_the_check_passed_on() {
     let (mut run, next) = issue_past_check(true, "b");
     assert_eq!(next, Action::Push("b".into()));
-    assert_eq!(run.forge_done(Ok(())), Action::OpenPullRequest);
+    assert_eq!(run.forge_done(Ok(None)), Action::OpenPullRequest);
+    let opened = PrOpened {
+        number: 7,
+        url: "https://example.com/pull/7".into(),
+    };
     // The status checks are watched on the commit that was pushed.
     assert_eq!(
-        run.forge_done(Ok(())),
+        run.forge_done(Ok(Some(opened.clone()))),
         Action::AwaitStatusChecks {
             wait: Duration::from_secs(3600),
             pushed: Some("b".into()),
         }
     );
     assert!(run.awaiting_status_checks());
+    assert_eq!(
+        run.pull_request,
+        Some(opened),
+        "the run keeps what it opened"
+    );
     assert_eq!(run.status_checks_seen(Seen::Pending), Action::Idle);
     assert_eq!(
         run.status_checks_seen(Seen::Passed),
@@ -1190,18 +1360,18 @@ fn failing_status_checks_go_back_to_the_change_with_what_failed_until_misses_run
         let head = format!("c{n}");
         run.turn_ended(&facts(&head, false, 1, "d0"), "");
         assert_eq!(
-            run.command_finished(Ok(Some(head.clone()))),
+            run.command_finished(passed(Some(head.clone()))),
             Action::Push(head)
         );
-        run.forge_done(Ok(()));
-        run.forge_done(Ok(()));
+        run.forge_done(Ok(None));
+        run.forge_done(Ok(None));
         run.status_checks_seen(Seen::Repair("Lint failed".into()));
         prompt_of(run.measured(mark("b", "d0")));
     }
     run.turn_ended(&facts("c4", false, 1, "d0"), "");
-    run.command_finished(Ok(Some("c4".into())));
-    run.forge_done(Ok(()));
-    run.forge_done(Ok(()));
+    run.command_finished(passed(Some("c4".into())));
+    run.forge_done(Ok(None));
+    run.forge_done(Ok(None));
     assert!(matches!(
         run.status_checks_seen(Seen::Repair("Lint failed".into())),
         Action::Finish(Outcome::Exhausted { .. })
@@ -1221,6 +1391,7 @@ fn a_merged_pull_request_is_done_and_a_failure_ends_the_run() {
         run.status_checks_seen(Seen::Fail("it was closed".into())),
         Action::Finish(Outcome::Failed("it was closed".into()))
     );
+    assert_eq!(run.failed_on(), Some(Failure::Forge));
 }
 
 #[test]
@@ -1337,4 +1508,205 @@ fn a_log_holding_a_fence_never_closes_the_one_around_it() {
     );
     assert!(said.ends_with("\n`````"), "{said}");
     assert_eq!(prompt::fenced("plain"), "```\nplain\n```");
+}
+
+/// Implement, Verify on the project's check command, Package on a command
+/// of its own, then Push.
+fn packaged() -> Template {
+    let mut template = Template::blank("Packaged");
+    template.id = "packaged".into();
+    template.place = Place::Worktree;
+    let step = |id: &str, kind: StepKind| StepSpec {
+        id: id.into(),
+        label: id[..1].to_uppercase() + &id[1..],
+        kind,
+    };
+    template.steps = vec![
+        step(
+            "implement",
+            StepKind::Agent {
+                prompt: "{brief}".into(),
+                gates: vec![GateKind::CodeChanged, GateKind::Committed],
+                keep_answer: false,
+            },
+        ),
+        step(
+            "verify",
+            StepKind::Command {
+                command: None,
+                on_fail: "implement".into(),
+            },
+        ),
+        step(
+            "package",
+            StepKind::Command {
+                command: Some("make package".into()),
+                on_fail: "implement".into(),
+            },
+        ),
+        step("push", StepKind::Push),
+    ];
+    template
+}
+
+/// A run of [`packaged`] that passed its commands and failed at the push.
+fn failed_at_push() -> Run {
+    let mut setup = setup(Some("make check"));
+    setup.forge = Some("Forge".into());
+    setup.agent = Some("claude".into());
+    let (mut run, _) = begin("1".into(), packaged(), brief(), setup);
+    prompt_of(run.measured(mark("a", "d0")));
+    assert_eq!(
+        run.turn_ended(&facts("b", false, 1, "d1"), ""),
+        Action::RunCommand("make check".into())
+    );
+    assert_eq!(
+        run.command_finished(passed(Some("a".into()))),
+        Action::RunCommand("make package".into())
+    );
+    assert_eq!(
+        run.command_finished(passed(Some("a".into()))),
+        Action::Push("a".into())
+    );
+    run.forge_done(Err("rejected".into()));
+    run
+}
+
+/// What Settings say now, the same as the run in [`failed_at_push`].
+fn same_now() -> Now {
+    Now {
+        agent: Some("claude".into()),
+        mode: None,
+        check: Some("make check".into()),
+        timeout: None,
+    }
+}
+
+/// A changed project check command starts the retry at the first step that
+/// runs it, not the last command step: the push would otherwise send work
+/// the new check never ran on.
+#[test]
+fn a_retry_with_current_settings_starts_where_a_command_changes() {
+    let prev = failed_at_push();
+    let index = |id: &str| prev.template.index_of(id).unwrap();
+    let carried = Run::with_current(&prev, Ok(packaged()), &same_now(), false).unwrap();
+    assert_eq!(
+        carried.start,
+        index("push"),
+        "nothing changed: the carry-over start"
+    );
+    assert!(carried.changes.is_empty());
+
+    let now = Now {
+        check: Some("make check2".into()),
+        ..same_now()
+    };
+    let plan = Run::with_current(&prev, Ok(packaged()), &now, false).unwrap();
+    assert_eq!(plan.start, index("verify"));
+    assert_eq!(plan.why, StartWhy::CommandChanged);
+    assert_eq!(
+        plan.changes,
+        vec![Changed {
+            what: "Check command",
+            old: "make check".into(),
+            new: "make check2".into(),
+        }]
+    );
+    assert_eq!(plan.setup.check.as_deref(), Some("make check2"));
+
+    let mut newer = packaged();
+    newer.version += 1;
+    if let StepKind::Command { command, .. } = &mut newer.steps[2].kind {
+        *command = Some("make dist".into());
+    }
+    let plan = Run::with_current(&prev, Ok(newer), &same_now(), false).unwrap();
+    assert_eq!(plan.start, index("package"));
+    assert_eq!(plan.changes[0].what, "Workflow version");
+
+    // Who runs it, and for how long, moves no start.
+    let now = Now {
+        agent: Some("codex".into()),
+        mode: Some("auto".into()),
+        timeout: Some("2h".into()),
+        ..same_now()
+    };
+    let plan = Run::with_current(&prev, Ok(packaged()), &now, false).unwrap();
+    assert_eq!(plan.start, index("push"));
+    let what: Vec<&str> = plan.changes.iter().map(|c| c.what).collect();
+    assert_eq!(what, ["Agent", "Mode", "Timeout"]);
+    assert_eq!(plan.template.timeout, "2h");
+    assert_eq!(plan.setup.mode.as_deref(), Some("auto"));
+}
+
+/// A workflow gone, or no longer valid, leaves nothing to retry with.
+#[test]
+fn a_retry_with_current_settings_needs_a_workflow_that_runs() {
+    let prev = failed_at_push();
+    assert_eq!(
+        Run::with_current(
+            &prev,
+            Err("there is no workflow `packaged`".into()),
+            &same_now(),
+            false
+        ),
+        Err("there is no workflow `packaged`".into())
+    );
+    let mut broken = packaged();
+    broken.steps.clear();
+    assert!(Run::with_current(&prev, Ok(broken), &same_now(), false).is_err());
+}
+
+/// Work changed since the last run stopped is checked again before anything
+/// past the check, whichever retry runs.
+#[test]
+fn changed_work_is_checked_again_before_a_retry_goes_past_it() {
+    let prev = failed_at_push();
+    let index = |id: &str| prev.template.index_of(id).unwrap();
+    assert_eq!(
+        Run::retry_offer(&prev, &prev.template, false),
+        (index("push"), index("push"))
+    );
+    assert_eq!(
+        Run::retry_offer(&prev, &prev.template, true),
+        (index("package"), index("package"))
+    );
+    let plan = Run::with_current(&prev, Ok(packaged()), &same_now(), true).unwrap();
+    assert_eq!(
+        (plan.start, plan.why),
+        (index("package"), StartWhy::WorkChanged)
+    );
+    assert_eq!(
+        StartWhy::WorkChanged.said(),
+        "where the changed work is checked again"
+    );
+}
+
+/// A command's result, as a clause.
+#[test]
+fn a_command_result_says_how_it_came_out() {
+    assert_eq!(
+        passed(Some("0123456789abcdef".into())).said(),
+        "passed on 0123456789"
+    );
+    assert_eq!(failed("x".into()).said(), "failed, exiting 1");
+    let cut_off = CommandResult {
+        exit: None,
+        ..failed("x".into())
+    };
+    assert_eq!(cut_off.said(), "did not finish");
+}
+
+/// A retry works on the same branch, so on the pull request the last run
+/// opened.
+#[test]
+fn a_retry_keeps_the_pull_request_its_task_opened() {
+    let mut run = at_status_checks();
+    let opened = PrOpened {
+        number: 7,
+        url: "https://forge/pr/7".into(),
+    };
+    run.pull_request = Some(opened.clone());
+    run.status_checks_seen(Seen::Fail("timed out".into()));
+    let again = Run::retry_of(&run, "2".into(), run.template.clone(), None);
+    assert_eq!(again.pull_request, Some(opened));
 }

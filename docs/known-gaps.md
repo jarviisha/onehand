@@ -167,10 +167,8 @@ the ones that exist. What workflows, tasks and unattended runs do not do is list
   issues a project keeps
   (local, or kept in step with a forge) get the work summary, the next action and the pull request
   line: an issue's work is matched by the issues file it is kept in and its number, and a forge's
-  issue has no such file. Its task is on the Tasks page. Both views also leave out what runs do
-  not keep yet: a failure's kind (so no *Retry with current settings*), a passed check's output
-  (the page says only which commit it passed on and whether the work has moved since), the pull
-  request a run opened (it is looked up by branch instead), and *Answer the pull request review*
-  as an action. The tab leaves the files changed and the commits past the base to the page.
-- **The Issues page cannot judge an approval in place.** *Review…* opens the run's session, whose
-  step strip holds the approval, on the page as in the tab; the page has no review block yet.
+  issue has no such file. Its task is on the Tasks page. The tab leaves the files changed, the
+  commits past the base and the review block to the page.
+- **The task detail's review leaves the files to the timeline.** Its *Awaiting approval* draws the
+  answer and the two answers, not what the step under review changed or the check: those are the
+  visits just below it, each opening onto its files.

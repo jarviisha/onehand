@@ -7,7 +7,7 @@
 //! draws what core decides. Everything lives on the view's entity, so
 //! leaving the page for a session and picking it again finds it as it was.
 
-use super::{IssuesView, full};
+use super::{IssuesView, full, review};
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
     AnyElement, ClickEvent, Context, InteractiveElement as _, IntoElement, ParentElement,
@@ -61,6 +61,8 @@ pub(super) struct PageState {
     pub(super) arrived: bool,
     /// What the issue on screen left, as read off git.
     pub(super) full: full::FullState,
+    /// The review block, while one is open.
+    pub(super) review: review::ReviewState,
 }
 
 impl PageState {
@@ -115,6 +117,9 @@ impl IssuesView {
         let Some(page) = self.page.as_mut() else {
             return;
         };
+        if !page.review.open_on(key.as_ref()) {
+            page.review = review::ReviewState::default();
+        }
         page.held.pinned = key;
         page.alone = true;
         self.root = Some(root.to_path_buf());
@@ -149,6 +154,10 @@ impl IssuesView {
                 if let Some(key) = &key {
                     let stopped = std::mem::take(&mut page.stopped);
                     page.held.pick(key, &stopped);
+                }
+                // Picking another issue closes the review; the same keeps it.
+                if !page.review.open_on(key.as_ref()) {
+                    page.review = review::ReviewState::default();
                 }
                 page.alone = true;
             }

@@ -115,11 +115,10 @@ which a save would otherwise drop without a word; such a file is listed as unrea
 (a new workflow, a duplicate, an import) takes its file name as `id` at version 1; an existing file
 keeps its `id`, and its `version` goes up by one when what the template says changed (the version
 itself left out of the comparison). A file written before ids takes its file name when read. No
-old version is kept: a run's snapshot already holds the one it ran. `Template::newer_than` is the
-rule Retry offers *the newer workflow* by: the same `id` at a higher `version`, or at the same
-`version` with different content, which is what a file edited by hand outside onehand looks like;
-a rename still finds it. A snapshot from before ids falls back to the same name with different content. A file
-copied by hand keeps its id, so two may share one, and Retry offers the first.
+old version is kept: a run's snapshot already holds the one it ran. `Template::same_workflow` is
+the rule *Retry with current settings* finds a task's workflow again by: the same `id`, so a rename
+still finds it, at whatever version is on offer now. A snapshot from before ids falls back to the
+same name. A file copied by hand keeps its id, so two may share one, and the first is taken.
 
 ### Import and export
 
@@ -174,15 +173,22 @@ the run's history, capped at 200.
   told to undo only its own.
 - **A command step** runs its command, or the project's check command. It passes on its exit status
   alone and records the head as `verified_at` when the work has one; failing is a miss and goes
-  back to `on_fail` carrying the output.
+  back to `on_fail` carrying the output. **Its visit keeps how it came out**
+  (`Visit::command`, a `CommandResult`), a pass as well as a failure: passed or not, the exit
+  code, the last 200 lines it printed, and the commit and the fingerprint of the uncommitted work,
+  untracked files included, read once it ran. The commit and the fingerprint together are what a
+  pass covers: the work is judged against both, so an edit after the check, committed or not, is
+  never taken for checked work.
 - **The forge steps** go to the connector the run's setup names (`Setup::forge`, the one that
   serves the project when a worktree task starts). With none, each passes at once: the branch is the
   result. **A push carries the commit the check passed on**: `Push` is `marks.verified_at`, never
   the head, so what lands is what was checked, and a push with nothing verified fails. A retry keeps
-  `verified_at`. *Pull request* takes the one open on the branch, or opens a draft
+  `verified_at`, and the pull request the last run opened, being on the same branch. *Pull request* takes the one open on the branch, or opens a draft
   (`unattended::pull_request_text`: it closes the issue only where the forge knows it); one closed
-  without being merged is refused, never opened again beside. Either failing ends the run as
-  failed; a retry starts at that step again. *Status checks* is judged by `workflow::judge` from the
+  without being merged is refused, never opened again beside. The run keeps the pull request it
+  opened or took up (`Run::pull_request`, its number and address), read back once it is open; one
+  not read back is still found by its branch. Either failing ends the run as
+  failed, on the forge; a retry starts at that step again. *Status checks* is judged by `workflow::judge` from the
   forge's pull request, **on the commit that was pushed**: checks on any other head are waited
   past. A failing check or a conflict wins over one still running and goes back to `on_fail` as a
   miss, carrying what failed and up to three logs as `{check_output}`; all passing takes the pull
@@ -194,7 +200,12 @@ the run's history, capped at 200.
   running, and nothing is waited on past `wait`: the run fails. Merged ends it done; closed, or no
   pull request at all, fails it. Repairs are bounded by `misses`, like a failing command.
 - **An approval step** waits. *Continue* goes on; *Revise…* goes back to the step it approves, whose
-  prompt then carries the note and its last answer. A revision is not a miss.
+  prompt then carries the note and its last answer. A revision is not a miss. **Each press names
+  what it approves** (`ApprovalAt`): the run and the approval step's open visit it was drawn from.
+  The engine takes it only while that run waits for approval at that visit, and answers `Idle`
+  otherwise. The run is named as well as the visit, because visit ids count from 1 in every run.
+  So a window still showing a plan another window had revised, a double press, a press after the
+  run was cut off and a press from a view of a run a Retry replaced all approve nothing.
 - **Misses are counted per stretch**: they reset only when the run reaches a step further on than it
   has been, so a command that keeps failing cannot loop with its `on_fail` step forever.
 - **`stopped` never judges the turn** that was under way, whatever the reason: a cut-short turn
@@ -245,7 +256,12 @@ writes still queued (`Writer::flush`), so a run's last save is not lost when the
 with its last window.
 
 **A run records step visits** (`Run::visits`): each stay at a step, with its times, what it kept
-(the answer, or how a failed command's output ended) and how it came out. Going back to a step is a
+(the answer, or how a failed command's output ended), its command's result on a command step, and
+how it came out. **A failed run keeps what it failed on** (`Run::failure`, read as
+`Run::failed_on`), beside its outcome rather than in it: *configuration* when what the preflight
+would have blocked is found only once the run runs (`preflight::found_late`: the agent no longer
+configured, a mode the agent does not offer, no check command to run, a workflow that no longer
+validates), *forge* when a forge step or the forge failed, and *other* for the rest. Going back to a step is a
 new visit, and resuming closes the cut-off visit as `interrupted` and opens a new one of the same
 step. **Each visit's start and end is pinned as a commit** (`task::marks::pin_blocking`): the work
 as it stands, untracked files included and ignored ones left out, committed from a temporary
@@ -255,7 +271,10 @@ it carries out a step's first action, so the start mark lands before the prompt 
 the work; one commit serves a visit's end and the next one's start. A mark that cannot be pinned is
 logged and left out, and never stops a run: gates read `Mark` and `Facts`, not the pinned commits. While a mark is
 being pinned, an approval or a revision waits for it and for the action it holds back, so nothing
-moves the run on under that action. A Stop, the timeout or any other ending waits for the pin too,
+moves the run on under that action; replayed, it still carries the visit it was drawn from, so a
+second press held behind the first finds that visit closed. The driver routes a press by the
+task, not the session, so a window other than the session's can make it, and the run's clock goes
+on only once the engine took the press. A Stop, the timeout or any other ending waits for the pin too,
 and then runs instead of that action, with its cancel of the turn: a prompt is never sent to a run
 already said to be over, and no ending races the pin. A driver
 taking a run up counts as pinned only the marks up to the last one that landed
@@ -271,7 +290,9 @@ the very file the change before it created.
 
 **What waits for approval is shown from the run**, not the transcript (`Run::under_review`):
 the strip's *Review…* opens the kept answer, so a run resumed in a new session is not approved
-blind.
+blind. A press the run no longer waits for is not an error: *Continue* puts up what the run waits
+on now, saying *The answer changed since you opened it.*, and *Revise…* refuses to send in place,
+keeping the note.
 
 ## Starting, queueing and resuming
 
@@ -299,7 +320,8 @@ the project's check command, a worktree workflow on a folder outside git (blocke
 account when the workflow has forge steps (blocked when `gh` is missing or signed out, as last
 seen), and that its branch is cut off `HEAD`. Whether the folder is in git and which forge serves
 it are read off the UI loop when the launcher opens; until they land, neither blocks. The launcher lists what it found under its fields, and *Run* is spent
-while a block remains. A Resume and a Retry are judged by the run's own setup
+while a block remains. A Resume and a Retry are judged by the run's own setup, and a *Retry with
+current settings* as a new start is, on what Settings say now
 ([tasks.md](tasks.md#retry-and-resume)).
 
 | Check | Blocks when | Says |
@@ -311,7 +333,7 @@ while a block remains. A Resume and a Retry are judged by the run's own setup
 | Place | `HEAD` is detached and no forge serves the project | |
 | Base | | what the branch is cut off: the default branch on `origin`, fetched first, or the branch checked out |
 | Forge | `gh` missing or signed out, as last seen | |
-| Issue | another run works on it | |
+| Issue | another run works on it; for *Answer a pull request review*, the pull request is not open (closed unmerged, merged, none, or unread), the workflow has no status checks step to repair from, no forge serves the project, the branch on the forge went its own way, or the issue is closed or could not be read | |
 | Earlier task | | the issue's last task needs attention: starting makes a second task, and *Retry…* opens that task's Retry dialog instead |
 | Slot | `at_once` is reached, naming the issues holding the slots | |
 
@@ -418,7 +440,12 @@ change (`git checkout . && git clean -fd`).
 | Runs from an older build | Put a run file from before tasks in `<config_dir>/onehand/pipeline-runs/` and start onehand | It is in `tasks/` under the same name, listed as interrupted, and `pipeline-runs/` is gone |
 | An unknown key | Copy a workflow file into `<config_dir>/onehand/workflows/` with `gate = "x"` added to a step, then *Import…* it too | The row reads *Cannot be read: it has a key `steps[N].gate` that onehand does not read*; the import is refused with the same reason |
 | Export, then import | *Export…* *Work in checkout*, then *Import…* that file | The form opens on it as a new workflow; Save asks for another name, and once renamed it is saved under a new id at version 1 |
-| Retry after a rename | Duplicate *Work in checkout* and save it, start a run with brief `miss`, then rename the workflow and save | *Retry* offers *Retry with version 2*, and the description says where the newer workflow starts |
+| Retry after a rename | Duplicate *Work in checkout* and save it, start a run with brief `miss`, then rename the workflow and save | *Retry* keeps *version 1*, saying Settings now say *version 2*; *Retry with current settings…* lists *Workflow version: version 1 → version 2* and runs the renamed workflow |
+| What Retry keeps | Let a run time out, then change `[unattended] timeout` (or the project's check command) and *Retry* | The dialog lists the agent, mode, check command, timeout and workflow version it keeps; the changed one, in the warning ink, names what Settings say now and *Retry with current settings* |
+| Retry with current settings | On a task whose run failed at its push, change the project's check command and press *Retry with current settings…* | *Check command: old → new*, *It starts at the Verify step, the first step whose command changes.*; *Retry with current settings* runs Verify on the new command before anything is pushed |
+| Retry with current settings, nothing changed | The same, with nothing changed | *Nothing differs from the last run's configuration.*, and it starts where *Retry* would |
+| A workflow gone | Delete the workflow a failed task ran, then *Retry with current settings…* | Blocked, saying the workflow is no longer on offer; *Retry* still runs the run's own snapshot |
+| A timed out issue | An issue whose run timed out, with `[unattended] timeout` changed since | *Timed out at … after …, against its timeout of …*; *Retry…* first, *Retry with current settings…* beside it |
 | Preview | Open the launcher, expand *Preview*, type a title | The steps are listed, and the first prompt shows the title as it is typed |
 | An issue found by its label | Switch the scratch project on for unattended runs, keep an issue in its Issues tab labelled `auto`, set `[unattended] agent = "Mock workflow"` and `mode = ""` (the mock offers no modes), then *Look for an issue now* in Settings ▸ Workspace | A task *#… · Work an issue* is under *Running*; a worktree on `onehand/local-<n>-<title>` is a project of its own and no session moves on screen. When it ends the project goes from the rail, the task is under *Finished*, and the issue has a note: *onehand left 1 commit on …* |
 | An issue picked by hand | *Work an issue…* from the project's menu, choose an issue, *Run* | The chosen row is marked and the start form opens below the list; after *Run* the dialog closes, nothing moves on screen, and its project stays when it ends |
@@ -429,7 +456,11 @@ change (`git checkout . && git clean -fd`).
 | From the Issues tab | Select an open issue, *Run workflow…* | The start form opens on that issue with no row to pick: *Workflow*, *Where it works* naming the branch and agent, *Instructions for this run*, the limits, *Preview*; *Run* starts the run, the dialog closes and the issue stays on screen, saying the run is starting with *Open session* |
 | A mode not offered | Open a session on an agent that offers modes, set `[unattended] mode` to one it does not offer, then *Run workflow…* on an issue | *Before it starts* says, in the danger ink, that the agent offers no such mode and what it offers; *Run* is spent and says one thing blocks; the issue keeps its labels. Edit the agent's spec in Settings ▸ Agents and open the form again: the mode reads *not known yet*, muted, and *Run* is offered |
 | A worktree run outside git | Open the launcher on a folder that is not a git repository and pick a worktree workflow | Under the fields, in the danger ink: no worktree can be cut; *Run* is spent. A checkout workflow there is offered |
-| A Retry whose mode is gone | Run an issue task with `mode` set to one the agent offers, let it end exhausted, then make the agent offer other modes (or change the spec's mode list) and open a session on it; *Retry* the task | The dialog lists, in the danger ink, that the agent offers no such mode and that the run keeps its own setup; *Retry* is spent. Changing `[unattended] mode` does not clear it |
+| A Retry whose mode is gone | Run an issue task with `mode` set to one the agent offers, let it end exhausted, then make the agent offer other modes (or change the spec's mode list) and open a session on it; *Retry* the task | The dialog lists, in the danger ink, that the agent offers no such mode, that the run keeps its own setup and that *Retry with current settings* runs with what Settings say now; *Retry* is spent. Changing `[unattended] mode` does not clear it, and *Retry with current settings…* then shows *Mode: old → new* and runs with the new one |
+| A configuration failure | An issue task whose run failed because its mode was not offered | The issue says why, with *Retry with current settings…* first and *Retry…* beside it |
+| Answer the pull request review | On a GitHub project, an issue whose task is done with its draft pull request open, a review left on it | The issue offers *Answer the pull request review* beside *Open pull request*; pressed, a new run starts at the repair step with the review as its note, and the issue is told it answers the review, as putting the label back does |
+| A review that cannot be answered | The same, after closing the pull request unmerged; then with a commit pushed to the branch on GitHub that the worktree does not have, the pull request open again; then on a workflow with no status checks step | The dialog lists *Its pull request … was closed without being merged …*, then *The branch on the forge went its own way …*, then *… has no status checks step …*, in the danger ink, and *Answer the review* is spent; nothing is claimed, and the issue gets no comment |
+| An older run in the review | A run kept by a build from before command results were kept, waiting at an approval after its check | The block's *Check* says *not recorded for this run*, or *cannot tell whether the check covers the work now* on a dirty worktree |
 | A full slot | With `at_once = 1` and an issue task running, *Run workflow…* on another issue | *Before it starts* names the issue being worked; *Run* is spent |
 | An earlier task needing attention | On an issue whose last task ended exhausted, *Run workflow…* | Muted: the last task ended and a new start makes a second task, with *Retry…*, which closes the form and opens that task's Retry dialog |
 | A template | *New issue* in the tab, press *Bug* in the *Template* row | The body holds *Problem*, *Scope*, *Acceptance* and *How to check*, each with its hint; the labels field gains `bug`; the row goes once anything is typed in the body. Save with only *Problem* filled: the issue's facts line says *No scope, acceptance or how to check written*, muted |
@@ -437,7 +468,7 @@ change (`git checkout . && git clean -fd`).
 | Advice on a run | Run a workflow on the templated issue above, by hand and by its label | The start form says the same muted line and *Run* is offered; each run's first report ends on *The issue has no … written.* |
 | Instructions for this run | In that form type `Keep the old flag.` under *Instructions for this run*, open *Preview*; *Run*; later *Retry* the task | The first prompt in the preview ends its instructions with the line as it is typed; the run's first prompt carries it, and so does the retry's; the issue's body is unchanged |
 | Where the work stands | While that run works, look at the issue | Above the body: *Running · Plan · step 1 of N*, *Working on Plan, started …*, no primary action, *Open session* and *Stop*. Below it: *What the work left* names the branch |
-| A long body waiting for approval | Give an issue a body several screens long, run on it, with the mock workflow agent, a duplicate of *Implement on a branch* given an approval step after its first, until it waits there | Without scrolling: *Waiting for approval · <the approval step> · step 2 of N*, *Approving starts …* and *Review…*, which opens the run's session with the step strip |
+| A long body waiting for approval | Give an issue a body several screens long, run on it, with the mock workflow agent, a duplicate of *Implement on a branch* given an approval step after its first, until it waits there | Without scrolling: *Waiting for approval · <the approval step> · step 2 of N*, *Approving starts …* and *Review…*, which opens the issue on the Issues page with its review block open |
 | A step ends while reading | Scroll into the body of an issue whose run is working, and wait for a step to end | Nothing above the body moves or changes height; only the words of the three work lines change |
 | A narrow dock, the largest zoom | Drag the Workbench to its narrowest and zoom in to the largest step | The primary action and *Step · step N of M* are drawn whole; the words before the step give way |
 | The network pulled | On a GitHub project with an issue whose run opened a pull request, turn networking off and press *Refresh* | The pull request line says *could not be read* in the warning ink, keeping the last state marked stale beside the failure; the branch line stays |
@@ -445,13 +476,22 @@ change (`git checkout . && git clean -fd`).
 | A closed issue with a live run | Close an issue in the tab while its run waits on a card | The confirm says *A run is still working on it; closing does not stop it*; afterwards *Open session to answer* and *Stop* stay, with *Issue is closed; this run is still active*. When the run ends, the line mutes to *Reopen issue* and *Show task* |
 | Before | Retry a task on the issue, or start a second one after the first ended | *Before* counts the earlier runs and names the earlier task, in the warning ink if it needs attention; each *Show task* opens it |
 | The Issues page | With twenty issues across two projects, some waiting for approval, some running, some never run, pick *Issues* in the rail | Both docks go away and the header reads *Issues*; without opening any, the waiting ones say *Waiting for approval* in the warning ink, the running ones *Running · <step>*, and the ones never run draw no line of work; *Needs attention* lists only the waiting and ended ones |
-| An approved issue stays | Under *Needs attention*, pick a waiting issue and approve it in its session, then pick *Issues* again | It is still in the list, saying *now Running · …*, at the place it was; picking another issue lets it go |
+| An approved issue stays | Under *Needs attention*, pick a waiting issue and approve it in its review block (or its session), then pick *Issues* again | It is still in the list, saying *now Running · …*, at the place it was; picking another issue lets it go |
 | Coming back | Pick an issue, filter by a project, scroll the list, then open the run's session (or the task detail, or a diff) and pick *Issues* in the rail | The same issue, filter, search and scroll |
 | Narrow | Narrow the window below two columns and pick an issue | The issue alone under *Back*; *Back* finds the list with its filters, scroll and the issue just read selected. At the largest zoom step a row still shows its title and its line of work |
 | Open in Issues | In the tab, ⋯ ▸ *Open in Issues*; also press a project row's *auto · #N* pill | The page opens on that issue; with the page filtered to another project and *Closed*, it is pinned on top, *Outside current filters*, the filters unchanged |
 | An older task needing attention | An issue whose newest task is done and an older task exhausted | Under *Needs attention*, its row saying *earlier task needs attention* |
 | Pull requests not read | On a GitHub project with more open pull requests than one read takes (or `gh` signed out), filter *Pull request open* | It says how many issues were not read, *the list may be incomplete*, with *Read them*; a project whose read failed is named |
-| What the work left, in full | Pick an issue whose run has passed Verify | Under *What the work left*: *Check* says it passed on the work as it is (or that the work has changed since), *This run* and *Branch* count the files and open into them, a file opens its diff in place, and *Commits* counts those past where the task started |
+| What the work left, in full | Pick an issue whose run has passed Verify | Under *What the work left*: *Check* says it passed on the work as it is, *N commits before the work now*, or *the work changed since the check passed*, with *Printed* its last line; *This run* and *Branch* count the files and open into them, a file opens its diff in place, and *Commits* counts those past where the task started |
+| A check against the work now | After a run passed Verify, edit a tracked file in its worktree without committing; then undo it and add an untracked file instead | *Check* says *the work changed since the check passed* both times; a task from before this build on a dirty worktree says *cannot tell whether the check covers the work now* |
+| A check in the review | A workflow with *Implement → Verify → Approve (of Implement)*, its check failing once then passing; *Review…* at the approval | *Check* says it passed against the work now, with the last lines the command printed; editing a file in the worktree and pressing *Review…* again says *the work changed since the check passed* |
+| Review in place | On the page, an issue waiting for approval: press *Review…* | The block opens below where the work stands, pushing the body down: *Review: Plan*, the plan, *Acceptance* collapsed (when the issue has one), *Plan runs again with your note* beside *Revise…* and *Continue starts Implement: …* beside *Continue*; a plan that changed no file draws no files and no check |
+| Continue from the block | Scroll the block's answer half way, press *Continue* | *Approved; sent to the run.* at once, the scroll where it was, then *The run moved on to Implement.*; the block stays until *Close* or another issue is picked; a run reaching its next approval does not open it |
+| An answer changed under the reader | Two windows on one workspace, both on the page with the block open on the same waiting issue; in one, *Revise…* with a note; wait for the plan to come back; in the other, press *Continue* | Nothing is approved: the block reloads to the new plan, saying *The answer changed since you opened it.*; a second *Continue* approves it |
+| A long answer | A plan longer than 60 lines waiting for approval | The block draws its last 60 lines with *Show all N lines*, and *Showing the last 60 of N lines.* above *Continue*; *Show all* draws the whole of it in place |
+| Revise from the block | *Revise…* in the block, *Send back* empty, then with a note | Empty says *Say what to change.*; with a note, *Sent back; sent to the run.*, and the plan runs again with the note |
+| Review from the tab | In the Issues tab, an issue waiting for approval: press *Review…* | The Issues page opens on the issue with its review block open |
+| The task detail's approval | Open a waiting task's detail on the Tasks page | *Awaiting approval* draws the answer, *Revise…* and *Continue* each beside what it starts; *Continue* moves the run on, as the strip's does |
 | One file for two views | With the tab and the page both on one issue, edit it in one | The other shows the edit at once; the footer says one sync, not two |
 | A draft kept | Start a new issue in the tab, type a title, open a session and come back; then pick another issue | The draft is still there; picking another issue asks *Drop this draft?* in a modal; an untouched form goes without asking |
 | Two at once | With `at_once = 1`, *Work an issue…* while an issue task runs | Refused, naming the issue being worked |

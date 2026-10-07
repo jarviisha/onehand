@@ -53,6 +53,20 @@ impl Shell {
                 }
             }
             E::OpenInIssues { root, number } => self.open_issue_on_page(root, *number, window, cx),
+            E::ReviewInIssues { root, number } => {
+                self.open_issue_on_page(root, *number, window, cx);
+                self.issues_page.review(root, *number, cx);
+            }
+            // Deferred: the run reaches into its session, and the answer
+            // reaches back into this page.
+            E::ApproveTask(approval) => {
+                let approval = approval.clone();
+                cx.defer(move |cx| crate::task::approve(approval, cx));
+            }
+            E::ReviseTask { approval, note } => {
+                let (approval, note) = (approval.clone(), note.clone());
+                cx.defer(move |cx| crate::task::revise(approval, note, cx));
+            }
             E::OpenTask(id) => self.show_task(id, window, cx),
             E::OpenTaskSession(id) => {
                 if let Some((uid, at)) = crate::task::session_of(id, cx) {
@@ -61,6 +75,8 @@ impl Shell {
             }
             E::ResumeTask(id) => self.resume_task(id.clone(), window, cx),
             E::RetryTask(id) => self.begin_retry(id.clone(), window, cx),
+            E::RetryTaskCurrent(id) => self.begin_retry_current(id.clone(), window, cx),
+            E::AnswerReview(id) => self.answer_review(id.clone(), window, cx),
             E::StopTask(id) => {
                 let id = id.clone();
                 cx.defer(move |cx| crate::task::stop_task(&id, cx));

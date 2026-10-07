@@ -635,45 +635,6 @@ impl Shell {
             .update(cx, |pane, cx| pane.open_task(Some(id), cx));
     }
 
-    /// Tell the Workbench where the work on the issues this window's projects
-    /// keep stands, and which projects a run may be started on, when either
-    /// changed since it was last told. Asked when the tasks move and when the git
-    /// sweep lands, which is also when the projects have changed.
-    pub(super) fn tell_issue_works(&mut self, cx: &mut Context<Self>) {
-        let kept: Vec<_> = self
-            .window
-            .workspace
-            .roots
-            .iter()
-            .filter_map(|root| Some((root.path.clone(), self.issues_file(&root.path)?)))
-            .collect();
-        // The rule the project menu offers *Work an issue…* by: a repository,
-        // not a run's own worktree, with unattended runs set up.
-        let set_up = crate::state::Shared::global(cx).unattended.is_some();
-        let offered: Vec<_> = self
-            .window
-            .workspace
-            .roots
-            .iter()
-            .filter(|root| set_up && !root.transient && self.window.git.contains_key(&root.path))
-            .map(|root| root.path.clone())
-            .collect();
-        let told = (crate::task::issue_works(&kept, cx), offered);
-        if told != self.issue_works {
-            self.workbench
-                .update(cx, |panel, cx| panel.issue_works(&told.0, &told.1, cx));
-            self.tell_issues_page(
-                &onehand_plugin_host::Request::IssueWork {
-                    works: &told.0,
-                    offered: &told.1,
-                },
-                cx,
-            );
-            self.issue_works = told;
-        }
-        self.tell_issues_page_projects(cx);
-    }
-
     /// Both docks hold one project's things, and a page is about all of
     /// them. Put away, not closed: the terminal's state is filed under its
     /// project and `terminal_root` let go, so the next arrival is a handover

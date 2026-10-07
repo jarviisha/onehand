@@ -14,8 +14,10 @@ use std::collections::{BTreeMap, HashSet};
 use std::path::Path;
 use std::path::PathBuf;
 
+mod answer;
 mod pick;
 
+pub use answer::{ReviewRead, read_review, start_answer};
 use pick::warn;
 pub use pick::{Pickable, look_now, pickable_blocking, pickable_one_blocking, start_picked};
 
@@ -97,11 +99,7 @@ pub(super) fn earlier(cx: &App) -> Vec<Earlier> {
             dir: task.setup.dir.clone(),
             branch: task.setup.branch.clone()?,
             working,
-            answers_reviews: task.setup.forge.is_some()
-                && task
-                    .runs
-                    .last()
-                    .is_some_and(|run| run.template.repair_step().is_some()),
+            answers_reviews: task.answers_reviews(),
         })
     })
 }
@@ -412,11 +410,9 @@ fn taking_blocking(
         }
     };
     Ok(match pr.state {
-        PrState::Open if !last.answers_reviews => Taking::Refused(format!(
-            "its pull request {} is open, and the workflow its task ran has no status \
-             checks step to answer a review from",
-            pr.url
-        )),
+        PrState::Open if !last.answers_reviews => {
+            Taking::Refused(core::review_unanswerable(&pr.url))
+        }
         PrState::Open => Taking::Review {
             task: last.task.clone(),
             dir: last.dir.clone(),
@@ -424,11 +420,7 @@ fn taking_blocking(
             note: core::review_note(&pr.url, &forge.read_review_with(pr.number)),
             pr: pr.url,
         },
-        PrState::Closed => Taking::Refused(format!(
-            "its pull request {} was closed without being merged, and onehand does not open \
-             another; reopen it to have its review answered",
-            pr.url
-        )),
+        PrState::Closed => Taking::Refused(core::review_closed(&pr.url)),
         PrState::Merged => Taking::Fresh,
     })
 }
@@ -465,7 +457,11 @@ fn prepare_blocking(
                 if let Some(forge) = forge {
                     forge.fetch_blocking(&repo, &branch)?;
                 }
-                worktree::fast_forward_blocking(&dir, &format!("origin/{branch}"))?;
+                let theirs = format!("origin/{branch}");
+                if worktree::went_its_own_way_blocking(&dir, &theirs)? {
+                    return Err(core::review_diverged());
+                }
+                worktree::fast_forward_blocking(&dir, &theirs)?;
                 return Ok(Work::Review { task, note });
             }
             Taking::Fresh => {}

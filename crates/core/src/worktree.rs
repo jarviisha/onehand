@@ -302,6 +302,27 @@ pub fn fast_forward_blocking(dir: &Path, to: &str) -> Result<(), String> {
     }
 }
 
+/// Whether the branch checked out at `dir` and `to` went their own ways:
+/// neither holds the other. One behind is brought up by a fast-forward, and
+/// one ahead, with commits not pushed yet, is up to date already.
+pub fn went_its_own_way_blocking(dir: &Path, to: &str) -> Result<bool, String> {
+    Ok(!ancestor_blocking(dir, "HEAD", to)? && !ancestor_blocking(dir, to, "HEAD")?)
+}
+
+/// Whether commit `old` is `new` or one of its ancestors.
+fn ancestor_blocking(dir: &Path, old: &str, new: &str) -> Result<bool, String> {
+    let out = output_within(
+        git(dir).args(["merge-base", "--is-ancestor", old, new]),
+        LOCAL_LIMIT,
+    )
+    .map_err(|err| format!("git merge-base {err}"))?;
+    match out.status.code() {
+        Some(0) => Ok(true),
+        Some(1) => Ok(false),
+        _ => Err(git_message(&out.stderr)),
+    }
+}
+
 /// How long a question git answers from the repository alone may take.
 pub(crate) const LOCAL_LIMIT: Duration = Duration::from_secs(30);
 
@@ -721,7 +742,8 @@ mod tests {
             git(dir, &["add", file]);
             git(dir, &["commit", "-qm", file]);
         };
-        let repo = std::env::temp_dir().join(format!("onehand-ff-{}", std::process::id()));
+        let repo =
+            std::env::temp_dir().join(format!("onehand-fast-forwards-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&repo);
         std::fs::create_dir_all(&repo).unwrap();
         git(&repo, &["init", "-q", "-b", "main"]);
@@ -733,12 +755,26 @@ mod tests {
         commit(&repo, "b");
         git(&repo, &["checkout", "-q", "main"]);
 
+        assert_eq!(
+            went_its_own_way_blocking(&repo, "theirs"),
+            Ok(false),
+            "behind"
+        );
         fast_forward_blocking(&repo, "theirs").unwrap();
         assert!(repo.join("b").exists(), "main caught up with theirs");
 
+        // Ahead of it, with a commit never pushed: up to date, not apart.
         commit(&repo, "c");
+        assert_eq!(
+            went_its_own_way_blocking(&repo, "theirs"),
+            Ok(false),
+            "ahead"
+        );
+        fast_forward_blocking(&repo, "theirs").unwrap();
+
         git(&repo, &["checkout", "-q", "theirs"]);
         commit(&repo, "d");
+        assert_eq!(went_its_own_way_blocking(&repo, "main"), Ok(true));
         assert!(
             fast_forward_blocking(&repo, "main").is_err(),
             "two branches that went their own ways are never merged"

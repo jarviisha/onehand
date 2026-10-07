@@ -11,6 +11,7 @@
 
 use gpui::{AnyView, App, Pixels, Window};
 use onehand_core::gitstat::GitStatus;
+use onehand_core::task::Approval;
 use onehand_core::task::work::IssueWork;
 use onehand_plugin_api::WorkbenchModeSpec;
 use std::collections::HashMap;
@@ -193,6 +194,19 @@ pub enum Request<'a> {
     /// is room to work it, its filters left as they are. Only ever travels
     /// **upward**.
     OpenInIssues { root: &'a Path, number: u64 },
+    /// Put issue `number` of project `root` on the Issues page with what its
+    /// work waits for approval on open to review. Only ever travels
+    /// **upward**.
+    ReviewInIssues { root: &'a Path, number: u64 },
+    /// Approve what a run waits on, as read: refused by the run unless it
+    /// still waits where it was read. Only ever travels **upward**.
+    ApproveTask(&'a Approval),
+    /// Send what a run waits on, as read, back with `note`: refused the same
+    /// way. Only ever travels **upward**.
+    ReviseTask {
+        approval: &'a Approval,
+        note: &'a str,
+    },
     /// Put task `id` on screen, in the Tasks page's detail. Only ever travels
     /// **upward**.
     OpenTask(&'a str),
@@ -203,6 +217,12 @@ pub enum Request<'a> {
     ResumeTask(&'a str),
     /// Choose how to run task `id` again. Only ever travels **upward**.
     RetryTask(&'a str),
+    /// Run task `id` again with what Settings say now, asking first. Only
+    /// ever travels **upward**.
+    RetryTaskCurrent(&'a str),
+    /// Answer the review on issue task `id`'s open pull request, as putting
+    /// the trigger label back does. Only ever travels **upward**.
+    AnswerReview(&'a str),
     /// Stop task `id`. Only ever travels **upward**.
     StopTask(&'a str),
 }

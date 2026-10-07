@@ -11,8 +11,9 @@ use gpui::{
 };
 use gpui_component::WindowExt as _;
 use gpui_component::notification::Notification;
+use onehand_core::task::work::UnderReview;
 use onehand_core::task::{Group, Task, Working, files, history, marks, queue};
-use onehand_core::workflow::{Action, Run, Stop, Template, run_command_blocking};
+use onehand_core::workflow::{Action, Failure, Run, Stop, Template, run_command_blocking};
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -128,6 +129,14 @@ impl Tasks {
     /// The driver running task `id`'s run, if one is.
     fn driven(&self, id: &str) -> Option<&driver::Driven> {
         self.live.values().find(|d| d.task == id)
+    }
+
+    /// The session task `id`'s run is driven on, if one is.
+    fn live_uid(&self, id: &str) -> Option<u64> {
+        self.live
+            .iter()
+            .find(|(_, d)| d.task == id)
+            .map(|(uid, _)| *uid)
     }
 
     /// What task `id` is doing, if anything.
@@ -387,13 +396,13 @@ fn freed(id: String, from: usize, cx: &mut App) {
     .detach();
 }
 
-/// Task `id`, holding its place, could not start for `why`: its run ends
-/// failed, its issue is told, and its place passes on.
-pub(crate) fn fail(id: String, why: String, cx: &mut App) {
+/// Task `id`, holding its place, could not start for `why`, of `kind`: its
+/// run ends failed, its issue is told, and its place passes on.
+pub(crate) fn fail(id: String, why: String, kind: Failure, cx: &mut App) {
     let Some(mut run) = resumable_run(&id, cx) else {
         return release(id, cx);
     };
-    run.failed(why);
+    run.failed(why, kind);
     crate::unattended::keep(&id, &run, false, None, cx);
     cx.update_global::<Tasks, _>(|t, _| t.store_run(&id, run));
     let_go(id, cx);
@@ -490,18 +499,25 @@ pub(crate) fn dismiss(id: &str, cx: &mut App) {
 
 /// Where the run on session `uid` stands, as its strip draws it.
 pub(crate) struct Shown {
+    pub(crate) task: SharedString,
     pub(crate) name: SharedString,
     pub(crate) steps: Vec<SharedString>,
     pub(crate) at: usize,
-    /// What it waits on *Continue* or *Revise…* for: the label of the step
-    /// that answered, and its answer.
-    pub(crate) review: Option<(SharedString, SharedString)>,
+    /// What it waits on *Continue* or *Revise…* for.
+    pub(crate) review: Option<UnderReview>,
+}
+
+/// What task `id`'s run, under way, waits for approval on now.
+pub(crate) fn review_of(id: &str, cx: &App) -> Option<UnderReview> {
+    UnderReview::of(&cx.try_global::<Tasks>()?.driven(id)?.run)
 }
 
 /// Where the run on session `uid` stands, if one drives it.
 pub(crate) fn shown(uid: u64, cx: &App) -> Option<Shown> {
-    let run = &cx.try_global::<Tasks>()?.live.get(&uid)?.run;
+    let driven = cx.try_global::<Tasks>()?.live.get(&uid)?;
+    let run = &driven.run;
     Some(Shown {
+        task: driven.task.clone().into(),
         name: run.template.name.clone().into(),
         steps: run
             .template
@@ -510,9 +526,7 @@ pub(crate) fn shown(uid: u64, cx: &App) -> Option<Shown> {
             .map(|step| step.label.clone().into())
             .collect(),
         at: run.step,
-        review: run
-            .under_review()
-            .map(|(step, answer)| (step.label.clone().into(), answer.to_string().into())),
+        review: UnderReview::of(run),
     })
 }
 
@@ -540,12 +554,7 @@ pub(crate) fn stop_task(id: &str, cx: &mut App) {
     if t.queue.queued(id) {
         return stop_queued(id, cx);
     }
-    let live = t
-        .live
-        .iter()
-        .find(|(_, d)| d.task == id)
-        .map(|(uid, _)| *uid);
-    if let Some(uid) = live {
+    if let Some(uid) = t.live_uid(id) {
         return stop(uid, cx);
     }
     if let Some(cancel) = t.checks.get(id) {
@@ -569,6 +578,29 @@ pub(crate) fn retry(
         }
         let made = t.task_mut(id).is_some_and(|task| {
             task.retry(onehand_core::task::new_id(), template, from, note)
+                .is_some()
+        });
+        if made {
+            t.save(id);
+        }
+        made
+    })
+}
+
+/// Give task `id` a new run with what Settings say now, as `plan` worked it
+/// out, kept but not started: the caller asks for its place. Whether there
+/// was one to give.
+pub(crate) fn retry_with(
+    id: &str,
+    plan: onehand_core::workflow::WithCurrent,
+    cx: &mut App,
+) -> bool {
+    cx.update_global::<Tasks, _>(|t, _| {
+        if t.busy(id) {
+            return false;
+        }
+        let made = t.task_mut(id).is_some_and(|task| {
+            task.retry_with(onehand_core::task::new_id(), plan)
                 .is_some()
         });
         if made {
@@ -617,10 +649,7 @@ pub(crate) fn drive_check(id: String, window: AnyWindowHandle, cx: &mut App) {
                 .spawn(async move {
                     let ran = run_command_blocking(&dir, &command, &cancel);
                     drop(running);
-                    ran?;
-                    // Passed on its exit status; the commit is kept when
-                    // there is one, and a folder outside git has none.
-                    Ok(onehand_core::worktree::head_blocking(&dir).ok())
+                    ran
                 })
                 .await
         };
@@ -636,7 +665,7 @@ pub(crate) fn drive_check(id: String, window: AnyWindowHandle, cx: &mut App) {
                     None
                 }
                 false => {
-                    let passed = ran.is_ok();
+                    let passed = ran.passed;
                     run.command_finished(ran);
                     Some(passed)
                 }

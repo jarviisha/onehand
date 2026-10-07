@@ -56,6 +56,23 @@ pub(super) fn branch_flow() -> Template {
     template
 }
 
+/// `task` as an issue's task, issue #3 of a local file.
+pub(super) fn on_issue(mut task: Task) -> Task {
+    task.source = super::super::Source::Issue(crate::unattended::IssueSource {
+        tracker: crate::unattended::TrackerRef::Local {
+            file: PathBuf::from("/repo/issues.toml"),
+        },
+        number: 3,
+        forge_ref: None,
+        forge: task.setup.forge.clone(),
+        base: "origin/main".into(),
+        picked: false,
+        unsent: Vec::new(),
+        notes: Vec::new(),
+    });
+    task
+}
+
 pub(super) fn task(id: &str, template: Template, forge: Option<&str>) -> Task {
     Task::new(
         id.into(),
@@ -91,6 +108,7 @@ pub(super) fn at(mut task: Task, at: usize, since: u64) -> Task {
         end: None,
         output: None,
         why: None,
+        command: None,
     });
     run.history.push(Transition {
         at: since,
@@ -313,35 +331,76 @@ fn an_exhausted_or_timed_out_run_says_where_and_what_its_last_visit_ended_on() {
         acts(&next),
         (Some(Act::Retry), vec![Act::ShowTask, Act::Edit])
     );
-    let task = ended(
+    let mut task = ended(
         at(self::task("1", forge_flow(), None), 2, 900),
         Outcome::Stopped(Stop::TimedOut),
         None,
     );
+    task.runs[0].spent_secs = 45 * 60;
     let timed_out = next_of(&task, None, open());
-    assert_eq!(timed_out.said.as_deref(), Some("Timed out at Implement"));
-    assert_eq!(timed_out.primary, Some(Act::Retry));
+    assert_eq!(
+        timed_out.said.as_deref(),
+        Some("Timed out at Implement after 45m, against its timeout of 45m")
+    );
+    assert_eq!(
+        acts(&timed_out),
+        (Some(Act::Retry), vec![Act::ShowTask, Act::Edit]),
+        "Retry keeps the timeout"
+    );
+    // With the timeout on offer changed since, the second way is offered.
+    let mut work = Work::of(&task, None, None);
+    work.timeout_moved = true;
+    assert_eq!(
+        acts(&next_action(Some(&work), open())),
+        (
+            Some(Act::Retry),
+            vec![Act::RetryCurrent, Act::ShowTask, Act::Edit]
+        )
+    );
 }
 
+/// A failed run is offered the way out its failure fits: a configuration
+/// failure is changed where the configuration is, the rest retried.
 #[test]
-fn a_failed_run_says_why_and_offers_a_retry() {
-    let task = ended(
-        at(task("1", forge_flow(), None), 0, 900),
-        Outcome::Failed("the agent is not configured".into()),
-        None,
+fn a_failed_run_says_why_and_offers_the_way_out_that_fits() {
+    let failed = |kind: Option<crate::workflow::Failure>| {
+        let mut task = ended(
+            at(task("1", forge_flow(), None), 0, 900),
+            Outcome::Failed("the agent `x` is no longer configured".into()),
+            None,
+        );
+        task.runs[0].failure = kind;
+        next_of(&task, None, open())
+    };
+    let next = failed(Some(crate::workflow::Failure::Configuration));
+    assert_eq!(
+        next.said.as_deref(),
+        Some("the agent `x` is no longer configured")
     );
-    let next = next_of(&task, None, open());
-    assert_eq!(next.said.as_deref(), Some("the agent is not configured"));
     assert_eq!(
         acts(&next),
-        (Some(Act::Retry), vec![Act::ShowTask, Act::Edit])
+        (
+            Some(Act::RetryCurrent),
+            vec![Act::Retry, Act::ShowTask, Act::Edit]
+        )
     );
+    for kind in [
+        Some(crate::workflow::Failure::Forge),
+        Some(crate::workflow::Failure::Other),
+        None,
+    ] {
+        assert_eq!(
+            acts(&failed(kind)),
+            (Some(Act::Retry), vec![Act::ShowTask, Act::Edit]),
+            "{kind:?}"
+        );
+    }
 }
 
 #[test]
 fn a_done_run_with_its_pull_request_open_is_reviewed_on_the_forge() {
     let task = ended(
-        at(task("1", forge_flow(), Some("GitHub")), 6, 900),
+        at(on_issue(task("1", forge_flow(), Some("GitHub"))), 6, 900),
         Outcome::Done,
         None,
     );
@@ -355,7 +414,15 @@ fn a_done_run_with_its_pull_request_open_is_reviewed_on_the_forge() {
         },
     );
     assert_eq!(next.said.as_deref(), Some("Review it on GitHub"));
-    assert_eq!(acts(&next), (Some(Act::OpenPullRequest), vec![Act::Edit]));
+    // A review left there is answered from here as well as by putting the
+    // label back; whether it can be is the preflight's to say when pressed.
+    assert_eq!(
+        acts(&next),
+        (
+            Some(Act::OpenPullRequest),
+            vec![Act::AnswerReview, Act::Edit]
+        )
+    );
     assert_eq!(pr_named(&open_pr), "#7 · open, draft");
 }
 
@@ -674,23 +741,259 @@ fn the_run_and_the_branch_are_measured_from_their_first_marks() {
 
 #[test]
 fn a_check_vouches_only_for_the_work_it_passed_on() {
-    use super::left::{check_stands, CheckStands};
-    assert_eq!(check_stands(None, "abc", false), CheckStands::NotRecorded);
+    use super::left::{check_stands, CheckStands, Vouched, WorkNow};
+    let now = |head: &str, dirty: bool, digest: &str, behind: u64| WorkNow {
+        head: head.into(),
+        dirty,
+        digest: digest.into(),
+        behind,
+    };
+    let ran = |digest: Option<&str>| Vouched {
+        commit: "abc".into(),
+        digest: digest.map(str::to_string),
+        tail: None,
+    };
     assert_eq!(
-        check_stands(Some("abc"), "abc", false),
+        check_stands(None, &now("abc", false, "d0", 0)),
+        CheckStands::NotRecorded
+    );
+    // The commit and the uncommitted work it ran on, as they are now.
+    assert_eq!(
+        check_stands(Some(&ran(Some("d1"))), &now("abc", true, "d1", 0)),
         CheckStands::OnThis("abc".into())
     );
-    // Uncommitted work beside the same commit is not what passed.
+    // A tracked file edited since, without a commit; or only an untracked
+    // file added: either way the fingerprint differs.
     assert_eq!(
-        check_stands(Some("abc"), "abc", true),
-        CheckStands::Moved("abc".into())
+        check_stands(Some(&ran(Some("d1"))), &now("abc", true, "d2", 0)),
+        CheckStands::Changed("abc".into())
+    );
+    // Another commit, counted.
+    assert_eq!(
+        check_stands(Some(&ran(Some("d1"))), &now("def", false, "d0", 2)),
+        CheckStands::Behind {
+            at: "abc".into(),
+            commits: 2
+        }
+    );
+    // From before the fingerprint was kept: the commit alone vouches for a
+    // clean worktree, and cannot tell for a dirty one.
+    assert_eq!(
+        check_stands(Some(&ran(None)), &now("abc", false, "d0", 0)),
+        CheckStands::OnThis("abc".into())
     );
     assert_eq!(
-        check_stands(Some("abc"), "def", false),
-        CheckStands::Moved("abc".into())
+        check_stands(Some(&ran(None)), &now("abc", true, "d2", 0)),
+        CheckStands::CannotTell("abc".into())
     );
     assert_eq!(
-        CheckStands::Moved("0123456789abcdef".into()).said(),
-        "passed on 0123456789; the work has changed since"
+        CheckStands::Behind {
+            at: "0123456789abcdef".into(),
+            commits: 2
+        }
+        .said(),
+        "passed on 0123456789, 2 commits before the work now"
     );
+    assert_eq!(
+        CheckStands::Changed("abc".into()).said(),
+        "passed on abc; the work changed since the check passed"
+    );
+    assert_eq!(
+        CheckStands::CannotTell("abc".into()).said(),
+        "passed on abc; cannot tell whether the check covers the work now"
+    );
+}
+
+/// The check a run's work shows is its last passed command, with what that
+/// command printed; a run from before part B has the commit alone.
+#[test]
+fn the_check_shown_is_the_last_passed_command() {
+    let verify = |why: &str, command: Option<crate::workflow::CommandResult>| Visit {
+        id: 9,
+        step: "verify".into(),
+        started_at: 1,
+        ended_at: Some(2),
+        start: None,
+        end: None,
+        output: None,
+        why: Some(why.into()),
+        command,
+    };
+    // A retry carries the commit the last run's check passed on, for its
+    // push; no command has run in it, so its check is not recorded.
+    let mut task = task("1", branch_flow(), None);
+    task.runs[0].marks.verified_at = Some("abc".into());
+    assert_eq!(Work::of(&task, None, None).vouched, None);
+
+    // A visit cut off while its command ran passed nothing.
+    task.runs[0].visits.push(verify("interrupted", None));
+    assert_eq!(Work::of(&task, None, None).vouched, None);
+
+    // A run from before results were kept passed its command and kept the
+    // commit alone.
+    task.runs[0].visits.push(verify("the command passed", None));
+    let vouched = Work::of(&task, None, None).vouched.unwrap();
+    assert_eq!((vouched.commit.as_str(), vouched.digest), ("abc", None));
+
+    task.runs[0].visits.push(verify(
+        "the command passed",
+        Some(crate::workflow::CommandResult {
+            passed: true,
+            exit: Some(0),
+            tail: "all 12 passed".into(),
+            commit: Some("abc".into()),
+            digest: Some("d1".into()),
+        }),
+    ));
+    let vouched = Work::of(&task, None, None).vouched.unwrap();
+    assert_eq!(vouched.digest.as_deref(), Some("d1"));
+    assert_eq!(vouched.tail.as_deref(), Some("all 12 passed"));
+}
+
+/// A task whose run, driven by the engine, answered its plan and waits for
+/// approval, with the plan's visit pinned from `m1` to `m2`.
+fn plan_waiting() -> Task {
+    use crate::workflow::{Facts, Mark};
+    let mut task = task("1", forge_flow(), None);
+    let run = task.runs.last_mut().unwrap();
+    run.resume();
+    run.pinned("m1", 0);
+    let mark = Mark {
+        head: "a".into(),
+        digests: vec!["d0".into()],
+    };
+    run.measured(mark);
+    let facts = Facts {
+        head: "a".into(),
+        dirty: false,
+        commits: 0,
+        digest: "d0".into(),
+    };
+    run.turn_ended(&facts, "The plan.");
+    run.pinned("m2", 1);
+    task
+}
+
+/// What waits for approval is read from the run, with the visit a press
+/// carries, what each answer starts, and the plan's own span of the work.
+#[test]
+fn an_approval_says_what_is_reviewed_and_what_each_answer_starts() {
+    let task = plan_waiting();
+    let work = Work::of(&task, Some(Working::Waiting), None);
+    let review = work.review.clone().expect("it waits for approval");
+    assert_eq!(review.at, task.runs[0].approval_at().unwrap());
+    assert_eq!(review.of, "Plan");
+    assert_eq!(review.answer, "The plan.");
+    assert_eq!(
+        review.continue_said(),
+        "Continue starts Implement: the agent works"
+    );
+    assert_eq!(review.revise_said(), "Plan runs again with your note");
+    assert_eq!(review.span, Some(("m1".to_string(), "m2".to_string())));
+    assert_eq!(
+        review.check,
+        Checked::NotRun,
+        "no command ran since the plan started"
+    );
+
+    // A command that ran since the step under review began is what its
+    // check says, failed as well as passed.
+    let mut checked = task.clone();
+    let failed = crate::workflow::CommandResult {
+        passed: false,
+        exit: Some(2),
+        tail: "1 test failed".into(),
+        commit: Some("a".into()),
+        digest: None,
+    };
+    let at = checked.runs[0].visits.len() - 1;
+    checked.runs[0].visits.insert(
+        at,
+        Visit {
+            id: 99,
+            step: "verify".into(),
+            started_at: 1,
+            ended_at: Some(2),
+            start: None,
+            end: None,
+            output: None,
+            why: None,
+            command: Some(failed.clone()),
+        },
+    );
+    let review = Work::of(&checked, Some(Working::Waiting), None)
+        .review
+        .unwrap();
+    assert_eq!(review.check, Checked::Ran(failed));
+    // One cut off while its command ran came out not at all.
+    checked.runs[0].visits[at].command = None;
+    checked.runs[0].visits[at].why = Some("interrupted".into());
+    let review = Work::of(&checked, Some(Working::Waiting), None)
+        .review
+        .unwrap();
+    assert_eq!(review.check, Checked::NotRun);
+    // One from before results were kept is said as not kept, for the work's
+    // own check to judge.
+    checked.runs[0].visits[at].why = Some("the command failed".into());
+    let review = Work::of(&checked, Some(Working::Waiting), None)
+        .review
+        .unwrap();
+    assert_eq!(review.check, Checked::NotKept);
+
+    // Nothing is under review once the run moved on, or for a run that is
+    // not waiting.
+    assert!(Work::of(&task, Some(Working::Running), None)
+        .review
+        .is_none());
+}
+
+/// What a step does, in the words beside *Continue*.
+#[test]
+fn a_step_says_what_it_does() {
+    let changes = StepKind::Agent {
+        prompt: String::new(),
+        gates: vec![crate::workflow::GateKind::CodeChanged],
+        keep_answer: false,
+    };
+    assert_eq!(changes.does(), "the agent changes the code");
+    let answers = StepKind::Agent {
+        prompt: String::new(),
+        gates: vec![crate::workflow::GateKind::Answered],
+        keep_answer: true,
+    };
+    assert_eq!(answers.does(), "the agent answers");
+    assert_eq!(
+        StepKind::Command {
+            command: None,
+            on_fail: "x".into()
+        }
+        .does(),
+        "onehand runs the check command"
+    );
+    assert_eq!(
+        StepKind::Command {
+            command: Some("make package".into()),
+            on_fail: "x".into()
+        }
+        .does(),
+        "onehand runs make package"
+    );
+    assert_eq!(
+        StepKind::Push.does(),
+        "onehand pushes the commit the check passed on"
+    );
+    assert_eq!(
+        StepKind::PullRequest.does(),
+        "onehand opens a draft pull request"
+    );
+}
+
+/// An answer is drawn by its last lines, saying how many it left out.
+#[test]
+fn an_answer_is_cut_to_its_last_lines() {
+    let long: String = (1..=70).map(|n| format!("line {n}\n")).collect();
+    let (shown, left_out) = last_lines(&long, ANSWER_LINES);
+    assert_eq!(left_out, 10);
+    assert!(shown.starts_with("line 11\n"));
+    assert_eq!(last_lines("short", ANSWER_LINES), ("short", 0));
 }

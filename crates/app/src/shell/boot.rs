@@ -174,13 +174,13 @@ impl Shell {
                     }
                     // Deferred: the run reaches into its session, which may
                     // be what is announcing this.
-                    E::ContinueWorkflow(uid) => {
-                        let uid = *uid;
-                        cx.defer(move |cx| crate::task::approve(uid, cx));
+                    E::ContinueWorkflow(approval) => {
+                        let approval = approval.clone();
+                        cx.defer(move |cx| crate::task::approve(approval, cx));
                     }
-                    E::ReviseWorkflow { uid, note } => {
-                        let (uid, note) = (*uid, note.clone());
-                        cx.defer(move |cx| crate::task::revise(uid, note, cx));
+                    E::ReviseWorkflow { approval, note } => {
+                        let (approval, note) = (approval.clone(), note.clone());
+                        cx.defer(move |cx| crate::task::revise(approval, note, cx));
                     }
                     E::StopWorkflow(uid) => {
                         let uid = *uid;
@@ -189,6 +189,8 @@ impl Shell {
                     E::ResumeTask(id) => shell.resume_task(id.clone(), window, cx),
                     E::DismissTask(id) => crate::task::dismiss(id, cx),
                     E::RetryTask(id) => shell.begin_retry(id.clone(), window, cx),
+                    E::RetryTaskCurrent(id) => shell.begin_retry_current(id.clone(), window, cx),
+                    E::AnswerReview(id) => shell.answer_review(id.clone(), window, cx),
                     E::StopTask(id) => {
                         let id = id.clone();
                         cx.defer(move |cx| crate::task::stop_task(&id, cx));

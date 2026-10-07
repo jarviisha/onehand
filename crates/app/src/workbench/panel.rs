@@ -28,6 +28,7 @@ use gpui_component::button::ButtonVariants as _;
 use gpui_component::dock::{Panel, PanelControl, PanelEvent};
 use gpui_component::{ActiveTheme, Icon, IconName, Sizable as _, StyledExt};
 use onehand_core::gitstat::GitStatus;
+use onehand_core::task::Approval;
 use onehand_plugin_api::{PluginId, WorkbenchModeSpec};
 use onehand_plugin_host::{Ask, Request, WorkbenchMode};
 use std::collections::HashMap;
@@ -386,6 +387,19 @@ pub enum WorkbenchEvent {
         root: std::path::PathBuf,
         number: u64,
     },
+    /// Show issue `number` of project `root` on the Issues page, its review
+    /// open.
+    ReviewInIssues {
+        root: std::path::PathBuf,
+        number: u64,
+    },
+    /// Approve what a run waits on, as read.
+    ApproveTask(Approval),
+    /// Send it back with `note`.
+    ReviseTask {
+        approval: Approval,
+        note: String,
+    },
     /// Show task `id` on the Tasks page.
     OpenTask(String),
     /// Show the session task `id` runs in.
@@ -394,6 +408,10 @@ pub enum WorkbenchEvent {
     ResumeTask(String),
     /// Choose how to run task `id` again.
     RetryTask(String),
+    /// Run task `id` again with what Settings say now, asking first.
+    RetryTaskCurrent(String),
+    /// Answer the review on issue task `id`'s open pull request.
+    AnswerReview(String),
     /// Stop task `id`.
     StopTask(String),
 }
@@ -423,10 +441,21 @@ pub fn issue_event(request: &Request<'_>) -> Option<WorkbenchEvent> {
             root: root.to_path_buf(),
             number: *number,
         },
+        Request::ReviewInIssues { root, number } => WorkbenchEvent::ReviewInIssues {
+            root: root.to_path_buf(),
+            number: *number,
+        },
+        Request::ApproveTask(approval) => WorkbenchEvent::ApproveTask((*approval).clone()),
+        Request::ReviseTask { approval, note } => WorkbenchEvent::ReviseTask {
+            approval: (*approval).clone(),
+            note: note.to_string(),
+        },
         Request::OpenTask(id) => WorkbenchEvent::OpenTask(id.to_string()),
         Request::OpenTaskSession(id) => WorkbenchEvent::OpenTaskSession(id.to_string()),
         Request::ResumeTask(id) => WorkbenchEvent::ResumeTask(id.to_string()),
         Request::RetryTask(id) => WorkbenchEvent::RetryTask(id.to_string()),
+        Request::RetryTaskCurrent(id) => WorkbenchEvent::RetryTaskCurrent(id.to_string()),
+        Request::AnswerReview(id) => WorkbenchEvent::AnswerReview(id.to_string()),
         Request::StopTask(id) => WorkbenchEvent::StopTask(id.to_string()),
         Request::OpenFile(_)
         | Request::Save

@@ -11,17 +11,18 @@ use super::Tasks;
 use crate::chat::session::{ChatEvent, ChatSession, note};
 use gpui::{AnyWindowHandle, App, BorrowAppContext as _, Entity, Subscription, Task, WeakEntity};
 use onehand_core::chat::Link;
-use onehand_core::connector::{self, CheckState, Connector, PrState};
+use onehand_core::preflight::{Check, found_late};
+use onehand_core::task::Approval;
 use onehand_core::task::marks;
 use onehand_core::unattended::Budget;
 use onehand_core::workflow::{
-    Action, Facts, Mark, Outcome, Run, Seen, Stop, judge, run_command_blocking, waited_on,
-    with_logs,
+    Action, Facts, Failure, Mark, Outcome, Run, Stop, run_command_blocking,
 };
-use onehand_core::worktree;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
+
+mod forge;
 
 /// A call held until a mark is pinned, and whether it ends the run.
 type Later = (bool, Box<dyn FnOnce(&mut App)>);
@@ -175,23 +176,42 @@ fn held(uid: u64, cx: &mut App, ends: bool, then: impl FnOnce(&mut App) + 'stati
     .unwrap_or(false)
 }
 
-/// A person approved what the run waits on.
-pub(crate) fn approve(uid: u64, cx: &mut App) {
-    if held(uid, cx, false, move |cx| approve(uid, cx)) {
-        return;
+/// A person approved what they read, as `approval` names it.
+pub(crate) fn approve(approval: Approval, cx: &mut App) {
+    if let Some(uid) = live_uid(&approval.task, cx) {
+        answer(uid, cx, move |run| run.approved(&approval.at));
     }
-    with(uid, cx, |d| d.budget.resume(Instant::now()));
-    advance(uid, cx, Run::approved);
 }
 
-/// A person sent it back with `note`.
-pub(crate) fn revise(uid: u64, note: String, cx: &mut App) {
-    let later = note.clone();
-    if held(uid, cx, false, move |cx| revise(uid, later, cx)) {
+/// A person sent what they read, as `approval` names it, back with `note`.
+pub(crate) fn revise(approval: Approval, note: String, cx: &mut App) {
+    if let Some(uid) = live_uid(&approval.task, cx) {
+        answer(uid, cx, move |run| run.revised(&approval.at, note));
+    }
+}
+
+/// The session task `task`'s run is driven on: a press is routed by the
+/// task, so a window other than the session's can make it.
+fn live_uid(task: &str, cx: &App) -> Option<u64> {
+    cx.try_global::<Tasks>()?.live_uid(task)
+}
+
+/// A person's answer to the approval the run on session `uid` waits on: held
+/// while a mark is pinned, then judged by the engine against the visit it
+/// was drawn from. The clock goes on only once the engine took it, so a
+/// refused press leaves the run waiting as it was.
+fn answer(uid: u64, cx: &mut App, report: impl FnOnce(&mut Run) -> Action + 'static) {
+    if read(uid, cx, |d| d.held.is_some()).unwrap_or(false) {
+        held(uid, cx, false, move |cx| answer(uid, cx, report));
         return;
     }
-    with(uid, cx, |d| d.budget.resume(Instant::now()));
-    advance(uid, cx, move |run| run.revised(note));
+    let Some(action) = with(uid, cx, |d| report(&mut d.run)) else {
+        return;
+    };
+    if action != Action::Idle {
+        with(uid, cx, |d| d.budget.resume(Instant::now()));
+    }
+    act(uid, action, cx);
 }
 
 /// A person pressed Stop: the turn is cancelled and the run ends.
@@ -390,11 +410,11 @@ fn carry_out(uid: u64, action: Action, cx: &mut App) {
                 format!("Pushing {}, which the check passed on", short(&commit)),
                 cx,
             );
-            on_forge(uid, Some(commit), cx);
+            forge::on_forge(uid, Some(commit), cx);
         }
         Action::OpenPullRequest => {
             note(&session, "Opening the pull request".to_string(), cx);
-            on_forge(uid, None, cx);
+            forge::on_forge(uid, None, cx);
         }
         Action::AwaitStatusChecks { wait, pushed } => {
             let task = with(uid, cx, |d| {
@@ -406,7 +426,7 @@ fn carry_out(uid: u64, action: Action, cx: &mut App) {
                 "Waiting for the pull request's status checks".to_string(),
                 cx,
             );
-            let watching = watch_status_checks(uid, pushed, Instant::now(), wait, cx);
+            let watching = forge::watch_status_checks(uid, pushed, Instant::now(), wait, cx);
             with(uid, cx, |d| d._status_checks = Some(watching));
             // Its slot is free now, for another issue to take up.
             if let Some(task) = task {
@@ -485,7 +505,7 @@ fn measure(uid: u64, cx: &mut App) {
         cx.update(|cx| match mark {
             Ok(mark) => advance(uid, cx, move |run| run.measured(mark)),
             Err(why) => advance(uid, cx, move |run| {
-                run.failed(format!("the work could not be read: {why}"))
+                run.failed(format!("the work could not be read: {why}"), Failure::Other)
             }),
         });
     })
@@ -516,7 +536,10 @@ fn send(uid: u64, session: &Entity<ChatSession>, text: String, cx: &mut App) {
     });
     if !session.update(cx, |session, cx| session.submit(&text, &[], cx)) {
         advance(uid, cx, |run| {
-            run.failed("the agent did not take the prompt".to_string())
+            run.failed(
+                "the agent did not take the prompt".to_string(),
+                Failure::Other,
+            )
         });
     }
 }
@@ -548,7 +571,7 @@ fn came_up(uid: u64, session: &Entity<ChatSession>, cx: &mut App) -> bool {
         .collect();
     if let Some(why) = onehand_core::preflight::mode_refused(&mode, &offered) {
         crate::unattended::refuse_mode(&why, cx);
-        advance(uid, cx, move |run| run.failed(why));
+        advance(uid, cx, move |run| run.failed(why, found_late(Check::Mode)));
         return false;
     }
     session.update(cx, |session, _| session.chat.set_mode(&mode));
@@ -579,7 +602,7 @@ fn after_turn(uid: u64, session: &Entity<ChatSession>, cx: &mut App) {
         cx.update(|cx| match facts {
             Ok(facts) => advance(uid, cx, move |run| run.turn_ended(&facts, &answer)),
             Err(why) => advance(uid, cx, move |run| {
-                run.failed(format!("the work could not be read: {why}"))
+                run.failed(format!("the work could not be read: {why}"), Failure::Other)
             }),
         });
     })
@@ -615,9 +638,7 @@ fn run_command(uid: u64, session: &Entity<ChatSession>, command: String, cx: &mu
             .spawn(async move {
                 let ran = run_command_blocking(&dir, &command, &cancel);
                 drop(running);
-                ran?;
-                // Passed on its exit status; the commit is kept when there is one.
-                Ok(worktree::head_blocking(&dir).ok())
+                ran
             })
             .await;
         cx.update(|cx| {
@@ -631,9 +652,9 @@ fn run_command(uid: u64, session: &Entity<ChatSession>, command: String, cx: &mu
                 return advance(uid, cx, move |run| run.stopped(stop));
             }
             if let Some(session) = weak.upgrade().filter(|_| read(uid, cx, |_| ()).is_some()) {
-                let said = match &ran {
-                    Ok(_) => "The command passed",
-                    Err(_) => "The command failed",
+                let said = match ran.passed {
+                    true => "The command passed",
+                    false => "The command failed",
                 };
                 note(&session, said.to_string(), cx);
             }
@@ -643,174 +664,9 @@ fn run_command(uid: u64, session: &Entity<ChatSession>, command: String, cx: &mu
     .detach();
 }
 
-/// How often a run waiting on its pull request's status checks looks at
-/// them.
-// ponytail: the session stays open while the status checks run, and a
-// restart waits afresh; park the run with no session once idle adapters cost
-// something.
-const STATUS_CHECKS_EVERY: Duration = Duration::from_secs(60);
-
-/// How many failing status checks' logs a repair is handed.
-const LOGS_MAX: usize = 3;
-
 /// A commit as a person reads it.
 fn short(commit: &str) -> &str {
     &commit[..commit.len().min(10)]
-}
-
-/// Where a run's forge steps go.
-struct Forge {
-    /// The run's work.
-    dir: std::path::PathBuf,
-    branch: String,
-    connector: &'static dyn Connector,
-}
-
-/// Where the run on session `uid` goes on the forge: its setup's connector,
-/// or why there is none.
-fn forge_of(uid: u64, cx: &App) -> Option<Result<Forge, String>> {
-    read(uid, cx, |d| {
-        let setup = &d.run.setup;
-        let branch = setup
-            .branch
-            .clone()
-            .ok_or_else(|| "the run has no branch of its own".to_string())?;
-        let name = setup.forge.as_deref().unwrap_or_default();
-        let connector = connector::named(crate::plugins::connectors(), name)
-            .ok_or_else(|| format!("no connector called {name} is built into this onehand"))?;
-        Ok(Forge {
-            dir: setup.dir.clone(),
-            branch,
-            connector,
-        })
-    })
-}
-
-/// Push `commit` as the run's branch, or, with none, open its pull request
-/// unless one is open on the branch already; then report how it went. One
-/// closed without being merged is refused: a person turned it down, and a
-/// second beside it would ask again.
-fn on_forge(uid: u64, commit: Option<String>, cx: &mut App) {
-    let Some(forge) = forge_of(uid, cx) else {
-        return;
-    };
-    let text = read(uid, cx, |d| {
-        let task = super::task(&d.task, cx);
-        onehand_core::unattended::pull_request_text(
-            &d.run.brief,
-            task.as_ref().and_then(|task| task.issue()),
-        )
-    });
-    cx.spawn(async move |cx| {
-        let done = cx
-            .background_executor()
-            .spawn(async move {
-                let Forge {
-                    dir,
-                    branch,
-                    connector,
-                } = forge?;
-                if let Some(commit) = commit {
-                    return connector.push_blocking(&dir, &commit, &branch);
-                }
-                match connector.pull_request_for_blocking(&dir, &branch)? {
-                    Some(pr) if pr.state == PrState::Open => return Ok(()),
-                    Some(pr) if pr.state == PrState::Closed => {
-                        return Err(format!(
-                            "its pull request {} was closed without being merged, and \
-                             onehand does not open another",
-                            pr.url
-                        ));
-                    }
-                    Some(_) | None => {}
-                }
-                let (title, body) = text.unwrap_or_default();
-                connector.open_pull_request_blocking(&dir, &branch, &title, &body)
-            })
-            .await;
-        cx.update(|cx| advance(uid, cx, move |run| run.forge_done(done)));
-    })
-    .detach();
-}
-
-/// Look at the pull request's status checks on `pushed` every
-/// [`STATUS_CHECKS_EVERY`] until they say something other than pending,
-/// waiting at most `wait` from `since`. Failing ones carry their logs; all
-/// passing takes a draft out of draft first, and one that could not be is
-/// waited on like a forge that could not be read.
-fn watch_status_checks(
-    uid: u64,
-    pushed: Option<String>,
-    since: Instant,
-    wait: Duration,
-    cx: &mut App,
-) -> Task<()> {
-    cx.spawn(async move |cx| {
-        loop {
-            cx.background_executor().timer(STATUS_CHECKS_EVERY).await;
-            let Some(forge) = cx.update(|cx| forge_of(uid, cx)) else {
-                return;
-            };
-            let pushed = pushed.clone();
-            let seen = cx
-                .background_executor()
-                .spawn(async move {
-                    let Forge {
-                        dir,
-                        branch,
-                        connector,
-                    } = match forge {
-                        Ok(forge) => forge,
-                        Err(why) => return Seen::Fail(why),
-                    };
-                    let read = connector.pull_request_for_blocking(&dir, &branch);
-                    let pr = read.as_ref().ok().cloned().flatten();
-                    let seen = judge(
-                        read.as_ref().map(Option::as_ref).map_err(Clone::clone),
-                        pushed.as_deref(),
-                        since.elapsed(),
-                        wait,
-                    );
-                    match (seen, pr) {
-                        (Seen::Repair(said), Some(pr)) => {
-                            let logs: Vec<(String, String)> = pr
-                                .checks
-                                .iter()
-                                .filter(|c| c.state == CheckState::Failed)
-                                .take(LOGS_MAX)
-                                .map(|check| {
-                                    let log = connector
-                                        .check_log_blocking(&dir, check)
-                                        .unwrap_or_else(|why| format!("(no log: {why})"));
-                                    (check.name.clone(), log)
-                                })
-                                .collect();
-                            Seen::Repair(with_logs(said, &logs))
-                        }
-                        (Seen::Passed, Some(pr)) if pr.draft => {
-                            match connector.mark_ready_blocking(&dir, pr.number) {
-                                Ok(()) => Seen::Passed,
-                                Err(why) => waited_on(
-                                    format!("{} could not be taken out of draft: {why}", pr.url),
-                                    since.elapsed(),
-                                    wait,
-                                ),
-                            }
-                        }
-                        (seen, _) => seen,
-                    }
-                })
-                .await;
-            if seen == Seen::Pending {
-                continue;
-            }
-            cx.update(|cx| {
-                with(uid, cx, |d| d.budget.resume(Instant::now()));
-                advance(uid, cx, move |run| run.status_checks_seen(seen));
-            });
-            return;
-        }
-    })
 }
 
 /// The run's timeout: when `left` has run out, look again, since time spent

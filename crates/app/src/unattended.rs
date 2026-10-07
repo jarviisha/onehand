@@ -24,7 +24,10 @@ use std::time::Duration;
 mod facts;
 mod launch;
 mod report;
-pub use launch::{Pickable, look_now, pickable_blocking, pickable_one_blocking, start_picked};
+pub use launch::{
+    Pickable, ReviewRead, look_now, pickable_blocking, pickable_one_blocking, read_review,
+    start_answer, start_picked,
+};
 use launch::{begin_blocking, landed};
 pub(crate) use report::{
     card_question, deliver, deliver_all, ended, keep, opening, refuse_mode, spec_for, started,
@@ -505,6 +508,10 @@ pub(crate) use facts::issue_run as issue_facts;
 /// last run's own setup.
 pub(crate) use facts::of_task as task_facts;
 
+/// What a start of a task that runs with a setup of its own is checked
+/// against: a retry with current settings.
+pub(crate) use facts::with_setup as setup_facts;
+
 /// A forge as a preflight reads it, its account as last seen.
 pub(crate) use facts::forge as forge_facts;
 
@@ -517,6 +524,47 @@ pub(crate) fn run_agent(cx: &App) -> Option<String> {
         .as_ref()
         .and_then(|u| u.agent.clone())
         .or_else(|| shared.agents.first().map(|spec| spec.name.clone()))
+}
+
+/// What a new task of `task`'s kind would be given now, for a retry with
+/// current settings: an issue's from `[unattended]` (its agent, its mode and
+/// the timeout put over the workflow's), a launcher's the first agent
+/// configured and the workflow's own timeout; both the project's `check`.
+pub(crate) fn now_for(
+    task: &onehand_core::task::Task,
+    check: Option<String>,
+    cx: &App,
+) -> onehand_core::workflow::Now {
+    let shared = Shared::global(cx);
+    let first = shared.agents.first().map(|spec| spec.name.clone());
+    match (task.issue(), shared.unattended.as_ref()) {
+        (Some(_), Some(u)) => onehand_core::workflow::Now {
+            agent: u.agent.clone().or(first),
+            mode: Some(u.mode.clone()).filter(|mode| !mode.trim().is_empty()),
+            check,
+            timeout: Some(u.timeout.clone()),
+        },
+        (Some(_), None) | (None, _) => onehand_core::workflow::Now {
+            agent: first,
+            mode: None,
+            check,
+            timeout: None,
+        },
+    }
+}
+
+/// Whether a retry of `task` with current settings would run with another
+/// timeout than its last run did: when a run that timed out is offered that
+/// second way out.
+pub(crate) fn timeout_moved(task: &onehand_core::task::Task, cx: &App) -> bool {
+    let Some(last) = task.runs.last() else {
+        return false;
+    };
+    // The check command moves no timeout, so it is not asked for.
+    let now = now_for(task, None, cx);
+    let newest = crate::workflow::newest(&last.template, cx);
+    onehand_core::workflow::Run::with_current(last, newest, &now, false)
+        .is_ok_and(|plan| plan.changes.iter().any(|change| change.what == "Timeout"))
 }
 
 /// The default workflow and the workflow labels, as the config has them.

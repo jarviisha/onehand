@@ -295,9 +295,14 @@ words with *Verify · step 3 of 6* read from the run's own snapshot (no
 percentage: a step that sends the work back would make one go down), the
 next action in one sentence, and its one primary action, all three lines kept
 whatever the state. What to say and offer is core's `next_action`, the rule
-beside the group rule in [tasks.md](tasks.md). *Review…* opens the run's
-session, whose step strip holds the approval, on the tab and on the Issues
-page alike, until the page can judge an answer in place.
+beside the group rule in [tasks.md](tasks.md). *Review…* opens the review
+block on the Issues page, below where the work stands: the answer, what the
+step under review changed, the check that ran since (passed or failed, with
+the last lines it printed), the issue's
+acceptance, and *Revise…* and *Continue*, each saying what it starts
+(`UnderReview`, read from the run). In the tab it opens the issue on the page
+with its block open; the review is never drawn at the dock's width. A press
+carries the visit it was drawn from, so it approves only what was read.
 
 Below the body, *What the work left* names the branch and, on a project a
 forge serves once the run has reached its pull request step, the pull
@@ -708,6 +713,30 @@ pull request on that task's branch:
 
 A review is answered on the task's own snapshot, as any retry is: a workflow,
 agent, mode or timeout configured since applies to new tasks only.
+
+**Answer the pull request review** is a second door to the same path, not a
+second path: an action on an issue whose newest task is done with its pull
+request open (beside *Open pull request*), and on the detail of a task done
+having opened one. Pressed, it first reads, off the UI loop
+(`unattended::read_review`), the pull request on the task's branch, for one
+open whether the worktree and the branch on the forge went their own ways
+(`worktree::went_its_own_way_blocking`, after a fetch: a worktree behind it is
+brought up, and one ahead of it, with a repair not pushed yet, is up to date
+already), and whether the issue is
+among the open ones a pick reads. The preflight, kind
+*Answer a pull request review* (`preflight::ReviewFacts`), judges that on the
+task's own snapshot and setup, and **its refusals come before the claim**, in
+the label path's words (`core::review_unanswerable`, `core::review_closed`,
+`core::review_diverged`, which the label path now checks before it
+fast-forwards): no forge, no status checks step to repair from, the pull
+request closed unmerged or merged or not there, the branch gone its own way,
+the issue closed or not read. A dialog says, before anything starts, the step
+the new run starts at and every finding, blocks in the danger ink; *Answer the
+review* is spent while one remains, and nothing is claimed. Otherwise the issue
+is picked as a
+person picks one (`start_picked`, with its cap and its claim comment), which
+finds the open pull request and answers it as above. The trigger label keeps
+working.
 
 ## Where it lives
 

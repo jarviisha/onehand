@@ -10,10 +10,13 @@
 use super::{Group, Task, Working};
 use crate::connector::{PrState, PullRequest};
 use crate::issues::IssueKey;
-use crate::workflow::{Outcome, Run, StepKind, Stop};
+use crate::workflow::{Failure, Outcome, Run, StepKind, Stop};
 
 pub mod left;
 pub mod list;
+mod review;
+
+pub use review::{last_lines, Checked, UnderReview, ANSWER_CHANGED, ANSWER_LINES};
 
 /// What a task waiting on a person waits for, in the words every view of
 /// it uses: an approval, or an answer to a card.
@@ -52,13 +55,18 @@ pub(crate) enum Stand {
     Card,
     /// Its agent stopped, its session went, or a restart cut it off.
     Resumable(String),
-    /// Ended where it could not get past a step: too many misses, or out of
-    /// time. What happened and what the step's last visit ended on.
+    /// Ended where it could not get past a step: too many misses. What
+    /// happened and what the step's last visit ended on.
     Exhausted {
         said: String,
         last: Option<String>,
     },
-    Failed(String),
+    /// Out of time: where, and how long it worked against which timeout.
+    TimedOut(String),
+    Failed {
+        why: String,
+        kind: Failure,
+    },
     Done,
     /// Stopped, taken over or let go by a person.
     ByPerson,
@@ -97,20 +105,26 @@ pub struct Work {
     stand: Stand,
     /// The steps after the one it is at, by label; empty once it is over.
     pub rest: Vec<String>,
-    /// The commit a command last passed on, in this run.
-    pub(crate) verified_at: Option<String>,
+    /// What the command that last passed in this run vouches for.
+    pub vouched: Option<left::Vouched>,
     /// The work as this run found it and as it last left it, as two marks;
     /// `None` until both are pinned.
     pub span: Option<(String, String)>,
     /// The work as the task's first run found it, as a mark: what the branch
     /// is measured from.
     pub base: Option<String>,
+    /// What it waits for approval on, while it does.
+    pub review: Option<UnderReview>,
+    /// The timeout a retry with current settings would run with differs
+    /// from the one its last run ran with. Told by the app, which knows
+    /// Settings; `false` until it does.
+    pub timeout_moved: bool,
 }
 
 impl Work {
     /// `task` as its issue's view draws it, given what the app says it is
     /// doing and, when it is queued, the title of the task holding its place.
-    pub(crate) fn of(task: &Task, working: Option<Working>, behind: Option<String>) -> Self {
+    pub fn of(task: &Task, working: Option<Working>, behind: Option<String>) -> Self {
         let run = task.runs.last();
         let stand = stand(task, run, working, behind);
         let said = match (&stand, working) {
@@ -155,7 +169,11 @@ impl Work {
         };
         Self {
             rest,
-            verified_at: run.and_then(|run| run.marks.verified_at.clone()),
+            vouched: run.and_then(left::vouched),
+            review: run
+                .filter(|_| matches!(stand, Stand::Approval { .. }))
+                .and_then(UnderReview::of),
+            timeout_moved: false,
             span: run.and_then(|run| first(run).zip(last(run))),
             base: task.runs.first().and_then(first),
             task: task.id.clone(),
@@ -233,17 +251,31 @@ fn stand(
             Some(Outcome::Stopped(stop)) => match stop {
                 Stop::ByPerson | Stop::TakenOver => Stand::ByPerson,
                 Stop::LinkLost | Stop::Closed => Stand::Resumable(stop.said().to_string()),
-                Stop::TimedOut => Stand::Exhausted {
-                    said: format!("Timed out at {}", step_label(run, None)),
-                    last: last_why(run),
-                },
+                Stop::TimedOut => Stand::TimedOut(format!(
+                    "Timed out at {} after {}, against its timeout of {}",
+                    step_label(run, None),
+                    worked(run.map_or(0, |run| run.spent_secs)),
+                    run.map_or("", |run| run.template.timeout.as_str()),
+                )),
             },
             Some(Outcome::Exhausted { step }) => Stand::Exhausted {
                 said: format!("Too many misses at {}", step_label(run, Some(&step))),
                 last: last_why(run),
             },
-            Some(Outcome::Failed(why)) => Stand::Failed(why),
+            Some(Outcome::Failed(why)) => Stand::Failed {
+                why,
+                kind: run.and_then(Run::failed_on).unwrap_or(Failure::Other),
+            },
         },
+    }
+}
+
+/// How long a run worked, as a timeout is written: *45m*, *1h 30m*.
+fn worked(secs: u64) -> String {
+    match (secs / 3600, secs % 3600 / 60) {
+        (0, minutes) => format!("{minutes}m"),
+        (hours, 0) => format!("{hours}h"),
+        (hours, minutes) => format!("{hours}h {minutes}m"),
     }
 }
 
@@ -361,6 +393,12 @@ pub enum Act {
     ShowTask,
     Resume,
     Retry,
+    /// Retry with what Settings say now, rather than what the last run ran
+    /// with.
+    RetryCurrent,
+    /// Answer the review on its open pull request, as putting the trigger
+    /// label back does.
+    AnswerReview,
     OpenPullRequest,
     OpenBranch,
     Refresh,
@@ -382,6 +420,8 @@ impl Act {
             Self::ShowTask => "Show task",
             Self::Resume => "Resume",
             Self::Retry => "Retry…",
+            Self::RetryCurrent => "Retry with current settings…",
+            Self::AnswerReview => "Answer the pull request review",
             Self::OpenPullRequest => "Open pull request",
             Self::OpenBranch => "Open branch",
             Self::Refresh => "Refresh",
@@ -526,7 +566,7 @@ fn by_stand(work: &Work, around: Around<'_>) -> Next {
             &[Act::Stop],
         ),
         Stand::Resumable(why) => row(
-            Some(format!("It can go on where it was: {why}")),
+            Some(format!("It can go on where it was, with its marks: {why}")),
             Some(Act::Resume),
             &[Act::Retry],
         ),
@@ -538,7 +578,26 @@ fn by_stand(work: &Work, around: Around<'_>) -> Next {
             Some(Act::Retry),
             &[Act::ShowTask],
         ),
-        Stand::Failed(why) => row(Some(why.clone()), Some(Act::Retry), &[Act::ShowTask]),
+        Stand::TimedOut(said) => {
+            // Retry keeps the timeout; a changed one is the other way out.
+            let others: &[Act] = match work.timeout_moved {
+                true => &[Act::RetryCurrent, Act::ShowTask],
+                false => &[Act::ShowTask],
+            };
+            row(Some(said.clone()), Some(Act::Retry), others)
+        }
+        Stand::Failed {
+            why,
+            kind: Failure::Configuration,
+        } => row(
+            Some(why.clone()),
+            Some(Act::RetryCurrent),
+            &[Act::Retry, Act::ShowTask],
+        ),
+        Stand::Failed {
+            why,
+            kind: Failure::Forge | Failure::Other,
+        } => row(Some(why.clone()), Some(Act::Retry), &[Act::ShowTask]),
         Stand::ByPerson => row(None, None, &[Act::RunWorkflow]),
         Stand::Done => done(work, around.pr),
     }
@@ -583,7 +642,9 @@ fn done(work: &Work, pr: PrSeen<'_>) -> Next {
             PrState::Open => row(
                 Some(format!("Review it on {forge}")),
                 Some(Act::OpenPullRequest),
-                &[],
+                // Whether it can be answered is the preflight's to say when it
+                // is pressed, as putting the label back would.
+                &[Act::AnswerReview],
             ),
             PrState::Merged => row(None, None, &[Act::RunWorkflow]),
             PrState::Closed => row(

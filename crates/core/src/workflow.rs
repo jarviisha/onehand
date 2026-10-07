@@ -20,11 +20,15 @@ pub mod store;
 mod template;
 mod validate;
 
-pub use facts::{run_command_blocking, Facts, Mark};
+pub use facts::{run_command_blocking, CommandResult, Facts, Mark};
 pub use prompt::first_prompt;
 #[cfg(test)]
 pub(crate) use run::Transition;
-pub use run::{Action, Brief, Outcome, Run, Setup, Stop, Visit};
+pub use run::{
+    Action, ApprovalAt, Brief, Changed, Failure, Now, Outcome, PrOpened, Run, Setup, StartWhy,
+    Stop, Visit, WithCurrent,
+};
+pub(crate) use run::{COMMAND_FAILED, COMMAND_PASSED, FORGE_DONE};
 pub use status_checks::{judge, waited_on, with_logs, Seen};
 pub use template::{GateKind, Place, StepKind, StepSpec, Template, DEFAULT_WAIT, SCHEMA_VERSION};
 pub use validate::validate;
