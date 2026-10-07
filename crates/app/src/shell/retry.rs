@@ -16,7 +16,7 @@ use onehand_core::preflight;
 use onehand_core::task::marks::{self, Against};
 use onehand_core::task::work::Act;
 use onehand_core::task::{Source, Task};
-use onehand_core::workflow::{Changed, Run, Template, WithCurrent};
+use onehand_core::workflow::{Changed, Field, Run, Template, WithCurrent};
 use std::cell::Cell;
 use std::rc::Rc;
 
@@ -319,7 +319,7 @@ impl Shell {
                     false => plan
                         .changes
                         .iter()
-                        .map(|c| format!("{}: {} → {}", c.what, c.old, c.new))
+                        .map(|c| format!("{}: {} → {}", c.field.label(), c.old, c.new))
                         .collect(),
                 };
                 (format!("It starts at {step}, {}.", plan.why.said()), lines)
@@ -420,21 +420,17 @@ fn refused_elsewhere(against: &Option<Against>, window: &mut Window, cx: &mut Ap
 /// What a *Retry* keeps of `last`'s configuration, one line each, and
 /// whether Settings say otherwise now, which the line says.
 fn kept_lines(last: &Run, differs: &[Changed]) -> Vec<(String, bool)> {
-    let setup = &last.setup;
-    let shown = |value: &Option<String>, none: &str| value.clone().unwrap_or(none.to_string());
     [
-        ("Agent", shown(&setup.agent, "the first configured")),
-        ("Mode", shown(&setup.mode, "as the agent starts")),
-        ("Check command", shown(&setup.check, "none")),
-        ("Timeout", last.template.timeout.clone()),
-        (
-            "Workflow version",
-            format!("version {}", last.template.version),
-        ),
+        Field::Agent,
+        Field::Mode,
+        Field::CheckCommand,
+        Field::Timeout,
+        Field::WorkflowVersion,
     ]
     .into_iter()
-    .map(
-        |(what, kept)| match differs.iter().find(|c| c.what == what) {
+    .map(|field| {
+        let (what, kept) = (field.label(), field.kept(&last.template, &last.setup));
+        match differs.iter().find(|c| c.field == field) {
             Some(now) => (
                 format!(
                     "Keeps {}: {kept}; Settings now say {}, which {} runs",
@@ -445,8 +441,8 @@ fn kept_lines(last: &Run, differs: &[Changed]) -> Vec<(String, bool)> {
                 true,
             ),
             None => (format!("Keeps {}: {kept}", what.to_lowercase()), false),
-        },
-    )
+        }
+    })
     .collect()
 }
 

@@ -126,7 +126,9 @@ ACP_CMD="node crates/core/examples/mock_ask_agent.js" cargo run -p onehand-core 
   private lets `dead_code` reach them; publicly reachable items can hide unused code.
 - **In `crates/app` only `assets` and `shell` are `pub`; keep new modules private.**
 - **Shared rules live in core, not per call site** (e.g. `GitStatus::label`, `Chat::apply`,
-  `AppConfig::update_in_place`, `Chats::reconcile`).
+  `AppConfig::update_in_place`, `Chats::reconcile`). A rule belongs in core when two call sites
+  share it, when a second front end (the remote bridge) could need it, or when it wants a test
+  without a GUI. The app matches on core's enums, never on the labels core shows.
 - **`crates/app/src/guards.rs` checks recurring violations rustc cannot catch.** These source
   scans are partial checks, not proof of every rule. Their coverage and review gaps are in
   [docs/rules-and-gotchas.md](docs/rules-and-gotchas.md#guard-coverage).

@@ -626,14 +626,10 @@ fn start(claimed: Claimed, cx: &mut App) -> Result<(), Unstarted> {
         Err(why) => return Err(unstarted(claimed, &why)),
     };
     let check = shell.read(cx).check_of(&claimed.repo);
-    if template.needs_check() && check.is_none() {
+    if let Some(why) = template.lacks_check(check.is_some()) {
         return Err(unstarted(
             claimed,
-            &format!(
-                "the workflow `{}` runs the project's check command, and the project has \
-                 none; set one on the project's page",
-                template.name
-            ),
+            &format!("{why}; set one on the project's page"),
         ));
     }
     let picked = claimed.picked_by_hand();

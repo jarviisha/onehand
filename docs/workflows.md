@@ -339,7 +339,7 @@ current settings* as a new start is, on what Settings say now
 | Workflow | it is not there, works in the checkout, or `workflow::validate` finds problems (each listed, first) | |
 | Agent | none is configured, or the one named is no longer | |
 | Mode | the agent's current offer, learned in this process from the spec as it is now, does not hold it | the mode is not known yet, with *Check the agent* |
-| Check command | the workflow runs the project's check command and there is none | the workflow runs no command: nothing verifies the work |
+| Check command | the workflow runs the project's check command and the project has none | the workflow runs no command: nothing verifies the work |
 | Place | `HEAD` is detached and no forge serves the project | for a new run of a checkout workflow, a person's own session that has been prompted in the same checkout, by its name: both edit the same files |
 | Base | | what the branch is cut off: the default branch on `origin`, fetched first, or the branch checked out |
 | Forge | `gh` missing or signed out, as last seen | the workflow has forge steps and no forge serves the project: they pass at once, and the branch is the result (not said for answering a review, which that refuses) |

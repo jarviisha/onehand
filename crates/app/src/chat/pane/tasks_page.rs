@@ -7,7 +7,7 @@ use gpui::{
 };
 use gpui_component::button::ButtonVariants as _;
 use gpui_component::{ActiveTheme, Icon, IconName, Sizable as _, StyledExt};
-use onehand_core::task::Group;
+use onehand_core::task::{Group, Section};
 use std::path::{Path, PathBuf};
 
 /// How many rows each card of the Tasks page draws. Finished tasks are kept
@@ -89,11 +89,11 @@ impl ChatPane {
         let (mut waiting, mut running, mut queued, mut finished) =
             (Vec::new(), Vec::new(), Vec::new(), Vec::new());
         for row in crate::task::rows(&roots, cx) {
-            match row.group {
-                group if group.needs_attention() => waiting.push(row),
-                Group::Waiting | Group::Ended | Group::Running => running.push(row),
-                Group::Queued => queued.push(row),
-                Group::Finished => finished.push(row),
+            match row.group.section() {
+                Section::NeedsAttention => waiting.push(row),
+                Section::Running => running.push(row),
+                Section::Queued => queued.push(row),
+                Section::Finished => finished.push(row),
             }
         }
         let removed = crate::task::removed(&roots, cx);

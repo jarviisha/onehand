@@ -93,10 +93,6 @@ impl Driven {
     }
 }
 
-/// How long a run may work when its template's timeout does not read, which
-/// validation refuses, so only a run file edited by hand meets it.
-const TIMEOUT_FALLBACK: Duration = Duration::from_secs(45 * 60);
-
 /// The longest answer kept from a turn. An answer the length of a book is cut
 /// rather than carried whole into the run's file and the next prompt.
 const ANSWER_MAX: usize = 20_000;
@@ -137,8 +133,9 @@ pub(crate) fn start(
     let release = cx.observe_release(session, move |_, cx| {
         cx.defer(move |cx| end(uid, Stop::Closed, cx));
     });
-    let limit = onehand_core::unattended::parse_every(&run.template.timeout)
-        .unwrap_or(TIMEOUT_FALLBACK)
+    let limit = run
+        .template
+        .timeout_limit()
         .saturating_sub(Duration::from_secs(run.spent_secs));
     let driven = Driven {
         task,

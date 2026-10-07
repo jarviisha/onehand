@@ -605,14 +605,14 @@ pub(super) fn count_of(n: usize, noun: &str) -> String {
 /// One line saying what the tasks of the project at `root` need, leading
 /// to the Tasks page narrowed to it; nothing when no task needs anything.
 fn tasks_link(root: &Path, cx: &mut Context<ChatPane>) -> Option<gpui::AnyElement> {
-    use onehand_core::task::Group as G;
+    use onehand_core::task::Section;
     let (mut attention, mut running, mut queued) = (0, 0, 0);
     for row in crate::task::rows(&[root.to_path_buf()], cx) {
-        match row.group {
-            group if group.needs_attention() => attention += 1,
-            G::Waiting | G::Ended | G::Running => running += 1,
-            G::Queued => queued += 1,
-            G::Finished => {}
+        match row.group.section() {
+            Section::NeedsAttention => attention += 1,
+            Section::Running => running += 1,
+            Section::Queued => queued += 1,
+            Section::Finished => {}
         }
     }
     let said: Vec<String> = [

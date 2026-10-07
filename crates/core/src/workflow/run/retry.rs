@@ -20,9 +20,43 @@ pub struct Now {
 /// as it will be.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Changed {
-    pub what: &'static str,
+    pub field: Field,
     pub old: String,
     pub new: String,
+}
+
+/// What a retry carries over from the last run, or takes from Settings now.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Field {
+    WorkflowVersion,
+    Agent,
+    Mode,
+    CheckCommand,
+    Timeout,
+}
+
+impl Field {
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::WorkflowVersion => "Workflow version",
+            Self::Agent => "Agent",
+            Self::Mode => "Mode",
+            Self::CheckCommand => "Check command",
+            Self::Timeout => "Timeout",
+        }
+    }
+
+    /// What a run of `template` with `setup` has for this field, as said.
+    pub fn kept(self, template: &Template, setup: &Setup) -> String {
+        let shown = |value: &Option<String>, none: &str| value.clone().unwrap_or(none.into());
+        match self {
+            Self::WorkflowVersion => format!("version {}", template.version),
+            Self::Agent => shown(&setup.agent, "the first configured"),
+            Self::Mode => shown(&setup.mode, "as the agent starts"),
+            Self::CheckCommand => shown(&setup.check, "none"),
+            Self::Timeout => template.timeout.clone(),
+        }
+    }
 }
 
 /// A retry of a run with what Settings say now, before anything starts.
@@ -247,39 +281,20 @@ impl Run {
         if changed && Run::recheck(&template, start) < start {
             (start, why) = (Run::recheck(&template, start), StartWhy::WorkChanged);
         }
-        let shown =
-            |value: &Option<String>, none: &str| value.clone().unwrap_or_else(|| none.to_string());
-        let mut changes = Vec::new();
-        let mut differs = |what, old: String, new: String| {
-            if old != new {
-                changes.push(Changed { what, old, new });
-            }
-        };
-        differs(
-            "Workflow version",
-            format!("version {}", prev.template.version),
-            format!("version {}", template.version),
-        );
-        differs(
-            "Agent",
-            shown(&prev.setup.agent, "the first configured"),
-            shown(&setup.agent, "the first configured"),
-        );
-        differs(
-            "Mode",
-            shown(&prev.setup.mode, "as the agent starts"),
-            shown(&setup.mode, "as the agent starts"),
-        );
-        differs(
-            "Check command",
-            shown(&prev.setup.check, "none"),
-            shown(&setup.check, "none"),
-        );
-        differs(
-            "Timeout",
-            prev.template.timeout.clone(),
-            template.timeout.clone(),
-        );
+        let changes = [
+            Field::WorkflowVersion,
+            Field::Agent,
+            Field::Mode,
+            Field::CheckCommand,
+            Field::Timeout,
+        ]
+        .into_iter()
+        .filter_map(|field| {
+            let old = field.kept(&prev.template, &prev.setup);
+            let new = field.kept(&template, &setup);
+            (old != new).then_some(Changed { field, old, new })
+        })
+        .collect();
         Ok(WithCurrent {
             template,
             setup,

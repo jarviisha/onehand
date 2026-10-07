@@ -11,7 +11,6 @@ path = "src/lib.rs"
 [dependencies]
 onehand-core = { path = "../../../crates/core" }
 onehand-plugin-api = { path = "../../../crates/plugin-api" }
-onehand-plugin-host = { path = "../../../crates/plugin-host" }
 futures = "0.3"
 reqwest = { version = "0.13", default-features = false, features = ["rustls-no-provider", "json"] }
 rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }
