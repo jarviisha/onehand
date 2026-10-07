@@ -208,7 +208,7 @@ fn open_review(
                         col.child(
                             div()
                                 .text_sm()
-                                .text_color(cx.theme().warning)
+                                .text_color(crate::theme::status_ink(cx).warning)
                                 .child(CHANGED),
                         )
                     })
@@ -307,7 +307,7 @@ fn open_revise(uid: u64, at: ApprovalAt, window: &mut Window, cx: &mut Context<C
                         col.child(
                             div()
                                 .text_sm()
-                                .text_color(cx.theme().warning)
+                                .text_color(crate::theme::status_ink(cx).warning)
                                 .child(format!("{CHANGED} Read it again with Review… first.")),
                         )
                     })
