@@ -53,6 +53,20 @@ impl Shell {
                 }
             }
             E::OpenInIssues { root, number } => self.open_issue_on_page(root, *number, window, cx),
+            E::ReviewInIssues { root, number } => {
+                self.open_issue_on_page(root, *number, window, cx);
+                self.issues_page.review(root, *number, cx);
+            }
+            // Deferred: the run reaches into its session, and the answer
+            // reaches back into this page.
+            E::ApproveTask { task, at } => {
+                let (task, at) = (task.clone(), at.clone());
+                cx.defer(move |cx| crate::task::approve(&task, at, cx));
+            }
+            E::ReviseTask { task, at, note } => {
+                let (task, at, note) = (task.clone(), at.clone(), note.clone());
+                cx.defer(move |cx| crate::task::revise(&task, at, note, cx));
+            }
             E::OpenTask(id) => self.show_task(id, window, cx),
             E::OpenTaskSession(id) => {
                 if let Some((uid, at)) = crate::task::session_of(id, cx) {

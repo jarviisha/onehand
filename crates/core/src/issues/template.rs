@@ -202,12 +202,22 @@ fn heading(line: &str) -> Option<Heading> {
 
 /// Whether the section headed `text` in `lines` holds anything.
 fn written(lines: &[Line<'_>], text: &str) -> bool {
-    let Some(at) = lines
+    section_of(lines, text).is_some()
+}
+
+/// What `body` writes under the heading `heading`, matched as a reader would
+/// (any level, any case), its hints left out; `None` when it is absent or
+/// holds nothing.
+pub fn section(body: &str, heading: &str) -> Option<String> {
+    section_of(&read(body), &heading.to_lowercase())
+}
+
+/// What the section headed `text` in `lines` holds, without its comments;
+/// `None` when it is absent or empty.
+fn section_of(lines: &[Line<'_>], text: &str) -> Option<String> {
+    let at = lines
         .iter()
-        .position(|line| line.heading.as_ref().is_some_and(|h| h.text == text))
-    else {
-        return false;
-    };
+        .position(|line| line.heading.as_ref().is_some_and(|h| h.text == text))?;
     let level = lines[at].heading.as_ref().map_or(0, |h| h.level);
     let section: Vec<&str> = lines[at + 1..]
         .iter()
@@ -215,7 +225,8 @@ fn written(lines: &[Line<'_>], text: &str) -> bool {
         .filter(|line| line.heading.is_none())
         .map(|line| line.text)
         .collect();
-    !uncommented(&section.join("\n")).trim().is_empty()
+    let kept = uncommented(&section.join("\n")).trim().to_string();
+    (!kept.is_empty()).then_some(kept)
 }
 
 /// `text` with its HTML comments taken out; one never closed runs to the end.

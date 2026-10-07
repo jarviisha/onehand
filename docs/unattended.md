@@ -295,9 +295,13 @@ words with *Verify · step 3 of 6* read from the run's own snapshot (no
 percentage: a step that sends the work back would make one go down), the
 next action in one sentence, and its one primary action, all three lines kept
 whatever the state. What to say and offer is core's `next_action`, the rule
-beside the group rule in [tasks.md](tasks.md). *Review…* opens the run's
-session, whose step strip holds the approval, on the tab and on the Issues
-page alike, until the page can judge an answer in place.
+beside the group rule in [tasks.md](tasks.md). *Review…* opens the review
+block on the Issues page, below where the work stands: the answer, what the
+step under review changed, the check when a command ran since, the issue's
+acceptance, and *Revise…* and *Continue*, each saying what it starts
+(`UnderReview`, read from the run). In the tab it opens the issue on the page
+with its block open; the review is never drawn at the dock's width. A press
+carries the visit it was drawn from, so it approves only what was read.
 
 Below the body, *What the work left* names the branch and, on a project a
 forge serves once the run has reached its pull request step, the pull

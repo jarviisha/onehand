@@ -10,7 +10,7 @@
 use super::{Group, Task, Working};
 use crate::connector::{PrState, PullRequest};
 use crate::issues::IssueKey;
-use crate::workflow::{Outcome, Run, StepKind, Stop};
+use crate::workflow::{ApprovalAt, Outcome, Run, StepKind, Stop};
 
 pub mod left;
 pub mod list;
@@ -105,6 +105,71 @@ pub struct Work {
     /// The work as the task's first run found it, as a mark: what the branch
     /// is measured from.
     pub base: Option<String>,
+    /// What it waits for approval on, while it does.
+    pub review: Option<UnderReview>,
+}
+
+/// What a run waiting for approval is judged on, as a review draws it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct UnderReview {
+    /// The visit a press drawn from this carries.
+    pub at: ApprovalAt,
+    /// The step under review, by label, and the answer it kept.
+    pub of: String,
+    pub answer: String,
+    /// The step approving starts, by label, and what it does; `None` when
+    /// approving ends the run.
+    pub starts: Option<(String, String)>,
+    /// The work as the step under review last found it and left it, as two
+    /// marks: what it changed. `None` until both are pinned.
+    pub span: Option<(String, String)>,
+    /// A command ran since the step under review last started, so a check
+    /// speaks for what it changed.
+    pub checked: bool,
+}
+
+impl UnderReview {
+    /// What *Continue* starts, said beside it.
+    pub fn continue_said(&self) -> String {
+        match &self.starts {
+            Some((label, does)) => format!("Continue starts {label}: {does}"),
+            None => "Continue ends the run".to_string(),
+        }
+    }
+
+    /// What *Revise…* runs again, said beside it.
+    pub fn revise_said(&self) -> String {
+        format!("{} runs again with your note", self.of)
+    }
+}
+
+impl UnderReview {
+    /// What `run` waits for approval on, if it does.
+    pub fn of(run: &Run) -> Option<Self> {
+        under_review(run)
+    }
+}
+
+/// What `run` waits for approval on, if it does.
+fn under_review(run: &Run) -> Option<UnderReview> {
+    let (step, answer) = run.under_review()?;
+    let at = run.approval_at()?;
+    let visits = run.visits();
+    let reviewed = visits.iter().rposition(|visit| visit.step == step.id);
+    let span = reviewed.and_then(|i| visits[i].start.clone().zip(visits[i].end.clone()));
+    let checked = reviewed.is_some_and(|i| visits[i..].iter().any(|v| v.command.is_some()));
+    Some(UnderReview {
+        at,
+        of: step.label.clone(),
+        answer: answer.to_string(),
+        starts: run
+            .template
+            .steps
+            .get(run.step + 1)
+            .map(|next| (next.label.clone(), next.kind.does())),
+        span,
+        checked,
+    })
 }
 
 impl Work {
@@ -156,6 +221,9 @@ impl Work {
         Self {
             rest,
             vouched: run.and_then(vouched),
+            review: run
+                .filter(|_| matches!(stand, Stand::Approval { .. }))
+                .and_then(under_review),
             span: run.and_then(|run| first(run).zip(last(run))),
             base: task.runs.first().and_then(first),
             task: task.id.clone(),

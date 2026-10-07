@@ -31,6 +31,7 @@ mod list;
 mod mentions;
 mod page;
 mod reads;
+mod review;
 mod store;
 mod work;
 use detail::{Doing, issue_view};
@@ -599,7 +600,9 @@ impl IssuesView {
             .cloned();
         self.read_pr_if_due(root, work.as_ref(), cx);
         self.read_left_if_due(work.as_ref(), cx);
+        let review = self.review_block(&issue, key.as_ref(), work.as_ref(), cx);
         let doing = Doing {
+            review,
             full: self.page.as_ref().map(page::PageState::full),
             session: working_in(&issue, &self.live).map(str::to_string),
             offered: self.offered.iter().any(|offered| offered == root),

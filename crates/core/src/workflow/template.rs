@@ -245,6 +245,35 @@ impl StepKind {
         }
     }
 
+    /// What the step does, as a person deciding whether to start it reads
+    /// it: *the agent changes the code*, *onehand runs the check command*.
+    pub fn does(&self) -> String {
+        match self {
+            Self::Agent { gates, .. } => {
+                let changes = gates.iter().any(|gate| match gate {
+                    GateKind::CodeChanged | GateKind::Committed => true,
+                    GateKind::Answered | GateKind::CodeUnchanged | GateKind::Uncommitted => false,
+                });
+                let answers = gates.contains(&GateKind::Answered);
+                match (changes, answers) {
+                    (true, _) => "the agent changes the code",
+                    (false, true) => "the agent answers",
+                    (false, false) => "the agent works",
+                }
+                .to_string()
+            }
+            Self::Command { command: None, .. } => "onehand runs the check command".to_string(),
+            Self::Command {
+                command: Some(command),
+                ..
+            } => format!("onehand runs {command}"),
+            Self::Approval { .. } => "a person is asked to approve again".to_string(),
+            Self::Push => "onehand pushes the commit the check passed on".to_string(),
+            Self::PullRequest => "onehand opens a draft pull request".to_string(),
+            Self::StatusChecks { .. } => "onehand waits for the forge's status checks".to_string(),
+        }
+    }
+
     /// Whether onehand does the step on the forge itself.
     pub(crate) fn on_forge(&self) -> bool {
         match self {

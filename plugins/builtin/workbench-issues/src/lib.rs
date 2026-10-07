@@ -90,6 +90,13 @@ impl Page {
             .update(cx, |view, cx| view.open_on_page(root, number, cx));
     }
 
+    /// Open the review of issue `number` of `root`, on screen: what its work
+    /// waits for approval on.
+    pub fn review(&self, root: &Path, number: u64, cx: &mut App) {
+        self.view
+            .update(cx, |view, cx| view.review_on_page(root, number, cx));
+    }
+
     pub fn forget_root(&self, root: &Path, cx: &mut App) {
         self.view.update(cx, |view, cx| view.forget_root(root, cx));
     }
@@ -145,6 +152,9 @@ fn handle(view: &Entity<IssuesView>, request: &Request<'_>, cx: &mut App) -> boo
         | Request::OpenConversation(_)
         | Request::RunIssueWorkflow { .. }
         | Request::OpenInIssues { .. }
+        | Request::ReviewInIssues { .. }
+        | Request::ApproveTask { .. }
+        | Request::ReviseTask { .. }
         | Request::OpenTask(_)
         | Request::OpenTaskSession(_)
         | Request::ResumeTask(_)

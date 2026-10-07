@@ -140,7 +140,8 @@ monospace font.
     then *Before*, its earlier runs and tasks (capped); then its history. The work's three lines
     keep their height while a step ends, so the body never moves under a reader. The tab is the
     glance beside a session; ⋯ ▸ *Open in Issues* opens the same issue on the Issues page, its
-    filters left as they are.
+    filters left as they are. The tab draws no review: its *Review…* opens the issue on the page
+    with the review block open.
   - Hiding a dock keeps its buffers and processes.
   - A hidden terminal is unmounted and takes no room.
   - The terminal's open state follows the selected project.
@@ -176,6 +177,20 @@ monospace font.
     changed (each opening its diff in place) and the commits past where the task started. The
     page keeps its filters, search, selection and scroll while a session or the task detail is
     looked at.
+  - The **review block** opens below where the work stands only when a person presses *Review…*,
+    pushing the body down; a run reaching an approval never opens it, and it closes only by its
+    *Close* or by picking another issue. In a hairline box that scrolls past its cap: *Review:
+    <step>*, the answer (its last 60 lines with *Show all N lines*), what the step under review
+    changed with each file opening its diff (drawn only when it changed something), the check
+    when a command ran since (drawn with the files), the issue's *Acceptance* collapsed, then
+    *Revise…* and *Continue* (the one primary), each beside what it starts: *Plan runs again
+    with your note*, *Continue starts Implement: the agent changes the code*. A cut answer says
+    *Showing the last 60 of N lines.* above them in the warning ink. *Revise…* writes its note in
+    the block. A press shows at once that it was sent, then what came of it (*The run moved on
+    to …*), without moving the reader's scroll; one the run no longer waits for reloads the
+    block, saying *The answer changed since you opened it.*
+  - The task detail's *Awaiting approval* draws the same answer, what each answer starts, and
+    *Review…*, *Revise…* and *Continue* through the same guarded call as the strip.
 - **No top bar, no status bar, no right toolbar.** Transient status goes in a toast. Modals are
   `Dialog`s. Settings is a large dialog: a nav column with Appearance, Workspace, Agents,
   Connections, Workflows and Shortcuts. Groups are separated by hairlines, not boxes.

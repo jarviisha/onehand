@@ -12,6 +12,7 @@
 use gpui::{AnyView, App, Pixels, Window};
 use onehand_core::gitstat::GitStatus;
 use onehand_core::task::work::IssueWork;
+use onehand_core::workflow::ApprovalAt;
 use onehand_plugin_api::WorkbenchModeSpec;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -193,6 +194,20 @@ pub enum Request<'a> {
     /// is room to work it, its filters left as they are. Only ever travels
     /// **upward**.
     OpenInIssues { root: &'a Path, number: u64 },
+    /// Put issue `number` of project `root` on the Issues page with what its
+    /// work waits for approval on open to review. Only ever travels
+    /// **upward**.
+    ReviewInIssues { root: &'a Path, number: u64 },
+    /// Approve what task `task`'s run waits on, as read at `at`: refused by
+    /// the run unless it still waits there. Only ever travels **upward**.
+    ApproveTask { task: &'a str, at: &'a ApprovalAt },
+    /// Send what task `task`'s run waits on, as read at `at`, back with
+    /// `note`: refused the same way. Only ever travels **upward**.
+    ReviseTask {
+        task: &'a str,
+        at: &'a ApprovalAt,
+        note: &'a str,
+    },
     /// Put task `id` on screen, in the Tasks page's detail. Only ever travels
     /// **upward**.
     OpenTask(&'a str),

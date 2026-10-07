@@ -82,6 +82,9 @@ impl ChatPane {
                         .when_some(shown.review, |row, review| {
                             let (read, revised, pressed) =
                                 (review.clone(), review.at.clone(), review.at);
+                            let task = shown.task.to_string();
+                            let (on_read, on_revise, on_continue) =
+                                (task.clone(), task.clone(), task);
                             row.child(
                                 crate::controls::action("workflow-review")
                                     .xsmall()
@@ -90,7 +93,7 @@ impl ChatPane {
                                     .tooltip("Read what is waiting for approval")
                                     .on_click(cx.listener(move |_, _, window, cx| {
                                         let pane = cx.entity().downgrade();
-                                        open_review(uid, pane, read.clone(), false, window, cx)
+                                        open_review(&on_read, pane, read.clone(), false, window, cx)
                                     })),
                             )
                             .child(
@@ -99,7 +102,7 @@ impl ChatPane {
                                     .ghost()
                                     .label("Revise…")
                                     .on_click(cx.listener(move |_, _, window, cx| {
-                                        open_revise(uid, revised.clone(), window, cx)
+                                        open_revise(&on_revise, revised.clone(), window, cx)
                                     })),
                             )
                             .child(
@@ -111,7 +114,7 @@ impl ChatPane {
                                     .tooltip("Approve it and go on to the next step")
                                     .on_click(cx.listener(move |_, _, window, cx| {
                                         let pane = cx.entity().downgrade();
-                                        press_continue(uid, pane, &pressed, window, cx)
+                                        press_continue(&on_continue, pane, &pressed, window, cx)
                                     })),
                             )
                         })
@@ -130,53 +133,48 @@ impl ChatPane {
     }
 }
 
-/// What the run on session `uid` waits for approval on now, when it still
-/// waits at `at`; otherwise what it waits on instead, which a press drawn
-/// from `at` would not have read.
-fn still_at(uid: u64, at: &ApprovalAt, cx: &App) -> Result<(), Option<Review>> {
-    match crate::task::shown(uid, cx).and_then(|shown| shown.review) {
+/// Whether task `task`'s run still waits at `at`; otherwise what it waits
+/// on instead, which a press drawn from `at` would not have read.
+fn still_at(task: &str, at: &ApprovalAt, cx: &App) -> Result<(), Option<Review>> {
+    match crate::task::review_of(task, cx) {
         Some(now) if &now.at == at => Ok(()),
         now => Err(now),
     }
 }
 
-/// *Continue* on what was read at `at`: approved when the run still waits
-/// there. Otherwise the answer changed under the reader, and what it waits
-/// on now is put up to be read, rather than approved unread.
-fn press_continue(
-    uid: u64,
+/// *Continue* on what was read of task `task`'s run at `at`: approved when
+/// the run still waits there. Otherwise the answer changed under the reader,
+/// and what it waits on now is put up to be read, rather than approved
+/// unread.
+pub(super) fn press_continue(
+    task: &str,
     pane: WeakEntity<ChatPane>,
     at: &ApprovalAt,
     window: &mut Window,
     cx: &mut App,
 ) {
-    match still_at(uid, at, cx) {
+    match still_at(task, at, cx) {
         Ok(()) => {
-            let at = at.clone();
+            let (task, at) = (task.to_string(), at.clone());
             let _ = pane.update(cx, |_, cx| {
-                if let Some(task) = crate::task::shown(uid, cx).map(|shown| shown.task) {
-                    cx.emit(ChatPaneEvent::ContinueWorkflow {
-                        task: task.to_string(),
-                        at,
-                    })
-                }
+                cx.emit(ChatPaneEvent::ContinueWorkflow { task, at })
             });
         }
-        Err(Some(now)) => open_review(uid, pane, now, true, window, cx),
-        // It no longer waits on anybody; the strip says where it went.
+        Err(Some(now)) => open_review(task, pane, now, true, window, cx),
+        // It no longer waits on anybody; where it went is drawn already.
         Err(None) => {}
     }
 }
 
-/// Put up what session `uid`'s run waits on approval for: the answer the
-/// step kept, as the markdown it was written in, saying first when it is not
-/// the answer a press was drawn from.
+/// Put up what task `task`'s run waits on approval for: the answer the step
+/// kept, as the markdown it was written in, saying first when it is not the
+/// answer a press was drawn from.
 ///
 /// Read from the run rather than the transcript: a run resumed in a new
 /// session has no transcript holding it, and its approval would otherwise be
 /// asked for blind.
 fn open_review(
-    uid: u64,
+    task: &str,
     pane: WeakEntity<ChatPane>,
     review: Review,
     changed: bool,
@@ -184,8 +182,9 @@ fn open_review(
     cx: &mut App,
 ) {
     window.close_dialog(cx);
+    let task = task.to_string();
     window.open_dialog(cx, move |dialog, _, cx| {
-        let pane = pane.clone();
+        let (pane, task) = (pane.clone(), task.clone());
         let Review { of, answer, at } = review.clone();
         let body = match answer.trim().is_empty() {
             true => div()
@@ -241,50 +240,70 @@ fn open_review(
                             .label("Continue")
                             .on_click(move |_, window: &mut Window, cx: &mut App| {
                                 window.close_dialog(cx);
-                                press_continue(uid, pane.clone(), &at, window, cx);
+                                press_continue(&task, pane.clone(), &at, window, cx);
                             }),
                     ),
             )
     });
 }
 
+/// Put up what task `task`'s run waits on approval for, as `review` read it.
+pub(super) fn open_review_of(
+    task: &str,
+    pane: WeakEntity<ChatPane>,
+    review: Review,
+    window: &mut Window,
+    cx: &mut App,
+) {
+    open_review(task, pane, review, false, window, cx)
+}
+
 /// What a refused press says, where the reader is.
 const CHANGED: &str = "The answer changed since you opened it.";
 
-/// Put up the window that sends what session `uid`'s run waits on, as read at
+/// Put up the window that sends what task `task`'s run waits on, as read at
 /// `at`, back to be done again, with what to change. Once the run no longer
 /// waits there, sending is refused in place, keeping the note.
-fn open_revise(uid: u64, at: ApprovalAt, window: &mut Window, cx: &mut Context<ChatPane>) {
+pub(super) fn open_revise(
+    task: &str,
+    at: ApprovalAt,
+    window: &mut Window,
+    cx: &mut Context<ChatPane>,
+) {
     let pane = cx.entity().downgrade();
+    let task = task.to_string();
     let note =
         cx.new(|cx| TextareaState::new(window, cx).placeholder("What should be done differently?"));
     note.update(cx, |input, cx| input.focus(window, cx));
     let changed = Rc::new(Cell::new(false));
     window.open_dialog(cx, move |dialog, _, cx| {
         let send = {
-            let (note, pane, at, changed) =
-                (note.clone(), pane.clone(), at.clone(), changed.clone());
+            let (note, pane, at, changed, task) = (
+                note.clone(),
+                pane.clone(),
+                at.clone(),
+                changed.clone(),
+                task.clone(),
+            );
             move |_: &gpui::ClickEvent, window: &mut Window, cx: &mut App| {
                 let text = note.read(cx).value().trim().to_string();
                 if text.is_empty() {
                     window.push_notification("Say what to change", cx);
                     return;
                 }
-                if still_at(uid, &at, cx).is_err() {
+                if still_at(&task, &at, cx).is_err() {
                     changed.set(true);
                     window.refresh();
                     return;
                 }
                 window.close_dialog(cx);
-                let at = at.clone();
+                let (at, task) = (at.clone(), task.clone());
                 let _ = pane.update(cx, |_, cx| {
-                    if let Some(task) = crate::task::shown(uid, cx).map(|shown| shown.task) {
-                        cx.emit(ChatPaneEvent::ReviseWorkflow {
-                            task: task.to_string(),
-                            at,
-                            note: text,
-                        })
-                    }
+                    cx.emit(ChatPaneEvent::ReviseWorkflow {
+                        task,
+                        at,
+                        note: text,
+                    })
                 });
             }
         };

@@ -16,6 +16,7 @@ use onehand_core::chat::now_secs;
 use onehand_core::diff::Row as DiffRow;
 use onehand_core::task::Group;
 use onehand_core::task::marks::{self, Change};
+use onehand_core::task::work::UnderReview;
 use onehand_core::workflow::{CommandResult, Run, Visit};
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
@@ -208,21 +209,8 @@ pub(super) fn task_detail(
     let Some((last, earlier)) = task.runs.split_last() else {
         return out;
     };
-    if let Some((step, answer)) = last.under_review() {
-        let open = open_session("task-review-open", row, cx).map(IntoElement::into_any_element);
-        let said = match answer.trim().is_empty() {
-            true => vec![muted_line("The step kept no answer.", cx)],
-            false => mono_well(answer, cx),
-        };
-        out.push(
-            page_card("Awaiting approval", None, open, cx)
-                .child(div().text_xs().text_color(muted).child(format!(
-                    "{} answered; it is approved in its session.",
-                    step.label
-                )))
-                .children(said)
-                .into_any_element(),
-        );
+    if let Some(review) = UnderReview::of(last) {
+        out.push(review_card(&task.id, row, &review, cx));
     }
     // Only a task at work has a visit under way: an open visit of any other
     // was cut off, by a quit or a lost session, before it could end.
@@ -505,6 +493,98 @@ fn visit_body(
         out.push(muted_line(&format!("{hidden} more files not shown"), cx));
     }
     out
+}
+
+/// What the task's run waits for approval on: the answer, what each answer
+/// starts, and the two answers, each carrying the visit it was drawn from.
+fn review_card(
+    task: &str,
+    row: &Row,
+    review: &UnderReview,
+    cx: &mut Context<ChatPane>,
+) -> gpui::AnyElement {
+    let muted = cx.theme().muted_foreground;
+    let open = open_session("task-review-open", row, cx).map(IntoElement::into_any_element);
+    let said = match review.answer.trim().is_empty() {
+        true => vec![muted_line("The step kept no answer.", cx)],
+        false => mono_well(&review.answer, cx),
+    };
+    let lines = review.answer.lines().count();
+    let cut = (lines > OUTPUT_LINES).then(|| {
+        div()
+            .text_xs()
+            .text_color(crate::theme::status_ink(cx).warning)
+            .child(format!(
+                "Showing the last {OUTPUT_LINES} of {lines} lines; Review… opens all of it."
+            ))
+    });
+    let pane = cx.entity().downgrade();
+    let (on_read, on_revise, on_continue) = (task.to_string(), task.to_string(), task.to_string());
+    let (revise_at, continue_at) = (review.at.clone(), review.at.clone());
+    let read = crate::task::Review {
+        of: review.of.clone().into(),
+        answer: review.answer.clone().into(),
+        at: review.at.clone(),
+    };
+    let answer_row = |button: gpui_component::button::Button, said: String| {
+        div()
+            .h_flex()
+            .gap_2()
+            .items_center()
+            .child(button)
+            .child(div().text_xs().text_color(muted).child(said))
+    };
+    page_card("Awaiting approval", None, open, cx)
+        .children(said)
+        .children(cut)
+        .child(
+            div().h_flex().child(
+                crate::controls::action("task-review-read")
+                    .ghost()
+                    .small()
+                    .label("Review…")
+                    .on_click({
+                        let pane = pane.clone();
+                        move |_, window, cx| {
+                            super::super::step_strip::open_review_of(
+                                &on_read,
+                                pane.clone(),
+                                read.clone(),
+                                window,
+                                cx,
+                            )
+                        }
+                    }),
+            ),
+        )
+        .child(answer_row(
+            crate::controls::action("task-review-revise")
+                .ghost()
+                .small()
+                .label("Revise…")
+                .on_click(cx.listener(move |_, _, window, cx| {
+                    super::super::step_strip::open_revise(&on_revise, revise_at.clone(), window, cx)
+                })),
+            review.revise_said(),
+        ))
+        .child(answer_row(
+            crate::controls::action("task-review-continue")
+                .primary()
+                .small()
+                .icon(Icon::new(IconName::Check))
+                .label("Continue")
+                .on_click(move |_, window, cx| {
+                    super::super::step_strip::press_continue(
+                        &on_continue,
+                        pane.clone(),
+                        &continue_at,
+                        window,
+                        cx,
+                    )
+                }),
+            review.continue_said(),
+        ))
+        .into_any_element()
 }
 
 /// How a visit's command came out, in one line.

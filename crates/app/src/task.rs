@@ -518,6 +518,22 @@ pub(crate) struct Review {
     pub(crate) at: ApprovalAt,
 }
 
+impl Review {
+    fn of(run: &Run) -> Option<Self> {
+        let (step, answer) = run.under_review()?;
+        Some(Self {
+            of: step.label.clone().into(),
+            answer: answer.to_string().into(),
+            at: run.approval_at()?,
+        })
+    }
+}
+
+/// What task `id`'s run, under way, waits for approval on now.
+pub(crate) fn review_of(id: &str, cx: &App) -> Option<Review> {
+    Review::of(&cx.try_global::<Tasks>()?.driven(id)?.run)
+}
+
 /// Where the run on session `uid` stands, if one drives it.
 pub(crate) fn shown(uid: u64, cx: &App) -> Option<Shown> {
     let driven = cx.try_global::<Tasks>()?.live.get(&uid)?;
@@ -532,14 +548,7 @@ pub(crate) fn shown(uid: u64, cx: &App) -> Option<Shown> {
             .map(|step| step.label.clone().into())
             .collect(),
         at: run.step,
-        review: run
-            .under_review()
-            .zip(run.approval_at())
-            .map(|((step, answer), at)| Review {
-                of: step.label.clone().into(),
-                answer: answer.to_string().into(),
-                at,
-            }),
+        review: Review::of(run),
     })
 }
 

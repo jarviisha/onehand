@@ -16,7 +16,7 @@ use gpui_component::{ActiveTheme, Icon, IconName, Sizable as _, StyledExt};
 use onehand_core::diff::Row as DiffRow;
 use onehand_core::issues;
 use onehand_core::task::marks::{self, Change};
-use onehand_core::task::work::left::{Left, left_blocking};
+use onehand_core::task::work::left::{CheckStands, Left, left_blocking};
 use onehand_core::task::work::{IssueWork, Reading, Work};
 use onehand_plugin_host::status_ink;
 use std::collections::{HashMap, HashSet};
@@ -48,10 +48,13 @@ pub(super) struct FullState {
     diffs: HashMap<DiffKey, Option<Result<Vec<DiffRow>, String>>>,
 }
 
+/// Which list of changed files: this run's, the branch's, or what the step
+/// under review changed.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-enum Side {
+pub(super) enum Side {
     Run,
     Branch,
+    Review,
 }
 
 /// What the full form draws, borrowed from the page.
@@ -62,6 +65,21 @@ pub(super) struct Full<'a> {
 impl FullState {
     pub(super) fn view(&self) -> Full<'_> {
         Full { state: self }
+    }
+}
+
+impl Full<'_> {
+    /// How `work`'s check stands, as last read for it; `None` until read.
+    pub(super) fn check_for(&self, work: &Work) -> Option<Result<CheckStands, String>> {
+        let reading = &self.state.left;
+        if reading.about() != Some(&(work.task.clone(), work.run.clone())) {
+            return None;
+        }
+        match (&reading.value, &reading.failed) {
+            (Some((left, _)), _) => Some(left.check.clone()),
+            (None, Some(why)) => Some(Err(why.clone())),
+            (None, None) => None,
+        }
     }
 }
 
@@ -239,6 +257,7 @@ pub(super) fn left_lines(
     let marks_of = |side: Side| match side {
         Side::Run => work.span.clone(),
         Side::Branch => work.branch_span(),
+        Side::Review => work.review.as_ref().and_then(|review| review.span.clone()),
     };
     for (name, side, files) in [
         ("This run", Side::Run, &left.run_files),
@@ -278,7 +297,7 @@ pub(super) fn left_lines(
 
 /// A count of changed files that opens into the list, each file opening its
 /// diff in place.
-fn files_view(
+pub(super) fn files_view(
     full: &Full<'_>,
     side: Side,
     files: &[Change],
@@ -296,6 +315,7 @@ fn files_view(
     let id = match side {
         Side::Run => "issue-full-run-files",
         Side::Branch => "issue-full-branch-files",
+        Side::Review => "issue-review-files",
     };
     let left_out = files.len().saturating_sub(FILES_SHOWN);
     div()
@@ -373,6 +393,7 @@ fn file_row(
                 match side {
                     Side::Run => "issue-full-run-file",
                     Side::Branch => "issue-full-branch-file",
+                    Side::Review => "issue-review-file",
                 },
                 i,
             ))

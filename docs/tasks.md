@@ -40,8 +40,10 @@ go back. It shows:
 
 - **a head**: the title, the row's muted line, and the row's actions, plus *Retry* on a finished
   task;
-- **Awaiting approval**, while the last run waits on one: the step that answered and its answer
-  (its last 60 lines, said when cut), with *Open session*. It is answered in its session, not here;
+- **Awaiting approval**, while the last run waits on one: its answer (its last 60 lines, said
+  when cut, *Review…* opening all of it), *Revise…* and *Continue* each beside what it starts, and
+  *Open session*. It is answered here as on the strip, through the same call: each press carries
+  the visit it was drawn from, and one the run no longer waits at shows the new answer instead;
 - **Run N**, the last run's timeline: one line per step visit (the step, why it ended, when it
   started and how long it took), each opening onto what it kept or printed (its last 60 lines) and
   the files it changed between its start and end marks, with their added and removed lines.

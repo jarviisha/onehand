@@ -771,3 +771,93 @@ fn the_check_shown_is_the_last_passed_command() {
     assert_eq!(vouched.digest.as_deref(), Some("d1"));
     assert_eq!(vouched.tail.as_deref(), Some("all 12 passed"));
 }
+
+/// A task whose run, driven by the engine, answered its plan and waits for
+/// approval, with the plan's visit pinned from `m1` to `m2`.
+fn plan_waiting() -> Task {
+    use crate::workflow::{Facts, Mark};
+    let mut task = task("1", forge_flow(), None);
+    let run = task.runs.last_mut().unwrap();
+    run.resume();
+    run.pinned("m1", 0);
+    let mark = Mark {
+        head: "a".into(),
+        digests: vec!["d0".into()],
+    };
+    run.measured(mark);
+    let facts = Facts {
+        head: "a".into(),
+        dirty: false,
+        commits: 0,
+        digest: "d0".into(),
+    };
+    run.turn_ended(&facts, "The plan.");
+    run.pinned("m2", 1);
+    task
+}
+
+/// What waits for approval is read from the run, with the visit a press
+/// carries, what each answer starts, and the plan's own span of the work.
+#[test]
+fn an_approval_says_what_is_reviewed_and_what_each_answer_starts() {
+    let task = plan_waiting();
+    let work = Work::of(&task, Some(Working::Waiting), None);
+    let review = work.review.clone().expect("it waits for approval");
+    assert_eq!(review.at, task.runs[0].approval_at().unwrap());
+    assert_eq!(review.of, "Plan");
+    assert_eq!(review.answer, "The plan.");
+    assert_eq!(
+        review.continue_said(),
+        "Continue starts Implement: the agent works"
+    );
+    assert_eq!(review.revise_said(), "Plan runs again with your note");
+    assert_eq!(review.span, Some(("m1".to_string(), "m2".to_string())));
+    assert!(!review.checked, "no command ran since the plan started");
+
+    // Nothing is under review once the run moved on, or for a run that is
+    // not waiting.
+    assert!(Work::of(&task, Some(Working::Running), None)
+        .review
+        .is_none());
+}
+
+/// What a step does, in the words beside *Continue*.
+#[test]
+fn a_step_says_what_it_does() {
+    let changes = StepKind::Agent {
+        prompt: String::new(),
+        gates: vec![crate::workflow::GateKind::CodeChanged],
+        keep_answer: false,
+    };
+    assert_eq!(changes.does(), "the agent changes the code");
+    let answers = StepKind::Agent {
+        prompt: String::new(),
+        gates: vec![crate::workflow::GateKind::Answered],
+        keep_answer: true,
+    };
+    assert_eq!(answers.does(), "the agent answers");
+    assert_eq!(
+        StepKind::Command {
+            command: None,
+            on_fail: "x".into()
+        }
+        .does(),
+        "onehand runs the check command"
+    );
+    assert_eq!(
+        StepKind::Command {
+            command: Some("make package".into()),
+            on_fail: "x".into()
+        }
+        .does(),
+        "onehand runs make package"
+    );
+    assert_eq!(
+        StepKind::Push.does(),
+        "onehand pushes the commit the check passed on"
+    );
+    assert_eq!(
+        StepKind::PullRequest.does(),
+        "onehand opens a draft pull request"
+    );
+}

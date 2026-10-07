@@ -104,3 +104,17 @@ fn the_template_with_more_headings_in_the_body_is_the_one_read() {
     let lacks = lacking(body, &[shipped().remove(0), own]).unwrap();
     assert_eq!(lacks.missing, ["Expected"]);
 }
+
+/// A section is read as written, its hints left out; an empty or absent one
+/// is none.
+#[test]
+fn a_section_is_read_without_its_hints() {
+    let body = "## Problem\nIt breaks.\n\n## Acceptance\n<!-- How you will judge it. -->\n\
+                - It no longer breaks.\n- A test says so.\n\n## How to check\n`make test`\n";
+    assert_eq!(
+        section(body, "Acceptance").as_deref(),
+        Some("- It no longer breaks.\n- A test says so.")
+    );
+    assert_eq!(section(&bug().body, "Acceptance"), None, "only the hint");
+    assert_eq!(section("Free text", "Acceptance"), None);
+}

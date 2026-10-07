@@ -192,7 +192,7 @@ fn tooltip(act: Act) -> Option<&'static str> {
             "Choose a workflow and work the issue with it as a task, on a branch and worktree \
              of its own",
         ),
-        Act::Review => Some("Open the run's session, whose step strip holds the approval"),
+        Act::Review => Some("Read what waits for approval, and approve it or send it back"),
         Act::OpenBranch => Some("Show the folder the branch is checked out in"),
         Act::Retry => Some("Run it again in a new run"),
         Act::Resume => Some("Carry on from that step in a new session"),
@@ -270,11 +270,12 @@ impl Pressed {
                 }
             }
             Act::Edit => view.open_form(Some(number), window, cx),
-            Act::OpenSession | Act::AnswerInSession | Act::Review => {
+            Act::OpenSession | Act::AnswerInSession => {
                 if let Some(id) = task {
                     view.ask_task(id, |id| Request::OpenTaskSession(id), window, cx);
                 }
             }
+            Act::Review => view.review(number, window, cx),
             Act::Stop => {
                 if let Some(id) = task {
                     view.ask_task(id, |id| Request::StopTask(id), window, cx);
