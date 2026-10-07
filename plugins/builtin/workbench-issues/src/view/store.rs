@@ -10,6 +10,7 @@
 use super::SYNC_GAP;
 use gpui::{App, AppContext as _, Context, Entity, Global, Task, WeakEntity};
 use onehand_core::connector::{self, Connector};
+use onehand_core::issues::template::{self, IssueTemplate};
 use onehand_core::issues::{self, Issues, sync};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -33,6 +34,9 @@ pub(super) struct IssuesFile {
     /// The forge that serves the project, if one does — found when the file
     /// is read, since asking reads the project's git remote.
     pub(super) forge: Option<&'static dyn Connector>,
+    /// The issue templates the project offers, its own or the shipped ones,
+    /// read with the file since its own are files in the project.
+    pub(super) templates: Vec<IssueTemplate>,
     /// A sync is on its way; a second is not started beside it.
     pub(super) syncing: bool,
     /// Something asked for a sync while one was running — an edit saved
@@ -70,6 +74,7 @@ impl IssuesFile {
             issues: None,
             failed: None,
             forge: None,
+            templates: template::shipped(),
             syncing: false,
             again: false,
             synced: None,
@@ -96,17 +101,19 @@ impl IssuesFile {
         self.stale = false;
         let (root, path, connectors) = (self.root.clone(), self.path.clone(), self.connectors);
         self._load = Some(cx.spawn(async move |file, cx| {
-            let (read, forge) = cx
+            let (read, forge, templates) = cx
                 .background_executor()
                 .spawn(async move {
                     let forge = connector::serving(connectors, &root)
                         .ok()
                         .map(|at| connectors[at]);
-                    (issues::load_blocking(&path), forge)
+                    let templates = template::for_project_blocking(&root);
+                    (issues::load_blocking(&path), forge, templates)
                 })
                 .await;
             let _ = file.update(cx, |file: &mut Self, cx| {
                 file.forge = forge;
+                file.templates = templates;
                 match read {
                     Ok(read) => {
                         keep_newer(&mut file.issues, read);

@@ -41,6 +41,7 @@ pub fn pick_issue(shell: &Shell, window: &Window, cx: &mut Context<Shell>) -> Di
     let found = picker.found.clone();
     let (at, narrowed, preview) = (picker.chosen, picker.only.is_some(), picker.preview);
     let instructions = picker.instructions.clone();
+    let templates = picker.templates.clone();
     let picked = picker.workflow.clone();
     let chosen = picker.chosen();
     // Judged on every frame from what the app holds, so a block fixed
@@ -79,6 +80,7 @@ pub fn pick_issue(shell: &Shell, window: &Window, cx: &mut Context<Shell>) -> Di
                         row,
                         picked.as_deref(),
                         judged,
+                        &templates,
                         &instructions,
                         preview,
                         &handle,
@@ -148,6 +150,7 @@ fn start_form(
     row: &IssueRow,
     picked: Option<&str>,
     judged: &(Vec<Finding>, Result<Template, String>),
+    templates: &[template::IssueTemplate],
     instructions: &Entity<TextareaState>,
     preview: bool,
     handle: &Entity<Shell>,
@@ -193,7 +196,7 @@ fn start_form(
         .collect();
     // What the issue's text leaves out of the template it was written from:
     // said, never in the way.
-    let lacks = template::lacking(row.issue.body_text(), &template::shipped())
+    let lacks = template::lacking(row.issue.body_text(), templates)
         .map(|lacks| div().text_xs().text_color(muted).child(lacks.said()));
     let column = div()
         .v_flex()

@@ -8,7 +8,8 @@ use gpui::{
 use gpui_component::button::ButtonVariants as _;
 use gpui_component::input::{Input, InputState, Textarea, TextareaState};
 use gpui_component::{ActiveTheme, Sizable as _, StyledExt};
-use onehand_core::issues::{self, Draft, template};
+use onehand_core::issues::template::IssueTemplate;
+use onehand_core::issues::{self, Draft};
 use onehand_plugin_host::action;
 
 /// The form a new issue or an edit is written in.
@@ -97,24 +98,36 @@ impl IssuesView {
         cx.notify();
     }
 
-    /// Fill the new issue's body from shipped template `at`, and add the
+    /// The templates the active project offers: its own, or the shipped
+    /// ones until its own are read or when it keeps none.
+    fn templates(&self, cx: &App) -> Vec<IssueTemplate> {
+        self.root
+            .as_ref()
+            .and_then(|root| self.roots.get(root))
+            .map_or_else(onehand_core::issues::template::shipped, |state| {
+                state.file.read(cx).templates.clone()
+            })
+    }
+
+    /// Fill the new issue's body from the project's template `at`, and add the
     /// labels it carries to those typed. Only a body still empty, or still
     /// another template's untouched, is filled: nothing typed is replaced.
     fn apply_template(&mut self, at: usize, window: &mut Window, cx: &mut Context<Self>) {
+        let templates = self.templates(cx);
         let Some(form) = self.state_mut().and_then(|state| state.form.as_ref()) else {
             return;
         };
-        let Some(template) = template::shipped().into_iter().nth(at) else {
+        let Some(template) = templates.get(at).cloned() else {
             return;
         };
         let body = form.body.read(cx).value().to_string();
-        if !fillable(&body) {
+        if !fillable(&body, &templates) {
             return;
         }
         let mut labels = issues::parse_labels(&form.labels.read(cx).value());
         // The template being replaced takes its own labels with it: a body
         // switched from Bug to Feature is no bug.
-        if let Some(before) = template::shipped().into_iter().find(|t| t.body == body) {
+        if let Some(before) = templates.iter().find(|t| t.body == body) {
             labels
                 .retain(|label| !before.labels.contains(label) || template.labels.contains(label));
         }
@@ -162,16 +175,20 @@ impl IssuesView {
     }
 }
 
-/// Whether a new issue's `body` may be filled from a template: it is empty, or
-/// a template's untouched.
-fn fillable(body: &str) -> bool {
-    body.trim().is_empty() || template::shipped().iter().any(|t| t.body == body)
+/// Whether a new issue's `body` may be filled from one of `templates`: it is
+/// empty, or a template's untouched.
+fn fillable(body: &str, templates: &[IssueTemplate]) -> bool {
+    body.trim().is_empty() || templates.iter().any(|t| t.body == body)
 }
 
 /// The templates a new issue can be started from, while its body is still
 /// fillable; a template fills in the body only, and adds no field.
-fn templates_row(form: &Form, cx: &mut Context<IssuesView>) -> Option<AnyElement> {
-    if form.editing.is_some() || !fillable(&form.body.read(cx).value()) {
+fn templates_row(
+    form: &Form,
+    templates: &[IssueTemplate],
+    cx: &mut Context<IssuesView>,
+) -> Option<AnyElement> {
+    if form.editing.is_some() || !fillable(&form.body.read(cx).value(), templates) {
         return None;
     }
     let muted = cx.theme().muted_foreground;
@@ -181,11 +198,11 @@ fn templates_row(form: &Form, cx: &mut Context<IssuesView>) -> Option<AnyElement
             .gap_1()
             .items_center()
             .child(div().text_xs().text_color(muted).child("Template"))
-            .children(template::shipped().into_iter().enumerate().map(|(at, t)| {
+            .children(templates.iter().enumerate().map(|(at, t)| {
                 action(("issue-form-template", at))
                     .small()
                     .ghost()
-                    .label(t.name)
+                    .label(t.name.clone())
                     .on_click(cx.listener(move |view, _: &ClickEvent, window, cx| {
                         view.apply_template(at, window, cx)
                     }))
@@ -200,6 +217,7 @@ fn templates_row(form: &Form, cx: &mut Context<IssuesView>) -> Option<AnyElement
 pub(super) fn form_view(
     form: &Form,
     project: Option<SharedString>,
+    templates: &[IssueTemplate],
     cx: &mut Context<IssuesView>,
 ) -> AnyElement {
     div()
@@ -229,7 +247,7 @@ pub(super) fn form_view(
         )
         .child(Input::new(&form.title))
         .child(Input::new(&form.labels))
-        .children(templates_row(form, cx))
+        .children(templates_row(form, templates, cx))
         .child(
             div()
                 .flex_1()

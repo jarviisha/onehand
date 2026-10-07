@@ -207,8 +207,10 @@ pub(super) fn begin_blocking(
                                 }
                                 // Nobody is there to read these before the
                                 // run: its first report says them instead.
-                                let lacks =
-                                    template::lacking(row.issue.body_text(), &template::shipped());
+                                let lacks = template::lacking(
+                                    row.issue.body_text(),
+                                    &template::for_project_blocking(&project.root),
+                                );
                                 notes = facts
                                     .issue
                                     .as_ref()

@@ -59,6 +59,96 @@ pub fn shipped() -> Vec<IssueTemplate> {
     ]
 }
 
+/// Where a project keeps issue templates of its own, as its forge reads them.
+const PROJECT_TEMPLATES: &str = ".github/ISSUE_TEMPLATE";
+
+/// The templates a new issue in the project at `root` is offered: its own,
+/// whole, when it keeps any that read; the shipped three otherwise. Reads
+/// the disk, so never on the UI thread.
+pub fn for_project_blocking(root: &std::path::Path) -> Vec<IssueTemplate> {
+    let mut files: Vec<_> = std::fs::read_dir(root.join(PROJECT_TEMPLATES))
+        .into_iter()
+        .flatten()
+        .flatten()
+        .map(|entry| entry.path())
+        .filter(|path| path.extension().is_some_and(|ext| ext == "md"))
+        .collect();
+    files.sort();
+    own_or_shipped(
+        files
+            .iter()
+            .filter_map(|path| std::fs::read_to_string(path).ok())
+            .filter_map(|text| from_file(&text))
+            .collect(),
+    )
+}
+
+/// A project's own templates when there are any, or the shipped three: one
+/// of its own replaces them all, never mixes with them.
+fn own_or_shipped(own: Vec<IssueTemplate>) -> Vec<IssueTemplate> {
+    if own.is_empty() { shipped() } else { own }
+}
+
+/// A Markdown issue template as a forge keeps it: front matter giving its
+/// `name` and `labels`, the rest its body. `None` for a file with no front
+/// matter, none closed, or no name, which a forge would not offer either.
+fn from_file(text: &str) -> Option<IssueTemplate> {
+    let rest = text.strip_prefix("---")?.trim_start_matches([' ', '\t']);
+    let rest = rest.strip_prefix("\r\n").or_else(|| rest.strip_prefix('\n'))?;
+    let mut lines = rest.split_inclusive('\n');
+    let mut front = Vec::new();
+    let mut read = 0;
+    loop {
+        let line = lines.next()?;
+        read += line.len();
+        if line.trim_end() == "---" {
+            break;
+        }
+        front.push(line.trim_end());
+    }
+    let body = rest[read..].trim_start_matches(['\r', '\n']).to_string();
+    let (mut name, mut labels) = (None, Vec::new());
+    let mut at = 0;
+    while at < front.len() {
+        let line = front[at];
+        at += 1;
+        let Some((key, value)) = line.split_once(':') else {
+            continue;
+        };
+        let value = value.trim();
+        match key.trim() {
+            "name" => name = Some(unquoted(value)).filter(|n| !n.is_empty()),
+            "labels" if value.is_empty() => {
+                while let Some(item) = front.get(at).and_then(|l| l.trim().strip_prefix('-')) {
+                    labels.push(unquoted(item.trim()));
+                    at += 1;
+                }
+            }
+            "labels" => {
+                let listed = value.strip_prefix('[').and_then(|v| v.strip_suffix(']'));
+                labels = listed.unwrap_or(value).split(',').map(unquoted).collect();
+            }
+            _ => {}
+        }
+    }
+    labels.retain(|label| !label.is_empty());
+    Some(IssueTemplate {
+        name: name?,
+        body,
+        labels,
+    })
+}
+
+/// A front matter value with its quotes taken off.
+fn unquoted(value: &str) -> String {
+    let value = value.trim();
+    ['"', '\'']
+        .into_iter()
+        .find_map(|q| value.strip_prefix(q).and_then(|v| v.strip_suffix(q)))
+        .unwrap_or(value)
+        .to_string()
+}
+
 /// The sections a body leaves empty or out, by the template it matches.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Lacking {

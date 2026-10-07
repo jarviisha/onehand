@@ -118,3 +118,47 @@ fn a_section_is_read_without_its_hints() {
     assert_eq!(section(&bug().body, "Acceptance"), None, "only the hint");
     assert_eq!(section("Free text", "Acceptance"), None);
 }
+
+#[test]
+fn a_project_template_reads_its_name_and_labels_from_front_matter() {
+    let text = "---\nname: Bug report\nabout: Something is broken\ntitle: ''\nlabels: bug, \"needs triage\"\nassignees: ''\n---\n\n## What happened\n\n## Expected\n";
+    let template = from_file(text).unwrap();
+    assert_eq!(template.name, "Bug report");
+    assert_eq!(template.labels, ["bug", "needs triage"]);
+    assert_eq!(template.body, "## What happened\n\n## Expected\n");
+}
+
+#[test]
+fn labels_read_as_a_flow_or_a_block_list() {
+    let flow = from_file("---\nname: A\nlabels: [\"bug\", 'ui']\n---\nbody\n").unwrap();
+    assert_eq!(flow.labels, ["bug", "ui"]);
+    let block = from_file("---\nname: B\nlabels:\n  - bug\n  - 'ui'\nabout: x\n---\nbody\n").unwrap();
+    assert_eq!(block.labels, ["bug", "ui"]);
+    let none = from_file("---\nname: C\nlabels: ''\n---\nbody\n").unwrap();
+    assert!(none.labels.is_empty());
+}
+
+#[test]
+fn a_file_without_front_matter_or_a_name_is_left_out() {
+    assert_eq!(from_file("## Problem\n\n## Scope\n"), None);
+    assert_eq!(from_file("---\nabout: no name\n---\nbody\n"), None);
+    assert_eq!(from_file("---\nname: never closed\nbody\n"), None);
+}
+
+#[test]
+fn a_project_template_replaces_the_shipped_ones_for_the_body_reader() {
+    let own = from_file("---\nname: Story\n---\n## Why\n\n## Done when\n").unwrap();
+    let body = "## Why\nUsers ask for it.\n\n## Done when\n";
+    let lacks = lacking(body, std::slice::from_ref(&own)).unwrap();
+    assert_eq!(lacks.missing, ["Done when"]);
+    // Written from the shipped bug template, it matches nothing of the
+    // project's, so it is never told it lacks anything.
+    assert_eq!(lacking(&bug().body, &[own]), None);
+}
+
+#[test]
+fn a_project_with_no_readable_template_keeps_the_shipped_three() {
+    assert_eq!(own_or_shipped(Vec::new()), shipped());
+    let own = from_file("---\nname: Story\n---\n## Why\n").unwrap();
+    assert_eq!(own_or_shipped(vec![own.clone()]), vec![own]);
+}

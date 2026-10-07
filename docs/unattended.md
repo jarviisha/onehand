@@ -580,6 +580,14 @@ also puts the `bug` label on, which is how a template can choose the workflow
 through a workflow label; switching to another template takes the first one's
 labels off again. A template fills the body in and nothing else: no
 field, no state, and an issue written without one is worked as it always was.
+A project that keeps its own templates in `.github/ISSUE_TEMPLATE/*.md` is
+offered those instead, whole, never mixed with the shipped three
+(`issues::template::for_project_blocking`): the front matter gives each its
+`name` and `labels` (a comma list, a flow list or a block list), and the rest
+is its body. A file with no front matter, none closed or no name is left out,
+as its forge would leave it out; a project none of whose files read keeps the
+shipped three. They are read off the UI thread, with the issues file, the pick
+and the search, and a body is read against the project's own.
 A pure reader (`issues::template::lacking`) says which of a template's headings
 a body leaves empty or out, against the template it matches: one carrying at
 least half its headings, ATX headings of any level matched on their text with

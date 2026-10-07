@@ -387,6 +387,10 @@ pub struct IssuePicker {
     /// The forge the project's work goes to, `Some(None)` for none; `None`
     /// while it is being found out.
     pub forge: Option<Option<&'static dyn onehand_core::connector::Connector>>,
+    /// The issue templates the project offers, its own or the shipped ones,
+    /// read with the issues: what an issue's body is read against. Empty
+    /// until read, when nothing is said to be lacking.
+    pub templates: Vec<onehand_core::issues::template::IssueTemplate>,
 }
 
 impl IssuePicker {

@@ -237,10 +237,11 @@ impl Shell {
             instructions,
             preview: false,
             forge: None,
+            templates: Vec::new(),
         });
         cx.notify();
         cx.spawn(async move |shell, cx| {
-            let (found, forge) = {
+            let (found, forge, templates) = {
                 let path = path.clone();
                 cx.background_executor()
                     .spawn(async move {
@@ -251,7 +252,9 @@ impl Shell {
                             }
                             None => crate::unattended::pickable_blocking(&path, issues),
                         };
-                        (found, forge)
+                        let templates =
+                            onehand_core::issues::template::for_project_blocking(&path);
+                        (found, forge, templates)
                     })
                     .await
             };
@@ -267,6 +270,7 @@ impl Shell {
                         }
                         picker.found = Some(std::rc::Rc::new(found));
                         picker.forge = Some(forge);
+                        picker.templates = templates;
                         cx.notify();
                     }
                 })

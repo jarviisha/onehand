@@ -126,8 +126,6 @@ pub fn start_picked(
     })
     .ok_or("Unattended runs are not set up.")??;
     let earlier = earlier(cx);
-    let lacks =
-        template::lacking(row.issue.body_text(), &template::shipped()).map(|lacks| lacks.note());
     cx.spawn(async move |cx| {
         let number = row.issue.number;
         let named = tracker.named(&row.issue);
@@ -155,6 +153,11 @@ pub fn start_picked(
                             taking.answering(),
                         )
                         .map_err(|why| format!("Could not start on issue {named}: {why}"))?;
+                        let lacks = template::lacking(
+                            row.issue.body_text(),
+                            &template::for_project_blocking(&repo),
+                        )
+                        .map(|lacks| lacks.note());
                         Ok(prepare_blocking(
                             repo,
                             tracker,

@@ -12,7 +12,7 @@ use gpui_component::button::ButtonVariants as _;
 use gpui_component::text::{TextView, TextViewState, TextViewStyle};
 use gpui_component::tooltip::Tooltip;
 use gpui_component::{ActiveTheme, Icon, IconName, Sizable as _, StyledExt};
-use onehand_core::issues::template::{lacking, shipped};
+use onehand_core::issues::template::{IssueTemplate, lacking};
 use onehand_core::issues::{LocalIssue, sync};
 use onehand_core::task::work::{IssueWork, PrSeen};
 use onehand_plugin_host::{action, status_ink};
@@ -34,6 +34,9 @@ pub(super) struct Doing<'a> {
     pub(super) full: Option<super::full::Full<'a>>,
     /// On the Issues page, the review block, while a person has it open.
     pub(super) review: Option<AnyElement>,
+    /// The templates the issue's project offers, which its body is read
+    /// against.
+    pub(super) templates: Vec<IssueTemplate>,
 }
 
 /// One issue, read, in one fixed order whatever the state, so what it waits
@@ -132,7 +135,7 @@ pub(super) fn issue_view(
         // What a body written from a template left out: advice, never a
         // refusal, and nothing at all for a body written its own way.
         .children(
-            lacking(&issue.body, &shipped())
+            lacking(&issue.body, &doing.templates)
                 .map(|lacks| div().flex_none().text_color(muted).child(lacks.said())),
         );
     let conflict = conflict_view(issue, cx);
