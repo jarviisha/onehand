@@ -648,6 +648,12 @@ pub struct Slots {
 }
 
 impl Slots {
+    /// Every slot is taken: what refuses for its holders, rather than for
+    /// the runs waiting on a person.
+    pub fn taken(&self) -> bool {
+        self.holders.len() + self.starting >= self.at_once as usize
+    }
+
     /// How many slots are taken: *Slots: 1 of 1*, the head of the line,
     /// for where each holder is drawn on its own.
     pub fn count_said(&self) -> String {
@@ -681,7 +687,7 @@ impl Slots {
     /// taken, said with the line so a person knows whom they wait for, or as
     /// many runs wait on a person as may.
     pub fn full(&self) -> Option<String> {
-        if self.holders.len() + self.starting >= self.at_once as usize {
+        if self.taken() {
             return Some(match self.at_once {
                 0 => "Unattended runs are capped at none at once (unattended.at_once).".to_string(),
                 _ => format!(

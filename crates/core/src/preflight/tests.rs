@@ -60,6 +60,7 @@ fn healthy() -> Facts {
         queued_behind: None,
         review: None,
         shared_checkout: None,
+        forge_read: true,
     }
 }
 
@@ -675,6 +676,12 @@ fn forge_steps_on_a_project_no_forge_serves_are_told() {
             finding.text
         );
     }
+    // Not read yet, no forge is not said.
+    let unread = Facts {
+        forge_read: false,
+        ..none.clone()
+    };
+    assert!(informs(Kind::NewRun, &unread, Check::Forge).is_none());
     // Answering a review on no forge is refused already, never told twice.
     assert!(informs(Kind::AnswerReview, &none, Check::Forge).is_none());
     // A forge serving, or no forge steps: nothing said.

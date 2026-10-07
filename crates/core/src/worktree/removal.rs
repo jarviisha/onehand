@@ -33,6 +33,9 @@ pub struct Facts {
     pub folder: PathBuf,
     /// The branch checked out in the worktree, `None` when it is detached.
     pub branch: Option<String>,
+    /// The task's own branch, the one the forge merged: the only branch a
+    /// removal deletes.
+    pub expected: Option<String>,
     /// Every path git says is not committed, untracked ones included, as its
     /// status prints it; `Err` when git could not say.
     pub uncommitted: Result<Vec<String>, String>,
@@ -70,6 +73,20 @@ pub fn judge(facts: &Facts) -> Judged {
             None
         }
     };
+    // Only the task's own branch was judged by the forge; another checked
+    // out in its place holds work nobody looked at.
+    if let Some(expected) = facts
+        .expected
+        .as_ref()
+        .filter(|e| facts.branch.as_ref() != Some(*e))
+    {
+        refused.push(match &facts.branch {
+            Some(other) => format!(
+                "The worktree has `{other}` checked out, not the task's branch `{expected}`."
+            ),
+            None => format!("The worktree is not on the task's branch `{expected}`."),
+        });
+    }
     if merged.is_some() {
         match &facts.past_merge {
             Ok(0) => {}
@@ -110,7 +127,7 @@ pub fn judge(facts: &Facts) -> Judged {
     );
     match (refused.is_empty(), merged) {
         (true, Some(merged)) => Judged::Remove {
-            branch: facts.branch.clone(),
+            branch: facts.expected.clone().or_else(|| facts.branch.clone()),
             why: format!(
                 "The forge merged #{} at {}, and the branch holds nothing past it, so it is \
                  deleted with `git branch -D`.",
@@ -131,6 +148,7 @@ fn short(commit: &str) -> &str {
 /// forge's answer and the folder's users are the caller's.
 pub fn facts_blocking(
     folder: &Path,
+    expected: Option<String>,
     merged: Result<Option<Merged>, String>,
     users: Vec<String>,
 ) -> Facts {
@@ -144,6 +162,7 @@ pub fn facts_blocking(
     Facts {
         folder: folder.to_path_buf(),
         branch,
+        expected,
         uncommitted,
         merged,
         past_merge,

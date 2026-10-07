@@ -405,6 +405,9 @@ pub(crate) fn finding_line(
             (finding.check == onehand_core::preflight::Check::Slot)
                 .then(|| crate::unattended::slots(cx))
                 .flatten()
+                // Only a full slot is refused for its holders; at the cap on
+                // waiting runs they are not what stands in the way.
+                .filter(|slots| slots.taken())
                 .into_iter()
                 .flat_map(|slots| slots.holders)
                 .take(onehand_core::unattended::HOLDERS_SAID)

@@ -722,7 +722,11 @@ on Linux; elsewhere the projects open on it are what tells). Every reason is lis
 onehand closes nothing for the person. The branch is judged by the forge's
 merged head, not by `git branch -d`, which refuses the usual squash merge and
 cannot see a remote branch deleted after the merge: a branch holding nothing
-past that head goes with `git branch -D`. If that fails, the worktree stays
+past that head goes with `git branch -D`. It is the task's own branch, the one
+the forge was asked about, and only that: a worktree with another branch
+checked out is refused. What is removed is the worktree's top, found off the UI
+thread, since a project in a folder of its repository works in that folder of
+the worktree. If `-D` fails, the worktree stays
 removed, the branch is kept, and the failure is said. A removal is kept with
 the task (`Task::worktree_removed`), so nothing offers it again.
 

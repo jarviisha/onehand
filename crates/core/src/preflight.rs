@@ -205,6 +205,9 @@ pub struct Facts {
     pub checked_out: Option<String>,
     /// The forge the work goes to, `None` on a project no forge serves.
     pub forge: Option<Forge>,
+    /// Which forge serves the project has been read: until it has, `None`
+    /// above says nothing.
+    pub forge_read: bool,
     /// The issue it works, for an issue's start.
     pub issue: Option<IssueFacts>,
     /// The slots, for an issue's start.
@@ -407,7 +410,7 @@ pub fn preflight(kind: Kind, facts: &Facts) -> Vec<Finding> {
         );
     }
     // Answering a review on no forge is refused below, and never told twice.
-    if forge_steps && facts.forge.is_none() && kind != Kind::AnswerReview {
+    if forge_steps && facts.forge_read && facts.forge.is_none() && kind != Kind::AnswerReview {
         say(
             Check::Forge,
             false,

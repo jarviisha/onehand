@@ -32,10 +32,10 @@ struct Asked {
 }
 
 impl Asked {
-    fn of(task: &Task, (users, processes): (Vec<String>, Vec<Process>)) -> Self {
+    fn of(task: &Task, folder: PathBuf, (users, processes): (Vec<String>, Vec<Process>)) -> Self {
         Self {
             repo: task.setup.repo.clone(),
-            folder: task.setup.dir.clone(),
+            folder,
             branch: task.setup.branch.clone(),
             forge: task.setup.forge.as_deref().and_then(|name| {
                 onehand_core::connector::named(crate::plugins::connectors(), name)
@@ -65,13 +65,54 @@ impl Asked {
         };
         let mut users = self.users.clone();
         users.extend(removal::working_in_blocking(&self.folder, &self.processes));
-        let facts = removal::facts_blocking(&self.folder, merged, users);
+        let facts = removal::facts_blocking(&self.folder, self.branch.clone(), merged, users);
         let judged = removal::judge(&facts);
         (facts, judged)
     }
 }
 
 impl Shell {
+    /// Judge removing task `id`'s worktree, then hand `done` what was
+    /// asked and found. The worktree's own top is found first, off the UI
+    /// thread, since a project in a folder of its repository works in that
+    /// folder of the worktree; what uses it is gathered from there.
+    fn judge_removal(
+        &mut self,
+        id: &str,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+        done: impl FnOnce(&mut Self, Asked, removal::Facts, Judged, &mut Window, &mut Context<Self>)
+        + 'static,
+    ) {
+        let Some(task) = crate::task::task(id, cx) else {
+            return;
+        };
+        let dir = task.setup.dir.clone();
+        cx.spawn_in(window, async move |shell, cx| {
+            let top = cx
+                .background_executor()
+                .spawn(async move { worktree_top_blocking(&dir) })
+                .await;
+            let Ok(asked) = shell.update(cx, |shell: &mut Self, cx| {
+                let users = shell.folder_users(&top, cx);
+                Asked::of(&task, top, users)
+            }) else {
+                return;
+            };
+            let (asked, facts, judged) = cx
+                .background_executor()
+                .spawn(async move {
+                    let (facts, judged) = asked.judge_blocking();
+                    (asked, facts, judged)
+                })
+                .await;
+            let _ = shell.update_in(cx, |shell: &mut Self, window, cx| {
+                done(shell, asked, facts, judged, window, cx)
+            });
+        })
+        .detach();
+    }
+
     /// Ask whether to remove task `id`'s worktree and branch, its pull
     /// request merged: judged first, off the UI loop, and listed in a modal.
     pub(crate) fn remove_worktree(
@@ -80,20 +121,15 @@ impl Shell {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let Some(task) = crate::task::task(&id, cx) else {
-            return;
-        };
-        let asked = Asked::of(&task, self.folder_users(&task.setup.dir, cx));
-        cx.spawn_in(window, async move |shell, cx| {
-            let (facts, judged) = cx
-                .background_executor()
-                .spawn(async move { asked.judge_blocking() })
-                .await;
-            let _ = shell.update_in(cx, |shell: &mut Self, window, cx| {
-                shell.confirm_removal(id, facts, judged, window, cx);
-            });
-        })
-        .detach();
+        let asked_for = id.clone();
+        self.judge_removal(
+            &asked_for,
+            window,
+            cx,
+            move |shell, _, facts, judged, window, cx| {
+                shell.confirm_removal(id, facts, judged, window, cx)
+            },
+        );
     }
 
     fn confirm_removal(
@@ -109,7 +145,8 @@ impl Shell {
             Judged::Remove { why, .. } => (vec![why], false),
             Judged::Refused(why) => (why, true),
         };
-        let what = match &facts.branch {
+        // The branch named is the one that would go: the task's own.
+        let what = match facts.expected.as_ref().or(facts.branch.as_ref()) {
             Some(branch) => format!("The worktree {folder} and its branch {branch} are deleted."),
             None => format!("The worktree {folder} is deleted; it is on no branch."),
         };
@@ -129,49 +166,55 @@ impl Shell {
     /// The person confirmed: judge again, as things stand now, and remove
     /// only if nothing has come up since the modal opened.
     fn removal_confirmed(&mut self, id: String, window: &mut Window, cx: &mut Context<Self>) {
-        let Some(task) = crate::task::task(&id, cx) else {
-            return;
-        };
-        let asked = Asked::of(&task, self.folder_users(&task.setup.dir, cx));
-        cx.spawn_in(window, async move |shell, cx| {
-            let done = cx
-                .background_executor()
-                .spawn(async move {
-                    match asked.judge_blocking().1 {
-                        Judged::Remove { branch, .. } => {
+        let asked_for = id.clone();
+        self.judge_removal(
+            &asked_for,
+            window,
+            cx,
+            move |_, asked, _, judged, window, cx| {
+                let branch = match judged {
+                    Judged::Remove { branch, .. } => branch,
+                    Judged::Refused(why) => {
+                        let why = format!("Not removed, as things stand now: {}", why.join(" "));
+                        window.push_notification(Notification::warning(why), cx);
+                        return;
+                    }
+                };
+                cx.spawn_in(window, async move |_, cx| {
+                    let done = cx
+                        .background_executor()
+                        .spawn(async move {
                             removal::remove_blocking(&asked.repo, &asked.folder, branch.as_deref())
                                 .map(|removed| (asked.folder, branch, removed))
+                        })
+                        .await;
+                    let _ = cx.update(|window, cx| {
+                        if done.is_ok() {
+                            crate::task::worktree_removed(&id, cx);
                         }
-                        Judged::Refused(why) => Err(format!(
-                            "Not removed, as things stand now: {}",
-                            why.join(" ")
-                        )),
-                    }
-                })
-                .await;
-            let _ = shell.update_in(cx, |_, window, cx| {
-                if done.is_ok() {
-                    crate::task::worktree_removed(&id, cx);
-                }
-                let said = match done {
-                    Ok((folder, branch, removed)) => {
-                        let folder = folder.display();
-                        match (branch, removed.branch_kept) {
-                            (Some(branch), Some(why)) => Notification::warning(format!(
-                                "Removed {folder}; the branch {branch} was kept: {why}"
-                            )),
-                            (Some(branch), None) => {
-                                Notification::success(format!("Removed {folder} and {branch}."))
+                        let said = match done {
+                            Ok((folder, branch, removed)) => {
+                                let folder = folder.display();
+                                match (branch, removed.branch_kept) {
+                                    (Some(branch), Some(why)) => Notification::warning(format!(
+                                        "Removed {folder}; the branch {branch} was kept: {why}"
+                                    )),
+                                    (Some(branch), None) => Notification::success(format!(
+                                        "Removed {folder} and {branch}."
+                                    )),
+                                    (None, _) => {
+                                        Notification::success(format!("Removed {folder}."))
+                                    }
+                                }
                             }
-                            (None, _) => Notification::success(format!("Removed {folder}.")),
-                        }
-                    }
-                    Err(why) => Notification::warning(why),
-                };
-                window.push_notification(said, cx);
-            });
-        })
-        .detach();
+                            Err(why) => Notification::warning(why),
+                        };
+                        window.push_notification(said, cx);
+                    });
+                })
+                .detach();
+            },
+        );
     }
 
     /// Everything of onehand's using `folder`, in every window: a project
@@ -257,10 +300,59 @@ impl Shell {
     }
 }
 
+/// The top of the worktree `dir` is in, written the way `dir` is, so it is
+/// compared with the workspace's own paths as they are kept: git answers
+/// with the top made canonical, which a link on the way would not match.
+fn worktree_top_blocking(dir: &Path) -> PathBuf {
+    let Some(top) = onehand_core::worktree::repo_top_blocking(dir) else {
+        return dir.to_path_buf();
+    };
+    let real = std::fs::canonicalize(dir).unwrap_or_else(|_| dir.to_path_buf());
+    let below = real
+        .strip_prefix(&top)
+        .map_or(0, |rel| rel.components().count());
+    dir.ancestors().nth(below).map_or(top, Path::to_path_buf)
+}
+
 /// `n` of `thing`, as a person counts them.
 fn count(n: usize, thing: &str) -> String {
     match n {
         1 => format!("a {thing}"),
         n => format!("{n} {thing}s"),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::worktree_top_blocking;
+    use std::process::Command;
+
+    /// A project in a folder of its repository works in that folder of the
+    /// worktree; the removal is of the worktree's top, written as the
+    /// project's path is, through a link included.
+    #[cfg(unix)]
+    #[test]
+    fn the_worktree_top_is_found_from_a_folder_in_it_and_kept_unresolved() {
+        let base = std::env::temp_dir().join(format!("onehand-top-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&base);
+        let repo = base.join("repo");
+        std::fs::create_dir_all(repo.join("app/src")).unwrap();
+        let git = Command::new("git")
+            .arg("-C")
+            .arg(&repo)
+            .arg("init")
+            .arg("-q")
+            .status();
+        if !git.is_ok_and(|s| s.success()) {
+            return;
+        }
+        let link = base.join("link");
+        std::os::unix::fs::symlink(&repo, &link).unwrap();
+        assert_eq!(worktree_top_blocking(&link.join("app/src")), link);
+        assert_eq!(worktree_top_blocking(&repo.join("app")), repo);
+        let outside = base.join("plain");
+        std::fs::create_dir_all(&outside).unwrap();
+        assert_eq!(worktree_top_blocking(&outside), outside);
+        let _ = std::fs::remove_dir_all(&base);
     }
 }

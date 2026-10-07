@@ -4,6 +4,7 @@ fn merged() -> Facts {
     Facts {
         folder: "/w/fix-12".into(),
         branch: Some("onehand/12-fix".into()),
+        expected: Some("onehand/12-fix".into()),
         uncommitted: Ok(Vec::new()),
         merged: Ok(Some(Merged {
             number: 40,
@@ -115,12 +116,33 @@ fn every_finding_is_listed() {
 }
 
 #[test]
-fn a_detached_worktree_removes_the_folder_and_keeps_no_branch_to_delete() {
+fn a_detached_worktree_with_no_branch_of_its_own_removes_only_the_folder() {
     let facts = Facts {
         branch: None,
+        expected: None,
         ..merged()
     };
     assert!(matches!(judge(&facts), Judged::Remove { branch: None, .. }));
+}
+
+/// The forge judged the task's branch; another checked out in its place is
+/// never the one deleted, and refuses the removal.
+#[test]
+fn another_branch_checked_out_refuses() {
+    let other = Facts {
+        branch: Some("experiment".into()),
+        ..merged()
+    };
+    let why = refused(&other);
+    assert!(
+        why[0].contains("`experiment`") && why[0].contains("onehand/12-fix"),
+        "{why:?}"
+    );
+    let detached = Facts {
+        branch: None,
+        ..merged()
+    };
+    assert!(refused(&detached)[0].contains("onehand/12-fix"));
 }
 
 /// A process is found by where it works now, wherever it was opened.

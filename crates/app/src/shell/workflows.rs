@@ -182,6 +182,7 @@ impl Shell {
             queued_behind: None,
             review: None,
             shared_checkout: self.own_session_in(&launcher.root, cx),
+            forge_read: launcher.ground.is_some(),
         };
         Some(preflight::preflight(preflight::Kind::NewRun, &facts))
     }
