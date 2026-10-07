@@ -12,6 +12,7 @@ use gpui_component::button::ButtonVariants as _;
 use gpui_component::text::{TextView, TextViewState, TextViewStyle};
 use gpui_component::tooltip::Tooltip;
 use gpui_component::{ActiveTheme, Icon, IconName, Sizable as _, StyledExt};
+use onehand_core::issues::template::{lacking, shipped};
 use onehand_core::issues::{LocalIssue, sync};
 use onehand_core::task::work::{IssueWork, PrSeen};
 use onehand_plugin_host::{action, status_ink};
@@ -125,7 +126,13 @@ pub(super) fn issue_view(
                 .flex_none()
                 .text_color(muted)
                 .child(format!("Priority: {priority}"))
-        }));
+        }))
+        // What a body written from a template left out: advice, never a
+        // refusal, and nothing at all for a body written its own way.
+        .children(
+            lacking(&issue.body, &shipped())
+                .map(|lacks| div().flex_none().text_color(muted).child(lacks.said())),
+        );
     let conflict = conflict_view(issue, cx);
 
     let next = work::next_for(issue, &doing);

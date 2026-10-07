@@ -149,6 +149,16 @@ A run cut off before its last visit ended is compared with that visit's start ma
 (`Run::last_mark`). A retry with no mark to compare against, or whose comparison fails, skips this
 check. **A check task is retried at once**, with no dialog: it is a fresh run of its one step.
 
+**A Retry and a Resume are preflighted by the run's own setup** (`onehand_core::preflight`, kinds
+*Retry* and *Resume*), since that is what runs: its agent, its mode, its check command, its forge,
+and, for an issue's task not already counted, the slot. Settings changed since neither blocks it
+nor clears a block, and a block says so: *the run keeps its own setup*. The Retry dialog lists what
+the preflight found under its description, blocks in the danger ink, and *Retry* is spent while one
+remains (Enter does nothing then). *Retry with version N* is judged as a new start of that version,
+validation included; what blocks it alone is listed with its version, and spends only its button.
+A Resume blocked is said in a notification where it was pressed, and nothing starts. Running with
+what Settings says now instead is not built yet.
+
 **The dialog has a step menu**, *From …*, listing the first step up to where the retry would start;
 it defaults to that start, or to the first step when the last run got to the end. The description
 says where the pick starts and how many answers it carries; only the steps before it carry. The

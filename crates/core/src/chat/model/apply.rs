@@ -29,6 +29,9 @@ pub struct ApplyOutcome {
     /// notification needs is the *moment* it started waiting, and only the event
     /// knows that.
     pub asked_user: Option<UserAsk>,
+    /// The agent said which modes it offers, now in [`Chat::modes`]: what a
+    /// start reads before it brings the agent up again.
+    pub modes_offered: bool,
 }
 
 /// What an agent parked in front of the user, and what to call it.
@@ -142,6 +145,7 @@ impl Chat {
         // would answer the same on every chunk that arrives while the card is
         // up. An elicitation that cannot be drawn never reaches here -- the
         // client declines those where they arrive rather than parking them.
+        let modes_offered = matches!(event, AcpEvent::Modes { .. });
         let asked_user = match event {
             AcpEvent::Permission(_) => Some(UserAsk::Permission),
             AcpEvent::Elicitation(_) => Some(UserAsk::Question),
@@ -319,6 +323,7 @@ impl Chat {
             transcript_changed: self.revision != before,
             turn_ended,
             asked_user,
+            modes_offered,
         }
     }
 

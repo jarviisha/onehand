@@ -286,6 +286,42 @@ with where it works, its timeout, its misses and its version; a line per step
 (`StepSpec::summary`); and the first prompt as the agent would receive it
 (`workflow::first_prompt`), filled with the brief as it is typed, in a scrolling box.
 
+**A start is preflighted before anything of its own** (`onehand_core::preflight`): one pure
+function, given the kind of start and the facts the app holds, returns findings, each blocking
+the start or only saying something, with where it is changed. It never claims, cuts or starts;
+whoever carries the start out still does, after it. It judges the configuration that will
+actually run, and the app gathers the facts without reaching the disk or the network in a
+render: `gh`'s sign-in is the state last seen, the forge serving a project is found when the form
+opens. What it checks, for a new issue run:
+
+A new run from the launcher is judged the same way (kind *new run*): its workflow, the agent,
+the project's check command, a worktree workflow on a folder outside git (blocked), the forge's
+account when the workflow has forge steps (blocked when `gh` is missing or signed out, as last
+seen), and that its branch is cut off `HEAD`. Whether the folder is in git and which forge serves
+it are read off the UI loop when the launcher opens; until they land, neither blocks. The launcher lists what it found under its fields, and *Run* is spent
+while a block remains. A Resume and a Retry are judged by the run's own setup
+([tasks.md](tasks.md#retry-and-resume)).
+
+| Check | Blocks when | Says |
+|---|---|---|
+| Workflow | it is not there, works in the checkout, or `workflow::validate` finds problems (each listed, first) | |
+| Agent | none is configured, or the one named is no longer | |
+| Mode | the agent's current offer, learned in this process from the spec as it is now, does not hold it | the mode is not known yet |
+| Check command | the workflow runs the project's check command and there is none | the workflow runs no command: nothing verifies the work |
+| Place | `HEAD` is detached and no forge serves the project | |
+| Base | | what the branch is cut off: the default branch on `origin`, fetched first, or the branch checked out |
+| Forge | `gh` missing or signed out, as last seen | |
+| Issue | another run works on it | |
+| Earlier task | | the issue's last task needs attention: starting makes a second task, and *Retry…* opens that task's Retry dialog instead |
+| Slot | `at_once` is reached, naming the issues holding the slots | |
+
+**What an agent offers is learned whenever it comes up**, a person's session included, and kept
+per agent spec (its command and arguments, compared whole) for the life of the process
+(`Shared::modes_seen`). A spec edited since is another spec, so what was learned of it stops
+counting; a restart forgets, so an upgraded adapter is never judged by an old list. Only a list
+that is current blocks; otherwise the mode is *not known yet*, and the driver's check when the
+agent comes up stays the authority.
+
 **Every start goes through the queue** (`task::request`), Resume included. A place is the
 checkout git sees: the canonical top level of the repository, or a folder's own canonical path
 outside git (`task::queue::place_blocking`), so two projects that are folders of one checkout share
@@ -322,6 +358,10 @@ is written in full and on disk before its old one goes, and the folder goes once
   step that runs only sometimes, and no two steps at once; a command's failure going back to an
   earlier step is the only way back, besides a revision. One session carries every step, so a step
   cannot use a different agent from the rest.
+- **A start does not say beforehand that its place is taken.** The preflight has the row, but
+  finding the place means asking git where the checkout's top is, which no render may do; a start
+  that queues says so in a notification once it has asked. An issue's new run is cut a worktree of
+  its own and never queues.
 
 ## Checking it by hand
 
@@ -381,12 +421,21 @@ change (`git checkout . && git clean -fd`).
 | Retry after a rename | Duplicate *Work in checkout* and save it, start a run with brief `miss`, then rename the workflow and save | *Retry* offers *Retry with version 2*, and the description says where the newer workflow starts |
 | Preview | Open the launcher, expand *Preview*, type a title | The steps are listed, and the first prompt shows the title as it is typed |
 | An issue found by its label | Switch the scratch project on for unattended runs, keep an issue in its Issues tab labelled `auto`, set `[unattended] agent = "Mock workflow"` and `mode = ""` (the mock offers no modes), then *Look for an issue now* in Settings ▸ Workspace | A task *#… · Work an issue* is under *Running*; a worktree on `onehand/local-<n>-<title>` is a project of its own and no session moves on screen. When it ends the project goes from the rail, the task is under *Finished*, and the issue has a note: *onehand left 1 commit on …* |
-| An issue picked by hand | *Work an issue…* from the project's menu, pick an issue | The session comes up on screen as it starts, and its project stays when it ends |
-| A workflow picked | *Work an issue…*, choose *Implement on a branch* in the *Workflow* menu, pick an issue | The task on the Tasks page names *Implement on a branch*, not *Work an issue* |
+| An issue picked by hand | *Work an issue…* from the project's menu, choose an issue, *Run* | The chosen row is marked and the start form opens below the list; after *Run* the dialog closes, nothing moves on screen, and its project stays when it ends |
+| A workflow picked | *Work an issue…*, choose an issue, choose *Implement on a branch* in the *Workflow* menu, *Run* | The task on the Tasks page names *Implement on a branch*, not *Work an issue* |
 | A workflow label | Settings ▸ Workspace ▸ Unattended runs: add `bug` → *Implement on a branch*; label an issue `auto` and `bug`, then *Look for an issue now* | Its task runs *Implement on a branch*; `onehand.toml` has `[unattended.workflows] bug = "builtin:branch"`; the issue keeps `bug` |
 | The trigger label refused | Add `auto` as a workflow label | Refused under the row, nothing written |
 | A checkout workflow refused | Set `workflow = "builtin:checkout"` under `[unattended]` and restart | Settings says nothing will be picked up, naming the checkout; the Workflow menus do not offer it |
-| From the Issues tab | Select an open issue, *Run workflow…* | The picker opens on that issue alone; picking it starts the run |
+| From the Issues tab | Select an open issue, *Run workflow…* | The start form opens on that issue with no row to pick: *Workflow*, *Where it works* naming the branch and agent, *Instructions for this run*, the limits, *Preview*; *Run* starts the run, the dialog closes and the issue stays on screen, saying the run is starting with *Open session* |
+| A mode not offered | Open a session on an agent that offers modes, set `[unattended] mode` to one it does not offer, then *Run workflow…* on an issue | *Before it starts* says, in the danger ink, that the agent offers no such mode and what it offers; *Run* is spent and says one thing blocks; the issue keeps its labels. Edit the agent's spec in Settings ▸ Agents and open the form again: the mode reads *not known yet*, muted, and *Run* is offered |
+| A worktree run outside git | Open the launcher on a folder that is not a git repository and pick a worktree workflow | Under the fields, in the danger ink: no worktree can be cut; *Run* is spent. A checkout workflow there is offered |
+| A Retry whose mode is gone | Run an issue task with `mode` set to one the agent offers, let it end exhausted, then make the agent offer other modes (or change the spec's mode list) and open a session on it; *Retry* the task | The dialog lists, in the danger ink, that the agent offers no such mode and that the run keeps its own setup; *Retry* is spent. Changing `[unattended] mode` does not clear it |
+| A full slot | With `at_once = 1` and an issue task running, *Run workflow…* on another issue | *Before it starts* names the issue being worked; *Run* is spent |
+| An earlier task needing attention | On an issue whose last task ended exhausted, *Run workflow…* | Muted: the last task ended and a new start makes a second task, with *Retry…*, which closes the form and opens that task's Retry dialog |
+| A template | *New issue* in the tab, press *Bug* in the *Template* row | The body holds *Problem*, *Scope*, *Acceptance* and *How to check*, each with its hint; the labels field gains `bug`; the row goes once anything is typed in the body. Save with only *Problem* filled: the issue's facts line says *No scope, acceptance or how to check written*, muted |
+| No advice | An issue whose body is a sentence, or written under other headings | No *No … written* line, in the detail or the start form |
+| Advice on a run | Run a workflow on the templated issue above, by hand and by its label | The start form says the same muted line and *Run* is offered; each run's first report ends on *The issue has no … written.* |
+| Instructions for this run | In that form type `Keep the old flag.` under *Instructions for this run*, open *Preview*; *Run*; later *Retry* the task | The first prompt in the preview ends its instructions with the line as it is typed; the run's first prompt carries it, and so does the retry's; the issue's body is unchanged |
 | Where the work stands | While that run works, look at the issue | Above the body: *Running · Plan · step 1 of N*, *Working on Plan, started …*, no primary action, *Open session* and *Stop*. Below it: *What the work left* names the branch |
 | A long body waiting for approval | Give an issue a body several screens long, run on it, with the mock workflow agent, a duplicate of *Implement on a branch* given an approval step after its first, until it waits there | Without scrolling: *Waiting for approval · <the approval step> · step 2 of N*, *Approving starts …* and *Review…*, which opens the run's session with the step strip |
 | A step ends while reading | Scroll into the body of an issue whose run is working, and wait for a step to end | Nothing above the body moves or changes height; only the words of the three work lines change |

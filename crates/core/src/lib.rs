@@ -35,6 +35,7 @@ pub mod editor;
 pub mod gitstat;
 pub mod instance;
 pub mod issues;
+pub mod preflight;
 pub mod process;
 pub mod remote;
 pub mod task;

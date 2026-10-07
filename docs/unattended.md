@@ -94,7 +94,7 @@ background executor, one interval in the config, no cron expressions.
 | `crates/app/src/shell/remote_runs.rs` | `run_unattended`, `end_unattended`, `adopt_unattended` |
 | `crates/app/src/shell/roots.rs` | `forget_root`, the half of `remove_root` that asks nothing and moves nothing |
 | `crates/app/src/chat/pane/sessions.rs` | `open_unshown` |
-| `crates/app/src/dialogs.rs` | `pick_issue` and `issue_workflow_menu`, the workflow menu the picker and Settings share |
+| `crates/app/src/dialogs/issue.rs` | `pick_issue`, the list and the start form, and `issue_workflow_menu`, the workflow menu the picker and Settings share |
 | `crates/app/src/settings/pages.rs` | the default workflow and the workflow labels in Settings |
 | `crates/core/src/task/work.rs` | where an issue's work stands and its next action (`Work`, `issue_work`, `next_action`), and the generation rule for what is read of it (`Reading`) |
 | `crates/app/src/task/listing.rs` (`issue_works`) and `plugins/builtin/workbench-issues/src/view/work.rs`, `view/reads.rs` | each issue's work, told to the Issues tab and the Issues page through `Request::IssueWork`, drawn there, and its pull request read |
@@ -231,31 +231,57 @@ does not offer stops every run. The reason is kept, and every switched-on row
 and Settings show it in the warning ink, while the projects and `gh` are still
 looked at.
 
+**Every new task is preflighted before its claim**, picked or found
+(`onehand_core::preflight`, kind *new issue run*; its checks are in
+[workflows.md](workflows.md#starting-queueing-and-resuming)). The start form
+lists what it found under *Before it starts*, blocks in the danger ink, and
+*Run* is spent while one remains, saying so beside it. The search runs the same
+function on each issue it would take, and nothing is claimed while a block
+remains. What blocks one issue alone (another run on it, its workflow, a check
+command its workflow needs) passes that issue over, its label left on, and the
+next may still be taken; anything else would block every issue there, so it is
+said on the project's row, and a search somebody asked for says it in the
+window rather than that nothing was found. A
+search that starts an issue whose last task needs attention says so in the new
+task's first report, and that its worktree is kept: nobody was there to read it
+before.
+
 **A run can be picked by hand, and started now.** A project's ••• menu (on the
 rail and on the project page) offers *Work an issue…* on any repository that is
 not a run's own worktree. It lists every open issue — anybody's, not only yours,
 since a person reading the list is the check the automatic search stands in for
 — with who opened each one on its row, because the body is handed to the agent
 word for word. The list holds the newest 100 and says so when it was cut.
-Picking one runs the same path as a found issue, with four differences:
+Choosing one opens the start form below the list; *Run* there runs the same
+path as a found issue, with four differences:
 - the claim takes the trigger label off only if the issue carries it, and its
   comment says to pick the issue again to retry, since re-adding a label means
   nothing for an issue the search would never take;
-- the session is put on screen as it starts, in the window it was picked from,
-  so the person who picked it is reading it as it works;
+- the brief carries what the person typed under *Instructions for this run*,
+  after its own instructions;
 - when it ends, the session stays where it is and its project is kept for good,
   as a taken-over one is, since somebody who watched it end may carry on in it;
 - what stops every run — a mode the agent does not offer, once learned, or a
   workflow that cannot run — refuses the pick *before* the claim, rather than
   claiming an issue for a run that would fail.
 
-The picker has a *Workflow* menu above the list: *By the issue's labels* (the
-default, as the tick chooses) or any workflow that works on a worktree. The
-same picker opens from an issue in the Issues tab, by *Run workflow…* (offered
-where *Work an issue…* is: a repository that is not a run's own worktree),
-narrowed to that one issue; an issue a run may not take (closed, brought in
-from a forge the project is no longer kept in step with, or older than the
-newest 100 the list reads) is said there instead of a row.
+The start form reads top to bottom in the order a person decides: the
+*Workflow* menu, *By the issue's labels* first (the default, as the tick
+chooses) or any workflow that works on a worktree, with what the workflow does
+in one muted line; where it works, the branch it will be cut as and the agent;
+*Instructions for this run*; the limits on one line; and a collapsed *Preview*
+of the steps and the first prompt, filled with this issue's brief and what was
+typed. *Run* is the footer's one primary action, refused while the workflow
+cannot run. The same form opens from an issue in the Issues tab or the Issues
+page, by *Run workflow…* (offered where *Work an issue…* is: a repository that
+is not a run's own worktree), on that one issue with no row to pick; an issue a
+run may not take (closed, brought in from a forge the project is no longer kept
+in step with, or older than the newest 100 the list reads) is said there
+instead of the form.
+
+**The person stays where they were.** Once started, the dialog closes and the
+run's session comes up off screen, as a found issue's does; the issue says the
+run is starting, with *Open session* among its actions.
 
 **An issue says where its work stands before what it says.** The app tells the
 Issues tab one summary per issue (`Request::IssueWork`), named by its
@@ -530,13 +556,34 @@ POSIX-only, which is marked where it is done.
 
 ## The brief
 
-`brief_for(&Tracker, &Issue)` gives the run's brief: the issue's title and body
-word for word, and instructions asked of every step that name the issue and say
-nobody is watching, so a decision the issue needs is asked through the agent's
-question tool and not guessed. Each step's prompt is the workflow's, with the
+`brief_for(&Tracker, &Issue, added)` gives the run's brief: the issue's title
+and body word for word, and instructions asked of every step that name the
+issue and say nobody is watching, so a decision the issue needs is asked
+through the agent's question tool and not guessed. What a person typed under
+*Instructions for this run* (`added`) follows them; it is kept on the task's
+brief, never written into the issue, so every Retry carries it and the issue's
+text is never rewritten behind its author. Each step's prompt is the workflow's, with the
 brief filled in; onehand adds what it adds to every step — where the work is (a
 branch of its own, *do not push or open a pull request*: onehand does that), to
 read the repository's own instructions, and the rule each gate checks.
+
+**An issue can be written to be worked.** The new-issue form offers three
+shipped templates while its body is empty (`issues::template::shipped`):
+*Bug*, *Feature* and *Refactor*, each the same four headings, *Problem*,
+*Scope*, *Acceptance* and *How to check*, with a hint comment under each; *Bug*
+also puts the `bug` label on, which is how a template can choose the workflow
+through a workflow label; switching to another template takes the first one's
+labels off again. A template fills the body in and nothing else: no
+field, no state, and an issue written without one is worked as it always was.
+A pure reader (`issues::template::lacking`) says which of a template's headings
+a body leaves empty or out, against the template it matches: one carrying at
+least half its headings, ATX headings of any level matched on their text with
+case and space ignored, fenced code skipped, and a section empty when nothing
+but HTML comments, whitespace and sub-headings is left in it. A body that
+matches no template gets no advice at all. The advice (*No acceptance
+written*) is muted, in the issue's facts line and the start form, and never
+stops a run; the run's first report says it too, for whoever later reads why
+the run went wrong, and for a run the search started nobody read the form.
 
 It deliberately does **not** restate the commit convention or the test
 commands. Those are in the repository's own instructions, which the agent reads
@@ -551,8 +598,11 @@ finishes, and the run's own timeout already bounds that.
 (`unattended::refuse_mode`). Every later run would fail the same way on a fresh
 issue, each one spending a claim to say so, so the first fails and the tick
 stops until the config is fixed and the app restarted. **That first issue is
-spent**: modes are only known once the adapter is up, which is after the claim,
-so the check cannot run before one is made. Its report names the mode and what
+spent only when nothing knew the modes yet**: what the agent offers is learned
+whenever it comes up, a person's session included, and kept per agent spec for
+the life of the process, so a mode known not to be offered refuses before any
+claim. The first issue is still spent by a search after a start of onehand, or
+an edit of the agent's spec, before the agent has come up anywhere. Its report names the mode and what
 was offered, and re-adding the label once the config is fixed is the way to try
 again.
 
@@ -581,7 +631,10 @@ Failed(why)        → "The run failed: <why>"
 ```
 
 then the question of a card nobody answered, and, for any outcome but `Done`,
-what the last step ended on, quoted. A run that failed before it asked its agent
+what the last step ended on, quoted. A task's first report ends on what its
+start noted, a report that only says the run could not start included (`PendingReport::notes`, handed over from `IssueSource::notes`):
+what the issue's text lacks of its template, and, for a task the search
+started, an earlier task left needing attention, since nobody read the form. A run that failed before it asked its agent
 anything (a mode the agent does not offer) is told only *"onehand could not start
 the run: <why>"*. A run cut off by a quit and then dismissed is told it was cut
 off and let go, and a queued task stopped before its run began is told it was

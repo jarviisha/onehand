@@ -15,6 +15,11 @@ use gpui_component::dialog::{Dialog, DialogClose, DialogTitle};
 use gpui_component::input::Input;
 use gpui_component::{ActiveTheme, Disableable, Icon, IconName, Sizable as _, StyledExt};
 
+mod issue;
+
+pub use issue::pick_issue;
+pub(crate) use issue::{issue_row, issue_workflow_menu, page_row};
+
 /// A dialog's name, and the ✕ that closes it.
 ///
 /// Both sit in the dialog's *content* rather than in its own `title` and
@@ -41,7 +46,7 @@ use gpui_component::{ActiveTheme, Disableable, Icon, IconName, Sizable as _, Sty
 /// that clear a half-finished rename or worktree still run. The fixed box around
 /// it is what contains that element's `size_full`, which would otherwise take
 /// the whole row away from the name beside it.
-fn title_row(name: impl Into<SharedString>) -> impl IntoElement {
+pub(super) fn title_row(name: impl Into<SharedString>) -> impl IntoElement {
     div()
         .h_flex()
         .items_center()
@@ -140,148 +145,6 @@ pub fn rename_session(shell: &Shell, cx: &mut Context<Shell>) -> Dialog {
         }))
 }
 
-/// A project's open issues, to pick one to work now.
-///
-/// **No trigger**, for the rename's reason: it is opened from a menu entry that
-/// is gone by the time the list arrives, so the shell decides whether it exists.
-///
-/// **Who opened each issue is on its row.** The issue's body goes into the
-/// agent's prompt word for word, and the agent works with the user's
-/// credentials; the automatic search takes only the user's own issues for that
-/// reason, and a person picking by hand from everybody's is shown whose text
-/// they are about to hand over.
-pub fn pick_issue(shell: &Shell, cx: &mut Context<Shell>) -> Dialog {
-    let Some(picker) = shell.issue_picker() else {
-        return Dialog::new(cx);
-    };
-    let heading = match picker.only {
-        Some(number) => format!("Run a workflow on issue {number} in {}", picker.project),
-        None => format!("Open issues in {}", picker.project),
-    };
-    let found = picker.found.clone();
-    let chosen = picker.workflow.clone();
-    let handle = cx.entity();
-    Dialog::new(cx)
-        .close_button(false)
-        .content(move |content, _, cx: &mut App| {
-            let shell = handle.clone();
-            let menu = issue_workflow_menu(
-                "pick-workflow",
-                chosen.as_deref(),
-                Some("By the issue's labels"),
-                move |id, _, cx| shell.update(cx, |shell, cx| shell.pick_issue_workflow(id, cx)),
-                cx,
-            );
-            content
-                .child(title_row(heading.clone()))
-                .child(
-                    div()
-                        .text_xs()
-                        .text_color(cx.theme().muted_foreground)
-                        .child(
-                            "Picking one claims it where it lives, starts an agent on it in \
-                             a worktree of its own with the workflow below, and shows you the \
-                             session.",
-                        ),
-                )
-                .child(
-                    div()
-                        .h_flex()
-                        .gap_2()
-                        .items_center()
-                        .child(div().text_sm().child("Workflow"))
-                        .child(menu),
-                )
-                .child(issue_list(found.as_deref(), &handle, cx))
-        })
-        .footer(
-            div().h_flex().justify_end().w_full().child(
-                crate::controls::action("cancel-pick")
-                    .ghost()
-                    .label("Cancel")
-                    .on_click(cx.listener(|shell: &mut Shell, _: &ClickEvent, _, cx| {
-                        shell.cancel_pick(cx);
-                    })),
-            ),
-        )
-        // Esc and the close button both put the list away, and both have to
-        // clear what is putting it on screen, or it renders straight back.
-        .on_close(cx.listener(|shell: &mut Shell, _, _, cx| {
-            shell.cancel_pick(cx);
-        }))
-}
-
-/// A menu of the workflows an issue can be worked with, its trigger naming
-/// `picked`. With `any` it starts with an entry for no workflow in particular,
-/// picked when `picked` is `None`; `on_pick` hears the id, or `None` for it.
-///
-/// A workflow that works in the checkout is not offered: an issue's run is cut
-/// a worktree of its own. One named that is no longer in the library shows its
-/// id, so a choice gone stale is seen rather than shown as another.
-pub(crate) fn issue_workflow_menu<F>(
-    id: &'static str,
-    picked: Option<&str>,
-    any: Option<&'static str>,
-    on_pick: F,
-    cx: &App,
-) -> impl IntoElement + use<F>
-where
-    F: Fn(Option<String>, &mut Window, &mut App) + 'static,
-{
-    let all = crate::unattended::issue_workflows(cx);
-    let left_out = all.len().saturating_sub(crate::workflow::TEMPLATES_SHOWN);
-    let shown: Vec<_> = all
-        .iter()
-        .take(crate::workflow::TEMPLATES_SHOWN)
-        .cloned()
-        .collect();
-    let name = match picked {
-        None => any.unwrap_or_default().to_string(),
-        Some(picked) => all
-            .iter()
-            .find(|(id, _, _)| id == picked)
-            .map_or_else(|| picked.to_string(), |(_, name, _)| name.clone()),
-    };
-    let picked = picked.map(str::to_string);
-    let on_pick = std::rc::Rc::new(on_pick);
-    crate::controls::menu_below(
-        id,
-        crate::controls::action((id, 0usize))
-            .outline()
-            .small()
-            .label(name)
-            .icon(Icon::new(IconName::ChevronDown)),
-        move |mut menu, _, _| {
-            if let Some(any) = any {
-                let on_pick = on_pick.clone();
-                menu = menu.item(
-                    crate::controls::menu_item(any)
-                        .checked(picked.is_none())
-                        .on_click(move |_, window, cx: &mut App| on_pick(None, window, cx)),
-                );
-            }
-            for (id, name, shipped) in &shown {
-                let (on_pick, id) = (on_pick.clone(), id.clone());
-                let label = match shipped {
-                    true => format!("{name} (built in)"),
-                    false => name.clone(),
-                };
-                menu = menu.item(
-                    crate::controls::menu_item(label)
-                        .checked(picked.as_ref() == Some(&id))
-                        .on_click(move |_, window, cx: &mut App| {
-                            on_pick(Some(id.clone()), window, cx)
-                        }),
-                );
-            }
-            if left_out > 0 {
-                menu = menu.label(format!("{left_out} more workflows not shown"));
-            }
-            menu
-        },
-    )
-}
-
 /// The workflow launcher: which template, what to do, and what to ask of
 /// every step.
 ///
@@ -303,6 +166,8 @@ pub fn run_workflow(shell: &Shell, window: &Window, cx: &mut Context<Shell>) -> 
         launcher.instructions.clone(),
     );
     let (error, busy, preview) = (launcher.error.clone(), launcher.busy, launcher.preview);
+    let found = shell.launcher_preflight(cx).unwrap_or_default();
+    let blocking = found.iter().filter(|f| f.blocks).count();
     let (muted, danger) = (
         cx.theme().muted_foreground,
         crate::theme::status_ink(cx).danger,
@@ -336,20 +201,7 @@ pub fn run_workflow(shell: &Shell, window: &Window, cx: &mut Context<Shell>) -> 
         .as_ref()
         .and_then(|entry| entry.template.clone().ok());
     let picker_name = picked.map_or_else(|| "Pick a workflow".to_string(), |e| e.name());
-    // The dialog sits its margin down from the top of the window, inside any
-    // frame the window draws, and keeps at least that margin under it; the
-    // form takes what is left under the heading and over the footer, and
-    // scrolls past that, so an open preview never pushes Run off screen. The
-    // padding is in rems, so the room set aside for the rest is too.
-    let rem = window.rem_size();
-    let frame = gpui_component::window_paddings(window);
-    let margin = rem * LAUNCHER_MARGIN;
-    let room = (window.viewport_size().height
-        - frame.top
-        - frame.bottom
-        - margin * 2.
-        - rem * LAUNCHER_CHROME)
-        .max(gpui::px(0.));
+    let (margin, room) = form_room(window);
 
     Dialog::new(cx)
         .margin_top(margin)
@@ -359,8 +211,21 @@ pub fn run_workflow(shell: &Shell, window: &Window, cx: &mut Context<Shell>) -> 
             // Read here, as it is typed, so the preview follows the brief.
             let shown = runnable.as_ref().map(|template| {
                 let brief = crate::shell::brief(&title, &body, &instructions, cx);
-                workflow_preview(template, &brief, preview, &handle, cx)
+                workflow_preview(
+                    template,
+                    &brief,
+                    preview,
+                    Shell::toggle_workflow_preview,
+                    true,
+                    &handle,
+                    cx,
+                )
             });
+            let lines: Vec<_> = found
+                .iter()
+                .enumerate()
+                .map(|(at, finding)| finding_line(at, finding, danger, muted, &handle))
+                .collect();
             let handle = handle.clone();
             let names = names.clone();
             let picker = crate::controls::menu_below(
@@ -420,6 +285,7 @@ pub fn run_workflow(shell: &Shell, window: &Window, cx: &mut Context<Shell>) -> 
                                 gpui_component::input::Textarea::new(&instructions)
                                     .h(gpui::rems(4.)),
                             )
+                            .children(lines)
                             .when_some(error.clone(), |col, why| {
                                 col.child(div().text_xs().text_color(danger).child(why))
                             }),
@@ -432,6 +298,7 @@ pub fn run_workflow(shell: &Shell, window: &Window, cx: &mut Context<Shell>) -> 
                 .gap_2()
                 .justify_end()
                 .w_full()
+                .children(blocking_note(blocking, danger))
                 .child(
                     crate::controls::action("cancel-workflow")
                         .ghost()
@@ -449,7 +316,7 @@ pub fn run_workflow(shell: &Shell, window: &Window, cx: &mut Context<Shell>) -> 
                         } else {
                             "Run"
                         });
-                    match busy {
+                    match busy || blocking > 0 {
                         true => crate::controls::resting(run).disabled(true),
                         false => run.on_click(cx.listener(
                             |shell: &mut Shell, _: &ClickEvent, window, cx| {
@@ -466,6 +333,80 @@ pub fn run_workflow(shell: &Shell, window: &Window, cx: &mut Context<Shell>) -> 
         }))
 }
 
+/// A form dialog's margin from the top of the window, and the room its form
+/// has under the heading and over the footer.
+///
+/// The dialog sits its margin down from the top of the window, inside any
+/// frame the window draws, and keeps at least that margin under it; the form
+/// takes what is left and scrolls past that, so an open preview never pushes
+/// *Run* off screen. The padding is in rems, so the room set aside for the
+/// rest is too.
+fn form_room(window: &Window) -> (gpui::Pixels, gpui::Pixels) {
+    let rem = window.rem_size();
+    let frame = gpui_component::window_paddings(window);
+    let margin = rem * LAUNCHER_MARGIN;
+    let room = (window.viewport_size().height
+        - frame.top
+        - frame.bottom
+        - margin * 2.
+        - rem * LAUNCHER_CHROME)
+        .max(gpui::px(0.));
+    (margin, room)
+}
+
+/// One thing the preflight found: in the danger ink when it blocks, muted
+/// when it only says, with where it is changed, and *Retry…* for an earlier
+/// task worth retrying instead, which opens its Retry dialog.
+pub(crate) fn finding_line(
+    at: usize,
+    finding: &onehand_core::preflight::Finding,
+    danger: gpui::Hsla,
+    muted: gpui::Hsla,
+    handle: &Entity<Shell>,
+) -> impl IntoElement {
+    let text = match finding.change {
+        Some(change) => format!("{} Changed in {change}.", finding.text),
+        None => finding.text.clone(),
+    };
+    let shell = handle.clone();
+    div()
+        .h_flex()
+        .gap_2()
+        .items_center()
+        .w_full()
+        .child(
+            div()
+                .flex_1()
+                .min_w_0()
+                .text_xs()
+                .text_color(if finding.blocks { danger } else { muted })
+                .child(text),
+        )
+        .children(finding.task.clone().map(|task| {
+            crate::controls::action(("pick-retry-task", at))
+                .ghost()
+                .small()
+                .label("Retry…")
+                .on_click(move |_, window: &mut Window, cx: &mut App| {
+                    shell.update(cx, |shell, cx| {
+                        shell.cancel_pick(cx);
+                        shell.begin_retry(task.clone(), window, cx);
+                    });
+                })
+        }))
+}
+
+/// Why *Run* is spent, said beside it: how many things above block the
+/// start. What each is, and where it is changed, is in the form.
+fn blocking_note(blocking: usize, danger: gpui::Hsla) -> Option<impl IntoElement> {
+    (blocking > 0).then(|| {
+        div().text_xs().text_color(danger).child(match blocking {
+            1 => "One thing above blocks the start.".to_string(),
+            n => format!("{n} things above block the start."),
+        })
+    })
+}
+
 /// The launcher's margin above it, and the least below it, in rems.
 const LAUNCHER_MARGIN: f32 = 3.;
 
@@ -477,13 +418,16 @@ const LAUNCHER_CHROME: f32 = 10.;
 /// there are.
 const PREVIEW_STEPS: usize = 12;
 
-/// What a run of `template` on `brief` starts with, behind a toggle: where
-/// it works and its limits, a line per step, and the first prompt exactly as
-/// the agent would receive it.
+/// What a run of `template` on `brief` starts with, behind a toggle that
+/// calls `toggle`: where it works and its limits when `head` asks for them
+/// (a form that shows them above leaves them out), a line per step, and the
+/// first prompt exactly as the agent would receive it.
 fn workflow_preview(
     template: &onehand_core::workflow::Template,
     brief: &onehand_core::workflow::Brief,
     open: bool,
+    toggle: fn(&mut Shell, &mut Context<Shell>),
+    head: bool,
     handle: &Entity<Shell>,
     cx: &App,
 ) -> AnyElement {
@@ -503,9 +447,7 @@ fn workflow_preview(
                 false => IconName::ChevronRight,
             }))
             .on_click(move |_, _, cx: &mut App| {
-                handle.update(cx, |shell: &mut Shell, cx| {
-                    shell.toggle_workflow_preview(cx)
-                });
+                handle.update(cx, toggle);
             })
     };
     let column = div()
@@ -516,13 +458,15 @@ fn workflow_preview(
     if !open {
         return column.into_any_element();
     }
-    let head = format!(
-        "{} · times out after {} · {} misses allowed · version {}",
-        template.place.label(),
-        template.timeout,
-        template.misses,
-        template.version
-    );
+    let head = head.then(|| {
+        format!(
+            "{} · times out after {} · {} misses allowed · version {}",
+            template.place.label(),
+            template.timeout,
+            template.misses,
+            template.version
+        )
+    });
     let left_out = template.steps.len().saturating_sub(PREVIEW_STEPS);
     let steps = template
         .steps
@@ -537,7 +481,7 @@ fn workflow_preview(
     let prompt = onehand_core::workflow::first_prompt(template, brief)
         .unwrap_or_else(|| "No step prompts the agent.".to_string());
     column
-        .child(div().text_xs().text_color(muted).child(head))
+        .children(head.map(|head| div().text_xs().text_color(muted).child(head)))
         .children(steps)
         .when(left_out > 0, |col| {
             col.child(
@@ -561,184 +505,6 @@ fn workflow_preview(
                 .text_xs()
                 .child(prompt),
         )
-        .into_any_element()
-}
-
-/// One issue as a pressable row: how it is shown muted — the forge's number, or
-/// *Draft* — then the title, a few labels as pills, and a muted word at the end
-/// saying where it lives or whose it is.
-///
-/// One builder for every list of issues, so an issue reads the same in the
-/// picker and on the workspace page.
-pub(crate) fn issue_row(
-    id: impl Into<gpui::ElementId>,
-    shown: String,
-    title: String,
-    labels: &[String],
-    trailing: String,
-    cx: &App,
-) -> gpui::Stateful<gpui::Div> {
-    let (muted, radius) = (cx.theme().muted_foreground, cx.theme().radius);
-    let (pill_bg, pill_fg) = (cx.theme().secondary, cx.theme().secondary_foreground);
-    row_shell(id, shown, title, cx)
-        // A few labels, not all: the row is for telling issues apart, and the
-        // title is what does most of that.
-        .children(labels.iter().take(3).map(|label| {
-            div()
-                .flex_none()
-                .px_1()
-                .rounded(radius)
-                .text_xs()
-                .bg(pill_bg)
-                .text_color(pill_fg)
-                .child(label.clone())
-        }))
-        .child(
-            div()
-                .flex_none()
-                .text_xs()
-                .text_color(muted)
-                .child(trailing),
-        )
-}
-
-/// A row in the issue row's shape with something other than a number at its
-/// head — a session's mark, a project's folder, a conversation's age — and no
-/// labels. What the workspace page lists that is not an issue.
-pub(crate) fn page_row(
-    id: impl Into<gpui::ElementId>,
-    lead: impl IntoElement,
-    title: String,
-    trailing: String,
-    cx: &App,
-) -> gpui::Stateful<gpui::Div> {
-    let muted = cx.theme().muted_foreground;
-    row_shell(id, lead, title, cx).child(
-        div()
-            .flex_none()
-            .text_xs()
-            .text_color(muted)
-            .child(trailing),
-    )
-}
-
-/// What both row shapes share: the pressable line, its muted head and its
-/// truncated title.
-fn row_shell(
-    id: impl Into<gpui::ElementId>,
-    lead: impl IntoElement,
-    title: String,
-    cx: &App,
-) -> gpui::Stateful<gpui::Div> {
-    let (muted, radius, hover) = (
-        cx.theme().muted_foreground,
-        cx.theme().radius,
-        cx.theme().list_hover,
-    );
-    div()
-        .id(id)
-        .h_flex()
-        .items_center()
-        .gap_2()
-        .w_full()
-        .px_2()
-        .py_1()
-        .rounded(radius)
-        .cursor_pointer()
-        .hover(move |row| row.bg(hover))
-        .child(div().flex_none().text_color(muted).child(lead))
-        .child(div().flex_1().min_w_0().truncate().child(title))
-}
-
-/// The picker's body: a wait, a failure, an empty answer, or the rows.
-fn issue_list(
-    found: Option<&crate::shell::PickerAnswer>,
-    handle: &Entity<Shell>,
-    cx: &App,
-) -> AnyElement {
-    let muted = cx.theme().muted_foreground;
-    let (rows, cut, unread) = match found {
-        None => {
-            return div()
-                .text_color(muted)
-                .child("Reading the open issues…")
-                .into_any_element();
-        }
-        Some(Err(why)) => {
-            return div()
-                .text_color(crate::theme::status_ink(cx).warning)
-                .child(format!("Nothing to pick: {why}"))
-                .into_any_element();
-        }
-        Some(Ok((rows, _, _))) if rows.is_empty() => {
-            return div()
-                .text_color(muted)
-                .child("There are no open issues.")
-                .into_any_element();
-        }
-        Some(Ok((rows, cut, unread))) => (rows, *cut, unread.clone()),
-    };
-    div()
-        .v_flex()
-        .gap_1()
-        .w_full()
-        .child(
-            div()
-                .id("issue-list")
-                .v_flex()
-                .w_full()
-                .max_h(gpui::rems(24.))
-                .overflow_y_scroll()
-                .children(rows.iter().enumerate().map(|(i, (tracker, row))| {
-                    let handle = handle.clone();
-                    // Who wrote it on a forge; an issue kept in onehand is the
-                    // user's own, and what is worth saying is where it lives.
-                    let trailing = match tracker {
-                        onehand_core::unattended::Tracker::Local(_) => "in onehand".to_string(),
-                        // Kept in step: the forge's number is already the
-                        // row's head, so the end says which forge.
-                        onehand_core::unattended::Tracker::Synced { forge, .. } => {
-                            match row.issue.forge_ref() {
-                                Some(_) => forge.name().to_string(),
-                                None => "in onehand".to_string(),
-                            }
-                        }
-                        onehand_core::unattended::Tracker::Forge(_) => {
-                            format!("by {}", row.author)
-                        }
-                    };
-                    issue_row(
-                        ("issue", i),
-                        tracker.shown(&row.issue),
-                        row.issue.title_text().to_string(),
-                        &row.labels,
-                        trailing,
-                        cx,
-                    )
-                    .on_click(
-                        move |_: &ClickEvent, window: &mut Window, cx: &mut App| {
-                            handle.update(cx, |shell, cx| shell.pick_issue(i, window, cx));
-                        },
-                    )
-                })),
-        )
-        // The forge's half could not be read while the project's own could:
-        // said, since its issues are missing from a list that looks whole.
-        .when_some(unread, |list, why| {
-            list.child(
-                div()
-                    .text_xs()
-                    .text_color(crate::theme::status_ink(cx).warning)
-                    .child(format!("The forge's issues could not be read: {why}")),
-            )
-        })
-        // Said, not hidden: a list cut silently reads as the whole of it.
-        .when(cut, |list| {
-            list.child(div().text_xs().text_color(muted).child(format!(
-                "Showing the newest {}; close some to reach the rest.",
-                onehand_core::unattended::ISSUES_SHOWN
-            )))
-        })
         .into_any_element()
 }
 
@@ -932,33 +698,4 @@ pub fn rename_branch(shell: &Shell, cx: &mut Context<Shell>) -> Dialog {
 }
 
 #[cfg(test)]
-mod tests {
-    /// No dialog here names itself through the library's own title slot.
-    ///
-    /// A dialog opened from a trigger is rebuilt when that trigger is pressed,
-    /// out of its content builder, its style and its props. Its title, header
-    /// and footer are elements, which cannot be cloned into a builder that runs
-    /// again on every open, so they do not survive the trip -- and every dialog
-    /// the rail opened lost its name and its buttons that way, in silence,
-    /// while otherwise working.
-    ///
-    /// The name goes in the content instead, and on every dialog rather than
-    /// only the triggered ones: one shape is what stops the next dialog picking
-    /// the wrong one. This is here because nothing else says no -- the slot
-    /// exists, compiles, and does nothing.
-    #[test]
-    fn no_dialog_names_itself_through_the_library_slot() {
-        // Assembled at run time so this test is not a match for itself.
-        let slot = format!(".{}(", "title");
-        for (n, line) in include_str!("dialogs.rs").lines().enumerate() {
-            assert!(
-                !line.contains(&slot),
-                "dialogs.rs:{}: names the dialog through the library's title \
-                 slot, which a triggered dialog drops on its way back open. \
-                 Put the name in the content instead.\n    {}",
-                n + 1,
-                line.trim()
-            );
-        }
-    }
-}
+mod tests;

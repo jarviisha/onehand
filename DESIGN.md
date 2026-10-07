@@ -115,8 +115,14 @@ monospace font.
   menu. If neither exists, the strip is not drawn. *Run a workflow…* is the `+` menu's last entry,
   below a separator; it and the keymap command open one launcher: a workflow menu, what the
   workflow does and where it works, a collapsed *Preview* (steps, limits and the first prompt,
-  bounded), then *Title*, *Details* and *Instructions*. Problems show in the danger ink above the
-  footer and *Run* starts nothing; the form scrolls so the footer never leaves the screen.
+  bounded), then *Title*, *Details* and *Instructions*. What the preflight found is listed under
+  them, blocks in the danger ink and the rest muted, and *Run* is spent while a block remains, saying
+  how many beside it; the form scrolls so the footer never leaves the screen.
+  *Run workflow…* on an issue opens a start form of its own on that issue, with no row to pick:
+  the workflow menu and what it does, where it works (branch, base and agent), *Before it starts*
+  (the preflight's findings, as in the launcher), *Instructions for this run*, the limits on one
+  line, then the same collapsed *Preview* without them; *Run* is the footer's primary action. Once
+  started the dialog closes and the person stays on the issue.
 - **Docks.** Bare panels with strips of their own and no library tab bars.
   - The Workbench strip has the mode chips (Editor, Markdown, Neovim, Issues, Plugins), then
     maximize, then hide.
@@ -153,7 +159,8 @@ monospace font.
     *Retry*, *Dismiss*, by state. Pressing a row's text opens the task's detail in the same column.
   - *Issues* lists the issues of every project of the workspace, with the one picked beside the
     list, or alone under *Back* when the page is too narrow for both. Above the list: the search and
-    *New issue* (in the project filtered to, else the one picked, its form saying which),
+    *New issue* (in the project filtered to, else the one picked, its form saying which; while its
+    body is empty a *Template* row offers *Bug*, *Feature* and *Refactor*),
     an *Open N | Closed N* switch, then the progress (*All*, *Needs attention*, *Running*,
     *Queued*, *Pull request open*, *No run recorded*), project and label filters, how old the
     pull request reading is and *Refresh*. A row is the title over a muted line (project,

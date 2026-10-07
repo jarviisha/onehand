@@ -49,7 +49,7 @@ impl Shell {
             E::OpenConversation(session) => self.open_conversation(session, window, cx),
             E::RunIssueWorkflow { root, number } => {
                 if let Some(idx) = self.root_index(root) {
-                    self.begin_pick(idx, Some(*number), cx);
+                    self.begin_pick(idx, Some(*number), window, cx);
                 }
             }
             E::OpenInIssues { root, number } => self.open_issue_on_page(root, *number, window, cx),
@@ -59,7 +59,7 @@ impl Shell {
                     self.show_session_in(uid, at, window, cx);
                 }
             }
-            E::ResumeTask(id) => crate::task::request(id.clone(), window, cx),
+            E::ResumeTask(id) => self.resume_task(id.clone(), window, cx),
             E::RetryTask(id) => self.begin_retry(id.clone(), window, cx),
             E::StopTask(id) => {
                 let id = id.clone();

@@ -546,11 +546,7 @@ fn came_up(uid: u64, session: &Entity<ChatSession>, cx: &mut App) -> bool {
         .iter()
         .map(|m| m.id.clone())
         .collect();
-    if !offered.contains(&mode) {
-        let why = format!(
-            "the agent offers no mode `{mode}` (it offers: {})",
-            offered.join(", ")
-        );
+    if let Some(why) = onehand_core::preflight::mode_refused(&mode, &offered) {
         crate::unattended::refuse_mode(&why, cx);
         advance(uid, cx, move |run| run.failed(why));
         return false;

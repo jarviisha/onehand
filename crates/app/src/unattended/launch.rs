@@ -1,17 +1,23 @@
 use super::report::tell_issue;
-use super::{
-    Project, Served, connector_for, label, lacks_check_given, opted_in_roots, tick, why_not, with,
-};
+use super::{Project, Served, label, with};
 use crate::state::Shared;
 use gpui::App;
 use onehand_core::connector::{Connector, PrState};
+use onehand_core::issues::template;
+use onehand_core::preflight::{self, Check, Facts, Forge, Kind};
+use onehand_core::task::Working;
 use onehand_core::task::{Source, Task};
-use onehand_core::unattended::{self as core, Issue, IssueRow, IssueSource, Tracker, TrackerRef};
-use onehand_core::workflow::{self as flow, Place, Setup, Template};
+use onehand_core::unattended::{self as core, Issue, IssueSource, Tracker, TrackerRef};
+use onehand_core::workflow::{self as flow, Setup, Template};
 use onehand_core::worktree;
 use std::collections::{BTreeMap, HashSet};
 use std::path::Path;
 use std::path::PathBuf;
+
+mod pick;
+
+use pick::warn;
+pub use pick::{Pickable, look_now, pickable_blocking, pickable_one_blocking, start_picked};
 
 /// A claimed issue and the worktree made for it.
 pub(super) struct Claimed {
@@ -30,9 +36,15 @@ pub(super) struct Claimed {
     /// What the claim works on.
     work: Work,
     /// The window a person picked it in, rather than the search finding it.
-    /// Such a run is put on screen there as it starts and stays when it ends —
-    /// somebody asked for it and is watching — so a card it parks is theirs.
+    /// Such a run is placed from there and its project stays when it ends —
+    /// somebody asked for it — so a card it parks is theirs.
     picked_in: Option<gpui::AnyWindowHandle>,
+    /// What the person who picked it added for this run, after the brief's
+    /// own instructions; empty for one the search found.
+    instructions: String,
+    /// What the start found for the first report to say, for a run nobody
+    /// was there to start.
+    notes: Vec<String>,
 }
 
 impl Claimed {
@@ -117,18 +129,25 @@ pub(super) struct Unstarted {
 /// chosen as `choosing` says, and on a project with no check command an issue
 /// whose workflow runs one is passed over, its label left on, while the next
 /// may still be taken.
+///
+/// **A new task is preflighted before its claim**, as a pick is: what blocks
+/// it is said on the project's row, and the issue keeps its label for when
+/// it is fixed. A review answered is judged by its own refusals instead.
 pub(super) fn begin_blocking(
     roots: &[Workable],
     label: &str,
     choosing: &Choosing,
     earlier: &[Earlier],
+    judging: &Judging,
     checked: &mut Vec<(PathBuf, Served)>,
 ) -> Option<Result<Claimed, Unstarted>> {
     // The oldest labelled issue no task is still working on: one being
     // worked is passed over, never claimed twice, and never in the way of
     // the next.
+    let mut notes = Vec::new();
     let (repo, tracker, forge, row, taking) = roots.iter().find_map(|w| {
         let (project, forge) = (&w.project, &w.forge);
+        let mut checked_out = None;
         for tracker in trackers_blocking(project.issues.clone(), *forge) {
             match core::candidates_blocking(&tracker, &project.root, label) {
                 Ok(found) => {
@@ -153,6 +172,60 @@ pub(super) fn begin_blocking(
                                 );
                                 continue;
                             }
+                            Ok(Taking::Fresh) => {
+                                let at = checked_out.get_or_insert_with(|| {
+                                    super::facts::checked_out_blocking(&project.root)
+                                });
+                                let facts = judging.facts(
+                                    choosing.workflow_for(&row.labels, label),
+                                    &tracker,
+                                    &row.issue,
+                                    w.has_check,
+                                    at.clone(),
+                                    *forge,
+                                );
+                                let found = preflight::preflight(Kind::NewIssueRun, &facts);
+                                match found.iter().find(|f| f.blocks) {
+                                    // What blocks this issue alone (another
+                                    // run on it, its workflow, a check
+                                    // command its workflow needs) passes it
+                                    // over, its label left on, as above; the
+                                    // next may still be taken.
+                                    Some(f)
+                                        if matches!(
+                                            f.check,
+                                            Check::Issue | Check::Workflow | Check::CheckCommand
+                                        ) =>
+                                    {
+                                        continue;
+                                    }
+                                    // Anything else would block every issue
+                                    // here: said on the project's row.
+                                    Some(f) => {
+                                        checked.push((project.root.clone(), Err(f.text.clone())));
+                                        return None;
+                                    }
+                                    None => {}
+                                }
+                                // Nobody is there to read these before the
+                                // run: its first report says them instead.
+                                let lacks =
+                                    template::lacking(row.issue.body_text(), &template::shipped());
+                                notes = facts
+                                    .issue
+                                    .as_ref()
+                                    .and_then(|issue| preflight::earlier_note(&issue.tasks))
+                                    .into_iter()
+                                    .chain(lacks.map(|lacks| lacks.note()))
+                                    .collect();
+                                return Some((
+                                    project.root.clone(),
+                                    tracker,
+                                    *forge,
+                                    row,
+                                    Taking::Fresh,
+                                ));
+                            }
                             Ok(taking) => {
                                 return Some((project.root.clone(), tracker, *forge, row, taking));
                             }
@@ -174,9 +247,56 @@ pub(super) fn begin_blocking(
         return None;
     }
     let workflow = choosing.workflow_for(&row.labels, label).to_string();
-    Some(prepare_blocking(
-        repo, tracker, forge, row.issue, workflow, taking, None,
-    ))
+    Some(
+        prepare_blocking(repo, tracker, forge, row.issue, workflow, taking, None)
+            .map(|claimed| Claimed { notes, ..claimed }),
+    )
+}
+
+/// What a search judges each new task by, gathered before it goes off the
+/// UI loop: the configuration's own facts, every workflow an issue may be
+/// given, and the issue tasks there are.
+pub(super) struct Judging {
+    pub(super) common: Facts,
+    pub(super) templates: Vec<(String, Result<Template, String>)>,
+    pub(super) tasks: Vec<(Task, Option<Working>)>,
+}
+
+impl Judging {
+    /// A new run of workflow `id` on `issue`, as [`super::facts::issue_run`]
+    /// gathers it in a window.
+    fn facts(
+        &self,
+        id: &str,
+        tracker: &Tracker,
+        issue: &Issue,
+        has_check: bool,
+        checked_out: Option<String>,
+        forge: Option<&'static dyn Connector>,
+    ) -> Facts {
+        let workflow = self.templates.iter().find(|(at, _)| at == id).map_or_else(
+            || Err(format!("there is no workflow `{id}`")),
+            |(_, t)| t.clone(),
+        );
+        let project = super::facts::ProjectFacts {
+            has_check,
+            checked_out,
+            // The look before the search asked the account; a project whose
+            // account failed is not searched.
+            forge: forge.map(|forge| Forge {
+                name: forge.name().to_string(),
+                account: None,
+            }),
+        };
+        super::facts::new_issue_run(
+            self.common.clone(),
+            workflow,
+            tracker,
+            issue,
+            project,
+            self.tasks.clone(),
+        )
+    }
 }
 
 /// A project a search may look in: the forge its work goes to, if any, and
@@ -252,7 +372,7 @@ impl Skip {
     /// What a person who picked the issue `named` is told.
     fn said(&self, named: &str) -> String {
         match self {
-            Self::Busy => format!("A run is already working on issue {named}."),
+            Self::Busy => preflight::already_working(named),
             Self::Unread(why) => format!("Could not start on issue {named}: {why}"),
         }
     }
@@ -383,6 +503,8 @@ fn prepare_blocking(
             workflow,
             work,
             picked_in,
+            instructions: String::new(),
+            notes: Vec::new(),
         }),
         Err(why) => Err(Unstarted {
             repo,
@@ -390,79 +512,6 @@ fn prepare_blocking(
             number: issue.number,
             why,
         }),
-    }
-}
-
-/// What a person can pick from in a project: its open issues from where each
-/// lives, the ones it keeps itself first, and whether the list was cut — plus
-/// why the forge's could not be read, when its own could.
-pub type Pickable = (Vec<(Tracker, IssueRow)>, bool, Option<String>);
-
-/// Read what a person can pick from in `root`, whose own issues are in
-/// `issues` if its workspace keeps any. Blocking.
-///
-/// A forge that cannot be read is an error only when there is nothing else to
-/// show; beside issues of the project's own it is said under the list, so one
-/// half being down does not hide the other.
-pub fn pickable_blocking(root: &Path, issues: Option<PathBuf>) -> Result<Pickable, String> {
-    let (mut rows, mut cut, mut unread) = (Vec::new(), false, None);
-    let forge = connector_for(root);
-    for tracker in trackers_blocking(issues, forge.as_ref().ok().copied()) {
-        match core::open_issues_blocking(&tracker, root) {
-            Ok((found, more)) => {
-                cut |= more;
-                rows.extend(found.into_iter().map(|row| (tracker.clone(), row)));
-            }
-            // The forge's half being down is said beside the rest; the
-            // project's own issues failing to read is the whole answer.
-            Err(why) => match tracker {
-                Tracker::Forge(_) => unread = Some(why),
-                Tracker::Local(_) | Tracker::Synced { .. } => return Err(why),
-            },
-        }
-    }
-    // A project no connector serves says why only when there is nothing else
-    // to list: beside its own issues, the forge it does not have is no news.
-    match (rows.is_empty(), unread, forge) {
-        (true, Some(why), _) | (true, None, Err(why)) => Err(why),
-        (_, unread, _) => Ok((rows, cut, unread)),
-    }
-}
-
-/// Issue `number` of the ones `root` keeps itself, in `issues`, to pick, or
-/// why it cannot be. Blocking.
-///
-/// Only the project's own issues are read, never its forge's: the Issues tab
-/// numbers the issues it keeps, and a forge's numbers are its own. So the list
-/// being cut is that list's, and an issue missing from it is said to be older
-/// than the newest it holds, or else one a run may not take.
-pub fn pickable_one_blocking(
-    root: &Path,
-    issues: Option<PathBuf>,
-    number: u64,
-) -> Result<Pickable, String> {
-    let forge = connector_for(root).ok();
-    let tracker = trackers_blocking(issues, forge)
-        .into_iter()
-        .find(|tracker| !matches!(tracker, Tracker::Forge(_)))
-        .ok_or("this workspace keeps no issues of its own")?;
-    let (found, cut) = core::open_issues_blocking(&tracker, root)?;
-    let rows: Vec<_> = found
-        .into_iter()
-        .filter(|row| row.issue.number == number)
-        .map(|row| (tracker.clone(), row))
-        .collect();
-    match (rows.is_empty(), cut) {
-        (false, _) => Ok((rows, false, None)),
-        (true, true) => Err(format!(
-            "issue {number} is not among the newest {} open issues a pick reads; close \
-             some of the newer ones to reach it",
-            core::ISSUES_SHOWN
-        )),
-        (true, false) => Err(format!(
-            "issue {number} cannot be worked by a run: it is closed, or it was brought in \
-             from a forge the project is no longer kept in step with"
-        )),
     }
 }
 
@@ -492,158 +541,15 @@ fn trackers_blocking(
         .collect()
 }
 
-/// Work `row`, picked by hand from a project's open issues, now, with the
-/// workflow `workflow`.
-///
-/// **Refused while the cap is reached**, the rule for picked and found alike —
-/// a run waiting on a person does not count — and the refusal names the
-/// issues being worked so the person knows what they are waiting on. Anything that stops it before
-/// the claim — a claim refused where the issue lives — is said in the window it
-/// was picked from; after the claim, on the issue as well. `has_check` is
-/// whether the project has a check command, told by the window it was picked
-/// in, which is being updated and so cannot be asked.
-pub fn start_picked(
-    repo: PathBuf,
-    tracker: Tracker,
-    row: IssueRow,
-    workflow: String,
-    has_check: bool,
-    window: gpui::AnyWindowHandle,
-    cx: &mut App,
-) -> Result<(), String> {
-    let (full, refused) = why_not(cx);
-    // Said apart from what stops every run: this is the one workflow picked,
-    // on this one project, and another pick may well start.
-    let unfit = lacks_check_given(has_check, &workflow, cx);
-    let label = with(cx, |u| {
-        if let Some(why) = full {
-            return Err(why);
-        }
-        if u.claiming {
-            return Err("An unattended run is starting — one at a time.".to_string());
-        }
-        // Refused before the claim: the run would fail, and the issue would
-        // be claimed and commented on for nothing.
-        if let Some(why) = refused {
-            return Err(format!("Nothing can be started: {why}"));
-        }
-        if let Some(why) = unfit {
-            return Err(format!("Cannot start on this project: {why}"));
-        }
-        u.claiming = true;
-        Ok(u.label.clone())
-    })
-    .ok_or("Unattended runs are not set up.")??;
-    let earlier = earlier(cx);
-    cx.spawn(async move |cx| {
-        let number = row.issue.number;
-        let named = tracker.named(&row.issue);
-        let begun = cx
-            .background_executor()
-            .spawn({
-                let named = named.clone();
-                async move {
-                    std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                        // An issue on the forge goes back to that forge; one kept
-                        // here goes to whichever forge serves the project, if any.
-                        let forge = match &tracker {
-                            Tracker::Forge(forge) | Tracker::Synced { forge, .. } => Some(*forge),
-                            Tracker::Local(_) => connector_for(&repo).ok(),
-                        };
-                        // Refused before the claim: claimed twice, it would be
-                        // worked twice, on two branches.
-                        let taking = taking_blocking(&earlier, &tracker, number, &repo, forge)
-                            .map_err(|skip| skip.said(&named))?;
-                        core::claim_picked_blocking(
-                            &tracker,
-                            &repo,
-                            &row,
-                            &label,
-                            taking.answering(),
-                        )
-                        .map_err(|why| format!("Could not start on issue {named}: {why}"))?;
-                        Ok(prepare_blocking(
-                            repo,
-                            tracker,
-                            forge,
-                            row.issue,
-                            workflow,
-                            taking,
-                            Some(window),
-                        ))
-                    }))
-                    .unwrap_or_else(|_| {
-                        Err("onehand panicked while claiming the issue".to_string())
-                    })
-                }
-            })
-            .await;
-        cx.update(|cx| {
-            let unstarted = match begun {
-                // Nothing was claimed, so the issue has nothing to be told; the
-                // window it was picked from is where the person is.
-                Err(why) => {
-                    with(cx, |u| u.claiming = false);
-                    warn(window, why, cx);
-                    return;
-                }
-                Ok(begun) => begun,
-            };
-            if let Err(Unstarted { why, .. }) = &unstarted {
-                warn(
-                    window,
-                    format!("Could not start on issue {named}: {why}"),
-                    cx,
-                );
-            }
-            landed(Some(unstarted), None, cx);
-        });
-    })
-    .detach();
-    Ok(())
-}
-
-/// Say `why` in `window`, as the transient notice it is.
-fn warn(window: gpui::AnyWindowHandle, why: String, cx: &mut App) {
-    use gpui_component::WindowExt as _;
-    let _ = window.update(cx, |_, window, cx| {
-        window.push_notification(gpui_component::notification::Notification::warning(why), cx);
-    });
-}
-
-/// Look for a labelled issue now, rather than at the next tick, and say what
-/// came of it in `window` — the person pressed a button and is waiting to hear.
-/// Every way it can do nothing is said rather than left to look like nothing
-/// happened.
-pub fn look_now(window: gpui::AnyWindowHandle, cx: &mut App) {
-    let why_not = if opted_in_roots(cx).is_empty() {
-        Some("No project is switched on for unattended runs.".to_string())
-    } else {
-        let (full, refused) = why_not(cx);
-        with(cx, |u| {
-            if full.is_some() {
-                full
-            } else if u.claiming {
-                Some("A run is already starting.".to_string())
-            } else {
-                u.blocked
-                    .clone()
-                    .or(refused)
-                    .map(|why| format!("Nothing can be picked up: {why}"))
-            }
-        })
-        .flatten()
-    };
-    match why_not {
-        Some(why) => warn(window, why, cx),
-        None => tick(Some(window), cx),
-    }
-}
-
 /// The claim came back: start the session, or say why not.
+///
+/// `held` is why nothing was started where something was looked for, when
+/// that is so: a search somebody asked for says it rather than that there was
+/// nothing to find.
 pub(super) fn landed(
     begun: Option<Result<Claimed, Unstarted>>,
     asked_from: Option<gpui::AnyWindowHandle>,
+    held: Option<String>,
     cx: &mut App,
 ) {
     with(cx, |u| u.claiming = false);
@@ -653,13 +559,12 @@ pub(super) fn landed(
             // tick ran says nothing, as a quiet half hour always has.
             if let Some(window) = asked_from {
                 let label = label(cx);
-                warn(
-                    window,
+                let said = held.unwrap_or_else(|| {
                     format!(
                         "No open issue of yours labelled `{label}` in the projects switched on."
-                    ),
-                    cx,
-                );
+                    )
+                });
+                warn(window, said, cx);
             }
             return;
         }
@@ -682,17 +587,10 @@ pub(super) fn landed(
 /// when that one does, so its session comes up in front of the person who
 /// asked for it.
 fn start(claimed: Claimed, cx: &mut App) -> Result<(), Unstarted> {
-    let Some((mode, agent, timeout)) =
-        with(cx, |u| (u.mode.clone(), u.agent.clone(), u.timeout.clone()))
-    else {
+    let Some((mode, timeout)) = with(cx, |u| (u.mode.clone(), u.timeout.clone())) else {
         return Err(unstarted(claimed, "unattended runs are off"));
     };
-    let agent = agent.or_else(|| {
-        Shared::global(cx)
-            .agents
-            .first()
-            .map(|spec| spec.name.clone())
-    });
+    let agent = super::run_agent(cx);
     let holding: Vec<_> = Shared::global(cx)
         .windows
         .iter()
@@ -752,7 +650,7 @@ fn start(claimed: Claimed, cx: &mut App) -> Result<(), Unstarted> {
         mode: Some(mode).filter(|mode| !mode.trim().is_empty()),
         forge: claimed.forge.map(|forge| forge.name().to_string()),
     };
-    let brief = core::brief_for(&claimed.tracker, &claimed.issue);
+    let brief = core::brief_for(&claimed.tracker, &claimed.issue, &claimed.instructions);
     let task_id = onehand_core::task::new_id();
     let mut task = Task::new(task_id.clone(), template, brief, setup);
     task.source = Source::Issue(IssueSource {
@@ -763,6 +661,7 @@ fn start(claimed: Claimed, cx: &mut App) -> Result<(), Unstarted> {
         base,
         picked,
         unsent: Vec::new(),
+        notes: claimed.notes,
     });
     // Counted against the cap until it has asked for its place.
     with(cx, |u| u.starting.insert(task_id.clone()));
@@ -814,19 +713,10 @@ fn answer_review(
 /// worktree of its own, and a workflow meant for a checkout run there leaves
 /// its work uncommitted where nobody looks and reports that nothing landed.
 pub(super) fn workflow(id: &str, timeout: &str, cx: &App) -> Result<Template, String> {
-    let mut template = crate::workflow::templates(cx)
-        .into_iter()
-        .filter_map(|entry| entry.template.ok())
-        .find(|template| template.id == id)
-        .ok_or_else(|| format!("there is no workflow `{id}`"))?;
-    if template.place != Place::Worktree {
-        return Err(format!(
-            "the workflow `{}` works in the checkout, and an issue is worked on a \
-             worktree of its own",
-            template.name
-        ));
+    let template = found(id, timeout, cx)?;
+    if let Some(why) = onehand_core::preflight::unfit_for_issue(&template) {
+        return Err(why);
     }
-    template.timeout = timeout.to_string();
     let problems = flow::validate(&template);
     if !problems.is_empty() {
         let said: Vec<String> = problems.iter().map(ToString::to_string).collect();
@@ -836,6 +726,18 @@ pub(super) fn workflow(id: &str, timeout: &str, cx: &App) -> Result<Template, St
             said.join("; ")
         ));
     }
+    Ok(template)
+}
+
+/// The workflow `id` with its timeout put to `timeout`, not yet judged, or
+/// why there is none.
+pub(super) fn found(id: &str, timeout: &str, cx: &App) -> Result<Template, String> {
+    let mut template = crate::workflow::templates(cx)
+        .into_iter()
+        .filter_map(|entry| entry.template.ok())
+        .find(|template| template.id == id)
+        .ok_or_else(|| format!("there is no workflow `{id}`"))?;
+    template.timeout = timeout.to_string();
     Ok(template)
 }
 

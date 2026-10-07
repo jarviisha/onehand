@@ -1,6 +1,8 @@
+use super::report::ended;
 use super::*;
 use crate::connector::fake::Fake;
 use crate::connector::PrState;
+use crate::workflow::{Outcome, Stop};
 
 /// The test forge, as the tracker an issue on it lives in.
 fn forge() -> Tracker {
@@ -239,7 +241,7 @@ fn a_synced_project_runs_only_what_the_user_wrote_and_claims_it_on_both_sides() 
     assert!(comments[0].1.contains("started"));
 
     // And the run names it by the forge's number, not onehand's.
-    let brief = brief_for(&tracker, &second);
+    let brief = brief_for(&tracker, &second, "");
     assert!(brief.instructions.unwrap().contains("Forge issue #7"));
     assert_eq!(branch_for(&tracker, &second), "onehand/forge-7-mine");
     let _ = std::fs::remove_dir_all(dir);
@@ -346,6 +348,7 @@ fn an_issue_is_named_by_its_forge_number_and_a_draft_by_its_title() {
         base: "main".into(),
         picked: false,
         unsent: Vec::new(),
+        notes: Vec::new(),
     };
     assert_eq!(source.named("Fix it"), kept.named(&issue(3, "Fix it")));
     let _ = std::fs::remove_dir_all(dir);
@@ -405,14 +408,14 @@ fn the_brief_keeps_the_body_whole_and_names_the_issue() {
         body: body.to_string(),
         ..issue(42, "Crash on open")
     };
-    let brief = brief_for(&forge(), &issue);
+    let brief = brief_for(&forge(), &issue, "");
     assert_eq!(brief.title, "Crash on open");
     assert_eq!(brief.body, body);
     let asked = brief.instructions.unwrap();
     assert!(asked.contains("Forge issue #42"), "{asked}");
     assert!(asked.contains("question"), "{asked}");
     let (kept, dir) = local("brief", &[]);
-    let asked = brief_for(&kept, &issue).instructions.unwrap();
+    let asked = brief_for(&kept, &issue, "").instructions.unwrap();
     assert!(asked.contains("kept in onehand"), "{asked}");
     let _ = std::fs::remove_dir_all(dir);
 }
@@ -425,6 +428,7 @@ fn ran(outcome: Outcome) -> PendingReport {
         started: true,
         ended_on: None,
         asked: None,
+        notes: Vec::new(),
     }
 }
 
@@ -576,6 +580,7 @@ fn every_tracker_kept_by_name_resolves_back() {
             base: "main".into(),
             picked: false,
             unsent: Vec::new(),
+            notes: Vec::new(),
         };
         assert_eq!(source.shown(), tracker.shown(&issue(7, "a")));
     }
@@ -600,8 +605,9 @@ fn a_pull_request_closes_the_issue_only_where_the_forge_knows_it() {
         base: "origin/main".into(),
         picked: false,
         unsent: Vec::new(),
+        notes: Vec::new(),
     };
-    let brief = brief_for(&forge(), &issue(3, "Fix it"));
+    let brief = brief_for(&forge(), &issue(3, "Fix it"), "");
     let body = |s: &IssueSource| pull_request_text(&brief, Some(s)).1;
     let on_forge = TrackerRef::Forge {
         connector: "Forge".into(),
@@ -637,5 +643,70 @@ fn a_branch_taken_on_the_forge_is_passed_over_too() {
     assert_eq!(
         free_branch_blocking(&root, "onehand/github-3-x", |_| Err("offline".into())),
         Err("offline".to_string())
+    );
+}
+
+#[test]
+fn instructions_for_the_run_follow_the_briefs_own_into_the_first_prompt_and_a_retry() {
+    let issue = issue(7, "Fix the parser");
+    let added = "Keep the old flag working.";
+    let brief = brief_for(&forge(), &issue, added);
+    let asked = brief.instructions.clone().unwrap();
+    let (own, theirs) = (
+        asked.find("Forge issue #7").unwrap(),
+        asked.find(added).unwrap(),
+    );
+    assert!(own < theirs, "the run's own instructions lead: {asked}");
+    let template = crate::workflow::builtin::all().remove(0);
+    let prompt = crate::workflow::first_prompt(&template, &brief).unwrap();
+    assert!(prompt.contains(added), "{prompt}");
+    let setup = crate::workflow::Setup {
+        repo: "/repo".into(),
+        dir: "/repo".into(),
+        branch: None,
+        agent: None,
+        check: None,
+        mode: None,
+        forge: None,
+    };
+    let first = crate::workflow::Run::new("1".into(), template.clone(), brief, setup);
+    let retry = crate::workflow::Run::retry_of(&first, "2".into(), template, None);
+    assert!(retry.brief.instructions.unwrap().contains(added));
+    // Nothing typed changes nothing.
+    assert_eq!(
+        brief_for(&forge(), &issue, "  \n"),
+        brief_for(&forge(), &issue, "")
+    );
+    assert!(!brief_for(&forge(), &issue, "")
+        .instructions
+        .unwrap()
+        .ends_with('\n'));
+}
+
+#[test]
+fn what_the_start_noted_is_said_last() {
+    let noted = PendingReport {
+        notes: vec!["An earlier task on this issue ended: too many misses at Implement. Its worktree is kept.".into()],
+        ..ran(Outcome::Done)
+    };
+    let said = report(&noted, &Ok(Verdict::Commits(1)), "b");
+    assert!(said.ends_with("Its worktree is kept."), "{said}");
+}
+
+#[test]
+fn what_the_start_noted_is_said_even_when_the_run_could_not_start() {
+    let refused = PendingReport {
+        started: false,
+        notes: vec!["The issue has no acceptance written.".into()],
+        ..ran(Outcome::Failed("the agent offers no mode `x`".into()))
+    };
+    let said = report(&refused, &Ok(Verdict::Commits(0)), "b");
+    assert!(
+        said.starts_with("onehand could not start the run"),
+        "{said}"
+    );
+    assert!(
+        said.ends_with("The issue has no acceptance written."),
+        "{said}"
     );
 }

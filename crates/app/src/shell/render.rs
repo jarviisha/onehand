@@ -230,7 +230,7 @@ impl Render for Shell {
             .children(
                 self.issue_picker
                     .is_some()
-                    .then(|| crate::dialogs::pick_issue(self, cx)),
+                    .then(|| crate::dialogs::pick_issue(self, window, cx)),
             )
             // And the workflow launcher, opened from a menu entry or a key.
             .children(

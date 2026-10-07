@@ -21,6 +21,7 @@ use std::path::Path;
 use std::path::PathBuf;
 use std::time::Duration;
 
+mod facts;
 mod launch;
 mod report;
 pub use launch::{Pickable, look_now, pickable_blocking, pickable_one_blocking, start_picked};
@@ -123,25 +124,11 @@ pub fn connector_for(root: &Path) -> Result<&'static dyn Connector, String> {
 // ponytail: waiting runs are not capped; each keeps an adapter alive. Cap
 // them when a pile of unanswered runs is seen to cost something.
 fn at_cap(u: &Unattended, cx: &App) -> Option<String> {
-    let working = crate::task::issues_working(cx);
-    if core::room(working.len() + u.starting.len(), u.at_once) {
-        return None;
-    }
-    Some(match working.as_slice() {
-        [] if u.at_once == 0 => {
-            "Unattended runs are capped at none at once (unattended.at_once).".to_string()
-        }
-        [] => "An unattended run is starting.".to_string(),
-        [one] => format!(
-            "An unattended run is already working on issue {one} — {} at a time.",
-            u.at_once
-        ),
-        many => format!(
-            "Unattended runs are already working on issues {} — {} at a time.",
-            many.join(", "),
-            u.at_once
-        ),
-    })
+    core::full(
+        &crate::task::issues_working(cx),
+        u.starting.len(),
+        u.at_once,
+    )
 }
 
 /// Why nothing at all may start, picked or found: the agent does not offer
@@ -197,6 +184,19 @@ fn choosing(u: &Unattended, cx: &App) -> launch::Choosing {
         default: u.workflow.clone(),
         by_label: u.workflows.clone(),
         need_check,
+    }
+}
+
+/// What a search judges each new task by, gathered on the UI loop.
+fn judging(u: &Unattended, cx: &App) -> launch::Judging {
+    let templates = std::iter::once(&u.workflow)
+        .chain(u.workflows.values())
+        .map(|id| (id.clone(), launch::found(id, &u.timeout, cx)))
+        .collect();
+    launch::Judging {
+        common: facts::common(cx),
+        templates,
+        tasks: crate::task::issue_tasks(cx, |_| true),
     }
 }
 
@@ -496,6 +496,29 @@ pub fn workflow_for(labels: &[String], cx: &App) -> String {
         .unwrap_or_default()
 }
 
+/// What a new run of workflow `id` on `issue` in `tracker` is checked
+/// against, in a window that knows whether the project `has_check`, what it
+/// has `checked_out` and the `forge` serving it.
+pub(crate) use facts::issue_run as issue_facts;
+
+/// What a Resume or a Retry of a task on a workflow is checked against: its
+/// last run's own setup.
+pub(crate) use facts::of_task as task_facts;
+
+/// A forge as a preflight reads it, its account as last seen.
+pub(crate) use facts::forge as forge_facts;
+
+/// The agent an issue's run starts, by name: the one set for runs, else the
+/// first configured.
+pub(crate) fn run_agent(cx: &App) -> Option<String> {
+    let shared = Shared::global(cx);
+    shared
+        .unattended
+        .as_ref()
+        .and_then(|u| u.agent.clone())
+        .or_else(|| shared.agents.first().map(|spec| spec.name.clone()))
+}
+
 /// The default workflow and the workflow labels, as the config has them.
 pub fn workflows(cx: &App) -> (String, BTreeMap<String, String>) {
     Shared::global(cx)
@@ -586,7 +609,7 @@ fn tick(asked_from: Option<gpui::AnyWindowHandle>, cx: &mut App) {
     let chosen = Shared::global(cx)
         .unattended
         .as_ref()
-        .map(|u| choosing(u, cx));
+        .map(|u| (choosing(u, cx), judging(u, cx)));
     let earlier = launch::earlier(cx);
     let search = with(cx, |u| {
         let idle = !u.claiming && u.blocked.is_none() && stopped.is_none();
@@ -602,7 +625,7 @@ fn tick(asked_from: Option<gpui::AnyWindowHandle>, cx: &mut App) {
         // A panic in there would otherwise leave `claiming` set for the life of
         // the process, and no issue would be looked for again. Said and treated
         // as nothing found.
-        let (accounts, checked, begun) = cx
+        let (accounts, checked, begun, held) = cx
             .background_executor()
             .spawn(async move {
                 std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
@@ -625,19 +648,35 @@ fn tick(asked_from: Option<gpui::AnyWindowHandle>, cx: &mut App) {
                             })
                         })
                         .collect();
-                    let begun = search.and_then(|(label, choosing)| {
-                        begin_blocking(&workable, &label, &choosing, &earlier, &mut checked)
+                    let begun = search.and_then(|(label, (choosing, judging))| {
+                        begin_blocking(
+                            &workable,
+                            &label,
+                            &choosing,
+                            &earlier,
+                            &judging,
+                            &mut checked,
+                        )
+                    });
+                    // Why nothing was started where something was looked
+                    // for: the look refused the project, or what the search
+                    // found was blocked. Taken before the line below, which
+                    // passes issues over rather than stopping a project.
+                    let held = checked.iter().find_map(|(root, served)| {
+                        let why = served.as_ref().err()?;
+                        let name = root.file_name()?.to_string_lossy().into_owned();
+                        Some(format!("Nothing was picked up in {name}: {why}"))
                     });
                     // Said after the look, which would otherwise say the
                     // project is fine.
                     checked.extend(lacking.into_iter().map(|(root, why)| (root, Err(why))));
-                    (Some(accounts), checked, begun)
+                    (Some(accounts), checked, begun, held)
                 }))
                 .unwrap_or_else(|_| {
                     // The look, the search and the claim are all in here, and
                     // none of them has taken a label unless it finished.
                     eprintln!("onehand: looking for an unattended run panicked");
-                    (None, Vec::new(), None)
+                    (None, Vec::new(), None, None)
                 })
             })
             .await;
@@ -647,7 +686,7 @@ fn tick(asked_from: Option<gpui::AnyWindowHandle>, cx: &mut App) {
                 record(checked, true, cx);
             }
             if searching {
-                landed(begun, asked_from, cx);
+                landed(begun, asked_from, held, cx);
             }
         });
     })
