@@ -18,7 +18,7 @@ use gpui_component::{ActiveTheme, Disableable, Icon, IconName, Sizable as _, Sty
 mod issue;
 
 pub use issue::pick_issue;
-pub(crate) use issue::{issue_row, issue_workflow_menu, page_row};
+pub(crate) use issue::{PickJudged, issue_row, issue_workflow_menu, page_row};
 
 /// A dialog's name, and the ✕ that closes it.
 ///

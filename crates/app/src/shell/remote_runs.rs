@@ -434,14 +434,7 @@ impl Shell {
 
     /// What the preflight finds of a run on the issue chosen in the picker,
     /// and the workflow it would run; `None` with nothing chosen yet.
-    pub(crate) fn pick_preflight(
-        &self,
-        cx: &App,
-    ) -> Option<(
-        Vec<onehand_core::preflight::Finding>,
-        Result<onehand_core::workflow::Template, String>,
-        Option<crate::agent_check::Ask>,
-    )> {
+    pub(crate) fn pick_preflight(&self, cx: &App) -> Option<crate::dialogs::PickJudged> {
         let picker = self.issue_picker.as_ref()?;
         let (tracker, row) = picker.chosen()?;
         let facts = crate::unattended::issue_facts(

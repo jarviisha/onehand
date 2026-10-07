@@ -141,6 +141,14 @@ pub fn pick_issue(shell: &Shell, window: &Window, cx: &mut Context<Shell>) -> Di
         }))
 }
 
+/// What the preflight found of the issue picked, the workflow it would run,
+/// and the agent *Check the agent* would start.
+pub(crate) type PickJudged = (
+    Vec<Finding>,
+    Result<Template, String>,
+    Option<crate::agent_check::Ask>,
+);
+
 /// The form that starts a run on `row`: the workflow and what it is, where it
 /// works, what the preflight `judged` blocks or says, what the person adds to
 /// the brief, and the preview of the first prompt.
@@ -149,11 +157,7 @@ fn start_form(
     tracker: &Tracker,
     row: &IssueRow,
     picked: Option<&str>,
-    judged: &(
-        Vec<Finding>,
-        Result<Template, String>,
-        Option<crate::agent_check::Ask>,
-    ),
+    judged: &PickJudged,
     templates: &[template::IssueTemplate],
     instructions: &Entity<TextareaState>,
     preview: bool,
