@@ -252,8 +252,7 @@ impl Shell {
                             }
                             None => crate::unattended::pickable_blocking(&path, issues),
                         };
-                        let templates =
-                            onehand_core::issues::template::for_project_blocking(&path);
+                        let templates = onehand_core::issues::template::for_project_blocking(&path);
                         (found, forge, templates)
                     })
                     .await
@@ -401,7 +400,7 @@ impl Shell {
     /// Judged again here, since what blocks it may have changed since the form
     /// was drawn: a block keeps the form up, saying it.
     pub fn commit_pick(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let Some((findings, _)) = self.pick_preflight(cx) else {
+        let Some((findings, ..)) = self.pick_preflight(cx) else {
             return;
         };
         if findings.iter().any(|f| f.blocks) {
@@ -435,12 +434,13 @@ impl Shell {
 
     /// What the preflight finds of a run on the issue chosen in the picker,
     /// and the workflow it would run; `None` with nothing chosen yet.
-    pub fn pick_preflight(
+    pub(crate) fn pick_preflight(
         &self,
         cx: &App,
     ) -> Option<(
         Vec<onehand_core::preflight::Finding>,
         Result<onehand_core::workflow::Template, String>,
+        Option<crate::agent_check::Ask>,
     )> {
         let picker = self.issue_picker.as_ref()?;
         let (tracker, row) = picker.chosen()?;
@@ -458,7 +458,8 @@ impl Shell {
         );
         let findings =
             onehand_core::preflight::preflight(onehand_core::preflight::Kind::NewIssueRun, &facts);
-        Some((findings, facts.workflow))
+        let ask = crate::agent_check::Ask::of(&facts, &picker.root, cx);
+        Some((findings, facts.workflow, ask))
     }
 
     /// Close the picker without working anything.

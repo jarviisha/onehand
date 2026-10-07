@@ -132,7 +132,8 @@ fn a_project_template_reads_its_name_and_labels_from_front_matter() {
 fn labels_read_as_a_flow_or_a_block_list() {
     let flow = from_file("---\nname: A\nlabels: [\"bug\", 'ui']\n---\nbody\n").unwrap();
     assert_eq!(flow.labels, ["bug", "ui"]);
-    let block = from_file("---\nname: B\nlabels:\n  - bug\n  - 'ui'\nabout: x\n---\nbody\n").unwrap();
+    let block =
+        from_file("---\nname: B\nlabels:\n  - bug\n  - 'ui'\nabout: x\n---\nbody\n").unwrap();
     assert_eq!(block.labels, ["bug", "ui"]);
     let none = from_file("---\nname: C\nlabels: ''\n---\nbody\n").unwrap();
     assert!(none.labels.is_empty());

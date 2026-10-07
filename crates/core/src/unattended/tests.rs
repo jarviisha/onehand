@@ -631,12 +631,10 @@ fn a_full_slot_is_refused_with_the_slots_line() {
     let full = slots(vec![holder("a", "#12 · Work an issue (Implement)")], 0, 1);
     let why = full.full().unwrap();
     assert!(why.contains(&full.said()), "{why}");
-    assert!(
-        slots(vec![], 0, 0)
-            .full()
-            .unwrap()
-            .contains("unattended.at_once")
-    );
+    assert!(slots(vec![], 0, 0)
+        .full()
+        .unwrap()
+        .contains("unattended.at_once"));
 }
 
 #[test]

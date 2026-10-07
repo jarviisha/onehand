@@ -412,7 +412,11 @@ fn slots_field(handle: &Entity<Shell>, slots: Slots, cx: &App) -> AnyElement {
     });
     let line = match slots.holders.is_empty() {
         true => slots.said(),
-        false => format!("Slots: {} of {}", slots.holders.len() + slots.starting, slots.at_once),
+        false => format!(
+            "Slots: {} of {}",
+            slots.holders.len() + slots.starting,
+            slots.at_once
+        ),
     };
     let waiting = match slots.waiting_cap {
         Some(cap) => format!("{} of {cap} may wait on a person", slots.waiting),

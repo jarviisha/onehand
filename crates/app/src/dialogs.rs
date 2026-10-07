@@ -224,7 +224,7 @@ pub fn run_workflow(shell: &Shell, window: &Window, cx: &mut Context<Shell>) -> 
             let lines: Vec<_> = found
                 .iter()
                 .enumerate()
-                .map(|(at, finding)| finding_line(at, finding, danger, muted, &handle))
+                .map(|(at, finding)| finding_line(at, finding, danger, muted, &handle, None, cx))
                 .collect();
             let handle = handle.clone();
             let names = names.clone();
@@ -363,6 +363,8 @@ pub(crate) fn finding_line(
     danger: gpui::Hsla,
     muted: gpui::Hsla,
     handle: &Entity<Shell>,
+    ask: Option<&crate::agent_check::Ask>,
+    cx: &App,
 ) -> impl IntoElement {
     let text = match finding
         .change
@@ -397,6 +399,14 @@ pub(crate) fn finding_line(
                     });
                 })
         }))
+        // A mode not known yet can be learned now, at the cost of an agent
+        // start, and only on a press.
+        .children(
+            ask.filter(|_| {
+                finding.check == onehand_core::preflight::Check::Mode && !finding.blocks
+            })
+            .map(|ask| crate::agent_check::button(at, ask, cx)),
+        )
 }
 
 /// Why *Run* is spent, said beside it: how many things above block the

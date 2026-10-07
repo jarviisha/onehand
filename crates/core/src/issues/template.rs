@@ -86,7 +86,11 @@ pub fn for_project_blocking(root: &std::path::Path) -> Vec<IssueTemplate> {
 /// A project's own templates when there are any, or the shipped three: one
 /// of its own replaces them all, never mixes with them.
 fn own_or_shipped(own: Vec<IssueTemplate>) -> Vec<IssueTemplate> {
-    if own.is_empty() { shipped() } else { own }
+    if own.is_empty() {
+        shipped()
+    } else {
+        own
+    }
 }
 
 /// A Markdown issue template as a forge keeps it: front matter giving its
@@ -94,7 +98,9 @@ fn own_or_shipped(own: Vec<IssueTemplate>) -> Vec<IssueTemplate> {
 /// matter, none closed, or no name, which a forge would not offer either.
 fn from_file(text: &str) -> Option<IssueTemplate> {
     let rest = text.strip_prefix("---")?.trim_start_matches([' ', '\t']);
-    let rest = rest.strip_prefix("\r\n").or_else(|| rest.strip_prefix('\n'))?;
+    let rest = rest
+        .strip_prefix("\r\n")
+        .or_else(|| rest.strip_prefix('\n'))?;
     let mut lines = rest.split_inclusive('\n');
     let mut front = Vec::new();
     let mut read = 0;

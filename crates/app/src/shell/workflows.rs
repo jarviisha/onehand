@@ -161,8 +161,32 @@ impl Shell {
             slots: None,
             queued_behind: None,
             review: None,
+            shared_checkout: self.own_session_in(&launcher.root, cx),
         };
         Some(preflight::preflight(preflight::Kind::NewRun, &facts))
+    }
+
+    /// A session of a person's own, not a run's, that has been prompted in
+    /// the checkout at `root`, by its name: what a run working in the same
+    /// checkout would edit beside.
+    fn own_session_in(&self, root: &std::path::Path, cx: &gpui::App) -> Option<String> {
+        let project = self
+            .window
+            .workspace
+            .roots
+            .iter()
+            .find(|r| r.path == root)?;
+        project
+            .sessions
+            .iter()
+            .filter(|session| crate::task::shown(session.uid, cx).is_none())
+            .find_map(|session| {
+                self.rail_sessions
+                    .iter()
+                    .find(|(uid, _)| *uid == session.uid)
+                    .and_then(|(_, row)| row.title.clone())
+            })
+            .map(|title| title.to_string())
     }
 
     /// Start the run the launcher describes, or say on it why not.

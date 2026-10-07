@@ -120,6 +120,7 @@ pub enum Check {
     EarlierTask,
     Slot,
     PlaceTaken,
+    Limits,
 }
 
 /// One thing the preflight found.
@@ -203,6 +204,9 @@ pub struct Facts {
     pub queued_behind: Option<String>,
     /// The pull request a review is answered on, for that start.
     pub review: Option<ReviewFacts>,
+    /// A person's own session working in the checkout the start works in,
+    /// by its name.
+    pub shared_checkout: Option<String>,
 }
 
 /// Everything `facts` says about a start of `kind`: blocks first, the
@@ -330,6 +334,19 @@ pub fn preflight(kind: Kind, facts: &Facts) -> Vec<Finding> {
             "The branch is cut off `HEAD`.".to_string(),
             None,
         ),
+        Kind::NewRun => {
+            if let Some(session) = &facts.shared_checkout {
+                say(
+                    Check::Place,
+                    false,
+                    format!(
+                        "Your session “{session}” works in this checkout too: the run edits \
+                         the same files, and neither sees the other's edits coming."
+                    ),
+                    None,
+                );
+            }
+        }
         Kind::NewIssueRun => match (&facts.forge, detached, &facts.checked_out) {
             (Some(_), _, _) => say(
                 Check::Base,
@@ -353,7 +370,7 @@ pub fn preflight(kind: Kind, facts: &Facts) -> Vec<Finding> {
             ),
             (None, false, None) => {}
         },
-        Kind::NewRun | Kind::Resume | Kind::Retry | Kind::RetryCurrent | Kind::AnswerReview => {}
+        Kind::Resume | Kind::Retry | Kind::RetryCurrent | Kind::AnswerReview => {}
     }
 
     // The forge: an issue's run asks it for the default branch whatever its
@@ -377,6 +394,37 @@ pub fn preflight(kind: Kind, facts: &Facts) -> Vec<Finding> {
             true,
             format!("{name} cannot be used: {why}"),
             Some(Change::At("Settings ▸ Connections")),
+        );
+    }
+    // Answering a review on no forge is refused below, and never told twice.
+    if forge_steps && facts.forge.is_none() && kind != Kind::AnswerReview {
+        say(
+            Check::Forge,
+            false,
+            "No forge serves the project: the forge steps pass at once, and the branch is \
+             the result."
+                .to_string(),
+            None,
+        );
+    }
+
+    // The limits the run is held to, from the snapshot that will run.
+    if let Some(template) = template {
+        say(
+            Check::Limits,
+            false,
+            format!(
+                "Limits: {} of work, waiting on a person not counted; {} failed {} in a \
+                 stretch of steps before it stops.",
+                template.timeout,
+                template.misses,
+                if template.misses == 1 {
+                    "turn"
+                } else {
+                    "turns"
+                }
+            ),
+            None,
         );
     }
 
@@ -415,11 +463,7 @@ pub fn preflight(kind: Kind, facts: &Facts) -> Vec<Finding> {
             task: None,
         })
     };
-    if let Some(why) = facts
-        .slots
-        .as_ref()
-        .and_then(Slots::full)
-    {
+    if let Some(why) = facts.slots.as_ref().and_then(Slots::full) {
         say(Check::Slot, true, why);
     }
     if let Some(ahead) = &facts.queued_behind {
@@ -496,7 +540,8 @@ pub fn found_late(check: Check) -> Failure {
         | Check::Issue
         | Check::EarlierTask
         | Check::Slot
-        | Check::PlaceTaken => Failure::Other,
+        | Check::PlaceTaken
+        | Check::Limits => Failure::Other,
     }
 }
 

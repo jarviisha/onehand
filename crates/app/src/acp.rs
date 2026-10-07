@@ -160,6 +160,13 @@ impl AcpRuntime {
         (self.start(spec, cwd, resume), Instant::now())
     }
 
+    /// Spawn an adapter for a look at what it offers, never the parked one:
+    /// it is brought up as far as its session and dropped, so it must not
+    /// take the spare a session is about to claim.
+    pub fn probe(&self, spec: &AgentSpec, cwd: PathBuf) -> mpsc::Receiver<AcpEvent> {
+        self.start(spec, cwd, None)
+    }
+
     /// Spawn an adapter and forward its events, with no reference to the parked
     /// one either way.
     fn start(

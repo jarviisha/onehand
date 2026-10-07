@@ -530,6 +530,7 @@ pub(crate) use facts::with_setup as setup_facts;
 
 /// A forge as a preflight reads it, its account as last seen.
 pub(crate) use facts::forge as forge_facts;
+pub(crate) use facts::offered;
 
 /// The agent an issue's run starts, by name: the one set for runs, else the
 /// first configured.

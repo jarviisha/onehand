@@ -112,6 +112,8 @@ pub struct Shared {
     /// edited since is another spec, so what was learned of it stops
     /// counting with the edit.
     pub modes_seen: Vec<(AgentSpec, Vec<String>)>,
+    /// *Check the agent* under way, or the last one that failed, per spec.
+    pub agent_checks: Vec<(AgentSpec, crate::agent_check::Checking)>,
 }
 
 impl Global for Shared {}
@@ -138,6 +140,7 @@ impl Shared {
             _remote_pump: None,
             unattended: None,
             modes_seen: Vec::new(),
+            agent_checks: Vec::new(),
         }
     }
 

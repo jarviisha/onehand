@@ -49,7 +49,7 @@ pub fn pick_issue(shell: &Shell, window: &Window, cx: &mut Context<Shell>) -> Di
     let judged = shell.pick_preflight(cx);
     let blocking = judged
         .as_ref()
-        .map_or(0, |(found, _)| found.iter().filter(|f| f.blocks).count());
+        .map_or(0, |(found, ..)| found.iter().filter(|f| f.blocks).count());
     let runnable = judged.is_some() && blocking == 0;
     let danger = crate::theme::status_ink(cx).danger;
     let (margin, room) = super::form_room(window);
@@ -143,20 +143,24 @@ pub fn pick_issue(shell: &Shell, window: &Window, cx: &mut Context<Shell>) -> Di
 
 /// The form that starts a run on `row`: the workflow and what it is, where it
 /// works, what the preflight `judged` blocks or says, what the person adds to
-/// the brief, the limits, and the preview of the first prompt.
+/// the brief, and the preview of the first prompt.
 #[allow(clippy::too_many_arguments)]
 fn start_form(
     tracker: &Tracker,
     row: &IssueRow,
     picked: Option<&str>,
-    judged: &(Vec<Finding>, Result<Template, String>),
+    judged: &(
+        Vec<Finding>,
+        Result<Template, String>,
+        Option<crate::agent_check::Ask>,
+    ),
     templates: &[template::IssueTemplate],
     instructions: &Entity<TextareaState>,
     preview: bool,
     handle: &Entity<Shell>,
     cx: &App,
 ) -> AnyElement {
-    let (findings, template) = judged;
+    let (findings, template, ask) = judged;
     let (muted, danger) = (
         cx.theme().muted_foreground,
         crate::theme::status_ink(cx).danger,
@@ -192,7 +196,9 @@ fn start_form(
     let lines: Vec<_> = said
         .iter()
         .enumerate()
-        .map(|(at, finding)| super::finding_line(at, finding, danger, muted, handle))
+        .map(|(at, finding)| {
+            super::finding_line(at, finding, danger, muted, handle, ask.as_ref(), cx)
+        })
         .collect();
     // What the issue's text leaves out of the template it was written from:
     // said, never in the way.
@@ -218,11 +224,8 @@ fn start_form(
         return column.into_any_element();
     };
     let brief = core::brief_for(tracker, &row.issue, instructions.read(cx).value().as_ref());
+    // Its limits are the preflight's to say, in *Before it starts*.
     column
-        .child(div().text_xs().text_color(muted).child(format!(
-            "Times out after {} · {} misses allowed",
-            template.timeout, template.misses
-        )))
         .child(super::workflow_preview(
             template,
             &brief,

@@ -14,6 +14,7 @@
 //! they are unaffected. Keep new modules private.
 
 mod acp;
+mod agent_check;
 pub mod assets;
 mod chat;
 mod controls;

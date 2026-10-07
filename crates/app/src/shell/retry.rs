@@ -152,6 +152,7 @@ impl Shell {
         // Settings says now neither blocks it nor clears a block.
         let facts = crate::unattended::task_facts(&task, same.clone(), cx);
         let found = preflight::preflight(preflight::Kind::Retry, &facts);
+        let ask = crate::agent_check::Ask::of(&facts, &task.setup.dir, cx);
         let blocked = found.iter().any(|f| f.blocks);
         // What it keeps, one line each, and where Settings say otherwise now.
         let differs: Vec<Changed> = match self.plan_current(&task, false, cx) {
@@ -170,7 +171,15 @@ impl Shell {
                 .iter()
                 .enumerate()
                 .map(|(at, finding)| {
-                    crate::dialogs::finding_line(at, finding, danger, muted, &shell)
+                    crate::dialogs::finding_line(
+                        at,
+                        finding,
+                        danger,
+                        muted,
+                        &shell,
+                        ask.as_ref(),
+                        cx,
+                    )
                 })
                 .collect();
             let from = steps.get(picked.get()).map(|step| step.id.clone());
@@ -297,6 +306,7 @@ impl Shell {
             .map_err(Clone::clone);
         let facts = crate::unattended::setup_facts(&task, &setup, workflow, cx);
         let found = preflight::preflight(preflight::Kind::RetryCurrent, &facts);
+        let ask = crate::agent_check::Ask::of(&facts, &setup.dir, cx);
         let blocked = found.iter().any(|f| f.blocks);
         let (said, changes) = match &plan {
             Ok(plan) => {
@@ -329,7 +339,15 @@ impl Shell {
                 .iter()
                 .enumerate()
                 .map(|(at, finding)| {
-                    crate::dialogs::finding_line(at, finding, danger, muted, &shell)
+                    crate::dialogs::finding_line(
+                        at,
+                        finding,
+                        danger,
+                        muted,
+                        &shell,
+                        ask.as_ref(),
+                        cx,
+                    )
                 })
                 .collect();
             let retry = {
@@ -505,6 +523,7 @@ impl Shell {
         cx: &mut Context<Self>,
     ) {
         let found = preflight::preflight(preflight::Kind::AnswerReview, &read.facts);
+        let ask = crate::agent_check::Ask::of(&read.facts, &task.setup.dir, cx);
         let blocked = found.iter().any(|f| f.blocks);
         let said = match &read.from {
             Some(step) => format!(
@@ -525,7 +544,15 @@ impl Shell {
                 .iter()
                 .enumerate()
                 .map(|(at, finding)| {
-                    crate::dialogs::finding_line(at, finding, danger, muted, &shell)
+                    crate::dialogs::finding_line(
+                        at,
+                        finding,
+                        danger,
+                        muted,
+                        &shell,
+                        ask.as_ref(),
+                        cx,
+                    )
                 })
                 .collect();
             let answer = {

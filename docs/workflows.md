@@ -328,14 +328,15 @@ current settings* as a new start is, on what Settings say now
 |---|---|---|
 | Workflow | it is not there, works in the checkout, or `workflow::validate` finds problems (each listed, first) | |
 | Agent | none is configured, or the one named is no longer | |
-| Mode | the agent's current offer, learned in this process from the spec as it is now, does not hold it | the mode is not known yet |
+| Mode | the agent's current offer, learned in this process from the spec as it is now, does not hold it | the mode is not known yet, with *Check the agent* |
 | Check command | the workflow runs the project's check command and there is none | the workflow runs no command: nothing verifies the work |
-| Place | `HEAD` is detached and no forge serves the project | |
+| Place | `HEAD` is detached and no forge serves the project | for a new run of a checkout workflow, a person's own session that has been prompted in the same checkout, by its name: both edit the same files |
 | Base | | what the branch is cut off: the default branch on `origin`, fetched first, or the branch checked out |
-| Forge | `gh` missing or signed out, as last seen | |
+| Forge | `gh` missing or signed out, as last seen | the workflow has forge steps and no forge serves the project: they pass at once, and the branch is the result (not said for answering a review, which that refuses) |
 | Issue | another run works on it; for *Answer a pull request review*, the pull request is not open (closed unmerged, merged, none, or unread), the workflow has no status checks step to repair from, no forge serves the project, the branch on the forge went its own way, or the issue is closed or could not be read | |
 | Earlier task | | the issue's last task needs attention: starting makes a second task, and *Retry…* opens that task's Retry dialog instead |
 | Slot | `at_once` is reached, or `waiting` runs wait on a person; said with the slots line naming who holds each | |
+| Limits | | every kind: the timeout and the misses allowed, from the snapshot that will run (the run's own for Resume, Retry and answering a review) |
 
 **What an agent offers is learned whenever it comes up**, a person's session included, and kept
 per agent spec (its command and arguments, compared whole) for the life of the process
@@ -343,6 +344,15 @@ per agent spec (its command and arguments, compared whole) for the life of the p
 counting; a restart forgets, so an upgraded adapter is never judged by an old list. Only a list
 that is current blocks; otherwise the mode is *not known yet*, and the driver's check when the
 agent comes up stays the authority.
+
+**Check the agent**, beside a mode not known yet, starts that agent in the project with no
+session, reads the modes its `session/new` answers with, and closes it, off the UI thread and
+prompting nothing (`agent_check`, through `AcpRuntime::probe`, which never takes the adapter
+parked for the next session). It is the one check that costs an agent start, so only its press
+runs it. What it learns goes into `Shared::modes_seen` like any other sighting: the issue's start
+form, judged every frame, turns *not known yet* into a block or into nothing; a dialog judged once
+when it opened says beside the button what the agent offers. A failure to come up, or no answer
+within 90 seconds, is said there.
 
 **Every start goes through the queue** (`task::request`), Resume included. A place is the
 checkout git sees: the canonical top level of the repository, or a folder's own canonical path
@@ -461,6 +471,11 @@ change (`git checkout . && git clean -fd`).
 | Answer the pull request review | On a GitHub project, an issue whose task is done with its draft pull request open, a review left on it | The issue offers *Answer the pull request review* beside *Open pull request*; pressed, a new run starts at the repair step with the review as its note, and the issue is told it answers the review, as putting the label back does |
 | A review that cannot be answered | The same, after closing the pull request unmerged; then with a commit pushed to the branch on GitHub that the worktree does not have, the pull request open again; then on a workflow with no status checks step | The dialog lists *Its pull request … was closed without being merged …*, then *The branch on the forge went its own way …*, then *… has no status checks step …*, in the danger ink, and *Answer the review* is spent; nothing is claimed, and the issue gets no comment |
 | An older run in the review | A run kept by a build from before command results were kept, waiting at an approval after its check | The block's *Check* says *not recorded for this run*, or *cannot tell whether the check covers the work now* on a dirty worktree |
+| Check the agent | Edit the Mock UI agent's arguments (a new spec), then *Run workflow…* on an issue with `mode` set | *Mode … is not known yet* with *Check the agent*; pressed, *Checking…*, then the line goes, or turns into a block in the danger ink naming the modes offered; no session appears, no prompt is sent, and no adapter process is left (`pgrep -f mock_ui_agent`) |
+| An agent that does not come up | The same with the agent's command set to one that does not exist | Beside the button: *… could not be checked: …* |
+| Limits | Any start form or Retry dialog | *Before it starts* ends on *Limits: 45m of work, …; 3 failed turns …*, from the workflow that will run |
+| A shared checkout | Prompt a session in a project, then open the launcher on a checkout workflow there | *Your session “…” works in this checkout too …*, muted; *Run* is offered |
+| No forge for forge steps | The launcher on a project with no `origin`, a workflow with a push step | *No forge serves the project: the forge steps pass at once, and the branch is the result.*, muted |
 | A full slot | With `at_once = 1` and an issue task running, *Run workflow…* on another issue | *Before it starts* names the issue being worked; *Run* is spent |
 | An earlier task needing attention | On an issue whose last task ended exhausted, *Run workflow…* | Muted: the last task ended and a new start makes a second task, with *Retry…*, which closes the form and opens that task's Retry dialog |
 | A template | *New issue* in the tab, press *Bug* in the *Template* row | The body holds *Problem*, *Scope*, *Acceptance* and *How to check*, each with its hint; the labels field gains `bug`; the row goes once anything is typed in the body. Save with only *Problem* filled: the issue's facts line says *No scope, acceptance or how to check written*, muted |

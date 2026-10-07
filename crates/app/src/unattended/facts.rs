@@ -35,6 +35,7 @@ pub(crate) fn common(cx: &App) -> Facts {
         issue: None,
         slots: u.map(|u| super::slots_of(u, cx)),
         queued_behind: None,
+        shared_checkout: None,
         review: None,
     }
 }
@@ -208,6 +209,7 @@ pub(crate) fn with_setup(
         issue: None,
         slots,
         queued_behind: None,
+        shared_checkout: None,
         review: None,
     }
 }
