@@ -77,7 +77,7 @@ documents and its row here names the pull request.
 | 3 | [#97](https://github.com/jarviisha/onehand/issues/97) | [#104](https://github.com/jarviisha/onehand/pull/104) |
 | 4 | [#105](https://github.com/jarviisha/onehand/issues/105) | [#112](https://github.com/jarviisha/onehand/pull/112) |
 | 5 | [#114](https://github.com/jarviisha/onehand/issues/114) | [#121](https://github.com/jarviisha/onehand/pull/121) |
-| 6 | [#122](https://github.com/jarviisha/onehand/issues/122) | |
+| 6 | [#122](https://github.com/jarviisha/onehand/issues/122) | [#129](https://github.com/jarviisha/onehand/pull/129) |
 
 ## Five questions every layout answers
 
