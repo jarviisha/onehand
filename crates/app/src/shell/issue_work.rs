@@ -196,5 +196,6 @@ impl Shell {
             self.issue_works = told;
         }
         self.tell_issues_page_projects(cx);
+        self.tell_workflows_page_projects(cx);
     }
 }

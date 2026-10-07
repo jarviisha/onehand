@@ -30,7 +30,6 @@ impl Shell {
         self.keymap_editor
             .update(cx, |editor, _| editor.forget_note());
         self.settings_focus.focus(window, cx);
-        self.make_check_inputs(window, cx);
         cx.notify();
     }
 
@@ -41,8 +40,7 @@ impl Shell {
     /// and closing with nothing pending has nothing to lose.
     pub fn request_close_settings(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let pending = self.agent_draft.dirty(&Shared::global(cx).agents, cx)
-            || self.keymap_editor.read(cx).dirty(cx)
-            || self.workflow_draft.as_ref().is_some_and(|d| d.dirty(cx));
+            || self.keymap_editor.read(cx).dirty(cx);
         if !pending {
             self.close_settings(window, cx);
             return;
@@ -53,7 +51,7 @@ impl Shell {
             alert
                 .title("Discard unsaved changes?")
                 .description(
-                    "An agent, a shortcut or a workflow is still being edited. \
+                    "An agent or a shortcut is still being edited. \
                      Closing Settings now throws those changes away.",
                 )
                 // Ours rather than the library's default pair, for the reason
@@ -76,7 +74,6 @@ impl Shell {
                                     window.close_dialog(cx);
                                     shell.update(cx, |shell: &mut Self, cx| {
                                         shell.agent_draft.clear(window, cx);
-                                        shell.workflow_draft = None;
                                         shell.keymap_editor.update(cx, |editor, cx| {
                                             if editor.editing() {
                                                 editor.cancel(window, cx);

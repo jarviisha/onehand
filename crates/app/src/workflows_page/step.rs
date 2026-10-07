@@ -1,7 +1,7 @@
+use super::WorkflowsPage;
 use super::draft::{Kind, StepDraft};
 use super::{click, row_delete, row_icon};
 use crate::settings::{about, field};
-use crate::shell::Shell;
 use gpui::prelude::FluentBuilder as _;
 use gpui::{
     AnyElement, App, Entity, IntoElement, ParentElement, SharedString, Styled, Window, div, rems,
@@ -21,7 +21,7 @@ pub(super) struct Earlier {
 
 /// One step of the form, in a box of its own.
 pub(super) fn step_box(
-    handle: &Entity<Shell>,
+    handle: &Entity<WorkflowsPage>,
     i: usize,
     step: &StepDraft,
     earlier: &[Earlier],
@@ -42,8 +42,8 @@ pub(super) fn step_box(
                     let handle = handle.clone();
                     menu = menu.item(crate::controls::menu_item(kind.label()).on_click(
                         move |_, window: &mut Window, cx: &mut App| {
-                            handle.update(cx, |shell, cx| {
-                                shell.edit_workflow_draft(window, cx, |d, _, _| {
+                            handle.update(cx, |page, cx| {
+                                page.edit_workflow_draft(window, cx, |d, _, _| {
                                     d.steps[i].kind = kind
                                 })
                             });
@@ -69,24 +69,24 @@ pub(super) fn step_box(
         .child(
             row_icon(("step-up", i), IconName::ArrowUp, "Move up").on_click(click(
                 handle,
-                move |shell, window, cx| {
-                    shell.edit_workflow_draft(window, cx, |d, _, _| d.move_step(i, true))
+                move |page, window, cx| {
+                    page.edit_workflow_draft(window, cx, |d, _, _| d.move_step(i, true))
                 },
             )),
         )
         .child(
             row_icon(("step-down", i), IconName::ArrowDown, "Move down").on_click(click(
                 handle,
-                move |shell, window, cx| {
-                    shell.edit_workflow_draft(window, cx, |d, _, _| d.move_step(i, false))
+                move |page, window, cx| {
+                    page.edit_workflow_draft(window, cx, |d, _, _| d.move_step(i, false))
                 },
             )),
         )
         .child(row_delete(
             handle,
             ("step-delete", i),
-            move |shell, window, cx| {
-                shell.edit_workflow_draft(window, cx, |d, _, _| {
+            move |page, window, cx| {
+                page.edit_workflow_draft(window, cx, |d, _, _| {
                     d.steps.remove(i);
                 })
             },
@@ -121,8 +121,8 @@ pub(super) fn step_box(
                             .small()
                             .label(gate.label())
                             .on_click(move |_: &bool, window: &mut Window, cx: &mut App| {
-                                handle.update(cx, |shell, cx| {
-                                    shell.edit_workflow_draft(window, cx, |d, _, _| {
+                                handle.update(cx, |page, cx| {
+                                    page.edit_workflow_draft(window, cx, |d, _, _| {
                                         let gates = &mut d.steps[i].gates;
                                         match gates.iter().position(|g| *g == gate) {
                                             Some(at) => {
@@ -144,8 +144,8 @@ pub(super) fn step_box(
                         .small()
                         .label("Keep its answer")
                         .on_click(move |_: &bool, window: &mut Window, cx: &mut App| {
-                            handle.update(cx, |shell, cx| {
-                                shell.edit_workflow_draft(window, cx, |d, _, _| {
+                            handle.update(cx, |page, cx| {
+                                page.edit_workflow_draft(window, cx, |d, _, _| {
                                     d.steps[i].keep_answer = !d.steps[i].keep_answer
                                 })
                             });
@@ -216,8 +216,8 @@ pub(super) fn step_box(
                                     .checked(id == current)
                                     .on_click(move |_, window: &mut Window, cx: &mut App| {
                                         let id = id.clone();
-                                        handle.update(cx, |shell, cx| {
-                                            shell.edit_workflow_draft(window, cx, move |d, _, _| {
+                                        handle.update(cx, |page, cx| {
+                                            page.edit_workflow_draft(window, cx, move |d, _, _| {
                                                 d.steps[i].target = id
                                             })
                                         });

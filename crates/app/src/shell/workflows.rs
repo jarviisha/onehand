@@ -52,11 +52,29 @@ impl Shell {
             );
             return;
         };
+        let root = root.path.clone();
+        self.begin_workflow_on(&root, None, window, cx);
+    }
+
+    /// Put the launcher up for the project at `root`, workflow `template`
+    /// picked, or the first that reads.
+    pub(crate) fn begin_workflow_on(
+        &mut self,
+        root: &std::path::Path,
+        template: Option<usize>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(root) = self.window.workspace.roots.iter().find(|r| r.path == root) else {
+            return;
+        };
         let (root, project) = (root.path.clone(), root.label.clone());
-        let template = crate::workflow::templates(cx)
-            .iter()
-            .position(|entry| entry.template.is_ok())
-            .unwrap_or(0);
+        let template = template.unwrap_or_else(|| {
+            crate::workflow::templates(cx)
+                .iter()
+                .position(|entry| entry.template.is_ok())
+                .unwrap_or(0)
+        });
         let title = cx.new(|cx| InputState::new(window, cx).placeholder("What to do, in a line"));
         let body = cx.new(|cx| {
             TextareaState::new(window, cx).placeholder("The details: what is wrong, what is wanted")

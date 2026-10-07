@@ -453,6 +453,7 @@ impl ChatPane {
             // repository, no switch offered" is what a menu drawn in that
             // moment can honestly say.
             facts: ProjectFacts::default(),
+            check_input: None,
         });
         self.scan_project_history(cx);
         // Going to no session at all is still leaving the one that was showing,

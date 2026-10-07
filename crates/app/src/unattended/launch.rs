@@ -631,7 +631,7 @@ fn start(claimed: Claimed, cx: &mut App) -> Result<(), Unstarted> {
             claimed,
             &format!(
                 "the workflow `{}` runs the project's check command, and the project has \
-                 none; set one under Settings ▸ Workflows",
+                 none; set one on the project's page",
                 template.name
             ),
         ));

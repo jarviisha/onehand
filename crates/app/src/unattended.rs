@@ -231,7 +231,7 @@ fn lacks_check_given(has: bool, id: &str, cx: &App) -> Option<String> {
     (template.needs_check() && !has).then(|| {
         format!(
             "the workflow `{}` runs the project's check command, and it has none; set one \
-             under Settings ▸ Workflows",
+             on the project's page",
             template.name
         )
     })

@@ -1,9 +1,9 @@
+use super::WorkflowsPage;
 use super::click;
 use super::draft::Kind;
 use super::step::{Earlier, step_box};
 use crate::controls::Refuses as _;
 use crate::settings::{about, field, section};
-use crate::shell::Shell;
 use gpui::{
     AnyElement, App, Entity, IntoElement, ParentElement, SharedString, Styled, Window, div,
 };
@@ -12,11 +12,42 @@ use gpui_component::input::Input;
 use gpui_component::{ActiveTheme, Icon, IconName, Sizable as _, StyledExt};
 use onehand_core::workflow::Place;
 
+/// How wide the margin beside the steps runs, in rems.
+const MARGIN: f32 = 4.5;
+
+/// A step's margin: where its failure sends the run back to, and which later
+/// steps send theirs back to it, by step number. The arrows of a loop read
+/// down the margin without opening a step.
+fn margin(back: Option<usize>, from: &[usize], muted: gpui::Hsla) -> impl IntoElement {
+    div()
+        .flex_none()
+        .w(gpui::rems(MARGIN))
+        .pt_3()
+        .v_flex()
+        .gap_1()
+        .text_xs()
+        .text_color(muted)
+        .children(back.map(|to| {
+            div()
+                .h_flex()
+                .gap_1()
+                .child(Icon::new(IconName::ArrowUp).xsmall())
+                .child(format!("to {}", to + 1))
+        }))
+        .children(from.iter().map(|k| {
+            div()
+                .h_flex()
+                .gap_1()
+                .child(Icon::new(IconName::ArrowLeft).xsmall())
+                .child(format!("from {}", k + 1))
+        }))
+}
+
 /// The form: the template's own fields, its steps, what is wrong with it,
 /// and Save.
-pub(crate) fn form(
-    handle: &Entity<Shell>,
-    draft: &crate::settings::WorkflowDraft,
+pub(super) fn form(
+    handle: &Entity<WorkflowsPage>,
+    draft: &super::WorkflowDraft,
     cx: &App,
 ) -> AnyElement {
     let problems = draft.problems(cx);
@@ -30,8 +61,8 @@ pub(crate) fn form(
         let handle = handle.clone();
         move |at: &usize, window: &mut Window, cx: &mut App| {
             let place = Place::ALL[*at];
-            handle.update(cx, |shell, cx| {
-                shell.edit_workflow_draft(window, cx, |d, _, _| d.place = place)
+            handle.update(cx, |page, cx| {
+                page.edit_workflow_draft(window, cx, |d, _, _| d.place = place)
             });
         }
     };
@@ -47,11 +78,38 @@ pub(crate) fn form(
         })
         .collect();
 
+    // Where each failure goes back to, by step number, for the margin.
+    let back: Vec<Option<usize>> = draft
+        .steps
+        .iter()
+        .enumerate()
+        .map(|(i, step)| {
+            matches!(step.kind, Kind::Command | Kind::StatusChecks)
+                .then(|| ids[..i].iter().position(|e| e.id == step.target))
+                .flatten()
+        })
+        .collect();
     let steps = draft
         .steps
         .iter()
         .enumerate()
-        .map(|(i, step)| step_box(handle, i, step, &ids[..i], place, cx))
+        .map(|(i, step)| {
+            let from: Vec<usize> = (0..back.len()).filter(|k| back[*k] == Some(i)).collect();
+            div()
+                .h_flex()
+                .items_start()
+                .gap_2()
+                .w_full()
+                .child(margin(back[i], &from, muted))
+                .child(div().flex_1().min_w_0().child(step_box(
+                    handle,
+                    i,
+                    step,
+                    &ids[..i],
+                    place,
+                    cx,
+                )))
+        })
         .collect::<Vec<_>>();
 
     section(
@@ -124,8 +182,8 @@ pub(crate) fn form(
                     .small()
                     .icon(Icon::new(IconName::Plus))
                     .label(format!("{} step", kind.label()))
-                    .on_click(click(handle, move |shell, window, cx| {
-                        shell.edit_workflow_draft(window, cx, |d, window, cx| {
+                    .on_click(click(handle, move |page, window, cx| {
+                        page.edit_workflow_draft(window, cx, |d, window, cx| {
                             d.add_step(kind, window, cx)
                         });
                     }))
@@ -145,15 +203,15 @@ pub(crate) fn form(
                     .primary()
                     .refuses(!problems.is_empty())
                     .label("Save")
-                    .on_click(click(handle, |shell, window, cx| {
-                        shell.save_workflow_draft(window, cx)
+                    .on_click(click(handle, |page, window, cx| {
+                        page.save_workflow_draft(window, cx)
                     })),
             )
             .child(
                 crate::controls::action("clear-workflow")
                     .ghost()
                     .label("Cancel")
-                    .on_click(click(handle, |shell, _, cx| shell.clear_workflow_draft(cx))),
+                    .on_click(click(handle, |page, _, cx| page.clear_workflow_draft(cx))),
             ),
     )
     .into_any_element()

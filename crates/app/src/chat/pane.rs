@@ -49,6 +49,8 @@ enum Page {
     /// The Issues plugin's page, whose state is its own entity's and so
     /// outlives this.
     Issues(gpui::AnyView),
+    /// The Workflows page, an entity of the window's for the same reason.
+    Workflows(gpui::AnyView),
 }
 
 /// The rest the transcript comes to above the composer.
@@ -470,6 +472,23 @@ impl ChatPane {
         }
         project.facts = facts;
         cx.notify();
+    }
+
+    /// Told by the shell which field edits the project's check command.
+    pub fn set_check_input(
+        &mut self,
+        input: Option<Entity<gpui_component::input::InputState>>,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(project) = self.empty.as_mut() else {
+            return;
+        };
+        if project.check_input.as_ref().map(Entity::entity_id)
+            != input.as_ref().map(Entity::entity_id)
+        {
+            project.check_input = input;
+            cx.notify();
+        }
     }
 
     pub fn set_git(&mut self, line: Option<SharedString>, cx: &mut Context<Self>) {

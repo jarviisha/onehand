@@ -19,12 +19,9 @@ use onehand_core::config::AgentSpec;
 
 mod agents;
 mod pages;
-mod workflows;
-pub(crate) use crate::workflows_page::WorkflowDraft;
 use agents::agents_page;
 pub use agents::{AgentCheck, check_key, draft_after_promote};
 use pages::{appearance_page, connections_page, workspace_page};
-use workflows::workflows_page;
 
 /// The add/edit form's fields. `editing` is `Some(i)` when an existing agent is
 /// being changed and `None` when a new one is being added, so one form serves
@@ -290,19 +287,15 @@ pub enum SettingsPage {
     /// Named for what it holds -- connectors and who each is signed in as --
     /// and not for a protocol none of them speaks yet.
     Connections,
-    /// The templates a run starts from, and each project's check
-    /// command, which is what a workflow's command step runs by default.
-    Workflows,
     Shortcuts,
 }
 
 impl SettingsPage {
-    pub const ALL: [Self; 6] = [
+    pub const ALL: [Self; 5] = [
         Self::Appearance,
         Self::Workspace,
         Self::Agents,
         Self::Connections,
-        Self::Workflows,
         Self::Shortcuts,
     ];
 
@@ -315,7 +308,6 @@ impl SettingsPage {
             Self::Workspace => "Workspace",
             Self::Agents => "Agents",
             Self::Connections => "Connections",
-            Self::Workflows => "Workflows",
             Self::Shortcuts => "Shortcuts",
         }
     }
@@ -327,7 +319,6 @@ impl SettingsPage {
             Self::Workspace => Icon::new(IconName::FolderClosed),
             Self::Agents => Icon::new(IconName::Bot),
             Self::Connections => Icon::new(IconName::Network),
-            Self::Workflows => Icon::new(IconName::Play),
             Self::Shortcuts => Icon::new(crate::icons::Icon::Keyboard),
         }
     }
@@ -492,7 +483,6 @@ fn settings(handle: &Entity<Shell>, cx: &App) -> AnyElement {
         SettingsPage::Workspace => workspace_page(&handle, cx),
         SettingsPage::Agents => agents_page(&handle, cx),
         SettingsPage::Connections => connections_page(cx),
-        SettingsPage::Workflows => workflows_page(&handle, cx),
         SettingsPage::Shortcuts => handle.read(cx).keymap_editor().into_any_element(),
     };
 

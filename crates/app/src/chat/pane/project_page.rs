@@ -42,6 +42,9 @@ pub(super) struct EmptyProject {
     /// changes — a menu still offering *Pin to top* on a project pinned a
     /// second ago is worse than one that does not offer it at all.
     pub(super) facts: ProjectFacts,
+    /// Its check command field, the shell's: `None` for a run's own
+    /// worktree, which keeps none.
+    pub(super) check_input: Option<gpui::Entity<gpui_component::input::InputState>>,
 }
 
 impl ChatPane {
@@ -476,6 +479,20 @@ impl ChatPane {
                                             }))
                                     })),
                             )
+                            // The command *Run check* runs, and a command step
+                            // naming none: kept with the project, saved as it
+                            // is typed.
+                            .children(project.check_input.as_ref().map(|input| {
+                                div()
+                                    .v_flex()
+                                    .gap_1()
+                                    .w_full()
+                                    .child(div().text_xs().text_color(muted).child(
+                                        "Check command: what Run check and a command step \
+                                         naming none run here",
+                                    ))
+                                    .child(gpui_component::input::Input::new(input).small())
+                            }))
                             // What this project's tasks need, as one line to
                             // the Tasks page. Above the conversations: one is
                             // work left half done.

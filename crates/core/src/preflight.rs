@@ -86,6 +86,12 @@ impl Kind {
 /// sentence and button names it.
 pub const RETRY_CURRENT: &str = "Retry with current settings";
 
+/// Where workflows are written, as a finding names it.
+const WORKFLOWS_PAGE: &str = "the Workflows page";
+
+/// Where a project's check command is set, as a finding names it.
+const PROJECT_PAGE: &str = "the project's page";
+
 /// Where what a finding blocks is changed, when that is somewhere else.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Change {
@@ -242,7 +248,7 @@ pub fn preflight(kind: Kind, facts: &Facts) -> Vec<Finding> {
                 Check::Workflow,
                 true,
                 format!("The workflow cannot run: {problem}"),
-                Some(Change::At("Settings ▸ Workflows")),
+                Some(Change::At(WORKFLOWS_PAGE)),
             );
         }
     }
@@ -306,7 +312,7 @@ pub fn preflight(kind: Kind, facts: &Facts) -> Vec<Finding> {
                      none.{keeps}",
                     template.name
                 ),
-                own_change.or(Some(Change::At("Settings ▸ Workflows"))),
+                own_change.or(Some(Change::At(PROJECT_PAGE))),
             );
         } else if !commands {
             say(

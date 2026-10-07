@@ -729,3 +729,31 @@ fn a_mode_learned_by_checking_the_agent_turns_not_known_into_a_block_or_nothing(
     };
     assert!(found(Kind::NewRun, &offered, Check::Mode).is_none());
 }
+
+#[test]
+fn a_finding_names_where_things_are_changed_now() {
+    let mut broken = worktree();
+    broken.steps.clear();
+    let invalid = Facts {
+        workflow: Ok(broken),
+        ..healthy()
+    };
+    let finding = found(Kind::NewRun, &invalid, Check::Workflow).unwrap();
+    assert_eq!(finding.change, Some(Change::At("the Workflows page")));
+    let no_check = Facts {
+        has_check: false,
+        ..healthy()
+    };
+    if let Some(finding) = found(Kind::NewRun, &no_check, Check::CheckCommand).filter(|f| f.blocks)
+    {
+        assert_eq!(finding.change, Some(Change::At("the project's page")));
+    }
+    for kind in ALL {
+        for facts in [&invalid, &no_check] {
+            for finding in preflight(kind, facts) {
+                let said = finding.change.and_then(Change::said).unwrap_or_default();
+                assert!(!said.contains("Settings ▸ Workflows"), "{said}");
+            }
+        }
+    }
+}

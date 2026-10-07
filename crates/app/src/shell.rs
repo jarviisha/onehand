@@ -16,8 +16,10 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 
 mod boot;
+mod check_commands;
 mod cleanup;
 mod confirm;
+pub(crate) use confirm::{Ask, ask_on};
 mod docks;
 mod drafts;
 mod issue_work;
@@ -29,7 +31,6 @@ mod roots;
 mod sessions;
 mod settings_dialog;
 mod storage;
-mod workflow_settings;
 mod workflows;
 pub use boot::{boot, open_or_focus, seed_workspace};
 pub use drafts::{BranchDraft, Draft, WorktreeDraft};
@@ -198,10 +199,8 @@ pub struct Shell {
     rail_split: Entity<ResizableState>,
     /// The agent add/edit form.
     agent_draft: AgentDraft,
-    /// The workflow form, while one is open.
-    workflow_draft: Option<crate::settings::WorkflowDraft>,
-    /// Each project's check command field in Settings, by root, made as
-    /// Settings opens.
+    /// Each project's check command field, by root, made as its project
+    /// page comes up.
     check_inputs: HashMap<PathBuf, Entity<InputState>>,
     /// Which page the Settings dialog is showing.
     ///
@@ -356,6 +355,9 @@ pub struct Shell {
     /// The Issues page, made once so it is found as it was left whenever it
     /// is picked again.
     issues_page: onehand_workbench_issues::Page,
+    /// The Workflows page, made once for the same reason: a workflow being
+    /// written is found as it was left.
+    workflows_page: Entity<crate::workflows_page::WorkflowsPage>,
 }
 
 /// What reading a project's open issues came to: the issues and whether the

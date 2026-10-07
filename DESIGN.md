@@ -67,6 +67,7 @@ monospace font.
     at zero);
   - *Issues*, highlighted the same way, with no count (*Tasks* already counts what needs a
     person);
+  - *Workflows*, highlighted the same way;
   - *New session*, a filled split button whose caret picks the project and agent (shown only when
     there is a choice);
   - a hairline;
@@ -96,8 +97,8 @@ monospace font.
   - the terminal, with a dot while a shell is alive;
   - always last, the Workbench.
 
-  On the workspace overview, the Tasks page and the Issues page the header reads *Workspace*,
-  *Tasks* or *Issues*, with no dots menu and no dock buttons.
+  On the workspace overview, the Tasks, Issues and Workflows pages the header reads its name, with
+  no dots menu and no dock buttons.
 
   When the pane narrows, the name gives way first, down to a minimum width; the controls keep
   their size. Without a session, the row names the project, and its dots menu holds the project's
@@ -147,7 +148,7 @@ monospace font.
   - The terminal's open state follows the selected project.
 - **Pages without a session.**
   - A project with no session shows *New session*, *Run check* when the project has a check
-    command, one line counting its tasks that need attention, run or wait (not drawn at zero, and
+    command, its *Check command* field, one line counting its tasks that need attention, run or wait (not drawn at zero, and
     opening the Tasks page narrowed to the project), and its past conversations: capped,
     scrolling, each with a *Delete* word.
   - *Workspace overview* shows, across all projects, the cards *Waiting on you* (runs waiting
@@ -195,13 +196,14 @@ monospace font.
     *Review…*, *Revise…* and *Continue* through the same guarded call as the strip.
     An ended task's detail draws *Way out*: why it ended in the issue's words, and *Retry with
     current settings…* when that fits, primary for a configuration failure.
+  - *Workflows* lists the workflows in one column, capped and saying how many it left out
+    (shipped ones tagged *Built in* and read-only), each with *Run…* (a menu of projects, the one
+    selected in the rail first). *New workflow* or *Edit* opens a form below, one hairline box
+    per step with a margin marking where a failure goes back to; its problems are listed above
+    *Save*, which stays spent while any remain. Its draft survives leaving the page.
 - **No top bar, no status bar, no right toolbar.** Transient status goes in a toast. Modals are
   `Dialog`s. Settings is a large dialog: a nav column with Appearance, Workspace, Agents,
-  Connections, Workflows and Shortcuts. Groups are separated by hairlines, not boxes.
-  Workflows lists the workflows, capped and saying how many it left out (shipped ones tagged
-  *Built in* and read-only). *New workflow* or *Edit* opens a form below in the agent form's
-  shape, one hairline box per step; its problems are listed above *Save*, which
-  stays spent while any remain, and the project check commands close the page.
+  Connections and Shortcuts. Groups are separated by hairlines, not boxes.
 - **Persistence.** The layout is saved as the Workbench width, terminal height and rail width,
   plus whether each dock is open. It is never saved as the library's `DockAreaState`.
 

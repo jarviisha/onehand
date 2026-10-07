@@ -30,6 +30,48 @@ impl Shell {
         });
         let terminal = TerminalPanel::new(cx);
         let issues_page = Self::new_issues_page(cx);
+        let workflows_page = crate::workflows_page::WorkflowsPage::new(cx);
+        cx.subscribe_in(
+            &workflows_page,
+            window,
+            |shell: &mut Self, _, event: &crate::workflows_page::WorkflowsPageEvent, window, cx| {
+                use crate::workflows_page::WorkflowsPageEvent as E;
+                match event {
+                    E::Run { template, root } => {
+                        shell.begin_workflow_on(root, Some(*template), window, cx)
+                    }
+                }
+            },
+        )
+        .detach();
+        // Closing the window over a workflow being written asks first, as
+        // picking another one does: the edit is the page's, and goes with it.
+        {
+            let page = workflows_page.downgrade();
+            window.on_window_should_close(cx, move |window, cx| {
+                let Some(page) = page.upgrade().filter(|page| page.read(cx).dirty(cx)) else {
+                    return true;
+                };
+                crate::shell::ask_on(
+                    page,
+                    crate::shell::Ask {
+                        id: "close-workflow-draft",
+                        title: "Drop the workflow being written?".into(),
+                        description: "Its changes are not saved. Closing the window throws \
+                                      them away."
+                            .into(),
+                        act: "Drop and close",
+                    },
+                    window,
+                    cx,
+                    |page, window, cx| {
+                        page.drop_draft(cx);
+                        window.remove_window();
+                    },
+                );
+                false
+            });
+        }
         issues_page.handle(
             &onehand_plugin_host::Request::SetStorage(workspace.storage_dir.as_deref()),
             cx,
@@ -438,7 +480,6 @@ impl Shell {
             label_input: cx.new(|cx| InputState::new(window, cx).placeholder("bug")),
             label_workflow: None,
             label_refused: None,
-            workflow_draft: None,
             check_inputs: HashMap::new(),
             workflow_launcher: None,
             branch_input,
@@ -447,6 +488,7 @@ impl Shell {
             chat,
             workbench,
             issues_page,
+            workflows_page,
             terminal,
             _pending_save: None,
             _pending_warm: None,
