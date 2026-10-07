@@ -5,6 +5,28 @@ use crate::workflow::builtin;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
+/// A command that passed on `commit`.
+fn passed(commit: Option<String>) -> crate::workflow::CommandResult {
+    crate::workflow::CommandResult {
+        passed: true,
+        exit: Some(0),
+        tail: String::new(),
+        commit,
+        digest: None,
+    }
+}
+
+/// A command that failed, printing `tail`.
+fn failed(tail: String) -> crate::workflow::CommandResult {
+    crate::workflow::CommandResult {
+        passed: false,
+        exit: Some(1),
+        tail,
+        commit: None,
+        digest: None,
+    }
+}
+
 fn task(id: &str) -> Task {
     Task::new(
         id.into(),
@@ -293,9 +315,9 @@ fn a_file_from_before_checks_reads_as_a_workflows_task() {
 fn a_check_task_passes_or_fails_on_its_command() {
     let setup = task("1").setup;
     for (ran, outcome) in [
-        (Ok(Some("abc".to_string())), Outcome::Done),
+        (passed(Some("abc".to_string())), Outcome::Done),
         (
-            Err("boom".to_string()),
+            failed("boom".to_string()),
             Outcome::Failed("the command failed".into()),
         ),
     ] {
@@ -587,7 +609,7 @@ fn a_check_says_whether_it_passed() {
     let mut t = Task::check("1".into(), "true".into(), task("1").setup);
     assert_eq!(t.ended_said(), None);
     t.runs[0].resume();
-    t.runs[0].command_finished(Ok(None));
+    t.runs[0].command_finished(passed(None));
     assert_eq!(t.ended_said().as_deref(), Some("Check passed"));
     t.runs[0].outcome = Some(Outcome::Failed("exit 1".into()));
     assert_eq!(t.ended_said().as_deref(), Some("Check failed: exit 1"));
@@ -613,4 +635,43 @@ fn a_retry_with_a_note_tells_its_first_step_what_to_change() {
         )
         .unwrap();
     assert_eq!(run.revise.as_deref(), Some("Address the review."));
+}
+
+/// A task file written before runs kept their failure's kind, their pull
+/// request and their commands' results reads, saves and reads again
+/// unchanged, its unsent report with it; what it lacks reads as not kept.
+#[test]
+fn a_task_file_from_before_part_b_reads_and_saves_unchanged() {
+    let mut t = issue_task("1", 5, &["1"]);
+    if let Source::Issue(issue) = &mut t.source {
+        issue.unsent[0].outcome = Some(Outcome::Failed("boom".into()));
+    }
+    let run = &mut t.runs[0];
+    run.outcome = Some(Outcome::Failed("boom".into()));
+    run.failure = Some(crate::workflow::Failure::Configuration);
+    let mut old = serde_json::to_value(&t).unwrap();
+    let kept = old["runs"][0].as_object_mut().unwrap();
+    assert!(kept.remove("failure").is_some(), "a newer file names it");
+    assert!(!kept.contains_key("pull_request"), "absent is not written");
+    let read: Task = serde_json::from_value(old.clone()).unwrap();
+    assert_eq!(
+        read.runs[0].failed_on(),
+        Some(crate::workflow::Failure::Other)
+    );
+    assert_eq!(read.runs[0].pull_request, None);
+    assert!(read.runs[0].visits().iter().all(|v| v.command.is_none()));
+    assert_eq!(serde_json::to_value(&read).unwrap(), old, "saved unchanged");
+    let again: Task = serde_json::from_value(serde_json::to_value(&read).unwrap()).unwrap();
+    assert_eq!(again, read);
+
+    // Every new field round-trips.
+    let mut t = issue_task("2", 5, &[]);
+    let run = &mut t.runs[0];
+    run.failure = Some(crate::workflow::Failure::Forge);
+    run.pull_request = Some(crate::workflow::PrOpened {
+        number: 7,
+        url: "u".into(),
+    });
+    let back: Task = serde_json::from_str(&serde_json::to_string(&t).unwrap()).unwrap();
+    assert_eq!(back, t);
 }

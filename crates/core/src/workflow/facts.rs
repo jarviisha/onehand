@@ -68,13 +68,32 @@ pub(crate) fn holds(gate: GateKind, facts: &Facts, from: &Mark, answer: &str) ->
 /// How long a step's command may run before it counts as failed.
 const COMMAND_LIMIT: Duration = Duration::from_secs(15 * 60);
 
-/// How many lines of a failed command's output are kept. The end is where a
+/// How many lines of a command's output are kept. The end is where a
 /// build or a test run says what went wrong.
 const COMMAND_LINES: usize = 200;
 
+/// How a step's command came out, and the work it vouches for when it
+/// passed.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CommandResult {
+    /// It exited zero.
+    pub passed: bool,
+    /// Its exit code; `None` when it did not exit on its own: timed out,
+    /// called off, or never started.
+    pub exit: Option<i32>,
+    /// How its output ended, or why it did not finish.
+    pub tail: String,
+    /// The commit the work was at once it had run; `None` outside git.
+    pub commit: Option<String>,
+    /// The fingerprint of the uncommitted work beside that commit, untracked
+    /// files included, as a mark takes it: with the commit, what a pass
+    /// covers.
+    pub digest: Option<String>,
+}
+
 /// Run `command` in `dir`, stopping it and all it started once `cancel` is
-/// set. `Err` holds how its output ended, or why it did not finish.
-/// Blocking: it returns only once nothing of the command is left running.
+/// set, then read the work it ran on. Blocking: it returns only once nothing
+/// of the command is left running.
 ///
 /// Through `sh`, because a check is often a chain (`make fmt && cargo test`),
 /// with stderr folded into stdout first so the two stay in the order they
@@ -83,26 +102,36 @@ pub fn run_command_blocking(
     dir: &Path,
     command: &str,
     cancel: &std::sync::atomic::AtomicBool,
-) -> Result<(), String> {
+) -> CommandResult {
     let mut cmd = std::process::Command::new("sh");
     cmd.arg("-c")
         .arg(format!("exec 2>&1\n{command}"))
         .current_dir(dir);
-    let out =
-        crate::process::output_until(&mut cmd, COMMAND_LIMIT, cancel).map_err(|why| match why {
-            crate::process::Failure::TimedOut(limit) => {
-                format!("timed out after {}m", limit.as_secs() / 60)
-            }
-            why => format!("the command's shell {why}"),
-        })?;
-    if out.status.success() {
-        return Ok(());
+    let ran = crate::process::output_until(&mut cmd, COMMAND_LIMIT, cancel);
+    let (passed, exit, tail) = match ran {
+        Err(crate::process::Failure::TimedOut(limit)) => (
+            false,
+            None,
+            format!("timed out after {}m", limit.as_secs() / 60),
+        ),
+        Err(why) => (false, None, format!("the command's shell {why}")),
+        Ok(out) => {
+            let text = String::from_utf8_lossy(&out.stdout);
+            let lines: Vec<&str> = text.lines().collect();
+            let tail = lines[lines.len().saturating_sub(COMMAND_LINES)..].join("\n");
+            let passed = out.status.success();
+            let tail = match (passed, tail.trim()) {
+                (false, "") => format!("it exited with {} and printed nothing", out.status),
+                _ => tail,
+            };
+            (passed, out.status.code(), tail)
+        }
+    };
+    CommandResult {
+        passed,
+        exit,
+        tail,
+        commit: worktree::head_blocking(dir).ok(),
+        digest: worktree::work_digest_blocking(dir).ok(),
     }
-    let text = String::from_utf8_lossy(&out.stdout);
-    let lines: Vec<&str> = text.lines().collect();
-    let tail = lines[lines.len().saturating_sub(COMMAND_LINES)..].join("\n");
-    Err(match tail.trim() {
-        "" => format!("it exited with {} and printed nothing", out.status),
-        _ => tail,
-    })
 }

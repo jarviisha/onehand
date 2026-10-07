@@ -431,3 +431,30 @@ fn an_issue_check_applies_to_an_issue_run_only() {
         None
     );
 }
+
+/// Every block of the configuration that will run, found once the run ran,
+/// is a configuration failure: the agent, its mode, the check command and
+/// the workflow. Where the work goes and who holds the slot are not.
+#[test]
+fn a_configuration_block_found_late_is_a_configuration_failure() {
+    use crate::workflow::Failure;
+    for check in [
+        Check::Workflow,
+        Check::Agent,
+        Check::Mode,
+        Check::CheckCommand,
+    ] {
+        assert_eq!(found_late(check), Failure::Configuration, "{check:?}");
+    }
+    assert_eq!(found_late(Check::Forge), Failure::Forge);
+    for check in [
+        Check::Place,
+        Check::Base,
+        Check::Issue,
+        Check::EarlierTask,
+        Check::Slot,
+        Check::PlaceTaken,
+    ] {
+        assert_eq!(found_late(check), Failure::Other, "{check:?}");
+    }
+}

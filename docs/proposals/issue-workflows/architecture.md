@@ -41,7 +41,7 @@ connector                                   + issue_reads (background)
 ```
 
 `(B)` is piece 1 part B: new persistence, optional fields beside the existing ones; no existing
-shape changes (see [issue-progress.md](issue-progress.md#part-b-what-runs-start-keeping)).
+shape changes (built: see [tasks.md](../../tasks.md#the-model)).
 
 ## Issue identity
 

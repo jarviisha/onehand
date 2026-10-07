@@ -91,6 +91,7 @@ pub(super) fn at(mut task: Task, at: usize, since: u64) -> Task {
         end: None,
         output: None,
         why: None,
+        command: None,
     });
     run.history.push(Transition {
         at: since,
@@ -674,23 +675,99 @@ fn the_run_and_the_branch_are_measured_from_their_first_marks() {
 
 #[test]
 fn a_check_vouches_only_for_the_work_it_passed_on() {
-    use super::left::{check_stands, CheckStands};
-    assert_eq!(check_stands(None, "abc", false), CheckStands::NotRecorded);
+    use super::left::{check_stands, CheckStands, Vouched, WorkNow};
+    let now = |head: &str, dirty: bool, digest: &str, behind: u64| WorkNow {
+        head: head.into(),
+        dirty,
+        digest: digest.into(),
+        behind,
+    };
+    let ran = |digest: Option<&str>| Vouched {
+        commit: "abc".into(),
+        digest: digest.map(str::to_string),
+        tail: None,
+    };
     assert_eq!(
-        check_stands(Some("abc"), "abc", false),
+        check_stands(None, &now("abc", false, "d0", 0)),
+        CheckStands::NotRecorded
+    );
+    // The commit and the uncommitted work it ran on, as they are now.
+    assert_eq!(
+        check_stands(Some(&ran(Some("d1"))), &now("abc", true, "d1", 0)),
         CheckStands::OnThis("abc".into())
     );
-    // Uncommitted work beside the same commit is not what passed.
+    // A tracked file edited since, without a commit; or only an untracked
+    // file added: either way the fingerprint differs.
     assert_eq!(
-        check_stands(Some("abc"), "abc", true),
-        CheckStands::Moved("abc".into())
+        check_stands(Some(&ran(Some("d1"))), &now("abc", true, "d2", 0)),
+        CheckStands::Changed("abc".into())
+    );
+    // Another commit, counted.
+    assert_eq!(
+        check_stands(Some(&ran(Some("d1"))), &now("def", false, "d0", 2)),
+        CheckStands::Behind {
+            at: "abc".into(),
+            commits: 2
+        }
+    );
+    // From before the fingerprint was kept: the commit alone vouches for a
+    // clean worktree, and cannot tell for a dirty one.
+    assert_eq!(
+        check_stands(Some(&ran(None)), &now("abc", false, "d0", 0)),
+        CheckStands::OnThis("abc".into())
     );
     assert_eq!(
-        check_stands(Some("abc"), "def", false),
-        CheckStands::Moved("abc".into())
+        check_stands(Some(&ran(None)), &now("abc", true, "d2", 0)),
+        CheckStands::CannotTell("abc".into())
     );
     assert_eq!(
-        CheckStands::Moved("0123456789abcdef".into()).said(),
-        "passed on 0123456789; the work has changed since"
+        CheckStands::Behind {
+            at: "0123456789abcdef".into(),
+            commits: 2
+        }
+        .said(),
+        "passed on 0123456789, 2 commits before the work now"
     );
+    assert_eq!(
+        CheckStands::Changed("abc".into()).said(),
+        "passed on abc; the work changed since the check passed"
+    );
+    assert_eq!(
+        CheckStands::CannotTell("abc".into()).said(),
+        "passed on abc; cannot tell whether the check covers the work now"
+    );
+}
+
+/// The check a run's work shows is its last passed command, with what that
+/// command printed; a run from before part B has the commit alone.
+#[test]
+fn the_check_shown_is_the_last_passed_command() {
+    let mut task = task("1", branch_flow(), None);
+    let run = task.runs.last_mut().unwrap();
+    run.marks.verified_at = Some("abc".into());
+    let work = Work::of(&task, None, None);
+    let vouched = work.vouched.clone().unwrap();
+    assert_eq!((vouched.commit.as_str(), vouched.digest), ("abc", None));
+
+    let run = task.runs.last_mut().unwrap();
+    run.visits.push(Visit {
+        id: 9,
+        step: "verify".into(),
+        started_at: 1,
+        ended_at: Some(2),
+        start: None,
+        end: None,
+        output: None,
+        why: None,
+        command: Some(crate::workflow::CommandResult {
+            passed: true,
+            exit: Some(0),
+            tail: "all 12 passed".into(),
+            commit: Some("abc".into()),
+            digest: Some("d1".into()),
+        }),
+    });
+    let vouched = Work::of(&task, None, None).vouched.unwrap();
+    assert_eq!(vouched.digest.as_deref(), Some("d1"));
+    assert_eq!(vouched.tail.as_deref(), Some("all 12 passed"));
 }

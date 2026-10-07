@@ -174,15 +174,22 @@ the run's history, capped at 200.
   told to undo only its own.
 - **A command step** runs its command, or the project's check command. It passes on its exit status
   alone and records the head as `verified_at` when the work has one; failing is a miss and goes
-  back to `on_fail` carrying the output.
+  back to `on_fail` carrying the output. **Its visit keeps how it came out**
+  (`Visit::command`, a `CommandResult`), a pass as well as a failure: passed or not, the exit
+  code, the last 200 lines it printed, and the commit and the fingerprint of the uncommitted work,
+  untracked files included, read once it ran. The commit and the fingerprint together are what a
+  pass covers: the work is judged against both, so an edit after the check, committed or not, is
+  never taken for checked work.
 - **The forge steps** go to the connector the run's setup names (`Setup::forge`, the one that
   serves the project when a worktree task starts). With none, each passes at once: the branch is the
   result. **A push carries the commit the check passed on**: `Push` is `marks.verified_at`, never
   the head, so what lands is what was checked, and a push with nothing verified fails. A retry keeps
   `verified_at`. *Pull request* takes the one open on the branch, or opens a draft
   (`unattended::pull_request_text`: it closes the issue only where the forge knows it); one closed
-  without being merged is refused, never opened again beside. Either failing ends the run as
-  failed; a retry starts at that step again. *Status checks* is judged by `workflow::judge` from the
+  without being merged is refused, never opened again beside. The run keeps the pull request it
+  opened or took up (`Run::pull_request`, its number and address), read back once it is open; one
+  not read back is still found by its branch. Either failing ends the run as
+  failed, on the forge; a retry starts at that step again. *Status checks* is judged by `workflow::judge` from the
   forge's pull request, **on the commit that was pushed**: checks on any other head are waited
   past. A failing check or a conflict wins over one still running and goes back to `on_fail` as a
   miss, carrying what failed and up to three logs as `{check_output}`; all passing takes the pull
@@ -250,7 +257,12 @@ writes still queued (`Writer::flush`), so a run's last save is not lost when the
 with its last window.
 
 **A run records step visits** (`Run::visits`): each stay at a step, with its times, what it kept
-(the answer, or how a failed command's output ended) and how it came out. Going back to a step is a
+(the answer, or how a failed command's output ended), its command's result on a command step, and
+how it came out. **A failed run keeps what it failed on** (`Run::failure`, read as
+`Run::failed_on`), beside its outcome rather than in it: *configuration* when what the preflight
+would have blocked is found only once the run runs (`preflight::found_late`: the agent no longer
+configured, a mode the agent does not offer, no check command to run, a workflow that no longer
+validates), *forge* when a forge step or the forge failed, and *other* for the rest. Going back to a step is a
 new visit, and resuming closes the cut-off visit as `interrupted` and opens a new one of the same
 step. **Each visit's start and end is pinned as a commit** (`task::marks::pin_blocking`): the work
 as it stands, untracked files included and ignored ones left out, committed from a temporary

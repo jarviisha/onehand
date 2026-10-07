@@ -12,7 +12,9 @@ use gpui::{
 use gpui_component::WindowExt as _;
 use gpui_component::notification::Notification;
 use onehand_core::task::{Group, Task, Working, files, history, marks, queue};
-use onehand_core::workflow::{Action, ApprovalAt, Run, Stop, Template, run_command_blocking};
+use onehand_core::workflow::{
+    Action, ApprovalAt, Failure, Run, Stop, Template, run_command_blocking,
+};
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -395,13 +397,13 @@ fn freed(id: String, from: usize, cx: &mut App) {
     .detach();
 }
 
-/// Task `id`, holding its place, could not start for `why`: its run ends
-/// failed, its issue is told, and its place passes on.
-pub(crate) fn fail(id: String, why: String, cx: &mut App) {
+/// Task `id`, holding its place, could not start for `why`, of `kind`: its
+/// run ends failed, its issue is told, and its place passes on.
+pub(crate) fn fail(id: String, why: String, kind: Failure, cx: &mut App) {
     let Some(mut run) = resumable_run(&id, cx) else {
         return release(id, cx);
     };
-    run.failed(why);
+    run.failed(why, kind);
     crate::unattended::keep(&id, &run, false, None, cx);
     cx.update_global::<Tasks, _>(|t, _| t.store_run(&id, run));
     let_go(id, cx);
@@ -637,10 +639,7 @@ pub(crate) fn drive_check(id: String, window: AnyWindowHandle, cx: &mut App) {
                 .spawn(async move {
                     let ran = run_command_blocking(&dir, &command, &cancel);
                     drop(running);
-                    ran?;
-                    // Passed on its exit status; the commit is kept when
-                    // there is one, and a folder outside git has none.
-                    Ok(onehand_core::worktree::head_blocking(&dir).ok())
+                    ran
                 })
                 .await
         };
@@ -656,7 +655,7 @@ pub(crate) fn drive_check(id: String, window: AnyWindowHandle, cx: &mut App) {
                     None
                 }
                 false => {
-                    let passed = ran.is_ok();
+                    let passed = ran.passed;
                     run.command_finished(ran);
                     Some(passed)
                 }

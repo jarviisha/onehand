@@ -97,8 +97,8 @@ pub struct Work {
     stand: Stand,
     /// The steps after the one it is at, by label; empty once it is over.
     pub rest: Vec<String>,
-    /// The commit a command last passed on, in this run.
-    pub(crate) verified_at: Option<String>,
+    /// What the command that last passed in this run vouches for.
+    pub vouched: Option<left::Vouched>,
     /// The work as this run found it and as it last left it, as two marks;
     /// `None` until both are pinned.
     pub span: Option<(String, String)>,
@@ -155,7 +155,7 @@ impl Work {
         };
         Self {
             rest,
-            verified_at: run.and_then(|run| run.marks.verified_at.clone()),
+            vouched: run.and_then(vouched),
             span: run.and_then(|run| first(run).zip(last(run))),
             base: task.runs.first().and_then(first),
             task: task.id.clone(),
@@ -187,6 +187,29 @@ impl Work {
             Group::Running | Group::Queued | Group::Waiting => true,
             Group::Ended | Group::Finished => false,
         }
+    }
+}
+
+/// What `run`'s check vouches for: its last passed command, as its visit
+/// kept it, or the commit alone for a run from before visits kept one.
+fn vouched(run: &Run) -> Option<left::Vouched> {
+    let kept = run
+        .visits()
+        .iter()
+        .rev()
+        .filter_map(|visit| visit.command.as_ref())
+        .find(|ran| ran.passed);
+    match kept {
+        Some(ran) => Some(left::Vouched {
+            commit: ran.commit.clone()?,
+            digest: ran.digest.clone(),
+            tail: Some(ran.tail.clone()),
+        }),
+        None => Some(left::Vouched {
+            commit: run.marks.verified_at.clone()?,
+            digest: None,
+            tail: None,
+        }),
     }
 }
 

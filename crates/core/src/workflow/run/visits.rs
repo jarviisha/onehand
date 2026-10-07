@@ -1,6 +1,6 @@
 //! A run's step visits, and the marks pinned at their boundaries.
 
-use super::{now, Run, Visit};
+use super::{now, CommandResult, Run, Visit};
 
 impl Run {
     /// Every stay at a step, oldest first.
@@ -77,6 +77,7 @@ impl Run {
             end: None,
             output: None,
             why: None,
+            command: None,
         });
     }
 
@@ -85,6 +86,13 @@ impl Run {
         if let Some(visit) = self.visits.last_mut().filter(|v| v.ended_at.is_none()) {
             visit.ended_at = Some(now());
             visit.why = Some(why.to_string());
+        }
+    }
+
+    /// How the open visit's command came out.
+    pub(super) fn visit_command(&mut self, ran: CommandResult) {
+        if let Some(visit) = self.visits.last_mut().filter(|v| v.ended_at.is_none()) {
+            visit.command = Some(ran);
         }
     }
 

@@ -24,7 +24,7 @@ follow it, judge what it left and send it back, without going looking for it.**
 
 | # | Piece | Document | Wave |
 |---|---|---|---|
-| 1 | The issue says where its work stands | [issue-progress.md](issue-progress.md) | 1 |
+| 1 | The issue says where its work stands | built: [unattended.md](../../unattended.md), [tasks.md](../../tasks.md) | 1 |
 | 2 | An issue written to be worked, and the brief shown before it is | [issue-brief.md](issue-brief.md) | 1 |
 | 3 | Everything a start needs, checked before it claims or cuts anything | [preflight.md](preflight.md) | 1 |
 | 4 | Approve, revise, resume or retry next to what is judged | [review-in-place.md](review-in-place.md) | 1 |
@@ -88,11 +88,11 @@ The pieces are judged by what a person can do, not by how much they are shown. E
 
 | Question | Owned by |
 |---|---|
-| An issue with a very long description is opened: is it seen at once that it waits on me? | [issue-progress.md](issue-progress.md#done-when) |
+| An issue with a very long description is opened: is it seen at once that it waits on me? | built: *A long body waiting for approval* in the by-hand list in [workflows.md](../../workflows.md#checking-it-by-hand) |
 | With many issues: can the ones that need me be found without opening each? | built: the Issues page rows of the by-hand list in [workflows.md](../../workflows.md#checking-it-by-hand) |
 | A failed run is retried: is it clear where it starts again and which configuration it keeps? | [review-in-place.md](review-in-place.md#done-when) |
 | A session or a diff is opened and left: is the same issue, filter and scroll still there? | built: *Coming back* in the by-hand list in [workflows.md](../../workflows.md#checking-it-by-hand) |
-| The window is narrowed or zoomed in: can the action and the current step still be read? | [issue-progress.md](issue-progress.md#done-when); built for the page: *Narrow* in the by-hand list in [workflows.md](../../workflows.md#checking-it-by-hand) |
+| The window is narrowed or zoomed in: can the action and the current step still be read? | built: the Issues tab rows and, for the page, *Narrow* in the by-hand list in [workflows.md](../../workflows.md#checking-it-by-hand) |
 
 ## What is read and what is new
 

@@ -11,12 +11,12 @@ use super::Tasks;
 use crate::chat::session::{ChatEvent, ChatSession, note};
 use gpui::{AnyWindowHandle, App, BorrowAppContext as _, Entity, Subscription, Task, WeakEntity};
 use onehand_core::chat::Link;
+use onehand_core::preflight::{Check, found_late};
 use onehand_core::task::marks;
 use onehand_core::unattended::Budget;
 use onehand_core::workflow::{
-    Action, ApprovalAt, Facts, Mark, Outcome, Run, Stop, run_command_blocking,
+    Action, ApprovalAt, Facts, Failure, Mark, Outcome, Run, Stop, run_command_blocking,
 };
-use onehand_core::worktree;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
@@ -505,7 +505,7 @@ fn measure(uid: u64, cx: &mut App) {
         cx.update(|cx| match mark {
             Ok(mark) => advance(uid, cx, move |run| run.measured(mark)),
             Err(why) => advance(uid, cx, move |run| {
-                run.failed(format!("the work could not be read: {why}"))
+                run.failed(format!("the work could not be read: {why}"), Failure::Other)
             }),
         });
     })
@@ -536,7 +536,10 @@ fn send(uid: u64, session: &Entity<ChatSession>, text: String, cx: &mut App) {
     });
     if !session.update(cx, |session, cx| session.submit(&text, &[], cx)) {
         advance(uid, cx, |run| {
-            run.failed("the agent did not take the prompt".to_string())
+            run.failed(
+                "the agent did not take the prompt".to_string(),
+                Failure::Other,
+            )
         });
     }
 }
@@ -568,7 +571,7 @@ fn came_up(uid: u64, session: &Entity<ChatSession>, cx: &mut App) -> bool {
         .collect();
     if let Some(why) = onehand_core::preflight::mode_refused(&mode, &offered) {
         crate::unattended::refuse_mode(&why, cx);
-        advance(uid, cx, move |run| run.failed(why));
+        advance(uid, cx, move |run| run.failed(why, found_late(Check::Mode)));
         return false;
     }
     session.update(cx, |session, _| session.chat.set_mode(&mode));
@@ -599,7 +602,7 @@ fn after_turn(uid: u64, session: &Entity<ChatSession>, cx: &mut App) {
         cx.update(|cx| match facts {
             Ok(facts) => advance(uid, cx, move |run| run.turn_ended(&facts, &answer)),
             Err(why) => advance(uid, cx, move |run| {
-                run.failed(format!("the work could not be read: {why}"))
+                run.failed(format!("the work could not be read: {why}"), Failure::Other)
             }),
         });
     })
@@ -635,9 +638,7 @@ fn run_command(uid: u64, session: &Entity<ChatSession>, command: String, cx: &mu
             .spawn(async move {
                 let ran = run_command_blocking(&dir, &command, &cancel);
                 drop(running);
-                ran?;
-                // Passed on its exit status; the commit is kept when there is one.
-                Ok(worktree::head_blocking(&dir).ok())
+                ran
             })
             .await;
         cx.update(|cx| {
@@ -651,9 +652,9 @@ fn run_command(uid: u64, session: &Entity<ChatSession>, command: String, cx: &mu
                 return advance(uid, cx, move |run| run.stopped(stop));
             }
             if let Some(session) = weak.upgrade().filter(|_| read(uid, cx, |_| ()).is_some()) {
-                let said = match &ran {
-                    Ok(_) => "The command passed",
-                    Err(_) => "The command failed",
+                let said = match ran.passed {
+                    true => "The command passed",
+                    false => "The command failed",
                 };
                 note(&session, said.to_string(), cx);
             }

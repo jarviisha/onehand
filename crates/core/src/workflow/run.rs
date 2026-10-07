@@ -8,7 +8,7 @@
 //! finishing, an approval, a Stop and a resume each go through a method
 //! here, so no two callers can disagree about what a Stop means.
 
-use super::facts::{self, Facts, Mark};
+use super::facts::{self, CommandResult, Facts, Mark};
 use super::prompt::{self, Fill};
 use super::status_checks::Seen;
 use super::template::{Place, StepKind, StepSpec, Template};
@@ -153,6 +153,26 @@ impl Outcome {
     }
 }
 
+/// What kind of thing a failed run failed on, which decides the way out.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Failure {
+    /// What its preflight would have blocked, found once it ran: the agent
+    /// no longer configured, a mode not offered, no check command, a workflow
+    /// that no longer validates. Changing the configuration is the way out.
+    Configuration,
+    /// A forge step, or the forge it asked, failed.
+    Forge,
+    Other,
+}
+
+/// The pull request a run's pull request step opened, or took up.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PrOpened {
+    pub number: u64,
+    pub url: String,
+}
+
 /// Why a run stopped before its steps were done.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Stop {
@@ -216,6 +236,9 @@ pub struct Visit {
     pub output: Option<String>,
     /// Why it ended, as its history says it.
     pub why: Option<String>,
+    /// How its command came out, on a command step's visit.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub command: Option<CommandResult>,
 }
 
 /// What a person's approval or revision was drawn from: the run, and the
@@ -266,6 +289,13 @@ pub struct Run {
     /// means it was cut off.
     #[serde(default)]
     pub outcome: Option<Outcome>,
+    /// What a failed run failed on. Beside the outcome rather than in it, so
+    /// a file from before it reads; absent reads as [`Failure::Other`].
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub failure: Option<Failure>,
+    /// The pull request its pull request step opened or took up.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pull_request: Option<PrOpened>,
     #[serde(skip)]
     awaiting: Await,
 }
@@ -291,7 +321,18 @@ impl Run {
             history: Vec::new(),
             visits: Vec::new(),
             outcome: None,
+            failure: None,
+            pull_request: None,
             awaiting: Await::Nothing,
+        }
+    }
+
+    /// What the run failed on, once it ended failed; a run from before the
+    /// kind was kept failed on something other.
+    pub fn failed_on(&self) -> Option<Failure> {
+        match self.outcome {
+            Some(Outcome::Failed(_)) => Some(self.failure.unwrap_or(Failure::Other)),
+            Some(Outcome::Done | Outcome::Stopped(_) | Outcome::Exhausted { .. }) | None => None,
         }
     }
 
@@ -421,33 +462,38 @@ impl Run {
         }
     }
 
-    /// The step's command finished: `Ok` when it exited zero, with the commit
-    /// it passed on when the work has one, or `Err` with how its output
-    /// ended. Whether it passed is its exit status alone.
-    pub fn command_finished(&mut self, ran: Result<Option<String>, String>) -> Action {
+    /// The step's command finished as `ran` says, kept on its visit.
+    /// Whether it passed is its exit status alone.
+    pub fn command_finished(&mut self, ran: CommandResult) -> Action {
         if self.awaiting != Await::Command {
             return Action::Idle;
         }
-        match ran {
-            Ok(head) => {
-                self.marks.verified_at = head;
+        self.visit_command(ran.clone());
+        match ran.passed {
+            true => {
+                self.marks.verified_at = ran.commit;
                 self.check_output = None;
                 self.enter(self.step + 1, "the command passed")
             }
-            Err(out) => self.send_back(out, "the command failed"),
+            false => self.send_back(ran.tail, "the command failed"),
         }
     }
 
-    /// The push or the pull request the step asked for is done, or failed
-    /// for the reason given. A failure ends the run: a retry starts at the
-    /// step again.
-    pub fn forge_done(&mut self, done: Result<(), String>) -> Action {
+    /// The push or the pull request the step asked for is done, with the
+    /// pull request it opened or took up, or failed for the reason given. A
+    /// failure ends the run: a retry starts at the step again.
+    pub fn forge_done(&mut self, done: Result<Option<PrOpened>, String>) -> Action {
         if self.awaiting != Await::Forge {
             return Action::Idle;
         }
         match done {
-            Ok(()) => self.enter(self.step + 1, "done on the forge"),
-            Err(why) => self.finish(Outcome::Failed(why)),
+            Ok(opened) => {
+                if opened.is_some() {
+                    self.pull_request = opened;
+                }
+                self.enter(self.step + 1, "done on the forge")
+            }
+            Err(why) => self.fail(why, Failure::Forge),
         }
     }
 
@@ -464,7 +510,7 @@ impl Run {
             }
             // Past every step: whatever was left is moot once it landed.
             Seen::Merged => self.enter(self.template.steps.len(), "its pull request was merged"),
-            Seen::Fail(why) => self.finish(Outcome::Failed(why)),
+            Seen::Fail(why) => self.fail(why, Failure::Forge),
             Seen::Repair(out) => self.send_back(out, "its status checks failed"),
         }
     }
@@ -481,7 +527,7 @@ impl Run {
             .and_then(|step| step.kind.sends_back_to())
             .and_then(|id| self.template.index_of(id));
         let Some(back) = back else {
-            return self.finish(Outcome::Failed(why.to_string()));
+            return self.fail(why.to_string(), Failure::Other);
         };
         self.check_output = Some(out);
         self.enter(back, why)
@@ -535,11 +581,17 @@ impl Run {
         self.finish(Outcome::Stopped(stop))
     }
 
-    /// The driver could not go on, for `why`.
-    pub fn failed(&mut self, why: String) -> Action {
+    /// The driver could not go on, for `why`, which was of `kind`.
+    pub fn failed(&mut self, why: String, kind: Failure) -> Action {
         if self.over() {
             return Action::Idle;
         }
+        self.fail(why, kind)
+    }
+
+    /// End failed, for `why`, of `kind`.
+    fn fail(&mut self, why: String, kind: Failure) -> Action {
+        self.failure = Some(kind);
         self.finish(Outcome::Failed(why))
     }
 
@@ -554,6 +606,7 @@ impl Run {
             return Action::Idle;
         }
         self.outcome = None;
+        self.failure = None;
         if !self.begun() {
             return self.enter(self.step, "started");
         }
@@ -607,9 +660,10 @@ impl Run {
                         self.awaiting = Await::Command;
                         Action::RunCommand(command)
                     }
-                    _ => self.finish(Outcome::Failed(
+                    _ => self.fail(
                         "the project has no check command to run".to_string(),
-                    )),
+                        Failure::Configuration,
+                    ),
                 }
             }
             Some(StepKind::Approval { .. }) => {
@@ -625,9 +679,10 @@ impl Run {
                     self.awaiting = Await::Forge;
                     Action::Push(commit)
                 }
-                None => self.finish(Outcome::Failed(
+                None => self.fail(
                     "no command has passed on a commit to push".to_string(),
-                )),
+                    Failure::Other,
+                ),
             },
             Some(StepKind::PullRequest) => {
                 self.awaiting = Await::Forge;

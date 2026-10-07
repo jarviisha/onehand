@@ -9,7 +9,7 @@
 //! that themselves, after this.
 
 use crate::task::{Task, Working};
-use crate::workflow::{Place, StepKind, Template};
+use crate::workflow::{Failure, Place, StepKind, Template};
 
 /// What kind of start is checked: each has its own configuration and place.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -359,6 +359,24 @@ pub fn unfit_for_issue(template: &Template) -> Option<String> {
 /// Why the issue `named` is not started again: a run already works on it.
 pub fn already_working(named: &str) -> String {
     format!("A run is already working on issue {named}.")
+}
+
+/// What a run fails on when what `check` would have blocked is found only
+/// once it runs: a configuration failure is a preflight block found late,
+/// so the way out offered is the one that changes the configuration.
+pub fn found_late(check: Check) -> Failure {
+    match check {
+        Check::Workflow | Check::Agent | Check::Mode | Check::CheckCommand => {
+            Failure::Configuration
+        }
+        Check::Forge => Failure::Forge,
+        Check::Place
+        | Check::Base
+        | Check::Issue
+        | Check::EarlierTask
+        | Check::Slot
+        | Check::PlaceTaken => Failure::Other,
+    }
 }
 
 /// Why an agent offering `offered` cannot start in `mode`, if it cannot.

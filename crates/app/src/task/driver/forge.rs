@@ -3,8 +3,8 @@
 
 use super::{advance, read, with};
 use gpui::{App, Task};
-use onehand_core::connector::{self, CheckState, Connector, PrState};
-use onehand_core::workflow::{Seen, judge, waited_on, with_logs};
+use onehand_core::connector::{self, CheckState, Connector, PrState, PullRequest};
+use onehand_core::workflow::{PrOpened, Seen, judge, waited_on, with_logs};
 use std::time::{Duration, Instant};
 
 /// How often a run waiting on its pull request's status checks looks at
@@ -46,9 +46,9 @@ fn forge_of(uid: u64, cx: &App) -> Option<Result<Forge, String>> {
 }
 
 /// Push `commit` as the run's branch, or, with none, open its pull request
-/// unless one is open on the branch already; then report how it went. One
-/// closed without being merged is refused: a person turned it down, and a
-/// second beside it would ask again.
+/// unless one is open on the branch already; then report how it went, with
+/// the pull request opened or taken up. One closed without being merged is
+/// refused: a person turned it down, and a second beside it would ask again.
 pub(super) fn on_forge(uid: u64, commit: Option<String>, cx: &mut App) {
     let Some(forge) = forge_of(uid, cx) else {
         return;
@@ -70,10 +70,16 @@ pub(super) fn on_forge(uid: u64, commit: Option<String>, cx: &mut App) {
                     connector,
                 } = forge?;
                 if let Some(commit) = commit {
-                    return connector.push_blocking(&dir, &commit, &branch);
+                    return connector
+                        .push_blocking(&dir, &commit, &branch)
+                        .map(|()| None);
                 }
+                let opened = |pr: PullRequest| PrOpened {
+                    number: pr.number,
+                    url: pr.url,
+                };
                 match connector.pull_request_for_blocking(&dir, &branch)? {
-                    Some(pr) if pr.state == PrState::Open => return Ok(()),
+                    Some(pr) if pr.state == PrState::Open => return Ok(Some(opened(pr))),
                     Some(pr) if pr.state == PrState::Closed => {
                         return Err(format!(
                             "its pull request {} was closed without being merged, and \
@@ -84,7 +90,14 @@ pub(super) fn on_forge(uid: u64, commit: Option<String>, cx: &mut App) {
                     Some(_) | None => {}
                 }
                 let (title, body) = text.unwrap_or_default();
-                connector.open_pull_request_blocking(&dir, &branch, &title, &body)
+                connector.open_pull_request_blocking(&dir, &branch, &title, &body)?;
+                // Read back for what to keep; one that cannot be read yet is
+                // still found by its branch.
+                Ok(connector
+                    .pull_request_for_blocking(&dir, &branch)
+                    .ok()
+                    .flatten()
+                    .map(opened))
             })
             .await;
         cx.update(|cx| advance(uid, cx, move |run| run.forge_done(done)));

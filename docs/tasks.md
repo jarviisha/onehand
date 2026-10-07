@@ -61,10 +61,12 @@ worktree, or from its project once the worktree is gone; while they are read the
 Task ──< Run ──< Step visit
  │        │        ├─ visit id, step id, started and ended at
  │        │        ├─ marks at its start and end ── refs/onehand/… in the repository
- │        │        └─ what it answered or printed, and how it came out
+ │        │        ├─ what it answered or printed, and how it came out
+ │        │        └─ its command's result, on a command step
  │        ├─ snapshot of the workflow (frozen when the run starts)
  │        ├─ session it used
- │        └─ outcome
+ │        ├─ the pull request it opened, when it did
+ │        └─ outcome, and what a failed one failed on
  ├─ source (the launcher, a project's check, an issue)
  ├─ brief (workflow tasks only)
  ├─ place (checkout or worktree + branch), shared by every run
@@ -84,6 +86,13 @@ Task ──< Run ──< Step visit
   runs keeps a snapshot of the workflow it started with.
 - **The place belongs to the task.** Every run works in the same checkout, or the same worktree and
   branch, so a retry sees the work the run before it left.
+- **What a run keeps beyond its outcome is optional in its file**, added beside the old fields and
+  never in place of one: what a failed run failed on (configuration, forge or other), the pull
+  request its pull request step opened, and each command visit's result (passed or not, the exit,
+  how its output ended, and the commit and the fingerprint of the work it ran on). The task file
+  has no version, so a file written before them reads with them absent: the failure reads as
+  *other*, and what is drawn of the rest says *not recorded for this run*, never a guess. An older
+  build reading a newer file drops them the next time it saves the task; the task is never lost.
 
 ### The life of a task
 

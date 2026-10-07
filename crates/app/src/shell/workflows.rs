@@ -13,10 +13,10 @@ use gpui_component::notification::Notification;
 use gpui_component::{
     ActiveTheme as _, Disableable as _, Icon, IconName, Sizable as _, StyledExt as _,
 };
-use onehand_core::preflight;
+use onehand_core::preflight::{self, Check, found_late};
 use onehand_core::task::marks::{self, Against};
 use onehand_core::task::{Source, Task};
-use onehand_core::workflow::{self as core, Brief, Place, Run, Setup, Template};
+use onehand_core::workflow::{self as core, Brief, Failure, Place, Run, Setup, Template};
 use onehand_core::worktree;
 use std::cell::Cell;
 use std::path::PathBuf;
@@ -329,7 +329,7 @@ impl Shell {
     /// the step it was at. One that cannot start stays as it was, and its
     /// place passes on.
     pub fn drive_task(&mut self, id: String, window: &mut Window, cx: &mut Context<Self>) {
-        let refused = |why: String, window: &mut Window, cx: &mut Context<Self>| {
+        let refused = |why: String, kind: Failure, window: &mut Window, cx: &mut Context<Self>| {
             // An issue's run that cannot start ends failed, so its issue is
             // told rather than left claimed with nothing after the claim.
             let issue = crate::task::task(&id, cx).is_some_and(|task| task.issue().is_some());
@@ -337,23 +337,34 @@ impl Shell {
             // Deferred: handing the place on may start a task in this shell.
             let id = id.clone();
             cx.defer(move |cx| match issue {
-                true => crate::task::fail(id, why, cx),
+                true => crate::task::fail(id, why, kind, cx),
                 false => crate::task::release(id, cx),
             });
         };
         let Some(mut run) = crate::task::resumable_run(&id, cx) else {
-            return refused("That task has nothing left to run".to_string(), window, cx);
+            return refused(
+                "That task has nothing left to run".to_string(),
+                Failure::Other,
+                window,
+                cx,
+            );
         };
         let dir = run.setup.dir.clone();
         if !dir.is_dir() {
             return refused(
                 format!("The folder that task works in is gone: {}", dir.display()),
+                Failure::Other,
                 window,
                 cx,
             );
         }
         let Some(task) = crate::task::task(&id, cx) else {
-            return refused("That task has nothing left to run".to_string(), window, cx);
+            return refused(
+                "That task has nothing left to run".to_string(),
+                Failure::Other,
+                window,
+                cx,
+            );
         };
         if task.source == Source::Check {
             let handle = window.window_handle();
@@ -362,6 +373,7 @@ impl Shell {
             cx.defer(move |cx| crate::task::drive_check(id, handle, cx));
             return;
         }
+        let mut unstarted = Failure::Other;
         let session = match task.issue() {
             // An issue's run comes up off screen, on a project of its own that
             // the workspace file never holds unless it was kept, so nothing the
@@ -370,6 +382,11 @@ impl Shell {
             // its session.
             Some(_) => {
                 let spec = crate::unattended::spec_for(run.setup.agent.as_deref(), cx);
+                // No agent of that name configured any more is what the
+                // preflight would have blocked.
+                if spec.is_none() {
+                    unstarted = found_late(Check::Agent);
+                }
                 let started = spec.and_then(|spec| self.run_unattended(dir, spec, cx));
                 if let Some((_, session)) = &started {
                     crate::unattended::opening(&task, session, cx);
@@ -390,7 +407,12 @@ impl Shell {
             }
         };
         let Some((uid, session)) = session else {
-            return refused("The task's session did not start".to_string(), window, cx);
+            return refused(
+                "The task's session did not start".to_string(),
+                unstarted,
+                window,
+                cx,
+            );
         };
         // Counted from what landed, so a mark the app quit before pinning is
         // pinned now rather than taken as made.

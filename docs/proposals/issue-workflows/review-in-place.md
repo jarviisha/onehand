@@ -1,6 +1,7 @@
 # Piece 4: approve, revise, resume or retry next to what is judged
 
-- Status: proposal, wave 1. Builds on [issue-progress.md](issue-progress.md), part B included, and
+- Status: proposal, wave 1. Builds on piece 1, part B included (built: what a run keeps, in
+  [tasks.md](../../tasks.md#the-model)), and
   on the Issues page of [pages.md](pages.md), where its block is drawn. Part of
   [the proposal](README.md).
 - Contracts it touches: [tasks.md](../../../docs/tasks.md) (the task detail, *Retry and Resume*),

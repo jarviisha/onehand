@@ -69,6 +69,94 @@ fn at_approval() -> Run {
     run
 }
 
+/// A command that passed on `commit`.
+fn passed(commit: Option<String>) -> CommandResult {
+    CommandResult {
+        passed: true,
+        exit: Some(0),
+        tail: "ok".into(),
+        commit,
+        digest: Some("d1".into()),
+    }
+}
+
+/// A command that failed, printing `tail`.
+fn failed(tail: String) -> CommandResult {
+    CommandResult {
+        passed: false,
+        exit: Some(1),
+        tail,
+        commit: Some("a".into()),
+        digest: Some("d1".into()),
+    }
+}
+
+/// A command step's visit keeps how its command came out, a pass as well as
+/// a failure, with the work it ran on.
+#[test]
+fn a_command_visit_keeps_its_result() {
+    let mut run = at_approval();
+    approve(&mut run);
+    prompt_of(run.measured(mark("a", "d0")));
+    assert_eq!(
+        run.turn_ended(&facts("a", true, 0, "d1"), ""),
+        Action::RunCommand("make check".into())
+    );
+    run.command_finished(failed("test failed: x".into()));
+    let failed_visit = run.visits().iter().rfind(|v| v.step == "verify").unwrap();
+    let kept = failed_visit.command.as_ref().unwrap();
+    assert!(!kept.passed);
+    assert_eq!(kept.tail, "test failed: x");
+    prompt_of(run.measured(mark("a", "d1")));
+    run.turn_ended(&facts("a", true, 0, "d2"), "");
+    run.command_finished(passed(Some("a".into())));
+    let passed_visit = run.visits().iter().rfind(|v| v.step == "verify").unwrap();
+    let kept = passed_visit.command.as_ref().unwrap();
+    assert!(kept.passed);
+    assert_eq!(kept.tail, "ok", "a pass keeps its output too");
+    assert_eq!(kept.digest.as_deref(), Some("d1"));
+}
+
+/// A failed run keeps what it failed on: no check command is a preflight
+/// block found late, a forge failure is the forge's, the rest is other.
+#[test]
+fn a_failed_run_keeps_what_it_failed_on() {
+    let (mut run, _) = begin("1".into(), checkout(), brief(), setup(None));
+    prompt_of(run.measured(mark("a", "d0")));
+    run.turn_ended(&facts("a", false, 0, "d0"), "The plan.");
+    approve(&mut run);
+    prompt_of(run.measured(mark("a", "d0")));
+    assert!(matches!(
+        run.turn_ended(&facts("a", true, 0, "d1"), ""),
+        Action::Finish(Outcome::Failed(_))
+    ));
+    assert_eq!(run.failed_on(), Some(Failure::Configuration));
+
+    let mut run = at_approval();
+    run.failed("the agent did not take the prompt".into(), Failure::Other);
+    assert_eq!(run.failed_on(), Some(Failure::Other));
+
+    let mut run = at_approval();
+    run.stopped(Stop::ByPerson);
+    assert_eq!(
+        run.failed_on(),
+        None,
+        "only a failed run failed on something"
+    );
+}
+
+/// A run from before the kind was kept reads as failed on something other.
+#[test]
+fn a_failure_with_no_kind_kept_reads_as_other() {
+    let mut run = at_approval();
+    run.failed("boom".into(), Failure::Forge);
+    let mut json = serde_json::to_value(&run).unwrap();
+    assert_eq!(json["failure"], "forge");
+    json.as_object_mut().unwrap().remove("failure");
+    let back: Run = serde_json::from_value(json).unwrap();
+    assert_eq!(back.failed_on(), Some(Failure::Other));
+}
+
 /// Approve what `run` waits on, as a press drawn from it now does.
 fn approve(run: &mut Run) -> Action {
     match run.approval_at() {
@@ -334,7 +422,7 @@ fn an_agent_step_passes_on_its_gates_and_keeps_its_answer() {
         Action::RunCommand("make check".into())
     );
     assert_eq!(
-        run.command_finished(Ok(Some("a".into()))),
+        run.command_finished(passed(Some("a".into()))),
         Action::Finish(Outcome::Done)
     );
     assert_eq!(run.marks.verified_at.as_deref(), Some("a"));
@@ -388,7 +476,7 @@ fn a_failed_command_goes_back_with_its_output_and_keeps_counting() {
     prompt_of(run.measured(mark("a", "d0")));
     run.turn_ended(&facts("a", true, 0, "d1"), "");
     assert_eq!(
-        run.command_finished(Err("test failed: x".into())),
+        run.command_finished(failed("test failed: x".into())),
         Action::Measure
     );
     assert_eq!(run.current().unwrap().id, "implement");
@@ -398,12 +486,12 @@ fn a_failed_command_goes_back_with_its_output_and_keeps_counting() {
     for n in 2..4 {
         let digest = format!("d{n}");
         run.turn_ended(&facts("a", true, 0, &digest), "");
-        run.command_finished(Err("again".into()));
+        run.command_finished(failed("again".into()));
         prompt_of(run.measured(mark("a", &digest)));
     }
     run.turn_ended(&facts("a", true, 0, "d9"), "");
     assert!(matches!(
-        run.command_finished(Err("again".into())),
+        run.command_finished(failed("again".into())),
         Action::Finish(Outcome::Exhausted { .. })
     ));
 }
@@ -575,7 +663,7 @@ fn going_back_is_a_new_visit_and_each_keeps_how_it_came_out() {
     approve(&mut run);
     prompt_of(run.measured(mark("a", "d0")));
     run.turn_ended(&facts("a", true, 0, "d1"), "");
-    run.command_finished(Err("test failed".into()));
+    run.command_finished(failed("test failed".into()));
     let steps: Vec<&str> = run.visits.iter().map(|v| v.step.as_str()).collect();
     assert_eq!(
         steps,
@@ -1018,7 +1106,7 @@ fn a_done_run_retries_from_past_its_last_step_and_offers_the_first() {
     prompt_of(prev.measured(mark("a", "d0")));
     prev.turn_ended(&facts("a", true, 0, "d1"), "");
     assert_eq!(
-        prev.command_finished(Ok(Some("a".into()))),
+        prev.command_finished(passed(Some("a".into()))),
         Action::Finish(Outcome::Done)
     );
     assert_eq!(
@@ -1065,7 +1153,7 @@ fn exhausted_at_verify() -> Run {
     for n in 0..4 {
         let digest = format!("d{}", n + 1);
         run.turn_ended(&facts("a", true, 0, &digest), "");
-        if let Action::Measure = run.command_finished(Err("again".into())) {
+        if let Action::Measure = run.command_finished(failed("again".into())) {
             prompt_of(run.measured(mark("a", &digest)));
         }
     }
@@ -1159,7 +1247,7 @@ fn a_command_passes_on_its_exit_status_with_or_without_a_commit() {
     let run = &mut t.runs[0];
     assert!(matches!(run.resume(), Action::RunCommand(_)));
     assert_eq!(
-        run.command_finished(Ok(None)),
+        run.command_finished(passed(None)),
         Action::Finish(Outcome::Done)
     );
     assert_eq!(run.marks.verified_at, None);
@@ -1176,15 +1264,15 @@ fn issue_past_check(forge: bool, verified: &str) -> (Run, Action) {
     run.turn_ended(&facts("a", false, 0, "d0"), "The plan.");
     prompt_of(run.measured(mark("a", "d0")));
     run.turn_ended(&facts("b", false, 1, "d0"), "");
-    let next = run.command_finished(Ok(Some(verified.into())));
+    let next = run.command_finished(passed(Some(verified.into())));
     (run, next)
 }
 
 /// [`issue_past_check`], pushed and with its pull request open.
 fn at_status_checks() -> Run {
     let (mut run, _) = issue_past_check(true, "b");
-    run.forge_done(Ok(()));
-    run.forge_done(Ok(()));
+    run.forge_done(Ok(None));
+    run.forge_done(Ok(None));
     run
 }
 
@@ -1214,16 +1302,25 @@ use std::time::Duration;
 fn the_push_carries_the_commit_the_check_passed_on() {
     let (mut run, next) = issue_past_check(true, "b");
     assert_eq!(next, Action::Push("b".into()));
-    assert_eq!(run.forge_done(Ok(())), Action::OpenPullRequest);
+    assert_eq!(run.forge_done(Ok(None)), Action::OpenPullRequest);
+    let opened = PrOpened {
+        number: 7,
+        url: "https://example.com/pull/7".into(),
+    };
     // The status checks are watched on the commit that was pushed.
     assert_eq!(
-        run.forge_done(Ok(())),
+        run.forge_done(Ok(Some(opened.clone()))),
         Action::AwaitStatusChecks {
             wait: Duration::from_secs(3600),
             pushed: Some("b".into()),
         }
     );
     assert!(run.awaiting_status_checks());
+    assert_eq!(
+        run.pull_request,
+        Some(opened),
+        "the run keeps what it opened"
+    );
     assert_eq!(run.status_checks_seen(Seen::Pending), Action::Idle);
     assert_eq!(
         run.status_checks_seen(Seen::Passed),
@@ -1280,18 +1377,18 @@ fn failing_status_checks_go_back_to_the_change_with_what_failed_until_misses_run
         let head = format!("c{n}");
         run.turn_ended(&facts(&head, false, 1, "d0"), "");
         assert_eq!(
-            run.command_finished(Ok(Some(head.clone()))),
+            run.command_finished(passed(Some(head.clone()))),
             Action::Push(head)
         );
-        run.forge_done(Ok(()));
-        run.forge_done(Ok(()));
+        run.forge_done(Ok(None));
+        run.forge_done(Ok(None));
         run.status_checks_seen(Seen::Repair("Lint failed".into()));
         prompt_of(run.measured(mark("b", "d0")));
     }
     run.turn_ended(&facts("c4", false, 1, "d0"), "");
-    run.command_finished(Ok(Some("c4".into())));
-    run.forge_done(Ok(()));
-    run.forge_done(Ok(()));
+    run.command_finished(passed(Some("c4".into())));
+    run.forge_done(Ok(None));
+    run.forge_done(Ok(None));
     assert!(matches!(
         run.status_checks_seen(Seen::Repair("Lint failed".into())),
         Action::Finish(Outcome::Exhausted { .. })
@@ -1311,6 +1408,7 @@ fn a_merged_pull_request_is_done_and_a_failure_ends_the_run() {
         run.status_checks_seen(Seen::Fail("it was closed".into())),
         Action::Finish(Outcome::Failed("it was closed".into()))
     );
+    assert_eq!(run.failed_on(), Some(Failure::Forge));
 }
 
 #[test]

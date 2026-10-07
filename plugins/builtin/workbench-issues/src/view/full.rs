@@ -220,6 +220,22 @@ pub(super) fn left_lines(
         }
         .into_any_element(),
     )];
+    // What the passing command printed last: its own word on what passed.
+    let printed = work
+        .vouched
+        .as_ref()
+        .and_then(|vouched| vouched.tail.as_deref())
+        .and_then(|tail| tail.lines().rev().map(str::trim).find(|l| !l.is_empty()));
+    if let Some(printed) = printed {
+        lines.push(line(
+            "Printed",
+            div()
+                .truncate()
+                .text_color(muted)
+                .child(printed.to_string())
+                .into_any_element(),
+        ));
+    }
     let marks_of = |side: Side| match side {
         Side::Run => work.span.clone(),
         Side::Branch => work.branch_span(),
