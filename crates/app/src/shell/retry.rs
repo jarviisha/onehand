@@ -346,9 +346,14 @@ impl Shell {
                     });
                 }
             };
+            let alert = alert.title(format!("Retry {title} with current settings?"));
+            // With no workflow to plan from, what blocks it is the whole
+            // story, and an empty line would only push it down.
+            let alert = match said.is_empty() {
+                true => alert,
+                false => alert.description(said.clone()),
+            };
             alert
-                .title(format!("Retry {title} with current settings?"))
-                .description(said.clone())
                 .child(
                     gpui::div()
                         .v_flex()

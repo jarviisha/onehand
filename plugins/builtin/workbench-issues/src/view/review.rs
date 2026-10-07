@@ -544,7 +544,9 @@ fn answers(
         .filter(|work| work.review.as_ref().map(|now| &now.at) != Some(&read.at))
         .map(|work| match &work.step {
             Some(step) => format!("The run moved on to {}.", step.label),
-            None => format!("The run is {}.", work.said.to_lowercase()),
+            // Ended: how, in its own words (*Workflow done: every step
+            // passed.*).
+            None => format!("{}.", work.said),
         });
     if review.sent.is_some() || (review.changed && moved_on.is_some()) {
         let said = match (review.sent, moved_on) {
