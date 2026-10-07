@@ -204,6 +204,9 @@ fn tooltip(act: Act) -> Option<&'static str> {
              starts",
         ),
         Act::Resume => Some("Carry on from that step in a new session"),
+        Act::RemoveWorktree => {
+            Some("Remove the worktree and its branch, once nothing in them is past the merge")
+        }
         Act::Refresh => Some("Read the pull request again"),
         Act::Edit
         | Act::OpenSession
@@ -312,6 +315,11 @@ impl Pressed {
             Act::AnswerReview => {
                 if let Some(id) = task {
                     view.ask_task(id, |id| Request::AnswerReview(id), window, cx);
+                }
+            }
+            Act::RemoveWorktree => {
+                if let Some(id) = task {
+                    view.ask_task(id, |id| Request::RemoveWorktree(id), window, cx);
                 }
             }
             Act::OpenPullRequest => match self.pr_url {

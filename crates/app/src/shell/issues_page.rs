@@ -77,6 +77,7 @@ impl Shell {
             E::RetryTask(id) => self.begin_retry(id.clone(), window, cx),
             E::RetryTaskCurrent(id) => self.begin_retry_current(id.clone(), window, cx),
             E::AnswerReview(id) => self.answer_review(id.clone(), window, cx),
+            E::RemoveWorktree(id) => self.remove_worktree(id.clone(), window, cx),
             E::StopTask(id) => {
                 let id = id.clone();
                 cx.defer(move |cx| crate::task::stop_task(&id, cx));

@@ -161,6 +161,7 @@ fn handle(view: &Entity<IssuesView>, request: &Request<'_>, cx: &mut App) -> boo
         | Request::RetryTask(_)
         | Request::RetryTaskCurrent(_)
         | Request::AnswerReview(_)
+        | Request::RemoveWorktree(_)
         | Request::StopTask(_) => false,
     }
 }

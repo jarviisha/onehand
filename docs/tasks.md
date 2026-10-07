@@ -398,7 +398,11 @@ migration it protects.
   it ended through the reports the task keeps (`crate::unattended::ended`).
 - **After a restart nothing starts by itself.** A task that was running or queued comes back
   interrupted, under *Needs attention*, and waits for Resume.
-- **Worktrees are never removed by onehand.** A task's worktree may hold unpushed commits.
+- **Worktrees are never removed unasked.** A task's worktree may hold unpushed commits. Once its
+  pull request is merged a person may press *Remove worktree…* (the issue, and the task detail of
+  a done worktree run that opened one), which is judged and asked in a modal
+  ([unattended.md](unattended.md#the-report)); the task's marks stay until the history cap drops
+  them.
 
 ## Not built
 

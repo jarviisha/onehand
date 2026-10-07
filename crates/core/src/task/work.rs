@@ -98,6 +98,9 @@ pub struct Work {
     pub branch: Option<String>,
     /// Where its work stands: the worktree, or the project itself.
     pub dir: std::path::PathBuf,
+    /// Its latest run works on a worktree of its own, which a person may
+    /// remove once the work is merged.
+    pub worktree: bool,
     /// The connector the branch goes to; `None` where no forge serves the
     /// project, whose work stays on the branch.
     pub forge: Option<String>,
@@ -184,6 +187,7 @@ impl Work {
             since,
             branch: task.setup.branch.clone(),
             dir: task.setup.dir.clone(),
+            worktree: run.is_some_and(|run| run.template.place == crate::workflow::Place::Worktree),
             forge: task.setup.forge.clone(),
             pull_request: run.map_or(PrStep::Absent, pr_step),
             stand,
@@ -399,6 +403,9 @@ pub enum Act {
     /// Answer the review on its open pull request, as putting the trigger
     /// label back does.
     AnswerReview,
+    /// Remove the worktree and its branch, once its pull request merged:
+    /// judged first, and asked in a modal.
+    RemoveWorktree,
     OpenPullRequest,
     OpenBranch,
     Refresh,
@@ -422,6 +429,7 @@ impl Act {
             Self::Retry => "Retry…",
             Self::RetryCurrent => "Retry with current settings…",
             Self::AnswerReview => "Answer the pull request review",
+            Self::RemoveWorktree => "Remove worktree…",
             Self::OpenPullRequest => "Open pull request",
             Self::OpenBranch => "Open branch",
             Self::Refresh => "Refresh",
@@ -646,6 +654,11 @@ fn done(work: &Work, pr: PrSeen<'_>) -> Next {
                 // is pressed, as putting the label back would.
                 &[Act::AnswerReview],
             ),
+            // Its worktree is left on disk until a person asks: only then,
+            // with nothing past the merge in it, may it go.
+            PrState::Merged if work.worktree => {
+                row(None, None, &[Act::RunWorkflow, Act::RemoveWorktree])
+            }
             PrState::Merged => row(None, None, &[Act::RunWorkflow]),
             PrState::Closed => row(
                 Some(

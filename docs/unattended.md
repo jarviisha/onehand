@@ -704,6 +704,23 @@ every case: a run that got half way has work in it, and removing a worktree to
 save the user a `git worktree remove` is the app throwing away work nobody asked
 it to.
 
+**Once its pull request is merged, a person may ask.** The issue's view offers
+*Remove worktree…* beside *Run workflow…* when the pull request reads merged
+(`Act::RemoveWorktree`), and the task detail on any done worktree run that
+opened one. Its modal names the folder and the branch, in the danger tint. The
+judgement is core's (`worktree::removal::judge`), on facts read off the UI
+thread when the modal opens and again when *Remove* is pressed: it refuses
+while the forge cannot be read or says the pull request is not merged, while
+the branch holds commits past the head the forge merged (or that head is not in
+this clone), while anything is uncommitted or untracked, and while anything of
+onehand's uses the folder in any window: a project open inside it, with its
+sessions and terminals, or a task still working there. Every reason is listed;
+onehand closes nothing for the person. The branch is judged by the forge's
+merged head, not by `git branch -d`, which refuses the usual squash merge and
+cannot see a remote branch deleted after the merge: a branch holding nothing
+past that head goes with `git branch -D`. If that fails, the worktree stays
+removed, the branch is kept, and the failure is said.
+
 The transcript needs no special handling — it is written at the end of every
 turn, under the conversations directory, exactly like a conversation somebody
 had by hand.
@@ -786,8 +803,6 @@ accumulate one row per issue ever worked.
   told apart from two different failures.
 - **A pull request as a task's source.** A review is answered only by putting the
   trigger label back on the issue the pull request came from.
-- **Cleaning up after a merged pull request.** The worktree and its branch stay
-  on disk; a merged pull request is the first signal clear enough to act on.
 - **Cron expressions, quiet hours, a calendar.** An interval and a switch per
   project. Add when somebody actually wants runs only at night.
 - **Telegram announcements of a run.** The three announced moments are a closed

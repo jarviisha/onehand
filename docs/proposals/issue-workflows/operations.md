@@ -1,6 +1,8 @@
 # Piece 6: unattended runs when there are many issues
 
-- Status: proposal; item 1 in wave 1, the rest in wave 2. Part of [the proposal](README.md).
+- Status: items 1 to 4 built (item 1 in wave 1, the rest in step 6); what they became lives in
+  [unattended.md](../../unattended.md) and [tasks.md](../../tasks.md). Part of
+  [the proposal](README.md).
 - Contracts it touches: [unattended.md](../../../docs/unattended.md) (*Not built, on purpose*, `at_once`,
   the rule that worktrees are left on disk), [tasks.md](../../../docs/tasks.md) (*Worktrees are never
   removed by onehand*).
@@ -39,36 +41,8 @@ Built: `[unattended] waiting` ([unattended.md](../../unattended.md)).
 
 ## 4. Clean up after a merge, on request
 
-**Today.** Worktrees and branches are left on disk in every case: a half-done run has work in it.
-A merged pull request is named in `unattended.md` as the first signal clear enough to act on.
-
-**Proposal.** Never automatic. On a task whose pull request is merged (piece 1 reads it), the task
-detail and the issue offer **Remove worktree…**, a destructive action in the danger tint with a
-modal naming the folder and the branch. A check in core, off the UI thread, runs **when the modal
-opens and again when it is confirmed**, since anything can change between the two:
-
-- uncommitted or untracked files in the worktree;
-- commits on the branch past the head the forge says the pull request merged (below);
-- anything of onehand's still using the folder, **across every window**: a task holding or
-  waiting for its place there, a session on it, a terminal or a Neovim whose directory is in it, a
-  command step still running there.
-
-Any finding is listed and the removal refused until the person deals with it; onehand closes
-nothing on the person's behalf.
-
-**The branch, after the forge's merge.** `git branch -d` refuses a branch whose commits are not
-reachable from its upstream or `HEAD`, which is the usual state after a squash or rebase merge, and
-the forge's branch may already be deleted. So the branch is judged by the forge instead: the
-pull request's merged head commit, as the forge reports it, against the local branch's head.
-
-| Local branch head | Forge's remote branch | What happens |
-|---|---|---|
-| the merged head | any | the worktree is removed, and the branch with `git branch -D`, the modal saying the forge's merged head is why |
-| past the merged head | any | the worktree is refused (commits past the merge are work); nothing removed |
-| the forge cannot be read | any | refused, said; nothing removed |
-| `-D` itself fails | | the worktree stays removed, the branch is kept, and the failure is said |
-
-The task's marks stay until the history cap drops them.
+Built: *Remove worktree…* ([unattended.md](../../unattended.md#the-report),
+[tasks.md](../../tasks.md)).
 
 ## What stays
 
@@ -78,11 +52,5 @@ The task's marks stay until the history cap drops them.
 
 ## Done when
 
-- Item 4: with its own *Checking it by hand* rows, with a
-  case for a squash merge, a deleted remote branch, and a terminal open in the worktree in
-  another window.
-
-## Documents to change when built
-
-- `docs/unattended.md`: *Not built, on purpose*, for item 4.
-- `docs/tasks.md`: *Worktrees are never removed by onehand* becomes *never removed unasked*.
+Items 1 to 4 are built. What is left here is the queue for slots above, which is not part of this
+proposal.

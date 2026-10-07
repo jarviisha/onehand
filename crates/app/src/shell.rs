@@ -16,6 +16,7 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 
 mod boot;
+mod cleanup;
 mod confirm;
 mod docks;
 mod drafts;

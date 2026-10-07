@@ -123,6 +123,11 @@ impl TerminalPanel {
         cx.notify();
     }
 
+    /// How many shells are open on `root`.
+    pub fn shells_in(&self, root: &std::path::Path) -> usize {
+        self.shells.get(root).map_or(0, |shells| shells.tabs.len())
+    }
+
     pub fn set_root(&mut self, root: PathBuf, cx: &mut Context<Self>) {
         self.root = Some(root);
         cx.notify();

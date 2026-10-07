@@ -412,6 +412,7 @@ pub enum WorkbenchEvent {
     RetryTaskCurrent(String),
     /// Answer the review on issue task `id`'s open pull request.
     AnswerReview(String),
+    RemoveWorktree(String),
     /// Stop task `id`.
     StopTask(String),
 }
@@ -456,6 +457,7 @@ pub fn issue_event(request: &Request<'_>) -> Option<WorkbenchEvent> {
         Request::RetryTask(id) => WorkbenchEvent::RetryTask(id.to_string()),
         Request::RetryTaskCurrent(id) => WorkbenchEvent::RetryTaskCurrent(id.to_string()),
         Request::AnswerReview(id) => WorkbenchEvent::AnswerReview(id.to_string()),
+        Request::RemoveWorktree(id) => WorkbenchEvent::RemoveWorktree(id.to_string()),
         Request::StopTask(id) => WorkbenchEvent::StopTask(id.to_string()),
         Request::OpenFile(_)
         | Request::Save

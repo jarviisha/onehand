@@ -1,5 +1,5 @@
 use super::*;
-use crate::workflow::{Brief, Setup, StepSpec, Template, Transition, Visit};
+use crate::workflow::{Brief, Place, Setup, StepSpec, Template, Transition, Visit};
 use std::path::PathBuf;
 
 pub(super) fn step(id: &str, kind: StepKind) -> StepSpec {
@@ -444,6 +444,28 @@ fn a_merged_pull_request_leaves_the_issue_to_say_whether_anything_is_left() {
     );
     assert_eq!(next.said, None);
     assert_eq!(acts(&next), (None, vec![Act::RunWorkflow, Act::Edit]));
+}
+
+#[test]
+fn a_merged_worktree_run_offers_removing_its_worktree() {
+    let mut flow = forge_flow();
+    flow.place = Place::Worktree;
+    let task = ended(
+        at(task("1", flow, Some("GitHub")), 6, 900),
+        Outcome::Done,
+        None,
+    );
+    let merged = pr(PrState::Merged, false);
+    let around = |pr| Around { pr, ..open() };
+    let next = next_of(&task, None, around(PrSeen::Read(Some(&merged))));
+    assert_eq!(
+        acts(&next),
+        (None, vec![Act::RunWorkflow, Act::RemoveWorktree, Act::Edit])
+    );
+    // Open, it is not offered: the work is not merged.
+    let open_pr = pr(PrState::Open, false);
+    let next = next_of(&task, None, around(PrSeen::Read(Some(&open_pr))));
+    assert!(!acts(&next).1.contains(&Act::RemoveWorktree));
 }
 
 #[test]

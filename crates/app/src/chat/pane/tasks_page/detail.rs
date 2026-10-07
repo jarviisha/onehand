@@ -216,6 +216,18 @@ pub(super) fn task_detail(
                      the label back does",
                 )
                 .on_click(super::emit(&task.id, cx, ChatPaneEvent::AnswerReview))
+        }))
+        // Offered on any done worktree run that opened a pull request: the
+        // modal reads the forge, and refuses one not merged.
+        .children(merged_worktree(task).then(|| {
+            crate::controls::action("task-remove-worktree")
+                .ghost()
+                .small()
+                .label("Remove worktree…")
+                .tooltip(
+                    "Remove the worktree and its branch, once nothing in them is past the merge",
+                )
+                .on_click(super::emit(&task.id, cx, ChatPaneEvent::RemoveWorktree))
         }));
     let mut out = vec![
         div().h_flex().child(back).into_any_element(),
@@ -524,6 +536,16 @@ fn answers_review(task: &onehand_core::task::Task) -> bool {
             .runs
             .last()
             .is_some_and(|run| run.outcome == Some(onehand_core::workflow::Outcome::Done))
+}
+
+/// Whether `task`'s worktree may be offered for removal: its last run, on a
+/// worktree, is done and opened a pull request, which the removal reads.
+fn merged_worktree(task: &onehand_core::task::Task) -> bool {
+    task.opened_pull_request()
+        && task.runs.last().is_some_and(|run| {
+            run.outcome == Some(onehand_core::workflow::Outcome::Done)
+                && run.template.place == onehand_core::workflow::Place::Worktree
+        })
 }
 
 /// An ended task's way out, as its issue says it (`next_action`): why it

@@ -276,6 +276,9 @@ pub enum ChatPaneEvent {
     RetryTaskCurrent(String),
     /// Answer the review on issue task `id`'s open pull request.
     AnswerReview(String),
+    /// Remove task `id`'s worktree and branch after its pull request merged,
+    /// asking first.
+    RemoveWorktree(String),
     /// Stop task `id`, queued or running.
     StopTask(String),
     /// Show the Tasks page, narrowed to one project or not.
