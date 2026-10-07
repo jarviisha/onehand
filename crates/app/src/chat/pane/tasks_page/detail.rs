@@ -514,14 +514,16 @@ fn visit_body(
 }
 
 /// Whether `task` offers to answer a review on its pull request: one it can
-/// have (`Task::reviewable`), its last run done having opened a pull request.
-/// Whether it is still open, and whether the review can be answered, is the
+/// have (`Task::reviewable`) that opened one, its last run done. Whether it
+/// is still open, and whether the review can be answered, is the
 /// preflight's to say when pressed.
 fn answers_review(task: &onehand_core::task::Task) -> bool {
     task.reviewable()
-        && task.runs.last().is_some_and(|run| {
-            run.outcome == Some(onehand_core::workflow::Outcome::Done) && run.pull_request.is_some()
-        })
+        && task.opened_pull_request()
+        && task
+            .runs
+            .last()
+            .is_some_and(|run| run.outcome == Some(onehand_core::workflow::Outcome::Done))
 }
 
 /// An ended task's way out, as its issue says it (`next_action`): why it

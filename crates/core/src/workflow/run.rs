@@ -253,6 +253,17 @@ pub struct ApprovalAt {
     pub visit: u32,
 }
 
+/// Why a command step's visit ended when its command passed, and when it
+/// failed: what tells, in a run from before a visit kept its command's
+/// result, a command that came out from one cut off while it ran.
+pub(crate) const COMMAND_PASSED: &str = "the command passed";
+pub(crate) const COMMAND_FAILED: &str = "the command failed";
+
+/// Why a forge step's visit ended when the forge did what it asked: on a
+/// pull request step, what tells a run from before the pull request was
+/// kept that it opened one.
+pub(crate) const FORGE_DONE: &str = "done on the forge";
+
 /// How many transitions a run's history keeps, newest last.
 const HISTORY_MAX: usize = 200;
 
@@ -475,9 +486,9 @@ impl Run {
             true => {
                 self.marks.verified_at = ran.commit;
                 self.check_output = None;
-                self.enter(self.step + 1, "the command passed")
+                self.enter(self.step + 1, COMMAND_PASSED)
             }
-            false => self.send_back(ran.tail, "the command failed"),
+            false => self.send_back(ran.tail, COMMAND_FAILED),
         }
     }
 
@@ -493,7 +504,7 @@ impl Run {
                 if opened.is_some() {
                     self.pull_request = opened;
                 }
-                self.enter(self.step + 1, "done on the forge")
+                self.enter(self.step + 1, FORGE_DONE)
             }
             Err(why) => self.fail(why, Failure::Forge),
         }

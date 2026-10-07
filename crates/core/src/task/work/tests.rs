@@ -808,7 +808,7 @@ fn a_check_vouches_only_for_the_work_it_passed_on() {
 /// command printed; a run from before part B has the commit alone.
 #[test]
 fn the_check_shown_is_the_last_passed_command() {
-    let verify = |command: Option<crate::workflow::CommandResult>| Visit {
+    let verify = |why: &str, command: Option<crate::workflow::CommandResult>| Visit {
         id: 9,
         step: "verify".into(),
         started_at: 1,
@@ -816,7 +816,7 @@ fn the_check_shown_is_the_last_passed_command() {
         start: None,
         end: None,
         output: None,
-        why: None,
+        why: Some(why.into()),
         command,
     };
     // A retry carries the commit the last run's check passed on, for its
@@ -825,21 +825,26 @@ fn the_check_shown_is_the_last_passed_command() {
     task.runs[0].marks.verified_at = Some("abc".into());
     assert_eq!(Work::of(&task, None, None).vouched, None);
 
-    // A run from before results were kept ran its command and kept the
+    // A visit cut off while its command ran passed nothing.
+    task.runs[0].visits.push(verify("interrupted", None));
+    assert_eq!(Work::of(&task, None, None).vouched, None);
+
+    // A run from before results were kept passed its command and kept the
     // commit alone.
-    task.runs[0].visits.push(verify(None));
+    task.runs[0].visits.push(verify("the command passed", None));
     let vouched = Work::of(&task, None, None).vouched.unwrap();
     assert_eq!((vouched.commit.as_str(), vouched.digest), ("abc", None));
 
-    task.runs[0]
-        .visits
-        .push(verify(Some(crate::workflow::CommandResult {
+    task.runs[0].visits.push(verify(
+        "the command passed",
+        Some(crate::workflow::CommandResult {
             passed: true,
             exit: Some(0),
             tail: "all 12 passed".into(),
             commit: Some("abc".into()),
             digest: Some("d1".into()),
-        })));
+        }),
+    ));
     let vouched = Work::of(&task, None, None).vouched.unwrap();
     assert_eq!(vouched.digest.as_deref(), Some("d1"));
     assert_eq!(vouched.tail.as_deref(), Some("all 12 passed"));
@@ -920,9 +925,16 @@ fn an_approval_says_what_is_reviewed_and_what_each_answer_starts() {
         .review
         .unwrap();
     assert_eq!(review.check, Checked::Ran(failed));
+    // One cut off while its command ran came out not at all.
+    checked.runs[0].visits[at].command = None;
+    checked.runs[0].visits[at].why = Some("interrupted".into());
+    let review = Work::of(&checked, Some(Working::Waiting), None)
+        .review
+        .unwrap();
+    assert_eq!(review.check, Checked::NotRun);
     // One from before results were kept is said as not kept, for the work's
     // own check to judge.
-    checked.runs[0].visits[at].command = None;
+    checked.runs[0].visits[at].why = Some("the command failed".into());
     let review = Work::of(&checked, Some(Working::Waiting), None)
         .review
         .unwrap();

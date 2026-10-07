@@ -183,7 +183,7 @@ the run's history, capped at 200.
   serves the project when a worktree task starts). With none, each passes at once: the branch is the
   result. **A push carries the commit the check passed on**: `Push` is `marks.verified_at`, never
   the head, so what lands is what was checked, and a push with nothing verified fails. A retry keeps
-  `verified_at`. *Pull request* takes the one open on the branch, or opens a draft
+  `verified_at`, and the pull request the last run opened, being on the same branch. *Pull request* takes the one open on the branch, or opens a draft
   (`unattended::pull_request_text`: it closes the issue only where the forge knows it); one closed
   without being merged is refused, never opened again beside. The run keeps the pull request it
   opened or took up (`Run::pull_request`, its number and address), read back once it is open; one

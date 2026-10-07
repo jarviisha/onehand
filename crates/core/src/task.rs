@@ -230,6 +230,23 @@ impl Task {
         self.issue().is_some() && self.setup.forge.is_some() && self.setup.branch.is_some()
     }
 
+    /// Whether one of its runs opened, or took up, a pull request: one kept
+    /// it, or, from before runs kept it, a pull request step's visit ended
+    /// with the forge having done it.
+    pub fn opened_pull_request(&self) -> bool {
+        self.runs.iter().any(|run| {
+            run.pull_request.is_some()
+                || run.visits().iter().any(|visit| {
+                    visit.why.as_deref() == Some(crate::workflow::FORGE_DONE)
+                        && run
+                            .template
+                            .steps
+                            .iter()
+                            .any(|step| step.id == visit.step && step.kind == StepKind::PullRequest)
+                })
+        })
+    }
+
     /// Whether a review on its pull request can be answered: one it can have
     /// ([`Task::reviewable`]), its last run's workflow repairing what the
     /// status checks find, which is where a review is answered from.

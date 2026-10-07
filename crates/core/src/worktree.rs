@@ -302,12 +302,17 @@ pub fn fast_forward_blocking(dir: &Path, to: &str) -> Result<(), String> {
     }
 }
 
-/// Whether the branch checked out at `dir` can be brought up to `to` without
-/// a merge commit: its head is an ancestor of `to`, so the two did not go
-/// their own ways.
-pub fn fast_forwards_blocking(dir: &Path, to: &str) -> Result<bool, String> {
+/// Whether the branch checked out at `dir` and `to` went their own ways:
+/// neither holds the other. One behind is brought up by a fast-forward, and
+/// one ahead, with commits not pushed yet, is up to date already.
+pub fn went_its_own_way_blocking(dir: &Path, to: &str) -> Result<bool, String> {
+    Ok(!ancestor_blocking(dir, "HEAD", to)? && !ancestor_blocking(dir, to, "HEAD")?)
+}
+
+/// Whether commit `old` is `new` or one of its ancestors.
+fn ancestor_blocking(dir: &Path, old: &str, new: &str) -> Result<bool, String> {
     let out = output_within(
-        git(dir).args(["merge-base", "--is-ancestor", "HEAD", to]),
+        git(dir).args(["merge-base", "--is-ancestor", old, new]),
         LOCAL_LIMIT,
     )
     .map_err(|err| format!("git merge-base {err}"))?;
@@ -750,14 +755,26 @@ mod tests {
         commit(&repo, "b");
         git(&repo, &["checkout", "-q", "main"]);
 
-        assert_eq!(fast_forwards_blocking(&repo, "theirs"), Ok(true));
+        assert_eq!(
+            went_its_own_way_blocking(&repo, "theirs"),
+            Ok(false),
+            "behind"
+        );
         fast_forward_blocking(&repo, "theirs").unwrap();
         assert!(repo.join("b").exists(), "main caught up with theirs");
 
+        // Ahead of it, with a commit never pushed: up to date, not apart.
         commit(&repo, "c");
+        assert_eq!(
+            went_its_own_way_blocking(&repo, "theirs"),
+            Ok(false),
+            "ahead"
+        );
+        fast_forward_blocking(&repo, "theirs").unwrap();
+
         git(&repo, &["checkout", "-q", "theirs"]);
         commit(&repo, "d");
-        assert_eq!(fast_forwards_blocking(&repo, "main"), Ok(false));
+        assert_eq!(went_its_own_way_blocking(&repo, "main"), Ok(true));
         assert!(
             fast_forward_blocking(&repo, "main").is_err(),
             "two branches that went their own ways are never merged"

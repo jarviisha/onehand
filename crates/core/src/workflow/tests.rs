@@ -1695,3 +1695,18 @@ fn a_command_result_says_how_it_came_out() {
     };
     assert_eq!(cut_off.said(), "did not finish");
 }
+
+/// A retry works on the same branch, so on the pull request the last run
+/// opened.
+#[test]
+fn a_retry_keeps_the_pull_request_its_task_opened() {
+    let mut run = at_status_checks();
+    let opened = PrOpened {
+        number: 7,
+        url: "https://forge/pr/7".into(),
+    };
+    run.pull_request = Some(opened.clone());
+    run.status_checks_seen(Seen::Fail("timed out".into()));
+    let again = Run::retry_of(&run, "2".into(), run.template.clone(), None);
+    assert_eq!(again.pull_request, Some(opened));
+}

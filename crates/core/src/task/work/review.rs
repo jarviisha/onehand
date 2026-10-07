@@ -1,7 +1,7 @@
 //! What a run waiting for approval is judged on: the answer under review,
 //! what each answer to it starts, and the work the step under review did.
 
-use crate::workflow::{ApprovalAt, CommandResult, Run, StepKind};
+use crate::workflow::{ApprovalAt, CommandResult, Run, COMMAND_FAILED, COMMAND_PASSED};
 
 /// How many lines of an answer under review are drawn until a person asks
 /// for all of it: its last ones, where an answer ends on what it proposes.
@@ -62,19 +62,15 @@ impl UnderReview {
         let reviewed = visits.iter().rposition(|visit| visit.step == step.id);
         let span = reviewed.and_then(|i| visits[i].start.clone().zip(visits[i].end.clone()));
         // The last command since the step under review last started: one a
-        // command step's visit did not keep the result of ran before results
-        // were kept.
-        let is_command = |id: &str| {
-            run.template
-                .steps
-                .iter()
-                .any(|s| s.id == id && matches!(s.kind, StepKind::Command { .. }))
-        };
+        // visit did not keep the result of came out before results were
+        // kept, as its visit says; one cut off while it ran came out not at
+        // all.
+        let came_out = |why: Option<&str>| matches!(why, Some(COMMAND_PASSED | COMMAND_FAILED));
         let check = reviewed
             .and_then(|i| {
                 visits[i..].iter().rev().find_map(|v| match &v.command {
                     Some(ran) => Some(Checked::Ran(ran.clone())),
-                    None if v.ended_at.is_some() && is_command(&v.step) => Some(Checked::NotKept),
+                    None if came_out(v.why.as_deref()) => Some(Checked::NotKept),
                     None => None,
                 })
             })

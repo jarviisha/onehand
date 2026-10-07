@@ -181,6 +181,9 @@ impl Run {
         // What was checked stays checked: a retry that starts at the push
         // pushes the commit the last check passed on.
         run.marks.verified_at = prev.marks.verified_at.clone();
+        // The same branch, so the same pull request: a retry from after the
+        // pull request step works on the one the last run opened.
+        run.pull_request = prev.pull_request.clone();
         run
     }
 

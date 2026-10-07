@@ -98,7 +98,11 @@ Task ──< Run ──< Step visit
   how its output ended, and the commit and the fingerprint of the work it ran on). The task file
   has no version, so a file written before them reads with them absent: the failure reads as
   *other*, and what is drawn of the rest says *not recorded for this run*, never a guess. An older
-  build reading a newer file drops them the next time it saves the task; the task is never lost.
+  run's check is the commit alone only where a command step's visit says its command passed; a
+  visit cut off while its command ran, and a retry carrying the last run's commit for its push,
+  check nothing. An older run's pull request is read from a pull request step's visit done on the
+  forge. An older build reading a newer file drops them the next time it saves the task; the task
+  is never lost.
 
 ### The life of a task
 

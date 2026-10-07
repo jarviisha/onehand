@@ -458,7 +458,7 @@ fn prepare_blocking(
                     forge.fetch_blocking(&repo, &branch)?;
                 }
                 let theirs = format!("origin/{branch}");
-                if !worktree::fast_forwards_blocking(&dir, &theirs)? {
+                if worktree::went_its_own_way_blocking(&dir, &theirs)? {
                     return Err(core::review_diverged());
                 }
                 worktree::fast_forward_blocking(&dir, &theirs)?;

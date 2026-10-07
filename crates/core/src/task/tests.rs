@@ -698,3 +698,37 @@ fn a_retry_with_current_settings_runs_the_new_setup_from_its_start() {
     assert_eq!(t.runs.len(), 2, "the old run is kept");
     assert_eq!(t.runs[0].setup.mode, None);
 }
+
+/// A task opened a pull request when a run kept it, or, from before runs
+/// kept it, when a pull request step's visit ended done on the forge.
+#[test]
+fn a_task_knows_it_opened_a_pull_request() {
+    let template = crate::workflow::builtin::all().remove(2);
+    let pr_step = template
+        .steps
+        .iter()
+        .find(|step| step.kind == StepKind::PullRequest)
+        .map(|step| step.id.clone())
+        .unwrap();
+    let mut t = task("1");
+    t.runs[0].template = template;
+    assert!(!t.opened_pull_request());
+    t.runs[0].visits.push(crate::workflow::Visit {
+        id: 1,
+        step: pr_step,
+        started_at: 1,
+        ended_at: Some(2),
+        start: None,
+        end: None,
+        output: None,
+        why: Some("done on the forge".into()),
+        command: None,
+    });
+    assert!(t.opened_pull_request(), "from before runs kept it");
+    t.runs[0].visits.clear();
+    t.runs[0].pull_request = Some(crate::workflow::PrOpened {
+        number: 7,
+        url: "u".into(),
+    });
+    assert!(t.opened_pull_request());
+}

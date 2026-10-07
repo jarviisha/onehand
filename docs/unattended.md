@@ -719,8 +719,10 @@ second path: an action on an issue whose newest task is done with its pull
 request open (beside *Open pull request*), and on the detail of a task done
 having opened one. Pressed, it first reads, off the UI loop
 (`unattended::read_review`), the pull request on the task's branch, for one
-open whether the worktree still fast-forwards to the branch on the forge
-(`worktree::fast_forwards_blocking`, after a fetch), and whether the issue is
+open whether the worktree and the branch on the forge went their own ways
+(`worktree::went_its_own_way_blocking`, after a fetch: a worktree behind it is
+brought up, and one ahead of it, with a repair not pushed yet, is up to date
+already), and whether the issue is
 among the open ones a pick reads. The preflight, kind
 *Answer a pull request review* (`preflight::ReviewFacts`), judges that on the
 task's own snapshot and setup, and **its refusals come before the claim**, in

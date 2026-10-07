@@ -69,10 +69,9 @@ pub fn read_review(id: &str, cx: &mut App) -> gpui::Task<Result<ReviewRead, Stri
         // otherwise be answered.
         let open = matches!(&pr, Ok(Some((PrState::Open, _))));
         let diverged = match (forge, open && answers) {
-            (Some(forge), true) => forge
-                .fetch_blocking(&repo, &branch)
-                .and_then(|()| worktree::fast_forwards_blocking(&dir, &format!("origin/{branch}")))
-                .map(|forwards| !forwards),
+            (Some(forge), true) => forge.fetch_blocking(&repo, &branch).and_then(|()| {
+                worktree::went_its_own_way_blocking(&dir, &format!("origin/{branch}"))
+            }),
             _ => Ok(false),
         };
         let (pr, diverged) = match diverged {

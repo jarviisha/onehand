@@ -4,7 +4,7 @@
 
 use super::Work;
 use crate::task::marks::{self, Change};
-use crate::workflow::{Run, StepKind};
+use crate::workflow::{Run, COMMAND_PASSED};
 use crate::worktree;
 
 /// How a run's check stands against the work as it is now.
@@ -181,18 +181,14 @@ pub(crate) fn vouched(run: &Run) -> Option<Vouched> {
             tail: Some(ran.tail.clone()),
         });
     }
-    // The commit alone, only for a run that ran a command step before its
-    // visits kept how one came out. A retry carries the last run's commit
-    // for its push, and a run that has not checked anything yet must not
-    // read as checked.
-    let ran_unkept =
-        run.visits().iter().any(|visit| {
-            visit.ended_at.is_some()
-                && visit.command.is_none()
-                && run.template.steps.iter().any(|step| {
-                    step.id == visit.step && matches!(step.kind, StepKind::Command { .. })
-                })
-        });
+    // The commit alone, only for a run whose command passed before its
+    // visits kept how one came out. A retry carries the last run's commit for
+    // its push, and a visit cut off while its command ran passed nothing: a
+    // run that has not checked anything must not read as checked.
+    let ran_unkept = run
+        .visits()
+        .iter()
+        .any(|visit| visit.command.is_none() && visit.why.as_deref() == Some(COMMAND_PASSED));
     if !ran_unkept {
         return None;
     }
