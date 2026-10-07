@@ -33,6 +33,24 @@ pub fn review_note(pr: &str, how: &str) -> String {
     )
 }
 
+/// Why a review on the open pull request `pr` is not answered: the workflow
+/// its task ran has no step its status checks send back to.
+pub fn review_unanswerable(pr: &str) -> String {
+    format!(
+        "its pull request {pr} is open, and the workflow its task ran has no status checks \
+         step to answer a review from"
+    )
+}
+
+/// Why a review on the pull request `pr` is not answered: a person closed it
+/// unmerged, and a second beside it would ask again.
+pub fn review_closed(pr: &str) -> String {
+    format!(
+        "its pull request {pr} was closed without being merged, and onehand does not open \
+         another; reopen it to have its review answered"
+    )
+}
+
 /// How one run of an issue's task ended, kept until the issue is told. What
 /// the run left on its branch is looked up when it is sent, so keeping it
 /// asks nothing of the network and lands before anything can be lost.

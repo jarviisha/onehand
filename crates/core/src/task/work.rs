@@ -116,6 +116,9 @@ pub struct Work {
     /// retry with current settings would run differently. Told by the app,
     /// which knows Settings; `false` until it does.
     pub settings_moved: bool,
+    /// Its last run's workflow answers a pull request review: its status
+    /// checks send back to a step that repairs.
+    pub answers_reviews: bool,
 }
 
 /// What a run waiting for approval is judged on, as a review draws it.
@@ -234,6 +237,7 @@ impl Work {
                 .filter(|_| matches!(stand, Stand::Approval { .. }))
                 .and_then(under_review),
             settings_moved: false,
+            answers_reviews: run.is_some_and(|run| run.template.repair_step().is_some()),
             span: run.and_then(|run| first(run).zip(last(run))),
             base: task.runs.first().and_then(first),
             task: task.id.clone(),
@@ -479,6 +483,9 @@ pub enum Act {
     /// Retry with what Settings say now, rather than what the last run ran
     /// with.
     RetryCurrent,
+    /// Answer the review on its open pull request, as putting the trigger
+    /// label back does.
+    AnswerReview,
     OpenPullRequest,
     OpenBranch,
     Refresh,
@@ -501,6 +508,7 @@ impl Act {
             Self::Resume => "Resume",
             Self::Retry => "Retry…",
             Self::RetryCurrent => "Retry with current settings…",
+            Self::AnswerReview => "Answer the pull request review",
             Self::OpenPullRequest => "Open pull request",
             Self::OpenBranch => "Open branch",
             Self::Refresh => "Refresh",
@@ -721,7 +729,10 @@ fn done(work: &Work, pr: PrSeen<'_>) -> Next {
             PrState::Open => row(
                 Some(format!("Review it on {forge}")),
                 Some(Act::OpenPullRequest),
-                &[],
+                match work.answers_reviews {
+                    true => &[Act::AnswerReview],
+                    false => &[],
+                },
             ),
             PrState::Merged => row(None, None, &[Act::RunWorkflow]),
             PrState::Closed => row(

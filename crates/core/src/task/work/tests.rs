@@ -397,8 +397,36 @@ fn a_done_run_with_its_pull_request_open_is_reviewed_on_the_forge() {
         },
     );
     assert_eq!(next.said.as_deref(), Some("Review it on GitHub"));
-    assert_eq!(acts(&next), (Some(Act::OpenPullRequest), vec![Act::Edit]));
+    // Its workflow repairs from its status checks, so a review left there is
+    // answered from here as well as by putting the label back.
+    assert_eq!(
+        acts(&next),
+        (
+            Some(Act::OpenPullRequest),
+            vec![Act::AnswerReview, Act::Edit]
+        )
+    );
     assert_eq!(pr_named(&open_pr), "#7 · open, draft");
+
+    // A workflow with nothing to repair from has no review to answer.
+    let mut plain = forge_flow();
+    plain
+        .steps
+        .retain(|step| !matches!(step.kind, StepKind::StatusChecks { .. }));
+    let task = ended(
+        at(self::task("1", plain, Some("GitHub")), 5, 900),
+        Outcome::Done,
+        None,
+    );
+    let next = next_of(
+        &task,
+        None,
+        Around {
+            pr: PrSeen::Read(Some(&open_pr)),
+            ..open()
+        },
+    );
+    assert_eq!(acts(&next), (Some(Act::OpenPullRequest), vec![Act::Edit]));
 }
 
 #[test]

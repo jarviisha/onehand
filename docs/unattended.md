@@ -713,6 +713,23 @@ pull request on that task's branch:
 A review is answered on the task's own snapshot, as any retry is: a workflow,
 agent, mode or timeout configured since applies to new tasks only.
 
+**Answer the pull request review** is a second door to the same path, not a
+second path: an action on an issue whose newest task is done with its pull
+request open (beside *Open pull request*, when its workflow repairs from its
+status checks) and on such a task's detail. Pressed, it first reads, off the UI
+loop, the pull request on the task's branch and, for one open, whether the
+worktree still fast-forwards to the branch on the forge
+(`worktree::fast_forwards_blocking`, after a fetch). The preflight, kind
+*Answer a pull request review* (`preflight::ReviewFacts`), judges that on the
+task's own snapshot and setup, and **its refusals come before the claim**, in
+the label path's words (`core::review_unanswerable`, `core::review_closed`): no
+forge, no status checks step to repair from, the pull request closed unmerged
+or merged or not there, the branch gone its own way. One is said in the window
+as *Not answered: …*, and nothing is claimed. Otherwise the issue is picked as a
+person picks one (`start_picked`, with its cap and its claim comment), which
+finds the open pull request and answers it as above. The trigger label keeps
+working.
+
 ## Where it lives
 
 The tick is on `Shared`, one per process, for the reason the remote bridge is

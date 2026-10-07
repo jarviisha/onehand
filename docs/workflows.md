@@ -333,7 +333,7 @@ current settings* as a new start is, on what Settings say now
 | Place | `HEAD` is detached and no forge serves the project | |
 | Base | | what the branch is cut off: the default branch on `origin`, fetched first, or the branch checked out |
 | Forge | `gh` missing or signed out, as last seen | |
-| Issue | another run works on it | |
+| Issue | another run works on it; for *Answer a pull request review*, the pull request is not open (closed unmerged, merged, none, or unread), the workflow has no status checks step to repair from, no forge serves the project, or the branch on the forge went its own way | |
 | Earlier task | | the issue's last task needs attention: starting makes a second task, and *Retry…* opens that task's Retry dialog instead |
 | Slot | `at_once` is reached, naming the issues holding the slots | |
 
@@ -458,6 +458,8 @@ change (`git checkout . && git clean -fd`).
 | A worktree run outside git | Open the launcher on a folder that is not a git repository and pick a worktree workflow | Under the fields, in the danger ink: no worktree can be cut; *Run* is spent. A checkout workflow there is offered |
 | A Retry whose mode is gone | Run an issue task with `mode` set to one the agent offers, let it end exhausted, then make the agent offer other modes (or change the spec's mode list) and open a session on it; *Retry* the task | The dialog lists, in the danger ink, that the agent offers no such mode, that the run keeps its own setup and that *Retry with current settings* runs with what Settings say now; *Retry* is spent. Changing `[unattended] mode` does not clear it, and *Retry with current settings…* then shows *Mode: old → new* and runs with the new one |
 | A configuration failure | An issue task whose run failed because its mode was not offered | The issue says why, with *Retry with current settings…* first and *Retry…* beside it |
+| Answer the pull request review | On a GitHub project, an issue whose task is done with its draft pull request open, a review left on it | The issue offers *Answer the pull request review* beside *Open pull request*; pressed, a new run starts at the repair step with the review as its note, and the issue is told it answers the review, as putting the label back does |
+| A review that cannot be answered | The same, after closing the pull request unmerged; then with a commit pushed to the branch on GitHub that the worktree does not have, the pull request open again | *Not answered: Its pull request … was closed without being merged …*, then *Not answered: The branch on the forge went its own way …*; nothing is claimed, and the issue gets no comment |
 | A full slot | With `at_once = 1` and an issue task running, *Run workflow…* on another issue | *Before it starts* names the issue being worked; *Run* is spent |
 | An earlier task needing attention | On an issue whose last task ended exhausted, *Run workflow…* | Muted: the last task ended and a new start makes a second task, with *Retry…*, which closes the form and opens that task's Retry dialog |
 | A template | *New issue* in the tab, press *Bug* in the *Template* row | The body holds *Problem*, *Scope*, *Acceptance* and *How to check*, each with its hint; the labels field gains `bug`; the row goes once anything is typed in the body. Save with only *Problem* filled: the issue's facts line says *No scope, acceptance or how to check written*, muted |

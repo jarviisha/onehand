@@ -27,7 +27,7 @@ follow it, judge what it left and send it back, without going looking for it.**
 | 1 | The issue says where its work stands | built: [unattended.md](../../unattended.md), [tasks.md](../../tasks.md) | 1 |
 | 2 | An issue written to be worked, and the brief shown before it is | [issue-brief.md](issue-brief.md) | 1 |
 | 3 | Everything a start needs, checked before it claims or cuts anything | [preflight.md](preflight.md) | 1 |
-| 4 | Approve, revise, resume or retry next to what is judged | [review-in-place.md](review-in-place.md) | 1 |
+| 4 | Approve, revise, resume or retry next to what is judged | built: [tasks.md](../../tasks.md), [unattended.md](../../unattended.md), [workflows.md](../../workflows.md) | 1 |
 | 5 | Issues and workflows as pages of their own | [pages.md](pages.md) | the Issues page 1, the Workflows page 2 |
 | 6 | Unattended runs when there are many issues | [operations.md](operations.md) | 2, except its first item |
 | 7 | Workflows past a straight line | below | 3 |
@@ -47,12 +47,10 @@ keep yet (see *What is read and what is new* below).
    the page the place to work.~~ Built.
 4. ~~**Brief preview** (piece 2) and **preflight per kind of start** (piece 3), with *Run workflow…*
    opening on the issue it was pressed on.~~ Built, except the parts steps 5 and 6 take below.
-5. **Review in place** (piece 4) on the page, with the approval guarded by the visit it was read
+5. ~~**Review in place** (piece 4) on the page, with the approval guarded by the visit it was read
    from, and the persistence it needs (piece 1, part B). The dock offers *Review…*, which opens
    the page; the full review is never built in the dock first. It also takes **answering a pull
-   request review** into the preflight as a kind of its own: step 4 left that kind's refusals
-   where they are, since they already come before the claim and judging them in the preflight
-   needs the pull request's state, which this step reads anyway.
+   request review** into the preflight as a kind of its own.~~ Built.
 6. Then the Workflows page (piece 5's other half) and the rest of operations (piece 6), with
    three parts step 4 left for it:
    - ***Check the agent*** ([preflight.md](preflight.md#check-the-agent-step-6)):
@@ -78,7 +76,7 @@ documents and its row here names the pull request.
 | 2 | [#90](https://github.com/jarviisha/onehand/issues/90) | [#96](https://github.com/jarviisha/onehand/pull/96) |
 | 3 | [#97](https://github.com/jarviisha/onehand/issues/97) | [#104](https://github.com/jarviisha/onehand/pull/104) |
 | 4 | [#105](https://github.com/jarviisha/onehand/issues/105) | [#112](https://github.com/jarviisha/onehand/pull/112) |
-| 5 | | |
+| 5 | [#114](https://github.com/jarviisha/onehand/issues/114) | |
 | 6 | | |
 
 ## Five questions every layout answers
@@ -90,7 +88,7 @@ The pieces are judged by what a person can do, not by how much they are shown. E
 |---|---|
 | An issue with a very long description is opened: is it seen at once that it waits on me? | built: *A long body waiting for approval* in the by-hand list in [workflows.md](../../workflows.md#checking-it-by-hand) |
 | With many issues: can the ones that need me be found without opening each? | built: the Issues page rows of the by-hand list in [workflows.md](../../workflows.md#checking-it-by-hand) |
-| A failed run is retried: is it clear where it starts again and which configuration it keeps? | [review-in-place.md](review-in-place.md#done-when) |
+| A failed run is retried: is it clear where it starts again and which configuration it keeps? | built: *What Retry keeps* and *Retry with current settings* in the by-hand list in [workflows.md](../../workflows.md#checking-it-by-hand) |
 | A session or a diff is opened and left: is the same issue, filter and scroll still there? | built: *Coming back* in the by-hand list in [workflows.md](../../workflows.md#checking-it-by-hand) |
 | The window is narrowed or zoomed in: can the action and the current step still be read? | built: the Issues tab rows and, for the page, *Narrow* in the by-hand list in [workflows.md](../../workflows.md#checking-it-by-hand) |
 
@@ -103,9 +101,10 @@ The pieces are judged by what a person can do, not by how much they are shown. E
 | `Marks::verified_at`, the commit the last passed command ran on | which command passed and when, as a record per command visit |
 | the issue's own open or closed | the pull request a run opened: the verdict looks it up by branch when the report is sent |
 
-Piece 1 part A uses the left column only. Everything in the right column is piece 1 part B, with
-its compatibility rule: a task file written before it reads with the new fields absent, and the
-view says *not recorded for this run*, never a guess.
+Piece 1 part A uses the left column only. Everything in the right column is piece 1 part B, built
+in step 5 ([tasks.md](../../tasks.md#the-model)), with its compatibility rule: a task file written
+before it reads with the new fields absent, and the view says *not recorded for this run*, never a
+guess.
 
 ## Waves
 

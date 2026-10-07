@@ -221,6 +221,9 @@ pub enum Request<'a> {
     /// Run task `id` again with what Settings say now, asking first. Only
     /// ever travels **upward**.
     RetryTaskCurrent(&'a str),
+    /// Answer the review on issue task `id`'s open pull request, as putting
+    /// the trigger label back does. Only ever travels **upward**.
+    AnswerReview(&'a str),
     /// Stop task `id`. Only ever travels **upward**.
     StopTask(&'a str),
 }

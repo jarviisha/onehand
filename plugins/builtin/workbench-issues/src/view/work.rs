@@ -195,6 +195,10 @@ fn tooltip(act: Act) -> Option<&'static str> {
         Act::Review => Some("Read what waits for approval, and approve it or send it back"),
         Act::OpenBranch => Some("Show the folder the branch is checked out in"),
         Act::Retry => Some("Run it again in a new run, as the last run was configured"),
+        Act::AnswerReview => Some(
+            "Run the task again from its repair step with the review as its note, as putting \
+             the label back does",
+        ),
         Act::RetryCurrent => Some(
             "Run it again with what Settings say now, saying first what changes and where it \
              starts",
@@ -303,6 +307,11 @@ impl Pressed {
             Act::RetryCurrent => {
                 if let Some(id) = task {
                     view.ask_task(id, |id| Request::RetryTaskCurrent(id), window, cx);
+                }
+            }
+            Act::AnswerReview => {
+                if let Some(id) = task {
+                    view.ask_task(id, |id| Request::AnswerReview(id), window, cx);
                 }
             }
             Act::OpenPullRequest => match self.pr_url {

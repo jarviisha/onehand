@@ -302,6 +302,22 @@ pub fn fast_forward_blocking(dir: &Path, to: &str) -> Result<(), String> {
     }
 }
 
+/// Whether the branch checked out at `dir` can be brought up to `to` without
+/// a merge commit: its head is an ancestor of `to`, so the two did not go
+/// their own ways.
+pub fn fast_forwards_blocking(dir: &Path, to: &str) -> Result<bool, String> {
+    let out = output_within(
+        git(dir).args(["merge-base", "--is-ancestor", "HEAD", to]),
+        LOCAL_LIMIT,
+    )
+    .map_err(|err| format!("git merge-base {err}"))?;
+    match out.status.code() {
+        Some(0) => Ok(true),
+        Some(1) => Ok(false),
+        _ => Err(git_message(&out.stderr)),
+    }
+}
+
 /// How long a question git answers from the repository alone may take.
 pub(crate) const LOCAL_LIMIT: Duration = Duration::from_secs(30);
 
@@ -721,7 +737,8 @@ mod tests {
             git(dir, &["add", file]);
             git(dir, &["commit", "-qm", file]);
         };
-        let repo = std::env::temp_dir().join(format!("onehand-ff-{}", std::process::id()));
+        let repo =
+            std::env::temp_dir().join(format!("onehand-fast-forwards-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&repo);
         std::fs::create_dir_all(&repo).unwrap();
         git(&repo, &["init", "-q", "-b", "main"]);
@@ -733,12 +750,14 @@ mod tests {
         commit(&repo, "b");
         git(&repo, &["checkout", "-q", "main"]);
 
+        assert_eq!(fast_forwards_blocking(&repo, "theirs"), Ok(true));
         fast_forward_blocking(&repo, "theirs").unwrap();
         assert!(repo.join("b").exists(), "main caught up with theirs");
 
         commit(&repo, "c");
         git(&repo, &["checkout", "-q", "theirs"]);
         commit(&repo, "d");
+        assert_eq!(fast_forwards_blocking(&repo, "main"), Ok(false));
         assert!(
             fast_forward_blocking(&repo, "main").is_err(),
             "two branches that went their own ways are never merged"

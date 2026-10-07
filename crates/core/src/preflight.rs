@@ -8,6 +8,7 @@
 //! back where the start is asked for; the callers that claim and cut still do
 //! that themselves, after this.
 
+use crate::connector::PrState;
 use crate::task::{Task, Working};
 use crate::workflow::{Failure, Place, StepKind, Template};
 
@@ -27,6 +28,10 @@ pub enum Kind {
     /// its newest version, judged as a new one is, on the configuration a
     /// new task of its kind would take.
     RetryCurrent,
+    /// An issue task's next run answering the review on its open pull
+    /// request, from its workflow's repair step, on its own snapshot and
+    /// setup, in its own worktree brought up to the forge's branch.
+    AnswerReview,
 }
 
 /// Where what blocks a Retry by its own setup is changed: the retry that
@@ -88,6 +93,22 @@ pub struct Slots {
     pub at_once: u32,
 }
 
+/// What answering a pull request review knows of it, read off the UI thread
+/// before anything is claimed.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ReviewFacts {
+    /// The pull request on the task's branch as the forge says now, by its
+    /// state and address; `None` when there is none, `Err` when it could not
+    /// be read.
+    pub pr: Result<Option<(PrState, String)>, String>,
+    /// The workflow its task ran answers a review: its status checks send
+    /// back to a step that repairs.
+    pub answers: bool,
+    /// The branch on the forge went its own way from the task's worktree, so
+    /// bringing the worktree up to it is no fast-forward.
+    pub diverged: bool,
+}
+
 /// The branch a detached `HEAD` reads as.
 pub const DETACHED: &str = "(detached)";
 
@@ -119,6 +140,8 @@ pub struct Facts {
     pub slots: Option<Slots>,
     /// The task whose place this start would queue behind.
     pub queued_behind: Option<String>,
+    /// The pull request a review is answered on, for that start.
+    pub review: Option<ReviewFacts>,
 }
 
 /// Everything `facts` says about a start of `kind`: blocks first, the
@@ -134,19 +157,25 @@ pub fn preflight(kind: Kind, facts: &Facts) -> Vec<Finding> {
             task: None,
         })
     };
-    let own = matches!(kind, Kind::Resume | Kind::Retry);
+    let own = matches!(kind, Kind::Resume | Kind::Retry | Kind::AnswerReview);
     let keeps = match kind {
         Kind::Retry => {
             " The run keeps its own setup; Retry with current settings runs with what Settings \
              say now."
         }
-        Kind::Resume => " The run keeps its own setup, so changing Settings does not change it.",
+        Kind::Resume | Kind::AnswerReview => {
+            " The run keeps its own setup, so changing Settings does not change it."
+        }
         Kind::NewRun | Kind::NewIssueRun | Kind::RetryCurrent => "",
     };
     // Where what the run's own setup blocks is changed, for a Retry.
     let own_change = match kind {
         Kind::Retry => Some(RETRY_CURRENT),
-        Kind::NewRun | Kind::NewIssueRun | Kind::Resume | Kind::RetryCurrent => None,
+        Kind::NewRun
+        | Kind::NewIssueRun
+        | Kind::Resume
+        | Kind::RetryCurrent
+        | Kind::AnswerReview => None,
     };
     let issue_kind = kind == Kind::NewIssueRun;
 
@@ -283,7 +312,7 @@ pub fn preflight(kind: Kind, facts: &Facts) -> Vec<Finding> {
             ),
             (None, false, None) => {}
         },
-        Kind::NewRun | Kind::Resume | Kind::Retry | Kind::RetryCurrent => {}
+        Kind::NewRun | Kind::Resume | Kind::Retry | Kind::RetryCurrent | Kind::AnswerReview => {}
     }
 
     // The forge: an issue's run asks it for the default branch whatever its
@@ -308,6 +337,13 @@ pub fn preflight(kind: Kind, facts: &Facts) -> Vec<Finding> {
             format!("{name} cannot be used: {why}"),
             Some("Settings ▸ Connections"),
         );
+    }
+
+    // The pull request a review is answered on.
+    if let Some(review) = facts.review.as_ref().filter(|_| kind == Kind::AnswerReview) {
+        if let Some(why) = review_refused(review, facts.forge.is_some()) {
+            say(Check::Issue, true, capital(&why), None);
+        }
     }
 
     // The issue and its earlier tasks.
@@ -355,6 +391,34 @@ pub fn preflight(kind: Kind, facts: &Facts) -> Vec<Finding> {
 
     found.sort_by_key(|f| (!f.blocks, f.check));
     found
+}
+
+/// Why a review is not answered, in the words the label path uses where it
+/// has them; `None` when it can be.
+fn review_refused(review: &ReviewFacts, forge: bool) -> Option<String> {
+    if !forge {
+        return Some(
+            "no forge serves the project, so there is no pull request review to answer".to_string(),
+        );
+    }
+    let (state, url) = match &review.pr {
+        Err(why) => return Some(format!("the pull request could not be read: {why}")),
+        Ok(None) => return Some("there is no pull request on the task's branch".to_string()),
+        Ok(Some(pr)) => pr,
+    };
+    match state {
+        PrState::Closed => Some(crate::unattended::review_closed(url)),
+        PrState::Merged => Some(format!(
+            "its pull request {url} was merged: there is no review left to answer"
+        )),
+        PrState::Open if !review.answers => Some(crate::unattended::review_unanswerable(url)),
+        PrState::Open if review.diverged => Some(
+            "the branch on the forge went its own way from the task's worktree, and onehand \
+             does not push over it"
+                .to_string(),
+        ),
+        PrState::Open => None,
+    }
 }
 
 /// Why `template` cannot work an issue: it works in the checkout, and an

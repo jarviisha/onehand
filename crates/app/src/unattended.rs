@@ -24,7 +24,10 @@ use std::time::Duration;
 mod facts;
 mod launch;
 mod report;
-pub use launch::{Pickable, look_now, pickable_blocking, pickable_one_blocking, start_picked};
+pub use launch::{
+    Pickable, answer_review_by_hand, look_now, pickable_blocking, pickable_one_blocking,
+    start_picked,
+};
 use launch::{begin_blocking, landed};
 pub(crate) use report::{
     card_question, deliver, deliver_all, ended, keep, opening, refuse_mode, spec_for, started,

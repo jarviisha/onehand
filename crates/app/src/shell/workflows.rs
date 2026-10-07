@@ -160,6 +160,7 @@ impl Shell {
             issue: None,
             slots: None,
             queued_behind: None,
+            review: None,
         };
         Some(preflight::preflight(preflight::Kind::NewRun, &facts))
     }

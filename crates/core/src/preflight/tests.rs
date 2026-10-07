@@ -56,6 +56,7 @@ fn healthy() -> Facts {
             at_once: 2,
         }),
         queued_behind: None,
+        review: None,
     }
 }
 
@@ -494,4 +495,78 @@ fn a_configuration_block_found_late_is_a_configuration_failure() {
     ] {
         assert_eq!(found_late(check), Failure::Other, "{check:?}");
     }
+}
+
+/// What answering a pull request review is refused for, said before anything
+/// is claimed, in the words the label path uses.
+#[test]
+fn answering_a_review_is_refused_before_the_claim() {
+    use crate::connector::PrState;
+    let url = "https://forge/pr/7".to_string();
+    let review = |pr: Result<Option<(PrState, String)>, String>, answers, diverged| Facts {
+        review: Some(ReviewFacts {
+            pr,
+            answers,
+            diverged,
+        }),
+        ..healthy()
+    };
+    let refused = |facts: &Facts| {
+        found(Kind::AnswerReview, facts, Check::Issue)
+            .filter(|f| f.blocks)
+            .map(|f| f.text)
+    };
+    assert_eq!(
+        refused(&review(Ok(Some((PrState::Open, url.clone()))), true, false)),
+        None,
+        "an open pull request on a workflow that repairs is answered"
+    );
+    // The label path's own words, the first letter raised.
+    let raised = |said: String| said[..1].to_uppercase() + &said[1..];
+    assert_eq!(
+        refused(&review(
+            Ok(Some((PrState::Open, url.clone()))),
+            false,
+            false
+        )),
+        Some(raised(crate::unattended::review_unanswerable(&url)))
+    );
+    assert_eq!(
+        refused(&review(
+            Ok(Some((PrState::Closed, url.clone()))),
+            true,
+            false
+        )),
+        Some(raised(crate::unattended::review_closed(&url)))
+    );
+    assert!(
+        refused(&review(Ok(Some((PrState::Open, url.clone()))), true, true))
+            .unwrap()
+            .contains("went its own way")
+    );
+    assert!(refused(&review(
+        Ok(Some((PrState::Merged, url.clone()))),
+        true,
+        false
+    ))
+    .unwrap()
+    .contains("merged"));
+    assert!(refused(&review(Ok(None), true, false)).is_some());
+    assert!(refused(&review(Err("offline".into()), true, false))
+        .unwrap()
+        .contains("offline"));
+    let no_forge = Facts {
+        forge: None,
+        ..review(Ok(None), true, false)
+    };
+    assert!(refused(&no_forge).unwrap().contains("No forge"));
+    // Its own snapshot and setup, as a Retry: Settings changed do not judge it.
+    assert_eq!(
+        found(
+            Kind::AnswerReview,
+            &review(Ok(Some((PrState::Open, url))), true, false),
+            Check::Base
+        ),
+        None
+    );
 }

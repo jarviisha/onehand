@@ -480,6 +480,22 @@ fn footer(
 }
 
 impl Shell {
+    /// Answer the review on issue task `id`'s open pull request, as putting
+    /// the trigger label back does, once its preflight finds nothing in the
+    /// way.
+    pub(crate) fn answer_review(
+        &mut self,
+        id: String,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let has_check = crate::task::task(&id, cx)
+            .is_some_and(|task| self.check_of(&task.setup.repo).is_some());
+        let handle = window.window_handle();
+        // Deferred: a start reaches into the window this shell is drawing.
+        cx.defer(move |cx| crate::unattended::answer_review_by_hand(id, has_check, handle, cx));
+    }
+
     /// Carry task `id` on where it stopped, once the preflight finds nothing
     /// in the way of its own setup; what blocks it is said in the window.
     pub(crate) fn resume_task(&mut self, id: String, window: &mut Window, cx: &mut Context<Self>) {

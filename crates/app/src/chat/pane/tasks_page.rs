@@ -377,7 +377,7 @@ fn open_session(
 }
 
 /// A press that announces `event` about task `id`.
-fn emit(
+pub(super) fn emit(
     id: &str,
     cx: &Context<ChatPane>,
     event: fn(String) -> ChatPaneEvent,

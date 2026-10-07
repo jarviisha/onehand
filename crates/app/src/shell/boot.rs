@@ -189,6 +189,7 @@ impl Shell {
                     E::ResumeTask(id) => shell.resume_task(id.clone(), window, cx),
                     E::DismissTask(id) => crate::task::dismiss(id, cx),
                     E::RetryTask(id) => shell.begin_retry(id.clone(), window, cx),
+                    E::AnswerReview(id) => shell.answer_review(id.clone(), window, cx),
                     E::StopTask(id) => {
                         let id = id.clone();
                         cx.defer(move |cx| crate::task::stop_task(&id, cx));

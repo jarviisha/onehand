@@ -3,7 +3,7 @@
 //! and changed, and its earlier runs.
 
 use super::super::workspace_page::{card_box, page_card};
-use super::super::{ChatPane, rel_time};
+use super::super::{ChatPane, ChatPaneEvent, rel_time};
 use super::{Page, TasksPage, open_session, row_actions, row_said};
 use crate::task::Row;
 use gpui::{
@@ -201,7 +201,18 @@ pub(super) fn task_detail(
                 .child(div().font_semibold().child(row.title.clone()))
                 .child(div().text_xs().text_color(muted).child(row_said(row, page))),
         )
-        .children(row_actions("task-detail", row, true, cx));
+        .children(row_actions("task-detail", row, true, cx))
+        .children(answers_review(task).then(|| {
+            crate::controls::action("task-answer-review")
+                .ghost()
+                .small()
+                .label("Answer the pull request review")
+                .tooltip(
+                    "Run it again from its repair step with the review as its note, as putting \
+                     the label back does",
+                )
+                .on_click(super::emit(&task.id, cx, ChatPaneEvent::AnswerReview))
+        }));
     let mut out = vec![
         div().h_flex().child(back).into_any_element(),
         head.into_any_element(),
@@ -493,6 +504,20 @@ fn visit_body(
         out.push(muted_line(&format!("{hidden} more files not shown"), cx));
     }
     out
+}
+
+/// Whether `task` may answer a review on its pull request: an issue's task
+/// whose last run is done, on a branch a forge serves, with a workflow that
+/// repairs from its status checks. Whether a pull request is open there is
+/// the preflight's to read when it is pressed.
+fn answers_review(task: &onehand_core::task::Task) -> bool {
+    task.issue().is_some()
+        && task.setup.forge.is_some()
+        && task.setup.branch.is_some()
+        && task.runs.last().is_some_and(|run| {
+            run.outcome == Some(onehand_core::workflow::Outcome::Done)
+                && run.template.repair_step().is_some()
+        })
 }
 
 /// What the task's run waits for approval on: the answer, what each answer
