@@ -218,6 +218,16 @@ pub struct Visit {
     pub why: Option<String>,
 }
 
+/// What a person's approval or revision was drawn from: the run, and the
+/// approval step's visit they read. Visit ids count from 1 in every run, so
+/// the run is named too: a press from a view of a run a retry replaced names
+/// a visit of the same number.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ApprovalAt {
+    pub run: String,
+    pub visit: u32,
+}
+
 /// How many transitions a run's history keeps, newest last.
 const HISTORY_MAX: usize = 200;
 
@@ -477,18 +487,32 @@ impl Run {
         self.enter(back, why)
     }
 
-    /// A person approved: go on.
-    pub fn approved(&mut self) -> Action {
+    /// What an approval press drawn from the run now names: the run, and the
+    /// approval step's open visit. `None` while nothing waits for approval.
+    pub fn approval_at(&self) -> Option<ApprovalAt> {
         if self.awaiting != Await::Approval {
+            return None;
+        }
+        let visit = self.visits.last().filter(|v| v.ended_at.is_none())?;
+        Some(ApprovalAt {
+            run: self.id.clone(),
+            visit: visit.id,
+        })
+    }
+
+    /// A person approved what they read at `at`: go on, unless the run no
+    /// longer waits there.
+    pub fn approved(&mut self, at: &ApprovalAt) -> Action {
+        if self.approval_at().as_ref() != Some(at) {
             return Action::Idle;
         }
         self.enter(self.step + 1, "approved")
     }
 
-    /// A person sent the answer back with `note`: the step it approves runs
-    /// again.
-    pub fn revised(&mut self, note: String) -> Action {
-        if self.awaiting != Await::Approval {
+    /// A person sent the answer they read at `at` back with `note`: the step
+    /// it approves runs again, unless the run no longer waits there.
+    pub fn revised(&mut self, at: &ApprovalAt, note: String) -> Action {
+        if self.approval_at().as_ref() != Some(at) {
             return Action::Idle;
         }
         let back = match self.current().map(|step| &step.kind) {

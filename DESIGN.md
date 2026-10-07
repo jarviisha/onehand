@@ -107,7 +107,9 @@ monospace font.
   the current one is in full ink and weight), then at the far end *Review…*, *Revise…* and
   *Continue* (the one primary) while the run waits for approval, and *Stop* always. The step
   labels are clipped by width; the workflow's name and the controls never are. *Review…* reads the answer from the run, not the
-  transcript. *Revise…* asks for a note and refuses an empty one.
+  transcript. *Revise…* asks for a note and refuses an empty one. Each press carries the visit it
+  was drawn from; one the run no longer waits at shows the new answer, saying it changed, in the
+  warning ink, rather than approving it unread.
 - **Composer.** A card at the foot of the transcript. Inside it, one row: the `+` menu, *Fast*,
   the model chip (those two only when the agent offers them), and *Send* or *Stop*, with *Queue*
   beside *Stop* while a turn runs and there is a draft. Under the card, outside it, a strip shows standing state:

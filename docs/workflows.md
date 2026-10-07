@@ -194,7 +194,12 @@ the run's history, capped at 200.
   running, and nothing is waited on past `wait`: the run fails. Merged ends it done; closed, or no
   pull request at all, fails it. Repairs are bounded by `misses`, like a failing command.
 - **An approval step** waits. *Continue* goes on; *Revise…* goes back to the step it approves, whose
-  prompt then carries the note and its last answer. A revision is not a miss.
+  prompt then carries the note and its last answer. A revision is not a miss. **Each press names
+  what it approves** (`ApprovalAt`): the run and the approval step's open visit it was drawn from.
+  The engine takes it only while that run waits for approval at that visit, and answers `Idle`
+  otherwise. The run is named as well as the visit, because visit ids count from 1 in every run.
+  So a window still showing a plan another window had revised, a double press, a press after the
+  run was cut off and a press from a view of a run a Retry replaced all approve nothing.
 - **Misses are counted per stretch**: they reset only when the run reaches a step further on than it
   has been, so a command that keeps failing cannot loop with its `on_fail` step forever.
 - **`stopped` never judges the turn** that was under way, whatever the reason: a cut-short turn
@@ -255,7 +260,10 @@ it carries out a step's first action, so the start mark lands before the prompt 
 the work; one commit serves a visit's end and the next one's start. A mark that cannot be pinned is
 logged and left out, and never stops a run: gates read `Mark` and `Facts`, not the pinned commits. While a mark is
 being pinned, an approval or a revision waits for it and for the action it holds back, so nothing
-moves the run on under that action. A Stop, the timeout or any other ending waits for the pin too,
+moves the run on under that action; replayed, it still carries the visit it was drawn from, so a
+second press held behind the first finds that visit closed. The driver routes a press by the
+task, not the session, so a window other than the session's can make it, and the run's clock goes
+on only once the engine took the press. A Stop, the timeout or any other ending waits for the pin too,
 and then runs instead of that action, with its cancel of the turn: a prompt is never sent to a run
 already said to be over, and no ending races the pin. A driver
 taking a run up counts as pinned only the marks up to the last one that landed
@@ -271,7 +279,9 @@ the very file the change before it created.
 
 **What waits for approval is shown from the run**, not the transcript (`Run::under_review`):
 the strip's *Review…* opens the kept answer, so a run resumed in a new session is not approved
-blind.
+blind. A press the run no longer waits for is not an error: *Continue* puts up what the run waits
+on now, saying *The answer changed since you opened it.*, and *Revise…* refuses to send in place,
+keeping the note.
 
 ## Starting, queueing and resuming
 

@@ -69,6 +69,96 @@ fn at_approval() -> Run {
     run
 }
 
+/// Approve what `run` waits on, as a press drawn from it now does.
+fn approve(run: &mut Run) -> Action {
+    match run.approval_at() {
+        Some(at) => run.approved(&at),
+        None => Action::Idle,
+    }
+}
+
+/// Send what `run` waits on back with `note`, as a press drawn from it now
+/// does.
+fn revise(run: &mut Run, note: &str) -> Action {
+    match run.approval_at() {
+        Some(at) => run.revised(&at, note.to_string()),
+        None => Action::Idle,
+    }
+}
+
+/// Window A reads the plan, B revises it, the plan runs again and waits at a
+/// new approval visit: A's *Continue* names a visit that is no longer open,
+/// and approves nothing it did not read.
+#[test]
+fn an_approval_drawn_from_a_closed_visit_is_refused() {
+    let mut run = at_approval();
+    let read_by_a = run.approval_at().unwrap();
+    assert_eq!(read_by_a.run, "1");
+    assert_eq!(
+        run.revised(&read_by_a.clone(), "Smaller, please.".into()),
+        Action::Measure
+    );
+    prompt_of(run.measured(mark("a", "d0")));
+    assert_eq!(
+        run.turn_ended(&facts("a", false, 0, "d0"), "A smaller plan."),
+        Action::AwaitApproval
+    );
+    let now = run.approval_at().unwrap();
+    assert_ne!(now.visit, read_by_a.visit, "the plan waits at a new visit");
+    assert_eq!(run.approved(&read_by_a), Action::Idle);
+    assert_eq!(
+        run.revised(&read_by_a, "Again.".into()),
+        Action::Idle,
+        "a revision is refused the same way"
+    );
+    assert!(run.awaiting_approval(), "the run has not moved");
+    assert_eq!(run.approved(&now), Action::Measure);
+}
+
+/// A double press, or a second press held while the next step's mark was
+/// pinned, names the visit the first one closed.
+#[test]
+fn a_second_press_of_continue_approves_nothing() {
+    let mut run = at_approval();
+    let at = run.approval_at().unwrap();
+    assert_eq!(run.approved(&at), Action::Measure);
+    assert_eq!(run.approved(&at), Action::Idle);
+    assert_eq!(run.revised(&at, "Late.".into()), Action::Idle);
+    assert_eq!(run.current().unwrap().id, "implement");
+    assert!(run.approval_at().is_none(), "nothing waits on a person");
+}
+
+/// A run cut off while it waited has nothing to approve; it is resumed.
+#[test]
+fn an_approval_of_a_run_cut_off_is_refused() {
+    let mut run = at_approval();
+    let at = run.approval_at().unwrap();
+    assert!(matches!(run.stopped(Stop::LinkLost), Action::Finish(o) if o.resumable()));
+    assert_eq!(run.approved(&at), Action::Idle);
+    assert!(run.approval_at().is_none());
+}
+
+/// Visit ids count from 1 in every run: a press drawn from an earlier run of
+/// the same task, at a visit with the same number, is refused by its run.
+#[test]
+fn an_approval_drawn_from_an_earlier_run_is_refused() {
+    let mut first = at_approval();
+    let old = first.approval_at().unwrap();
+    first.stopped(Stop::TimedOut);
+    let mut next = Run::retry_of(&first, "2".into(), first.template.clone(), Some("plan"));
+    assert_eq!(next.resume(), Action::Measure);
+    prompt_of(next.measured(mark("a", "d0")));
+    assert_eq!(
+        next.turn_ended(&facts("a", false, 0, "d0"), "The plan."),
+        Action::AwaitApproval
+    );
+    let now = next.approval_at().unwrap();
+    assert_eq!(now.visit, old.visit, "the same number in another run");
+    assert_eq!(next.approved(&old), Action::Idle);
+    assert_eq!(next.revised(&old, "No.".into()), Action::Idle);
+    assert_eq!(next.approved(&now), Action::Measure);
+}
+
 #[test]
 fn every_shipped_template_parses_and_validates() {
     let all = builtin::all();
@@ -233,7 +323,7 @@ fn an_agent_step_passes_on_its_gates_and_keeps_its_answer() {
     let mut run = at_approval();
     assert!(run.awaiting_approval());
     assert_eq!(run.outputs["plan"], "The plan.");
-    assert_eq!(run.approved(), Action::Measure);
+    assert_eq!(approve(&mut run), Action::Measure);
     let text = prompt_of(run.measured(mark("a", "d0")));
     assert!(
         text.contains("The plan."),
@@ -294,7 +384,7 @@ fn a_change_in_a_checkout_plan_is_measured_again_so_a_persons_edit_may_stay() {
 #[test]
 fn a_failed_command_goes_back_with_its_output_and_keeps_counting() {
     let mut run = at_approval();
-    run.approved();
+    approve(&mut run);
     prompt_of(run.measured(mark("a", "d0")));
     run.turn_ended(&facts("a", true, 0, "d1"), "");
     assert_eq!(
@@ -321,7 +411,7 @@ fn a_failed_command_goes_back_with_its_output_and_keeps_counting() {
 #[test]
 fn a_revision_sends_the_plan_back_with_the_note_and_the_old_plan() {
     let mut run = at_approval();
-    assert_eq!(run.revised("Smaller, please.".into()), Action::Measure);
+    assert_eq!(revise(&mut run, "Smaller, please."), Action::Measure);
     assert_eq!(run.current().unwrap().id, "plan");
     let text = prompt_of(run.measured(mark("a", "d0")));
     assert!(text.contains("> Smaller, please."));
@@ -360,7 +450,7 @@ fn every_stop_ends_the_run_without_judging_the_turn() {
     }
     let mut run = at_approval();
     assert!(matches!(run.stopped(Stop::ByPerson), Action::Finish(_)));
-    assert_eq!(run.approved(), Action::Idle);
+    assert_eq!(approve(&mut run), Action::Idle);
 }
 
 /// Finding #3: a resumed run keeps the mark its step was measured from, so
@@ -368,7 +458,7 @@ fn every_stop_ends_the_run_without_judging_the_turn() {
 #[test]
 fn resume_keeps_where_the_step_started() {
     let mut run = at_approval();
-    run.approved();
+    approve(&mut run);
     prompt_of(run.measured(mark("a", "d0")));
     let text = serde_json::to_string(&run).unwrap();
     let mut back: Run = serde_json::from_str(&text).unwrap();
@@ -390,7 +480,7 @@ fn resume_keeps_where_the_step_started() {
     // What it waits on comes back with it, for the new session to show.
     let (step, answer) = waiting.under_review().unwrap();
     assert_eq!((step.id.as_str(), answer), ("plan", "The plan."));
-    waiting.approved();
+    approve(&mut waiting);
     assert!(waiting.under_review().is_none());
     let (fresh, _) = begin("1".into(), checkout(), brief(), setup(None));
     let mut fresh: Run = serde_json::from_str(&serde_json::to_string(&fresh).unwrap()).unwrap();
@@ -403,7 +493,7 @@ fn resume_keeps_where_the_step_started() {
 fn a_run_parked_in_this_process_resumes() {
     for stop in [Stop::LinkLost, Stop::Closed] {
         let mut run = at_approval();
-        run.approved();
+        approve(&mut run);
         prompt_of(run.measured(mark("a", "d0")));
         assert!(matches!(run.stopped(stop), Action::Finish(outcome) if outcome.resumable()));
         let mut parked = run.clone();
@@ -441,7 +531,7 @@ fn a_run_keeps_the_template_it_began_with() {
 fn a_command_step_with_no_command_and_no_check_fails() {
     let mut run = at_approval();
     run.setup.check = None;
-    run.approved();
+    approve(&mut run);
     prompt_of(run.measured(mark("a", "d0")));
     assert!(matches!(
         run.turn_ended(&facts("a", true, 0, "d1"), ""),
@@ -452,7 +542,7 @@ fn a_command_step_with_no_command_and_no_check_fails() {
 #[test]
 fn every_move_is_in_the_history() {
     let mut run = at_approval();
-    run.approved();
+    approve(&mut run);
     let moves: Vec<(&str, &str)> = run
         .history
         .iter()
@@ -482,7 +572,7 @@ fn a_run_not_started_has_no_visits_and_starts_on_resume() {
 #[test]
 fn going_back_is_a_new_visit_and_each_keeps_how_it_came_out() {
     let mut run = at_approval();
-    run.approved();
+    approve(&mut run);
     prompt_of(run.measured(mark("a", "d0")));
     run.turn_ended(&facts("a", true, 0, "d1"), "");
     run.command_finished(Err("test failed".into()));
@@ -875,7 +965,7 @@ fn only_an_ending_nobody_chose_needs_attention() {
 /// misses at the change.
 fn exhausted_at_implement() -> Run {
     let mut run = at_approval();
-    run.approved();
+    approve(&mut run);
     prompt_of(run.measured(mark("a", "d0")));
     for _ in 0..4 {
         run.turn_ended(&facts("a", false, 0, "d0"), "");
@@ -924,7 +1014,7 @@ fn a_retry_ignores_a_step_it_lacks_or_one_past_its_start() {
 #[test]
 fn a_done_run_retries_from_past_its_last_step_and_offers_the_first() {
     let mut prev = at_approval();
-    prev.approved();
+    approve(&mut prev);
     prompt_of(prev.measured(mark("a", "d0")));
     prev.turn_ended(&facts("a", true, 0, "d1"), "");
     assert_eq!(
@@ -970,7 +1060,7 @@ fn a_retry_plan_says_where_it_starts_and_what_it_carries() {
 /// ran out of misses at the check.
 fn exhausted_at_verify() -> Run {
     let mut run = at_approval();
-    run.approved();
+    approve(&mut run);
     prompt_of(run.measured(mark("a", "d0")));
     for n in 0..4 {
         let digest = format!("d{}", n + 1);

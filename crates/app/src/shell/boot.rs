@@ -174,13 +174,13 @@ impl Shell {
                     }
                     // Deferred: the run reaches into its session, which may
                     // be what is announcing this.
-                    E::ContinueWorkflow(uid) => {
-                        let uid = *uid;
-                        cx.defer(move |cx| crate::task::approve(uid, cx));
+                    E::ContinueWorkflow { task, at } => {
+                        let (task, at) = (task.clone(), at.clone());
+                        cx.defer(move |cx| crate::task::approve(&task, at, cx));
                     }
-                    E::ReviseWorkflow { uid, note } => {
-                        let (uid, note) = (*uid, note.clone());
-                        cx.defer(move |cx| crate::task::revise(uid, note, cx));
+                    E::ReviseWorkflow { task, at, note } => {
+                        let (task, at, note) = (task.clone(), at.clone(), note.clone());
+                        cx.defer(move |cx| crate::task::revise(&task, at, note, cx));
                     }
                     E::StopWorkflow(uid) => {
                         let uid = *uid;

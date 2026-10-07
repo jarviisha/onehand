@@ -13,7 +13,9 @@ use gpui::{AnyWindowHandle, App, BorrowAppContext as _, Entity, Subscription, Ta
 use onehand_core::chat::Link;
 use onehand_core::task::marks;
 use onehand_core::unattended::Budget;
-use onehand_core::workflow::{Action, Facts, Mark, Outcome, Run, Stop, run_command_blocking};
+use onehand_core::workflow::{
+    Action, ApprovalAt, Facts, Mark, Outcome, Run, Stop, run_command_blocking,
+};
 use onehand_core::worktree;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -173,23 +175,43 @@ fn held(uid: u64, cx: &mut App, ends: bool, then: impl FnOnce(&mut App) + 'stati
     .unwrap_or(false)
 }
 
-/// A person approved what the run waits on.
-pub(crate) fn approve(uid: u64, cx: &mut App) {
-    if held(uid, cx, false, move |cx| approve(uid, cx)) {
-        return;
+/// A person approved what they read of task `task`'s run at `at`.
+pub(crate) fn approve(task: &str, at: ApprovalAt, cx: &mut App) {
+    if let Some(uid) = live_uid(task, cx) {
+        answer(uid, cx, move |run| run.approved(&at));
     }
-    with(uid, cx, |d| d.budget.resume(Instant::now()));
-    advance(uid, cx, Run::approved);
 }
 
-/// A person sent it back with `note`.
-pub(crate) fn revise(uid: u64, note: String, cx: &mut App) {
-    let later = note.clone();
-    if held(uid, cx, false, move |cx| revise(uid, later, cx)) {
+/// A person sent what they read of task `task`'s run at `at` back with
+/// `note`.
+pub(crate) fn revise(task: &str, at: ApprovalAt, note: String, cx: &mut App) {
+    if let Some(uid) = live_uid(task, cx) {
+        answer(uid, cx, move |run| run.revised(&at, note));
+    }
+}
+
+/// The session task `task`'s run is driven on: a press is routed by the
+/// task, so a window other than the session's can make it.
+fn live_uid(task: &str, cx: &App) -> Option<u64> {
+    cx.try_global::<Tasks>()?.live_uid(task)
+}
+
+/// A person's answer to the approval the run on session `uid` waits on: held
+/// while a mark is pinned, then judged by the engine against the visit it
+/// was drawn from. The clock goes on only once the engine took it, so a
+/// refused press leaves the run waiting as it was.
+fn answer(uid: u64, cx: &mut App, report: impl FnOnce(&mut Run) -> Action + 'static) {
+    if read(uid, cx, |d| d.held.is_some()).unwrap_or(false) {
+        held(uid, cx, false, move |cx| answer(uid, cx, report));
         return;
     }
-    with(uid, cx, |d| d.budget.resume(Instant::now()));
-    advance(uid, cx, move |run| run.revised(note));
+    let Some(action) = with(uid, cx, |d| report(&mut d.run)) else {
+        return;
+    };
+    if action != Action::Idle {
+        with(uid, cx, |d| d.budget.resume(Instant::now()));
+    }
+    act(uid, action, cx);
 }
 
 /// A person pressed Stop: the turn is cancelled and the run ends.

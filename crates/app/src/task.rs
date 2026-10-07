@@ -12,7 +12,7 @@ use gpui::{
 use gpui_component::WindowExt as _;
 use gpui_component::notification::Notification;
 use onehand_core::task::{Group, Task, Working, files, history, marks, queue};
-use onehand_core::workflow::{Action, Run, Stop, Template, run_command_blocking};
+use onehand_core::workflow::{Action, ApprovalAt, Run, Stop, Template, run_command_blocking};
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -498,18 +498,30 @@ pub(crate) fn dismiss(id: &str, cx: &mut App) {
 
 /// Where the run on session `uid` stands, as its strip draws it.
 pub(crate) struct Shown {
+    pub(crate) task: SharedString,
     pub(crate) name: SharedString,
     pub(crate) steps: Vec<SharedString>,
     pub(crate) at: usize,
-    /// What it waits on *Continue* or *Revise…* for: the label of the step
-    /// that answered, and its answer.
-    pub(crate) review: Option<(SharedString, SharedString)>,
+    /// What it waits on *Continue* or *Revise…* for.
+    pub(crate) review: Option<Review>,
+}
+
+/// What a run waits for approval on, as a press is drawn from it.
+#[derive(Clone)]
+pub(crate) struct Review {
+    /// The label of the step that answered.
+    pub(crate) of: SharedString,
+    pub(crate) answer: SharedString,
+    /// The visit it is read at, which the press carries.
+    pub(crate) at: ApprovalAt,
 }
 
 /// Where the run on session `uid` stands, if one drives it.
 pub(crate) fn shown(uid: u64, cx: &App) -> Option<Shown> {
-    let run = &cx.try_global::<Tasks>()?.live.get(&uid)?.run;
+    let driven = cx.try_global::<Tasks>()?.live.get(&uid)?;
+    let run = &driven.run;
     Some(Shown {
+        task: driven.task.clone().into(),
         name: run.template.name.clone().into(),
         steps: run
             .template
@@ -520,7 +532,12 @@ pub(crate) fn shown(uid: u64, cx: &App) -> Option<Shown> {
         at: run.step,
         review: run
             .under_review()
-            .map(|(step, answer)| (step.label.clone().into(), answer.to_string().into())),
+            .zip(run.approval_at())
+            .map(|((step, answer), at)| Review {
+                of: step.label.clone().into(),
+                answer: answer.to_string().into(),
+                at,
+            }),
     })
 }
 
