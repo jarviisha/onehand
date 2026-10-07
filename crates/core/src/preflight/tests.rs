@@ -288,6 +288,7 @@ fn a_full_slot_blocks_naming_who_holds_it() {
         slots: Some(Slots {
             holders: vec![crate::unattended::Holder {
                 task: "t5".into(),
+                named: "#5".into(),
                 shown: "#5".into(),
             }],
             starting: 0,
@@ -646,6 +647,12 @@ fn a_checkout_workflow_beside_a_persons_session_is_told_on_a_new_run() {
         ..shared.clone()
     };
     assert!(informs(Kind::NewRun, &apart, Check::Place).is_none());
+    // A workflow that does not read is not known to work in the checkout.
+    let unread = Facts {
+        workflow: Err("gone".into()),
+        ..shared.clone()
+    };
+    assert!(informs(Kind::NewRun, &unread, Check::Place).is_none());
     // Every other kind runs where it ran, or on a worktree of its own.
     for kind in ALL.into_iter().filter(|k| *k != Kind::NewRun) {
         assert!(informs(kind, &shared, Check::Place).is_none(), "{kind:?}");

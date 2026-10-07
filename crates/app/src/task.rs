@@ -498,6 +498,18 @@ pub(crate) fn dismiss(id: &str, cx: &mut App) {
     cx.refresh_windows();
 }
 
+/// Task `id`'s worktree and branch were removed: kept with the task, so
+/// nothing offers to remove them again.
+pub(crate) fn worktree_removed(id: &str, cx: &mut App) {
+    cx.update_global::<Tasks, _>(|t, _| {
+        if let Some(task) = t.task_mut(id) {
+            task.worktree_removed = true;
+            t.save(id);
+        }
+    });
+    cx.refresh_windows();
+}
+
 /// Where the run on session `uid` stands, as its strip draws it.
 pub(crate) struct Shown {
     pub(crate) task: SharedString,

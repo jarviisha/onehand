@@ -86,7 +86,7 @@ pub trait WorkbenchMode {
 
     /// The processes this mode keeps running, each with what a person calls
     /// it: what the shell asks before it removes a folder one may work in.
-    fn processes(&self, _cx: &App) -> Vec<(String, u32)> {
+    fn processes(&self, _cx: &App) -> Vec<onehand_core::worktree::removal::Process> {
         Vec::new()
     }
 }

@@ -98,8 +98,8 @@ pub struct Work {
     pub branch: Option<String>,
     /// Where its work stands: the worktree, or the project itself.
     pub dir: std::path::PathBuf,
-    /// Its latest run works on a worktree of its own, which a person may
-    /// remove once the work is merged.
+    /// Its latest run works on a worktree of its own, still on disk, which a
+    /// person may remove once the work is merged.
     pub worktree: bool,
     /// The connector the branch goes to; `None` where no forge serves the
     /// project, whose work stays on the branch.
@@ -187,11 +187,22 @@ impl Work {
             since,
             branch: task.setup.branch.clone(),
             dir: task.setup.dir.clone(),
-            worktree: run.is_some_and(|run| run.template.place == crate::workflow::Place::Worktree),
+            worktree: !task.worktree_removed
+                && run.is_some_and(|run| run.template.place == crate::workflow::Place::Worktree),
             forge: task.setup.forge.clone(),
             pull_request: run.map_or(PrStep::Absent, pr_step),
             stand,
         }
+    }
+
+    /// Whether *Remove worktree…* is offered for it, given its pull request
+    /// as read: its worktree is left on disk until a person asks, and is
+    /// offered only once the work it holds is merged and it is done.
+    pub fn removal_offered(&self, pr: Option<&PullRequest>) -> bool {
+        self.worktree
+            && self.stand == Stand::Done
+            && self.has_pull_request()
+            && pr.is_some_and(|pr| pr.state == PrState::Merged)
     }
 
     /// Whether it should have a pull request to read: a forge serves its
@@ -658,9 +669,7 @@ fn done(work: &Work, pr: PrSeen<'_>) -> Next {
                 // is pressed, as putting the label back would.
                 &[Act::AnswerReview],
             ),
-            // Its worktree is left on disk until a person asks: only then,
-            // with nothing past the merge in it, may it go.
-            PrState::Merged if work.worktree => {
+            PrState::Merged if work.removal_offered(Some(pr)) => {
                 row(None, None, &[Act::RunWorkflow, Act::RemoveWorktree])
             }
             PrState::Merged => row(None, None, &[Act::RunWorkflow]),

@@ -44,6 +44,7 @@ monospace font.
 │ Overview         │ workflow > step > step   Stop      │                  │
 │ Tasks         2  │                                    │                  │
 │ Issues           │                                    │                  │
+│ Workflows        │                                    │                  │
 │ [+ New session v]│                                    │    Workbench     │
 │ ──────────────── │          agent pane                │  (right dock,    │
 │ Projects | All   │        (centre, flexes)            │   full height)   │
@@ -77,14 +78,13 @@ monospace font.
 
   A project row carries its folder icon and name, then any of: a pin, the branch (selected row
   only), the change count, an unattended-run pill (*auto*, *auto · N*, *auto · N waiting*), the
-  most urgent session mark (a run's pill opens its issue on the Issues page), the ellipsis menu (selected row only; every row has it on right-click)
-  and the fold chevron, which alone folds. A session row carries its name, its mark only when it
-  has one, and a muted agent footnote only when the project's sessions use different agents
-  and the conversation has a title.
-  The order of the tree is the user's, set by dragging. Pinned projects stay on top, and
-  sessions never leave their project. `Ctrl+Shift+B` hides the rail completely; it never
-  collapses to an icon column. It resizes between 232 and 320px. It is the one panel drawn on
-  the ramp's lifted surface.
+  most urgent session mark (a run's pill opens its issue on the Issues page), the ellipsis menu
+  (selected row only; every row has it on right-click) and the fold chevron, which alone folds. A
+  session row carries its name, its mark only when it has one, and a muted agent footnote only
+  when the project's sessions use different agents and the conversation has a title. The tree's
+  order is the user's, set by dragging; pinned projects stay on top, and sessions never leave
+  their project. `Ctrl+Shift+B` hides the rail completely, never to an icon column. It resizes
+  between 232 and 320px, and is the one panel on the ramp's lifted surface.
 - **Agent pane header**, left to right:
   - the show-rail button, only while the rail is hidden;
   - the conversation's name, semibold, full ink;
@@ -96,52 +96,39 @@ monospace font.
   - the terminal, with a dot while a shell is alive;
   - always last, the Workbench.
 
-  On the workspace overview, the Tasks, Issues and Workflows pages the header reads its name, with
-  no dots menu and no dock buttons.
-
-  When the pane narrows, the name gives way first, down to a minimum width; the controls keep
-  their size. Without a session, the row names the project, and its dots menu holds the project's
+  On the overview, the Tasks, Issues and Workflows pages it reads the page's name, with no dots
+  menu and no dock buttons. When the pane narrows, the name gives way first, down to a minimum
+  width. Without a session, the row names the project, and its dots menu holds the project's
   actions except *New session* and *Open terminal*, which the page and the header already offer.
-- **Step strip.** Under the header, only while a run drives the connected session on screen: the workflow's
-  name muted, then each step's label with a chevron between them (done steps carry a muted check,
-  the current one is in full ink and weight), then at the far end *Review…*, *Revise…* and
-  *Continue* (the one primary) while the run waits for approval, and *Stop* always. The step
-  labels are clipped by width; the workflow's name and the controls never are. *Review…* reads the answer from the run, not the
-  transcript. *Revise…* asks for a note and refuses an empty one. Each press carries the visit it
-  was drawn from; one the run no longer waits at shows the new answer, saying it changed, in the
-  warning ink, rather than approving it unread.
-- **Composer.** A card at the foot of the transcript. Inside it, one row: the `+` menu, *Fast*,
-  the model chip (those two only when the agent offers them), and *Send* or *Stop*, with *Queue*
-  beside *Stop* while a turn runs and there is a draft. Under the card, outside it, a strip shows standing state:
-  the project's branch on the left and the turn's permission mode on the right; both open a
-  menu. If neither exists, the strip is not drawn. *Run a workflow…* is the `+` menu's last entry,
-  below a separator; it and the keymap command open one launcher: a workflow menu, what the
-  workflow does and where it works, a collapsed *Preview* (steps, limits and the first prompt,
-  bounded), then *Title*, *Details* and *Instructions*. What the preflight found is listed under
-  them, blocks in the danger ink and the rest muted, and *Run* is spent while a block remains, saying
-  how many beside it; the form scrolls so the footer never leaves the screen.
-  *Run workflow…* on an issue opens a start form of its own on that issue, with no row to pick:
-  the workflow menu and what it does, where it works (branch, base and agent), *Before it starts*
-  (the preflight's findings, as in the launcher), *Instructions for this run*, the limits on one
-  line, then the same collapsed *Preview* without them; *Run* is the footer's primary action. Once
-  started the dialog closes and the person stays on the issue.
+- **Step strip.** Under the header, only while a run drives the session on screen: the workflow's
+  name muted, each step's label between chevrons (done ones with a muted check, the current one in
+  full ink), then *Review…*, *Revise…* and *Continue* (primary) while it waits for approval, and
+  *Stop* always. Only the step labels clip. *Review…* reads the answer from the run; *Revise…*
+  refuses an empty note; a press the run no longer waits at shows the new answer, in the warning
+  ink, rather than approving it unread.
+- **Composer.** A card at the foot of the transcript, one row: the `+` menu, *Fast* and the model
+  chip (when offered), *Send* or *Stop*, and *Queue* beside *Stop* while a turn runs over a draft.
+  Under it, a strip: the branch left, the permission mode right, each opening a menu (not drawn
+  when neither exists). *Run a workflow…*, the `+` menu's last entry, the keymap command and the
+  Workflows page's *Run…* open one launcher: a workflow menu, what it does and where, a collapsed
+  *Preview* (steps, limits, the first prompt), *Title*, *Details*, *Instructions*, then what the
+  preflight found (blocks in the danger ink), *Run* spent while a block remains; it scrolls so the
+  footer stays. *Run workflow…* on an issue opens its own start form, no row to pick: the workflow
+  and where it works, *Before it starts* (the findings, limits included), *Instructions for this
+  run*, the *Preview*; once started the person stays on the issue.
 - **Docks.** Bare panels with strips of their own and no library tab bars.
   - The Workbench strip has the mode chips (Editor, Markdown, Neovim, Issues, Plugins), then
     maximize, then hide.
   - The terminal strip has its shell tabs and `+`, then the same maximize and hide.
   - Each dock is a card, inset on three sides and flush on the side it is dragged by, on the same
     reading surface as the conversation.
-  - The Issues tab's issue is drawn in one fixed order whatever the state, so what it waits on
-    comes before what it says: its title with its state (*Open*, *Closed*) beside it and nowhere
-    else, and its facts; then where its work stands (the newest task's progress with *step N of
-    M*, the next action in one sentence, at most one primary action, the secondary ones in a
-    place that does not move, then ⋯); then its body; then what the work left (the branch and,
-    on a project a forge serves, the pull request's state with *read 2m ago* and *Refresh*);
-    then *Before*, its earlier runs and tasks (capped); then its history. The work's three lines
-    keep their height while a step ends, so the body never moves under a reader. The tab is the
-    glance beside a session; ⋯ ▸ *Open in Issues* opens the same issue on the Issues page, its
-    filters left as they are. The tab draws no review: its *Review…* opens the issue on the page
-    with the review block open.
+  - The Issues tab's issue is drawn in one fixed order, what it waits on before what it says: the
+    title with its state (*Open*, *Closed*) and its facts; where its work stands (progress with
+    *step N of M*, the next action in a sentence, at most one primary, the rest in a place that
+    does not move, then ⋯); the body; what the work left (the branch, and the pull request's state
+    with *read 2m ago* and *Refresh*); *Before* (capped); its history. Those lines keep their
+    height while a step ends. The tab is a glance: ⋯ ▸ *Open in Issues* and its *Review…* open the
+    issue on the Issues page, the latter with the review block open.
   - Hiding a dock keeps its buffers and processes.
   - A hidden terminal is unmounted and takes no room.
   - The terminal's open state follows the selected project.
@@ -152,48 +139,33 @@ monospace font.
     conversations: capped, scrolling, each with a *Delete* word.
   - *Workspace overview* shows, across all projects, the cards *Waiting on you* (runs waiting
     for an answer or an approval, and sessions waiting, finished or lost) and *Working*, then
-    *Projects* as a grid of project tiles (not drawn without projects), then the cards *Recent
-    conversations* and *Open issues*. While it shows, the header reads
-    *Workspace*, and both docks are put away.
-  - *Tasks* is the third page, left like the overview and drawn in its column: one column of four
-    cards, *Needs attention* (with the project filter), *Running*, *Queued* and *Finished*, each
-    with a count, an empty line and a cap. A row is the task's title over a muted line (workflow,
-    step or outcome, project) with ghost actions at its end: *Open session*, *Stop*, *Resume*,
-    *Retry*, *Dismiss*, by state. Pressing a row's text opens the task's detail in the same column.
-  - *Issues* lists the issues of every project of the workspace, with the one picked beside the
-    list, or alone under *Back* when the page is too narrow for both. Above the list: the search and
-    *New issue* (in the project filtered to, else the one picked, its form saying which; while its
-    body is empty a *Template* row offers *Bug*, *Feature* and *Refactor*, or the project's own
-    templates), an *Open N | Closed N* switch, then the progress (*All*, *Needs attention*, *Running*,
-    *Queued*, *Pull request open*, *No run recorded*), project and label filters, how old the
-    pull request reading is and *Refresh*. A row is the title over a muted line (project,
-    reference), its line of work in the Tasks page's words (the warning ink only for what needs
-    the person, none for *No run recorded*) and the labels that fit with a count. The list never
-    moves under a person: a row keeps its place while its run changes, one that stops matching
-    stays saying *now …* until another issue is picked, new matches go below, and an issue
-    opened from elsewhere that the filters leave out is pinned on top, *Outside current
-    filters*, with *Clear filters*. The issue is the tab's order with the steps still to come
-    under its progress, and in *What the work left* the check, the files this run and the branch
-    changed (each opening its diff in place) and the commits past where the task started. The
-    page keeps its filters, search, selection and scroll while a session or the task detail is
-    looked at.
-  - The **review block** opens below where the work stands only when a person presses *Review…*,
-    pushing the body down; a run reaching an approval never opens it, and it closes only by its
-    *Close* or by picking another issue. In a hairline box that scrolls past its cap: *Review:
-    <step>*, the answer (its last 60 lines with *Show all N lines*), what the step under review
-    changed with each file opening its diff (drawn only when it changed something), the check
-    when a command ran since (passed or failed, with its last 20 lines in a mono well), the
-    issue's *Acceptance* collapsed, then
-    *Revise…* and *Continue* (the one primary), each beside what it starts: *Plan runs again
-    with your note*, *Continue starts Implement: the agent changes the code*. A cut answer says
-    *Showing the last 60 of N lines.* above them in the warning ink. *Revise…* writes its note in
-    the block. A press shows at once that it was sent, then what came of it (*The run moved on
-    to …*), without moving the reader's scroll; one the run no longer waits for reloads the
-    block, saying *The answer changed since you opened it.*
-  - The task detail's *Awaiting approval* draws the same answer, what each answer starts, and
-    *Review…*, *Revise…* and *Continue* through the same guarded call as the strip.
-    An ended task's detail draws *Way out*: why it ended in the issue's words, and *Retry with
-    current settings…* when that fits, primary for a configuration failure.
+    *Projects* as a grid of tiles (not drawn without projects), then *Recent conversations* and
+    *Open issues*.
+  - *Tasks*: four cards, *Needs attention* (with the project filter), *Running*, *Queued*,
+    *Finished*, each with a count, an empty line and a cap. A row is the title over workflow, step
+    or outcome and project, with ghost actions by state (*Open session*, *Stop*, *Resume*, *Retry*,
+    *Dismiss*); its text opens the task's detail in the same column.
+  - *Issues* lists every project's issues, the one picked beside the list (alone under *Back* when
+    narrow). Above the list: the search, *New issue* (its *Template* row, while the body is empty:
+    *Bug*, *Feature*, *Refactor*, or the project's own), *Open N | Closed N*, the progress filter
+    (*All*, *Needs attention*, *Running*, *Queued*, *Pull request open*, *No run recorded*),
+    project and label filters, the pull request reading's age and *Refresh*. A row: the title over
+    project and reference, its line of work (warning ink only for what needs the person), its
+    labels. The list never moves under a person: a row keeps its place, one that stops matching
+    says *now …* until another is picked, new matches go below, and an issue opened from elsewhere
+    outside the filters is pinned on top with *Clear filters*. The issue is the tab's order plus
+    the steps to come, and *What the work left* with the check, the files changed (diffs in place)
+    and the commits. Filters, search, selection and scroll survive a look elsewhere.
+  - The **review block** opens below where the work stands only on *Review…*, never by itself,
+    and closes only by *Close* or another issue. A hairline box scrolling past its cap: *Review:
+    <step>*, the answer (last 60 lines, *Show all N lines*), the files the step changed (each a
+    diff), the check when a command ran since (last 20 lines in a mono well), *Acceptance*
+    collapsed, then *Revise…* and *Continue* (primary), each beside what it starts. A cut answer
+    says so above them in the warning ink. A press says it was sent, then what came of it,
+    keeping the scroll; one the run no longer waits for reloads, saying the answer changed.
+  - The task detail's *Awaiting approval* draws the same answer and actions through the strip's
+    guarded call; an ended task's *Way out* says why in the issue's words, with *Retry with
+    current settings…* when it fits. A merged worktree's *Remove worktree…* is a danger word.
   - *Workflows* lists the workflows, capped (shipped ones *Built in*, read-only), each with
     *Run…* (projects, the rail's first). *New workflow* or *Edit* opens a form below, one hairline
     box per step, a margin marking where a failure goes back to, problems above a spent *Save*.
@@ -260,16 +232,12 @@ monospace font.
 ## Components
 
 Reuse gpui-component before building anything: `Root`, `DockArea`, `Sidebar`, `Dialog`, `Switch`,
-`InputState`, `Editor`, `TextView`, plus gpui's own `list` for the transcript. Buttons go through the app's action
-wrapper, which sets the pointer cursor; a control that refuses says so (`resting()` or
-`.refuses()`) and goes back to the arrow. The app owns
-only what is onehand's own:
-- the transcript renderers;
-- the icon registry;
-- the terminal panel;
-- per-panel zoom;
-- the composer popup. This is one shell for `@`, `/`, the pickers and the attachment tray, with a
-  pinned title and footer, a height capped at twelve rows, grouped rows, and its own scrollbar on its edge.
+`InputState`, `Editor`, `TextView`, plus gpui's own `list` for the transcript. Buttons go through
+the app's action wrapper, which sets the pointer cursor; a control that refuses says so
+(`resting()` or `.refuses()`) and goes back to the arrow. The app owns only what is its own: the
+transcript renderers, the icon registry, the terminal panel, per-panel zoom, and the composer
+popup (one shell for `@`, `/`, the pickers and the attachment tray, with a pinned title and footer,
+at most twelve rows, grouped, with its own scrollbar).
 
 Scope: the Workbench editor is a quick editor (tree-sitter, no LSP). Neovim is a Workbench mode with a
 PTY of its own per project, through the shared terminal crate. Files lives inside Editor, not as a

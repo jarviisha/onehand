@@ -87,6 +87,11 @@ impl Shell {
         });
     }
 
+    /// Whether Settings is on screen.
+    pub(crate) fn settings_shown(&self) -> bool {
+        self.settings_open
+    }
+
     pub fn close_settings(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if !self.settings_open {
             return;
@@ -187,6 +192,7 @@ impl Shell {
             description: "It leaves the agent list. Sessions already running on it carry on."
                 .into(),
             act: "Delete",
+            ..Default::default()
         };
         // By the whole spec, not by position: the list can be reordered while
         // the question is open, and two agents may share a name.

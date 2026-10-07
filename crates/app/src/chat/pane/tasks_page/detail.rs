@@ -575,27 +575,13 @@ fn answers_review(task: &onehand_core::task::Task) -> bool {
 }
 
 /// Whether its issue's view would offer removing `task`'s worktree, by
-/// core's ways out, given the pull request `detail` read: never before it
-/// is read and merged.
+/// core's rule, given the pull request `detail` read: never before it is
+/// read and merged.
 fn removable(task: &onehand_core::task::Task, detail: &TaskDetail) -> bool {
     let Some(Ok(pr)) = &detail.pr else {
         return false;
     };
-    let work = Work::of(task, None, None);
-    let next = next_action(
-        Some(&work),
-        Around {
-            open: true,
-            can_start: false,
-            session: false,
-            pr: PrSeen::Read(pr.as_ref()),
-            now: now_secs(),
-        },
-    );
-    next.primary
-        .into_iter()
-        .chain(next.secondary)
-        .any(|act| act == Act::RemoveWorktree)
+    Work::of(task, None, None).removal_offered(pr.as_ref())
 }
 
 /// An ended task's way out, as its issue says it (`next_action`): why it

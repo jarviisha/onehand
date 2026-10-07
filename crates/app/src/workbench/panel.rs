@@ -165,7 +165,7 @@ impl Workbench {
     }
 
     /// Every process the modes keep running, each with what it is called.
-    pub fn processes(&self, cx: &App) -> Vec<(String, u32)> {
+    pub fn processes(&self, cx: &App) -> Vec<onehand_core::worktree::removal::Process> {
         self.modes
             .iter()
             .flat_map(|mode| mode.processes(cx))

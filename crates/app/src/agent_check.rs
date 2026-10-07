@@ -156,16 +156,16 @@ pub(crate) fn button(id: usize, ask: &Ask, cx: &App) -> AnyElement {
     let muted = cx.theme().muted_foreground;
     let state = checking(&ask.spec, cx);
     let learned = crate::unattended::offered(&ask.spec, cx);
-    let said = match (&state, &learned, &ask.mode) {
-        (Some(Checking::Failed(why)), _, _) => {
+    let said = match &state {
+        Some(Checking::Failed(why)) => {
             Some(format!("{} could not be checked: {why}", ask.spec.name))
         }
-        (_, Some(offered), Some(mode)) => Some(
-            onehand_core::preflight::mode_refused(mode, offered)
-                .unwrap_or_else(|| format!("{} offers `{mode}`.", ask.spec.name)),
-        ),
-        _ => None,
+        Some(Checking::Running) | None => learned.zip(ask.mode.as_ref()).map(|(offered, mode)| {
+            onehand_core::preflight::mode_refused(mode, &offered)
+                .unwrap_or_else(|| format!("{} offers `{mode}`.", ask.spec.name))
+        }),
     };
+    let running = state == Some(Checking::Running);
     let ask = ask.clone();
     div()
         .h_flex()
@@ -175,13 +175,13 @@ pub(crate) fn button(id: usize, ask: &Ask, cx: &App) -> AnyElement {
             row.child(div().text_xs().text_color(muted).child(said))
         })
         .child(
-            crate::controls::action(("check-agent", id))
+            crate::controls::action(("check-agent-modes", id))
                 .ghost()
                 .small()
-                .loading(state == Some(Checking::Running))
-                .label(match state {
-                    Some(Checking::Running) => "Checking…",
-                    _ => "Check the agent",
+                .loading(running)
+                .label(match running {
+                    true => "Checking…",
+                    false => "Check the agent",
                 })
                 .on_click(move |_, _: &mut Window, cx: &mut App| check(&ask, cx)),
         )

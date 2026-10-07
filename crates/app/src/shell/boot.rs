@@ -37,8 +37,8 @@ impl Shell {
             |shell: &mut Self, _, event: &crate::workflows_page::WorkflowsPageEvent, window, cx| {
                 use crate::workflows_page::WorkflowsPageEvent as E;
                 match event {
-                    E::Run { template, root } => {
-                        shell.begin_workflow_on(root, Some(*template), window, cx)
+                    E::Run { workflow, root } => {
+                        shell.begin_workflow_on(root, Some(workflow), window, cx)
                     }
                 }
             },
@@ -61,6 +61,7 @@ impl Shell {
                                       them away."
                             .into(),
                         act: "Drop and close",
+                        ..Default::default()
                     },
                     window,
                     cx,

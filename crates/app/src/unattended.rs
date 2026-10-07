@@ -343,6 +343,19 @@ pub(crate) fn waiting(id: &str, cx: &mut App) {
     }
 }
 
+/// A person answered the run of issue task `id` that waited on them: under
+/// a cap on waiting runs, that is room made, so look for the next issue at
+/// once rather than at the next tick.
+pub(crate) fn answered(id: &str, cx: &mut App) {
+    let capped = Shared::global(cx)
+        .unattended
+        .as_ref()
+        .is_some_and(|u| u.waiting.is_some());
+    if capped && crate::task::task(id, cx).is_some_and(|task| task.issue().is_some()) {
+        tick(None, cx);
+    }
+}
+
 /// What each connector last said about its account, if they have answered yet.
 pub fn accounts(cx: &App) -> Option<Accounts> {
     Shared::global(cx).unattended.as_ref()?.accounts.clone()

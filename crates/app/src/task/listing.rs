@@ -189,10 +189,11 @@ pub(crate) fn slot_holders(cx: &App) -> Vec<Holder> {
                     Some(step) => format!("{named} · {} ({})", run.template.name, step.label),
                     None => format!("{named} · {}", run.template.name),
                 },
-                None => named,
+                None => named.clone(),
             };
             Some(Holder {
                 task: task.id.clone(),
+                named,
                 shown,
             })
         })

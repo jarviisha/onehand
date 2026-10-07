@@ -9,6 +9,9 @@ use gpui_component::notification::Notification;
 use onehand_core::workflow::{self as core, StepKind, Template};
 use std::path::PathBuf;
 
+/// What a save says, done or not.
+const SAVED: (&str, &str) = ("Workflow saved", "Workflow not saved");
+
 impl WorkflowsPage {
     /// Open the form on a new template, one agent step to start from.
     pub(crate) fn new_workflow(&mut self, window: &mut Window, cx: &mut Context<Self>) {
@@ -71,7 +74,12 @@ impl WorkflowsPage {
                 return;
             };
             let _ = page.update_in(cx, |page: &mut Self, window, cx| {
-                page.report("Exported workflow", written, true, window, cx);
+                page.report(
+                    ("Workflow exported", "Workflow not exported"),
+                    written,
+                    window,
+                    cx,
+                );
                 cx.notify();
             });
         })
@@ -215,7 +223,7 @@ impl WorkflowsPage {
             .any(|entry| !same(entry) && entry.name() == template.name);
         if clash {
             let why = format!("another workflow is already called {}", template.name);
-            self.report("Workflow", Err(why), true, window, cx);
+            self.report(SAVED, Err(why), window, cx);
             cx.notify();
             return;
         }
@@ -238,10 +246,10 @@ impl WorkflowsPage {
                             draft.file = Some(path);
                             draft.original = written;
                         }
-                        page.report("Workflow", Ok::<(), String>(()), true, window, cx);
+                        page.report(SAVED, Ok::<(), String>(()), window, cx);
                         crate::workflow::reload_templates(cx);
                     }
-                    Err(why) => page.report("Workflow", Err(why), true, window, cx),
+                    Err(why) => page.report(SAVED, Err(why), window, cx),
                 }
                 cx.notify();
             });
@@ -269,6 +277,7 @@ impl WorkflowsPage {
                           on with the copy they took."
                 .into(),
             act: "Delete",
+            ..Default::default()
         };
         crate::shell::ask_on(cx.entity(), ask, window, cx, move |page, window, cx| {
             page.delete_workflow_file(file.clone(), window, cx)
@@ -294,7 +303,12 @@ impl WorkflowsPage {
                 {
                     page.draft = None;
                 }
-                page.report("Workflow", gone, true, window, cx);
+                page.report(
+                    ("Workflow deleted", "Workflow not deleted"),
+                    gone,
+                    window,
+                    cx,
+                );
                 crate::workflow::reload_templates(cx);
                 cx.notify();
             });
@@ -302,19 +316,18 @@ impl WorkflowsPage {
         .detach();
     }
 
-    /// Say how a write went: a failure always, in a toast; a success too,
-    /// since the page has no line of its own to say it on.
+    /// Say how a write went, in a toast, by `said`'s two words: done, or
+    /// not done and why. The page has no line of its own to say it on.
     fn report<E: std::fmt::Display>(
         &mut self,
-        what: &str,
+        (done, not): (&str, &str),
         written: Result<(), E>,
-        _noted: bool,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
         let note = match written {
-            Ok(()) => Notification::success(format!("{what} saved")),
-            Err(why) => Notification::error(format!("{what} not saved — {why}")),
+            Ok(()) => Notification::success(done.to_string()),
+            Err(why) => Notification::error(format!("{not} — {why}")),
         };
         window.push_notification(note, cx);
     }

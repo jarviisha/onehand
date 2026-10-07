@@ -380,7 +380,9 @@ adapter alive. Unset, there is no cap. At it, nothing more is taken up, by the
 tick or a pick, and a Resume or a Retry of an issue's task is held to it as to
 `at_once`, the reason said where the working cap's is. Nothing is stopped,
 parked or answered for it: a person's answer is what frees one, and the room
-it makes is there at once.
+it makes is there at once: answering a card or an approval of an issue's run
+looks for the next issue then, rather than at the next tick
+(`unattended::answered`).
 
 **The transcript is the run's log**, in short lines, one fact each. A remark in
 the transcript is one line down the middle of the column, cut where the column
@@ -721,7 +723,8 @@ onehand closes nothing for the person. The branch is judged by the forge's
 merged head, not by `git branch -d`, which refuses the usual squash merge and
 cannot see a remote branch deleted after the merge: a branch holding nothing
 past that head goes with `git branch -D`. If that fails, the worktree stays
-removed, the branch is kept, and the failure is said.
+removed, the branch is kept, and the failure is said. A removal is kept with
+the task (`Task::worktree_removed`), so nothing offers it again.
 
 The transcript needs no special handling — it is written at the end of every
 turn, under the conversations directory, exactly like a conversation somebody

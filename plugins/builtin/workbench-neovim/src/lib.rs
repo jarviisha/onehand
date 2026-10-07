@@ -42,7 +42,7 @@ impl WorkbenchMode for Mode {
         self.view.clone().into()
     }
 
-    fn processes(&self, cx: &App) -> Vec<(String, u32)> {
+    fn processes(&self, cx: &App) -> Vec<onehand_plugin_host::Process> {
         self.view.read(cx).processes()
     }
 

@@ -466,6 +466,15 @@ fn a_merged_worktree_run_offers_removing_its_worktree() {
     let open_pr = pr(PrState::Open, false);
     let next = next_of(&task, None, around(PrSeen::Read(Some(&open_pr))));
     assert!(!acts(&next).1.contains(&Act::RemoveWorktree));
+    // Removed once, it is never offered again.
+    let mut removed = task.clone();
+    removed.worktree_removed = true;
+    let next = next_of(&removed, None, around(PrSeen::Read(Some(&merged))));
+    assert!(!acts(&next).1.contains(&Act::RemoveWorktree));
+    let work = Work::of(&removed, None, None);
+    assert!(!work.removal_offered(Some(&merged)));
+    assert!(Work::of(&task, None, None).removal_offered(Some(&merged)));
+    assert!(!Work::of(&task, None, None).removal_offered(None));
 }
 
 #[test]

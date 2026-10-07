@@ -407,13 +407,15 @@ pub(crate) fn finding_line(
                 .flatten()
                 .into_iter()
                 .flat_map(|slots| slots.holders)
+                .take(onehand_core::unattended::HOLDERS_SAID)
                 .enumerate()
                 .map(|(i, holder)| {
                     let (shell, task) = (handle.clone(), holder.task);
-                    crate::controls::action(("slot-holder", at * 100 + i))
+                    // The line above names each holder; the button opens it.
+                    crate::controls::action(SharedString::from(format!("slot-holder-{at}-{i}")))
                         .ghost()
                         .small()
-                        .label(holder.shown)
+                        .label(format!("Open {}", holder.named))
                         .tooltip("Open the task holding this slot")
                         .on_click(move |_, window: &mut Window, cx: &mut App| {
                             gpui_component::WindowExt::close_dialog(window, cx);

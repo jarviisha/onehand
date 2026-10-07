@@ -89,6 +89,9 @@ pub const RETRY_CURRENT: &str = "Retry with current settings";
 /// Where workflows are written, as a finding names it.
 const WORKFLOWS_PAGE: &str = "the Workflows page";
 
+/// Where a forge's account is seen to, as a finding names it.
+const CONNECTIONS: &str = "Settings ▸ Connections";
+
 /// Where a project's check command is set, as a finding names it.
 const PROJECT_PAGE: &str = "the project's page";
 
@@ -340,7 +343,8 @@ pub fn preflight(kind: Kind, facts: &Facts) -> Vec<Finding> {
             "The branch is cut off `HEAD`.".to_string(),
             None,
         ),
-        Kind::NewRun => {
+        // Only a workflow that reads is known to work in the checkout.
+        Kind::NewRun if template.is_some() => {
             if let Some(session) = &facts.shared_checkout {
                 say(
                     Check::Place,
@@ -376,7 +380,7 @@ pub fn preflight(kind: Kind, facts: &Facts) -> Vec<Finding> {
             ),
             (None, false, None) => {}
         },
-        Kind::Resume | Kind::Retry | Kind::RetryCurrent | Kind::AnswerReview => {}
+        Kind::NewRun | Kind::Resume | Kind::Retry | Kind::RetryCurrent | Kind::AnswerReview => {}
     }
 
     // The forge: an issue's run asks it for the default branch whatever its
@@ -399,7 +403,7 @@ pub fn preflight(kind: Kind, facts: &Facts) -> Vec<Finding> {
             Check::Forge,
             true,
             format!("{name} cannot be used: {why}"),
-            Some(Change::At("Settings ▸ Connections")),
+            Some(Change::At(CONNECTIONS)),
         );
     }
     // Answering a review on no forge is refused below, and never told twice.

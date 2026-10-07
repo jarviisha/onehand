@@ -304,6 +304,7 @@ impl Shell {
             )
             .into(),
             act: "Remove",
+            ..Default::default()
         };
         // By path, not by index: the tree can be reordered while the question
         // is open, and the answer has to land on the project it was about.

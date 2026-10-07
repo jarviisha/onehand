@@ -128,6 +128,7 @@ impl Shell {
             }
             .into(),
             act: "Delete",
+            ..Default::default()
         };
         self.ask(ask, window, cx, move |shell, window, cx| {
             shell.delete_conversation(dir.clone(), window, cx)
@@ -222,6 +223,7 @@ impl Shell {
                           turn is lost."
                 .into(),
             act: "Close",
+            ..Default::default()
         };
         // By uid, not by place: the list can shift while the question is open.
         self.ask(ask, window, cx, move |shell, window, cx| {
@@ -537,6 +539,7 @@ impl Shell {
             title: format!("Restart the agent of {label}?").into(),
             description: "A turn is running. Restarting stops it, and that turn is lost.".into(),
             act: "Restart",
+            ..Default::default()
         };
         // By uid: the question is about the session it was asked on,
         // whichever one shows by the time it is answered.

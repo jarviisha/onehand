@@ -10,14 +10,12 @@
 
 use super::Shell;
 use crate::state::Shared;
-use gpui::{App, Context, ParentElement as _, SharedString, Styled as _, Window};
-use gpui_component::button::ButtonVariants as _;
-use gpui_component::dialog::{DialogClose, DialogFooter};
+use gpui::{App, Context, Window};
+use gpui_component::WindowExt as _;
 use gpui_component::notification::Notification;
-use gpui_component::{ActiveTheme as _, Disableable as _, StyledExt as _, WindowExt as _};
 use onehand_core::connector::PrState;
 use onehand_core::task::Task;
-use onehand_core::worktree::removal::{self, Judged, Merged};
+use onehand_core::worktree::removal::{self, Judged, Merged, Process};
 use std::path::{Path, PathBuf};
 
 /// What a removal reads, gathered on the UI thread before the git and
@@ -30,11 +28,11 @@ struct Asked {
     users: Vec<String>,
     /// Every shell and Neovim of every window, each with what it is
     /// called, to be asked where it works now.
-    processes: Vec<(String, u32)>,
+    processes: Vec<Process>,
 }
 
 impl Asked {
-    fn of(task: &Task, (users, processes): (Vec<String>, Vec<(String, u32)>)) -> Self {
+    fn of(task: &Task, (users, processes): (Vec<String>, Vec<Process>)) -> Self {
         Self {
             repo: task.setup.repo.clone(),
             folder: task.setup.dir.clone(),
@@ -106,55 +104,25 @@ impl Shell {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let shell = cx.entity();
         let folder = facts.folder.display().to_string();
-        let branch = facts.branch.clone();
-        let (lines, blocked) = match &judged {
-            Judged::Remove { why, .. } => (vec![why.clone()], false),
-            Judged::Refused(why) => (why.clone(), true),
+        let (lines, refused) = match judged {
+            Judged::Remove { why, .. } => (vec![why], false),
+            Judged::Refused(why) => (why, true),
         };
-        let what = match &branch {
+        let what = match &facts.branch {
             Some(branch) => format!("The worktree {folder} and its branch {branch} are deleted."),
             None => format!("The worktree {folder} is deleted; it is on no branch."),
         };
-        window.open_alert_dialog(cx, move |alert, _, cx| {
-            let ink = match blocked {
-                true => crate::theme::status_ink(cx).danger,
-                false => cx.theme().muted_foreground,
-            };
-            let (shell, id) = (shell.clone(), id.clone());
-            let remove = crate::controls::action("remove-worktree-confirm")
-                .danger()
-                .label("Remove");
-            let remove = match blocked {
-                true => crate::controls::resting(remove).disabled(true),
-                false => remove.on_click(move |_, window: &mut Window, cx: &mut App| {
-                    window.close_dialog(cx);
-                    let id = id.clone();
-                    shell.update(cx, |shell, cx| shell.removal_confirmed(id, window, cx));
-                }),
-            };
-            alert
-                .title("Remove this worktree?")
-                .description(SharedString::from(what.clone()))
-                .child(
-                    gpui::div().v_flex().gap_1().w_full().children(
-                        lines
-                            .iter()
-                            .map(|line| gpui::div().text_xs().text_color(ink).child(line.clone())),
-                    ),
-                )
-                .footer(
-                    DialogFooter::new()
-                        .child(
-                            DialogClose::new().child(
-                                crate::controls::action("remove-worktree-keep")
-                                    .ghost()
-                                    .label("Keep"),
-                            ),
-                        )
-                        .child(remove),
-                )
+        let ask = super::Ask {
+            id: "remove-worktree",
+            title: "Remove this worktree?".into(),
+            description: what.into(),
+            act: "Remove",
+            lines,
+            refused,
+        };
+        super::ask_on(cx.entity(), ask, window, cx, move |shell, window, cx| {
+            shell.removal_confirmed(id.clone(), window, cx)
         });
     }
 
@@ -182,6 +150,9 @@ impl Shell {
                 })
                 .await;
             let _ = shell.update_in(cx, |_, window, cx| {
+                if done.is_ok() {
+                    crate::task::worktree_removed(&id, cx);
+                }
                 let said = match done {
                     Ok((folder, branch, removed)) => {
                         let folder = folder.display();
@@ -207,7 +178,7 @@ impl Shell {
     /// open on it with its sessions and terminals, and a task working there;
     /// then every other shell and Neovim, whose directory is asked off the
     /// UI thread.
-    fn folder_users(&self, folder: &Path, cx: &Context<Self>) -> (Vec<String>, Vec<(String, u32)>) {
+    fn folder_users(&self, folder: &Path, cx: &Context<Self>) -> (Vec<String>, Vec<Process>) {
         let (mut users, mut processes) = self.users_here(folder, "this window", cx);
         // This shell is the one being updated, so it is read as `self`.
         let this = cx.entity_id();
@@ -220,15 +191,23 @@ impl Shell {
             processes.extend(running);
         }
         users.extend(crate::task::each(cx, |task, working| {
-            (working && task.setup.dir.starts_with(folder))
-                .then(|| format!("Task “{}”, still working there,", task.brief.title))
+            (working && task.setup.dir.starts_with(folder)).then(|| {
+                // A command step running there is named by its step.
+                match task.runs.last().and_then(|run| run.current()) {
+                    Some(step) => format!(
+                        "Task “{}”, at its step {}, still working there,",
+                        task.brief.title, step.label
+                    ),
+                    None => format!("Task “{}”, still working there,", task.brief.title),
+                }
+            })
         }));
         (users, processes)
     }
 
     /// What of this window uses `folder`: each project open inside it, with
     /// its sessions and terminals.
-    fn users_here(&self, folder: &Path, said: &str, cx: &App) -> (Vec<String>, Vec<(String, u32)>) {
+    fn users_here(&self, folder: &Path, said: &str, cx: &App) -> (Vec<String>, Vec<Process>) {
         // A shell opened on a project inside the folder is said with it;
         // the rest are asked where they are now.
         let processes = self
@@ -237,13 +216,19 @@ impl Shell {
             .processes()
             .into_iter()
             .filter(|(root, _)| !root.starts_with(folder))
-            .map(|(_, pid)| (format!("A terminal in {said}"), pid))
+            .map(|(_, pid)| Process {
+                what: format!("A terminal in {said}"),
+                pid,
+            })
             .chain(
                 self.workbench
                     .read(cx)
                     .processes(cx)
                     .into_iter()
-                    .map(|(what, pid)| (format!("{what} in {said}"), pid)),
+                    .map(|p| Process {
+                        what: format!("{} in {said}", p.what),
+                        pid: p.pid,
+                    }),
             )
             .collect();
         let users = self

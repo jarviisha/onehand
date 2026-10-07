@@ -615,11 +615,17 @@ impl Tracker {
     }
 }
 
+/// How many holders the slots line names before it counts the rest, and
+/// how many a list of them draws.
+pub const HOLDERS_SAID: usize = 8;
+
 /// A task holding one of the slots of unattended runs, and how the slots
 /// line shows it: its issue, its workflow and the step it is at.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Holder {
     pub task: String,
+    /// Its issue, as a sentence names it: what a button opening it reads.
+    pub named: String,
     pub shown: String,
 }
 
@@ -642,16 +648,32 @@ pub struct Slots {
 }
 
 impl Slots {
-    /// The slots line: *Slots: 1 of 1 — #12 · Work an issue (Implement)*.
-    pub fn said(&self) -> String {
+    /// How many slots are taken: *Slots: 1 of 1*, the head of the line,
+    /// for where each holder is drawn on its own.
+    pub fn count_said(&self) -> String {
         let taken = self.holders.len() + self.starting;
-        let mut who: Vec<String> = self.holders.iter().map(|h| h.shown.clone()).collect();
+        format!("Slots: {taken} of {}", self.at_once)
+    }
+
+    /// The slots line: *Slots: 1 of 1 — #12 · Work an issue (Implement)*,
+    /// naming at most [`HOLDERS_SAID`] holders and how many more.
+    pub fn said(&self) -> String {
+        let mut who: Vec<String> = self
+            .holders
+            .iter()
+            .take(HOLDERS_SAID)
+            .map(|h| h.shown.clone())
+            .collect();
+        let more = self.holders.len().saturating_sub(HOLDERS_SAID);
+        if more > 0 {
+            who.push(format!("{more} more"));
+        }
         if self.starting > 0 {
             who.push(format!("{} starting", self.starting));
         }
         match who.is_empty() {
-            true => format!("Slots: {taken} of {}", self.at_once),
-            false => format!("Slots: {taken} of {} — {}", self.at_once, who.join(", ")),
+            true => self.count_said(),
+            false => format!("{} — {}", self.count_said(), who.join(", ")),
         }
     }
 

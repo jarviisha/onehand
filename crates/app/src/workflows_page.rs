@@ -36,8 +36,9 @@ const EDITOR_COLUMN: f32 = 48.;
 
 /// What the page asks of its window.
 pub(crate) enum WorkflowsPageEvent {
-    /// Open the launcher on `root` with workflow `template` picked.
-    Run { template: usize, root: PathBuf },
+    /// Open the launcher on `root` with the workflow of id `workflow`
+    /// picked: by id, since the list may be read again before the press.
+    Run { workflow: String, root: PathBuf },
 }
 
 pub(crate) struct WorkflowsPage {
@@ -189,7 +190,9 @@ fn list(
                     .when(shipped, |row| {
                         row.child(Tag::secondary().small().child("Built in"))
                     })
-                    .when(readable, |row| row.child(run_menu(handle, i, choices)))
+                    .when_some(entry.template.as_ref().ok(), |row, template| {
+                        row.child(run_menu(handle, i, &template.id, choices))
+                    })
                     .when(readable, |row| {
                         row.child(row_action(
                             handle,
@@ -272,14 +275,15 @@ fn list(
         .into_any_element()
 }
 
-/// *Run…*: which project to start workflow `i` on, the rail's selection
-/// first, then the launcher.
+/// *Run…* on row `i`: which project to start workflow `workflow` on, the
+/// rail's selection first, then the launcher.
 fn run_menu(
     handle: &Entity<WorkflowsPage>,
     i: usize,
+    workflow: &str,
     choices: &[(PathBuf, SharedString)],
 ) -> impl IntoElement {
-    let (handle, choices) = (handle.clone(), choices.to_vec());
+    let (handle, choices, workflow) = (handle.clone(), choices.to_vec(), workflow.to_string());
     crate::controls::menu_below(
         ("run-workflow", i),
         crate::controls::action(("run-workflow-trigger", i))
@@ -289,12 +293,12 @@ fn run_menu(
         move |mut menu, _, _| {
             menu = menu.label("Run on");
             for (root, label) in &choices {
-                let (handle, root) = (handle.clone(), root.clone());
+                let (handle, root, workflow) = (handle.clone(), root.clone(), workflow.clone());
                 menu = menu.item(crate::controls::menu_item(label.clone()).on_click(
                     move |_, _: &mut Window, cx: &mut App| {
-                        let root = root.clone();
+                        let (root, workflow) = (root.clone(), workflow.clone());
                         handle.update(cx, |_, cx| {
-                            cx.emit(WorkflowsPageEvent::Run { template: i, root })
+                            cx.emit(WorkflowsPageEvent::Run { workflow, root })
                         });
                     },
                 ));

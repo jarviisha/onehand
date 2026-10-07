@@ -590,6 +590,7 @@ fn every_tracker_kept_by_name_resolves_back() {
 fn holder(task: &str, shown: &str) -> Holder {
     Holder {
         task: task.into(),
+        named: shown.split(' ').next().unwrap_or_default().into(),
         shown: shown.into(),
     }
 }
@@ -624,6 +625,17 @@ fn the_slots_line_names_each_holder_in_order() {
         slots(vec![holder("a", "#3"), holder("b", "#9")], 1, 3).said(),
         "Slots: 3 of 3 — #3, #9, 1 starting"
     );
+    // A long line names the first few and counts the rest.
+    let many: Vec<Holder> = (0..HOLDERS_SAID + 3)
+        .map(|n| holder(&n.to_string(), &format!("#{n}")))
+        .collect();
+    let said = slots(many, 0, 20).said();
+    assert!(said.ends_with(", 3 more"), "{said}");
+    assert!(!said.contains(&format!("#{}", HOLDERS_SAID)), "{said}");
+    // The head alone, for where the holders are drawn one by one.
+    let full = slots(vec![holder("a", "#3"), holder("b", "#9")], 1, 3);
+    assert_eq!(full.count_said(), "Slots: 3 of 3");
+    assert!(full.said().starts_with(&full.count_said()));
 }
 
 #[test]

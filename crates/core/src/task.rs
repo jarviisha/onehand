@@ -104,6 +104,10 @@ pub struct Task {
     /// A person let it go: it is history, never offered again.
     #[serde(default)]
     pub dismissed: bool,
+    /// A person removed its worktree and branch after its pull request
+    /// merged: nothing of its work is left on disk to remove again.
+    #[serde(default)]
+    pub worktree_removed: bool,
     /// A file from before checks were tasks reads as a workflow's.
     #[serde(default)]
     pub source: Source,
@@ -118,6 +122,7 @@ impl Task {
             brief,
             setup,
             dismissed: false,
+            worktree_removed: false,
             source: Source::Workflow,
         }
     }
