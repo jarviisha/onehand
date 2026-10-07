@@ -5,8 +5,8 @@ use super::Tasks;
 use gpui::{AnyWindowHandle, App};
 use onehand_core::issues::IssueKey;
 use onehand_core::task::work::{IssueWork, issue_work, waiting_said};
-use onehand_core::task::{Group, Task, sort_listed};
-use onehand_core::unattended::TrackerRef;
+use onehand_core::task::{Group, Task, Working, sort_listed};
+use onehand_core::unattended::{Holder, TrackerRef};
 use onehand_core::workflow::Run;
 use std::path::PathBuf;
 
@@ -171,18 +171,44 @@ pub(crate) fn is_working(id: &str, cx: &App) -> bool {
     cx.try_global::<Tasks>().is_some_and(|t| t.busy(id))
 }
 
-/// How each issue task working or queued is shown, oldest first: what the
-/// cap on unattended runs counts. One waiting on a person, or on its pull
-/// request's status checks, is not working.
-pub(crate) fn issues_working(cx: &App) -> Vec<String> {
+/// Each issue task working or queued, oldest first, with its issue, its
+/// workflow and the step it is at: what the cap on unattended runs counts.
+/// One waiting on a person, or on its pull request's status checks, is not
+/// working.
+pub(crate) fn slot_holders(cx: &App) -> Vec<Holder> {
     let Some(t) = cx.try_global::<Tasks>() else {
         return Vec::new();
     };
     t.tasks
         .iter()
         .filter(|task| t.holds_slot(&task.id))
-        .filter_map(|task| task.issue().map(|issue| issue.named(&task.brief.title)))
+        .filter_map(|task| {
+            let named = task.issue()?.named(&task.brief.title);
+            let shown = match task.runs.last() {
+                Some(run) => match run.current() {
+                    Some(step) => format!("{named} · {} ({})", run.template.name, step.label),
+                    None => format!("{named} · {}", run.template.name),
+                },
+                None => named,
+            };
+            Some(Holder {
+                task: task.id.clone(),
+                shown,
+            })
+        })
         .collect()
+}
+
+/// How many issue tasks have a run waiting on a person: what the cap on
+/// waiting runs counts.
+pub(crate) fn issues_waiting(cx: &App) -> usize {
+    cx.try_global::<Tasks>().map_or(0, |t| {
+        t.tasks
+            .iter()
+            .filter(|task| task.issue().is_some())
+            .filter(|task| t.working(&task.id) == Some(Working::Waiting))
+            .count()
+    })
 }
 
 /// An unattended run with a session under way, as the rail and the workspace

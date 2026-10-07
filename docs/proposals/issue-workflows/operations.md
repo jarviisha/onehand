@@ -16,15 +16,8 @@ returns. It left this proposal and the *Not built* list of `unattended.md`.
 
 ## 2. Say who holds each slot
 
-**Today.** A full slot refuses: an issue pick, a Resume or a Retry of an issue's task past
-`at_once` is refused in `task::request` (`unattended::over_cap`), and the refusal names the issues
-being worked. *Look for an issue now* says the cap is reached. Nothing shows the slots standing.
-
-**Proposal.** One line in Settings ▸ Workspace ▸ Unattended runs, and in the refusal itself:
-*Slots: 1 of 1 — #12 · Work an issue (Implement)*, each opening its task. Read from
-`issues_working` and `starting`; nothing stored. A queued issue task waits for its place only, and
-says which task holds it. This is the *Slot* row of the preflight ([preflight.md](preflight.md))
-shown outside a start.
+Built: the slots line in a refusal, the preflight and Settings, and the task a
+queued one waits behind ([unattended.md](../../unattended.md)).
 
 ### A queue for slots, not in this proposal
 
@@ -42,17 +35,7 @@ own proposal. It would have to settle, at least:
 
 ## 3. A cap on waiting runs
 
-**Today.** A run waiting on a card, an approval or its status checks gives its slot up, keeping its
-adapter alive. `at_once` counts working runs only. Unbounded waiting runs means unbounded live
-agents.
-
-**When.** When a pile of unanswered runs is seen to cost something (memory, an adapter's own limit).
-
-**Smallest build.** `[unattended] waiting = N` (unset: no cap). Past it the tick claims nothing new
-and says why, the way the working cap does. It never stops, parks or answers a waiting run: the
-person's answer is still what frees one. Parking a waiting run with no session (resumed when
-answered) is the larger alternative already listed under *Parking a run while its status checks
-run*, and is not this.
+Built: `[unattended] waiting` ([unattended.md](../../unattended.md)).
 
 ## 4. Clean up after a merge, on request
 
@@ -95,12 +78,11 @@ The task's marks stay until the history cap drops them.
 
 ## Done when
 
-- Item 2: a refused issue start and Settings both name who holds each slot.
-- Item 3 and 4: each with its own *Checking it by hand* rows in `unattended.md`; item 4 with a
+- Item 4: with its own *Checking it by hand* rows, with a
   case for a squash merge, a deleted remote branch, and a terminal open in the worktree in
   another window.
 
 ## Documents to change when built
 
-- `docs/unattended.md`: *Not built, on purpose*, per item; *Config* for `waiting`.
+- `docs/unattended.md`: *Not built, on purpose*, for item 4.
 - `docs/tasks.md`: *Worktrees are never removed by onehand* becomes *never removed unasked*.

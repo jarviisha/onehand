@@ -335,7 +335,7 @@ current settings* as a new start is, on what Settings say now
 | Forge | `gh` missing or signed out, as last seen | |
 | Issue | another run works on it; for *Answer a pull request review*, the pull request is not open (closed unmerged, merged, none, or unread), the workflow has no status checks step to repair from, no forge serves the project, the branch on the forge went its own way, or the issue is closed or could not be read | |
 | Earlier task | | the issue's last task needs attention: starting makes a second task, and *Retry…* opens that task's Retry dialog instead |
-| Slot | `at_once` is reached, naming the issues holding the slots | |
+| Slot | `at_once` is reached, or `waiting` runs wait on a person; said with the slots line naming who holds each | |
 
 **What an agent offers is learned whenever it comes up**, a person's session included, and kept
 per agent spec (its command and arguments, compared whole) for the life of the process
@@ -496,6 +496,10 @@ change (`git checkout . && git clean -fd`).
 | One file for two views | With the tab and the page both on one issue, edit it in one | The other shows the edit at once; the footer says one sync, not two |
 | A draft kept | Start a new issue in the tab, type a title, open a session and come back; then pick another issue | The draft is still there; picking another issue asks *Drop this draft?* in a modal; an untouched form goes without asking |
 | Two at once | With `at_once = 1`, *Work an issue…* while an issue task runs | Refused, naming the issue being worked |
+| Who holds the slots | With `at_once = 1` and an issue task running at Implement, open Settings ▸ Workspace | *Slots: 1 of 1* with the holder *#N · Work an issue (Implement)* as a link; pressed, Settings closes and the task opens; *Run workflow…* on another issue says the same line in *Before it starts* |
+| No slot held | With nothing running | *Slots: 0 of 1* and *0 waiting on a person, no cap* |
+| Waiting capped | `waiting = 1`, an issue task waiting at an approval, `at_once = 2`; *Look for an issue now*, then *Run workflow…* on another issue | Both refused, naming `unattended.waiting`; answer the approval and the next look takes the issue |
+| Queued behind a task | Two checkout tasks on one project, the second started while the first runs | The notification names the first task: *… is queued behind <its title>, working in <folder>* |
 | Push and pull request | On a GitHub project with CI, an issue task through Verify | `git ls-remote origin <branch>` shows the commit Verify passed on, a draft pull request is open on the branch closing the issue, and once its status checks pass it is out of draft; the issue says *onehand opened … It is ready for review.* |
 | A failing check is repaired | As above, with a check that fails on the change | The run goes back to Implement with the check's name and log in its prompt, pushes again, and waits again |
 | No checks at all | As above, on a repository with no CI | The run waits ten minutes, then the pull request leaves draft |

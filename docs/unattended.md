@@ -85,7 +85,7 @@ background executor, one interval in the config, no cron expressions.
 | `crates/app/src/unattended.rs` | the tick, the cap (`at_cap`, the tasks still `starting`), `waiting` |
 | `crates/app/src/unattended/launch.rs` | claiming an issue, cutting its worktree, and making it a task of its workflow; `workflow`, which refuses a checkout workflow |
 | `crates/app/src/unattended/report.rs` | `spec_for`, `refuse_mode`, `started`, `opening`, and the end: `keep`, `card_question`, `ended`, `deliver`, `deliver_all` |
-| `crates/app/src/task.rs` | `freed`, which calls `unattended::ended`; `issues_working`, `live_issues`, `update_issue`, `undelivered` |
+| `crates/app/src/task.rs` | `freed`, which calls `unattended::ended`; `slot_holders`, `issues_waiting`, `live_issues`, `update_issue`, `undelivered` |
 | `crates/app/src/task/driver.rs` | `came_up` (the mode, the note on the issue), the clock, the take-over |
 | `crates/app/src/shell/workflows.rs` | `drive_task`, which brings an issue's run up off screen |
 | `crates/core/src/config.rs` | `UnattendedConfig` |
@@ -131,6 +131,7 @@ mode = "acceptEdits"        # the ACP session mode a run starts in; empty leaves
 agent = "Claude Code"       # which agent spec; the default agent when unset
 workflow = "builtin:issue"  # the workflow an issue is worked with, by id
 at_once = 1                 # runs working at once, across every window
+waiting = 4                 # runs waiting on a person at once; unset for no cap
 
 [unattended.workflows]      # workflow labels: label = workflow id
 bug = "my-fix"
@@ -355,16 +356,31 @@ workflow there is refused before the claim, said as this project's problem
 rather than as something stopping every run.
 
 **`at_once` runs work at a time**, picked and found alike, counted across every
-window (`task::issues_working`: issue tasks running or queued). A run waiting on
+window (`task::slot_holders`: issue tasks running or queued). A run waiting on
 a card or an approval does not count, and starting to wait looks for the next
 issue at once (`unattended::waiting`) rather than at the next tick. A pick while
-the cap is reached is refused with the issues being worked, and so is a Resume
-or a Retry of an issue's task from the Tasks page (`unattended::over_cap`, asked
-in `task::request`, which every start goes through); a refused Retry drops the
-run it was about to start. *Look for an issue now*, in Settings ▸
-Workspace, runs the search at once and always says what came of it: nothing
-switched on, the cap reached, what blocks every run, or that no issue of yours
-carries the label.
+the cap is reached is refused, and so is a Resume or a Retry of an issue's task
+from the Tasks page (`unattended::over_cap`, asked in `task::request`, which
+every start goes through); a refused Retry drops the run it was about to start.
+*Look for an issue now*, in Settings ▸ Workspace, runs the search at once and
+always says what came of it: nothing switched on, the cap reached, what blocks
+every run, or that no issue of yours carries the label.
+
+**Who holds each slot is said**, read from the tasks working and starting and
+never stored (`unattended::Slots`): *Slots: 1 of 1 — #12 · Work an issue
+(Implement)*, each holder its issue, its workflow and the step it is at. A full
+slot's refusal carries the line, and so does the preflight's *Slot* row;
+Settings ▸ Workspace ▸ Unattended runs shows it with each holder a link to its
+task, how many runs wait on a person, and why nothing more is taken up when a
+cap says so. A full slot still refuses; only a place queues, and a task queued
+for its place is told which task holds it.
+
+**`waiting` caps the runs waiting on a person**, each of which keeps its
+adapter alive. Unset, there is no cap. At it, nothing more is taken up, by the
+tick or a pick, and a Resume or a Retry of an issue's task is held to it as to
+`at_once`, the reason said where the working cap's is. Nothing is stopped,
+parked or answered for it: a person's answer is what frees one, and the room
+it makes is there at once.
 
 **The transcript is the run's log**, in short lines, one fact each. A remark in
 the transcript is one line down the middle of the column, cut where the column
@@ -772,9 +788,6 @@ accumulate one row per issue ever worked.
   trigger label back on the issue the pull request came from.
 - **Cleaning up after a merged pull request.** The worktree and its branch stay
   on disk; a merged pull request is the first signal clear enough to act on.
-- **A cap on waiting runs.** `at_once` counts working runs only; each waiting
-  one keeps an adapter alive. Add when a pile of unanswered runs is seen to
-  cost something.
 - **Cron expressions, quiet hours, a calendar.** An interval and a switch per
   project. Add when somebody actually wants runs only at night.
 - **Telegram announcements of a run.** The three announced moments are a closed
@@ -801,7 +814,8 @@ Core, pure, no fixtures:
 - `branch_for` passes `validate_branch` for a title that is nothing but
   punctuation and for one 300 characters long, and a kept issue and a forge
   issue of one number never share a branch.
-- `room` counts working runs against `at_once`.
+- `Slots::full` counts working runs against `at_once` and waiting runs against
+  `waiting`, each on its own; `Slots::said` names each holder in order.
 - `workflow_for` takes the first workflow label in the table's order, never
   the trigger label, and falls back to the default; a found issue keeps every
   label it carries; `workflow_label_refused` refuses an empty, trigger or

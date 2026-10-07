@@ -51,9 +51,11 @@ fn healthy() -> Facts {
             tasks: Vec::new(),
         }),
         slots: Some(Slots {
-            working: Vec::new(),
+            holders: Vec::new(),
             starting: 0,
             at_once: 2,
+            waiting: 0,
+            waiting_cap: None,
         }),
         queued_behind: None,
         review: None,
@@ -283,9 +285,14 @@ fn an_earlier_task_needing_attention_informs_and_offers_it() {
 fn a_full_slot_blocks_naming_who_holds_it() {
     let facts = Facts {
         slots: Some(Slots {
-            working: vec!["#5".into()],
+            holders: vec![crate::unattended::Holder {
+                task: "t5".into(),
+                shown: "#5".into(),
+            }],
             starting: 0,
             at_once: 1,
+            waiting: 0,
+            waiting_cap: None,
         }),
         ..healthy()
     };

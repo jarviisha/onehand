@@ -10,6 +10,7 @@
 
 use crate::connector::PrState;
 use crate::task::{Task, Working};
+use crate::unattended::Slots;
 use crate::workflow::{Failure, Place, StepKind, Template};
 
 /// What kind of start is checked: each has its own configuration and place.
@@ -148,16 +149,6 @@ pub struct Forge {
 pub struct IssueFacts {
     pub named: String,
     pub tasks: Vec<(Task, Option<Working>)>,
-}
-
-/// How many issue runs may work at once, and who holds the slots.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Slots {
-    /// The issues being worked, as they are shown.
-    pub working: Vec<String>,
-    /// Issue tasks kept and not yet placed, which count too.
-    pub starting: usize,
-    pub at_once: u32,
 }
 
 /// What answering a pull request review knows of it, read off the UI thread
@@ -427,7 +418,7 @@ pub fn preflight(kind: Kind, facts: &Facts) -> Vec<Finding> {
     if let Some(why) = facts
         .slots
         .as_ref()
-        .and_then(|s| crate::unattended::full(&s.working, s.starting, s.at_once))
+        .and_then(Slots::full)
     {
         say(Check::Slot, true, why);
     }

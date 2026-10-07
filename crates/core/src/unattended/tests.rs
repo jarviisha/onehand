@@ -587,12 +587,75 @@ fn every_tracker_kept_by_name_resolves_back() {
     assert!(forge().to_ref().resolve(&[]).is_none());
 }
 
+fn holder(task: &str, shown: &str) -> Holder {
+    Holder {
+        task: task.into(),
+        shown: shown.into(),
+    }
+}
+
+fn slots(holders: Vec<Holder>, starting: usize, at_once: u32) -> Slots {
+    Slots {
+        holders,
+        starting,
+        at_once,
+        waiting: 0,
+        waiting_cap: None,
+    }
+}
+
 #[test]
 fn the_cap_counts_working_runs_only() {
-    assert!(room(0, 1));
-    assert!(!room(1, 1));
-    assert!(room(1, 2));
-    assert!(!room(0, 0));
+    assert!(slots(vec![], 0, 1).full().is_none());
+    assert!(slots(vec![holder("a", "#1")], 0, 1).full().is_some());
+    assert!(slots(vec![holder("a", "#1")], 0, 2).full().is_none());
+    assert!(slots(vec![], 1, 1).full().is_some());
+    assert!(slots(vec![], 0, 0).full().is_some());
+}
+
+#[test]
+fn the_slots_line_names_each_holder_in_order() {
+    assert_eq!(slots(vec![], 0, 2).said(), "Slots: 0 of 2");
+    assert_eq!(
+        slots(vec![holder("a", "#12 · Work an issue (Implement)")], 0, 1).said(),
+        "Slots: 1 of 1 — #12 · Work an issue (Implement)"
+    );
+    assert_eq!(
+        slots(vec![holder("a", "#3"), holder("b", "#9")], 1, 3).said(),
+        "Slots: 3 of 3 — #3, #9, 1 starting"
+    );
+}
+
+#[test]
+fn a_full_slot_is_refused_with_the_slots_line() {
+    let full = slots(vec![holder("a", "#12 · Work an issue (Implement)")], 0, 1);
+    let why = full.full().unwrap();
+    assert!(why.contains(&full.said()), "{why}");
+    assert!(
+        slots(vec![], 0, 0)
+            .full()
+            .unwrap()
+            .contains("unattended.at_once")
+    );
+}
+
+#[test]
+fn the_waiting_cap_bites_on_its_own_and_unset_is_none() {
+    let mut s = slots(vec![], 0, 2);
+    s.waiting = 40;
+    assert!(s.full().is_none(), "unset: no cap");
+    s.waiting_cap = Some(3);
+    s.waiting = 2;
+    assert!(s.full().is_none());
+    s.waiting = 3;
+    let why = s.full().unwrap();
+    assert!(why.contains("unattended.waiting"), "{why}");
+    // Answering one makes room at once.
+    s.waiting = 2;
+    assert!(s.full().is_none());
+    // The working cap still bites with waiting under its cap.
+    s.holders = vec![holder("a", "#1"), holder("b", "#2")];
+    assert!(s.full().unwrap().contains("Slots: 2 of 2"));
 }
 
 #[test]
