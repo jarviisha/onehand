@@ -136,7 +136,7 @@ and the rail count cannot drift apart.
 |---|---|---|
 | Run | the same one | a new one |
 | Offered for | an interrupted run only (the agent stopped or the session went: `Outcome::resumable`) | every outcome under *Needs attention*, and *Finished* from the detail; a dismissed task retried is live again |
-| Workflow | the run's own snapshot | the previous run's snapshot; the newer workflow is offered if it changed |
+| Workflow | the run's own snapshot | the previous run's snapshot; *Retry with current settings* runs the newest version |
 | Starts at | where it was, marks kept | the first step that cannot be carried over (below), or an earlier one picked in the dialog; a run that got to the end starts at the first step by default |
 | Misses | as they were | from zero |
 | Place | through the queue | through the queue |
@@ -165,16 +165,38 @@ check. **A check task is retried at once**, with no dialog: it is a fresh run of
 and, for an issue's task not already counted, the slot. Settings changed since neither blocks it
 nor clears a block, and a block says so: *the run keeps its own setup*. The Retry dialog lists what
 the preflight found under its description, blocks in the danger ink, and *Retry* is spent while one
-remains (Enter does nothing then). *Retry with version N* is judged as a new start of that version,
-validation included; what blocks it alone is listed with its version, and spends only its button.
-A Resume blocked is said in a notification where it was pressed, and nothing starts. Running with
-what Settings says now instead is not built yet.
+remains (Enter does nothing then). A block of the run's own agent, mode or check command says
+that *Retry with current settings* runs with what Settings say now. A Resume blocked is said in a
+notification where it was pressed, and nothing starts.
+
+**The Retry dialog says what it keeps** before it starts anything, one line each from the last
+run: the agent, the mode, the check command, the timeout and the workflow's version. A line that
+Settings now say otherwise for says what they say, in the warning ink, and that *Retry with
+current settings* runs it.
+
+**Retry with current settings** is a second action beside *Retry*, never a change to what *Retry*
+does; *Retry* means only "as the last run was". It runs **the task's own workflow, by id, at the
+version on offer now** (an issue's labels and `[unattended] workflow` are not asked again: they
+choose the workflow of a new task, and a retry is the same task), with the rest of the
+configuration from where a new task of its kind takes it: an issue's task from `[unattended]`
+(agent, mode, the timeout put over the workflow's) and the project's check command; a launcher's
+the first agent configured, the workflow's own timeout and the project's check command. Its dialog
+says, before anything starts, what changes (*Mode: plan → auto*, one line each, or that nothing
+does), where it starts and why, and what its preflight (kind *Retry with current settings*, judged
+as a new start is, validation included) found. A workflow whose id is no longer on offer, or that
+no longer validates, blocks.
+
+**Where it starts is the earlier of two points**: the carry-over start for the version it runs,
+and **the first command step before it whose command changes**. A command step's command is its
+own, or the check command when it names none, compared as the last run ran it against as this run
+will. Not the last command step: in `Implement → Verify (project check) → Package (own command) →
+Push`, a changed project check starts at Verify, since starting at Package would push work the new
+check never ran on. A changed agent, mode or timeout moves no start. On work changed since the
+last run stopped, the start is held at the last command step up to it, as for *Retry*.
 
 **The dialog has a step menu**, *From …*, listing the first step up to where the retry would start;
 it defaults to that start, or to the first step when the last run got to the end. The description
-says where the pick starts and how many answers it carries; only the steps before it carry. The
-pick goes to both *Retry* and *Retry with version N*, and a newer workflow without that
-step ignores it.
+says where the pick starts, why, and how many answers it carries; only the steps before it carry.
 
 In code: `Run::retry_start` (`crates/core/src/workflow/run.rs`) says where a retry would start,
 `Run::retry_offered` which step the dialog offers first, and `Run::retry_plan` where a retry from a
@@ -186,15 +208,16 @@ clears `dismissed`, so a task let go comes back live and a failure lands under *
 again. A check is retried from its one step, so one that passed runs again.
 `Run::resume` enters the run's own step on its first start, which is step 0 for a fresh run.
 `task::marks::against_blocking` answers `Same`, `Changed` or `OtherBranch`, and
-`Shell::begin_retry` (`crates/app/src/shell/workflows.rs`) asks the question. On `Changed` the
+`Shell::begin_retry` (`crates/app/src/shell/retry.rs`) asks the question. On `Changed` the
 start is held at or before the last command step up to it (`Run::recheck`): a retry carries
 `verified_at`, and without the check running again on the work as it is now, a push would send
-the commit the last check passed on. Enter in the dialog retries as *Retry* does. The dialog shows
-*Retry with version N* when the workflows on offer hold one that is newer than
-the run's snapshot (`Template::newer_than`: the same id at a higher version, or at the same version with different
-content, as a hand edit leaves it; or for a snapshot from
-before ids the same name with different content) and validates, and its description says where that
-one would start.
+the commit the last check passed on. Enter in the dialog retries as *Retry* does.
+`Run::with_current` works out a retry with current settings from the last run, the workflow on
+offer by its id (`crate::workflow::newest`) and what a new task of its kind takes now
+(`workflow::Now`, from `unattended::now_for`): what changes, the setup, and the start.
+`Task::retry_with` pushes that run, and `Shell::begin_retry_current` asks first. The Issues views
+are told, per ended task, whether Settings now differ from its last run (`Work::settings_moved`),
+which is when a timed out run is offered the second way out.
 
 ## The architecture
 

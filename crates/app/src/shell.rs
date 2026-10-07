@@ -23,6 +23,7 @@ mod issue_work;
 mod issues_page;
 mod remote_runs;
 mod render;
+mod retry;
 mod roots;
 mod sessions;
 mod settings_dialog;

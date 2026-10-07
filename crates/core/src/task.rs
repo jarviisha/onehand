@@ -16,7 +16,9 @@ pub mod queue;
 pub mod work;
 
 use crate::unattended::IssueSource;
-use crate::workflow::{Brief, Outcome, Run, Setup, StepKind, StepSpec, Stop, Template};
+use crate::workflow::{
+    Brief, Outcome, Run, Setup, StepKind, StepSpec, Stop, Template, WithCurrent,
+};
 use serde::{Deserialize, Serialize};
 
 /// What a task runs: a workflow a person picked, the project's check command
@@ -192,6 +194,22 @@ impl Task {
     ) -> Option<&Run> {
         let mut next = Run::retry_of(self.runs.last()?, id, template, from);
         next.revise = note;
+        self.dismissed = false;
+        self.runs.push(next);
+        self.runs.last()
+    }
+
+    /// Run it again as run `id` with what Settings say now, as `plan` worked
+    /// it out from its last run: its own workflow at its newest version, the
+    /// setup a new task of its kind takes, from the step `plan` starts at.
+    pub fn retry_with(&mut self, id: String, plan: WithCurrent) -> Option<&Run> {
+        let from = plan
+            .template
+            .steps
+            .get(plan.start)
+            .map(|step| step.id.clone());
+        let mut next = Run::retry_of(self.runs.last()?, id, plan.template, from.as_deref());
+        next.setup = plan.setup;
         self.dismissed = false;
         self.runs.push(next);
         self.runs.last()

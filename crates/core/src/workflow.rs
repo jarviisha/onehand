@@ -24,7 +24,10 @@ pub use facts::{run_command_blocking, CommandResult, Facts, Mark};
 pub use prompt::first_prompt;
 #[cfg(test)]
 pub(crate) use run::Transition;
-pub use run::{Action, ApprovalAt, Brief, Failure, Outcome, PrOpened, Run, Setup, Stop, Visit};
+pub use run::{
+    Action, ApprovalAt, Brief, Changed, Failure, Now, Outcome, PrOpened, Run, Setup, Stop, Visit,
+    WithCurrent,
+};
 pub use status_checks::{judge, waited_on, with_logs, Seen};
 pub use template::{GateKind, Place, StepKind, StepSpec, Template, DEFAULT_WAIT, SCHEMA_VERSION};
 pub use validate::validate;

@@ -87,19 +87,13 @@ impl Template {
         bare(self) == bare(other)
     }
 
-    /// Whether `self` is a later save of the template a run kept as
-    /// `snapshot`: the same id at a higher version, or at the same version
-    /// saying something else, as a file edited by hand outside onehand does,
-    /// its version untouched. A snapshot from before ids has none, and then a
-    /// template of the same name that says something else counts.
-    pub fn newer_than(&self, snapshot: &Self) -> bool {
+    /// Whether `self` is the workflow a run kept as `snapshot`, at whatever
+    /// version: the same id, so a rename still finds it. A snapshot from
+    /// before ids has none, and then a workflow of the same name is it.
+    pub fn same_workflow(&self, snapshot: &Self) -> bool {
         match snapshot.id.is_empty() {
-            true => self.name == snapshot.name && !self.same_content(snapshot),
-            false => {
-                self.id == snapshot.id
-                    && (self.version > snapshot.version
-                        || self.version == snapshot.version && !self.same_content(snapshot))
-            }
+            true => self.name == snapshot.name,
+            false => self.id == snapshot.id,
         }
     }
 

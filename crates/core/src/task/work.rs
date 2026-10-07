@@ -10,7 +10,7 @@
 use super::{Group, Task, Working};
 use crate::connector::{PrState, PullRequest};
 use crate::issues::IssueKey;
-use crate::workflow::{ApprovalAt, Outcome, Run, StepKind, Stop};
+use crate::workflow::{ApprovalAt, Failure, Outcome, Run, StepKind, Stop};
 
 pub mod left;
 pub mod list;
@@ -52,13 +52,18 @@ pub(crate) enum Stand {
     Card,
     /// Its agent stopped, its session went, or a restart cut it off.
     Resumable(String),
-    /// Ended where it could not get past a step: too many misses, or out of
-    /// time. What happened and what the step's last visit ended on.
+    /// Ended where it could not get past a step: too many misses. What
+    /// happened and what the step's last visit ended on.
     Exhausted {
         said: String,
         last: Option<String>,
     },
-    Failed(String),
+    /// Out of time: where, and how long it worked against which timeout.
+    TimedOut(String),
+    Failed {
+        why: String,
+        kind: Failure,
+    },
     Done,
     /// Stopped, taken over or let go by a person.
     ByPerson,
@@ -107,6 +112,10 @@ pub struct Work {
     pub base: Option<String>,
     /// What it waits for approval on, while it does.
     pub review: Option<UnderReview>,
+    /// What Settings say now differs from what its last run ran with, so a
+    /// retry with current settings would run differently. Told by the app,
+    /// which knows Settings; `false` until it does.
+    pub settings_moved: bool,
 }
 
 /// What a run waiting for approval is judged on, as a review draws it.
@@ -224,6 +233,7 @@ impl Work {
             review: run
                 .filter(|_| matches!(stand, Stand::Approval { .. }))
                 .and_then(under_review),
+            settings_moved: false,
             span: run.and_then(|run| first(run).zip(last(run))),
             base: task.runs.first().and_then(first),
             task: task.id.clone(),
@@ -324,17 +334,31 @@ fn stand(
             Some(Outcome::Stopped(stop)) => match stop {
                 Stop::ByPerson | Stop::TakenOver => Stand::ByPerson,
                 Stop::LinkLost | Stop::Closed => Stand::Resumable(stop.said().to_string()),
-                Stop::TimedOut => Stand::Exhausted {
-                    said: format!("Timed out at {}", step_label(run, None)),
-                    last: last_why(run),
-                },
+                Stop::TimedOut => Stand::TimedOut(format!(
+                    "Timed out at {} after {}, against its timeout of {}",
+                    step_label(run, None),
+                    worked(run.map_or(0, |run| run.spent_secs)),
+                    run.map_or("", |run| run.template.timeout.as_str()),
+                )),
             },
             Some(Outcome::Exhausted { step }) => Stand::Exhausted {
                 said: format!("Too many misses at {}", step_label(run, Some(&step))),
                 last: last_why(run),
             },
-            Some(Outcome::Failed(why)) => Stand::Failed(why),
+            Some(Outcome::Failed(why)) => Stand::Failed {
+                why,
+                kind: run.and_then(Run::failed_on).unwrap_or(Failure::Other),
+            },
         },
+    }
+}
+
+/// How long a run worked, as a timeout is written: *45m*, *1h 30m*.
+fn worked(secs: u64) -> String {
+    match (secs / 3600, secs % 3600 / 60) {
+        (0, minutes) => format!("{minutes}m"),
+        (hours, 0) => format!("{hours}h"),
+        (hours, minutes) => format!("{hours}h {minutes}m"),
     }
 }
 
@@ -452,6 +476,9 @@ pub enum Act {
     ShowTask,
     Resume,
     Retry,
+    /// Retry with what Settings say now, rather than what the last run ran
+    /// with.
+    RetryCurrent,
     OpenPullRequest,
     OpenBranch,
     Refresh,
@@ -473,6 +500,7 @@ impl Act {
             Self::ShowTask => "Show task",
             Self::Resume => "Resume",
             Self::Retry => "Retry…",
+            Self::RetryCurrent => "Retry with current settings…",
             Self::OpenPullRequest => "Open pull request",
             Self::OpenBranch => "Open branch",
             Self::Refresh => "Refresh",
@@ -629,7 +657,26 @@ fn by_stand(work: &Work, around: Around<'_>) -> Next {
             Some(Act::Retry),
             &[Act::ShowTask],
         ),
-        Stand::Failed(why) => row(Some(why.clone()), Some(Act::Retry), &[Act::ShowTask]),
+        Stand::TimedOut(said) => {
+            // Retry keeps the timeout; a changed one is the other way out.
+            let others: &[Act] = match work.settings_moved {
+                true => &[Act::RetryCurrent, Act::ShowTask],
+                false => &[Act::ShowTask],
+            };
+            row(Some(said.clone()), Some(Act::Retry), others)
+        }
+        Stand::Failed {
+            why,
+            kind: Failure::Configuration,
+        } => row(
+            Some(why.clone()),
+            Some(Act::RetryCurrent),
+            &[Act::Retry, Act::ShowTask],
+        ),
+        Stand::Failed {
+            why,
+            kind: Failure::Forge | Failure::Other,
+        } => row(Some(why.clone()), Some(Act::Retry), &[Act::ShowTask]),
         Stand::ByPerson => row(None, None, &[Act::RunWorkflow]),
         Stand::Done => done(work, around.pr),
     }

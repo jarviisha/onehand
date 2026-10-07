@@ -79,3 +79,18 @@ pub(crate) fn templates(cx: &App) -> Vec<Entry> {
         .map(|p| p.templates.clone())
         .unwrap_or_default()
 }
+
+/// The workflow a run's `snapshot` was taken of, by its id, as it is on offer
+/// now: what a task runs again with when it runs with what Settings say.
+pub(crate) fn newest(snapshot: &Template, cx: &App) -> Result<Template, String> {
+    let entry = templates(cx)
+        .into_iter()
+        .find(|entry| {
+            entry
+                .template
+                .as_ref()
+                .is_ok_and(|template| template.same_workflow(snapshot))
+        })
+        .ok_or_else(|| format!("the workflow `{}` is no longer on offer", snapshot.name))?;
+    entry.template
+}

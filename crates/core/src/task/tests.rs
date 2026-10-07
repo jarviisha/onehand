@@ -675,3 +675,25 @@ fn a_task_file_from_before_part_b_reads_and_saves_unchanged() {
     let back: Task = serde_json::from_str(&serde_json::to_string(&t).unwrap()).unwrap();
     assert_eq!(back, t);
 }
+
+/// A retry with current settings is a new run of the same task with the
+/// setup a new task takes now, from where its plan starts.
+#[test]
+fn a_retry_with_current_settings_runs_the_new_setup_from_its_start() {
+    let mut t = task("1");
+    t.runs[0].resume();
+    t.runs[0].stopped(Stop::TimedOut);
+    let mut setup = t.runs[0].setup.clone();
+    setup.mode = Some("auto".into());
+    let plan = crate::workflow::WithCurrent {
+        template: t.runs[0].template.clone(),
+        setup: setup.clone(),
+        changes: Vec::new(),
+        start: 0,
+    };
+    let next = t.retry_with("2".into(), plan).unwrap();
+    assert_eq!(next.setup, setup);
+    assert_eq!(next.step, 0);
+    assert_eq!(t.runs.len(), 2, "the old run is kept");
+    assert_eq!(t.runs[0].setup.mode, None);
+}

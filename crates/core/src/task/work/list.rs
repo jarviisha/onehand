@@ -426,7 +426,8 @@ fn line(work: &IssueWork, pr: Option<Option<&PullRequest>>) -> String {
         Stand::Card => super::waiting_said(false).to_string(),
         Stand::Resumable(_) => "Ended · cut off".to_string(),
         Stand::Exhausted { .. } => at("Ended · stuck"),
-        Stand::Failed(_) => "Ended · failed".to_string(),
+        Stand::TimedOut(_) => at("Ended · timed out"),
+        Stand::Failed { .. } => "Ended · failed".to_string(),
         Stand::ByPerson => "Stopped".to_string(),
         Stand::Done => match pr.flatten() {
             Some(pr) if work.has_pull_request() => format!("Done · pull request {}", pr_said(pr)),

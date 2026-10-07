@@ -314,29 +314,70 @@ fn an_exhausted_or_timed_out_run_says_where_and_what_its_last_visit_ended_on() {
         acts(&next),
         (Some(Act::Retry), vec![Act::ShowTask, Act::Edit])
     );
-    let task = ended(
+    let mut task = ended(
         at(self::task("1", forge_flow(), None), 2, 900),
         Outcome::Stopped(Stop::TimedOut),
         None,
     );
+    task.runs[0].spent_secs = 45 * 60;
     let timed_out = next_of(&task, None, open());
-    assert_eq!(timed_out.said.as_deref(), Some("Timed out at Implement"));
-    assert_eq!(timed_out.primary, Some(Act::Retry));
+    assert_eq!(
+        timed_out.said.as_deref(),
+        Some("Timed out at Implement after 45m, against its timeout of 45m")
+    );
+    assert_eq!(
+        acts(&timed_out),
+        (Some(Act::Retry), vec![Act::ShowTask, Act::Edit]),
+        "Retry keeps the timeout"
+    );
+    // With the timeout on offer changed since, the second way is offered.
+    let mut work = Work::of(&task, None, None);
+    work.settings_moved = true;
+    assert_eq!(
+        acts(&next_action(Some(&work), open())),
+        (
+            Some(Act::Retry),
+            vec![Act::RetryCurrent, Act::ShowTask, Act::Edit]
+        )
+    );
 }
 
+/// A failed run is offered the way out its failure fits: a configuration
+/// failure is changed where the configuration is, the rest retried.
 #[test]
-fn a_failed_run_says_why_and_offers_a_retry() {
-    let task = ended(
-        at(task("1", forge_flow(), None), 0, 900),
-        Outcome::Failed("the agent is not configured".into()),
-        None,
+fn a_failed_run_says_why_and_offers_the_way_out_that_fits() {
+    let failed = |kind: Option<crate::workflow::Failure>| {
+        let mut task = ended(
+            at(task("1", forge_flow(), None), 0, 900),
+            Outcome::Failed("the agent `x` is no longer configured".into()),
+            None,
+        );
+        task.runs[0].failure = kind;
+        next_of(&task, None, open())
+    };
+    let next = failed(Some(crate::workflow::Failure::Configuration));
+    assert_eq!(
+        next.said.as_deref(),
+        Some("the agent `x` is no longer configured")
     );
-    let next = next_of(&task, None, open());
-    assert_eq!(next.said.as_deref(), Some("the agent is not configured"));
     assert_eq!(
         acts(&next),
-        (Some(Act::Retry), vec![Act::ShowTask, Act::Edit])
+        (
+            Some(Act::RetryCurrent),
+            vec![Act::Retry, Act::ShowTask, Act::Edit]
+        )
     );
+    for kind in [
+        Some(crate::workflow::Failure::Forge),
+        Some(crate::workflow::Failure::Other),
+        None,
+    ] {
+        assert_eq!(
+            acts(&failed(kind)),
+            (Some(Act::Retry), vec![Act::ShowTask, Act::Edit]),
+            "{kind:?}"
+        );
+    }
 }
 
 #[test]

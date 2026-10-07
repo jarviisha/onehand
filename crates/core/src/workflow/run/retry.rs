@@ -1,8 +1,42 @@
 //! Where a retry of a run starts and what it carries over from the last.
 
-use super::{Outcome, Run};
+use super::{Outcome, Run, Setup};
 use crate::workflow::prompt;
 use crate::workflow::template::{StepKind, Template};
+
+/// What a task's next run takes when it runs with what Settings say now:
+/// what a new task of its kind would be given.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Now {
+    pub agent: Option<String>,
+    pub mode: Option<String>,
+    pub check: Option<String>,
+    /// The timeout a new task of its kind is given; `None` keeps the
+    /// workflow's own.
+    pub timeout: Option<String>,
+}
+
+/// One thing a retry with current settings runs differently, as it was and
+/// as it will be.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Changed {
+    pub what: &'static str,
+    pub old: String,
+    pub new: String,
+}
+
+/// A retry of a run with what Settings say now, before anything starts.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct WithCurrent {
+    /// The task's own workflow at its newest version, its timeout set.
+    pub template: Template,
+    /// The last run's setup, its agent, mode and check command as now.
+    pub setup: Setup,
+    /// What differs from the last run, in a fixed order.
+    pub changes: Vec<Changed>,
+    /// The step it starts at.
+    pub start: usize,
+}
 
 impl Run {
     /// Where a retry of `prev` on `template` starts: the first step it
@@ -112,5 +146,99 @@ impl Run {
         // pushes the commit the last check passed on.
         run.marks.verified_at = prev.marks.verified_at.clone();
         run
+    }
+
+    /// `prev` retried with `now`, on `newest`: the task's own workflow by id
+    /// at the newest version on offer, or why there is none.
+    ///
+    /// It starts at the earlier of the carry-over start and **the first
+    /// command step before it whose command changes**: a step's command is
+    /// its own, or the check command when it names none. Not the last command
+    /// step: a changed project check before a step with a command of its own
+    /// would otherwise push work the new check never ran on. A changed agent,
+    /// mode or timeout moves no start.
+    pub fn with_current(
+        prev: &Run,
+        newest: Result<Template, String>,
+        now: &Now,
+    ) -> Result<WithCurrent, String> {
+        let mut template = newest?;
+        let problems = crate::workflow::validate(&template);
+        if !problems.is_empty() {
+            let said: Vec<String> = problems.iter().map(ToString::to_string).collect();
+            return Err(format!(
+                "the workflow `{}` no longer validates: {}",
+                template.name,
+                said.join("; ")
+            ));
+        }
+        if let Some(timeout) = &now.timeout {
+            template.timeout = timeout.clone();
+        }
+        let setup = Setup {
+            agent: now.agent.clone(),
+            mode: now.mode.clone(),
+            check: now.check.clone(),
+            ..prev.setup.clone()
+        };
+        let carry = Run::retry_offered(prev, &template);
+        let command = |template: &Template, at: &str, check: &Option<String>| match &template
+            .steps
+            .iter()
+            .find(|step| step.id == at)?
+            .kind
+        {
+            StepKind::Command { command, .. } => command.clone().or_else(|| check.clone()),
+            StepKind::Agent { .. }
+            | StepKind::Approval { .. }
+            | StepKind::Push
+            | StepKind::PullRequest
+            | StepKind::StatusChecks { .. } => None,
+        };
+        let changed_command = template.steps[..carry].iter().position(|step| {
+            matches!(step.kind, StepKind::Command { .. })
+                && command(&template, &step.id, &setup.check)
+                    != command(&prev.template, &step.id, &prev.setup.check)
+        });
+        let start = changed_command.map_or(carry, |at| at.min(carry));
+        let shown =
+            |value: &Option<String>, none: &str| value.clone().unwrap_or_else(|| none.to_string());
+        let mut changes = Vec::new();
+        let mut differs = |what, old: String, new: String| {
+            if old != new {
+                changes.push(Changed { what, old, new });
+            }
+        };
+        differs(
+            "Workflow version",
+            format!("version {}", prev.template.version),
+            format!("version {}", template.version),
+        );
+        differs(
+            "Agent",
+            shown(&prev.setup.agent, "the first configured"),
+            shown(&setup.agent, "the first configured"),
+        );
+        differs(
+            "Mode",
+            shown(&prev.setup.mode, "as the agent starts"),
+            shown(&setup.mode, "as the agent starts"),
+        );
+        differs(
+            "Check command",
+            shown(&prev.setup.check, "none"),
+            shown(&setup.check, "none"),
+        );
+        differs(
+            "Timeout",
+            prev.template.timeout.clone(),
+            template.timeout.clone(),
+        );
+        Ok(WithCurrent {
+            template,
+            setup,
+            changes,
+            start,
+        })
     }
 }

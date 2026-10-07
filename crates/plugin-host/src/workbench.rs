@@ -218,6 +218,9 @@ pub enum Request<'a> {
     ResumeTask(&'a str),
     /// Choose how to run task `id` again. Only ever travels **upward**.
     RetryTask(&'a str),
+    /// Run task `id` again with what Settings say now, asking first. Only
+    /// ever travels **upward**.
+    RetryTaskCurrent(&'a str),
     /// Stop task `id`. Only ever travels **upward**.
     StopTask(&'a str),
 }

@@ -855,37 +855,20 @@ fn a_key_onehand_does_not_read_is_refused() {
     assert!(store::parse(&text).is_ok());
 }
 
+/// A run's workflow is found again by its id, whatever it was renamed to;
+/// one kept before ids by its name.
 #[test]
-fn a_newer_template_is_one_saved_later_under_the_same_id() {
+fn a_workflow_is_found_again_by_its_id() {
     let mut snapshot = checkout();
     let mut later = snapshot.clone();
     later.name = "Renamed".into();
     later.version = 2;
-    assert!(later.newer_than(&snapshot), "found by id after a rename");
-    assert!(
-        !snapshot.newer_than(&later),
-        "an older version is not newer"
-    );
+    assert!(later.same_workflow(&snapshot), "found by id after a rename");
     later.id = "other".into();
-    assert!(!later.newer_than(&snapshot));
-
-    // A file edited by hand keeps its version, and still counts.
-    let mut by_hand = snapshot.clone();
-    assert!(!by_hand.newer_than(&snapshot), "the same, unchanged");
-    by_hand.misses += 1;
-    assert!(by_hand.newer_than(&snapshot));
-    by_hand.version = 0;
-    assert!(!by_hand.newer_than(&snapshot), "an older version never is");
-
-    // A run kept before ids falls back to the name and what it says.
+    assert!(!later.same_workflow(&snapshot));
     snapshot.id.clear();
-    let mut same_name = checkout();
-    assert!(
-        !same_name.newer_than(&snapshot),
-        "the same, only with an id"
-    );
-    same_name.misses += 1;
-    assert!(same_name.newer_than(&snapshot));
+    assert!(checkout().same_workflow(&snapshot), "by name, before ids");
+    assert!(!later.same_workflow(&snapshot));
 }
 
 #[test]
@@ -1525,4 +1508,148 @@ fn a_log_holding_a_fence_never_closes_the_one_around_it() {
     );
     assert!(said.ends_with("\n`````"), "{said}");
     assert_eq!(prompt::fenced("plain"), "```\nplain\n```");
+}
+
+/// Implement, Verify on the project's check command, Package on a command
+/// of its own, then Push.
+fn packaged() -> Template {
+    let mut template = Template::blank("Packaged");
+    template.id = "packaged".into();
+    template.place = Place::Worktree;
+    let step = |id: &str, kind: StepKind| StepSpec {
+        id: id.into(),
+        label: id[..1].to_uppercase() + &id[1..],
+        kind,
+    };
+    template.steps = vec![
+        step(
+            "implement",
+            StepKind::Agent {
+                prompt: "{brief}".into(),
+                gates: vec![GateKind::CodeChanged, GateKind::Committed],
+                keep_answer: false,
+            },
+        ),
+        step(
+            "verify",
+            StepKind::Command {
+                command: None,
+                on_fail: "implement".into(),
+            },
+        ),
+        step(
+            "package",
+            StepKind::Command {
+                command: Some("make package".into()),
+                on_fail: "implement".into(),
+            },
+        ),
+        step("push", StepKind::Push),
+    ];
+    template
+}
+
+/// A run of [`packaged`] that passed its commands and failed at the push.
+fn failed_at_push() -> Run {
+    let mut setup = setup(Some("make check"));
+    setup.forge = Some("Forge".into());
+    setup.agent = Some("claude".into());
+    let (mut run, _) = begin("1".into(), packaged(), brief(), setup);
+    prompt_of(run.measured(mark("a", "d0")));
+    assert_eq!(
+        run.turn_ended(&facts("b", false, 1, "d1"), ""),
+        Action::RunCommand("make check".into())
+    );
+    assert_eq!(
+        run.command_finished(passed(Some("a".into()))),
+        Action::RunCommand("make package".into())
+    );
+    assert_eq!(
+        run.command_finished(passed(Some("a".into()))),
+        Action::Push("a".into())
+    );
+    run.forge_done(Err("rejected".into()));
+    run
+}
+
+/// What Settings say now, the same as the run in [`failed_at_push`].
+fn same_now() -> Now {
+    Now {
+        agent: Some("claude".into()),
+        mode: None,
+        check: Some("make check".into()),
+        timeout: None,
+    }
+}
+
+/// A changed project check command starts the retry at the first step that
+/// runs it, not the last command step: the push would otherwise send work
+/// the new check never ran on.
+#[test]
+fn a_retry_with_current_settings_starts_where_a_command_changes() {
+    let prev = failed_at_push();
+    let index = |id: &str| prev.template.index_of(id).unwrap();
+    let carried = Run::with_current(&prev, Ok(packaged()), &same_now()).unwrap();
+    assert_eq!(
+        carried.start,
+        index("push"),
+        "nothing changed: the carry-over start"
+    );
+    assert!(carried.changes.is_empty());
+
+    let now = Now {
+        check: Some("make check2".into()),
+        ..same_now()
+    };
+    let plan = Run::with_current(&prev, Ok(packaged()), &now).unwrap();
+    assert_eq!(plan.start, index("verify"));
+    assert_eq!(
+        plan.changes,
+        vec![Changed {
+            what: "Check command",
+            old: "make check".into(),
+            new: "make check2".into(),
+        }]
+    );
+    assert_eq!(plan.setup.check.as_deref(), Some("make check2"));
+
+    let mut newer = packaged();
+    newer.version += 1;
+    if let StepKind::Command { command, .. } = &mut newer.steps[2].kind {
+        *command = Some("make dist".into());
+    }
+    let plan = Run::with_current(&prev, Ok(newer), &same_now()).unwrap();
+    assert_eq!(plan.start, index("package"));
+    assert_eq!(plan.changes[0].what, "Workflow version");
+
+    // Who runs it, and for how long, moves no start.
+    let now = Now {
+        agent: Some("codex".into()),
+        mode: Some("auto".into()),
+        timeout: Some("2h".into()),
+        ..same_now()
+    };
+    let plan = Run::with_current(&prev, Ok(packaged()), &now).unwrap();
+    assert_eq!(plan.start, index("push"));
+    let what: Vec<&str> = plan.changes.iter().map(|c| c.what).collect();
+    assert_eq!(what, ["Agent", "Mode", "Timeout"]);
+    assert_eq!(plan.template.timeout, "2h");
+    assert_eq!(plan.setup.mode.as_deref(), Some("auto"));
+}
+
+/// A workflow gone, or no longer valid, leaves nothing to retry with.
+#[test]
+fn a_retry_with_current_settings_needs_a_workflow_that_runs() {
+    let prev = failed_at_push();
+    assert_eq!(
+        Run::with_current(
+            &prev,
+            Err("there is no workflow `packaged`".into()),
+            &same_now()
+        ),
+        Err("there is no workflow `packaged`".into())
+    );
+    let mut broken = packaged();
+    broken.steps.clear();
+    assert!(Run::with_current(&prev, Ok(broken), &same_now()).is_err());
 }

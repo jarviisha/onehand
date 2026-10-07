@@ -347,12 +347,9 @@ fn a_resume_says_nothing_of_a_base_and_judges_no_workflow_anew() {
     };
     assert_eq!(found(Kind::Resume, &facts, Check::Base), None);
     assert_eq!(found(Kind::Resume, &facts, Check::Workflow), None);
-    assert_eq!(
-        found(Kind::Retry { newer: false }, &facts, Check::Workflow),
-        None
-    );
+    assert_eq!(found(Kind::Retry, &facts, Check::Workflow), None);
     assert!(
-        found(Kind::Retry { newer: true }, &facts, Check::Workflow)
+        found(Kind::RetryCurrent, &facts, Check::Workflow)
             .unwrap()
             .blocks
     );
@@ -365,11 +362,7 @@ fn a_retry_whose_own_mode_is_not_offered_blocks_and_says_it_keeps_its_setup() {
         offered: Some(vec!["default".into()]),
         ..plain()
     };
-    for kind in [
-        Kind::Retry { newer: false },
-        Kind::Retry { newer: true },
-        Kind::Resume,
-    ] {
+    for kind in [Kind::Retry, Kind::Resume] {
         let finding = found(kind, &facts, Check::Mode).unwrap();
         assert!(finding.blocks);
         assert!(
@@ -377,10 +370,60 @@ fn a_retry_whose_own_mode_is_not_offered_blocks_and_says_it_keeps_its_setup() {
             "{}",
             finding.text
         );
-        assert_eq!(finding.change, None);
+        // A Retry blocked by its own setup is changed by retrying with what
+        // Settings say now; a Resume carries the same run, and cannot be.
+        let change = match kind {
+            Kind::Resume => None,
+            _ => Some(RETRY_CURRENT),
+        };
+        assert_eq!(finding.change, change, "{kind:?}");
     }
     let new = found(Kind::NewIssueRun, &facts, Check::Mode).unwrap();
     assert!(!new.text.contains("keeps its own setup"));
+}
+
+/// A retry with current settings is judged as a new start is: on the
+/// configuration Settings give now, with the workflow judged anew.
+#[test]
+fn a_retry_with_current_settings_is_judged_on_what_settings_say() {
+    let refused = Facts {
+        mode: Some("plan".into()),
+        offered: Some(vec!["default".into()]),
+        ..plain()
+    };
+    let mode = found(Kind::RetryCurrent, &refused, Check::Mode).unwrap();
+    assert!(mode.blocks);
+    assert!(!mode.text.contains("keeps its own setup"));
+    let gone = Facts {
+        agent_configured: false,
+        ..plain()
+    };
+    assert!(
+        found(Kind::RetryCurrent, &gone, Check::Agent)
+            .unwrap()
+            .blocks
+    );
+    let mut broken = worktree();
+    broken.steps.clear();
+    let broken = Facts {
+        workflow: Ok(broken),
+        ..plain()
+    };
+    assert!(
+        found(Kind::RetryCurrent, &broken, Check::Workflow)
+            .unwrap()
+            .blocks
+    );
+    let missing = Facts {
+        workflow: Err("there is no workflow `fix`".into()),
+        ..plain()
+    };
+    assert!(
+        found(Kind::RetryCurrent, &missing, Check::Workflow)
+            .unwrap()
+            .blocks
+    );
+    assert_eq!(found(Kind::RetryCurrent, &plain(), Check::Base), None);
 }
 
 #[test]
@@ -398,7 +441,7 @@ fn a_run_with_forge_steps_needs_its_forge_and_one_without_does_not() {
         .iter()
         .any(|s| matches!(s.kind, crate::workflow::StepKind::PullRequest));
     assert_eq!(
-        found(Kind::Retry { newer: false }, &with_steps, Check::Forge).is_some(),
+        found(Kind::Retry, &with_steps, Check::Forge).is_some(),
         has_steps
     );
     let mut bare = worktree();
@@ -415,10 +458,7 @@ fn a_run_with_forge_steps_needs_its_forge_and_one_without_does_not() {
         forge: out,
         ..plain()
     };
-    assert_eq!(
-        found(Kind::Retry { newer: false }, &without, Check::Forge),
-        None
-    );
+    assert_eq!(found(Kind::Retry, &without, Check::Forge), None);
 }
 
 #[test]
@@ -426,10 +466,7 @@ fn an_issue_check_applies_to_an_issue_run_only() {
     let mut facts = healthy();
     facts.issue.as_mut().unwrap().tasks = vec![(task_on_issue(None), Some(Working::Running))];
     assert_eq!(found(Kind::Resume, &facts, Check::Issue), None);
-    assert_eq!(
-        found(Kind::Retry { newer: false }, &facts, Check::EarlierTask),
-        None
-    );
+    assert_eq!(found(Kind::Retry, &facts, Check::EarlierTask), None);
 }
 
 /// Every block of the configuration that will run, found once the run ran,

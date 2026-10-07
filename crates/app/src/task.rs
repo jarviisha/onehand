@@ -609,6 +609,29 @@ pub(crate) fn retry(
     })
 }
 
+/// Give task `id` a new run with what Settings say now, as `plan` worked it
+/// out, kept but not started: the caller asks for its place. Whether there
+/// was one to give.
+pub(crate) fn retry_with(
+    id: &str,
+    plan: onehand_core::workflow::WithCurrent,
+    cx: &mut App,
+) -> bool {
+    cx.update_global::<Tasks, _>(|t, _| {
+        if t.busy(id) {
+            return false;
+        }
+        let made = t.task_mut(id).is_some_and(|task| {
+            task.retry_with(onehand_core::task::new_id(), plan)
+                .is_some()
+        });
+        if made {
+            t.save(id);
+        }
+        made
+    })
+}
+
 /// Run check task `id`, whose place it now holds: pin the work, run the
 /// command, and say in `window` how it went. No session: there is no agent
 /// to watch.

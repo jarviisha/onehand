@@ -159,6 +159,7 @@ fn handle(view: &Entity<IssuesView>, request: &Request<'_>, cx: &mut App) -> boo
         | Request::OpenTaskSession(_)
         | Request::ResumeTask(_)
         | Request::RetryTask(_)
+        | Request::RetryTaskCurrent(_)
         | Request::StopTask(_) => false,
     }
 }

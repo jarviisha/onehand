@@ -19,6 +19,8 @@ use std::path::PathBuf;
 mod retry;
 mod visits;
 
+pub use retry::{Changed, Now, WithCurrent};
+
 /// What a run is asked to do: a title, a body, and what the person starting
 /// it asked of every step.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

@@ -194,7 +194,11 @@ fn tooltip(act: Act) -> Option<&'static str> {
         ),
         Act::Review => Some("Read what waits for approval, and approve it or send it back"),
         Act::OpenBranch => Some("Show the folder the branch is checked out in"),
-        Act::Retry => Some("Run it again in a new run"),
+        Act::Retry => Some("Run it again in a new run, as the last run was configured"),
+        Act::RetryCurrent => Some(
+            "Run it again with what Settings say now, saying first what changes and where it \
+             starts",
+        ),
         Act::Resume => Some("Carry on from that step in a new session"),
         Act::Refresh => Some("Read the pull request again"),
         Act::Edit
@@ -294,6 +298,11 @@ impl Pressed {
             Act::Retry => {
                 if let Some(id) = task {
                     view.ask_task(id, |id| Request::RetryTask(id), window, cx);
+                }
+            }
+            Act::RetryCurrent => {
+                if let Some(id) = task {
+                    view.ask_task(id, |id| Request::RetryTaskCurrent(id), window, cx);
                 }
             }
             Act::OpenPullRequest => match self.pr_url {

@@ -115,11 +115,10 @@ which a save would otherwise drop without a word; such a file is listed as unrea
 (a new workflow, a duplicate, an import) takes its file name as `id` at version 1; an existing file
 keeps its `id`, and its `version` goes up by one when what the template says changed (the version
 itself left out of the comparison). A file written before ids takes its file name when read. No
-old version is kept: a run's snapshot already holds the one it ran. `Template::newer_than` is the
-rule Retry offers *the newer workflow* by: the same `id` at a higher `version`, or at the same
-`version` with different content, which is what a file edited by hand outside onehand looks like;
-a rename still finds it. A snapshot from before ids falls back to the same name with different content. A file
-copied by hand keeps its id, so two may share one, and Retry offers the first.
+old version is kept: a run's snapshot already holds the one it ran. `Template::same_workflow` is
+the rule *Retry with current settings* finds a task's workflow again by: the same `id`, so a rename
+still finds it, at whatever version is on offer now. A snapshot from before ids falls back to the
+same name. A file copied by hand keeps its id, so two may share one, and the first is taken.
 
 ### Import and export
 
@@ -321,7 +320,8 @@ the project's check command, a worktree workflow on a folder outside git (blocke
 account when the workflow has forge steps (blocked when `gh` is missing or signed out, as last
 seen), and that its branch is cut off `HEAD`. Whether the folder is in git and which forge serves
 it are read off the UI loop when the launcher opens; until they land, neither blocks. The launcher lists what it found under its fields, and *Run* is spent
-while a block remains. A Resume and a Retry are judged by the run's own setup
+while a block remains. A Resume and a Retry are judged by the run's own setup, and a *Retry with
+current settings* as a new start is, on what Settings say now
 ([tasks.md](tasks.md#retry-and-resume)).
 
 | Check | Blocks when | Says |
@@ -440,7 +440,12 @@ change (`git checkout . && git clean -fd`).
 | Runs from an older build | Put a run file from before tasks in `<config_dir>/onehand/pipeline-runs/` and start onehand | It is in `tasks/` under the same name, listed as interrupted, and `pipeline-runs/` is gone |
 | An unknown key | Copy a workflow file into `<config_dir>/onehand/workflows/` with `gate = "x"` added to a step, then *Import…* it too | The row reads *Cannot be read: it has a key `steps[N].gate` that onehand does not read*; the import is refused with the same reason |
 | Export, then import | *Export…* *Work in checkout*, then *Import…* that file | The form opens on it as a new workflow; Save asks for another name, and once renamed it is saved under a new id at version 1 |
-| Retry after a rename | Duplicate *Work in checkout* and save it, start a run with brief `miss`, then rename the workflow and save | *Retry* offers *Retry with version 2*, and the description says where the newer workflow starts |
+| Retry after a rename | Duplicate *Work in checkout* and save it, start a run with brief `miss`, then rename the workflow and save | *Retry* keeps *version 1*, saying Settings now say *version 2*; *Retry with current settings…* lists *Workflow version: version 1 → version 2* and runs the renamed workflow |
+| What Retry keeps | Let a run time out, then change `[unattended] timeout` (or the project's check command) and *Retry* | The dialog lists the agent, mode, check command, timeout and workflow version it keeps; the changed one, in the warning ink, names what Settings say now and *Retry with current settings* |
+| Retry with current settings | On a task whose run failed at its push, change the project's check command and press *Retry with current settings…* | *Check command: old → new*, *It starts at the Verify step, the first step whose command changes.*; *Retry with current settings* runs Verify on the new command before anything is pushed |
+| Retry with current settings, nothing changed | The same, with nothing changed | *Nothing differs from the last run's configuration.*, and it starts where *Retry* would |
+| A workflow gone | Delete the workflow a failed task ran, then *Retry with current settings…* | Blocked, saying the workflow is no longer on offer; *Retry* still runs the run's own snapshot |
+| A timed out issue | An issue whose run timed out, with `[unattended] timeout` changed since | *Timed out at … after …, against its timeout of …*; *Retry…* first, *Retry with current settings…* beside it |
 | Preview | Open the launcher, expand *Preview*, type a title | The steps are listed, and the first prompt shows the title as it is typed |
 | An issue found by its label | Switch the scratch project on for unattended runs, keep an issue in its Issues tab labelled `auto`, set `[unattended] agent = "Mock workflow"` and `mode = ""` (the mock offers no modes), then *Look for an issue now* in Settings ▸ Workspace | A task *#… · Work an issue* is under *Running*; a worktree on `onehand/local-<n>-<title>` is a project of its own and no session moves on screen. When it ends the project goes from the rail, the task is under *Finished*, and the issue has a note: *onehand left 1 commit on …* |
 | An issue picked by hand | *Work an issue…* from the project's menu, choose an issue, *Run* | The chosen row is marked and the start form opens below the list; after *Run* the dialog closes, nothing moves on screen, and its project stays when it ends |
@@ -451,7 +456,8 @@ change (`git checkout . && git clean -fd`).
 | From the Issues tab | Select an open issue, *Run workflow…* | The start form opens on that issue with no row to pick: *Workflow*, *Where it works* naming the branch and agent, *Instructions for this run*, the limits, *Preview*; *Run* starts the run, the dialog closes and the issue stays on screen, saying the run is starting with *Open session* |
 | A mode not offered | Open a session on an agent that offers modes, set `[unattended] mode` to one it does not offer, then *Run workflow…* on an issue | *Before it starts* says, in the danger ink, that the agent offers no such mode and what it offers; *Run* is spent and says one thing blocks; the issue keeps its labels. Edit the agent's spec in Settings ▸ Agents and open the form again: the mode reads *not known yet*, muted, and *Run* is offered |
 | A worktree run outside git | Open the launcher on a folder that is not a git repository and pick a worktree workflow | Under the fields, in the danger ink: no worktree can be cut; *Run* is spent. A checkout workflow there is offered |
-| A Retry whose mode is gone | Run an issue task with `mode` set to one the agent offers, let it end exhausted, then make the agent offer other modes (or change the spec's mode list) and open a session on it; *Retry* the task | The dialog lists, in the danger ink, that the agent offers no such mode and that the run keeps its own setup; *Retry* is spent. Changing `[unattended] mode` does not clear it |
+| A Retry whose mode is gone | Run an issue task with `mode` set to one the agent offers, let it end exhausted, then make the agent offer other modes (or change the spec's mode list) and open a session on it; *Retry* the task | The dialog lists, in the danger ink, that the agent offers no such mode, that the run keeps its own setup and that *Retry with current settings* runs with what Settings say now; *Retry* is spent. Changing `[unattended] mode` does not clear it, and *Retry with current settings…* then shows *Mode: old → new* and runs with the new one |
+| A configuration failure | An issue task whose run failed because its mode was not offered | The issue says why, with *Retry with current settings…* first and *Retry…* beside it |
 | A full slot | With `at_once = 1` and an issue task running, *Run workflow…* on another issue | *Before it starts* names the issue being worked; *Run* is spent |
 | An earlier task needing attention | On an issue whose last task ended exhausted, *Run workflow…* | Muted: the last task ended and a new start makes a second task, with *Retry…*, which closes the form and opens that task's Retry dialog |
 | A template | *New issue* in the tab, press *Bug* in the *Template* row | The body holds *Problem*, *Scope*, *Acceptance* and *How to check*, each with its hint; the labels field gains `bug`; the row goes once anything is typed in the body. Save with only *Problem* filled: the issue's facts line says *No scope, acceptance or how to check written*, muted |

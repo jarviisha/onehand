@@ -170,8 +170,20 @@ pub(crate) fn offered(spec: &AgentSpec, cx: &App) -> Option<Vec<String>> {
 /// A Resume or a Retry of `task` on `template`: judged by its last run's own
 /// setup, never what Settings says now, since that is what will run.
 pub(crate) fn of_task(task: &Task, template: Template, cx: &App) -> Facts {
-    let shared = Shared::global(cx);
     let setup = task.runs.last().map_or(&task.setup, |run| &run.setup);
+    with_setup(task, setup, Ok(template), cx)
+}
+
+/// A start of `task` on `workflow`, or why there is none, that runs with
+/// `setup`: a retry with current settings is judged on the setup it will
+/// take, not the last run's.
+pub(crate) fn with_setup(
+    task: &Task,
+    setup: &onehand_core::workflow::Setup,
+    workflow: Result<Template, String>,
+    cx: &App,
+) -> Facts {
+    let shared = Shared::global(cx);
     // A setup naming no agent starts the first one configured.
     let agent = setup
         .agent
@@ -191,7 +203,7 @@ pub(crate) fn of_task(task: &Task, template: Template, cx: &App) -> Facts {
         (task.issue().is_some() && !counted).then(|| slots(u, cx))
     });
     Facts {
-        workflow: Ok(template),
+        workflow,
         agent_configured: spec.is_some(),
         offered: spec.and_then(|spec| offered(spec, cx)),
         agent,

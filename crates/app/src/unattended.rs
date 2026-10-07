@@ -505,6 +505,10 @@ pub(crate) use facts::issue_run as issue_facts;
 /// last run's own setup.
 pub(crate) use facts::of_task as task_facts;
 
+/// What a start of a task that runs with a setup of its own is checked
+/// against: a retry with current settings.
+pub(crate) use facts::with_setup as setup_facts;
+
 /// A forge as a preflight reads it, its account as last seen.
 pub(crate) use facts::forge as forge_facts;
 
@@ -517,6 +521,33 @@ pub(crate) fn run_agent(cx: &App) -> Option<String> {
         .as_ref()
         .and_then(|u| u.agent.clone())
         .or_else(|| shared.agents.first().map(|spec| spec.name.clone()))
+}
+
+/// What a new task of `task`'s kind would be given now, for a retry with
+/// current settings: an issue's from `[unattended]` (its agent, its mode and
+/// the timeout put over the workflow's), a launcher's the first agent
+/// configured and the workflow's own timeout; both the project's `check`.
+pub(crate) fn now_for(
+    task: &onehand_core::task::Task,
+    check: Option<String>,
+    cx: &App,
+) -> onehand_core::workflow::Now {
+    let shared = Shared::global(cx);
+    let first = shared.agents.first().map(|spec| spec.name.clone());
+    match (task.issue(), shared.unattended.as_ref()) {
+        (Some(_), Some(u)) => onehand_core::workflow::Now {
+            agent: u.agent.clone().or(first),
+            mode: Some(u.mode.clone()).filter(|mode| !mode.trim().is_empty()),
+            check,
+            timeout: Some(u.timeout.clone()),
+        },
+        (Some(_), None) | (None, _) => onehand_core::workflow::Now {
+            agent: first,
+            mode: None,
+            check,
+            timeout: None,
+        },
+    }
 }
 
 /// The default workflow and the workflow labels, as the config has them.

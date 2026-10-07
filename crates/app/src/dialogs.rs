@@ -365,8 +365,9 @@ pub(crate) fn finding_line(
     handle: &Entity<Shell>,
 ) -> impl IntoElement {
     let text = match finding.change {
+        // The finding says so itself, and the dialog offers it.
+        Some(onehand_core::preflight::RETRY_CURRENT) | None => finding.text.clone(),
         Some(change) => format!("{} Changed in {change}.", finding.text),
-        None => finding.text.clone(),
     };
     let shell = handle.clone();
     div()

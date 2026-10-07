@@ -21,10 +21,17 @@ pub enum Kind {
     NewIssueRun,
     /// A run cut off, carried on where it stopped, on its own snapshot.
     Resume,
-    /// A task's next run; `newer` when it runs a newer version of the
-    /// workflow than its last run did, which is checked as a new one is.
-    Retry { newer: bool },
+    /// A task's next run, on its last run's own snapshot and setup.
+    Retry,
+    /// A task's next run with what Settings say now: its own workflow at
+    /// its newest version, judged as a new one is, on the configuration a
+    /// new task of its kind would take.
+    RetryCurrent,
 }
+
+/// Where what blocks a Retry by its own setup is changed: the retry that
+/// runs with what Settings say now.
+pub const RETRY_CURRENT: &str = "Retry with current settings";
 
 /// What a finding is about, in the order findings are listed.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -127,10 +134,19 @@ pub fn preflight(kind: Kind, facts: &Facts) -> Vec<Finding> {
             task: None,
         })
     };
-    let own = matches!(kind, Kind::Resume | Kind::Retry { .. });
-    let keeps = match own {
-        true => " The run keeps its own setup, so changing Settings does not change it.",
-        false => "",
+    let own = matches!(kind, Kind::Resume | Kind::Retry);
+    let keeps = match kind {
+        Kind::Retry => {
+            " The run keeps its own setup; Retry with current settings runs with what Settings \
+             say now."
+        }
+        Kind::Resume => " The run keeps its own setup, so changing Settings does not change it.",
+        Kind::NewRun | Kind::NewIssueRun | Kind::RetryCurrent => "",
+    };
+    // Where what the run's own setup blocks is changed, for a Retry.
+    let own_change = match kind {
+        Kind::Retry => Some(RETRY_CURRENT),
+        Kind::NewRun | Kind::NewIssueRun | Kind::Resume | Kind::RetryCurrent => None,
     };
     let issue_kind = kind == Kind::NewIssueRun;
 
@@ -142,10 +158,7 @@ pub fn preflight(kind: Kind, facts: &Facts) -> Vec<Finding> {
             None
         }
     };
-    let judged = matches!(
-        kind,
-        Kind::NewRun | Kind::NewIssueRun | Kind::Retry { newer: true }
-    );
+    let judged = matches!(kind, Kind::NewRun | Kind::NewIssueRun | Kind::RetryCurrent);
     if let Some(template) = template.filter(|_| judged) {
         if let Some(why) = unfit_for_issue(template).filter(|_| issue_kind) {
             say(Check::Workflow, true, capital(&why), None);
@@ -172,13 +185,13 @@ pub fn preflight(kind: Kind, facts: &Facts) -> Vec<Finding> {
             Check::Agent,
             true,
             format!("The agent `{name}` is no longer configured.{keeps}"),
-            Some("Settings ▸ Agents"),
+            own_change.or(Some("Settings ▸ Agents")),
         ),
         (Some(_), true) => {}
     }
     if let Some(mode) = facts.mode.as_deref().filter(|m| !m.trim().is_empty()) {
         let change = match own {
-            true => None,
+            true => own_change,
             false => Some("unattended.mode, in the config file"),
         };
         match &facts.offered {
@@ -215,10 +228,11 @@ pub fn preflight(kind: Kind, facts: &Facts) -> Vec<Finding> {
                 Check::CheckCommand,
                 true,
                 format!(
-                    "The workflow `{}` runs the project's check command, and there is none.",
+                    "The workflow `{}` runs the project's check command, and there is \
+                     none.{keeps}",
                     template.name
                 ),
-                Some("Settings ▸ Workflows"),
+                own_change.or(Some("Settings ▸ Workflows")),
             );
         } else if !commands {
             say(
@@ -269,7 +283,7 @@ pub fn preflight(kind: Kind, facts: &Facts) -> Vec<Finding> {
             ),
             (None, false, None) => {}
         },
-        Kind::NewRun | Kind::Resume | Kind::Retry { .. } => {}
+        Kind::NewRun | Kind::Resume | Kind::Retry | Kind::RetryCurrent => {}
     }
 
     // The forge: an issue's run asks it for the default branch whatever its
