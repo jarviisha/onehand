@@ -42,6 +42,10 @@ impl WorkbenchMode for Mode {
         self.view.clone().into()
     }
 
+    fn processes(&self, cx: &App) -> Vec<(String, u32)> {
+        self.view.read(cx).processes()
+    }
+
     fn set_root(&mut self, root: &Path, cx: &mut App) {
         self.view.update(cx, |view, cx| view.set_root(root, cx));
     }

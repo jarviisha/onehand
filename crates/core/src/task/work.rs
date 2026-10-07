@@ -438,6 +438,10 @@ impl Act {
     }
 }
 
+/// What *Remove worktree…* does, as its tooltip says wherever it is drawn.
+pub const REMOVE_WORKTREE_ABOUT: &str =
+    "Remove the worktree and its branch, once nothing in them is past the merge";
+
 /// The pull request of an issue's work, as last read.
 #[derive(Debug, Clone, Copy)]
 pub enum PrSeen<'a> {

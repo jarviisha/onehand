@@ -28,10 +28,13 @@ struct Asked {
     branch: Option<String>,
     forge: Option<&'static dyn onehand_core::connector::Connector>,
     users: Vec<String>,
+    /// Every shell and Neovim of every window, each with what it is
+    /// called, to be asked where it works now.
+    processes: Vec<(String, u32)>,
 }
 
 impl Asked {
-    fn of(task: &Task, users: Vec<String>) -> Self {
+    fn of(task: &Task, (users, processes): (Vec<String>, Vec<(String, u32)>)) -> Self {
         Self {
             repo: task.setup.repo.clone(),
             folder: task.setup.dir.clone(),
@@ -40,6 +43,7 @@ impl Asked {
                 onehand_core::connector::named(crate::plugins::connectors(), name)
             }),
             users,
+            processes,
         }
     }
 
@@ -61,7 +65,9 @@ impl Asked {
             (None, _) => Err("no forge serves the project".to_string()),
             (_, None) => Err("the task has no branch to look its pull request up by".to_string()),
         };
-        let facts = removal::facts_blocking(&self.folder, merged, self.users.clone());
+        let mut users = self.users.clone();
+        users.extend(removal::working_in_blocking(&self.folder, &self.processes));
+        let facts = removal::facts_blocking(&self.folder, merged, users);
         let judged = removal::judge(&facts);
         (facts, judged)
     }
@@ -198,28 +204,50 @@ impl Shell {
     }
 
     /// Everything of onehand's using `folder`, in every window: a project
-    /// open on it with its sessions and terminals, and a task working there.
-    fn folder_users(&self, folder: &Path, cx: &Context<Self>) -> Vec<String> {
-        let mut users = self.users_here(folder, "this window", cx);
+    /// open on it with its sessions and terminals, and a task working there;
+    /// then every other shell and Neovim, whose directory is asked off the
+    /// UI thread.
+    fn folder_users(&self, folder: &Path, cx: &Context<Self>) -> (Vec<String>, Vec<(String, u32)>) {
+        let (mut users, mut processes) = self.users_here(folder, "this window", cx);
         // This shell is the one being updated, so it is read as `self`.
         let this = cx.entity_id();
         for open in &Shared::global(cx).windows {
             let Some(other) = open.shell.upgrade().filter(|o| o.entity_id() != this) else {
                 continue;
             };
-            users.extend(other.read(cx).users_here(folder, "another window", cx));
+            let (more, running) = other.read(cx).users_here(folder, "another window", cx);
+            users.extend(more);
+            processes.extend(running);
         }
         users.extend(crate::task::each(cx, |task, working| {
             (working && task.setup.dir.starts_with(folder))
                 .then(|| format!("Task “{}”, still working there,", task.brief.title))
         }));
-        users
+        (users, processes)
     }
 
     /// What of this window uses `folder`: each project open inside it, with
     /// its sessions and terminals.
-    fn users_here(&self, folder: &Path, said: &str, cx: &App) -> Vec<String> {
-        self.window
+    fn users_here(&self, folder: &Path, said: &str, cx: &App) -> (Vec<String>, Vec<(String, u32)>) {
+        // A shell opened on a project inside the folder is said with it;
+        // the rest are asked where they are now.
+        let processes = self
+            .terminal
+            .read(cx)
+            .processes()
+            .into_iter()
+            .filter(|(root, _)| !root.starts_with(folder))
+            .map(|(_, pid)| (format!("A terminal in {said}"), pid))
+            .chain(
+                self.workbench
+                    .read(cx)
+                    .processes(cx)
+                    .into_iter()
+                    .map(|(what, pid)| (format!("{what} in {said}"), pid)),
+            )
+            .collect();
+        let users = self
+            .window
             .workspace
             .roots
             .iter()
@@ -239,7 +267,8 @@ impl Shell {
                 };
                 format!("Project {}, open in {said}{what},", root.label)
             })
-            .collect()
+            .collect();
+        (users, processes)
     }
 }
 

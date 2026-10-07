@@ -672,7 +672,8 @@ impl Slots {
             .waiting_cap
             .filter(|cap| self.waiting >= *cap as usize)?;
         Some(format!(
-            "{} unattended runs wait on a person, the most allowed at once              (unattended.waiting = {cap}); answering one makes room.",
+            "{} unattended runs wait on a person, the most allowed at once \
+             (unattended.waiting = {cap}); answering one makes room.",
             self.waiting
         ))
     }

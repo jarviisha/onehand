@@ -648,6 +648,7 @@ fn the_waiting_cap_bites_on_its_own_and_unset_is_none() {
     s.waiting = 3;
     let why = s.full().unwrap();
     assert!(why.contains("unattended.waiting"), "{why}");
+    assert!(!why.contains("  "), "{why}");
     // Answering one makes room at once.
     s.waiting = 2;
     assert!(s.full().is_none());

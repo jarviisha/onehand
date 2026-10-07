@@ -60,6 +60,12 @@ impl PtyTab {
         self.label.clone()
     }
 
+    /// The child's process id, while the platform gives one: what tells
+    /// where it works now, wherever it was started.
+    pub fn process_id(&self) -> Option<u32> {
+        self.child.process_id()
+    }
+
     /// Whether the child has exited.
     ///
     /// Asked rather than remembered, and asked of the process rather than of

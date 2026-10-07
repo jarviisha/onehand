@@ -65,9 +65,8 @@ monospace font.
   - *Workspace overview*, highlighted while that page shows;
   - *Tasks*, highlighted the same way, with a count pill of the tasks that need attention (no pill
     at zero);
-  - *Issues*, highlighted the same way, with no count (*Tasks* already counts what needs a
-    person);
-  - *Workflows*, highlighted the same way;
+  - *Issues* and *Workflows*, highlighted the same way, with no count (*Tasks* already counts
+    what needs a person);
   - *New session*, a filled split button whose caret picks the project and agent (shown only when
     there is a choice);
   - a hairline;
@@ -148,9 +147,9 @@ monospace font.
   - The terminal's open state follows the selected project.
 - **Pages without a session.**
   - A project with no session shows *New session*, *Run check* when the project has a check
-    command, its *Check command* field, one line counting its tasks that need attention, run or wait (not drawn at zero, and
-    opening the Tasks page narrowed to the project), and its past conversations: capped,
-    scrolling, each with a *Delete* word.
+    command, its *Check command* field, one line counting its tasks that need attention, run or
+    wait (not drawn at zero, and opening the Tasks page narrowed to the project), and its past
+    conversations: capped, scrolling, each with a *Delete* word.
   - *Workspace overview* shows, across all projects, the cards *Waiting on you* (runs waiting
     for an answer or an approval, and sessions waiting, finished or lost) and *Working*, then
     *Projects* as a grid of project tiles (not drawn without projects), then the cards *Recent
@@ -165,8 +164,7 @@ monospace font.
     list, or alone under *Back* when the page is too narrow for both. Above the list: the search and
     *New issue* (in the project filtered to, else the one picked, its form saying which; while its
     body is empty a *Template* row offers *Bug*, *Feature* and *Refactor*, or the project's own
-    templates when it keeps any),
-    an *Open N | Closed N* switch, then the progress (*All*, *Needs attention*, *Running*,
+    templates), an *Open N | Closed N* switch, then the progress (*All*, *Needs attention*, *Running*,
     *Queued*, *Pull request open*, *No run recorded*), project and label filters, how old the
     pull request reading is and *Refresh*. A row is the title over a muted line (project,
     reference), its line of work in the Tasks page's words (the warning ink only for what needs
@@ -196,11 +194,9 @@ monospace font.
     *Review…*, *Revise…* and *Continue* through the same guarded call as the strip.
     An ended task's detail draws *Way out*: why it ended in the issue's words, and *Retry with
     current settings…* when that fits, primary for a configuration failure.
-  - *Workflows* lists the workflows in one column, capped and saying how many it left out
-    (shipped ones tagged *Built in* and read-only), each with *Run…* (a menu of projects, the one
-    selected in the rail first). *New workflow* or *Edit* opens a form below, one hairline box
-    per step with a margin marking where a failure goes back to; its problems are listed above
-    *Save*, which stays spent while any remain. Its draft survives leaving the page.
+  - *Workflows* lists the workflows, capped (shipped ones *Built in*, read-only), each with
+    *Run…* (projects, the rail's first). *New workflow* or *Edit* opens a form below, one hairline
+    box per step, a margin marking where a failure goes back to, problems above a spent *Save*.
 - **No top bar, no status bar, no right toolbar.** Transient status goes in a toast. Modals are
   `Dialog`s. Settings is a large dialog: a nav column with Appearance, Workspace, Agents,
   Connections and Shortcuts. Groups are separated by hairlines, not boxes.

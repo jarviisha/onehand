@@ -87,7 +87,23 @@ fn check(ask: &Ask, cx: &mut App) {
                     }
                     AcpEvent::Connected { .. } => return Ok(modes),
                     AcpEvent::Error(why) | AcpEvent::Disconnected(why) => return Err(why),
-                    _ => {}
+                    // Nothing else is asked of an agent that is never
+                    // prompted; whatever it says before it comes up is let go.
+                    AcpEvent::SessionId(_)
+                    | AcpEvent::AgentChunk(_)
+                    | AcpEvent::ThoughtChunk(_)
+                    | AcpEvent::UserChunk(_)
+                    | AcpEvent::ToolCall(_)
+                    | AcpEvent::ToolUpdate(_)
+                    | AcpEvent::Plan(_)
+                    | AcpEvent::Permission(_)
+                    | AcpEvent::Elicitation(_)
+                    | AcpEvent::AvailableCommands(_)
+                    | AcpEvent::ModeChanged(_)
+                    | AcpEvent::ConfigOptions(_)
+                    | AcpEvent::TerminalOutput { .. }
+                    | AcpEvent::TerminalExit { .. }
+                    | AcpEvent::TurnEnded { .. } => {}
                 }
             }
             Err("the agent closed before it came up".to_string())

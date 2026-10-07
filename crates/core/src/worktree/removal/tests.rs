@@ -122,3 +122,17 @@ fn a_detached_worktree_removes_the_folder_and_keeps_no_branch_to_delete() {
     };
     assert!(matches!(judge(&facts), Judged::Remove { branch: None, .. }));
 }
+
+/// A process is found by where it works now, wherever it was opened.
+#[cfg(target_os = "linux")]
+#[test]
+fn a_process_working_inside_the_folder_is_found() {
+    let here = std::env::current_dir().unwrap();
+    let me = vec![(
+        "A terminal in another window".to_string(),
+        std::process::id(),
+    )];
+    let found = working_in_blocking(&here, &me);
+    assert_eq!(found, ["A terminal in another window, working in it,"]);
+    assert!(working_in_blocking(Path::new("/nowhere-at-all"), &me).is_empty());
+}

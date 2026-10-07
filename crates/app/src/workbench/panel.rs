@@ -164,6 +164,14 @@ impl Workbench {
         self.modes.iter().map(|mode| mode.unsaved(root, cx)).sum()
     }
 
+    /// Every process the modes keep running, each with what it is called.
+    pub fn processes(&self, cx: &App) -> Vec<(String, u32)> {
+        self.modes
+            .iter()
+            .flat_map(|mode| mode.processes(cx))
+            .collect()
+    }
+
     /// Drop everything every mode holds for `root`.
     ///
     /// Called when a project root leaves the workspace.

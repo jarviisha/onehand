@@ -83,6 +83,12 @@ pub trait WorkbenchMode {
     fn unsaved(&self, _root: &Path, _cx: &App) -> usize {
         0
     }
+
+    /// The processes this mode keeps running, each with what a person calls
+    /// it: what the shell asks before it removes a folder one may work in.
+    fn processes(&self, _cx: &App) -> Vec<(String, u32)> {
+        Vec::new()
+    }
 }
 
 /// Something asked of the Workbench without naming which mode answers it.

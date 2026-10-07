@@ -167,6 +167,21 @@ fn past_blocking(folder: &Path, head: &str) -> Result<u64, String> {
     super::commits_since_blocking(folder, head)
 }
 
+/// Which of `processes`, each with what it is called, work inside `folder`
+/// now, by the directory the system says each is in: a shell that moved
+/// into it, or a Neovim that did, wherever it was opened. Where the system
+/// does not say, none is found, and the projects open on the folder are what
+/// is left to tell. Blocking.
+pub fn working_in_blocking(folder: &Path, processes: &[(String, u32)]) -> Vec<String> {
+    processes
+        .iter()
+        .filter(|(_, pid)| {
+            std::fs::read_link(format!("/proc/{pid}/cwd")).is_ok_and(|cwd| cwd.starts_with(folder))
+        })
+        .map(|(what, _)| format!("{what}, working in it,"))
+        .collect()
+}
+
 /// What a removal did.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Removed {

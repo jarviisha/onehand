@@ -399,6 +399,31 @@ pub(crate) fn finding_line(
                     });
                 })
         }))
+        // Who holds each slot, as the slots stand now, each opening its
+        // task in place of the start.
+        .children(
+            (finding.check == onehand_core::preflight::Check::Slot)
+                .then(|| crate::unattended::slots(cx))
+                .flatten()
+                .into_iter()
+                .flat_map(|slots| slots.holders)
+                .enumerate()
+                .map(|(i, holder)| {
+                    let (shell, task) = (handle.clone(), holder.task);
+                    crate::controls::action(("slot-holder", at * 100 + i))
+                        .ghost()
+                        .small()
+                        .label(holder.shown)
+                        .tooltip("Open the task holding this slot")
+                        .on_click(move |_, window: &mut Window, cx: &mut App| {
+                            gpui_component::WindowExt::close_dialog(window, cx);
+                            shell.update(cx, |shell, cx| {
+                                shell.cancel_pick(cx);
+                                shell.show_task(&task, window, cx);
+                            });
+                        })
+                }),
+        )
         // A mode not known yet can be learned now, at the cost of an agent
         // start, and only on a press.
         .children(

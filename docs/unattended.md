@@ -706,15 +706,17 @@ it to.
 
 **Once its pull request is merged, a person may ask.** The issue's view offers
 *Remove worktree…* beside *Run workflow…* when the pull request reads merged
-(`Act::RemoveWorktree`), and the task detail on any done worktree run that
-opened one. Its modal names the folder and the branch, in the danger tint. The
+(`Act::RemoveWorktree`), and the task detail by the same rule, on the pull
+request it reads when it opens. Its modal names the folder and the branch, in the danger tint. The
 judgement is core's (`worktree::removal::judge`), on facts read off the UI
 thread when the modal opens and again when *Remove* is pressed: it refuses
 while the forge cannot be read or says the pull request is not merged, while
 the branch holds commits past the head the forge merged (or that head is not in
 this clone), while anything is uncommitted or untracked, and while anything of
 onehand's uses the folder in any window: a project open inside it, with its
-sessions and terminals, or a task still working there. Every reason is listed;
+sessions and terminals, a task still working there, or any shell or Neovim
+whose directory is inside it now, as the system says (`/proc/<pid>/cwd`, so
+on Linux; elsewhere the projects open on it are what tells). Every reason is listed;
 onehand closes nothing for the person. The branch is judged by the forge's
 merged head, not by `git branch -d`, which refuses the usual squash merge and
 cannot see a remote branch deleted after the merge: a branch holding nothing

@@ -64,6 +64,14 @@ impl NeovimView {
         })
     }
 
+    /// Each Neovim running, by its process id.
+    pub(crate) fn processes(&self) -> Vec<(String, u32)> {
+        self.tabs
+            .values()
+            .filter_map(|tab| Some(("A Neovim".to_string(), tab.process_id()?)))
+            .collect()
+    }
+
     pub(crate) fn set_root(&mut self, root: &Path, cx: &mut Context<Self>) {
         if self.root.as_deref() == Some(root) {
             return;

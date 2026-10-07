@@ -299,15 +299,12 @@ pub(crate) fn request(id: String, window: &mut Window, cx: &mut Context<Shell>) 
                         || place.display().to_string(),
                         |n| n.to_string_lossy().into_owned(),
                     );
-                    // Named by the task holding the place, so a person knows
-                    // which one to finish or stop.
-                    let said = match t.queue.holder_of(&id).and_then(|holder| t.task(holder)) {
-                        Some(holder) => format!(
-                            "{title} is queued behind {}, working in {at}",
-                            holder.brief.title
-                        ),
-                        None => format!("{title} is queued behind the task working in {at}"),
-                    };
+                    let holder = t.queue.holder_of(&id).and_then(|holder| t.task(holder));
+                    let said = onehand_core::task::queue::queued_said(
+                        &title,
+                        holder.map(|holder| holder.brief.title.as_str()),
+                        &at,
+                    );
                     window.push_notification(Notification::info(said), cx);
                     cx.refresh_windows();
                 }
