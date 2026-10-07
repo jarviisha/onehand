@@ -20,10 +20,10 @@ use onehand_core::config::AgentSpec;
 mod agents;
 mod pages;
 mod workflows;
+pub(crate) use crate::workflows_page::WorkflowDraft;
 use agents::agents_page;
 pub use agents::{AgentCheck, check_key, draft_after_promote};
 use pages::{appearance_page, connections_page, workspace_page};
-pub use workflows::WorkflowDraft;
 use workflows::workflows_page;
 
 /// The add/edit form's fields. `editing` is `Some(i)` when an existing agent is
@@ -131,7 +131,7 @@ pub fn draft_shift(editing: Option<usize>, removed: usize) -> DraftShift {
 }
 
 /// A setting's line about itself, from a fixed sentence.
-fn about(text: &'static str) -> Option<AnyElement> {
+pub(crate) fn about(text: &'static str) -> Option<AnyElement> {
     Some(text.into_any_element())
 }
 

@@ -35,4 +35,5 @@ mod theme;
 mod unattended;
 mod workbench;
 mod workflow;
+mod workflows_page;
 mod zoom;
