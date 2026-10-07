@@ -18,7 +18,7 @@ use gpui_component::{ActiveTheme, Disableable, Icon, IconName, Sizable as _, Sty
 mod issue;
 
 pub use issue::pick_issue;
-pub(crate) use issue::{issue_row, issue_workflow_menu, page_row};
+pub(crate) use issue::{PickJudged, issue_row, issue_workflow_menu, page_row};
 
 /// A dialog's name, and the ✕ that closes it.
 ///
@@ -224,7 +224,7 @@ pub fn run_workflow(shell: &Shell, window: &Window, cx: &mut Context<Shell>) -> 
             let lines: Vec<_> = found
                 .iter()
                 .enumerate()
-                .map(|(at, finding)| finding_line(at, finding, danger, muted, &handle))
+                .map(|(at, finding)| finding_line(at, finding, danger, muted, &handle, None, cx))
                 .collect();
             let handle = handle.clone();
             let names = names.clone();
@@ -363,6 +363,8 @@ pub(crate) fn finding_line(
     danger: gpui::Hsla,
     muted: gpui::Hsla,
     handle: &Entity<Shell>,
+    ask: Option<&crate::agent_check::Ask>,
+    cx: &App,
 ) -> impl IntoElement {
     let text = match finding
         .change
@@ -397,6 +399,44 @@ pub(crate) fn finding_line(
                     });
                 })
         }))
+        // Who holds each slot, as the slots stand now, each opening its
+        // task in place of the start.
+        .children(
+            (finding.check == onehand_core::preflight::Check::Slot)
+                .then(|| crate::unattended::slots(cx))
+                .flatten()
+                // Only a full slot is refused for its holders; at the cap on
+                // waiting runs they are not what stands in the way.
+                .filter(|slots| slots.taken())
+                .into_iter()
+                .flat_map(|slots| slots.holders)
+                .take(onehand_core::unattended::HOLDERS_SAID)
+                .enumerate()
+                .map(|(i, holder)| {
+                    let (shell, task) = (handle.clone(), holder.task);
+                    // The line above names each holder; the button opens it.
+                    crate::controls::action(SharedString::from(format!("slot-holder-{at}-{i}")))
+                        .ghost()
+                        .small()
+                        .label(format!("Open {}", holder.named))
+                        .tooltip("Open the task holding this slot")
+                        .on_click(move |_, window: &mut Window, cx: &mut App| {
+                            gpui_component::WindowExt::close_dialog(window, cx);
+                            shell.update(cx, |shell, cx| {
+                                shell.cancel_pick(cx);
+                                shell.show_task(&task, window, cx);
+                            });
+                        })
+                }),
+        )
+        // A mode not known yet can be learned now, at the cost of an agent
+        // start, and only on a press.
+        .children(
+            ask.filter(|_| {
+                finding.check == onehand_core::preflight::Check::Mode && !finding.blocks
+            })
+            .map(|ask| crate::agent_check::button(at, ask, cx)),
+        )
 }
 
 /// Why *Run* is spent, said beside it: how many things above block the

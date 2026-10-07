@@ -64,6 +64,19 @@ impl NeovimView {
         })
     }
 
+    /// Each Neovim running, by its process id.
+    pub(crate) fn processes(&self) -> Vec<onehand_plugin_host::Process> {
+        self.tabs
+            .values()
+            .filter_map(|tab| {
+                Some(onehand_plugin_host::Process {
+                    what: "A Neovim".to_string(),
+                    pid: tab.process_id()?,
+                })
+            })
+            .collect()
+    }
+
     pub(crate) fn set_root(&mut self, root: &Path, cx: &mut Context<Self>) {
         if self.root.as_deref() == Some(root) {
             return;

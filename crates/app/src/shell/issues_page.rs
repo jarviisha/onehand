@@ -77,6 +77,7 @@ impl Shell {
             E::RetryTask(id) => self.begin_retry(id.clone(), window, cx),
             E::RetryTaskCurrent(id) => self.begin_retry_current(id.clone(), window, cx),
             E::AnswerReview(id) => self.answer_review(id.clone(), window, cx),
+            E::RemoveWorktree(id) => self.remove_worktree(id.clone(), window, cx),
             E::StopTask(id) => {
                 let id = id.clone();
                 cx.defer(move |cx| crate::task::stop_task(&id, cx));
@@ -98,6 +99,40 @@ impl Shell {
         self.issues_page.handle(&Request::Shown, cx);
         self.sync_agent_started(cx);
         cx.notify();
+    }
+
+    /// Show the Workflows page, as it was left, the docks put away as for
+    /// the other pages.
+    pub fn show_workflows(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.tell_workflows_page_projects(cx);
+        self.docks_aside(window, cx);
+        let view: gpui::AnyView = self.workflows_page.clone().into();
+        self.chat
+            .update(cx, |pane, cx| pane.show_workflows(view, window, cx));
+        self.sync_agent_started(cx);
+        cx.notify();
+    }
+
+    /// Whether the Workflows page is what the centre of the window shows.
+    pub fn workflows_shown(&self, cx: &gpui::App) -> bool {
+        self.chat.read(cx).showing_workflows()
+    }
+
+    /// Tell the Workflows page which projects a run may start on, and which
+    /// one the rail has selected.
+    pub(super) fn tell_workflows_page_projects(&mut self, cx: &mut Context<Self>) {
+        let projects = self
+            .page_projects()
+            .into_iter()
+            .map(|project| (project.root, SharedString::from(project.label.to_string())))
+            .collect();
+        let selected = self
+            .window
+            .workspace
+            .active_root()
+            .map(|root| root.path.clone());
+        self.workflows_page
+            .update(cx, |page, cx| page.set_projects(projects, selected, cx));
     }
 
     /// Show issue `number` of `root` on the Issues page, its filters as they

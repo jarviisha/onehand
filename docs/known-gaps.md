@@ -172,3 +172,6 @@ the ones that exist. What workflows, tasks and unattended runs do not do is list
 - **The task detail's review leaves the files to the timeline.** Its *Awaiting approval* draws the
   answer and the two answers, not what the step under review changed or the check: those are the
   visits just below it, each opening onto its files.
+- **A workflow being written is lost to a signal or a logout.** The app ends when its last window
+  closes, and closing a window over an unsaved workflow asks first; a process ended from outside
+  (a signal, the session logging out) asks nothing, since GPUI gives no hook that can refuse it.

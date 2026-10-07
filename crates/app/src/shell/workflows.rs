@@ -52,11 +52,31 @@ impl Shell {
             );
             return;
         };
+        let root = root.path.clone();
+        self.begin_workflow_on(&root, None, window, cx);
+    }
+
+    /// Put the launcher up for the project at `root`, the workflow of id
+    /// `workflow` picked, or the first that reads.
+    pub(crate) fn begin_workflow_on(
+        &mut self,
+        root: &std::path::Path,
+        workflow: Option<&str>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(root) = self.window.workspace.roots.iter().find(|r| r.path == root) else {
+            return;
+        };
         let (root, project) = (root.path.clone(), root.label.clone());
-        let template = crate::workflow::templates(cx)
-            .iter()
-            .position(|entry| entry.template.is_ok())
-            .unwrap_or(0);
+        let entries = crate::workflow::templates(cx);
+        let named = |entry: &crate::workflow::Entry| {
+            entry
+                .template
+                .as_ref()
+                .is_ok_and(|t| workflow.is_none_or(|id| t.id == id))
+        };
+        let template = entries.iter().position(named).unwrap_or(0);
         let title = cx.new(|cx| InputState::new(window, cx).placeholder("What to do, in a line"));
         let body = cx.new(|cx| {
             TextareaState::new(window, cx).placeholder("The details: what is wrong, what is wanted")
@@ -161,8 +181,33 @@ impl Shell {
             slots: None,
             queued_behind: None,
             review: None,
+            shared_checkout: self.own_session_in(&launcher.root, cx),
+            forge_read: launcher.ground.is_some(),
         };
         Some(preflight::preflight(preflight::Kind::NewRun, &facts))
+    }
+
+    /// A session of a person's own, not a run's, that has been prompted in
+    /// the checkout at `root`, by its name: what a run working in the same
+    /// checkout would edit beside.
+    fn own_session_in(&self, root: &std::path::Path, cx: &gpui::App) -> Option<String> {
+        let project = self
+            .window
+            .workspace
+            .roots
+            .iter()
+            .find(|r| r.path == root)?;
+        project
+            .sessions
+            .iter()
+            .filter(|session| crate::task::shown(session.uid, cx).is_none())
+            .find_map(|session| {
+                self.rail_sessions
+                    .iter()
+                    .find(|(uid, _)| *uid == session.uid)
+                    .and_then(|(_, row)| row.title.clone())
+            })
+            .map(|title| title.to_string())
     }
 
     /// Start the run the launcher describes, or say on it why not.

@@ -138,6 +138,7 @@ pub(crate) fn migrate_blocking(old: &Path, new: &Path) -> Vec<String> {
                 setup: run.setup.clone(),
                 runs: vec![run],
                 dismissed: false,
+                worktree_removed: false,
                 source: super::Source::Workflow,
             };
             serde_json::to_string_pretty(&task).map_err(|err| err.to_string())

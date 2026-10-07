@@ -19,7 +19,8 @@ use onehand_core::task::Approval;
 use onehand_core::task::Group;
 use onehand_core::task::marks::{self, Change};
 use onehand_core::task::work::{
-    ANSWER_LINES, Act, Around, PrSeen, UnderReview, Work, last_lines, next_action,
+    ANSWER_LINES, Act, Around, PrSeen, REMOVE_WORKTREE_ABOUT, UnderReview, Work, last_lines,
+    next_action,
 };
 use onehand_core::workflow::{Run, Visit};
 use std::collections::{HashMap, HashSet};
@@ -58,6 +59,10 @@ pub(in crate::chat::pane) struct TaskDetail {
     changes: HashMap<(String, String), Loaded<Vec<Change>>>,
     /// Files opened, by the two marks and the path, with their diffs.
     files: HashMap<(String, String, String), Loaded<Vec<DiffRow>>>,
+    /// The pull request on the task's branch, read off the UI thread when
+    /// the detail opens on a task that opened one: what its issue's view
+    /// judges the ways out by.
+    pr: Loaded<Option<onehand_core::connector::PullRequest>>,
 }
 
 impl ChatPane {
@@ -71,15 +76,47 @@ impl ChatPane {
     /// Show task `id` in place of the cards, or the cards again for `None`.
     pub(crate) fn open_task(&mut self, id: Option<String>, cx: &mut Context<Self>) {
         if let Some(Page::Tasks(page)) = self.page.as_mut() {
-            page.open = id.map(|id| TaskDetail {
+            page.open = id.clone().map(|id| TaskDetail {
                 id,
                 expanded: HashSet::new(),
                 earlier_open: HashSet::new(),
                 changes: HashMap::new(),
                 files: HashMap::new(),
+                pr: None,
             });
             cx.notify();
         }
+        if let Some(id) = id {
+            self.read_pr(id, cx);
+        }
+    }
+
+    /// Read the pull request on task `id`'s branch, when it opened one.
+    fn read_pr(&mut self, id: String, cx: &mut Context<Self>) {
+        let Some(task) = crate::task::task(&id, cx).filter(|t| t.opened_pull_request()) else {
+            return;
+        };
+        let forge =
+            task.setup.forge.as_deref().and_then(|name| {
+                onehand_core::connector::named(crate::plugins::connectors(), name)
+            });
+        let (Some(forge), Some(branch)) = (forge, task.setup.branch.clone()) else {
+            return;
+        };
+        let repo = task.setup.repo.clone();
+        cx.spawn(async move |pane, cx| {
+            let read = cx
+                .background_executor()
+                .spawn(async move { forge.pull_request_for_blocking(&repo, &branch) })
+                .await;
+            let _ = pane.update(cx, |pane: &mut Self, cx| {
+                if let Some(detail) = pane.detail_mut().filter(|d| d.id == id) {
+                    detail.pr = Some(read);
+                    cx.notify();
+                }
+            });
+        })
+        .detach();
     }
 
     /// Open or close a visit; opening one pinned at both ends, `pinned`,
@@ -216,6 +253,17 @@ pub(super) fn task_detail(
                      the label back does",
                 )
                 .on_click(super::emit(&task.id, cx, ChatPaneEvent::AnswerReview))
+        }))
+        // Offered where its issue's view offers it: core's ways out, given
+        // the pull request as read.
+        .children(removable(task, detail).then(|| {
+            crate::controls::action("task-remove-worktree")
+                .ghost()
+                .small()
+                .text_color(crate::theme::status_ink(cx).danger)
+                .label(Act::RemoveWorktree.label())
+                .tooltip(REMOVE_WORKTREE_ABOUT)
+                .on_click(super::emit(&task.id, cx, ChatPaneEvent::RemoveWorktree))
         }));
     let mut out = vec![
         div().h_flex().child(back).into_any_element(),
@@ -524,6 +572,16 @@ fn answers_review(task: &onehand_core::task::Task) -> bool {
             .runs
             .last()
             .is_some_and(|run| run.outcome == Some(onehand_core::workflow::Outcome::Done))
+}
+
+/// Whether its issue's view would offer removing `task`'s worktree, by
+/// core's rule, given the pull request `detail` read: never before it is
+/// read and merged.
+fn removable(task: &onehand_core::task::Task, detail: &TaskDetail) -> bool {
+    let Some(Ok(pr)) = &detail.pr else {
+        return false;
+    };
+    Work::of(task, None, None).removal_offered(pr.as_ref())
 }
 
 /// An ended task's way out, as its issue says it (`next_action`): why it

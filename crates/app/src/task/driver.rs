@@ -122,10 +122,14 @@ pub(crate) fn start(
     let answered = cx.observe(session, move |session, cx| {
         let card = read(uid, cx, |d| d.card).unwrap_or(false);
         if card && !session.read(cx).chat.awaiting_permission() {
-            with(uid, cx, |d| {
+            let task = with(uid, cx, |d| {
                 d.card = false;
                 d.budget.resume(Instant::now());
+                d.task.clone()
             });
+            if let Some(task) = task {
+                cx.defer(move |cx| crate::unattended::answered(&task, cx));
+            }
         }
     });
     // The session went with the run still going: its window or the session
@@ -179,14 +183,18 @@ fn held(uid: u64, cx: &mut App, ends: bool, then: impl FnOnce(&mut App) + 'stati
 /// A person approved what they read, as `approval` names it.
 pub(crate) fn approve(approval: Approval, cx: &mut App) {
     if let Some(uid) = live_uid(&approval.task, cx) {
+        let task = approval.task.clone();
         answer(uid, cx, move |run| run.approved(&approval.at));
+        crate::unattended::answered(&task, cx);
     }
 }
 
 /// A person sent what they read, as `approval` names it, back with `note`.
 pub(crate) fn revise(approval: Approval, note: String, cx: &mut App) {
     if let Some(uid) = live_uid(&approval.task, cx) {
+        let task = approval.task.clone();
         answer(uid, cx, move |run| run.revised(&approval.at, note));
+        crate::unattended::answered(&task, cx);
     }
 }
 

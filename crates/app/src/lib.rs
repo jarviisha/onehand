@@ -14,6 +14,7 @@
 //! they are unaffected. Keep new modules private.
 
 mod acp;
+mod agent_check;
 pub mod assets;
 mod chat;
 mod controls;
@@ -34,4 +35,5 @@ mod theme;
 mod unattended;
 mod workbench;
 mod workflow;
+mod workflows_page;
 mod zoom;

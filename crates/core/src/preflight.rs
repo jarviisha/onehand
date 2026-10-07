@@ -10,6 +10,7 @@
 
 use crate::connector::PrState;
 use crate::task::{Task, Working};
+use crate::unattended::Slots;
 use crate::workflow::{Failure, Place, StepKind, Template};
 
 /// What kind of start is checked: each has its own configuration and place.
@@ -85,6 +86,15 @@ impl Kind {
 /// sentence and button names it.
 pub const RETRY_CURRENT: &str = "Retry with current settings";
 
+/// Where workflows are written, as a finding names it.
+const WORKFLOWS_PAGE: &str = "the Workflows page";
+
+/// Where a forge's account is seen to, as a finding names it.
+const CONNECTIONS: &str = "Settings ▸ Connections";
+
+/// Where a project's check command is set, as a finding names it.
+const PROJECT_PAGE: &str = "the project's page";
+
 /// Where what a finding blocks is changed, when that is somewhere else.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Change {
@@ -119,6 +129,7 @@ pub enum Check {
     EarlierTask,
     Slot,
     PlaceTaken,
+    Limits,
 }
 
 /// One thing the preflight found.
@@ -148,16 +159,6 @@ pub struct Forge {
 pub struct IssueFacts {
     pub named: String,
     pub tasks: Vec<(Task, Option<Working>)>,
-}
-
-/// How many issue runs may work at once, and who holds the slots.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Slots {
-    /// The issues being worked, as they are shown.
-    pub working: Vec<String>,
-    /// Issue tasks kept and not yet placed, which count too.
-    pub starting: usize,
-    pub at_once: u32,
 }
 
 /// What answering a pull request review knows of it, read off the UI thread
@@ -204,6 +205,9 @@ pub struct Facts {
     pub checked_out: Option<String>,
     /// The forge the work goes to, `None` on a project no forge serves.
     pub forge: Option<Forge>,
+    /// Which forge serves the project has been read: until it has, `None`
+    /// above says nothing.
+    pub forge_read: bool,
     /// The issue it works, for an issue's start.
     pub issue: Option<IssueFacts>,
     /// The slots, for an issue's start.
@@ -212,6 +216,9 @@ pub struct Facts {
     pub queued_behind: Option<String>,
     /// The pull request a review is answered on, for that start.
     pub review: Option<ReviewFacts>,
+    /// A person's own session working in the checkout the start works in,
+    /// by its name.
+    pub shared_checkout: Option<String>,
 }
 
 /// Everything `facts` says about a start of `kind`: blocks first, the
@@ -247,7 +254,7 @@ pub fn preflight(kind: Kind, facts: &Facts) -> Vec<Finding> {
                 Check::Workflow,
                 true,
                 format!("The workflow cannot run: {problem}"),
-                Some(Change::At("Settings ▸ Workflows")),
+                Some(Change::At(WORKFLOWS_PAGE)),
             );
         }
     }
@@ -311,7 +318,7 @@ pub fn preflight(kind: Kind, facts: &Facts) -> Vec<Finding> {
                      none.{keeps}",
                     template.name
                 ),
-                own_change.or(Some(Change::At("Settings ▸ Workflows"))),
+                own_change.or(Some(Change::At(PROJECT_PAGE))),
             );
         } else if !commands {
             say(
@@ -339,6 +346,20 @@ pub fn preflight(kind: Kind, facts: &Facts) -> Vec<Finding> {
             "The branch is cut off `HEAD`.".to_string(),
             None,
         ),
+        // Only a workflow that reads is known to work in the checkout.
+        Kind::NewRun if template.is_some() => {
+            if let Some(session) = &facts.shared_checkout {
+                say(
+                    Check::Place,
+                    false,
+                    format!(
+                        "Your session “{session}” works in this checkout too: the run edits \
+                         the same files, and neither sees the other's edits coming."
+                    ),
+                    None,
+                );
+            }
+        }
         Kind::NewIssueRun => match (&facts.forge, detached, &facts.checked_out) {
             (Some(_), _, _) => say(
                 Check::Base,
@@ -385,7 +406,38 @@ pub fn preflight(kind: Kind, facts: &Facts) -> Vec<Finding> {
             Check::Forge,
             true,
             format!("{name} cannot be used: {why}"),
-            Some(Change::At("Settings ▸ Connections")),
+            Some(Change::At(CONNECTIONS)),
+        );
+    }
+    // Answering a review on no forge is refused below, and never told twice.
+    if forge_steps && facts.forge_read && facts.forge.is_none() && kind != Kind::AnswerReview {
+        say(
+            Check::Forge,
+            false,
+            "No forge serves the project: the forge steps pass at once, and the branch is \
+             the result."
+                .to_string(),
+            None,
+        );
+    }
+
+    // The limits the run is held to, from the snapshot that will run.
+    if let Some(template) = template {
+        say(
+            Check::Limits,
+            false,
+            format!(
+                "Limits: {} of work, waiting on a person not counted; {} failed {} in a \
+                 stretch of steps before it stops.",
+                template.timeout,
+                template.misses,
+                if template.misses == 1 {
+                    "turn"
+                } else {
+                    "turns"
+                }
+            ),
+            None,
         );
     }
 
@@ -424,11 +476,7 @@ pub fn preflight(kind: Kind, facts: &Facts) -> Vec<Finding> {
             task: None,
         })
     };
-    if let Some(why) = facts
-        .slots
-        .as_ref()
-        .and_then(|s| crate::unattended::full(&s.working, s.starting, s.at_once))
-    {
+    if let Some(why) = facts.slots.as_ref().and_then(Slots::full) {
         say(Check::Slot, true, why);
     }
     if let Some(ahead) = &facts.queued_behind {
@@ -505,7 +553,8 @@ pub fn found_late(check: Check) -> Failure {
         | Check::Issue
         | Check::EarlierTask
         | Check::Slot
-        | Check::PlaceTaken => Failure::Other,
+        | Check::PlaceTaken
+        | Check::Limits => Failure::Other,
     }
 }
 

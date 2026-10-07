@@ -1,4 +1,4 @@
-use super::queue::{place_blocking, Queue};
+use super::queue::{place_blocking, queued_said, Queue};
 use super::*;
 use super::{Group, Source, Working};
 use crate::workflow::builtin;
@@ -731,4 +731,16 @@ fn a_task_knows_it_opened_a_pull_request() {
         url: "u".into(),
     });
     assert!(t.opened_pull_request());
+}
+
+#[test]
+fn a_queued_task_is_told_which_task_holds_its_place() {
+    assert_eq!(
+        queued_said("Fix b", Some("Fix a"), "repo"),
+        "Fix b is queued behind Fix a, working in repo"
+    );
+    assert_eq!(
+        queued_said("Fix b", None, "repo"),
+        "Fix b is queued behind the task working in repo"
+    );
 }

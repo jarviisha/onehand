@@ -123,6 +123,24 @@ impl TerminalPanel {
         cx.notify();
     }
 
+    /// How many shells are open on `root`.
+    pub fn shells_in(&self, root: &std::path::Path) -> usize {
+        self.shells.get(root).map_or(0, |shells| shells.tabs.len())
+    }
+
+    /// Every shell's process id, with the project it was opened on.
+    pub fn processes(&self) -> Vec<(PathBuf, u32)> {
+        self.shells
+            .iter()
+            .flat_map(|(root, shells)| {
+                shells
+                    .tabs
+                    .iter()
+                    .filter_map(|tab| Some((root.clone(), tab.process_id()?)))
+            })
+            .collect()
+    }
+
     pub fn set_root(&mut self, root: PathBuf, cx: &mut Context<Self>) {
         self.root = Some(root);
         cx.notify();

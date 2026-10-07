@@ -98,6 +98,9 @@ pub struct Work {
     pub branch: Option<String>,
     /// Where its work stands: the worktree, or the project itself.
     pub dir: std::path::PathBuf,
+    /// Its latest run works on a worktree of its own, still on disk, which a
+    /// person may remove once the work is merged.
+    pub worktree: bool,
     /// The connector the branch goes to; `None` where no forge serves the
     /// project, whose work stays on the branch.
     pub forge: Option<String>,
@@ -184,10 +187,22 @@ impl Work {
             since,
             branch: task.setup.branch.clone(),
             dir: task.setup.dir.clone(),
+            worktree: !task.worktree_removed
+                && run.is_some_and(|run| run.template.place == crate::workflow::Place::Worktree),
             forge: task.setup.forge.clone(),
             pull_request: run.map_or(PrStep::Absent, pr_step),
             stand,
         }
+    }
+
+    /// Whether *Remove worktree…* is offered for it, given its pull request
+    /// as read: its worktree is left on disk until a person asks, and is
+    /// offered only once the work it holds is merged and it is done.
+    pub fn removal_offered(&self, pr: Option<&PullRequest>) -> bool {
+        self.worktree
+            && self.stand == Stand::Done
+            && self.has_pull_request()
+            && pr.is_some_and(|pr| pr.state == PrState::Merged)
     }
 
     /// Whether it should have a pull request to read: a forge serves its
@@ -399,6 +414,9 @@ pub enum Act {
     /// Answer the review on its open pull request, as putting the trigger
     /// label back does.
     AnswerReview,
+    /// Remove the worktree and its branch, once its pull request merged:
+    /// judged first, and asked in a modal.
+    RemoveWorktree,
     OpenPullRequest,
     OpenBranch,
     Refresh,
@@ -422,6 +440,7 @@ impl Act {
             Self::Retry => "Retry…",
             Self::RetryCurrent => "Retry with current settings…",
             Self::AnswerReview => "Answer the pull request review",
+            Self::RemoveWorktree => "Remove worktree…",
             Self::OpenPullRequest => "Open pull request",
             Self::OpenBranch => "Open branch",
             Self::Refresh => "Refresh",
@@ -429,6 +448,10 @@ impl Act {
         }
     }
 }
+
+/// What *Remove worktree…* does, as its tooltip says wherever it is drawn.
+pub const REMOVE_WORKTREE_ABOUT: &str =
+    "Remove the worktree and its branch, once nothing in them is past the merge";
 
 /// The pull request of an issue's work, as last read.
 #[derive(Debug, Clone, Copy)]
@@ -646,6 +669,9 @@ fn done(work: &Work, pr: PrSeen<'_>) -> Next {
                 // is pressed, as putting the label back would.
                 &[Act::AnswerReview],
             ),
+            PrState::Merged if work.removal_offered(Some(pr)) => {
+                row(None, None, &[Act::RunWorkflow, Act::RemoveWorktree])
+            }
             PrState::Merged => row(None, None, &[Act::RunWorkflow]),
             PrState::Closed => row(
                 Some(

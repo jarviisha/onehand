@@ -25,11 +25,11 @@ follow it, judge what it left and send it back, without going looking for it.**
 | # | Piece | Document | Wave |
 |---|---|---|---|
 | 1 | The issue says where its work stands | built: [unattended.md](../../unattended.md), [tasks.md](../../tasks.md) | 1 |
-| 2 | An issue written to be worked, and the brief shown before it is | [issue-brief.md](issue-brief.md) | 1 |
-| 3 | Everything a start needs, checked before it claims or cuts anything | [preflight.md](preflight.md) | 1 |
+| 2 | An issue written to be worked, and the brief shown before it is | built: [unattended.md](../../unattended.md); later ideas in [issue-brief.md](issue-brief.md) | 1 |
+| 3 | Everything a start needs, checked before it claims or cuts anything | built: [workflows.md](../../workflows.md); *Place taken* left in [preflight.md](preflight.md) | 1 |
 | 4 | Approve, revise, resume or retry next to what is judged | built: [tasks.md](../../tasks.md), [unattended.md](../../unattended.md), [workflows.md](../../workflows.md) | 1 |
-| 5 | Issues and workflows as pages of their own | [pages.md](pages.md) | the Issues page 1, the Workflows page 2 |
-| 6 | Unattended runs when there are many issues | [operations.md](operations.md) | 2, except its first item |
+| 5 | Issues and workflows as pages of their own | built: [DESIGN.md](../../../DESIGN.md), [workflows.md](../../workflows.md) | the Issues page 1, the Workflows page 2 |
+| 6 | Unattended runs when there are many issues | built: [unattended.md](../../unattended.md), [tasks.md](../../tasks.md); a queue for slots left in [operations.md](operations.md) | 2, except its first item |
 | 7 | Workflows past a straight line | below | 3 |
 
 How they fit together in the code, with the flows: [architecture.md](architecture.md).
@@ -51,15 +51,15 @@ keep yet (see *What is read and what is new* below).
    from, and the persistence it needs (piece 1, part B). The dock offers *Review…*, which opens
    the page; the full review is never built in the dock first. It also takes **answering a pull
    request review** into the preflight as a kind of its own.~~ Built.
-6. Then the Workflows page (piece 5's other half) and the rest of operations (piece 6), with
-   three parts step 4 left for it:
-   - ***Check the agent*** ([preflight.md](preflight.md#check-the-agent-step-6)):
+6. ~~Then the Workflows page (piece 5's other half) and the rest of operations (piece 6), with
+   three parts step 4 left for it:~~ Built.
+   - ***Check the agent***:
      the mode remembered from any time the agent comes up covers most starts, and the driver's
      check covers the rest, as before; the button needs a way to start an adapter with no session.
-   - **The remaining informs rows** ([preflight.md](preflight.md#the-remaining-informs-rows-step-6)):
+   - **The remaining informs rows**:
      a checkout shared with a person's own session, which needs a fact nothing tracks yet; *no
      forge serves the project*; and *Limits*, which the issue's start form already shows.
-   - **A project's own issue templates** ([issue-brief.md](issue-brief.md#a-projects-own-templates-step-6)):
+   - **A project's own issue templates**:
      no project uses them yet; the body reader step 4 builds takes any template, so this is
      reading the files.
 
@@ -77,7 +77,7 @@ documents and its row here names the pull request.
 | 3 | [#97](https://github.com/jarviisha/onehand/issues/97) | [#104](https://github.com/jarviisha/onehand/pull/104) |
 | 4 | [#105](https://github.com/jarviisha/onehand/issues/105) | [#112](https://github.com/jarviisha/onehand/pull/112) |
 | 5 | [#114](https://github.com/jarviisha/onehand/issues/114) | [#121](https://github.com/jarviisha/onehand/pull/121) |
-| 6 | | |
+| 6 | [#122](https://github.com/jarviisha/onehand/issues/122) | [#129](https://github.com/jarviisha/onehand/pull/129) |
 
 ## Five questions every layout answers
 

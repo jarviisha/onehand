@@ -164,6 +164,14 @@ impl Workbench {
         self.modes.iter().map(|mode| mode.unsaved(root, cx)).sum()
     }
 
+    /// Every process the modes keep running, each with what it is called.
+    pub fn processes(&self, cx: &App) -> Vec<onehand_core::worktree::removal::Process> {
+        self.modes
+            .iter()
+            .flat_map(|mode| mode.processes(cx))
+            .collect()
+    }
+
     /// Drop everything every mode holds for `root`.
     ///
     /// Called when a project root leaves the workspace.
@@ -412,6 +420,7 @@ pub enum WorkbenchEvent {
     RetryTaskCurrent(String),
     /// Answer the review on issue task `id`'s open pull request.
     AnswerReview(String),
+    RemoveWorktree(String),
     /// Stop task `id`.
     StopTask(String),
 }
@@ -456,6 +465,7 @@ pub fn issue_event(request: &Request<'_>) -> Option<WorkbenchEvent> {
         Request::RetryTask(id) => WorkbenchEvent::RetryTask(id.to_string()),
         Request::RetryTaskCurrent(id) => WorkbenchEvent::RetryTaskCurrent(id.to_string()),
         Request::AnswerReview(id) => WorkbenchEvent::AnswerReview(id.to_string()),
+        Request::RemoveWorktree(id) => WorkbenchEvent::RemoveWorktree(id.to_string()),
         Request::StopTask(id) => WorkbenchEvent::StopTask(id.to_string()),
         Request::OpenFile(_)
         | Request::Save

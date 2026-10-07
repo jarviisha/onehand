@@ -291,20 +291,21 @@ pub(crate) fn request(id: String, window: &mut Window, cx: &mut Context<Shell>) 
             match free {
                 Some(true) => shell.drive_task(id, window, cx),
                 Some(false) => {
-                    let title = cx
-                        .global::<Tasks>()
+                    let t = cx.global::<Tasks>();
+                    let title = t
                         .task(&id)
                         .map_or_else(String::new, |task| task.brief.title.clone());
                     let at = place.file_name().map_or_else(
                         || place.display().to_string(),
                         |n| n.to_string_lossy().into_owned(),
                     );
-                    window.push_notification(
-                        Notification::info(format!(
-                            "{title} is queued behind the task working in {at}"
-                        )),
-                        cx,
+                    let holder = t.queue.holder_of(&id).and_then(|holder| t.task(holder));
+                    let said = onehand_core::task::queue::queued_said(
+                        &title,
+                        holder.map(|holder| holder.brief.title.as_str()),
+                        &at,
                     );
+                    window.push_notification(Notification::info(said), cx);
                     cx.refresh_windows();
                 }
                 None => {}
@@ -494,6 +495,18 @@ pub(crate) fn dismiss(id: &str, cx: &mut App) {
         crate::unattended::deliver(id.to_string(), cx);
     }
     enforce_cap(cx);
+    cx.refresh_windows();
+}
+
+/// Task `id`'s worktree and branch were removed: kept with the task, so
+/// nothing offers to remove them again.
+pub(crate) fn worktree_removed(id: &str, cx: &mut App) {
+    cx.update_global::<Tasks, _>(|t, _| {
+        if let Some(task) = t.task_mut(id) {
+            task.worktree_removed = true;
+            t.save(id);
+        }
+    });
     cx.refresh_windows();
 }
 

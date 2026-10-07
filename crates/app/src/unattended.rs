@@ -15,7 +15,7 @@ use crate::state::Shared;
 use gpui::{App, BorrowAppContext as _, Task, WeakEntity};
 use onehand_core::config::UnattendedConfig;
 use onehand_core::connector::{self, Connector};
-use onehand_core::unattended as core;
+use onehand_core::unattended::{self as core, Slots};
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::path::Path;
 use std::path::PathBuf;
@@ -48,6 +48,8 @@ pub struct Unattended {
     workflows: BTreeMap<String, String>,
     /// How many runs may work at once.
     at_once: u32,
+    /// How many runs may wait on a person at once; `None` for no cap.
+    waiting: Option<u32>,
     /// A claim is on its way to the connector and the worktree is being made. A tick
     /// landing now must not start a second.
     claiming: bool,
@@ -118,20 +120,33 @@ pub fn connector_for(root: &Path) -> Result<&'static dyn Connector, String> {
     connector::serving(all, root).map(|at| all[at])
 }
 
-/// Why no more runs may start while these work: the cap is reached, said
-/// with the issues it is waiting on. A run waiting on a person is not
-/// counted, so one question nobody has answered yet does not stop every other
-/// issue from being worked; one whose card is answered carries on beside
-/// whatever started meanwhile, since the protocol cannot hold an agent
-/// mid-turn.
-// ponytail: waiting runs are not capped; each keeps an adapter alive. Cap
-// them when a pile of unanswered runs is seen to cost something.
+/// Why no more runs may start while these work: every slot is taken, said
+/// with who holds each, or as many runs wait on a person as may. A run
+/// waiting on a person holds no slot, so one question nobody has answered
+/// yet does not stop every other issue from being worked; one whose card is
+/// answered carries on beside whatever started meanwhile, since the protocol
+/// cannot hold an agent mid-turn.
 fn at_cap(u: &Unattended, cx: &App) -> Option<String> {
-    core::full(
-        &crate::task::issues_working(cx),
-        u.starting.len(),
-        u.at_once,
-    )
+    slots_of(u, cx).full()
+}
+
+/// The slots as they stand, across every window.
+fn slots_of(u: &Unattended, cx: &App) -> Slots {
+    Slots {
+        holders: crate::task::slot_holders(cx),
+        starting: u.starting.len(),
+        at_once: u.at_once,
+        waiting: crate::task::issues_waiting(cx),
+        waiting_cap: u.waiting,
+    }
+}
+
+/// The slots as they stand, if unattended runs are set up.
+pub(crate) fn slots(cx: &App) -> Option<Slots> {
+    Shared::global(cx)
+        .unattended
+        .as_ref()
+        .map(|u| slots_of(u, cx))
 }
 
 /// Why nothing at all may start, picked or found: the agent does not offer
@@ -216,7 +231,7 @@ fn lacks_check_given(has: bool, id: &str, cx: &App) -> Option<String> {
     (template.needs_check() && !has).then(|| {
         format!(
             "the workflow `{}` runs the project's check command, and it has none; set one \
-             under Settings ▸ Workflows",
+             on the project's page",
             template.name
         )
     })
@@ -270,6 +285,7 @@ pub fn boot(cfg: &UnattendedConfig, cx: &mut App) {
             workflow: cfg.workflow.clone(),
             workflows: cfg.workflows.clone(),
             at_once: cfg.at_once,
+            waiting: cfg.waiting,
             claiming: false,
             blocked,
             mode_refused: None,
@@ -323,6 +339,19 @@ pub(crate) fn placed(id: &str, cx: &mut App) {
 /// the cap up: look for the next issue at once rather than at the next tick.
 pub(crate) fn waiting(id: &str, cx: &mut App) {
     if crate::task::task(id, cx).is_some_and(|task| task.issue().is_some()) {
+        tick(None, cx);
+    }
+}
+
+/// A person answered the run of issue task `id` that waited on them: under
+/// a cap on waiting runs, that is room made, so look for the next issue at
+/// once rather than at the next tick.
+pub(crate) fn answered(id: &str, cx: &mut App) {
+    let capped = Shared::global(cx)
+        .unattended
+        .as_ref()
+        .is_some_and(|u| u.waiting.is_some());
+    if capped && crate::task::task(id, cx).is_some_and(|task| task.issue().is_some()) {
         tick(None, cx);
     }
 }
@@ -514,6 +543,7 @@ pub(crate) use facts::with_setup as setup_facts;
 
 /// A forge as a preflight reads it, its account as last seen.
 pub(crate) use facts::forge as forge_facts;
+pub(crate) use facts::offered;
 
 /// The agent an issue's run starts, by name: the one set for runs, else the
 /// first configured.

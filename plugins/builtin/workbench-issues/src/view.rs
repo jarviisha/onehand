@@ -578,7 +578,8 @@ impl IssuesView {
         };
         if let Some(form) = &state.form {
             let project = self.page.as_ref().and_then(|page| page.label_of(root));
-            return form_view(form, project, cx);
+            let templates = state.file.read(cx).templates.clone();
+            return form_view(form, project, &templates, cx);
         }
         let Some(issue) = state.selected.and_then(|n| issues.get(n)).cloned() else {
             return hint("Pick an issue, or start a new one", cx);
@@ -592,6 +593,7 @@ impl IssuesView {
             .filter(|forge| issues.in_step_with(forge.name()))
             .filter(|_| issue.link.is_none())
             .map(|forge| forge.name());
+        let templates = state.file.read(cx).templates.clone();
         let body = self.parsed_body(root, &issue, cx);
         let key = self.key(root, issue.number);
         let work = key
@@ -608,6 +610,7 @@ impl IssuesView {
             offered: self.offered.iter().any(|offered| offered == root),
             pr: self.pr_seen(work.as_ref()),
             last: self.pr_value(work.as_ref()),
+            templates,
             work,
         };
         issue_view(root, &issue, body, publish_to, doing, window, cx)

@@ -11,6 +11,7 @@ use gpui_component::input::Input;
 use gpui_component::switch::Switch;
 use gpui_component::{ActiveTheme, Icon, IconName, Selectable, Sizable as _, StyledExt};
 use onehand_core::config::Appearance;
+use onehand_core::unattended::Slots;
 
 /// The light/dark/system picker.
 ///
@@ -316,6 +317,7 @@ fn unattended_section(handle: &Entity<Shell>, cx: &App) -> AnyElement {
         ),
         cx,
     ))
+    .children(crate::unattended::slots(cx).map(|slots| slots_field(handle, slots, cx)))
     .child(field(
         "Workflow",
         about(
@@ -387,6 +389,71 @@ fn unattended_section(handle: &Entity<Shell>, cx: &App) -> AnyElement {
             })),
         cx,
     ))
+    .into_any_element()
+}
+
+/// Who holds each slot of unattended runs, across every window: the slots
+/// line, then each holder as a link to its task, and why nothing more is
+/// taken up when the caps say so. Read as it stands; nothing is stored.
+fn slots_field(handle: &Entity<Shell>, slots: Slots, cx: &App) -> AnyElement {
+    let muted = cx.theme().muted_foreground;
+    let shown = onehand_core::unattended::HOLDERS_SAID;
+    let left_out = slots.holders.len().saturating_sub(shown);
+    let holders = slots
+        .holders
+        .iter()
+        .take(shown)
+        .enumerate()
+        .map(|(at, holder)| {
+            let (shell, task) = (handle.clone(), holder.task.clone());
+            crate::controls::action(("unattended-slot", at))
+                .ghost()
+                .small()
+                .label(holder.shown.clone())
+                .on_click(move |_: &ClickEvent, window: &mut Window, cx: &mut App| {
+                    shell.update(cx, |shell, cx| {
+                        // Only once Settings has closed: an edit there still
+                        // pending asks first, and the task waits for the answer.
+                        shell.request_close_settings(window, cx);
+                        if !shell.settings_shown() {
+                            shell.show_task(&task, window, cx);
+                        }
+                    });
+                })
+        });
+    let waiting = match slots.waiting_cap {
+        Some(cap) => format!("{} of {cap} may wait on a person", slots.waiting),
+        None => format!("{} waiting on a person, no cap", slots.waiting),
+    };
+    let starting = (slots.starting > 0).then(|| format!("{} starting", slots.starting));
+    field(
+        "Slots",
+        about(
+            "Issue runs working or queued, across every window, against unattended.at_once; \
+             a run waiting on a person holds none, and is counted against \
+             unattended.waiting when that is set.",
+        ),
+        div()
+            .v_flex()
+            .gap_1()
+            .child(div().text_sm().child(slots.count_said()))
+            .child(div().h_flex().flex_wrap().gap_1().children(holders))
+            .children((left_out > 0).then(|| {
+                div()
+                    .text_sm()
+                    .text_color(muted)
+                    .child(format!("and {left_out} more"))
+            }))
+            .children(starting.map(|line| div().text_sm().text_color(muted).child(line)))
+            .child(div().text_sm().text_color(muted).child(waiting))
+            .children(slots.full().is_some().then(|| {
+                div()
+                    .text_sm()
+                    .text_color(muted)
+                    .child("No other issue is taken up until one of these makes room.")
+            })),
+        cx,
+    )
     .into_any_element()
 }
 

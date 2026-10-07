@@ -13,6 +13,7 @@
 mod menu;
 mod workbench;
 pub use menu::{menu_below, menu_item, menu_row};
+pub use onehand_core::worktree::removal::Process;
 pub use workbench::{Ask, Request, WorkbenchMode};
 
 use gpui::prelude::FluentBuilder as _;

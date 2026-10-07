@@ -70,3 +70,13 @@ impl Queue {
         self.held.values().any(|holder| holder == task)
     }
 }
+
+/// What a task just queued for its place is told: the task holding the
+/// place, by its title, so a person knows which one to finish or stop, and
+/// the place by its folder's name.
+pub fn queued_said(title: &str, holder: Option<&str>, place: &str) -> String {
+    match holder {
+        Some(holder) => format!("{title} is queued behind {holder}, working in {place}"),
+        None => format!("{title} is queued behind the task working in {place}"),
+    }
+}

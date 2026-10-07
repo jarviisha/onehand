@@ -12,6 +12,8 @@
 //! what is wrong with a name while it is being typed, and the same rule has to
 //! be the one `git worktree add` is finally handed.
 
+pub mod removal;
+
 use crate::process::output_within;
 use crate::workspace::label_for;
 use std::path::{Path, PathBuf};
@@ -362,7 +364,7 @@ pub fn commits_since_blocking(dir: &Path, base: &str) -> Result<u64, String> {
 }
 
 /// `git -C <dir> <args>`, answering with what it printed, trimmed.
-fn read_blocking(dir: &Path, args: &[&str]) -> Result<String, String> {
+pub(crate) fn read_blocking(dir: &Path, args: &[&str]) -> Result<String, String> {
     let out =
         output_within(git(dir).args(args), LOCAL_LIMIT).map_err(|err| format!("git {err}"))?;
     if !out.status.success() {

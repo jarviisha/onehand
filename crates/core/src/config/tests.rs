@@ -147,6 +147,22 @@ fn unattended_runs_have_no_switch_of_their_own_and_read_an_old_one_as_nothing() 
     assert_eq!(cfg.unattended.label, "x");
 }
 
+/// Waiting runs are uncapped unless the file says so, and a cap set survives
+/// a settings rewrite beside a label table.
+#[test]
+fn the_waiting_cap_is_unset_by_default_and_round_trips() {
+    assert_eq!(AppConfig::parse("").unwrap().unattended.waiting, None);
+    let mut cfg = AppConfig::default();
+    cfg.unattended.waiting = Some(3);
+    cfg.unattended
+        .workflows
+        .insert("bug".into(), "builtin:issue".into());
+    let text = cfg.to_toml().unwrap();
+    let back = AppConfig::parse(&text).unwrap();
+    assert_eq!(back.unattended.waiting, Some(3));
+    assert!(!AppConfig::default().to_toml().unwrap().contains("waiting"));
+}
+
 /// The bridge is off unless the file asks for it, and its list starts
 /// empty — an enabled bridge with nobody on the list answers nobody, which
 /// is the failure that has to be the safe one.

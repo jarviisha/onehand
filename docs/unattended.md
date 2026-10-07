@@ -85,7 +85,7 @@ background executor, one interval in the config, no cron expressions.
 | `crates/app/src/unattended.rs` | the tick, the cap (`at_cap`, the tasks still `starting`), `waiting` |
 | `crates/app/src/unattended/launch.rs` | claiming an issue, cutting its worktree, and making it a task of its workflow; `workflow`, which refuses a checkout workflow |
 | `crates/app/src/unattended/report.rs` | `spec_for`, `refuse_mode`, `started`, `opening`, and the end: `keep`, `card_question`, `ended`, `deliver`, `deliver_all` |
-| `crates/app/src/task.rs` | `freed`, which calls `unattended::ended`; `issues_working`, `live_issues`, `update_issue`, `undelivered` |
+| `crates/app/src/task.rs` | `freed`, which calls `unattended::ended`; `slot_holders`, `issues_waiting`, `live_issues`, `update_issue`, `undelivered` |
 | `crates/app/src/task/driver.rs` | `came_up` (the mode, the note on the issue), the clock, the take-over |
 | `crates/app/src/shell/workflows.rs` | `drive_task`, which brings an issue's run up off screen |
 | `crates/core/src/config.rs` | `UnattendedConfig` |
@@ -131,6 +131,7 @@ mode = "acceptEdits"        # the ACP session mode a run starts in; empty leaves
 agent = "Claude Code"       # which agent spec; the default agent when unset
 workflow = "builtin:issue"  # the workflow an issue is worked with, by id
 at_once = 1                 # runs working at once, across every window
+waiting = 4                 # runs waiting on a person at once; unset for no cap
 
 [unattended.workflows]      # workflow labels: label = workflow id
 bug = "my-fix"
@@ -355,16 +356,33 @@ workflow there is refused before the claim, said as this project's problem
 rather than as something stopping every run.
 
 **`at_once` runs work at a time**, picked and found alike, counted across every
-window (`task::issues_working`: issue tasks running or queued). A run waiting on
+window (`task::slot_holders`: issue tasks running or queued). A run waiting on
 a card or an approval does not count, and starting to wait looks for the next
 issue at once (`unattended::waiting`) rather than at the next tick. A pick while
-the cap is reached is refused with the issues being worked, and so is a Resume
-or a Retry of an issue's task from the Tasks page (`unattended::over_cap`, asked
-in `task::request`, which every start goes through); a refused Retry drops the
-run it was about to start. *Look for an issue now*, in Settings ▸
-Workspace, runs the search at once and always says what came of it: nothing
-switched on, the cap reached, what blocks every run, or that no issue of yours
-carries the label.
+the cap is reached is refused, and so is a Resume or a Retry of an issue's task
+from the Tasks page (`unattended::over_cap`, asked in `task::request`, which
+every start goes through); a refused Retry drops the run it was about to start.
+*Look for an issue now*, in Settings ▸ Workspace, runs the search at once and
+always says what came of it: nothing switched on, the cap reached, what blocks
+every run, or that no issue of yours carries the label.
+
+**Who holds each slot is said**, read from the tasks working and starting and
+never stored (`unattended::Slots`): *Slots: 1 of 1 — #12 · Work an issue
+(Implement)*, each holder its issue, its workflow and the step it is at. A full
+slot's refusal carries the line, and so does the preflight's *Slot* row;
+Settings ▸ Workspace ▸ Unattended runs shows it with each holder a link to its
+task, how many runs wait on a person, and why nothing more is taken up when a
+cap says so. A full slot still refuses; only a place queues, and a task queued
+for its place is told which task holds it.
+
+**`waiting` caps the runs waiting on a person**, each of which keeps its
+adapter alive. Unset, there is no cap. At it, nothing more is taken up, by the
+tick or a pick, and a Resume or a Retry of an issue's task is held to it as to
+`at_once`, the reason said where the working cap's is. Nothing is stopped,
+parked or answered for it: a person's answer is what frees one, and the room
+it makes is there at once: answering a card or an approval of an issue's run
+looks for the next issue then, rather than at the next tick
+(`unattended::answered`).
 
 **The transcript is the run's log**, in short lines, one fact each. A remark in
 the transcript is one line down the middle of the column, cut where the column
@@ -580,6 +598,14 @@ also puts the `bug` label on, which is how a template can choose the workflow
 through a workflow label; switching to another template takes the first one's
 labels off again. A template fills the body in and nothing else: no
 field, no state, and an issue written without one is worked as it always was.
+A project that keeps its own templates in `.github/ISSUE_TEMPLATE/*.md` is
+offered those instead, whole, never mixed with the shipped three
+(`issues::template::for_project_blocking`): the front matter gives each its
+`name` and `labels` (a comma list, a flow list or a block list), and the rest
+is its body. A file with no front matter, none closed or no name is left out,
+as its forge would leave it out; a project none of whose files read keeps the
+shipped three. They are read off the UI thread, with the issues file, the pick
+and the search, and a body is read against the project's own.
 A pure reader (`issues::template::lacking`) says which of a template's headings
 a body leaves empty or out, against the template it matches: one carrying at
 least half its headings, ATX headings of any level matched on their text with
@@ -680,6 +706,30 @@ every case: a run that got half way has work in it, and removing a worktree to
 save the user a `git worktree remove` is the app throwing away work nobody asked
 it to.
 
+**Once its pull request is merged, a person may ask.** The issue's view offers
+*Remove worktree…* beside *Run workflow…* when the pull request reads merged
+(`Act::RemoveWorktree`), and the task detail by the same rule, on the pull
+request it reads when it opens. Its modal names the folder and the branch, in the danger tint. The
+judgement is core's (`worktree::removal::judge`), on facts read off the UI
+thread when the modal opens and again when *Remove* is pressed: it refuses
+while the forge cannot be read or says the pull request is not merged, while
+the branch holds commits past the head the forge merged (or that head is not in
+this clone), while anything is uncommitted or untracked, and while anything of
+onehand's uses the folder in any window: a project open inside it, with its
+sessions and terminals, a task still working there, or any shell or Neovim
+whose directory is inside it now, as the system says (`/proc/<pid>/cwd`, so
+on Linux; elsewhere the projects open on it are what tells). Every reason is listed;
+onehand closes nothing for the person. The branch is judged by the forge's
+merged head, not by `git branch -d`, which refuses the usual squash merge and
+cannot see a remote branch deleted after the merge: a branch holding nothing
+past that head goes with `git branch -D`. It is the task's own branch, the one
+the forge was asked about, and only that: a worktree with another branch
+checked out is refused. What is removed is the worktree's top, found off the UI
+thread, since a project in a folder of its repository works in that folder of
+the worktree. If `-D` fails, the worktree stays
+removed, the branch is kept, and the failure is said. A removal is kept with
+the task (`Task::worktree_removed`), so nothing offers it again.
+
 The transcript needs no special handling — it is written at the end of every
 turn, under the conversations directory, exactly like a conversation somebody
 had by hand.
@@ -762,11 +812,6 @@ accumulate one row per issue ever worked.
   told apart from two different failures.
 - **A pull request as a task's source.** A review is answered only by putting the
   trigger label back on the issue the pull request came from.
-- **Cleaning up after a merged pull request.** The worktree and its branch stay
-  on disk; a merged pull request is the first signal clear enough to act on.
-- **A cap on waiting runs.** `at_once` counts working runs only; each waiting
-  one keeps an adapter alive. Add when a pile of unanswered runs is seen to
-  cost something.
 - **Cron expressions, quiet hours, a calendar.** An interval and a switch per
   project. Add when somebody actually wants runs only at night.
 - **Telegram announcements of a run.** The three announced moments are a closed
@@ -793,7 +838,8 @@ Core, pure, no fixtures:
 - `branch_for` passes `validate_branch` for a title that is nothing but
   punctuation and for one 300 characters long, and a kept issue and a forge
   issue of one number never share a branch.
-- `room` counts working runs against `at_once`.
+- `Slots::full` counts working runs against `at_once` and waiting runs against
+  `waiting`, each on its own; `Slots::said` names each holder in order.
 - `workflow_for` takes the first workflow label in the table's order, never
   the trigger label, and falls back to the default; a found issue keeps every
   label it carries; `workflow_label_refused` refuses an empty, trigger or

@@ -1,12 +1,12 @@
 //! What a start on an issue is checked against: the facts the app holds,
 //! gathered for the preflight core decides with.
 
-use super::{Unattended, launch};
+use super::launch;
 use crate::state::Shared;
 use gpui::App;
 use onehand_core::config::AgentSpec;
 use onehand_core::connector::Connector;
-use onehand_core::preflight::{DETACHED, Facts, Forge, IssueFacts, Slots};
+use onehand_core::preflight::{DETACHED, Facts, Forge, IssueFacts};
 use onehand_core::task::{Task, Working};
 use onehand_core::unattended::{Issue, Tracker, TrackerRef};
 use onehand_core::workflow::Template;
@@ -33,8 +33,10 @@ pub(crate) fn common(cx: &App) -> Facts {
         checked_out: None,
         forge: None,
         issue: None,
-        slots: u.map(|u| slots(u, cx)),
+        slots: u.map(|u| super::slots_of(u, cx)),
         queued_behind: None,
+        shared_checkout: None,
+        forge_read: true,
         review: None,
     }
 }
@@ -146,14 +148,6 @@ fn account(forge: &'static dyn Connector, cx: &App) -> Option<Result<String, Str
         .map(|(_, said)| said)
 }
 
-fn slots(u: &Unattended, cx: &App) -> Slots {
-    Slots {
-        working: crate::task::issues_working(cx),
-        starting: u.starting.len(),
-        at_once: u.at_once,
-    }
-}
-
 /// The modes the agent `spec` offered when it last came up in this process,
 /// started as it is configured now; `None` when it has not.
 ///
@@ -201,7 +195,7 @@ pub(crate) fn with_setup(
     // Held to the cap as the tick is: an issue's task not already counted.
     let slots = shared.unattended.as_ref().and_then(|u| {
         let counted = u.starting.contains(&task.id) || crate::task::is_working(&task.id, cx);
-        (task.issue().is_some() && !counted).then(|| slots(u, cx))
+        (task.issue().is_some() && !counted).then(|| super::slots_of(u, cx))
     });
     Facts {
         workflow,
@@ -216,6 +210,8 @@ pub(crate) fn with_setup(
         issue: None,
         slots,
         queued_behind: None,
+        shared_checkout: None,
+        forge_read: true,
         review: None,
     }
 }

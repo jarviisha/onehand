@@ -365,6 +365,11 @@ pub struct UnattendedConfig {
     /// How many issues may be worked at once across every window. One
     /// waiting on a person does not count.
     pub at_once: u32,
+    /// How many issue runs may wait on a person at once, each keeping its
+    /// adapter alive; past it no other issue is taken up until one is
+    /// answered. Unset for no cap.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub waiting: Option<u32>,
 }
 
 impl Default for UnattendedConfig {
@@ -378,6 +383,7 @@ impl Default for UnattendedConfig {
             workflow: "builtin:issue".to_string(),
             workflows: BTreeMap::new(),
             at_once: 1,
+            waiting: None,
         }
     }
 }

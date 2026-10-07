@@ -83,6 +83,12 @@ pub trait WorkbenchMode {
     fn unsaved(&self, _root: &Path, _cx: &App) -> usize {
         0
     }
+
+    /// The processes this mode keeps running, each with what a person calls
+    /// it: what the shell asks before it removes a folder one may work in.
+    fn processes(&self, _cx: &App) -> Vec<onehand_core::worktree::removal::Process> {
+        Vec::new()
+    }
 }
 
 /// Something asked of the Workbench without naming which mode answers it.
@@ -223,6 +229,9 @@ pub enum Request<'a> {
     /// Answer the review on issue task `id`'s open pull request, as putting
     /// the trigger label back does. Only ever travels **upward**.
     AnswerReview(&'a str),
+    /// Remove issue task `id`'s worktree and branch after its pull request
+    /// merged, asking first. Only ever travels **upward**.
+    RemoveWorktree(&'a str),
     /// Stop task `id`. Only ever travels **upward**.
     StopTask(&'a str),
 }

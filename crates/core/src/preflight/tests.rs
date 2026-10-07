@@ -51,12 +51,16 @@ fn healthy() -> Facts {
             tasks: Vec::new(),
         }),
         slots: Some(Slots {
-            working: Vec::new(),
+            holders: Vec::new(),
             starting: 0,
             at_once: 2,
+            waiting: 0,
+            waiting_cap: None,
         }),
         queued_behind: None,
         review: None,
+        shared_checkout: None,
+        forge_read: true,
     }
 }
 
@@ -283,9 +287,15 @@ fn an_earlier_task_needing_attention_informs_and_offers_it() {
 fn a_full_slot_blocks_naming_who_holds_it() {
     let facts = Facts {
         slots: Some(Slots {
-            working: vec!["#5".into()],
+            holders: vec![crate::unattended::Holder {
+                task: "t5".into(),
+                named: "#5".into(),
+                shown: "#5".into(),
+            }],
             starting: 0,
             at_once: 1,
+            waiting: 0,
+            waiting_cap: None,
         }),
         ..healthy()
     };
@@ -583,4 +593,181 @@ fn answering_a_review_is_refused_before_the_claim() {
         ),
         None
     );
+}
+
+const ALL: [Kind; 6] = [
+    Kind::NewRun,
+    Kind::NewIssueRun,
+    Kind::Resume,
+    Kind::Retry,
+    Kind::RetryCurrent,
+    Kind::AnswerReview,
+];
+
+/// A shipped workflow that works in the checkout.
+fn checkout() -> Template {
+    builtin::all()
+        .into_iter()
+        .find(|t| t.place == Place::Checkout)
+        .unwrap()
+}
+
+/// A shipped workflow with forge steps.
+fn with_forge_steps() -> Template {
+    builtin::all()
+        .into_iter()
+        .find(|t| t.steps.iter().any(|s| matches!(s.kind, StepKind::Push)))
+        .unwrap()
+}
+
+fn informs(kind: Kind, facts: &Facts, check: Check) -> Option<Finding> {
+    preflight(kind, facts)
+        .into_iter()
+        .find(|f| f.check == check && !f.blocks)
+}
+
+#[test]
+fn a_checkout_workflow_beside_a_persons_session_is_told_on_a_new_run() {
+    let shared = Facts {
+        workflow: Ok(checkout()),
+        shared_checkout: Some("Fix the parser".into()),
+        ..healthy()
+    };
+    let finding = informs(Kind::NewRun, &shared, Check::Place).unwrap();
+    assert!(finding.text.contains("Fix the parser"), "{}", finding.text);
+    assert!(blocks(Kind::NewRun, &shared).is_empty());
+    // Nobody else in the checkout: nothing said.
+    let alone = Facts {
+        shared_checkout: None,
+        ..shared.clone()
+    };
+    assert!(informs(Kind::NewRun, &alone, Check::Place).is_none());
+    // A worktree workflow works apart from the session, whatever it does.
+    let apart = Facts {
+        workflow: Ok(worktree()),
+        ..shared.clone()
+    };
+    assert!(informs(Kind::NewRun, &apart, Check::Place).is_none());
+    // A workflow that does not read is not known to work in the checkout.
+    let unread = Facts {
+        workflow: Err("gone".into()),
+        ..shared.clone()
+    };
+    assert!(informs(Kind::NewRun, &unread, Check::Place).is_none());
+    // Every other kind runs where it ran, or on a worktree of its own.
+    for kind in ALL.into_iter().filter(|k| *k != Kind::NewRun) {
+        assert!(informs(kind, &shared, Check::Place).is_none(), "{kind:?}");
+    }
+}
+
+#[test]
+fn forge_steps_on_a_project_no_forge_serves_are_told() {
+    let none = Facts {
+        workflow: Ok(with_forge_steps()),
+        forge: None,
+        ..healthy()
+    };
+    for kind in ALL.into_iter().filter(|k| *k != Kind::AnswerReview) {
+        let finding = informs(kind, &none, Check::Forge)
+            .unwrap_or_else(|| panic!("{kind:?} says nothing of the forge"));
+        assert!(
+            finding.text.contains("pass at once") && finding.text.contains("branch"),
+            "{}",
+            finding.text
+        );
+    }
+    // Not read yet, no forge is not said.
+    let unread = Facts {
+        forge_read: false,
+        ..none.clone()
+    };
+    assert!(informs(Kind::NewRun, &unread, Check::Forge).is_none());
+    // Answering a review on no forge is refused already, never told twice.
+    assert!(informs(Kind::AnswerReview, &none, Check::Forge).is_none());
+    // A forge serving, or no forge steps: nothing said.
+    let served = Facts {
+        workflow: Ok(with_forge_steps()),
+        ..healthy()
+    };
+    assert!(informs(Kind::NewRun, &served, Check::Forge).is_none());
+    let no_steps = Facts {
+        workflow: Ok(checkout()),
+        forge: None,
+        ..healthy()
+    };
+    assert!(informs(Kind::NewRun, &no_steps, Check::Forge).is_none());
+}
+
+#[test]
+fn every_start_says_the_limits_of_the_workflow_that_will_run() {
+    let mut template = worktree();
+    template.timeout = "20m".into();
+    template.misses = 4;
+    let facts = Facts {
+        workflow: Ok(template),
+        ..healthy()
+    };
+    for kind in ALL {
+        let finding = informs(kind, &facts, Check::Limits)
+            .unwrap_or_else(|| panic!("{kind:?} says no limits"));
+        assert!(
+            finding.text.contains("20m") && finding.text.contains('4'),
+            "{kind:?}: {}",
+            finding.text
+        );
+    }
+    let unread = Facts {
+        workflow: Err("gone".into()),
+        ..healthy()
+    };
+    assert!(informs(Kind::Retry, &unread, Check::Limits).is_none());
+}
+
+#[test]
+fn a_mode_learned_by_checking_the_agent_turns_not_known_into_a_block_or_nothing() {
+    let unknown = Facts {
+        mode: Some("plan".into()),
+        offered: None,
+        ..healthy()
+    };
+    let finding = found(Kind::NewRun, &unknown, Check::Mode).unwrap();
+    assert!(!finding.blocks && finding.text.contains("not known yet"));
+    let refused = Facts {
+        offered: Some(vec!["default".into()]),
+        ..unknown.clone()
+    };
+    assert!(found(Kind::NewRun, &refused, Check::Mode).unwrap().blocks);
+    let offered = Facts {
+        offered: Some(vec!["plan".into()]),
+        ..unknown
+    };
+    assert!(found(Kind::NewRun, &offered, Check::Mode).is_none());
+}
+
+#[test]
+fn a_finding_names_where_things_are_changed_now() {
+    let mut broken = worktree();
+    broken.steps.clear();
+    let invalid = Facts {
+        workflow: Ok(broken),
+        ..healthy()
+    };
+    let finding = found(Kind::NewRun, &invalid, Check::Workflow).unwrap();
+    assert_eq!(finding.change, Some(Change::At("the Workflows page")));
+    let no_check = Facts {
+        has_check: false,
+        ..healthy()
+    };
+    if let Some(finding) = found(Kind::NewRun, &no_check, Check::CheckCommand).filter(|f| f.blocks)
+    {
+        assert_eq!(finding.change, Some(Change::At("the project's page")));
+    }
+    for kind in ALL {
+        for facts in [&invalid, &no_check] {
+            for finding in preflight(kind, facts) {
+                let said = finding.change.and_then(Change::said).unwrap_or_default();
+                assert!(!said.contains("Settings ▸ Workflows"), "{said}");
+            }
+        }
+    }
 }

@@ -193,6 +193,7 @@ impl Shell {
             // for the project being arrived at, so anything pushed into the old
             // one is thrown away with it.
             self.sync_project_facts(cx);
+            self.show_check_input(&path, window, cx);
             // Nothing is running on this project and the page now on screen is
             // a list of past conversations over a *New session* button, so the
             // next thing asked of it is almost certainly a session. Start the
@@ -303,6 +304,7 @@ impl Shell {
             )
             .into(),
             act: "Remove",
+            ..Default::default()
         };
         // By path, not by index: the tree can be reordered while the question
         // is open, and the answer has to land on the project it was about.

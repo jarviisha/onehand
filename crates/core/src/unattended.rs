@@ -615,33 +615,96 @@ impl Tracker {
     }
 }
 
-/// Whether another issue may be taken up while `working` are, under the cap
-/// of `at_once` across every window. The caller counts no run that waits on a
-/// person.
-pub fn room(working: usize, at_once: u32) -> bool {
-    working < at_once as usize
+/// How many holders the slots line names before it counts the rest, and
+/// how many a list of them draws.
+pub const HOLDERS_SAID: usize = 8;
+
+/// A task holding one of the slots of unattended runs, and how the slots
+/// line shows it: its issue, its workflow and the step it is at.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Holder {
+    pub task: String,
+    /// Its issue, as a sentence names it: what a button opening it reads.
+    pub named: String,
+    pub shown: String,
 }
 
-/// Why no more runs may start while the issues `working` are worked and
-/// `starting` more are on their way, under the cap of `at_once`: said with the
-/// issues it is waiting on, so a person knows whom they wait for.
-pub fn full(working: &[String], starting: usize, at_once: u32) -> Option<String> {
-    if room(working.len() + starting, at_once) {
-        return None;
+/// The slots of unattended runs across every window, as they stand: read from
+/// the tasks working and starting, never stored.
+///
+/// A run waiting on a person gives its slot up but keeps its adapter alive,
+/// so those are counted apart, against a cap of their own when one is set.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Slots {
+    /// The issue tasks queued or running, oldest first.
+    pub holders: Vec<Holder>,
+    /// Issue tasks kept and not yet placed, which count too.
+    pub starting: usize,
+    pub at_once: u32,
+    /// Issue runs waiting on a person.
+    pub waiting: usize,
+    /// How many may wait at once; `None` for no cap.
+    pub waiting_cap: Option<u32>,
+}
+
+impl Slots {
+    /// Every slot is taken: what refuses for its holders, rather than for
+    /// the runs waiting on a person.
+    pub fn taken(&self) -> bool {
+        self.holders.len() + self.starting >= self.at_once as usize
     }
-    Some(match working {
-        [] if at_once == 0 => {
-            "Unattended runs are capped at none at once (unattended.at_once).".to_string()
+
+    /// How many slots are taken: *Slots: 1 of 1*, the head of the line,
+    /// for where each holder is drawn on its own.
+    pub fn count_said(&self) -> String {
+        let taken = self.holders.len() + self.starting;
+        format!("Slots: {taken} of {}", self.at_once)
+    }
+
+    /// The slots line: *Slots: 1 of 1 — #12 · Work an issue (Implement)*,
+    /// naming at most [`HOLDERS_SAID`] holders and how many more.
+    pub fn said(&self) -> String {
+        let mut who: Vec<String> = self
+            .holders
+            .iter()
+            .take(HOLDERS_SAID)
+            .map(|h| h.shown.clone())
+            .collect();
+        let more = self.holders.len().saturating_sub(HOLDERS_SAID);
+        if more > 0 {
+            who.push(format!("{more} more"));
         }
-        [] => "An unattended run is starting.".to_string(),
-        [one] => {
-            format!("An unattended run is already working on issue {one} — {at_once} at a time.")
+        if self.starting > 0 {
+            who.push(format!("{} starting", self.starting));
         }
-        many => format!(
-            "Unattended runs are already working on issues {} — {at_once} at a time.",
-            many.join(", ")
-        ),
-    })
+        match who.is_empty() {
+            true => self.count_said(),
+            false => format!("{} — {}", self.count_said(), who.join(", ")),
+        }
+    }
+
+    /// Why no other issue may be taken up now, if none may: every slot is
+    /// taken, said with the line so a person knows whom they wait for, or as
+    /// many runs wait on a person as may.
+    pub fn full(&self) -> Option<String> {
+        if self.taken() {
+            return Some(match self.at_once {
+                0 => "Unattended runs are capped at none at once (unattended.at_once).".to_string(),
+                _ => format!(
+                    "Every slot of unattended runs is taken (unattended.at_once). {}",
+                    self.said()
+                ),
+            });
+        }
+        let cap = self
+            .waiting_cap
+            .filter(|cap| self.waiting >= *cap as usize)?;
+        Some(format!(
+            "{} unattended runs wait on a person, the most allowed at once \
+             (unattended.waiting = {cap}); answering one makes room.",
+            self.waiting
+        ))
+    }
 }
 
 /// How much of its timeout a run has left, counting only the time it spent
