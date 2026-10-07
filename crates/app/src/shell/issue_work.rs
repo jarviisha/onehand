@@ -176,13 +176,11 @@ impl Shell {
             .map(|root| root.path.clone())
             .collect();
         let mut works = crate::task::issue_works(&kept, cx);
-        // Whether a retry with current settings would run an ended task
-        // differently, which only the app can tell: it knows Settings.
+        // Whether a retry with current settings would run an ended task with
+        // another timeout, which only the app can tell: it knows Settings.
         for work in works.iter_mut().filter(|work| !work.work.active()) {
-            let task = crate::task::task(&work.work.task, cx);
-            work.work.settings_moved = task.is_some_and(|task| {
-                matches!(self.plan_current(&task, cx), Some(Ok(plan)) if !plan.changes.is_empty())
-            });
+            work.work.timeout_moved = crate::task::task(&work.work.task, cx)
+                .is_some_and(|task| crate::unattended::timeout_moved(&task, cx));
         }
         let told = (works, offered);
         if told != self.issue_works {

@@ -10,10 +10,13 @@
 use super::{Group, Task, Working};
 use crate::connector::{PrState, PullRequest};
 use crate::issues::IssueKey;
-use crate::workflow::{ApprovalAt, Failure, Outcome, Run, StepKind, Stop};
+use crate::workflow::{Failure, Outcome, Run, StepKind, Stop};
 
 pub mod left;
 pub mod list;
+mod review;
+
+pub use review::{last_lines, UnderReview, ANSWER_LINES};
 
 /// What a task waiting on a person waits for, in the words every view of
 /// it uses: an approval, or an answer to a card.
@@ -112,82 +115,18 @@ pub struct Work {
     pub base: Option<String>,
     /// What it waits for approval on, while it does.
     pub review: Option<UnderReview>,
-    /// What Settings say now differs from what its last run ran with, so a
-    /// retry with current settings would run differently. Told by the app,
-    /// which knows Settings; `false` until it does.
-    pub settings_moved: bool,
-    /// Its last run's workflow answers a pull request review: its status
-    /// checks send back to a step that repairs.
+    /// The timeout a retry with current settings would run with differs
+    /// from the one its last run ran with. Told by the app, which knows
+    /// Settings; `false` until it does.
+    pub timeout_moved: bool,
+    /// A review on its pull request can be answered (`Task::answers_reviews`).
     pub answers_reviews: bool,
-}
-
-/// What a run waiting for approval is judged on, as a review draws it.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct UnderReview {
-    /// The visit a press drawn from this carries.
-    pub at: ApprovalAt,
-    /// The step under review, by label, and the answer it kept.
-    pub of: String,
-    pub answer: String,
-    /// The step approving starts, by label, and what it does; `None` when
-    /// approving ends the run.
-    pub starts: Option<(String, String)>,
-    /// The work as the step under review last found it and left it, as two
-    /// marks: what it changed. `None` until both are pinned.
-    pub span: Option<(String, String)>,
-    /// A command ran since the step under review last started, so a check
-    /// speaks for what it changed.
-    pub checked: bool,
-}
-
-impl UnderReview {
-    /// What *Continue* starts, said beside it.
-    pub fn continue_said(&self) -> String {
-        match &self.starts {
-            Some((label, does)) => format!("Continue starts {label}: {does}"),
-            None => "Continue ends the run".to_string(),
-        }
-    }
-
-    /// What *Revise…* runs again, said beside it.
-    pub fn revise_said(&self) -> String {
-        format!("{} runs again with your note", self.of)
-    }
-}
-
-impl UnderReview {
-    /// What `run` waits for approval on, if it does.
-    pub fn of(run: &Run) -> Option<Self> {
-        under_review(run)
-    }
-}
-
-/// What `run` waits for approval on, if it does.
-fn under_review(run: &Run) -> Option<UnderReview> {
-    let (step, answer) = run.under_review()?;
-    let at = run.approval_at()?;
-    let visits = run.visits();
-    let reviewed = visits.iter().rposition(|visit| visit.step == step.id);
-    let span = reviewed.and_then(|i| visits[i].start.clone().zip(visits[i].end.clone()));
-    let checked = reviewed.is_some_and(|i| visits[i..].iter().any(|v| v.command.is_some()));
-    Some(UnderReview {
-        at,
-        of: step.label.clone(),
-        answer: answer.to_string(),
-        starts: run
-            .template
-            .steps
-            .get(run.step + 1)
-            .map(|next| (next.label.clone(), next.kind.does())),
-        span,
-        checked,
-    })
 }
 
 impl Work {
     /// `task` as its issue's view draws it, given what the app says it is
     /// doing and, when it is queued, the title of the task holding its place.
-    pub(crate) fn of(task: &Task, working: Option<Working>, behind: Option<String>) -> Self {
+    pub fn of(task: &Task, working: Option<Working>, behind: Option<String>) -> Self {
         let run = task.runs.last();
         let stand = stand(task, run, working, behind);
         let said = match (&stand, working) {
@@ -232,12 +171,12 @@ impl Work {
         };
         Self {
             rest,
-            vouched: run.and_then(vouched),
+            vouched: run.and_then(left::vouched),
             review: run
                 .filter(|_| matches!(stand, Stand::Approval { .. }))
-                .and_then(under_review),
-            settings_moved: false,
-            answers_reviews: run.is_some_and(|run| run.template.repair_step().is_some()),
+                .and_then(UnderReview::of),
+            timeout_moved: false,
+            answers_reviews: task.answers_reviews(),
             span: run.and_then(|run| first(run).zip(last(run))),
             base: task.runs.first().and_then(first),
             task: task.id.clone(),
@@ -269,29 +208,6 @@ impl Work {
             Group::Running | Group::Queued | Group::Waiting => true,
             Group::Ended | Group::Finished => false,
         }
-    }
-}
-
-/// What `run`'s check vouches for: its last passed command, as its visit
-/// kept it, or the commit alone for a run from before visits kept one.
-fn vouched(run: &Run) -> Option<left::Vouched> {
-    let kept = run
-        .visits()
-        .iter()
-        .rev()
-        .filter_map(|visit| visit.command.as_ref())
-        .find(|ran| ran.passed);
-    match kept {
-        Some(ran) => Some(left::Vouched {
-            commit: ran.commit.clone()?,
-            digest: ran.digest.clone(),
-            tail: Some(ran.tail.clone()),
-        }),
-        None => Some(left::Vouched {
-            commit: run.marks.verified_at.clone()?,
-            digest: None,
-            tail: None,
-        }),
     }
 }
 
@@ -667,7 +583,7 @@ fn by_stand(work: &Work, around: Around<'_>) -> Next {
         ),
         Stand::TimedOut(said) => {
             // Retry keeps the timeout; a changed one is the other way out.
-            let others: &[Act] = match work.settings_moved {
+            let others: &[Act] = match work.timeout_moved {
                 true => &[Act::RetryCurrent, Act::ShowTask],
                 false => &[Act::ShowTask],
             };

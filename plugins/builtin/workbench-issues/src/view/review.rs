@@ -23,13 +23,14 @@ use gpui_component::{ActiveTheme, Icon, IconName, Sizable as _, StyledExt};
 use onehand_core::issues::template::section;
 use onehand_core::issues::{IssueKey, LocalIssue};
 use onehand_core::task::marks::{self, Change};
-use onehand_core::task::work::{IssueWork, Reading, UnderReview, Work};
+use onehand_core::task::work::{ANSWER_LINES, IssueWork, Reading, UnderReview, Work, last_lines};
+use onehand_core::workflow::CommandResult;
 use onehand_plugin_host::{Request, action, status_ink};
 use std::path::{Path, PathBuf};
 
-/// How many lines of the answer are drawn until a person asks for all of
-/// it: its last ones, where an answer ends on what it proposes.
-const ANSWER_LINES: usize = 60;
+/// How many lines of what a check printed are drawn: its last ones, where a
+/// build or a test run says how it ended.
+const CHECK_LINES: usize = 20;
 
 /// How tall the block grows before it scrolls, in rems: the body stays in
 /// reach below it.
@@ -360,12 +361,12 @@ impl IssuesView {
         }
 
         // The answer, its last lines until all of it is asked for.
-        let lines: Vec<&str> = read.answer.lines().collect();
-        let cut = !review.whole && lines.len() > ANSWER_LINES;
-        let shown = match cut {
-            true => lines[lines.len() - ANSWER_LINES..].join("\n"),
-            false => read.answer.clone(),
+        let total = read.answer.lines().count();
+        let (shown, left_out) = match review.whole {
+            true => (read.answer.as_str(), 0),
+            false => last_lines(&read.answer, ANSWER_LINES),
         };
+        let (shown, cut) = (shown.to_string(), left_out > 0);
         block = block.child(match read.answer.trim().is_empty() {
             true => div()
                 .text_color(muted)
@@ -380,7 +381,7 @@ impl IssuesView {
                         action("issue-review-whole")
                             .xsmall()
                             .ghost()
-                            .label(format!("Show all {} lines", lines.len()))
+                            .label(format!("Show all {total} lines"))
                             .on_click(cx.listener(|view, _: &ClickEvent, _, cx| {
                                 view.toggle_review(|review| review.whole = true, cx)
                             })),
@@ -408,9 +409,6 @@ impl IssuesView {
                 files_view(&full, Side::Review, files, dir, Some(span.clone()), cx),
                 cx,
             ));
-            if read.checked {
-                block = block.child(labelled("Check", check_line(&full, work, cx), cx));
-            }
         } else if let Some(why) = review.files.failed.as_deref() {
             block = block.child(labelled(
                 "Changed",
@@ -420,6 +418,12 @@ impl IssuesView {
                     .into_any_element(),
                 cx,
             ));
+        }
+
+        // The check that ran since the step under review began, passed or
+        // failed; none ran after a plan, and none is drawn.
+        if let Some(ran) = &read.ran {
+            block = block.child(labelled("Check", check_line(&full, ran, work, cx), cx));
         }
 
         // How the work will be judged, one click away.
@@ -460,7 +464,7 @@ impl IssuesView {
             );
         }
 
-        block = block.child(answers(review, read, work, cut, lines.len(), cx));
+        block = block.child(answers(review, read, work, cut, total, cx));
         Some(block.into_any_element())
     }
 }
@@ -483,24 +487,49 @@ fn labelled(name: &'static str, value: AnyElement, cx: &Context<IssuesView>) -> 
         .into_any_element()
 }
 
-/// The check, as the full form last read it against the work now.
-fn check_line(full: &Full<'_>, work: Option<&Work>, cx: &Context<IssuesView>) -> AnyElement {
+/// The check that ran since the step under review began: a pass as the
+/// full form last read it against the work now, a failure as it exited, and
+/// either way the last lines it printed.
+fn check_line(
+    full: &Full<'_>,
+    ran: &CommandResult,
+    work: Option<&Work>,
+    cx: &Context<IssuesView>,
+) -> AnyElement {
     let muted = cx.theme().muted_foreground;
-    let said = match work.and_then(|work| full.check_for(work)) {
-        Some(Ok(check)) => check.said(),
-        Some(Err(why)) => format!("could not be read: {why}"),
-        None => "reading…".to_string(),
+    let said = match (ran.passed, ran.exit) {
+        (true, _) => match work.and_then(|work| full.check_for(work)) {
+            Some(Ok(check)) => check.said(),
+            Some(Err(why)) => format!("passed; could not be read against the work now: {why}"),
+            None => "passed; reading it against the work now…".to_string(),
+        },
+        (false, Some(code)) => format!("failed, exiting {code}"),
+        (false, None) => "did not finish".to_string(),
     };
-    let printed = work
-        .and_then(|work| work.vouched.as_ref())
-        .and_then(|vouched| vouched.tail.as_deref())
-        .and_then(|tail| tail.lines().rev().map(str::trim).find(|l| !l.is_empty()))
-        .map(str::to_string);
+    let (printed, left_out) = last_lines(ran.tail.trim_end(), CHECK_LINES);
     div()
         .v_flex()
+        .gap_1()
         .min_w_0()
         .child(div().truncate().child(said))
-        .children(printed.map(|printed| div().truncate().text_color(muted).child(printed)))
+        .when(left_out > 0, |column| {
+            column.child(
+                div()
+                    .text_color(muted)
+                    .child(format!("{left_out} earlier lines not shown")),
+            )
+        })
+        .when(!printed.is_empty(), |column| {
+            column.child(
+                div()
+                    .p_1()
+                    .rounded(cx.theme().radius)
+                    .bg(cx.theme().muted)
+                    .font_family(cx.theme().mono_font_family.clone())
+                    .text_xs()
+                    .children(printed.lines().map(|line| div().child(line.to_string()))),
+            )
+        })
         .into_any_element()
 }
 

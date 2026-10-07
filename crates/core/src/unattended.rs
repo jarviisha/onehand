@@ -17,8 +17,8 @@ use std::time::{Duration, Instant};
 mod report;
 
 pub use report::{
-    could_not_start, pull_request_text, report, review_closed, review_note, review_unanswerable,
-    PendingReport, Verdict,
+    could_not_start, pull_request_text, report, review_closed, review_diverged, review_note,
+    review_unanswerable, PendingReport, Verdict,
 };
 
 /// An issue a run can take.

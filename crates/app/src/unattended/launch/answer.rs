@@ -41,7 +41,7 @@ pub fn answer_review_by_hand(id: String, has_check: bool, window: AnyWindowHandl
     // Judged by its own snapshot and setup, as a Retry is: a review is
     // answered by the task that opened the pull request.
     let mut facts = crate::unattended::task_facts(&task, last.template.clone(), cx);
-    let answers = last.template.repair_step().is_some();
+    let answers = task.answers_reviews();
     let (repo, dir, branch) = (
         task.setup.repo.clone(),
         task.setup.dir.clone(),
@@ -97,9 +97,15 @@ pub fn answer_review_by_hand(id: String, has_check: bool, window: AnyWindowHandl
                 answers,
                 diverged,
             });
-            let found = preflight::preflight(Kind::AnswerReview, &facts);
-            if let Some(block) = found.iter().find(|f| f.blocks) {
-                return warn(window, format!("Not answered: {}", block.text), cx);
+            // Every block is said, not only the first: each is its own thing
+            // to put right before pressing again.
+            let blocks: Vec<String> = preflight::preflight(Kind::AnswerReview, &facts)
+                .into_iter()
+                .filter(|f| f.blocks)
+                .map(|f| f.text)
+                .collect();
+            if !blocks.is_empty() {
+                return warn(window, format!("Not answered: {}", blocks.join(" ")), cx);
             }
             let row = match row {
                 Ok(Some(row)) => row,

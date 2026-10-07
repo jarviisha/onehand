@@ -276,6 +276,8 @@ pub enum ChatPaneEvent {
     DismissTask(String),
     /// Run task `id` again, asking first where from.
     RetryTask(String),
+    /// Run task `id` again with what Settings say now, asking first.
+    RetryTaskCurrent(String),
     /// Answer the review on issue task `id`'s open pull request.
     AnswerReview(String),
     /// Stop task `id`, queued or running.

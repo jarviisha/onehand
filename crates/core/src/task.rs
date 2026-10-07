@@ -215,6 +215,19 @@ impl Task {
         self.runs.last()
     }
 
+    /// Whether a review on its pull request can be answered: an issue's task
+    /// on a branch a forge serves, whose last run's workflow repairs what the
+    /// status checks find, which is where a review is answered from.
+    pub fn answers_reviews(&self) -> bool {
+        self.issue().is_some()
+            && self.setup.forge.is_some()
+            && self.setup.branch.is_some()
+            && self
+                .runs
+                .last()
+                .is_some_and(|run| run.template.repair_step().is_some())
+    }
+
     /// How it stands: its last run's outcome, `None` while that run has not
     /// ended, or stopped by a person when it was called off before any run.
     pub fn outcome(&self) -> Option<Outcome> {

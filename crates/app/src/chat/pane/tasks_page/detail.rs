@@ -2,6 +2,7 @@
 //! what it waits on approval for, its last run's visits with what each kept
 //! and changed, and its earlier runs.
 
+use super::super::step_strip::{open_review_of, open_revise, press_continue};
 use super::super::workspace_page::{card_box, page_card};
 use super::super::{ChatPane, ChatPaneEvent, rel_time};
 use super::{Page, TasksPage, open_session, row_actions, row_said};
@@ -16,7 +17,9 @@ use onehand_core::chat::now_secs;
 use onehand_core::diff::Row as DiffRow;
 use onehand_core::task::Group;
 use onehand_core::task::marks::{self, Change};
-use onehand_core::task::work::UnderReview;
+use onehand_core::task::work::{
+    ANSWER_LINES, Act, Around, PrSeen, UnderReview, Work, last_lines, next_action,
+};
 use onehand_core::workflow::{CommandResult, Run, Visit};
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
@@ -27,8 +30,8 @@ const VISITS_SHOWN: usize = 100;
 /// How many changed files a visit lists.
 const FILES_SHOWN: usize = 100;
 
-/// How many lines of a visit's output, or of an answer awaiting approval,
-/// are drawn: their last ones, where an output says how it ended.
+/// How many lines of a visit's output are drawn: their last ones, where an
+/// output says how it ended.
 const OUTPUT_LINES: usize = 60;
 
 /// How many lines of one file's diff are drawn.
@@ -222,6 +225,9 @@ pub(super) fn task_detail(
     };
     if let Some(review) = UnderReview::of(last) {
         out.push(review_card(&task.id, row, &review, cx));
+    }
+    if row.group == Group::Ended {
+        out.extend(way_out(task, cx));
     }
     // Only a task at work has a visit under way: an open visit of any other
     // was cut off, by a quit or a lost session, before it could end.
@@ -506,18 +512,56 @@ fn visit_body(
     out
 }
 
-/// Whether `task` may answer a review on its pull request: an issue's task
-/// whose last run is done, on a branch a forge serves, with a workflow that
-/// repairs from its status checks. Whether a pull request is open there is
-/// the preflight's to read when it is pressed.
+/// Whether `task` may answer a review on its pull request: one that can
+/// (`Task::answers_reviews`), whose last run is done having opened a pull
+/// request. Whether it is still open is the preflight's to read when pressed.
 fn answers_review(task: &onehand_core::task::Task) -> bool {
-    task.issue().is_some()
-        && task.setup.forge.is_some()
-        && task.setup.branch.is_some()
+    task.answers_reviews()
         && task.runs.last().is_some_and(|run| {
-            run.outcome == Some(onehand_core::workflow::Outcome::Done)
-                && run.template.repair_step().is_some()
+            run.outcome == Some(onehand_core::workflow::Outcome::Done) && run.pull_request.is_some()
         })
+}
+
+/// An ended task's way out, as its issue says it (`next_action`): why it
+/// ended, and the ways out the head's actions do not already offer, the one
+/// that fits first.
+fn way_out(
+    task: &onehand_core::task::Task,
+    cx: &mut Context<ChatPane>,
+) -> Option<gpui::AnyElement> {
+    let mut work = Work::of(task, None, None);
+    work.timeout_moved = crate::unattended::timeout_moved(task, cx);
+    let around = Around {
+        open: true,
+        can_start: false,
+        session: false,
+        pr: PrSeen::Unread,
+        now: now_secs(),
+    };
+    let next = next_action(Some(&work), around);
+    let said = next.said?;
+    let offered: Vec<Act> = next
+        .primary
+        .into_iter()
+        .chain(next.secondary)
+        .filter(|act| matches!(act, Act::RetryCurrent))
+        .collect();
+    let buttons = offered.into_iter().map(|act| {
+        let button = crate::controls::action(SharedString::from(format!("task-way-{act:?}")))
+            .small()
+            .label(act.label());
+        let button = match Some(act) == next.primary {
+            true => button.primary(),
+            false => button.ghost(),
+        };
+        button.on_click(super::emit(&task.id, cx, ChatPaneEvent::RetryTaskCurrent))
+    });
+    Some(
+        page_card("Way out", None, None, cx)
+            .child(div().text_sm().child(said))
+            .child(div().h_flex().gap_2().children(buttons))
+            .into_any_element(),
+    )
 }
 
 /// What the task's run waits for approval on: the answer, what each answer
@@ -530,17 +574,18 @@ fn review_card(
 ) -> gpui::AnyElement {
     let muted = cx.theme().muted_foreground;
     let open = open_session("task-review-open", row, cx).map(IntoElement::into_any_element);
+    let (shown, left_out) = last_lines(&review.answer, ANSWER_LINES);
     let said = match review.answer.trim().is_empty() {
         true => vec![muted_line("The step kept no answer.", cx)],
-        false => mono_well(&review.answer, cx),
+        false => mono_well(shown, cx),
     };
     let lines = review.answer.lines().count();
-    let cut = (lines > OUTPUT_LINES).then(|| {
+    let cut = (left_out > 0).then(|| {
         div()
             .text_xs()
             .text_color(crate::theme::status_ink(cx).warning)
             .child(format!(
-                "Showing the last {OUTPUT_LINES} of {lines} lines; Review… opens all of it."
+                "Showing the last {ANSWER_LINES} of {lines} lines; Review… opens all of it."
             ))
     });
     let pane = cx.entity().downgrade();
@@ -571,13 +616,7 @@ fn review_card(
                     .on_click({
                         let pane = pane.clone();
                         move |_, window, cx| {
-                            super::super::step_strip::open_review_of(
-                                &on_read,
-                                pane.clone(),
-                                read.clone(),
-                                window,
-                                cx,
-                            )
+                            open_review_of(&on_read, pane.clone(), read.clone(), window, cx)
                         }
                     }),
             ),
@@ -588,7 +627,7 @@ fn review_card(
                 .small()
                 .label("Revise…")
                 .on_click(cx.listener(move |_, _, window, cx| {
-                    super::super::step_strip::open_revise(&on_revise, revise_at.clone(), window, cx)
+                    open_revise(&on_revise, revise_at.clone(), window, cx)
                 })),
             review.revise_said(),
         ))
@@ -599,13 +638,7 @@ fn review_card(
                 .icon(Icon::new(IconName::Check))
                 .label("Continue")
                 .on_click(move |_, window, cx| {
-                    super::super::step_strip::press_continue(
-                        &on_continue,
-                        pane.clone(),
-                        &continue_at,
-                        window,
-                        cx,
-                    )
+                    press_continue(&on_continue, pane.clone(), &continue_at, window, cx)
                 }),
             review.continue_said(),
         ))

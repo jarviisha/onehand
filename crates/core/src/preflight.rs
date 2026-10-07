@@ -412,11 +412,7 @@ fn review_refused(review: &ReviewFacts, forge: bool) -> Option<String> {
             "its pull request {url} was merged: there is no review left to answer"
         )),
         PrState::Open if !review.answers => Some(crate::unattended::review_unanswerable(url)),
-        PrState::Open if review.diverged => Some(
-            "the branch on the forge went its own way from the task's worktree, and onehand \
-             does not push over it"
-                .to_string(),
-        ),
+        PrState::Open if review.diverged => Some(crate::unattended::review_diverged()),
         PrState::Open => None,
     }
 }

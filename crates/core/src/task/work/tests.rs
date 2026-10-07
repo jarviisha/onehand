@@ -56,6 +56,23 @@ pub(super) fn branch_flow() -> Template {
     template
 }
 
+/// `task` as an issue's task, issue #3 of a local file.
+pub(super) fn on_issue(mut task: Task) -> Task {
+    task.source = super::super::Source::Issue(crate::unattended::IssueSource {
+        tracker: crate::unattended::TrackerRef::Local {
+            file: PathBuf::from("/repo/issues.toml"),
+        },
+        number: 3,
+        forge_ref: None,
+        forge: task.setup.forge.clone(),
+        base: "origin/main".into(),
+        picked: false,
+        unsent: Vec::new(),
+        notes: Vec::new(),
+    });
+    task
+}
+
 pub(super) fn task(id: &str, template: Template, forge: Option<&str>) -> Task {
     Task::new(
         id.into(),
@@ -332,7 +349,7 @@ fn an_exhausted_or_timed_out_run_says_where_and_what_its_last_visit_ended_on() {
     );
     // With the timeout on offer changed since, the second way is offered.
     let mut work = Work::of(&task, None, None);
-    work.settings_moved = true;
+    work.timeout_moved = true;
     assert_eq!(
         acts(&next_action(Some(&work), open())),
         (
@@ -383,7 +400,7 @@ fn a_failed_run_says_why_and_offers_the_way_out_that_fits() {
 #[test]
 fn a_done_run_with_its_pull_request_open_is_reviewed_on_the_forge() {
     let task = ended(
-        at(task("1", forge_flow(), Some("GitHub")), 6, 900),
+        at(on_issue(task("1", forge_flow(), Some("GitHub"))), 6, 900),
         Outcome::Done,
         None,
     );
@@ -811,15 +828,7 @@ fn a_check_vouches_only_for_the_work_it_passed_on() {
 /// command printed; a run from before part B has the commit alone.
 #[test]
 fn the_check_shown_is_the_last_passed_command() {
-    let mut task = task("1", branch_flow(), None);
-    let run = task.runs.last_mut().unwrap();
-    run.marks.verified_at = Some("abc".into());
-    let work = Work::of(&task, None, None);
-    let vouched = work.vouched.clone().unwrap();
-    assert_eq!((vouched.commit.as_str(), vouched.digest), ("abc", None));
-
-    let run = task.runs.last_mut().unwrap();
-    run.visits.push(Visit {
+    let verify = |command: Option<crate::workflow::CommandResult>| Visit {
         id: 9,
         step: "verify".into(),
         started_at: 1,
@@ -828,14 +837,29 @@ fn the_check_shown_is_the_last_passed_command() {
         end: None,
         output: None,
         why: None,
-        command: Some(crate::workflow::CommandResult {
+        command,
+    };
+    // A retry carries the commit the last run's check passed on, for its
+    // push; no command has run in it, so its check is not recorded.
+    let mut task = task("1", branch_flow(), None);
+    task.runs[0].marks.verified_at = Some("abc".into());
+    assert_eq!(Work::of(&task, None, None).vouched, None);
+
+    // A run from before results were kept ran its command and kept the
+    // commit alone.
+    task.runs[0].visits.push(verify(None));
+    let vouched = Work::of(&task, None, None).vouched.unwrap();
+    assert_eq!((vouched.commit.as_str(), vouched.digest), ("abc", None));
+
+    task.runs[0]
+        .visits
+        .push(verify(Some(crate::workflow::CommandResult {
             passed: true,
             exit: Some(0),
             tail: "all 12 passed".into(),
             commit: Some("abc".into()),
             digest: Some("d1".into()),
-        }),
-    });
+        })));
     let vouched = Work::of(&task, None, None).vouched.unwrap();
     assert_eq!(vouched.digest.as_deref(), Some("d1"));
     assert_eq!(vouched.tail.as_deref(), Some("all 12 passed"));
@@ -881,7 +905,37 @@ fn an_approval_says_what_is_reviewed_and_what_each_answer_starts() {
     );
     assert_eq!(review.revise_said(), "Plan runs again with your note");
     assert_eq!(review.span, Some(("m1".to_string(), "m2".to_string())));
-    assert!(!review.checked, "no command ran since the plan started");
+    assert_eq!(review.ran, None, "no command ran since the plan started");
+
+    // A command that ran since the step under review began is what its
+    // check says, failed as well as passed.
+    let mut checked = task.clone();
+    let failed = crate::workflow::CommandResult {
+        passed: false,
+        exit: Some(2),
+        tail: "1 test failed".into(),
+        commit: Some("a".into()),
+        digest: None,
+    };
+    let at = checked.runs[0].visits.len() - 1;
+    checked.runs[0].visits.insert(
+        at,
+        Visit {
+            id: 99,
+            step: "verify".into(),
+            started_at: 1,
+            ended_at: Some(2),
+            start: None,
+            end: None,
+            output: None,
+            why: None,
+            command: Some(failed.clone()),
+        },
+    );
+    let review = Work::of(&checked, Some(Working::Waiting), None)
+        .review
+        .unwrap();
+    assert_eq!(review.ran, Some(failed));
 
     // Nothing is under review once the run moved on, or for a run that is
     // not waiting.
@@ -929,4 +983,14 @@ fn a_step_says_what_it_does() {
         StepKind::PullRequest.does(),
         "onehand opens a draft pull request"
     );
+}
+
+/// An answer is drawn by its last lines, saying how many it left out.
+#[test]
+fn an_answer_is_cut_to_its_last_lines() {
+    let long: String = (1..=70).map(|n| format!("line {n}\n")).collect();
+    let (shown, left_out) = last_lines(&long, ANSWER_LINES);
+    assert_eq!(left_out, 10);
+    assert!(shown.starts_with("line 11\n"));
+    assert_eq!(last_lines("short", ANSWER_LINES), ("short", 0));
 }

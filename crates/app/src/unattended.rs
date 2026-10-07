@@ -553,6 +553,20 @@ pub(crate) fn now_for(
     }
 }
 
+/// Whether a retry of `task` with current settings would run with another
+/// timeout than its last run did: when a run that timed out is offered that
+/// second way out.
+pub(crate) fn timeout_moved(task: &onehand_core::task::Task, cx: &App) -> bool {
+    let Some(last) = task.runs.last() else {
+        return false;
+    };
+    // The check command moves no timeout, so it is not asked for.
+    let now = now_for(task, None, cx);
+    let newest = crate::workflow::newest(&last.template, cx);
+    onehand_core::workflow::Run::with_current(last, newest, &now)
+        .is_ok_and(|plan| plan.changes.iter().any(|change| change.what == "Timeout"))
+}
+
 /// The default workflow and the workflow labels, as the config has them.
 pub fn workflows(cx: &App) -> (String, BTreeMap<String, String>) {
     Shared::global(cx)

@@ -99,11 +99,7 @@ pub(super) fn earlier(cx: &App) -> Vec<Earlier> {
             dir: task.setup.dir.clone(),
             branch: task.setup.branch.clone()?,
             working,
-            answers_reviews: task.setup.forge.is_some()
-                && task
-                    .runs
-                    .last()
-                    .is_some_and(|run| run.template.repair_step().is_some()),
+            answers_reviews: task.answers_reviews(),
         })
     })
 }
@@ -461,7 +457,11 @@ fn prepare_blocking(
                 if let Some(forge) = forge {
                     forge.fetch_blocking(&repo, &branch)?;
                 }
-                worktree::fast_forward_blocking(&dir, &format!("origin/{branch}"))?;
+                let theirs = format!("origin/{branch}");
+                if !worktree::fast_forwards_blocking(&dir, &theirs)? {
+                    return Err(core::review_diverged());
+                }
+                worktree::fast_forward_blocking(&dir, &theirs)?;
                 return Ok(Work::Review { task, note });
             }
             Taking::Fresh => {}

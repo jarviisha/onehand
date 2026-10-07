@@ -241,7 +241,7 @@ impl StepKind {
 
     /// What the step does, as a person deciding whether to start it reads
     /// it: *the agent changes the code*, *onehand runs the check command*.
-    pub fn does(&self) -> String {
+    pub(crate) fn does(&self) -> String {
         match self {
             Self::Agent { gates, .. } => {
                 let changes = gates.iter().any(|gate| match gate {

@@ -331,7 +331,7 @@ impl Run {
 
     /// What the run failed on, once it ended failed; a run from before the
     /// kind was kept failed on something other.
-    pub fn failed_on(&self) -> Option<Failure> {
+    pub(crate) fn failed_on(&self) -> Option<Failure> {
         match self.outcome {
             Some(Outcome::Failed(_)) => Some(self.failure.unwrap_or(Failure::Other)),
             Some(Outcome::Done | Outcome::Stopped(_) | Outcome::Exhausted { .. }) | None => None,

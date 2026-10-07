@@ -19,7 +19,7 @@ impl Run {
     /// Every point a mark is pinned at, in order: each visit's start, then
     /// its end once it has one. Only ever grows at its end, so a count of
     /// how many were pinned stays true.
-    pub fn boundaries(&self) -> Vec<(u32, bool)> {
+    pub(crate) fn boundaries(&self) -> Vec<(u32, bool)> {
         self.visits
             .iter()
             .flat_map(|visit| {

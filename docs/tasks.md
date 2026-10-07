@@ -39,7 +39,11 @@ running, what needs me, and what has finished.
 go back. It shows:
 
 - **a head**: the title, the row's muted line, and the row's actions, plus *Retry* on a finished
-  task;
+  task, and *Answer the pull request review* on an issue's task that can answer one, done with a
+  pull request it opened;
+- **Way out**, on an ended task: why it ended and the way out that fits, in the issue's words
+  (`next_action`), with *Retry with current settings…* when that is a way out (first for a
+  configuration failure);
 - **Awaiting approval**, while the last run waits on one: its answer (its last 60 lines, said
   when cut, *Review…* opening all of it), *Revise…* and *Continue* each beside what it starts, and
   *Open session*. It is answered here as on the strip, through the same call: each press carries
@@ -216,8 +220,9 @@ the commit the last check passed on. Enter in the dialog retries as *Retry* does
 offer by its id (`crate::workflow::newest`) and what a new task of its kind takes now
 (`workflow::Now`, from `unattended::now_for`): what changes, the setup, and the start.
 `Task::retry_with` pushes that run, and `Shell::begin_retry_current` asks first. The Issues views
-are told, per ended task, whether Settings now differ from its last run (`Work::settings_moved`),
-which is when a timed out run is offered the second way out.
+and the task detail are told, per ended task, whether the timeout it would run with now differs
+from its last run's (`Work::timeout_moved`, from `unattended::timeout_moved`), which is when a
+timed out run is offered the second way out.
 
 ## The architecture
 

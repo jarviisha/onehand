@@ -297,7 +297,8 @@ next action in one sentence, and its one primary action, all three lines kept
 whatever the state. What to say and offer is core's `next_action`, the rule
 beside the group rule in [tasks.md](tasks.md). *Review…* opens the review
 block on the Issues page, below where the work stands: the answer, what the
-step under review changed, the check when a command ran since, the issue's
+step under review changed, the check that ran since (passed or failed, with
+the last lines it printed), the issue's
 acceptance, and *Revise…* and *Continue*, each saying what it starts
 (`UnderReview`, read from the run). In the tab it opens the issue on the page
 with its block open; the review is never drawn at the dock's width. A press
@@ -722,10 +723,12 @@ worktree still fast-forwards to the branch on the forge
 (`worktree::fast_forwards_blocking`, after a fetch). The preflight, kind
 *Answer a pull request review* (`preflight::ReviewFacts`), judges that on the
 task's own snapshot and setup, and **its refusals come before the claim**, in
-the label path's words (`core::review_unanswerable`, `core::review_closed`): no
-forge, no status checks step to repair from, the pull request closed unmerged
-or merged or not there, the branch gone its own way. One is said in the window
-as *Not answered: …*, and nothing is claimed. Otherwise the issue is picked as a
+the label path's words (`core::review_unanswerable`, `core::review_closed`,
+`core::review_diverged`, which the label path now checks before it
+fast-forwards): no forge, no status checks step to repair from, the pull
+request closed unmerged or merged or not there, the branch gone its own way.
+Every one found is said in the window as *Not answered: …*, and nothing is
+claimed. Otherwise the issue is picked as a
 person picks one (`start_picked`, with its cap and its claim comment), which
 finds the open pull request and answers it as above. The trigger label keeps
 working.

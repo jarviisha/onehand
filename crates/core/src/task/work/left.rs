@@ -4,6 +4,7 @@
 
 use super::Work;
 use crate::task::marks::{self, Change};
+use crate::workflow::{Run, StepKind};
 use crate::worktree;
 
 /// How a run's check stands against the work as it is now.
@@ -162,4 +163,42 @@ impl Work {
         let last = self.span.as_ref().map(|(_, last)| last.clone());
         self.started_from().zip(last)
     }
+}
+
+/// What `run`'s check vouches for: its last passed command, as its visit
+/// kept it, or the commit alone for a run from before visits kept one.
+pub(crate) fn vouched(run: &Run) -> Option<Vouched> {
+    let kept = run
+        .visits()
+        .iter()
+        .rev()
+        .filter_map(|visit| visit.command.as_ref())
+        .find(|ran| ran.passed);
+    if let Some(ran) = kept {
+        return Some(Vouched {
+            commit: ran.commit.clone()?,
+            digest: ran.digest.clone(),
+            tail: Some(ran.tail.clone()),
+        });
+    }
+    // The commit alone, only for a run that ran a command step before its
+    // visits kept how one came out. A retry carries the last run's commit
+    // for its push, and a run that has not checked anything yet must not
+    // read as checked.
+    let ran_unkept =
+        run.visits().iter().any(|visit| {
+            visit.ended_at.is_some()
+                && visit.command.is_none()
+                && run.template.steps.iter().any(|step| {
+                    step.id == visit.step && matches!(step.kind, StepKind::Command { .. })
+                })
+        });
+    if !ran_unkept {
+        return None;
+    }
+    Some(Vouched {
+        commit: run.marks.verified_at.clone()?,
+        digest: None,
+        tail: None,
+    })
 }

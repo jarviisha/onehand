@@ -182,7 +182,8 @@ monospace font.
     *Close* or by picking another issue. In a hairline box that scrolls past its cap: *Review:
     <step>*, the answer (its last 60 lines with *Show all N lines*), what the step under review
     changed with each file opening its diff (drawn only when it changed something), the check
-    when a command ran since (drawn with the files), the issue's *Acceptance* collapsed, then
+    when a command ran since (passed or failed, with its last 20 lines in a mono well), the
+    issue's *Acceptance* collapsed, then
     *Revise…* and *Continue* (the one primary), each beside what it starts: *Plan runs again
     with your note*, *Continue starts Implement: the agent changes the code*. A cut answer says
     *Showing the last 60 of N lines.* above them in the warning ink. *Revise…* writes its note in
@@ -191,6 +192,8 @@ monospace font.
     block, saying *The answer changed since you opened it.*
   - The task detail's *Awaiting approval* draws the same answer, what each answer starts, and
     *Review…*, *Revise…* and *Continue* through the same guarded call as the strip.
+    An ended task's detail draws *Way out*: why it ended in the issue's words, and *Retry with
+    current settings…* when that fits, primary for a configuration failure.
 - **No top bar, no status bar, no right toolbar.** Transient status goes in a toast. Modals are
   `Dialog`s. Settings is a large dialog: a nav column with Appearance, Workspace, Agents,
   Connections, Workflows and Shortcuts. Groups are separated by hairlines, not boxes.

@@ -51,6 +51,14 @@ pub fn review_closed(pr: &str) -> String {
     )
 }
 
+/// Why a review is not answered: the branch on the forge, which a reviewer
+/// may have pushed to, went its own way from the task's worktree.
+pub fn review_diverged() -> String {
+    "the branch on the forge went its own way from the task's worktree, and onehand does \
+     not push over it"
+        .to_string()
+}
+
 /// How one run of an issue's task ended, kept until the issue is told. What
 /// the run left on its branch is looked up when it is sent, so keeping it
 /// asks nothing of the network and lands before anything can be lost.
