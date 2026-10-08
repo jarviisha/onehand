@@ -128,7 +128,7 @@ impl Labs {
 
         // A project and its sessions leave together when it is deleted.
         let first = v_flex()
-            .gap(rems(TIGHT * 0.5))
+            .gap(rems(ROW_GAP))
             .child(project(self, cx, 0, true))
             .child(session(
                 cx,
@@ -193,7 +193,7 @@ impl Labs {
             .child(
                 v_flex()
                     .px(rems(CONTROL))
-                    .gap(rems(TIGHT * 0.5))
+                    .gap(rems(ROW_GAP))
                     .child(nav(
                         cx,
                         Page::Overview,
@@ -228,7 +228,7 @@ impl Labs {
                     .flex_1()
                     .overflow_y_scroll()
                     .p(rems(CONTROL))
-                    .gap(rems(TIGHT * 0.5))
+                    .gap(rems(ROW_GAP))
                     .when(kept(0), |d| d.child(first))
                     .when(kept(1), |d| d.child(project(self, cx, 1, false))),
             )

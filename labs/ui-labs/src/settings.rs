@@ -92,7 +92,7 @@ impl Labs {
         let nav = v_flex()
             .w(rems(SETTINGS_NAV))
             .flex_none()
-            .gap(rems(TIGHT * 0.5))
+            .gap(rems(ROW_GAP))
             .children(SECTIONS.iter().map(|&(sec, label)| {
                 let on = sec == s.section;
                 h_flex()
@@ -248,7 +248,7 @@ impl Labs {
                     p,
                     "Check command",
                     "Run after a step that changed files, and by Run check on a project with no session.",
-                    div().w(rems(FORM_STACK * 0.5)).child(Input::new(&s.check).small()),
+                    div().w(rems(FIELD_W)).child(Input::new(&s.check).small()),
                     stacked,
                 ))
                 .child(form_row(
@@ -394,7 +394,7 @@ fn form_row(
     let text = v_flex()
         .flex_1()
         .min_w_0()
-        .gap(rems(TIGHT * 0.5))
+        .gap(rems(SUBLINE))
         .child(div().text_color(p.text).child(label))
         .when(!description.is_empty(), |d| {
             d.child(
@@ -430,8 +430,8 @@ fn segmented(
 ) -> gpui::Div {
     let pick = Rc::new(pick);
     h_flex()
-        .p(rems(TIGHT * 0.5))
-        .gap(rems(TIGHT * 0.5))
+        .p(rems(ROW_GAP))
+        .gap(rems(ROW_GAP))
         .rounded(rems(RADIUS_SM))
         .border_1()
         .border_color(p.control)

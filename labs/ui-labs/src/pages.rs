@@ -160,7 +160,7 @@ impl Labs {
             .rounded_full()
             .border_1()
             .border_color(if fill.is_some() {
-                ink.opacity(0.0)
+                gpui::transparent_black()
             } else {
                 p.control
             })
@@ -595,7 +595,7 @@ impl Labs {
                                 .id(i)
                                 .px(rems(RELATED))
                                 .py(rems(CONTROL))
-                                .gap(rems(TIGHT * 0.5))
+                                .gap(rems(SUBLINE))
                                 .border_b_1()
                                 .border_color(p.hairline)
                                 .when(picked == Some(i), |d| d.bg(p.selected))

@@ -79,9 +79,9 @@ impl Labs {
                         d.child(
                             div()
                                 .absolute()
-                                .top(rems(TIGHT * 0.5))
-                                .right(rems(TIGHT * 0.5))
-                                .size(rems(DOT * 0.75))
+                                .top(rems(BADGE_INSET))
+                                .right(rems(BADGE_INSET))
+                                .size(rems(BADGE_DOT))
                                 .rounded_full()
                                 .bg(p.accent),
                         )

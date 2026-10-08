@@ -74,7 +74,7 @@ pub(super) const PLACEHOLDER: &str = "Ask the agent…";
 /// caret.
 pub(super) fn card(p: &Palette, focused: bool) -> gpui::Div {
     v_flex()
-        .rounded(rems(RADIUS_MD))
+        .rounded(rems(RADIUS_LG))
         .border_1()
         .border_color(if focused { p.muted } else { p.control })
         .bg(p.panel)
@@ -399,7 +399,7 @@ impl Labs {
             h_flex()
                 .gap(rems(CONTROL))
                 .text_color(ink)
-                .child(div().w(rems(ICON_SM)).child(sign))
+                .child(sign)
                 .child(text)
         };
         Self::pinned(
@@ -469,7 +469,7 @@ impl Labs {
                     .child("1 of 2"),
             );
         let rows = v_flex()
-            .gap(rems(TIGHT * 0.5))
+            .gap(rems(ROW_GAP))
             .children(options.iter().enumerate().map(|(i, (label, why))| {
                 let on = self.choice == i;
                 h_flex()
@@ -535,7 +535,7 @@ impl Labs {
             "Docs examples",
         ];
         let rows = v_flex()
-            .gap(rems(TIGHT * 0.5))
+            .gap(rems(ROW_GAP))
             .children(options.iter().enumerate().map(|(i, label)| {
                 let on = self.picks[i];
                 h_flex()
