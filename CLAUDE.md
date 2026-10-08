@@ -57,6 +57,8 @@ Availability or installation does not authorize a skill's side effects.
 | Tool or workflow | Fit for this repository |
 |---|---|
 | `design-contract` | Required reading for visible changes; follow the existing GPUI theme and components. |
+| `gpui-ui` | Any view, panel, card, popup, dialog, token or theme change, app or lab: which `DESIGN.md` binds, where values come from, what already draws it, and the review checklist. |
+| `ui-promote` | Moving a proven `labs/ui-labs` idea into `crates/app`, one per pull request, and re-seeding the lab's `Cargo.lock` after a gpui bump. |
 | Matt Pocock review, debugging, domain modeling | Use for the requested concern; keep the existing glossary and document ownership. Tracker/triage workflows publish to this repository's GitHub issues: a spec gets `ready-for-agent`, never `auto` (the trigger label: an unattended run would claim it). A proposal under `docs/proposals/` keeps its own table of which step has a spec. |
 | Matt Pocock `setup-pre-commit`, TypeScript setup | Do not apply npm/Husky/Prettier or TypeScript defaults to this Rust workspace. Use the Makefile and Cargo checks. |
 | `ponytail` | Simplify within the requested behaviour. Preserve the module seams, guards, rendering bounds and deliberate exceptions; fewer files is not a reason to bypass them. |
@@ -68,6 +70,8 @@ Availability or installation does not authorize a skill's side effects.
 ```bash
 cargo run [-- /path/to/project]  # the app; the arg seeds the workspace's first project
 make dev [ROOT=/path]            # a debug build beside the app in use, data root ~/onehand-dev
+make showcase                    # the app on scratch projects + the Mock UI agent, data root ~/onehand-showcase
+make labs                        # labs/ui-labs: proposed UI on static data; outside the workspace and CI
 cargo check                      # fast type-check
 cargo test                       # everything; `cargo test <substring>` for one test
 cargo test -p onehand-core       # core only (fast, no GUI)
