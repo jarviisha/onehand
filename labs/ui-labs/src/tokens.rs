@@ -6,7 +6,7 @@
 //! chat's minimum width scale with it.
 //!
 //! Some values are not drawn by any screen here yet; they are kept because the
-//! screens still to come (see the README's backlog) are specified in them.
+//! screens still to come (see the backlog in DESIGN.md) are specified in them.
 #![allow(dead_code)]
 
 use gpui::{Hsla, rgb, rgba};
@@ -39,6 +39,13 @@ pub const ROW_H: f32 = 1.875;
 /// Buttons, inputs, tabs.
 pub const CONTROL_H: f32 = 1.75;
 pub const CONTROL_H_SM: f32 = 1.5;
+/// A chip's inset on the composer, and the card's own: the app's, so the lab's
+/// composer stands at the app's size.
+pub const CHIP_PAD_X: f32 = 0.375;
+pub const COMPOSER_PAD: f32 = 0.375;
+/// The `+` glyph: larger than a chip's word, because it is aimed at by its
+/// shape alone, and still under `CONTROL_H_SM` so the row's height holds.
+pub const PLUS_ICON: f32 = 1.25;
 /// A tab never grows past this; a longer name truncates.
 pub const TAB_MAX_W: f32 = 10.0;
 
@@ -65,6 +72,19 @@ pub const TEXT_READ_XS: f32 = 0.75;
 pub const LEADING_UI: f32 = 1.45;
 pub const LEADING_READ: f32 = 1.6;
 pub const LEADING_DOC: f32 = 1.65;
+/// The reading zoom: one step per key press, snapped so stepping up and back
+/// returns to exactly 1, and bounded both ways.
+pub const ZOOM_STEP: f32 = 0.1;
+pub const ZOOM_MIN: f32 = 0.7;
+pub const ZOOM_MAX: f32 = 2.0;
+
+// ---- lines: device pixels on purpose --------------------------------------
+
+/// A hairline is a property of the screen, not of the reading size, so it is
+/// the one length given in pixels; gpui rounds it up to one device pixel.
+pub const HAIRLINE_PX: f32 = 0.5;
+/// A seam's line while it is being dragged.
+pub const SEAM_DRAG_PX: f32 = 2.0;
 
 // ---- marks ----------------------------------------------------------------
 
@@ -91,6 +111,8 @@ pub const RADIUS_XL: f32 = 0.75;
 
 // ---- width budgets, measured after the rail -------------------------------
 
+/// How wide a seam is to grab. The line drawn in it stays a hairline.
+pub const SEAM_GRAB_W: f32 = 0.375;
 /// The rail resizes between these; it hides completely, never to icons.
 pub const RAIL_W: f32 = 14.5;
 pub const RAIL_MAX_W: f32 = 20.0;
@@ -103,8 +125,15 @@ pub const READ_MAX: f32 = 44.0;
 pub const DOCK_MIN: f32 = 24.0;
 /// The Workbench's opening width; below it the mode strip becomes a select.
 pub const DOCK_PREF: f32 = 30.0;
-/// The terminal's opening height.
+/// The terminal's opening height, and the least it is drawn at.
 pub const TERM_H: f32 = 15.0;
+pub const TERM_MIN_H: f32 = 6.0;
+/// What the conversation always keeps above the terminal: enough to read a
+/// few lines and reach the composer.
+pub const READING_MIN_H: f32 = 16.0;
+/// How much more room a split needs to come back than to hold, so a window
+/// resting on the threshold does not flicker between presentations.
+pub const SPLIT_SLACK: f32 = 1.0;
 /// A list beside its detail: side by side only when the container holds
 /// `LIST_W + DETAIL_MIN`, else one at a time under a labelled back link.
 pub const LIST_W: f32 = 12.0;
@@ -121,9 +150,14 @@ pub const SETTINGS_NAV: f32 = 11.0;
 /// A form's width, and below `FORM_STACK` a row's label stacks over its control.
 pub const FORM_MAX: f32 = 40.0;
 pub const FORM_STACK: f32 = 32.0;
-/// The composer and everything pinned on it share this width.
-pub const COMPOSER_MAX: f32 = 40.0;
-/// Below this the composer's context strip takes two lines.
+/// The composer, everything pinned on it and the popups opening from it share
+/// this width, so the stack reads as one object rather than panels that fail
+/// to line up. The same cap as the app's composer: a message being written is
+/// a few lines and one row of controls, and much wider than this those
+/// controls end up a hand's width apart with nothing between them.
+pub const COMPOSER_MAX: f32 = 44.0;
+/// Below this the strip under the composer takes two lines, the branch over
+/// the mode.
 pub const COMPOSER_SPLIT: f32 = 36.0;
 /// The user's bubble, so a long prompt wraps well short of the left axis.
 pub const BUBBLE_MAX: f32 = 28.0;
@@ -136,11 +170,26 @@ pub const STACK_GAP: f32 = 0.625;
 pub const TILE_W: f32 = 14.0;
 /// A dialog never widens past this; a long name wraps in its body.
 pub const DIALOG_MAX: f32 = 28.0;
+/// A popup's inner padding, around its header, rows and footer.
+pub const POPUP_INSET: f32 = 0.375;
+/// The composer cards gallery: a stack plus its specimen frame.
+pub const GALLERY_MAX: f32 = 48.0;
 /// A popup opening from a chip, rather than spanning the composer.
 pub const MENU_W: f32 = 17.0;
 pub const MENU_WIDE_W: f32 = 20.0;
 /// Rows a popup shows before it says how many more there are.
 pub const POPUP_LIST_CAP: usize = 6;
+
+// ---- state steps for filled controls -------------------------------------
+
+/// How far a filled control's hover moves away from the surface, and its press.
+pub const HOVER_STEP: f32 = 0.12;
+pub const PRESS_STEP: f32 = 0.2;
+/// The solid danger fill darkens in both modes, so white stays legible on it.
+pub const DANGER_HOVER_STEP: f32 = 0.06;
+pub const DANGER_PRESS_STEP: f32 = 0.12;
+/// Selected text: the accent, thinned so the text under it still reads.
+pub const SELECTION_ALPHA: f32 = 0.25;
 
 // ---- colour ---------------------------------------------------------------
 
@@ -235,8 +284,11 @@ pub fn dark() -> Palette {
         muted: c(0x8C8A83),
         hairline: ca(0xB4B2A933),
         control: ca(0xB4B2A952),
-        selected: ca(0xECEAE312),
-        chip_on: ca(0xECEAE324),
+        // Thicker than the light set's: a light tint on a dark surface shows
+        // far less than the same share of ink on white, and at the light
+        // set's share a ghost button's hover vanished on `panel`.
+        selected: ca(0xECEAE31F),
+        chip_on: ca(0xECEAE333),
         accent: c(0x85B7EB),
         accent_bg: ca(0x378ADD2E),
         warning: c(0xFAC775),

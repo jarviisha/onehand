@@ -30,6 +30,10 @@ impl Labs {
                 "Composer cards",
                 self.composer_gallery(p, cx).into_any_element(),
             ),
+            Page::Settings => (
+                "Settings",
+                self.settings_page(p, avail, cx).into_any_element(),
+            ),
             Page::Chat => unreachable!("the chat is not a page"),
         };
         v_flex()
@@ -45,10 +49,11 @@ impl Labs {
                     .border_color(p.hairline)
                     .child(div().flex_1().font_medium().text_color(p.text).child(title))
                     .child(
-                        Button::new("theme-page")
+                        action("theme-page")
                             .ghost()
                             .small()
                             .icon(IconName::Palette)
+                            .tooltip("Switch light and dark")
                             .on_click(cx.listener(|this, _, window, cx| {
                                 this.dark = !this.dark;
                                 set_mode(this.dark, window, cx);
@@ -120,13 +125,14 @@ impl Labs {
         boxed.children(rows.into_iter().enumerate().map(|(i, r)| {
             h_flex()
                 .id(r.id)
+                .hover(|d| d.bg(p.selected))
                 .px(rems(RELATED))
                 .py(rems(CONTROL))
                 .gap(rems(RELATED))
                 .when(i != last, |d| d.border_b_1().border_color(p.hairline))
                 .child(
                     div()
-                        .w(rems(DOT))
+                        .w(rems(DOT_COLUMN))
                         .flex_none()
                         .children(r.dot.map(|d| div().size(rems(DOT)).rounded_full().bg(d))),
                 )
@@ -165,11 +171,7 @@ impl Labs {
     }
 
     fn action(id: &'static str, label: &'static str) -> AnyElement {
-        Button::new(id)
-            .ghost()
-            .small()
-            .label(label)
-            .into_any_element()
+        action(id).ghost().small().label(label).into_any_element()
     }
 
     fn overview(&self, p: &Palette) -> impl IntoElement {
@@ -304,7 +306,7 @@ impl Labs {
     }
 
     fn tasks(&self, p: &Palette, cx: &mut Context<Self>) -> impl IntoElement {
-        let filter = Button::new("filter")
+        let filter = action("filter")
             .ghost()
             .small()
             .label("All projects")
@@ -326,7 +328,7 @@ impl Labs {
                                 meta: "Fix an issue · step 2 of 3 waits for approval · atlas-api",
                                 dot: Some(p.warning),
                                 end: Some(
-                                    Button::new("t1-open")
+                                    action("t1-open")
                                         .ghost()
                                         .small()
                                         .label("Open")
@@ -370,7 +372,11 @@ impl Labs {
                     "Queued",
                     Some(0),
                     None,
-                    Self::rows(p, vec![], "Nothing queued."),
+                    Self::rows(
+                        p,
+                        vec![],
+                        "Nothing queued. A run waits here when its project is already busy with another.",
+                    ),
                 ))
                 .child(Self::section(
                     p,
@@ -422,7 +428,7 @@ impl Labs {
                         .gap(rems(CONTROL))
                         .child(
                             div().child(
-                                Button::new("back-tasks")
+                                action("back-tasks")
                                     .ghost()
                                     .small()
                                     .icon(IconName::ArrowLeft)
@@ -443,7 +449,7 @@ impl Labs {
                                         .font_weight(FontWeight::MEDIUM)
                                         .child("Retry with backoff"),
                                 )
-                                .child(Button::new("open-session").outline().small().label("Open session")),
+                                .child(action("open-session").outline().small().label("Open session")),
                         )
                         .child(
                             h_flex()
@@ -451,8 +457,8 @@ impl Labs {
                                 .gap(rems(CONTROL))
                                 .text_size(rems(TEXT_XS))
                                 .text_color(p.muted)
-                                .child(Self::badge(p, "Awaiting approval", p.warning, Some(p.warning_bg)))
-                                .child("Fix an issue · atlas-api · issue #42 · started 14:02 · 12 min"),
+                                .child(div().flex_1().child("Fix an issue · atlas-api · issue #42 · started 14:02 · 12 min"))
+                                .child(Self::badge(p, "Awaiting approval", p.warning, Some(p.warning_bg))),
                         ),
                 )
                 .child(Self::section(
@@ -478,7 +484,7 @@ impl Labs {
                                 .rounded(rems(RADIUS_MD))
                                 .bg(p.sunken)
                                 .font_family(mono)
-                                .text_size(rems(TEXT_READ_SM))
+                                .text_size(self.read(TEXT_READ_SM))
                                 .text_color(p.text2)
                                 .child("Backoff now reads an injected clock. tests/flaky.rs passes 200 runs in a row.\n2 files changed, +38 −11"),
                         )
@@ -486,8 +492,8 @@ impl Labs {
                             h_flex()
                                 .gap(rems(CONTROL))
                                 .justify_end()
-                                .child(Button::new("revise").ghost().small().label("Revise…"))
-                                .child(Button::new("continue").primary().small().label("Continue")),
+                                .child(action("revise").ghost().small().label("Revise…"))
+                                .child(action("continue").primary().small().label("Continue")),
                         ),
                 )),
         )
@@ -551,7 +557,7 @@ impl Labs {
                     .border_color(p.hairline)
                     .child(
                         h_flex().gap(rems(CONTROL)).child(search).child(
-                            Button::new("new-issue")
+                            action("new-issue")
                                 .primary()
                                 .small()
                                 .icon(IconName::Plus)
@@ -562,13 +568,13 @@ impl Labs {
                         h_flex()
                             .gap(rems(TIGHT))
                             .child(
-                                Button::new("open-n")
+                                action("open-n")
                                     .ghost()
                                     .small()
                                     .label("Open 4")
                                     .selected(true),
                             )
-                            .child(Button::new("closed-n").ghost().small().label("Closed 40"))
+                            .child(action("closed-n").ghost().small().label("Closed 40"))
                             .child(div().flex_1())
                             .child(
                                 div()
@@ -593,35 +599,36 @@ impl Labs {
                                 .border_b_1()
                                 .border_color(p.hairline)
                                 .when(picked == Some(i), |d| d.bg(p.selected))
+                                .cursor_pointer()
+                                .hover(|d| d.bg(p.selected))
                                 .on_click(cx.listener(move |this, _, _, cx| {
                                     this.issue = Some(i);
                                     cx.notify();
                                 }))
                                 .child(div().truncate().text_color(p.text).child(*title))
+                                // Labels are facts beside the reference, not pills:
+                                // a pill is kept for a state.
                                 .child(
-                                    div()
-                                        .text_size(rems(TEXT_XS))
-                                        .text_color(p.muted)
-                                        .child(*reference),
+                                    div().text_size(rems(TEXT_XS)).text_color(p.muted).child(
+                                        std::iter::once(*reference)
+                                            .chain(labels.iter().copied())
+                                            .collect::<Vec<_>>()
+                                            .join(" · "),
+                                    ),
                                 )
                                 .child(
-                                    h_flex()
-                                        .gap(rems(CONTROL))
-                                        .child(
-                                            div()
-                                                .flex_1()
-                                                .truncate()
-                                                .text_size(rems(TEXT_XS))
-                                                .text_color(if *needs_you {
-                                                    p.warning
-                                                } else {
-                                                    p.text2
-                                                })
-                                                .child(*work),
-                                        )
-                                        .children(
-                                            labels.iter().map(|l| Self::badge(p, l, p.text2, None)),
-                                        ),
+                                    h_flex().gap(rems(CONTROL)).child(
+                                        div()
+                                            .flex_1()
+                                            .truncate()
+                                            .text_size(rems(TEXT_XS))
+                                            .text_color(if *needs_you {
+                                                p.warning
+                                            } else {
+                                                p.text2
+                                            })
+                                            .child(*work),
+                                    ),
                                 )
                         },
                     )),
@@ -641,7 +648,7 @@ impl Labs {
                             .border_b_1()
                             .border_color(p.hairline)
                             .child(
-                                Button::new("back-issues")
+                                action("back-issues")
                                     .ghost()
                                     .small()
                                     .icon(IconName::ArrowLeft)
@@ -671,9 +678,14 @@ impl Labs {
                                             .gap(rems(CONTROL))
                                             .text_size(rems(TEXT_XS))
                                             .text_color(p.muted)
-                                            .child(Self::badge(p, "Open", p.success, None))
-                                            .child(format!("{reference} · opened by jarviisha · 3 days ago"))
-                                            .children(labels.iter().map(|l| Self::badge(p, l, p.text2, None))),
+                                            .child(
+                                                std::iter::once("Open")
+                                                    .chain(std::iter::once(reference))
+                                                    .chain(std::iter::once("opened by jarviisha 3 days ago"))
+                                                    .chain(labels.iter().copied())
+                                                    .collect::<Vec<_>>()
+                                                    .join(" · "),
+                                            ),
                                     ),
                             )
                             .child(
@@ -698,16 +710,16 @@ impl Labs {
                                     .child(
                                         h_flex()
                                             .gap(rems(CONTROL))
-                                            .child(Button::new("i-review").primary().small().label("Review…"))
-                                            .child(Button::new("i-open").ghost().small().label("Open session"))
+                                            .child(action("i-review").primary().small().label("Review…"))
+                                            .child(action("i-open").ghost().small().label("Open session"))
                                             .child(div().flex_1())
-                                            .child(Button::new("i-more").ghost().small().icon(IconName::Ellipsis)),
+                                            .child(action("i-more").ghost().small().icon(IconName::Ellipsis).tooltip("More")),
                                     ),
                             )
                             .child(
                                 div()
-                                    .text_size(rems(TEXT_READ))
-                                    .line_height(rems(TEXT_READ * LEADING_READ))
+                                    .text_size(self.read(TEXT_READ))
+                                    .line_height(self.read(TEXT_READ * LEADING_READ))
                                     .child("The retry test fails about one run in five on CI. The third attempt's backoff uses wall-clock time, so a slow runner pushes it past the test's 5s timeout."),
                             )
                             .child(Self::section(
