@@ -227,12 +227,14 @@ Conversation           Split                          Workbench focus
   names where it goes.
 - **Spacing is chosen by relationship:** `TIGHT` for an icon and its label, `CONTROL` between
   adjacent controls, `RELATED` inside a card, `INSET` for a gutter, `SECTION` between groups,
-  `MAJOR` only between very different parts of a page.
+  `MAJOR` only between very different parts of a page. Inside a row, `SUBLINE` between its title
+  and the line under it; between rows stacked in a list, `ROW_GAP`.
 - **Controls:** buttons take gpui-component's small size, which is `CONTROL_H_SM`, so every
   button on a bar or in a row is the same height; `CONTROL_H` is a single-line field and an
   attachment chip. A tab is at most `TAB_MAX_W`.
 - **Radii are small:** `RADIUS_SM` for controls and rows, `RADIUS_MD` for wells, list boxes and
-  popups, `RADIUS_LG` for a pinned card, `RADIUS_XL` for the composer, the bubble and a dialog.
+  popups, `RADIUS_LG` for the composer and the cards pinned on it, `RADIUS_XL` for the bubble and a
+  dialog.
   A pill is only for a status badge.
 - **Truncation** is one line with an ellipsis and the full text on hover (names in the rail, the
   Workbench's lists and the terminal's tabs); state and primary actions always stay visible. A long name in a dialog wraps.
@@ -325,6 +327,9 @@ hierarchy are identical in both.
 | *Stop* is a solid danger button with its word | Send and Stop share an icon button |
 | A question's description is said once | the description is repeated as the field's placeholder |
 | Settings is a page in the content area | Settings is a large dialog |
+| One primary per region, so a list and its detail side by side may each have one | one primary per view |
+| The composer is a panel card with no shadow | the composer card floats over the transcript with a shadow |
+| Spacing and radii are named roles in `src/tokens.rs` | gpui's base-4 scale and the theme's radius steps |
 
 ## Backlog
 

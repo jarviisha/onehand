@@ -4,10 +4,6 @@
 //! All sizes are rems. Chrome (bars, rows, controls, rail) is meant to stay
 //! fixed when the reading zoom changes; only the `TEXT_READ*` sizes and the
 //! chat's minimum width scale with it.
-//!
-//! Some values are not drawn by any screen here yet; they are kept because the
-//! screens still to come (see the backlog in DESIGN.md) are specified in them.
-#![allow(dead_code)]
 
 use gpui::{Hsla, rgb, rgba};
 
@@ -24,7 +20,17 @@ pub const RELATED: f32 = 0.75;
 pub const INSET: f32 = 1.0;
 /// Between the distinct groups of a page.
 pub const SECTION: f32 = 1.5;
+/// Between the lines of one row: a title and the sub-line under it, which read
+/// as one thing.
+pub const SUBLINE: f32 = 0.125;
+/// Between rows stacked in a list, and between a segmented control's segments
+/// and around them, so two fills side by side, or a fill and the control's
+/// edge, still read as two.
+pub const ROW_GAP: f32 = 0.125;
 /// Only between substantially different page sections, never between fields.
+/// No page here is long enough to need it yet; the role is kept so one that
+/// is does not invent its own.
+#[allow(dead_code)]
 pub const MAJOR: f32 = 2.0;
 
 // ---- chrome heights: outside the reading zoom -----------------------------
@@ -66,8 +72,6 @@ pub const TEXT_XL: f32 = 1.25;
 pub const TEXT_READ: f32 = 0.9375;
 /// Activity lines and code.
 pub const TEXT_READ_SM: f32 = 0.8125;
-/// The composer's context strip.
-pub const TEXT_READ_XS: f32 = 0.75;
 /// Line height as a multiple of the size.
 pub const LEADING_UI: f32 = 1.45;
 pub const LEADING_READ: f32 = 1.6;
@@ -93,20 +97,26 @@ pub const ICON_SM: f32 = 0.75;
 /// A state dot, in a stable 1rem column so names never shift beside it.
 pub const DOT: f32 = 0.4375;
 pub const DOT_COLUMN: f32 = 1.0;
+/// The dot on a header button saying something behind it is alive: smaller
+/// than a row's, because it sits on a glyph, and inset from the corner so it
+/// stays inside the button.
+pub const BADGE_DOT: f32 = DOT * 0.75;
+pub const BADGE_INSET: f32 = 0.125;
 /// A session row's text starts under its project's name: icon plus gap.
 pub const RAIL_INDENT: f32 = 1.75;
+/// Each level of a file tree steps in this far: half a rail session's indent,
+/// because a tree runs many levels deep and a rail only one.
+pub const TREE_INDENT: f32 = 0.875;
 
 // ---- radii: small; a pill only for a status badge -------------------------
 
-/// Inline code, a key cap.
-pub const RADIUS_XS: f32 = 0.25;
 /// Buttons, rows, inputs, tabs.
 pub const RADIUS_SM: f32 = 0.375;
 /// Code blocks, list boxes, popups.
 pub const RADIUS_MD: f32 = 0.5;
-/// A pinned card on the composer.
+/// The composer and the cards pinned on it, so the stack reads as one object.
 pub const RADIUS_LG: f32 = 0.625;
-/// The composer, the user's bubble, a dialog.
+/// The user's bubble, a dialog.
 pub const RADIUS_XL: f32 = 0.75;
 
 // ---- width budgets, measured after the rail -------------------------------
@@ -150,6 +160,9 @@ pub const SETTINGS_NAV: f32 = 11.0;
 /// A form's width, and below `FORM_STACK` a row's label stacks over its control.
 pub const FORM_MAX: f32 = 40.0;
 pub const FORM_STACK: f32 = 32.0;
+/// A text field at the end of a form row: room for a command, and half the
+/// row's stacking width, so its label still has the other half beside it.
+pub const FIELD_W: f32 = FORM_STACK / 2.0;
 /// The composer, everything pinned on it and the popups opening from it share
 /// this width, so the stack reads as one object rather than panels that fail
 /// to line up. The same cap as the app's composer: a message being written is
@@ -221,10 +234,14 @@ pub struct Palette {
     /// under the pointer.
     pub chip_on: Hsla,
     pub accent: Hsla,
+    // The running and done badges' fills: no badge here is in either state yet.
+    #[allow(dead_code)]
     pub accent_bg: Hsla,
     pub warning: Hsla,
     pub warning_bg: Hsla,
     pub success: Hsla,
+    // The running and done badges' fills: no badge here is in either state yet.
+    #[allow(dead_code)]
     pub success_bg: Hsla,
     /// Danger as ink on a surface.
     pub danger: Hsla,
@@ -234,7 +251,8 @@ pub struct Palette {
     /// The one primary action in a region; never two side by side.
     pub primary_bg: Hsla,
     pub primary_fg: Hsla,
-    /// Under a dialog.
+    /// Under a dialog. The lab still draws the library's own overlay there.
+    #[allow(dead_code)]
     pub scrim: Hsla,
 }
 

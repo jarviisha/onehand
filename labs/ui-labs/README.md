@@ -18,6 +18,9 @@ make showcase   # the app as it is, on scratch projects and the Mock UI agent
   root `Cargo.lock` here again.
 - `make labs` builds into the workspace's `target/`, so the shared gpui graph
   is compiled once.
+- No CI job runs its tests either, so run them by hand before a lab change
+  lands: `cargo test --manifest-path labs/ui-labs/Cargo.toml --target-dir target`.
+  They include source scans holding every length and colour to `src/tokens.rs`.
 - `src/tokens.rs` holds every value the proposal is built from, each with
   the reason for it. `src/main.rs` is the window layout and the theme wiring;
   `src/pages.rs` the overview, Tasks and Issues; `src/composer.rs` every card

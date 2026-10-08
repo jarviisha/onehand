@@ -467,7 +467,7 @@ impl Labs {
                             h_flex()
                                 .id(path)
                                 .h(rems(ROW_H))
-                                .pl(rems(CONTROL + depth as f32 * RAIL_INDENT * 0.5))
+                                .pl(rems(CONTROL + depth as f32 * TREE_INDENT))
                                 .pr(rems(CONTROL))
                                 .gap(rems(CONTROL))
                                 .rounded(rems(RADIUS_SM))
@@ -718,7 +718,7 @@ impl Labs {
                                     v_flex()
                                         .flex_1()
                                         .min_w_0()
-                                        .gap(rems(TIGHT * 0.5))
+                                        .gap(rems(SUBLINE))
                                         .child(div().font_medium().text_color(p.text).child(*name))
                                         .child(div().text_color(p.text2).child(*about))
                                         // Metadata on a line of its own, never

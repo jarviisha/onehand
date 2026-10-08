@@ -40,6 +40,9 @@ mod terminal;
 mod theme;
 mod workbench;
 
+#[cfg(test)]
+mod guards;
+
 use controls::action;
 use layout::{Presentation, Seam, presentation};
 use theme::{install, set_mode};
