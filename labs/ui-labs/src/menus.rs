@@ -210,19 +210,19 @@ impl Labs {
         // branch on the left, or at the right for the mode. The model chip sits
         // past Fast, whose word changes width, so its menu starts at the inset
         // too. A completion spans the stack.
-        let left = match menu {
-            Menu::Plus | Menu::Model | Menu::Branch => COMPOSER_PAD,
-            Menu::Mode | Menu::Mention | Menu::Command => 0.0,
+        let inset = match menu {
+            Menu::Plus | Menu::Model | Menu::Branch => true,
+            Menu::Mode | Menu::Mention | Menu::Command => false,
         };
         div()
             .absolute()
             .bottom(gpui::relative(1.))
             .left_0()
             .right_0()
-            .pb(rems(CONTROL))
+            .pb_2()
             .flex()
-            .pl(rems(left))
-            .when(right, |d| d.justify_end().pr(rems(COMPOSER_PAD)))
+            .when(inset, |d| d.pl_1p5())
+            .when(right, |d| d.justify_end().pr_1p5())
             .occlude()
             .child(list)
             .into_any_element()

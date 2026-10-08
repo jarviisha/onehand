@@ -69,8 +69,8 @@ impl Settings {
 /// Whether the nav sits beside the form, and whether the form's rows stack, in
 /// a page `avail` wide.
 pub(super) fn settings_layout(avail: f32) -> (bool, bool) {
-    let nav = avail >= SETTINGS_NAV + FORM_STACK + INSET * 3.0;
-    let form = (avail - INSET * 2.0 - if nav { SETTINGS_NAV + INSET } else { 0.0 }).min(FORM_MAX);
+    let nav = avail >= SETTINGS_NAV + FORM_STACK + GUTTER * 3.0;
+    let form = (avail - GUTTER * 2.0 - if nav { SETTINGS_NAV + GUTTER } else { 0.0 }).min(FORM_MAX);
     (nav, form < FORM_STACK)
 }
 
@@ -92,14 +92,14 @@ impl Labs {
         let nav = v_flex()
             .w(rems(SETTINGS_NAV))
             .flex_none()
-            .gap(rems(ROW_GAP))
+            .gap_0p5()
             .children(SECTIONS.iter().map(|&(sec, label)| {
                 let on = sec == s.section;
                 h_flex()
                     .id(label)
                     .h(rems(ROW_H))
-                    .px(rems(CONTROL))
-                    .rounded(rems(RADIUS_SM))
+                    .px_2()
+                    .rounded(cx.theme().radius)
                     .cursor_pointer()
                     .hover(|d| d.bg(p.selected))
                     .text_color(if on { p.text } else { p.text2 })
@@ -146,7 +146,7 @@ impl Labs {
                         .absolute()
                         .top(gpui::relative(1.))
                         .left_0()
-                        .pt(rems(TIGHT))
+                        .pt_1()
                         .occlude()
                         .child(Self::popup(
                             cx,
@@ -172,10 +172,10 @@ impl Labs {
             .flex_1()
             .min_w_0()
             .max_w(rems(FORM_MAX))
-            .gap(rems(SECTION))
+            .gap_6()
             .child(
                 div()
-                    .text_size(rems(TEXT_LG))
+                    .text_base()
                     .font_medium()
                     .text_color(p.text)
                     .child(current),
@@ -186,17 +186,11 @@ impl Labs {
             .w_full()
             .max_w(rems(PAGE_MAX))
             .mx_auto()
-            .px(rems(INSET))
-            .py(rems(SECTION))
-            .gap(rems(SECTION));
+            .px_4()
+            .py_6()
+            .gap_6();
         let page = if nav_beside {
-            page.child(
-                h_flex()
-                    .items_start()
-                    .gap(rems(INSET))
-                    .child(nav)
-                    .child(form),
-            )
+            page.child(h_flex().items_start().gap_4().child(nav).child(form))
         } else {
             page.child(select).child(form)
         };
@@ -292,7 +286,7 @@ impl Labs {
                         }),
                 )
                 .child(
-                    div().pt(rems(RELATED)).child(
+                    div().pt_3().child(
                         action("add-agent").outline().small().icon(IconName::Plus).label("Add agent"),
                     ),
                 )
@@ -336,10 +330,10 @@ impl Labs {
             let delete = this.clone();
             dialog
                 .w(width)
-                .title(div().text_size(rems(TEXT_LG)).font_medium().child("Delete project?"))
+                .title(div().text_base().font_medium().child("Delete project?"))
                 .child(
                     v_flex()
-                        .gap(rems(RELATED))
+                        .gap_3()
                         .text_color(p.text2)
                         .child(
                             div()
@@ -354,7 +348,7 @@ impl Labs {
                     h_flex()
                         .w_full()
                         .justify_end()
-                        .gap(rems(CONTROL))
+                        .gap_2()
                         .child(
                             action("keep")
                                 .outline()
@@ -394,30 +388,21 @@ fn form_row(
     let text = v_flex()
         .flex_1()
         .min_w_0()
-        .gap(rems(SUBLINE))
+        .gap_0p5()
         .child(div().text_color(p.text).child(label))
         .when(!description.is_empty(), |d| {
-            d.child(
-                div()
-                    .text_size(rems(TEXT_XS))
-                    .text_color(p.muted)
-                    .child(description),
-            )
+            d.child(div().text_xs().text_color(p.muted).child(description))
         });
     let row = if stacked {
-        v_flex()
-            .items_start()
-            .gap(rems(CONTROL))
-            .child(text)
-            .child(control)
+        v_flex().items_start().gap_2().child(text).child(control)
     } else {
         h_flex()
             .items_center()
-            .gap(rems(INSET))
+            .gap_4()
             .child(text)
             .child(div().flex_none().child(control))
     };
-    row.py(rems(RELATED)).border_b_1().border_color(p.hairline)
+    row.py_3().border_b_1().border_color(p.hairline)
 }
 
 /// Two or three short choices; the chosen one takes the `selected` fill.
@@ -430,9 +415,9 @@ fn segmented(
 ) -> gpui::Div {
     let pick = Rc::new(pick);
     h_flex()
-        .p(rems(ROW_GAP))
-        .gap(rems(ROW_GAP))
-        .rounded(rems(RADIUS_SM))
+        .p_0p5()
+        .gap_0p5()
+        .rounded(cx.theme().radius)
         .border_1()
         .border_color(p.control)
         .children(options.iter().enumerate().map(|(i, (label, on))| {

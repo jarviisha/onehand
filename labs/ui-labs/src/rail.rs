@@ -20,9 +20,9 @@ impl Labs {
             h_flex()
                 .id(label)
                 .h(rems(ROW_H))
-                .px(rems(CONTROL))
-                .gap(rems(CONTROL))
-                .rounded(rems(RADIUS_SM))
+                .px_2()
+                .gap_2()
+                .rounded(cx.theme().radius)
                 .cursor_pointer()
                 .hover(|d| d.bg(p.selected))
                 .when(current == page, |d| d.bg(p.selected).text_color(p.text))
@@ -32,11 +32,9 @@ impl Labs {
                     this.task_open = false;
                     cx.notify();
                 }))
-                .child(Icon::new(icon).size(rems(ICON)))
+                .child(Icon::new(icon).small())
                 .child(div().flex_1().child(label))
-                .children(
-                    count.map(|n| div().text_size(rems(TEXT_XS)).text_color(p.muted).child(n)),
-                )
+                .children(count.map(|n| div().text_xs().text_color(p.muted).child(n)))
         };
         let session = |cx: &mut Context<Self>,
                        title: &'static str,
@@ -46,11 +44,11 @@ impl Labs {
             let sel = sel && current == Page::Chat;
             h_flex()
                 .id(title)
-                .py(rems(TIGHT))
+                .py_1()
                 .pl(rems(RAIL_INDENT))
-                .pr(rems(CONTROL))
-                .gap(rems(CONTROL))
-                .rounded(rems(RADIUS_SM))
+                .pr_2()
+                .gap_2()
+                .rounded(cx.theme().radius)
                 .cursor_pointer()
                 .hover(|d| d.bg(p.selected))
                 .when(sel, |d| d.bg(p.selected))
@@ -63,13 +61,7 @@ impl Labs {
                         .flex_1()
                         .min_w_0()
                         .child(full(format!("title-{title}"), title).text_color(p.text))
-                        .child(
-                            div()
-                                .truncate()
-                                .text_size(rems(TEXT_XS))
-                                .text_color(p.muted)
-                                .child(foot),
-                        ),
+                        .child(div().truncate().text_xs().text_color(p.muted).child(foot)),
                 )
                 .child(
                     div()
@@ -91,9 +83,9 @@ impl Labs {
                     h_flex()
                         .id(("project", i))
                         .h(rems(ROW_H))
-                        .pl(rems(CONTROL))
-                        .gap(rems(CONTROL))
-                        .rounded(rems(RADIUS_SM))
+                        .pl_2()
+                        .gap_2()
+                        .rounded(cx.theme().radius)
                         .hover(|d| d.bg(p.selected))
                         .text_color(p.text)
                         .font_medium()
@@ -103,7 +95,7 @@ impl Labs {
                             } else {
                                 IconName::FolderClosed
                             })
-                            .size(rems(ICON)),
+                            .small(),
                         )
                         .child(full(format!("project-name-{i}"), name).flex_1())
                         .child(
@@ -119,7 +111,7 @@ impl Labs {
                     d.child(
                         div()
                             .pl(rems(RAIL_INDENT))
-                            .text_size(rems(TEXT_XS))
+                            .text_xs()
                             .text_color(p.muted)
                             .child(git),
                     )
@@ -128,7 +120,7 @@ impl Labs {
 
         // A project and its sessions leave together when it is deleted.
         let first = v_flex()
-            .gap(rems(ROW_GAP))
+            .gap_0p5()
             .child(project(self, cx, 0, true))
             .child(session(
                 cx,
@@ -167,8 +159,8 @@ impl Labs {
             .child(
                 h_flex()
                     .h(rems(BAR_H))
-                    .pl(rems(RELATED))
-                    .pr(rems(CONTROL))
+                    .pl_3()
+                    .pr_2()
                     .child(
                         div()
                             .flex_1()
@@ -192,8 +184,8 @@ impl Labs {
             )
             .child(
                 v_flex()
-                    .px(rems(CONTROL))
-                    .gap(rems(ROW_GAP))
+                    .px_2()
+                    .gap_0p5()
                     .child(nav(
                         cx,
                         Page::Overview,
@@ -211,7 +203,7 @@ impl Labs {
                         None,
                     ))
                     .child(
-                        div().py(rems(CONTROL)).child(
+                        div().py_2().child(
                             action("new-session")
                                 .primary()
                                 .small()
@@ -227,23 +219,17 @@ impl Labs {
                     .id("tree")
                     .flex_1()
                     .overflow_y_scroll()
-                    .p(rems(CONTROL))
-                    .gap(rems(ROW_GAP))
+                    .p_2()
+                    .gap_0p5()
                     .when(kept(0), |d| d.child(first))
                     .when(kept(1), |d| d.child(project(self, cx, 1, false))),
             )
-            .child(
-                div()
-                    .p(rems(CONTROL))
-                    .border_t_1()
-                    .border_color(p.hairline)
-                    .child(nav(
-                        cx,
-                        Page::Settings,
-                        "Settings",
-                        IconName::Settings,
-                        None,
-                    )),
-            )
+            .child(div().p_2().border_t_1().border_color(p.hairline).child(nav(
+                cx,
+                Page::Settings,
+                "Settings",
+                IconName::Settings,
+                None,
+            )))
     }
 }

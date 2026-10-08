@@ -22,7 +22,10 @@ impl Labs {
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
         let (title, body): (&str, AnyElement) = match self.page {
-            Page::Overview => ("Workspace overview", self.overview(p).into_any_element()),
+            Page::Overview => (
+                "Workspace overview",
+                self.overview(p, cx).into_any_element(),
+            ),
             Page::Tasks if self.task_open => ("Tasks", self.task_detail(p, cx).into_any_element()),
             Page::Tasks => ("Tasks", self.tasks(p, cx).into_any_element()),
             Page::Issues => ("Issues", self.issues(p, avail, cx).into_any_element()),
@@ -44,7 +47,7 @@ impl Labs {
                 h_flex()
                     .h(rems(BAR_H))
                     .flex_none()
-                    .px(rems(INSET))
+                    .px_4()
                     .border_b_1()
                     .border_color(p.hairline)
                     .child(div().flex_1().font_medium().text_color(p.text).child(title))
@@ -74,9 +77,9 @@ impl Labs {
             .w_full()
             .max_w(rems(PAGE_MAX))
             .mx_auto()
-            .px(rems(INSET))
-            .py(rems(SECTION))
-            .gap(rems(SECTION))
+            .px_4()
+            .py_6()
+            .gap_6()
             .text_color(p.text)
     }
 
@@ -88,17 +91,14 @@ impl Labs {
         body: impl IntoElement,
     ) -> impl IntoElement {
         v_flex()
-            .gap(rems(CONTROL))
+            .gap_2()
             .child(
                 h_flex()
-                    .gap(rems(CONTROL))
-                    .child(div().text_size(rems(TEXT_MD)).font_medium().child(title))
-                    .children(count.map(|n| {
-                        div()
-                            .text_size(rems(TEXT_XS))
-                            .text_color(p.muted)
-                            .child(n.to_string())
-                    }))
+                    .gap_2()
+                    .child(div().text_sm().font_medium().child(title))
+                    .children(
+                        count.map(|n| div().text_xs().text_color(p.muted).child(n.to_string())),
+                    )
                     .child(div().flex_1())
                     .children(extra),
             )
@@ -106,29 +106,23 @@ impl Labs {
     }
 
     /// Rows in one hairline box, divided by hairlines. An empty list says so.
-    fn rows(p: &Palette, rows: Vec<Row>, empty: &'static str) -> impl IntoElement {
+    fn rows(p: &Palette, cx: &App, rows: Vec<Row>, empty: &'static str) -> impl IntoElement {
         let boxed = v_flex()
-            .rounded(rems(RADIUS_MD))
+            .rounded(cx.theme().radius_lg)
             .border_1()
             .border_color(p.hairline)
             .bg(p.panel);
         if rows.is_empty() {
-            return boxed.child(
-                div()
-                    .px(rems(RELATED))
-                    .py(rems(CONTROL))
-                    .text_color(p.muted)
-                    .child(empty),
-            );
+            return boxed.child(div().px_3().py_2().text_color(p.muted).child(empty));
         }
         let last = rows.len() - 1;
         boxed.children(rows.into_iter().enumerate().map(|(i, r)| {
             h_flex()
                 .id(r.id)
                 .hover(|d| d.bg(p.selected))
-                .px(rems(RELATED))
-                .py(rems(CONTROL))
-                .gap(rems(RELATED))
+                .px_3()
+                .py_2()
+                .gap_3()
                 .when(i != last, |d| d.border_b_1().border_color(p.hairline))
                 .child(
                     div()
@@ -141,13 +135,7 @@ impl Labs {
                         .flex_1()
                         .min_w_0()
                         .child(div().truncate().child(r.title))
-                        .child(
-                            div()
-                                .truncate()
-                                .text_size(rems(TEXT_XS))
-                                .text_color(p.muted)
-                                .child(r.meta),
-                        ),
+                        .child(div().truncate().text_xs().text_color(p.muted).child(r.meta)),
                 )
                 .children(r.end)
         }))
@@ -156,7 +144,7 @@ impl Labs {
     fn badge(p: &Palette, label: &'static str, ink: Hsla, fill: Option<Hsla>) -> impl IntoElement {
         div()
             .flex_none()
-            .px(rems(CONTROL))
+            .px_2()
             .rounded_full()
             .border_1()
             .border_color(if fill.is_some() {
@@ -165,7 +153,7 @@ impl Labs {
                 p.control
             })
             .when_some(fill, |d, f| d.bg(f))
-            .text_size(rems(TEXT_XS))
+            .text_xs()
             .text_color(ink)
             .child(label)
     }
@@ -174,40 +162,26 @@ impl Labs {
         action(id).ghost().small().label(label).into_any_element()
     }
 
-    fn overview(&self, p: &Palette) -> impl IntoElement {
+    fn overview(&self, p: &Palette, cx: &App) -> impl IntoElement {
         let tile =
             |name: &'static str, git: &'static str, sessions: &'static str, dot: Option<Hsla>| {
                 v_flex()
                     .w(rems(TILE_W))
-                    .p(rems(RELATED))
-                    .gap(rems(TIGHT))
-                    .rounded(rems(RADIUS_MD))
+                    .p_3()
+                    .gap_1()
+                    .rounded(cx.theme().radius_lg)
                     .border_1()
                     .border_color(p.hairline)
                     .bg(p.panel)
                     .child(
                         h_flex()
-                            .gap(rems(CONTROL))
-                            .child(
-                                Icon::new(IconName::Folder)
-                                    .size(rems(ICON))
-                                    .text_color(p.muted),
-                            )
+                            .gap_2()
+                            .child(Icon::new(IconName::Folder).small().text_color(p.muted))
                             .child(div().flex_1().truncate().font_medium().child(name))
                             .children(dot.map(|d| div().size(rems(DOT)).rounded_full().bg(d))),
                     )
-                    .child(
-                        div()
-                            .text_size(rems(TEXT_XS))
-                            .text_color(p.muted)
-                            .child(git),
-                    )
-                    .child(
-                        div()
-                            .text_size(rems(TEXT_XS))
-                            .text_color(p.text2)
-                            .child(sessions),
-                    )
+                    .child(div().text_xs().text_color(p.muted).child(git))
+                    .child(div().text_xs().text_color(p.text2).child(sessions))
             };
         Self::column("overview").child(
             Self::inner(p)
@@ -218,6 +192,7 @@ impl Labs {
                     None,
                     Self::rows(
                         p,
+                        cx,
                         vec![
                             Row {
                                 id: "w1",
@@ -244,6 +219,7 @@ impl Labs {
                     None,
                     Self::rows(
                         p,
+                        cx,
                         vec![Row {
                             id: "k1",
                             title: "Fix flaky retry test",
@@ -261,7 +237,7 @@ impl Labs {
                     None,
                     h_flex()
                         .flex_wrap()
-                        .gap(rems(RELATED))
+                        .gap_3()
                         .child(tile(
                             "atlas-api",
                             "main · 3 changes",
@@ -283,6 +259,7 @@ impl Labs {
                     None,
                     Self::rows(
                         p,
+                        cx,
                         vec![
                             Row {
                                 id: "r1",
@@ -320,7 +297,7 @@ impl Labs {
                     Some(2),
                     Some(filter),
                     Self::rows(
-                        p,
+                        p, cx,
                         vec![
                             Row {
                                 id: "t1",
@@ -356,7 +333,7 @@ impl Labs {
                     Some(1),
                     None,
                     Self::rows(
-                        p,
+                        p, cx,
                         vec![Row {
                             id: "t3",
                             title: "Chart legend overlaps",
@@ -373,7 +350,7 @@ impl Labs {
                     Some(0),
                     None,
                     Self::rows(
-                        p,
+                        p, cx,
                         vec![],
                         "Nothing queued. A run waits here when its project is already busy with another.",
                     ),
@@ -384,7 +361,7 @@ impl Labs {
                     Some(1),
                     None,
                     Self::rows(
-                        p,
+                        p, cx,
                         vec![Row {
                             id: "t4",
                             title: "Run check",
@@ -402,18 +379,14 @@ impl Labs {
         let mono = cx.theme().mono_font_family.clone();
         let step = |label: &'static str, state: Option<bool>| {
             h_flex()
-                .gap(rems(CONTROL))
-                .py(rems(TIGHT))
+                .gap_2()
+                .py_1()
                 .child(match state {
-                    Some(true) => Icon::new(IconName::Check)
-                        .size(rems(ICON))
-                        .text_color(p.muted),
+                    Some(true) => Icon::new(IconName::Check).small().text_color(p.muted),
                     Some(false) => Icon::new(IconName::ChevronRight)
-                        .size(rems(ICON))
+                        .small()
                         .text_color(p.warning),
-                    None => Icon::new(IconName::Minus)
-                        .size(rems(ICON))
-                        .text_color(p.muted),
+                    None => Icon::new(IconName::Minus).small().text_color(p.muted),
                 })
                 .child(
                     div()
@@ -425,7 +398,7 @@ impl Labs {
             Self::inner(p)
                 .child(
                     v_flex()
-                        .gap(rems(CONTROL))
+                        .gap_2()
                         .child(
                             div().child(
                                 action("back-tasks")
@@ -441,11 +414,11 @@ impl Labs {
                         )
                         .child(
                             h_flex()
-                                .gap(rems(RELATED))
+                                .gap_3()
                                 .child(
                                     div()
                                         .flex_1()
-                                        .text_size(rems(TEXT_XL))
+                                        .text_xl()
                                         .font_weight(FontWeight::MEDIUM)
                                         .child("Retry with backoff"),
                                 )
@@ -454,8 +427,8 @@ impl Labs {
                         .child(
                             h_flex()
                                 .flex_wrap()
-                                .gap(rems(CONTROL))
-                                .text_size(rems(TEXT_XS))
+                                .gap_2()
+                                .text_xs()
                                 .text_color(p.muted)
                                 .child(div().flex_1().child("Fix an issue · atlas-api · issue #42 · started 14:02 · 12 min"))
                                 .child(Self::badge(p, "Awaiting approval", p.warning, Some(p.warning_bg))),
@@ -477,11 +450,11 @@ impl Labs {
                     None,
                     None,
                     v_flex()
-                        .gap(rems(RELATED))
+                        .gap_3()
                         .child(
                             div()
-                                .p(rems(RELATED))
-                                .rounded(rems(RADIUS_MD))
+                                .p_3()
+                                .rounded(cx.theme().radius_lg)
                                 .bg(p.sunken)
                                 .font_family(mono)
                                 .text_size(self.read(TEXT_READ_SM))
@@ -490,7 +463,7 @@ impl Labs {
                         )
                         .child(
                             h_flex()
-                                .gap(rems(CONTROL))
+                                .gap_2()
                                 .justify_end()
                                 .child(action("revise").ghost().small().label("Revise…"))
                                 .child(action("continue").primary().small().label("Continue")),
@@ -534,16 +507,16 @@ impl Labs {
         let picked = self.issue;
 
         let search = h_flex()
-            .h(rems(CONTROL_H))
+            .h_6()
             .flex_1()
-            .px(rems(CONTROL))
-            .gap(rems(CONTROL))
-            .rounded(rems(RADIUS_SM))
+            .px_2()
+            .gap_2()
+            .rounded(cx.theme().radius)
             .border_1()
             .border_color(p.control)
             .bg(p.panel)
             .text_color(p.muted)
-            .child(Icon::new(IconName::Search).size(rems(ICON)))
+            .child(Icon::new(IconName::Search).small())
             .child("Search issues");
         let list = v_flex()
             .when(side_by_side, |d| d.w(rems(ISSUE_LIST_W)).flex_none())
@@ -551,12 +524,12 @@ impl Labs {
             .h_full()
             .child(
                 v_flex()
-                    .p(rems(RELATED))
-                    .gap(rems(CONTROL))
+                    .p_3()
+                    .gap_2()
                     .border_b_1()
                     .border_color(p.hairline)
                     .child(
-                        h_flex().gap(rems(CONTROL)).child(search).child(
+                        h_flex().gap_2().child(search).child(
                             action("new-issue")
                                 .primary()
                                 .small()
@@ -566,7 +539,7 @@ impl Labs {
                     )
                     .child(
                         h_flex()
-                            .gap(rems(TIGHT))
+                            .gap_1()
                             .child(
                                 action("open-n")
                                     .ghost()
@@ -576,12 +549,7 @@ impl Labs {
                             )
                             .child(action("closed-n").ghost().small().label("Closed 40"))
                             .child(div().flex_1())
-                            .child(
-                                div()
-                                    .text_size(rems(TEXT_XS))
-                                    .text_color(p.muted)
-                                    .child("read 2m ago"),
-                            ),
+                            .child(div().text_xs().text_color(p.muted).child("read 2m ago")),
                     ),
             )
             .child(
@@ -593,9 +561,9 @@ impl Labs {
                         |(i, (title, reference, work, needs_you, labels))| {
                             v_flex()
                                 .id(i)
-                                .px(rems(RELATED))
-                                .py(rems(CONTROL))
-                                .gap(rems(SUBLINE))
+                                .px_3()
+                                .py_2()
+                                .gap_0p5()
                                 .border_b_1()
                                 .border_color(p.hairline)
                                 .when(picked == Some(i), |d| d.bg(p.selected))
@@ -609,7 +577,7 @@ impl Labs {
                                 // Labels are facts beside the reference, not pills:
                                 // a pill is kept for a state.
                                 .child(
-                                    div().text_size(rems(TEXT_XS)).text_color(p.muted).child(
+                                    div().text_xs().text_color(p.muted).child(
                                         std::iter::once(*reference)
                                             .chain(labels.iter().copied())
                                             .collect::<Vec<_>>()
@@ -617,11 +585,11 @@ impl Labs {
                                     ),
                                 )
                                 .child(
-                                    h_flex().gap(rems(CONTROL)).child(
+                                    h_flex().gap_2().child(
                                         div()
                                             .flex_1()
                                             .truncate()
-                                            .text_size(rems(TEXT_XS))
+                                            .text_xs()
                                             .text_color(if *needs_you {
                                                 p.warning
                                             } else {
@@ -644,7 +612,7 @@ impl Labs {
                     d.child(
                         h_flex()
                             .h(rems(SUBBAR_H))
-                            .px(rems(CONTROL))
+                            .px_2()
                             .border_b_1()
                             .border_color(p.hairline)
                             .child(
@@ -664,19 +632,19 @@ impl Labs {
                     div().id("issue").flex_1().overflow_y_scroll().child(
                         v_flex()
                             .max_w(rems(READ_MAX))
-                            .px(rems(INSET))
-                            .py(rems(SECTION))
-                            .gap(rems(SECTION))
+                            .px_4()
+                            .py_6()
+                            .gap_6()
                             .text_color(p.text)
                             .child(
                                 v_flex()
-                                    .gap(rems(CONTROL))
-                                    .child(div().text_size(rems(TEXT_XL)).font_medium().child(title))
+                                    .gap_2()
+                                    .child(div().text_xl().font_medium().child(title))
                                     .child(
                                         h_flex()
                                             .flex_wrap()
-                                            .gap(rems(CONTROL))
-                                            .text_size(rems(TEXT_XS))
+                                            .gap_2()
+                                            .text_xs()
                                             .text_color(p.muted)
                                             .child(
                                                 std::iter::once("Open")
@@ -690,17 +658,17 @@ impl Labs {
                             )
                             .child(
                                 v_flex()
-                                    .p(rems(RELATED))
-                                    .gap(rems(CONTROL))
-                                    .rounded(rems(RADIUS_MD))
+                                    .p_3()
+                                    .gap_2()
+                                    .rounded(cx.theme().radius_lg)
                                     .border_1()
                                     .border_color(p.hairline)
                                     .bg(p.panel)
                                     .child(
                                         h_flex()
-                                            .gap(rems(CONTROL))
+                                            .gap_2()
                                             .child(div().font_medium().child("Where it stands"))
-                                            .child(div().text_size(rems(TEXT_XS)).text_color(p.muted).child("step 2 of 3")),
+                                            .child(div().text_xs().text_color(p.muted).child("step 2 of 3")),
                                     )
                                     .child(
                                         div()
@@ -709,7 +677,7 @@ impl Labs {
                                     )
                                     .child(
                                         h_flex()
-                                            .gap(rems(CONTROL))
+                                            .gap_2()
                                             .child(action("i-review").primary().small().label("Review…"))
                                             .child(action("i-open").ghost().small().label("Open session"))
                                             .child(div().flex_1())
@@ -728,7 +696,7 @@ impl Labs {
                                 None,
                                 None,
                                 Self::rows(
-                                    p,
+                                    p, cx,
                                     vec![
                                         Row { id: "b", title: "fix/retry-clock", meta: "branch · 2 commits ahead of main", dot: None, end: None },
                                         Row { id: "c", title: "Check passed", meta: "cargo test · 14:10", dot: Some(p.success), end: None },

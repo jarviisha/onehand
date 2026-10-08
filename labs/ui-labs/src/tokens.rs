@@ -1,5 +1,5 @@
-//! Every value the proposed UI is built from, in one place: spacing roles,
-//! chrome sizes, type, radii, the width budgets and the two palettes.
+//! Every value the proposed UI needs that gpui and gpui-component do not give:
+//! chrome heights, reading type, the width budgets and the two palettes.
 //!
 //! All sizes are rems. Chrome (bars, rows, controls, rail) is meant to stay
 //! fixed when the reading zoom changes; only the `TEXT_READ*` sizes and the
@@ -7,31 +7,15 @@
 
 use gpui::{Hsla, rgb, rgba};
 
-// ---- spacing: chosen by relationship, never by global replacement ---------
+// ---- what the library already gives ----------------------------------------
 
-/// Closely related metadata; an icon beside its label.
-pub const TIGHT: f32 = 0.25;
-/// Adjacent controls; the content of one compact row.
-pub const CONTROL: f32 = 0.5;
-/// Related blocks: field groups, a card's insides, stacked controls.
-pub const RELATED: f32 = 0.75;
-/// The default gutter of a page or a reader. One owner per outer padding: a
-/// page inset, a card inset and a list inset never stack on the same label.
-pub const INSET: f32 = 1.0;
-/// Between the distinct groups of a page.
-pub const SECTION: f32 = 1.5;
-/// Between the lines of one row: a title and the sub-line under it, which read
-/// as one thing.
-pub const SUBLINE: f32 = 0.125;
-/// Between rows stacked in a list, and between a segmented control's segments
-/// and around them, so two fills side by side, or a fill and the control's
-/// edge, still read as two.
-pub const ROW_GAP: f32 = 0.125;
-/// Only between substantially different page sections, never between fields.
-/// No page here is long enough to need it yet; the role is kept so one that
-/// is does not invent its own.
-#[allow(dead_code)]
-pub const MAJOR: f32 = 2.0;
+// Gaps, paddings, the UI's text sizes, control heights, icon sizes and radii
+// come from gpui's scale (`gap_2`, `text_xs`, `h_6`), the library's sizes
+// (`small`, `xsmall`) and `cx.theme().radius`/`radius_lg`, as in the app. Only
+// what neither gives is named here.
+
+/// The page gutter that `px_4` draws, for the width sums that subtract it.
+pub const GUTTER: f32 = 1.0;
 
 // ---- chrome heights: outside the reading zoom -----------------------------
 
@@ -42,36 +26,18 @@ pub const BAR_H: f32 = 2.75;
 pub const SUBBAR_H: f32 = 2.25;
 /// A single-line rail or nav row.
 pub const ROW_H: f32 = 1.875;
-/// Buttons, inputs, tabs.
-pub const CONTROL_H: f32 = 1.75;
-pub const CONTROL_H_SM: f32 = 1.5;
-/// A chip's inset on the composer, and the card's own: the app's, so the lab's
-/// composer stands at the app's size.
-pub const CHIP_PAD_X: f32 = 0.375;
-pub const COMPOSER_PAD: f32 = 0.375;
-/// The `+` glyph: larger than a chip's word, because it is aimed at by its
-/// shape alone, and still under `CONTROL_H_SM` so the row's height holds.
-pub const PLUS_ICON: f32 = 1.25;
 /// A tab never grows past this; a longer name truncates.
 pub const TAB_MAX_W: f32 = 10.0;
 
-// ---- type: two weights only, 400 and 500; sentence case everywhere --------
+// ---- reading type: the sizes the reading zoom multiplies ------------------
 
-/// Metadata, chips, sub-lines.
-pub const TEXT_XS: f32 = 0.75;
-/// The UI default: rows, buttons, bars.
-pub const TEXT_SM: f32 = 0.8125;
-/// Section headings.
-pub const TEXT_MD: f32 = 0.875;
-/// Dialog and form titles.
-pub const TEXT_LG: f32 = 0.9375;
-/// A page title (the task detail).
-pub const TEXT_XL: f32 = 1.25;
 /// Reading sizes: the transcript, the composer, documents. These are the
-/// ones the reading zoom multiplies.
-pub const TEXT_READ: f32 = 0.9375;
-/// Activity lines and code.
-pub const TEXT_READ_SM: f32 = 0.8125;
+/// ones the reading zoom multiplies, so they are numbers rather than gpui's
+/// `text_*` calls, held to that scale: `text_base`, a step over the UI's
+/// `text_sm`.
+pub const TEXT_READ: f32 = 1.0;
+/// Activity lines and code: `text_sm`.
+pub const TEXT_READ_SM: f32 = 0.875;
 /// Line height as a multiple of the size.
 pub const LEADING_UI: f32 = 1.45;
 pub const LEADING_READ: f32 = 1.6;
@@ -92,8 +58,6 @@ pub const SEAM_DRAG_PX: f32 = 2.0;
 
 // ---- marks ----------------------------------------------------------------
 
-pub const ICON: f32 = 0.875;
-pub const ICON_SM: f32 = 0.75;
 /// A state dot, in a stable 1rem column so names never shift beside it.
 pub const DOT: f32 = 0.4375;
 pub const DOT_COLUMN: f32 = 1.0;
@@ -101,23 +65,11 @@ pub const DOT_COLUMN: f32 = 1.0;
 /// than a row's, because it sits on a glyph, and inset from the corner so it
 /// stays inside the button.
 pub const BADGE_DOT: f32 = DOT * 0.75;
-pub const BADGE_INSET: f32 = 0.125;
 /// A session row's text starts under its project's name: icon plus gap.
 pub const RAIL_INDENT: f32 = 1.75;
 /// Each level of a file tree steps in this far: half a rail session's indent,
 /// because a tree runs many levels deep and a rail only one.
 pub const TREE_INDENT: f32 = 0.875;
-
-// ---- radii: small; a pill only for a status badge -------------------------
-
-/// Buttons, rows, inputs, tabs.
-pub const RADIUS_SM: f32 = 0.375;
-/// Code blocks, list boxes, popups.
-pub const RADIUS_MD: f32 = 0.5;
-/// The composer and the cards pinned on it, so the stack reads as one object.
-pub const RADIUS_LG: f32 = 0.625;
-/// The user's bubble, a dialog.
-pub const RADIUS_XL: f32 = 0.75;
 
 // ---- width budgets, measured after the rail -------------------------------
 
@@ -174,17 +126,10 @@ pub const COMPOSER_MAX: f32 = 44.0;
 pub const COMPOSER_SPLIT: f32 = 36.0;
 /// The user's bubble, so a long prompt wraps well short of the left axis.
 pub const BUBBLE_MAX: f32 = 28.0;
-/// The composer's field before anything is typed.
-pub const INPUT_MIN_H: f32 = 2.5;
-/// Between a pinned card and the composer: a step over the gap inside a
-/// stack, because two objects need a seam that reads as one.
-pub const STACK_GAP: f32 = 0.625;
 /// An overview project tile; tiles wrap rather than shrink.
 pub const TILE_W: f32 = 14.0;
 /// A dialog never widens past this; a long name wraps in its body.
 pub const DIALOG_MAX: f32 = 28.0;
-/// A popup's inner padding, around its header, rows and footer.
-pub const POPUP_INSET: f32 = 0.375;
 /// The composer cards gallery: a stack plus its specimen frame.
 pub const GALLERY_MAX: f32 = 48.0;
 /// A popup opening from a chip, rather than spanning the composer.
@@ -206,7 +151,7 @@ pub const SELECTION_ALPHA: f32 = 0.25;
 
 // ---- colour ---------------------------------------------------------------
 
-/// One palette. Warm neutrals carry everything; a hue only ever means state:
+/// One palette. Neutrals carry everything; a hue only ever means state:
 /// blue is running (and links), amber waits on the person, green is done, red
 /// is danger. A selected row is a faint ink tint, never the accent.
 ///
@@ -265,59 +210,67 @@ fn ca(hex: u32) -> Hsla {
 
 pub fn light() -> Palette {
     Palette {
-        page: c(0xFAF9F5),
-        sunken: c(0xF1EFE8),
-        panel: c(0xFFFFFF),
-        text: c(0x2C2C2A),
-        text2: c(0x5F5E5A),
-        muted: c(0x888780),
-        hairline: ca(0x8887804D),
-        control: ca(0x88878073),
-        selected: ca(0x2C2C2A0E),
-        chip_on: ca(0x2C2C2A1C),
-        accent: c(0x185FA5),
-        accent_bg: c(0xE6F1FB),
+        page: c(0xFFFFFF),
+        sunken: c(0xEEEEEE),
+        panel: c(0xF3F3F3),
+        text: c(0x1F1F1F),
+        text2: c(0x616161),
+        muted: c(0x888888),
+        hairline: c(0xD4D4D4),
+        control: c(0xC7C7C7),
+        // Thick enough that a ghost control's hover shows on a panel, where
+        // the tabs and the composer's chips sit: #E3E3E3 there, #EEEEEE on
+        // the page. An open chip lands near #DADADA, a step above it.
+        selected: ca(0x1F1F1F14),
+        chip_on: ca(0x1F1F1F1E),
+        accent: c(0x007ACC),
+        accent_bg: ca(0x007ACC1A),
+        // No waiting or danger state in the reference set: these keep the
+        // previous hues.
         warning: c(0x854F0B),
         warning_bg: c(0xFAEEDA),
-        success: c(0x3B6D11),
-        success_bg: c(0xEAF3DE),
+        success: c(0x16825D),
+        success_bg: ca(0x16825D1A),
         danger: c(0xA32D2D),
         danger_solid: c(0xA32D2D),
         on_danger: c(0xFFFFFF),
-        primary_bg: c(0x2C2C2A),
+        primary_bg: c(0x1F1F1F),
         primary_fg: c(0xFFFFFF),
-        scrim: ca(0x2C2C2A52),
+        scrim: ca(0x1F1F1F52),
     }
 }
 
-/// Derived from the light palette rather than specified: the same hierarchy
-/// and the same geometry, on warm near-black surfaces.
+/// Its own set rather than the light one inverted: the same hierarchy and
+/// the same geometry, on near-black greys.
 pub fn dark() -> Palette {
     Palette {
-        page: c(0x1E1D1B),
-        sunken: c(0x191817),
-        panel: c(0x262523),
-        text: c(0xECEAE3),
-        text2: c(0xB4B2A9),
-        muted: c(0x8C8A83),
-        hairline: ca(0xB4B2A933),
-        control: ca(0xB4B2A952),
+        page: c(0x181818),
+        sunken: c(0x282828),
+        panel: c(0x202020),
+        text: c(0xECECEC),
+        text2: c(0x979797),
+        muted: c(0x767676),
+        hairline: c(0x404040),
+        control: c(0x404040),
         // Thicker than the light set's: a light tint on a dark surface shows
-        // far less than the same share of ink on white, and at the light
-        // set's share a ghost button's hover vanished on `panel`.
-        selected: ca(0xECEAE31F),
-        chip_on: ca(0xECEAE333),
-        accent: c(0x85B7EB),
-        accent_bg: ca(0x378ADD2E),
+        // far less than the same share of ink on white. This lands near
+        // #323232 on a panel, the reference's chosen tab, and #2A2A2A on the
+        // page; an open chip near #3E3E3E.
+        selected: ca(0xECECEC16),
+        chip_on: ca(0xECECEC26),
+        accent: c(0xC9B974),
+        accent_bg: ca(0xC9B9742E),
+        // No waiting or danger state in the reference set: these keep the
+        // previous hues.
         warning: c(0xFAC775),
         warning_bg: ca(0xBA751733),
-        success: c(0x97C459),
-        success_bg: ca(0x6399222E),
+        success: c(0x1FBD53),
+        success_bg: ca(0x1FBD532E),
         danger: c(0xF09595),
         danger_solid: c(0xA32D2D),
         on_danger: c(0xFFFFFF),
-        primary_bg: c(0xECEAE3),
-        primary_fg: c(0x1E1D1B),
+        primary_bg: c(0xECECEC),
+        primary_fg: c(0x181818),
         scrim: ca(0x0000008C),
     }
 }
