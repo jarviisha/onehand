@@ -641,6 +641,9 @@ pub fn boot(cx: &mut App) {
     crate::unattended::boot(&unattended, cx);
     crate::workflow::boot(cx);
     crate::task::boot(cx);
+    // Before the theme names the bundled families, and before the monospace
+    // scan looks for them among what is installed.
+    crate::fonts::register(cx);
     // Before a mode is chosen, because choosing one applies whichever of the
     // two configs this installs.
     crate::theme::install(cx);
@@ -678,7 +681,8 @@ pub fn boot(cx: &mut App) {
 /// default is one hard-coded name per platform, and on Linux that name is
 /// DejaVu Sans Mono, which many distributions do not ship — so on those
 /// machines every well in the transcript was sans while the code that drew it
-/// was, correctly, asking for mono.
+/// was, correctly, asking for mono. The theme now names the family the app
+/// ships instead, so the scan's real job is checking a configured one.
 ///
 /// The scan is done once at boot, before any window exists, because the theme
 /// is a global — but the answer is kept, since changing the appearance loads a
@@ -688,9 +692,9 @@ pub fn boot(cx: &mut App) {
 /// `fallbacks` still parse and go nowhere.
 fn use_installed_mono(configured: Option<&str>, cx: &mut App) {
     let installed = cx.text_system().all_font_names();
-    // The theme's own default is a preference too, not a thing to override:
-    // where it resolves, it is what this platform's users expect to read code
-    // in, and it should win over anything merely popular.
+    // The theme's default is the bundled family, which is registered before
+    // this runs, so it resolves on every machine; the ladder behind it only
+    // matters if registering failed.
     let default = gpui_component::ActiveTheme::theme(cx)
         .mono_font_family
         .to_string();

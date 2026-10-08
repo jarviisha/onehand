@@ -199,6 +199,10 @@ monospace font.
 | Meta, hints | `.text_xs()` + `muted_foreground` |
 | Machine text | `mono_font_family` |
 
+- **The families ship with the app:** Inter for the interface (the theme's `font_family`) and
+  JetBrains Mono for machine text (`mono_font_family`), so text looks and centres the same on every
+  machine. `[font].monospace` can still name another installed mono family.
+
 - **Sizes are rems, never pixels**, because per-panel zoom overrides the rem base. Fixed chrome
   heights stay outside the zoom wrapper. Two exceptions are pixels on purpose: the settings
   dialog's bounds, which are measured against the window, and a menu row's inset, which cancels

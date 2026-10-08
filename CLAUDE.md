@@ -208,8 +208,9 @@ ACP_CMD="node crates/core/examples/mock_ask_agent.js" cargo run -p onehand-core 
 - **Key bindings beat `on_key_down`**, matched against the focus context stack first. A binding
   can silently steal a key a PTY needs. `!Ctx` means "nowhere in the stack".
 - **`with_rem_size` goes in all three element phases** (layout, prepaint, paint).
-- **Font families fail silently.** Pick from `all_font_names()` (`use_installed_mono` (`shell/boot.rs`),
-  `config::resolve_monospace`); never assume a name resolves.
+- **Font families fail silently.** The app ships Inter and JetBrains Mono (`crate::fonts`); any
+  other family is picked from `all_font_names()` (`use_installed_mono` (`shell/boot.rs`),
+  `config::resolve_monospace`). Never assume a name resolves.
 - **`mx_auto` does nothing in a `gpui::list` row**, which is its own layout root. Centre with
   `h_flex().justify_center()` around a `max_w` child.
 - **Bare dock panels track their own focus.** Every panel here is a bare `DockItem::Panel`, so
