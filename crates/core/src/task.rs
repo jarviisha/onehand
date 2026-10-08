@@ -64,13 +64,29 @@ pub enum Group {
     Finished,
 }
 
+/// The heading a task is listed under on a page of tasks.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Section {
+    NeedsAttention,
+    Running,
+    Queued,
+    Finished,
+}
+
 impl Group {
     /// Whether a person should act on a task listed here: one waiting on
     /// them, or one that ended on something nobody chose.
     pub fn needs_attention(self) -> bool {
+        self.section() == Section::NeedsAttention
+    }
+
+    /// The heading a task in this group is listed under.
+    pub fn section(self) -> Section {
         match self {
-            Self::Waiting | Self::Ended => true,
-            Self::Running | Self::Queued | Self::Finished => false,
+            Self::Waiting | Self::Ended => Section::NeedsAttention,
+            Self::Running => Section::Running,
+            Self::Queued => Section::Queued,
+            Self::Finished => Section::Finished,
         }
     }
 }

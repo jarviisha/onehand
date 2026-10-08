@@ -309,15 +309,11 @@ pub fn preflight(kind: Kind, facts: &Facts) -> Vec<Finding> {
             .steps
             .iter()
             .any(|step| matches!(step.kind, StepKind::Command { .. }));
-        if template.needs_check() && !facts.has_check {
+        if let Some(why) = template.lacks_check(facts.has_check) {
             say(
                 Check::CheckCommand,
                 true,
-                format!(
-                    "The workflow `{}` runs the project's check command, and there is \
-                     none.{keeps}",
-                    template.name
-                ),
+                format!("{}.{keeps}", capital(&why)),
                 own_change.or(Some(Change::At(PROJECT_PAGE))),
             );
         } else if !commands {

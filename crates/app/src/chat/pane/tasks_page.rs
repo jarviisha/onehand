@@ -7,7 +7,7 @@ use gpui::{
 };
 use gpui_component::button::ButtonVariants as _;
 use gpui_component::{ActiveTheme, Icon, IconName, Sizable as _, StyledExt};
-use onehand_core::task::Group;
+use onehand_core::task::{Group, Section};
 use std::path::{Path, PathBuf};
 
 /// How many rows each card of the Tasks page draws. Finished tasks are kept
@@ -86,21 +86,21 @@ impl ChatPane {
             None => page.projects.iter().map(|p| p.root.clone()).collect(),
         };
         // The rows come in group order, so waiting ones lead ended ones.
-        let (mut waiting, mut running, mut queued, mut finished) =
+        let (mut needs_attention, mut running, mut queued, mut finished) =
             (Vec::new(), Vec::new(), Vec::new(), Vec::new());
         for row in crate::task::rows(&roots, cx) {
-            match row.group {
-                group if group.needs_attention() => waiting.push(row),
-                Group::Waiting | Group::Ended | Group::Running => running.push(row),
-                Group::Queued => queued.push(row),
-                Group::Finished => finished.push(row),
+            match row.group.section() {
+                Section::NeedsAttention => needs_attention.push(row),
+                Section::Running => running.push(row),
+                Section::Queued => queued.push(row),
+                Section::Finished => finished.push(row),
             }
         }
         let removed = crate::task::removed(&roots, cx);
         // An opened task is read per frame too; one let go meanwhile leaves
         // the cards on screen.
         let opened = page.open.as_ref().and_then(|detail| {
-            let row = [&waiting, &running, &queued, &finished]
+            let row = [&needs_attention, &running, &queued, &finished]
                 .into_iter()
                 .flatten()
                 .find(|row| row.id == detail.id)?;
@@ -173,7 +173,7 @@ impl ChatPane {
         let attention = card(
             "Needs attention",
             "tasks-attention",
-            waiting,
+            needs_attention,
             "Nothing needs you.",
             Some(filter.into_any_element()),
             cx,

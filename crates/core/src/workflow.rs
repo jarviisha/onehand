@@ -25,8 +25,8 @@ pub use prompt::first_prompt;
 #[cfg(test)]
 pub(crate) use run::Transition;
 pub use run::{
-    Action, ApprovalAt, Brief, Changed, Failure, Now, Outcome, PrOpened, Run, Setup, StartWhy,
-    Stop, Visit, WithCurrent,
+    Action, ApprovalAt, Brief, Changed, Failure, Field, Now, Outcome, PrOpened, Run, Setup,
+    StartWhy, Stop, Visit, WithCurrent,
 };
 pub(crate) use run::{COMMAND_FAILED, COMMAND_PASSED, FORGE_DONE};
 pub use status_checks::{judge, waited_on, with_logs, Seen};

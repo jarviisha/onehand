@@ -77,6 +77,27 @@ impl Template {
         })
     }
 
+    /// Why `self` cannot run in a project with no check command, when
+    /// `has_check` says it has none and a step needs one. Where to set one is
+    /// the caller's to say: a run that keeps its own setup is not fixed there.
+    pub fn lacks_check(&self, has_check: bool) -> Option<String> {
+        (self.needs_check() && !has_check).then(|| {
+            format!(
+                "the workflow `{}` runs the project's check command, and the project has none",
+                self.name
+            )
+        })
+    }
+
+    /// How long a run of `self` may work. A timeout that does not read, which
+    /// validation refuses, so only a file edited by hand carries one, gives
+    /// what a new workflow is given.
+    pub fn timeout_limit(&self) -> std::time::Duration {
+        crate::unattended::parse_every(&self.timeout)
+            .or_else(|| crate::unattended::parse_every(&default_timeout()))
+            .expect("the default timeout reads")
+    }
+
     /// Whether `self` and `other` say the same, whatever their id and version.
     pub(crate) fn same_content(&self, other: &Self) -> bool {
         let bare = |t: &Self| Self {

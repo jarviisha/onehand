@@ -16,6 +16,7 @@ use gpui::{App, BorrowAppContext as _, Task, WeakEntity};
 use onehand_core::config::UnattendedConfig;
 use onehand_core::connector::{self, Connector};
 use onehand_core::unattended::{self as core, Slots};
+use onehand_core::workflow::Field;
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::path::Path;
 use std::path::PathBuf;
@@ -228,13 +229,9 @@ fn lacks_check_given(has: bool, id: &str, cx: &App) -> Option<String> {
         Ok(template) => template,
         Err(why) => return Some(why),
     };
-    (template.needs_check() && !has).then(|| {
-        format!(
-            "the workflow `{}` runs the project's check command, and it has none; set one \
-             on the project's page",
-            template.name
-        )
-    })
+    template
+        .lacks_check(has)
+        .map(|why| format!("{why}; set one on the project's page"))
 }
 
 /// Start the tick, or say why it cannot run.
@@ -593,8 +590,11 @@ pub(crate) fn timeout_moved(task: &onehand_core::task::Task, cx: &App) -> bool {
     // The check command moves no timeout, so it is not asked for.
     let now = now_for(task, None, cx);
     let newest = crate::workflow::newest(&last.template, cx);
-    onehand_core::workflow::Run::with_current(last, newest, &now, false)
-        .is_ok_and(|plan| plan.changes.iter().any(|change| change.what == "Timeout"))
+    onehand_core::workflow::Run::with_current(last, newest, &now, false).is_ok_and(|plan| {
+        plan.changes
+            .iter()
+            .any(|change| change.field == Field::Timeout)
+    })
 }
 
 /// The default workflow and the workflow labels, as the config has them.

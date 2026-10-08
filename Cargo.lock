@@ -4751,7 +4751,6 @@ dependencies = [
  "futures",
  "onehand-core",
  "onehand-plugin-api",
- "onehand-plugin-host",
  "reqwest",
  "rustls",
  "serde",

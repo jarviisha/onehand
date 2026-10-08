@@ -1,6 +1,6 @@
 use super::queue::{place_blocking, queued_said, Queue};
 use super::*;
-use super::{Group, Source, Working};
+use super::{Group, Section, Source, Working};
 use crate::workflow::builtin;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -564,6 +564,22 @@ fn needs_attention_is_waiting_and_ended_only() {
         (Group::Finished, false),
     ] {
         assert_eq!(group.needs_attention(), needs, "{group:?}");
+    }
+}
+
+/// A list of tasks shows those that need a person under one heading, and
+/// every other group under its own.
+#[test]
+fn a_group_is_listed_under_its_section() {
+    for (group, section) in [
+        (Group::Waiting, Section::NeedsAttention),
+        (Group::Ended, Section::NeedsAttention),
+        (Group::Running, Section::Running),
+        (Group::Queued, Section::Queued),
+        (Group::Finished, Section::Finished),
+    ] {
+        assert_eq!(group.section(), section, "{group:?}");
+        assert_eq!(group.needs_attention(), section == Section::NeedsAttention);
     }
 }
 

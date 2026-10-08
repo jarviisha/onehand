@@ -606,6 +606,51 @@ fn a_template_needs_a_check_command_only_for_a_command_step_naming_none() {
     assert!(!named.needs_check());
 }
 
+/// A workflow that needs the project's check command, run where there is
+/// none, says which workflow; anything else runs.
+#[test]
+fn a_template_lacking_its_check_command_names_itself() {
+    let needs = checkout();
+    let why = needs
+        .lacks_check(false)
+        .expect("no check command, and it needs one");
+    assert!(why.contains(&format!("`{}`", needs.name)), "{why}");
+    assert_eq!(needs.lacks_check(true), None);
+    let mut named = checkout();
+    named.steps[3].kind = StepKind::Command {
+        command: Some("make check".into()),
+        on_fail: "implement".into(),
+    };
+    assert_eq!(named.lacks_check(false), None);
+}
+
+/// A timeout that does not read gives a run what a new workflow is given.
+#[test]
+fn a_timeout_that_does_not_read_falls_back_to_a_new_workflows() {
+    let mut template = checkout();
+    template.timeout = "10m".into();
+    assert_eq!(template.timeout_limit(), Duration::from_secs(10 * 60));
+    template.timeout = "soon".into();
+    let fresh = Template::blank("new").timeout_limit();
+    assert_eq!(template.timeout_limit(), fresh);
+    assert_eq!(fresh, Duration::from_secs(45 * 60));
+}
+
+/// What a retry keeps is said the same way whether it changed or not.
+#[test]
+fn a_kept_field_reads_the_same_as_its_change() {
+    let prev = failed_at_push();
+    let now = Now {
+        agent: Some("codex".into()),
+        ..same_now()
+    };
+    let plan = Run::with_current(&prev, Ok(packaged()), &now, false).unwrap();
+    let change = &plan.changes[0];
+    assert_eq!(change.field, Field::Agent);
+    assert_eq!(change.old, Field::Agent.shown(&prev.template, &prev.setup));
+    assert_eq!(Field::Agent.label(), "Agent");
+}
+
 #[test]
 fn a_run_keeps_the_template_it_began_with() {
     let mut template = checkout();
@@ -1607,7 +1652,7 @@ fn a_retry_with_current_settings_starts_where_a_command_changes() {
     assert_eq!(
         plan.changes,
         vec![Changed {
-            what: "Check command",
+            field: Field::CheckCommand,
             old: "make check".into(),
             new: "make check2".into(),
         }]
@@ -1621,7 +1666,7 @@ fn a_retry_with_current_settings_starts_where_a_command_changes() {
     }
     let plan = Run::with_current(&prev, Ok(newer), &same_now(), false).unwrap();
     assert_eq!(plan.start, index("package"));
-    assert_eq!(plan.changes[0].what, "Workflow version");
+    assert_eq!(plan.changes[0].field, Field::WorkflowVersion);
 
     // Who runs it, and for how long, moves no start.
     let now = Now {
@@ -1632,8 +1677,8 @@ fn a_retry_with_current_settings_starts_where_a_command_changes() {
     };
     let plan = Run::with_current(&prev, Ok(packaged()), &now, false).unwrap();
     assert_eq!(plan.start, index("push"));
-    let what: Vec<&str> = plan.changes.iter().map(|c| c.what).collect();
-    assert_eq!(what, ["Agent", "Mode", "Timeout"]);
+    let fields: Vec<Field> = plan.changes.iter().map(|c| c.field).collect();
+    assert_eq!(fields, [Field::Agent, Field::Mode, Field::Timeout]);
     assert_eq!(plan.template.timeout, "2h");
     assert_eq!(plan.setup.mode.as_deref(), Some("auto"));
 }
