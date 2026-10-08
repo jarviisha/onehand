@@ -21,6 +21,9 @@ members = [
     "vendor/gpui-terminal",
 ]
 resolver = "2"
+# `labs/` holds experiments with workspaces of their own; see
+# `labs/ui-labs/Cargo.toml`.
+exclude = ["labs"]
 
 # No `default-members`: bare `cargo run` / `cargo check` / `cargo test` should
 # cover everything there is.

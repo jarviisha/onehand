@@ -1,0 +1,31 @@
+# A UI laboratory: proposed layouts and components drawn with gpui-component,
+# on static data, to be looked at before any of it reaches the app.
+#
+# Deliberately outside the onehand workspace (the root manifest excludes
+# `labs/`) and named by no CI job: nothing here ships, nothing here is held to
+# the app's contracts, and nothing the app does depends on it.
+#
+# The dependency set mirrors `crates/app` on purpose: the same gpui-component
+# rev, and gpui revless so it unifies with that rev's own. This crate keeps a
+# Cargo.lock of its own, seeded from the workspace's, so its gpui commit is the
+# app's. Run it through `make labs`, which shares the workspace's target dir.
+[workspace]
+
+[package]
+name = "ui-labs"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+[dependencies]
+gpui-component = { git = "https://github.com/longbridge/gpui-component", rev = "9e3a29dcbdebc318632bf68203f26c33e9f0e902" }
+gpui-component-assets = { git = "https://github.com/longbridge/gpui-component", rev = "9e3a29dcbdebc318632bf68203f26c33e9f0e902" }
+gpui = { git = "https://github.com/zed-industries/zed" }
+gpui_platform = { git = "https://github.com/zed-industries/zed", features = ["font-kit", "x11", "wayland", "runtime_shaders"] }
+
+[profile.dev]
+opt-level = 1
+debug = "line-tables-only"
+
+[profile.dev.package."*"]
+opt-level = 3
