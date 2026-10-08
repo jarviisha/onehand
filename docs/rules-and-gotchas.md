@@ -94,6 +94,7 @@ Review the uncovered part when changing the relevant area:
 | Fields have readers | Scans field-name uses; comments in the guard explain exceptions | Collection mutation counted as a read and unrelated fields sharing a name |
 | Registry icons and button wrapper | Finds listed glyph literals and direct `Button::new(` spelling | Other glyphs, aliases and differently formatted construction |
 | English documents | Detects selected Vietnamese diacritics | Other languages and quoted data |
+| Named sizes | Finds a non-zero number written as the first argument of `rems(` or `px(` outside a `const`, ratcheted per file for the files that predate the rule | Arithmetic on a number (`x * 0.5`), sizes passed through other helpers, and the listed files until their counts reach zero |
 | Theme, bounded rendering, module size and UI contract | Dedicated tests cover individual behaviours | No general guard proves these rules or synchronizes documentation with code |
 
 Keep the checks that catch real regressions. Add a targeted check when a concrete failure

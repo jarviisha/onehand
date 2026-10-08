@@ -12,7 +12,7 @@ before reading anything else.
 
 | Editing | Binding contract | Every value comes from | Checks |
 |---|---|---|---|
-| `crates/app`, `plugins/builtin/*`, `crates/plugin-host` | `DESIGN.md` at the root, plus the `design-contract` skill; a feature's own screens are in `docs/tasks.md`, `docs/workflows.md`, `docs/unattended.md` | `cx.theme()` for colour and radius; the surface ramp in `crates/app/src/theme.rs`; gpui's base-4 spacing scale; any other size, a named `const` beside the code that uses it, with its reason | `cargo test -p onehand` (its `guards` included), the touched plugin's tests, `make clippy CLIPPY_EXTRA="-- -D warnings"`, `make fmt` |
+| `crates/app`, `plugins/builtin/*`, `crates/plugin-host` | `DESIGN.md` at the root, plus the `design-contract` skill; a feature's own screens are in `docs/tasks.md`, `docs/workflows.md`, `docs/unattended.md` | `cx.theme()` for colour and radius; the surface ramp in `crates/app/src/theme.rs`; for spacing and every other size, root `DESIGN.md`, *Typography and spacing* | `cargo test -p onehand` (its `guards` included), the touched plugin's tests, `make clippy CLIPPY_EXTRA="-- -D warnings"`, `make fmt` |
 | `labs/ui-labs` | `labs/ui-labs/DESIGN.md` | `labs/ui-labs/src/tokens.rs` only: spacing, chrome, type, radii, width budgets, state steps and the two `Palette`s | `cargo test --manifest-path labs/ui-labs/Cargo.toml --target-dir target` (its `guards` included), `cargo fmt --manifest-path labs/ui-labs/Cargo.toml` |
 
 - **Never apply a labs rule to `crates/app`**, or an app rule to the lab. The only way a lab
@@ -42,9 +42,13 @@ before reading anything else.
     role (`SUBLINE`), never for its arithmetic (`HALF_TIGHT`).
   - App: a missing surface or ink goes into the ramp in `crates/app/src/theme.rs` with its
     contrast asserted in that file's tests, never into the one view that needed it. A missing size
-    is a `const` in the module that uses it, in rems, with its reason.
+    follows root `DESIGN.md`, *Typography and spacing*.
+  - App, files written before that rule: `every_length_has_a_name` in `crates/app/src/guards.rs`
+    lists them with how many numbers each still writes. A change may only lower a count; when you
+    touch one of those lines anyway, name its number and lower the file's entry.
 - **In the lab, docs name constants, never numbers**, as its `DESIGN.md` says at the top. The
-  root `DESIGN.md` names no values at all.
+  root `DESIGN.md` states no drawing values; the few numbers it holds are behaviour, such as a
+  cap or a resize range.
 
 ## 4. The same change carries its docs
 

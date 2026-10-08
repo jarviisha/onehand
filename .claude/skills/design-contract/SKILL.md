@@ -7,7 +7,9 @@ description: Read before changing anything the user sees — a panel, a dock, a 
 
 Read `DESIGN.md` before the edit, at the version in the working tree. It covers layout, the
 transcript, typography, colour, components and icons. It describes structure and behaviour, never
-values: every colour, radius and size comes from `cx.theme()`, and sizes are rems.
+values: every colour, radius and size comes from `cx.theme()`, and sizes are rems. Its
+*Typography and spacing* says where any other size lives, and a source guard holds new code to
+it.
 
 - **It is binding at the level it is written.** Below that, the code and its tests decide, and
   a feature's own document (`docs/tasks.md`, `docs/workflows.md`, `docs/unattended.md`) holds the

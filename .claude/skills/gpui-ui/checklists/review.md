@@ -10,7 +10,8 @@ rule. Read the same sections before drawing, for the region you touch.
 ## Values
 
 1. Any literal size, gap, radius or colour at a call site, rather than from the source in the
-   skill's route table (*Every value comes from*)? — *Labs:* the paragraph under the title.
+   skill's route table (*Every value comes from*)? — *App:* Typography and spacing · *Labs:* the
+   paragraph under the title.
 2. Any constant named for its arithmetic rather than its role, or used for a role it is not named
    for? — *Labs:* the paragraph under the title.
 3. Any number or hex copied into a document, a comment or this skill? — *Labs:* the paragraph under

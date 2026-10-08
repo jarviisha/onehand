@@ -638,6 +638,144 @@ mod tests {
         }
     }
 
+    /// Lengths written as numbers where they are drawn, per file, that predate
+    /// the rule below. A file may only go down; once it does, lower its entry
+    /// here, and remove it at zero.
+    ///
+    /// The settings dialog's six are there to stay: its bounds are measured
+    /// against the window in pixels, which is the point of them.
+    const LENGTHS_BEFORE_THE_RULE: &[(&str, usize)] = &[
+        ("crates/app/src/chat/pane/header.rs", 1),
+        ("crates/app/src/chat/pane/runs.rs", 1),
+        ("crates/app/src/chat/pane/step_strip.rs", 2),
+        ("crates/app/src/chat/transcript/prose.rs", 1),
+        ("crates/app/src/chat/transcript/strip.rs", 1),
+        ("crates/app/src/chat/transcript/tool.rs", 2),
+        ("crates/app/src/chat/viewport.rs", 2),
+        ("crates/app/src/dialogs.rs", 4),
+        ("crates/app/src/dialogs/issue.rs", 2),
+        ("crates/app/src/rail/session.rs", 1),
+        ("crates/app/src/rail/workspace.rs", 1),
+        ("crates/app/src/settings.rs", 9),
+        ("crates/app/src/settings/pages.rs", 1),
+        ("crates/app/src/terminal.rs", 1),
+        ("crates/app/src/workflows_page/step.rs", 1),
+        ("plugins/builtin/workbench-editor/src/buffers.rs", 7),
+        ("plugins/builtin/workbench-files/src/view.rs", 2),
+        ("plugins/builtin/workbench-issues/src/view/detail.rs", 3),
+        ("plugins/builtin/workbench-issues/src/view/full.rs", 1),
+        ("plugins/builtin/workbench-issues/src/view/review.rs", 2),
+        ("plugins/builtin/workbench-markdown/src/document.rs", 3),
+        ("plugins/builtin/workbench-plugins/src/view/details.rs", 1),
+    ];
+
+    /// The lengths written into `rems(` or `px(` on one line, unless the line
+    /// declares a constant or is a comment. Zero is not a length anyone tunes.
+    fn written_lengths(line: &str) -> Vec<String> {
+        let code = line.trim_start();
+        if code.starts_with("//") {
+            return Vec::new();
+        }
+        let item = match code.strip_prefix("pub") {
+            Some(rest) if rest.starts_with('(') => rest.split_once(") ").map_or(rest, |(_, r)| r),
+            Some(rest) => rest.trim_start(),
+            None => code,
+        };
+        if item.starts_with("const ") || item.starts_with("static ") {
+            return Vec::new();
+        }
+        let mut found = Vec::new();
+        for call in ["rems(", "px("] {
+            for (at, _) in line.match_indices(call) {
+                if line[..at]
+                    .chars()
+                    .last()
+                    .is_some_and(|c| c.is_alphanumeric() || c == '_')
+                {
+                    continue;
+                }
+                let arg = line[at + call.len()..].trim_start();
+                let arg = arg.strip_prefix('-').unwrap_or(arg);
+                let number: String = arg
+                    .chars()
+                    .take_while(|c| c.is_ascii_digit() || *c == '.' || *c == '_')
+                    .collect();
+                if number.chars().any(|c| c.is_ascii_digit() && c != '0') {
+                    found.push(number);
+                }
+            }
+        }
+        found
+    }
+
+    /// Every length is named where the theme and gpui's spacing scale give it
+    /// none: a `const` beside the code that uses it, its reason in its doc
+    /// comment. A number at the call site says neither what it is for nor
+    /// that the same number two files away is the same decision, and it is how
+    /// one size drifts into three.
+    ///
+    /// Ratcheted rather than all at once: the files that already wrote numbers
+    /// are listed with how many, and a file may only lose them.
+    #[test]
+    fn every_length_has_a_name() {
+        let root = workspace_root().display().to_string();
+        let mut over = Vec::new();
+        let mut under = Vec::new();
+        for (path, source) in ui_sources() {
+            let rel = path
+                .strip_prefix(&root)
+                .unwrap_or(&path)
+                .trim_start_matches('/')
+                .to_string();
+            if rel.contains("/tests/") || rel.ends_with("/tests.rs") {
+                continue;
+            }
+            let code = source.split("#[cfg(test)]\nmod tests").next().unwrap_or("");
+            let lines: Vec<String> = code
+                .lines()
+                .enumerate()
+                .flat_map(|(n, line)| {
+                    let rel = &rel;
+                    written_lengths(line)
+                        .into_iter()
+                        .map(move |v| format!("{rel}:{}: {v} in {}", n + 1, line.trim()))
+                })
+                .collect();
+            let allowed = LENGTHS_BEFORE_THE_RULE
+                .iter()
+                .find(|(file, _)| *file == rel)
+                .map_or(0, |(_, n)| *n);
+            if lines.len() > allowed {
+                over.extend(lines);
+            } else if lines.len() < allowed {
+                under.push(format!("{rel}: {} now, listed as {allowed}", lines.len()));
+            }
+        }
+        assert!(
+            over.is_empty(),
+            "a length written as a number; name it in a const beside its use, with \
+             its reason:\n{}",
+            over.join("\n")
+        );
+        assert!(
+            under.is_empty(),
+            "fewer written lengths than listed; lower these in \
+             LENGTHS_BEFORE_THE_RULE:\n{}",
+            under.join("\n")
+        );
+    }
+
+    #[test]
+    fn a_written_length_is_told_from_a_named_one() {
+        assert_eq!(written_lengths(".w(rems(13.5))"), vec!["13.5"]);
+        assert_eq!(written_lengths("start: offset < px(-0.5),"), vec!["0.5"]);
+        assert!(written_lengths(".gap(px(0.))").is_empty());
+        assert!(written_lengths(".w(rems(ROW_W))").is_empty());
+        assert!(written_lengths("pub(in crate::chat) const GAP: Rems = rems(2.);").is_empty());
+        assert!(written_lengths("/// a `px(13.)` in prose").is_empty());
+        assert!(written_lengths("x.to_rems(1.0)").is_empty());
+    }
+
     #[test]
     fn code_never_cites_a_document() {
         // Assembled from stems at run time so this test does not match its own

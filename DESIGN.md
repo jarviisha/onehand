@@ -204,7 +204,8 @@ monospace font.
   dialog's bounds, which are measured against the window, and a menu row's inset, which cancels
   one the library draws in pixels.
 - Spacing uses gpui's base-4 scale. Radius comes from `cx.theme().radius` (`radius_lg` for
-  cards); `rounded_full` is only for dots and pills.
+  cards); `rounded_full` is only for dots and pills. A size neither gives is a named constant
+  beside the code using it, its reason in its doc comment, never a number at the call site.
 - Weight carries hierarchy before size does.
 
 ## Colour and state
