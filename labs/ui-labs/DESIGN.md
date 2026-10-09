@@ -410,7 +410,7 @@ hierarchy are identical in both.
 |---|---|
 | Docks are continuous surfaces divided by one hairline | each dock is a card inset on three sides |
 | The Workbench takes the content area when the chat would drop under `CHAT_MIN` | docks never crowd the conversation, with no rule for when they would |
-| A palette of its own, neutral greys in light and dark | gpui-component's theme plus the app's surface ramp |
+| Bubble and well share `sunken`; hover and selected share `selected` | the app's palette keeps each pair a step apart, its other values the lab's |
 | Weights 400 and 500 only | titles are semibold |
 | *Stop* is a solid danger button with its word | Send and Stop share an icon button |
 | A question's description is said once | the description is repeated as the field's placeholder |

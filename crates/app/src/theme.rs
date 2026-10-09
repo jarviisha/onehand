@@ -12,9 +12,12 @@
 //! the same value, so a quoted command and the user's own message are drawn
 //! identically and the composer paints exactly the surface it floats above.
 //!
-//! So the app names its own steps. Only the surfaces and the greys that sit on
-//! them are ours; hues, status colours, selection, the scrollbar and everything
-//! else keep the values the library shipped.
+//! So the app names its own steps, and its own hues with them: neutral greys
+//! carry everything, and a hue only ever means state. The values are the ones
+//! `labs/ui-labs/src/tokens.rs` proposed; where the app draws a distinction the
+//! lab does not (a bubble apart from a well, selected apart from hover, a
+//! marked rail row), the step is the nearest grey that keeps the tests below.
+//! Every token not written here keeps the value the library shipped.
 //!
 //! ## Status colour is still not a surface
 //!
@@ -83,9 +86,9 @@ struct Ramp {
     /// well, and against the well `hover` is 1.04 apart in the light palette —
     /// a fill nobody can see — while the reading surface is 1.19 in the dark
     /// one, which punches a near-black hole through a panel rather than lifting
-    /// a row out of it. This sits between, and it lifts: lighter than the rail
-    /// in the dark palette, lighter again in the light one, because a selected
-    /// row reads as raised and a hole reads as damage.
+    /// a row out of it. This sits between: the hover tint laid over the rail,
+    /// so in the dark palette it lifts toward the light rather than sinking
+    /// toward the near-black surface.
     ///
     /// It can afford to be quiet where a *surface* could not. A region has only
     /// its fill to be found by; a row has ink at full strength and a weight the
@@ -97,30 +100,60 @@ struct Ramp {
     /// A control floating over the transcript: the composer, the completion
     /// popup, the jump-to-latest pill.
     floating: &'static str,
+    /// A control's edge, and the scrollbar thumb.
+    control: &'static str,
+    /// The border marking where the keyboard is.
+    ring: &'static str,
+    /// Running and links; the text selection is this, thinned.
+    accent: &'static str,
+    /// The base hues status ink is derived from.
+    warning: &'static str,
+    success: &'static str,
+    danger: &'static str,
+    /// Danger as a fill, with white on it: the same red in both modes, because
+    /// the lighter red of the dark palette is only ever ink.
+    danger_fill: &'static str,
+    /// The one primary action in a view: ink on light, light on dark.
+    primary: &'static str,
+    primary_ink: &'static str,
 }
 
 /// Light steps *down* from a white surface, which is the only direction there
 /// is: nothing is lighter than the surface, so a floating control stays white
 /// and is separated by its shadow instead.
-///
-/// The ink here is left at full strength on purpose. What glares in a light
-/// palette is the *surface*, not the text on it, so dimming the text buys no
-/// comfort and spends legibility to do it — the softening the dark ramp needed
-/// would be a straight loss here.
 const LIGHT: Ramp = Ramp {
     background: "#ffffff",
-    foreground: "#0a0a0a",
-    well: "#efefef",
-    well_ink: "#636363",
-    bubble: "#e0e0e0",
-    bubble_ink: "#171717",
-    hover: "#ebebeb",
-    selected: "#d3d3d3",
-    selected_ink: "#171717",
-    // 1.12 against the well the rail is drawn in.
-    marked: "#fcfcfc",
-    hairline: "#dcdcdc",
+    foreground: "#1f1f1f",
+    well: "#eeeeee",
+    // The lab's secondary ink rather than its metadata grey: this one is drawn
+    // as small text on every surface, and the lighter grey falls under AA on
+    // white.
+    well_ink: "#616161",
+    // A step past the well, so the user's own message is the block a reader
+    // finds scanning back through a long conversation.
+    bubble: "#dedede",
+    bubble_ink: "#1f1f1f",
+    // The lab's hover tint, composited onto the surface.
+    hover: "#ededed",
+    // Far enough past hover that a row both hovered and selected, thinned in
+    // the completion popup, still reads as selected.
+    selected: "#d6d6d6",
+    selected_ink: "#1f1f1f",
+    // The lab's hover tint over the well the rail is drawn in.
+    marked: "#dedede",
+    hairline: "#d4d4d4",
     floating: "#ffffff",
+    control: "#c7c7c7",
+    ring: "#888888",
+    // A shade under the lab's `#007acc`, which inline code tempered toward the
+    // meta ink drew under AA in a well.
+    accent: "#006eb8",
+    warning: "#854f0b",
+    success: "#16825d",
+    danger: "#a32d2d",
+    danger_fill: "#a32d2d",
+    primary: "#1f1f1f",
+    primary_ink: "#ffffff",
 };
 
 /// Dark steps *up* from a near-black surface, for the same reason in reverse —
@@ -128,35 +161,33 @@ const LIGHT: Ramp = Ramp {
 /// near-black is invisible and would leave a card divided from the conversation
 /// by one hairline.
 const DARK: Ramp = Ramp {
-    background: "#0a0a0a",
-    // **Not white.** On a near-black surface the ink is the bright thing in the
-    // room, and near-white prose against it runs about 19:1 -- roughly four
-    // times what a body of text needs and enough to leave an afterimage on a
-    // long conversation read in a dark room. Stepped down to a soft grey it is
-    // still comfortably past AAA against every surface it lands on, and the
-    // ramp's *relative* steps are all unchanged: meta ink stays quieter than
-    // prose, and prose stays quieter than the ink on a selected row.
-    foreground: "#d6d6d6",
-    well: "#1e1e1e",
-    // Left where it was. It is already grey rather than white, so it is not
-    // what glares -- and it is the ink with the least room to give: dimmed one
-    // step further it fell under AA against the bubble fill, which the ramp's
-    // own test caught.
-    well_ink: "#a3a3a3",
-    bubble: "#303030",
-    // A step up from prose, because the bubble fill is a step up from the
-    // surface: the same ink on both would make the user's own message the
-    // dimmest text on screen.
-    bubble_ink: "#e3e3e3",
-    hover: "#232323",
-    selected: "#3d3d3d",
-    selected_ink: "#f0f0f0",
-    // 1.12 against the well, the same step the light palette takes, and on the
-    // same side of it: up from the rail rather than down toward the near-black
-    // reading surface.
-    marked: "#272727",
-    hairline: "#333333",
-    floating: "#1e1e1e",
+    background: "#181818",
+    foreground: "#ececec",
+    well: "#282828",
+    // A notch over the lab's secondary ink: at that value it fell under AA on
+    // the bubble, which the ramp's own test caught.
+    well_ink: "#a0a0a0",
+    bubble: "#333333",
+    bubble_ink: "#ececec",
+    hover: "#2a2a2a",
+    selected: "#3e3e3e",
+    selected_ink: "#ececec",
+    marked: "#393939",
+    hairline: "#404040",
+    // The well's grey: the lab's panel sits too close to the surface for a
+    // card that has no visible shadow to stand on.
+    floating: "#282828",
+    control: "#404040",
+    ring: "#767676",
+    // Blue in both modes, lifted to read on near-black: running and waiting
+    // must never be told apart by a shade, and a yellow sat beside the amber.
+    accent: "#3794ff",
+    warning: "#fac775",
+    success: "#1fbd53",
+    danger: "#f09595",
+    danger_fill: "#a32d2d",
+    primary: "#ececec",
+    primary_ink: "#181818",
 };
 
 /// Write one ramp into the token names the library actually reads.
@@ -255,6 +286,46 @@ fn paint(colors: &mut ThemeConfigColors, ramp: &Ramp) {
     // Left to its own devices this one is derived as a fraction of the selected
     // fill, which lands close enough to the surface to read as nothing.
     set(&mut colors.list_hover, ramp.hover);
+
+    set(&mut colors.input, ramp.control);
+    set(&mut colors.scrollbar_thumb, ramp.control);
+    set(&mut colors.ring, ramp.ring);
+    set(&mut colors.caret, ramp.foreground);
+    set(&mut colors.link, ramp.accent);
+    set(&mut colors.info, ramp.accent);
+    set(&mut colors.success, ramp.success);
+    set(&mut colors.warning, ramp.warning);
+    set(&mut colors.primary, ramp.primary);
+    set(&mut colors.primary_foreground, ramp.primary_ink);
+    set(&mut colors.button_primary, ramp.primary);
+    set(&mut colors.button_primary_foreground, ramp.primary_ink);
+    // Danger is solid red with white on it in both modes; the lighter red is
+    // only ever ink, through the base hue below.
+    for slot in [&mut colors.danger, &mut colors.button_danger] {
+        set(slot, ramp.danger_fill);
+    }
+    for slot in [
+        &mut colors.danger_foreground,
+        &mut colors.button_danger_foreground,
+    ] {
+        set(slot, "#ffffff");
+    }
+    // The text selection: the accent, thinned so the text under it still reads.
+    colors.selection = Some(format!("{}40", ramp.accent).into());
+
+    // The base hues status ink and inline code are derived from. The library
+    // keeps these slots private, so they go in through the config's serde form,
+    // under the names a theme file would give them.
+    let mut value = serde_json::to_value(&*colors).expect("a theme config serializes");
+    for (key, hue) in [
+        ("base.blue", ramp.accent),
+        ("base.yellow", ramp.warning),
+        ("base.green", ramp.success),
+        ("base.red", ramp.danger),
+    ] {
+        value[key] = hue.into();
+    }
+    *colors = serde_json::from_value(value).expect("a theme config reads back");
 }
 
 /// Replace the two configs the mode switch chooses between with ours.
@@ -701,6 +772,30 @@ mod tests {
                 assert!(
                     contrast(state, theme.muted) > contrast(theme.secondary, theme.muted),
                     "{name}: a {label} filled button sits closer to the well than its own resting fill"
+                );
+            }
+        }
+    }
+
+    /// The base hues are private slots reached through the config's serde form;
+    /// a renamed key there would leave them on the shipped palette in silence.
+    #[test]
+    fn the_base_hues_run_on_the_ramp() {
+        for (name, ramp, mode) in [
+            ("light", &LIGHT, ThemeMode::Light),
+            ("dark", &DARK, ThemeMode::Dark),
+        ] {
+            let theme = resolve(ramp, mode);
+            for (hue, got, want) in [
+                ("blue", theme.blue, ramp.accent),
+                ("yellow", theme.yellow, ramp.warning),
+                ("green", theme.green, ramp.success),
+                ("red", theme.red, ramp.danger),
+            ] {
+                assert_eq!(
+                    got,
+                    Hsla::parse_hex(want).unwrap(),
+                    "{name}: base {hue} is not the ramp's"
                 );
             }
         }

@@ -5,8 +5,9 @@ follows. It describes structure and behaviour, not values. It is binding at the 
 below it, the code and its tests decide. A feature's own document (`docs/tasks.md`,
 `docs/workflows.md`, `docs/unattended.md`) holds the detail of its screens. Code never cites this file; a comment gives its reason in its own words.
 
-**No palette lives here.** onehand uses gpui-component's theme, plus one surface-ramp override
-installed at boot (`crate::theme::install`, which carries contrast tests). Every colour, radius and
+**No palette lives here.** onehand uses gpui-component's theme, overridden at boot by the app's
+own palette (`crate::theme::install`, which carries contrast tests): neutral greys for every
+surface and ink, a hue only for state. Every colour, radius and
 size is read from `cx.theme()` at the call site. A hex literal in the render layer is a bug even
 when it looks right, because a theme switch cannot reach it.
 

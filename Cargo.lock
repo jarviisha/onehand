@@ -4703,6 +4703,7 @@ dependencies = [
  "onehand-workbench-neovim",
  "onehand-workbench-plugins",
  "rfd",
+ "serde_json",
  "tokio",
  "toml 0.8.23",
 ]
