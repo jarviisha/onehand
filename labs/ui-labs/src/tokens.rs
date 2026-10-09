@@ -38,6 +38,12 @@ pub const TAB_MAX_W: f32 = 10.0;
 pub const TEXT_READ: f32 = 1.0;
 /// Activity lines and code: `text_sm`.
 pub const TEXT_READ_SM: f32 = 0.875;
+/// Headings in the agent's prose: `text_xl` and `text_lg`. A third level
+/// keeps the body size and only takes weight.
+pub const TEXT_READ_H1: f32 = 1.25;
+pub const TEXT_READ_H2: f32 = 1.125;
+/// The space between paragraphs in the agent's prose: `gap_2`.
+pub const PARAGRAPH_GAP: f32 = 0.5;
 /// Line height as a multiple of the size.
 pub const LEADING_UI: f32 = 1.45;
 pub const LEADING_READ: f32 = 1.6;
@@ -55,6 +61,11 @@ pub const ZOOM_MAX: f32 = 2.0;
 pub const HAIRLINE_PX: f32 = 0.5;
 /// A seam's line while it is being dragged.
 pub const SEAM_DRAG_PX: f32 = 2.0;
+/// The composer's lift, in pixels as a hairline is: the tight shadow's blur,
+/// and the soft one's drop and blur.
+pub const LIFT_EDGE_BLUR_PX: f32 = 1.5;
+pub const LIFT_DROP_PX: f32 = 4.0;
+pub const LIFT_BLUR_PX: f32 = 16.0;
 
 // ---- marks ----------------------------------------------------------------
 
@@ -148,6 +159,8 @@ pub const MENU_WIDE_W: f32 = 20.0;
 pub const SESSION_CAP: usize = 6;
 /// Rows a popup shows before it says how many more there are.
 pub const POPUP_LIST_CAP: usize = 6;
+/// A command's output shows this many last lines until asked for the rest.
+pub const OUTPUT_TAIL: usize = 5;
 
 // ---- state steps for filled controls -------------------------------------
 
@@ -159,6 +172,9 @@ pub const DANGER_HOVER_STEP: f32 = 0.06;
 pub const DANGER_PRESS_STEP: f32 = 0.12;
 /// Selected text: the accent, thinned so the text under it still reads.
 pub const SELECTION_ALPHA: f32 = 0.25;
+/// A state's ink thinned to a fill: a diff line's green or red, an error's
+/// banner.
+pub const STATE_TINT: f32 = 0.1;
 
 // ---- colour ---------------------------------------------------------------
 
@@ -167,15 +183,22 @@ pub const SELECTION_ALPHA: f32 = 0.25;
 /// is danger. A selected row is a faint ink tint, never the accent.
 ///
 /// Solid fills only: no gradients, no textures. Shadows only on what floats
-/// (dialogs, menus, popups).
+/// (the composer card, dialogs, menus, popups).
 #[derive(Clone, Copy)]
 pub struct Palette {
     /// The reading surface.
     pub page: Hsla,
     /// The rail, code wells, the user's bubble.
     pub sunken: Hsla,
-    /// Docks, the composer, cards, dialogs.
+    /// Docks, cards, dialogs.
     pub panel: Hsla,
+    /// The composer card: it has no edge, so its fill and its lift stand it
+    /// clear of the page and of `sunken`, the wells' and the bubble's.
+    pub raised: Hsla,
+    /// The composer's lift: a tight shadow that draws its outline where a
+    /// border would, and a soft one under it.
+    pub lift_edge: Hsla,
+    pub lift: Hsla,
     pub text: Hsla,
     pub text2: Hsla,
     /// Metadata, line numbers.
@@ -224,6 +247,10 @@ pub fn light() -> Palette {
         page: c(0xFFFFFF),
         sunken: c(0xEEEEEE),
         panel: c(0xF3F3F3),
+        // White, as the page: a grey card read as a well. The lift draws it.
+        raised: c(0xFFFFFF),
+        lift_edge: ca(0x1F1F1F2E),
+        lift: ca(0x1F1F1F1A),
         text: c(0x1F1F1F),
         text2: c(0x616161),
         muted: c(0x888888),
@@ -258,6 +285,11 @@ pub fn dark() -> Palette {
         page: c(0x181818),
         sunken: c(0x282828),
         panel: c(0x202020),
+        // A shadow barely shows on near-black, so the fill does the work: a
+        // clear step above `sunken`, the lift only deepening it.
+        raised: c(0x303030),
+        lift_edge: ca(0x00000099),
+        lift: ca(0x00000066),
         text: c(0xECECEC),
         text2: c(0x979797),
         muted: c(0x767676),

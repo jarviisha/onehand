@@ -69,15 +69,25 @@ impl Item {
 /// The field's placeholder.
 pub(super) const PLACEHOLDER: &str = "Ask the agent…";
 
-/// The composer's card: the field and its row of controls on one surface. The
-/// card is the field's edge, so it is what darkens while the field has the
-/// caret.
-pub(super) fn card(p: &Palette, cx: &App, focused: bool) -> gpui::Div {
+/// The composer's card: the field and its row of controls on one surface,
+/// with no edge drawn: its own fill and its lift set it apart. The library's
+/// shadows are too soft to outline a white card on a white page, so the lift
+/// is two of its own: a tight one where the edge would be, a soft one under.
+pub(super) fn card(p: &Palette, cx: &App) -> gpui::Div {
+    let shadow = |color, y, blur| gpui::BoxShadow {
+        color,
+        offset: gpui::point(gpui::Pixels::ZERO, gpui::px(y)),
+        blur_radius: gpui::px(blur),
+        spread_radius: gpui::Pixels::ZERO,
+        inset: false,
+    };
     v_flex()
         .rounded(cx.theme().radius_lg)
-        .border_1()
-        .border_color(if focused { p.muted } else { p.control })
-        .bg(p.panel)
+        .bg(p.raised)
+        .shadow(vec![
+            shadow(p.lift_edge, 0., LIFT_EDGE_BLUR_PX),
+            shadow(p.lift, LIFT_DROP_PX, LIFT_BLUR_PX),
+        ])
         .p_1p5()
         .gap_1()
 }
@@ -209,7 +219,7 @@ impl Labs {
         v_flex()
             .w_full()
             .child(
-                card(p, cx, false)
+                card(p, cx)
                     .children(tray)
                     .child(
                         div()
