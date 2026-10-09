@@ -325,7 +325,7 @@ impl Labs {
     // ---- drawing -----------------------------------------------------------
 
     /// What this session added, below the canned transcript.
-    pub(super) fn said(&self, p: &Palette) -> Vec<AnyElement> {
+    pub(super) fn said(&self, p: &Palette, cx: &App) -> Vec<AnyElement> {
         let mut out: Vec<AnyElement> = self
             .live
             .said
@@ -336,9 +336,9 @@ impl Labs {
                     .child(
                         v_flex()
                             .max_w(rems(BUBBLE_MAX))
-                            .px(rems(RELATED))
-                            .py(rems(CONTROL))
-                            .rounded(rems(RADIUS_XL))
+                            .px_3()
+                            .py_2()
+                            .rounded(cx.theme().radius_lg)
                             .bg(p.sunken)
                             .child(if text.is_empty() {
                                 "(attachments only)".to_string()
@@ -348,7 +348,7 @@ impl Labs {
                             .when(*files > 0, |d| {
                                 d.child(
                                     div()
-                                        .text_size(rems(TEXT_XS))
+                                        .text_xs()
                                         .text_color(p.muted)
                                         .child(format!("{files} attached")),
                                 )
@@ -357,10 +357,10 @@ impl Labs {
                     .into_any_element(),
                 Said::Agent(text) => div().child(*text).into_any_element(),
                 Said::Notice(text) => h_flex()
-                    .gap(rems(CONTROL))
+                    .gap_2()
                     .text_size(self.read(TEXT_READ_SM))
                     .text_color(p.muted)
-                    .child(Icon::new(IconName::Info).size(rems(ICON_SM)))
+                    .child(Icon::new(IconName::Info).xsmall())
                     .child(*text)
                     .into_any_element(),
             })
@@ -368,7 +368,7 @@ impl Labs {
         if self.live.running() {
             out.push(
                 h_flex()
-                    .gap(rems(CONTROL))
+                    .gap_2()
                     .text_size(self.read(TEXT_READ_SM))
                     .text_color(p.accent)
                     .child(gpui_component::spinner::Spinner::new().small())
@@ -401,7 +401,7 @@ impl Labs {
 
         let send: AnyElement = if running {
             h_flex()
-                .gap(rems(TIGHT))
+                .gap_1()
                 .when(typed, |d| {
                     d.child(
                         action("queue")
@@ -435,20 +435,20 @@ impl Labs {
         let tray = (!live.tray.is_empty()).then(|| {
             h_flex()
                 .flex_wrap()
-                .gap(rems(TIGHT))
+                .gap_1()
                 .children(live.tray.iter().enumerate().map(|(slot, &i)| {
                     let (icon, name, size) = ATTACHABLE[i].clone();
                     h_flex()
-                        .h(rems(CONTROL_H))
-                        .pl(rems(CONTROL))
-                        .pr(rems(TIGHT))
-                        .gap(rems(CONTROL))
-                        .rounded(rems(RADIUS_SM))
+                        .h_6()
+                        .pl_2()
+                        .pr_1()
+                        .gap_2()
+                        .rounded(cx.theme().radius)
                         .border_1()
                         .border_color(p.hairline)
                         .bg(p.sunken)
-                        .text_size(rems(TEXT_XS))
-                        .child(Icon::new(icon).size(rems(ICON_SM)).text_color(p.muted))
+                        .text_xs()
+                        .child(Icon::new(icon).xsmall().text_color(p.muted))
                         .child(div().text_color(p.text).child(name))
                         .child(div().text_color(p.muted).child(size))
                         .child(
@@ -468,12 +468,12 @@ impl Labs {
         let queued = live.queued.iter().enumerate().map(|(i, text)| {
             h_flex()
                 .w_full()
-                .px(rems(RELATED))
-                .py(rems(CONTROL))
-                .gap(rems(CONTROL))
+                .px_3()
+                .py_2()
+                .gap_2()
                 .child(
                     div()
-                        .text_size(rems(TEXT_XS))
+                        .text_xs()
                         .text_color(p.muted)
                         .font_medium()
                         .child("Queued"),
@@ -514,13 +514,13 @@ impl Labs {
         };
         let is_open = |menu: Menu| live.open == Some(menu);
 
-        let card = super::composer::card(p, focused)
+        let card = super::composer::card(p, cx, focused)
             .children(tray)
             .child(
                 // The whole field area takes the caret, not only its first line.
                 div()
                     .id("field")
-                    .min_h(rems(INPUT_MIN_H))
+                    .min_h_10()
                     .cursor_text()
                     .text_size(self.read(TEXT_READ))
                     .line_height(self.read(TEXT_READ * LEADING_READ))
@@ -529,7 +529,7 @@ impl Labs {
             )
             .child(
                 h_flex()
-                    .gap(rems(CONTROL))
+                    .gap_2()
                     .child(
                         super::composer::plus_chip(is_open(Menu::Plus))
                             .on_click(cx.listener(|this, _, _, cx| this.toggle(Menu::Plus, cx))),
@@ -576,10 +576,10 @@ impl Labs {
         let strip = if narrow {
             v_flex().items_start()
         } else {
-            h_flex().justify_between().gap(rems(CONTROL))
+            h_flex().justify_between().gap_2()
         }
-        .px(rems(COMPOSER_PAD))
-        .pt(rems(COMPOSER_PAD))
+        .px_1p5()
+        .pt_1p5()
         .child(branch)
         .child(mode);
 
@@ -587,7 +587,7 @@ impl Labs {
 
         v_flex()
             .w_full()
-            .gap(rems(STACK_GAP))
+            .gap_2p5()
             .children(queued)
             .child(v_flex().relative().child(card).child(strip).children(popup))
             // While a popup is open the arrows walk it instead of the caret.

@@ -19,6 +19,7 @@ pub mod assets;
 mod chat;
 mod controls;
 mod dialogs;
+mod fonts;
 #[cfg(test)]
 mod guards;
 mod icons;

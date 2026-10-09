@@ -2,41 +2,37 @@
 //! numbered specimen, at the stack's real width, on the reading surface.
 use super::composer::{ComposerLook, item};
 use super::*;
-use gpui::AnyElement;
+use gpui::{AnyElement, Pixels};
 
 impl Labs {
     fn specimen(
         p: &Palette,
+        radius: Pixels,
         n: usize,
         name: &'static str,
         note: &'static str,
         stack: impl IntoElement,
     ) -> impl IntoElement {
         v_flex()
-            .gap(rems(CONTROL))
+            .gap_2()
             .child(
                 h_flex()
-                    .gap(rems(CONTROL))
-                    .child(
-                        div()
-                            .text_size(rems(TEXT_XS))
-                            .text_color(p.muted)
-                            .child(format!("{n:02}")),
-                    )
+                    .gap_2()
+                    .child(div().text_xs().text_color(p.muted).child(format!("{n:02}")))
                     .child(div().font_medium().text_color(p.text).child(name))
                     .child(
                         div()
                             .flex_1()
                             .truncate()
-                            .text_size(rems(TEXT_XS))
+                            .text_xs()
                             .text_color(p.muted)
                             .child(note),
                     ),
             )
             .child(
                 v_flex()
-                    .p(rems(INSET))
-                    .rounded(rems(RADIUS_MD))
+                    .p_4()
+                    .rounded(radius)
                     .border_1()
                     .border_color(p.hairline)
                     .bg(p.page)
@@ -45,26 +41,30 @@ impl Labs {
                             .w_full()
                             .max_w(rems(COMPOSER_MAX))
                             .mx_auto()
-                            .gap(rems(STACK_GAP))
+                            .gap_2p5()
                             .child(stack),
                     ),
             )
     }
 
     pub(super) fn composer_gallery(&self, p: &Palette, cx: &mut Context<Self>) -> impl IntoElement {
+        let radius = cx.theme().radius_lg;
         let mono = cx.theme().mono_font_family.clone();
-        let idle = || Self::composer_card(p, ComposerLook::default());
-        let typed = |chip: Option<&'static str>, text: &'static str| {
+        let idle =
+            |cx: &App| Self::composer_card(p, cx, ComposerLook::default()).into_any_element();
+        let typed = |cx: &App, chip: Option<&'static str>, text: &'static str| {
             Self::composer_card(
                 p,
+                cx,
                 ComposerLook {
                     text: Some(text),
                     open_chip: chip,
                     ..Default::default()
                 },
             )
+            .into_any_element()
         };
-        let stack = || v_flex().w_full().gap(rems(STACK_GAP));
+        let stack = || v_flex().w_full().gap_2p5();
         let mut n = 0;
         let mut next = || {
             n += 1;
@@ -136,45 +136,45 @@ impl Labs {
                 .child(div().text_color(p.text2).child(
                     "Everything that rests on the composer. Pinned cards stack in the order they were asked; popups open above the input and float over the transcript.",
                 ))
-                .child(div().text_size(rems(TEXT_MD)).font_medium().child("Pinned above the composer"))
-                .child(Self::specimen(p, next(), "Permission · command", "a long command is capped in its well", stack().child(Self::permission_command(p, mono.clone())).child(idle())))
-                .child(Self::specimen(p, next(), "Permission · edit", "the diff keeps its signs, not just colour", stack().child(Self::permission_edit(p, mono.clone())).child(idle())))
-                .child(Self::specimen(p, next(), "Question · one choice", "click a row; tabs for a form with several fields", stack().child(self.question_single(p, cx)).child(idle())))
-                .child(Self::specimen(p, next(), "Question · any choices", "click to toggle; Submit counts", stack().child(self.question_multi(p, cx)).child(idle())))
-                .child(Self::specimen(p, next(), "Question · free text", "the description once, a short placeholder", stack().child(Self::question_text(p)).child(idle())))
+                .child(div().text_sm().font_medium().child("Pinned above the composer"))
+                .child(Self::specimen(p, radius, next(), "Permission · command", "a long command is capped in its well", stack().child(Self::permission_command(p, cx, mono.clone())).child(idle(cx))))
+                .child(Self::specimen(p, radius, next(), "Permission · edit", "the diff keeps its signs, not just colour", stack().child(Self::permission_edit(p, cx, mono.clone())).child(idle(cx))))
+                .child(Self::specimen(p, radius, next(), "Question · one choice", "click a row; tabs for a form with several fields", stack().child(self.question_single(p, cx)).child(idle(cx))))
+                .child(Self::specimen(p, radius, next(), "Question · any choices", "click to toggle; Submit counts", stack().child(self.question_multi(p, cx)).child(idle(cx))))
+                .child(Self::specimen(p, radius, next(), "Question · free text", "the description once, a short placeholder", stack().child(Self::question_text(p, cx)).child(idle(cx))))
                 .child(Self::specimen(
-                    p,
+                    p, radius,
                     next(),
                     "Queued prompt while a turn runs",
                     "Stop stays; Queue joins it over a draft",
                     stack()
                         .child(Self::queued(p))
-                        .child(Self::composer_card(p, ComposerLook { text: Some("Also bump the crate version"), running: true, ..Default::default() })),
+                        .child(Self::composer_card(p, cx, ComposerLook { text: Some("Also bump the crate version"), running: true, ..Default::default() })),
                 ))
-                .child(Self::specimen(p, next(), "Reconnecting", "the transcript stays; sending waits", stack().child(Self::connecting(p)).child(idle())))
+                .child(Self::specimen(p, radius, next(), "Reconnecting", "the transcript stays; sending waits", stack().child(Self::connecting(p)).child(idle(cx))))
                 .child(Self::specimen(
-                    p,
+                    p, radius,
                     next(),
                     "Stacked",
                     "permission, then question, then the queue, then the composer",
                     stack()
-                        .child(Self::permission_command(p, mono.clone()))
-                        .child(Self::question_text(p))
+                        .child(Self::permission_command(p, cx, mono.clone()))
+                        .child(Self::question_text(p, cx))
                         .child(Self::queued(p))
-                        .child(Self::composer_card(p, ComposerLook { running: true, ..Default::default() })),
+                        .child(Self::composer_card(p, cx, ComposerLook { running: true, ..Default::default() })),
                 ))
-                .child(div().text_size(rems(TEXT_MD)).font_medium().child("Opening from the composer"))
-                .child(Self::specimen(p, next(), "+ menu", "the way to @ and / when an IME swallows them", stack().child(left(Self::popup(cx, p, mono.clone(), Some(MENU_W), "Add to the prompt", plus, 0, None, None).into_any_element())).child(Self::composer_card(p, ComposerLook { open_chip: Some("plus"), ..Default::default() }))))
-                .child(Self::specimen(p, next(), "@ mention", "changed files first; capped, says how many are left", stack().child(Self::popup(cx, p, mono.clone(), None, "Mention a file", files, 0, Self::nav_keys(), None)).child(typed(None, "Look at @"))))
-                .child(Self::specimen(p, next(), "/ command", "the agent's commands, then onehand's", stack().child(Self::popup(cx, p, mono.clone(), None, "Run a command", commands, 1, Self::nav_keys(), None)).child(typed(None, "/c"))))
-                .child(Self::specimen(p, next(), "@ with no match", "says what it looked for", stack().child(Self::popup(cx, p, mono.clone(), None, "Mention a file", vec![], 0, None, Some("No matches for \u{201c}flakey\u{201d}".into()))).child(typed(None, "Look at @flakey"))))
-                .child(Self::specimen(p, next(), "Model and effort", "one popup, two groups, the current one checked", stack().child(left(Self::popup(cx, p, mono.clone(), Some(MENU_WIDE_W), "Settings", settings, 0, None, None).into_any_element())).child(Self::composer_card(p, ComposerLook { open_chip: Some("model"), ..Default::default() }))))
-                .child(Self::specimen(p, next(), "Permission mode", "opens from the strip, right-aligned to it", stack().child(right(Self::popup(cx, p, mono.clone(), Some(MENU_WIDE_W), "Mode", modes, 0, None, None).into_any_element())).child(Self::composer_card(p, ComposerLook { open_chip: Some("mode"), ..Default::default() }))))
-                .child(Self::specimen(p, next(), "Branch", "opens from the strip, left-aligned to it", stack().child(left(Self::popup(cx, p, mono.clone(), Some(MENU_W), "Branch", branches, 0, None, None).into_any_element())).child(Self::composer_card(p, ComposerLook { open_chip: Some("branch"), ..Default::default() }))))
-                .child(div().text_size(rems(TEXT_MD)).font_medium().child("The composer itself"))
-                .child(Self::specimen(p, next(), "Empty", "Send is spent until there is something to send", idle()))
-                .child(Self::specimen(p, next(), "Attachments", "a tray inside the card, each removable", Self::composer_card(p, ComposerLook { text: Some("Why does the CI log show a timeout?"), tray: true, ..Default::default() })))
-                .child(Self::specimen(p, next(), "Running, nothing typed", "Stop alone", Self::composer_card(p, ComposerLook { running: true, ..Default::default() }))),
+                .child(div().text_sm().font_medium().child("Opening from the composer"))
+                .child(Self::specimen(p, radius, next(), "+ menu", "the way to @ and / when an IME swallows them", stack().child(left(Self::popup(cx, p, mono.clone(), Some(MENU_W), "Add to the prompt", plus, 0, None, None).into_any_element())).child(Self::composer_card(p, cx, ComposerLook { open_chip: Some("plus"), ..Default::default() }))))
+                .child(Self::specimen(p, radius, next(), "@ mention", "changed files first; capped, says how many are left", stack().child(Self::popup(cx, p, mono.clone(), None, "Mention a file", files, 0, Self::nav_keys(), None)).child(typed(cx, None, "Look at @"))))
+                .child(Self::specimen(p, radius, next(), "/ command", "the agent's commands, then onehand's", stack().child(Self::popup(cx, p, mono.clone(), None, "Run a command", commands, 1, Self::nav_keys(), None)).child(typed(cx, None, "/c"))))
+                .child(Self::specimen(p, radius, next(), "@ with no match", "says what it looked for", stack().child(Self::popup(cx, p, mono.clone(), None, "Mention a file", vec![], 0, None, Some("No matches for \u{201c}flakey\u{201d}".into()))).child(typed(cx, None, "Look at @flakey"))))
+                .child(Self::specimen(p, radius, next(), "Model and effort", "one popup, two groups, the current one checked", stack().child(left(Self::popup(cx, p, mono.clone(), Some(MENU_WIDE_W), "Settings", settings, 0, None, None).into_any_element())).child(Self::composer_card(p, cx, ComposerLook { open_chip: Some("model"), ..Default::default() }))))
+                .child(Self::specimen(p, radius, next(), "Permission mode", "opens from the strip, right-aligned to it", stack().child(right(Self::popup(cx, p, mono.clone(), Some(MENU_WIDE_W), "Mode", modes, 0, None, None).into_any_element())).child(Self::composer_card(p, cx, ComposerLook { open_chip: Some("mode"), ..Default::default() }))))
+                .child(Self::specimen(p, radius, next(), "Branch", "opens from the strip, left-aligned to it", stack().child(left(Self::popup(cx, p, mono.clone(), Some(MENU_W), "Branch", branches, 0, None, None).into_any_element())).child(Self::composer_card(p, cx, ComposerLook { open_chip: Some("branch"), ..Default::default() }))))
+                .child(div().text_sm().font_medium().child("The composer itself"))
+                .child(Self::specimen(p, radius, next(), "Empty", "Send is spent until there is something to send", idle(cx)))
+                .child(Self::specimen(p, radius, next(), "Attachments", "a tray inside the card, each removable", Self::composer_card(p, cx, ComposerLook { text: Some("Why does the CI log show a timeout?"), tray: true, ..Default::default() })))
+                .child(Self::specimen(p, radius, next(), "Running, nothing typed", "Stop alone", Self::composer_card(p, cx, ComposerLook { running: true, ..Default::default() }))),
         )
     }
 }

@@ -21,8 +21,10 @@ make showcase   # the app as it is, on scratch projects and the Mock UI agent
 - No CI job runs its tests either, so run them by hand before a lab change
   lands: `cargo test --manifest-path labs/ui-labs/Cargo.toml --target-dir target`.
   They include source scans holding every length and colour to `src/tokens.rs`.
-- `src/tokens.rs` holds every value the proposal is built from, each with
-  the reason for it. `src/main.rs` is the window layout and the theme wiring;
+- Spacing, the UI's type sizes, control heights and radii come from gpui's
+  base-4 scale, gpui-component's sizes and the theme, as in the app;
+  `src/tokens.rs` holds every value they do not give, each with the reason
+  for it. `src/main.rs` is the window layout and the theme wiring;
   `src/pages.rs` the overview, Tasks and Issues; `src/composer.rs` every card
   and popup on the composer.
 

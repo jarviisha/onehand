@@ -93,13 +93,41 @@ pub(super) fn paint(config: &mut gpui_component::ThemeConfig, p: &Palette, dark:
     set(&mut c.scrollbar_thumb, p.control);
 }
 
-/// Install both palettes as the configs the mode switch chooses between.
+/// The families the app ships, read from the same files so the lab draws in
+/// the faces the app does. A family the machine merely has brings its own
+/// metrics, and one of them sat button labels a pixel under their icons.
+const UI_FAMILY: &str = "Inter";
+const MONO_FAMILY: &str = "JetBrains Mono";
+const FACES: &[&[u8]] = &[
+    include_bytes!("../../../assets/fonts/Inter-Regular.ttf"),
+    include_bytes!("../../../assets/fonts/Inter-Italic.ttf"),
+    include_bytes!("../../../assets/fonts/Inter-Medium.ttf"),
+    include_bytes!("../../../assets/fonts/Inter-SemiBold.ttf"),
+    include_bytes!("../../../assets/fonts/Inter-Bold.ttf"),
+    include_bytes!("../../../assets/fonts/JetBrainsMono-Regular.ttf"),
+    include_bytes!("../../../assets/fonts/JetBrainsMono-Italic.ttf"),
+    include_bytes!("../../../assets/fonts/JetBrainsMono-Bold.ttf"),
+];
+
+/// Install both palettes as the configs the mode switch chooses between, with
+/// the shipped families registered first so the configs can name them.
 pub(super) fn install(cx: &mut App) {
+    let faces = FACES
+        .iter()
+        .map(|b| std::borrow::Cow::Borrowed(*b))
+        .collect();
+    if let Err(err) = cx.text_system().add_fonts(faces) {
+        eprintln!("ui-labs: the bundled fonts did not load: {err}");
+    }
     let registry = gpui_component::ThemeRegistry::global(cx);
     let mut light_cfg = (**registry.default_light_theme()).clone();
     let mut dark_cfg = (**registry.default_dark_theme()).clone();
     paint(&mut light_cfg, &light(), false);
     paint(&mut dark_cfg, &dark(), true);
+    for config in [&mut light_cfg, &mut dark_cfg] {
+        config.font_family = Some(UI_FAMILY.into());
+        config.mono_font_family = Some(MONO_FAMILY.into());
+    }
     let theme = Theme::global_mut(cx);
     theme.light_theme = std::rc::Rc::new(light_cfg);
     theme.dark_theme = std::rc::Rc::new(dark_cfg);

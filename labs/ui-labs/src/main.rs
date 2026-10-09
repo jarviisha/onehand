@@ -209,7 +209,7 @@ impl Render for Labs {
             .track_focus(&self.focus)
             .key_context("Labs")
             .bg(p.page)
-            .text_size(rems(TEXT_SM))
+            .text_sm()
             .text_color(p.text)
             .on_action(cx.listener(|this, _: &ToggleWorkbench, _, cx| this.toggle_workbench(cx)))
             .on_action(cx.listener(|this, _: &ToggleTerminal, _, cx| this.toggle_terminal(cx)))

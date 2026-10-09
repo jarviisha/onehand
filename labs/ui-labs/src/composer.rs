@@ -72,27 +72,27 @@ pub(super) const PLACEHOLDER: &str = "Ask the agent…";
 /// The composer's card: the field and its row of controls on one surface. The
 /// card is the field's edge, so it is what darkens while the field has the
 /// caret.
-pub(super) fn card(p: &Palette, focused: bool) -> gpui::Div {
+pub(super) fn card(p: &Palette, cx: &App, focused: bool) -> gpui::Div {
     v_flex()
-        .rounded(rems(RADIUS_LG))
+        .rounded(cx.theme().radius_lg)
         .border_1()
         .border_color(if focused { p.muted } else { p.control })
         .bg(p.panel)
-        .p(rems(COMPOSER_PAD))
-        .gap(rems(TIGHT))
+        .p_1p5()
+        .gap_1()
 }
 
 /// A chip in the composer's row or the strip under it: a ghost button at the
-/// row's `CONTROL_H_SM`, the library's extra-small caret, inset `CHIP_PAD_X`.
-/// What it says is its children, so each chip letters it at `TEXT_XS` itself.
+/// height of a small button, with the library's extra-small caret. What it
+/// says is its children, so each chip letters it at `text_xs` itself.
 pub(super) fn chip(id: &'static str, open: bool) -> Button {
     action(id)
         .ghost()
         .xsmall()
         .selected(open)
-        .h(rems(CONTROL_H_SM))
-        .px(rems(CHIP_PAD_X))
-        .gap(rems(TIGHT))
+        .h_6()
+        .px_1p5()
+        .gap_1()
 }
 
 /// A chip's word, at the composer's metadata size.
@@ -100,7 +100,7 @@ fn chip_text(p: &Palette, text: impl Into<SharedString>) -> gpui::Div {
     div()
         .min_w_0()
         .truncate()
-        .text_size(rems(TEXT_XS))
+        .text_xs()
         .text_color(p.text)
         .child(text.into())
 }
@@ -109,7 +109,7 @@ fn chip_text(p: &Palette, text: impl Into<SharedString>) -> gpui::Div {
 /// is drawn larger than a chip's, because it is aimed at by its shape alone.
 pub(super) fn plus_chip(open: bool) -> Button {
     chip("plus", open)
-        .child(Icon::new(IconName::Plus).size(rems(PLUS_ICON)))
+        .child(Icon::new(IconName::Plus).size_5())
         .tooltip("Attach files, mention or run a command")
 }
 
@@ -120,7 +120,7 @@ pub(super) fn fast_chip(id: &'static str, on: bool, p: &Palette) -> Button {
         .child(
             Icon::empty()
                 .path(crate::assets::ZAP)
-                .size(rems(ICON_SM))
+                .xsmall()
                 .text_color(p.muted),
         )
         .child(chip_text(p, if on { "On" } else { "Off" }))
@@ -138,7 +138,7 @@ pub(super) fn model_chip(p: &Palette, model: &str, effort: &str, open: bool) -> 
         .child(chip_text(p, model.to_string()))
         .child(
             div()
-                .text_size(rems(TEXT_XS))
+                .text_xs()
                 .text_color(p.muted)
                 .child(effort.to_lowercase()),
         )
@@ -156,12 +156,7 @@ pub(super) fn strip_chip(
     open: bool,
 ) -> Button {
     chip(id, open)
-        .child(
-            Icon::empty()
-                .path(glyph)
-                .size(rems(ICON_SM))
-                .text_color(p.muted),
-        )
+        .child(Icon::empty().path(glyph).xsmall().text_color(p.muted))
         .child(chip_text(p, text))
 }
 
@@ -172,24 +167,31 @@ pub(super) fn key(k: &str) -> Kbd {
 impl Labs {
     // ---- the composer card -------------------------------------------------
 
-    pub(super) fn composer_card(p: &Palette, look: ComposerLook) -> impl IntoElement {
+    pub(super) fn composer_card(p: &Palette, cx: &App, look: ComposerLook) -> impl IntoElement {
         let open = |id: &str| look.open_chip == Some(id);
         let tray = look.tray.then(|| {
             h_flex()
                 .flex_wrap()
-                .gap(rems(TIGHT))
-                .child(Self::attachment(p, IconName::File, "retry.rs", "4 KB"))
+                .gap_1()
+                .child(Self::attachment(p, cx, IconName::File, "retry.rs", "4 KB"))
                 .child(Self::attachment(
                     p,
+                    cx,
                     IconName::Frame,
                     "screenshot.png",
                     "182 KB",
                 ))
-                .child(Self::attachment(p, IconName::File, "ci-log.txt", "51 KB"))
+                .child(Self::attachment(
+                    p,
+                    cx,
+                    IconName::File,
+                    "ci-log.txt",
+                    "51 KB",
+                ))
         });
         let send = if look.running {
             h_flex()
-                .gap(rems(TIGHT))
+                .gap_1()
                 .when(look.text.is_some(), |d| {
                     d.child(action("queue").outline().small().label("Queue"))
                 })
@@ -207,11 +209,11 @@ impl Labs {
         v_flex()
             .w_full()
             .child(
-                card(p, false)
+                card(p, cx, false)
                     .children(tray)
                     .child(
                         div()
-                            .min_h(rems(INPUT_MIN_H))
+                            .min_h_10()
                             .text_size(rems(TEXT_READ))
                             .line_height(rems(TEXT_READ * LEADING_READ))
                             .text_color(if look.text.is_some() { p.text } else { p.muted })
@@ -219,7 +221,7 @@ impl Labs {
                     )
                     .child(
                         h_flex()
-                            .gap(rems(CONTROL))
+                            .gap_2()
                             .child(plus_chip(open("plus")))
                             .child(fast_chip("fast", false, p))
                             .child(model_chip(p, "Sonnet 5", "High", open("model")))
@@ -230,9 +232,9 @@ impl Labs {
             .child(
                 h_flex()
                     .justify_between()
-                    .gap(rems(CONTROL))
-                    .px(rems(COMPOSER_PAD))
-                    .pt(rems(COMPOSER_PAD))
+                    .gap_2()
+                    .px_1p5()
+                    .pt_1p5()
                     .child(strip_chip(
                         "branch",
                         p,
@@ -252,21 +254,22 @@ impl Labs {
 
     fn attachment(
         p: &Palette,
+        cx: &App,
         icon: IconName,
         name: &'static str,
         size: &'static str,
     ) -> impl IntoElement {
         h_flex()
-            .h(rems(CONTROL_H))
-            .pl(rems(CONTROL))
-            .pr(rems(TIGHT))
-            .gap(rems(CONTROL))
-            .rounded(rems(RADIUS_SM))
+            .h_6()
+            .pl_2()
+            .pr_1()
+            .gap_2()
+            .rounded(cx.theme().radius)
             .border_1()
             .border_color(p.hairline)
             .bg(p.sunken)
-            .text_size(rems(TEXT_XS))
-            .child(Icon::new(icon).size(rems(ICON_SM)).text_color(p.muted))
+            .text_xs()
+            .child(Icon::new(icon).xsmall().text_color(p.muted))
             .child(div().text_color(p.text).child(name))
             .child(div().text_color(p.muted).child(size))
             .child(
@@ -284,6 +287,7 @@ impl Labs {
     /// A pinned card: what it asks, the body, and a footer of keys and answers.
     fn pinned(
         p: &Palette,
+        cx: &App,
         icon: IconName,
         ink: Hsla,
         title: &'static str,
@@ -294,18 +298,18 @@ impl Labs {
     ) -> impl IntoElement {
         v_flex()
             .w_full()
-            .rounded(rems(RADIUS_LG))
+            .rounded(cx.theme().radius_lg)
             .border_1()
             .border_color(p.control)
             .bg(p.panel)
             .child(
                 v_flex()
-                    .p(rems(RELATED))
-                    .gap(rems(CONTROL))
+                    .p_3()
+                    .gap_2()
                     .child(
                         h_flex()
-                            .gap(rems(CONTROL))
-                            .child(Icon::new(icon).size(rems(ICON)).text_color(ink))
+                            .gap_2()
+                            .child(Icon::new(icon).small().text_color(ink))
                             .child(
                                 v_flex()
                                     .flex_1()
@@ -313,73 +317,80 @@ impl Labs {
                                     .child(div().font_medium().text_color(p.text).child(title))
                                     // Who asks, on a line of its own, so a long
                                     // question keeps the whole width.
-                                    .child(
-                                        div()
-                                            .text_size(rems(TEXT_XS))
-                                            .text_color(p.muted)
-                                            .child(meta),
-                                    ),
+                                    .child(div().text_xs().text_color(p.muted).child(meta)),
                             ),
                     )
                     .children(body),
             )
             .child(
                 h_flex()
-                    .px(rems(RELATED))
-                    .py(rems(CONTROL))
-                    .gap(rems(CONTROL))
+                    .px_3()
+                    .py_2()
+                    .gap_2()
                     .border_t_1()
                     .border_color(p.hairline)
                     .child(
                         h_flex()
                             .flex_1()
                             .min_w_0()
-                            .gap(rems(RELATED))
-                            .text_size(rems(TEXT_XS))
+                            .gap_3()
+                            .text_xs()
                             .text_color(p.muted)
-                            .children(keys.into_iter().map(|(k, what)| {
-                                h_flex().gap(rems(TIGHT)).child(key(k)).child(what)
-                            })),
+                            .children(
+                                keys.into_iter()
+                                    .map(|(k, what)| h_flex().gap_1().child(key(k)).child(what)),
+                            ),
                     )
                     .children(actions),
             )
     }
 
-    fn well(p: &Palette, mono: SharedString, max_lines: f32, text: &'static str) -> gpui::Div {
+    fn well(
+        p: &Palette,
+        cx: &App,
+        mono: SharedString,
+        max_lines: f32,
+        text: &'static str,
+    ) -> gpui::Div {
         div()
-            .max_h(rems(
-                TEXT_READ_SM * LEADING_READ * max_lines + RELATED * 2.0,
-            ))
-            .overflow_hidden()
-            .p(rems(RELATED))
-            .rounded(rems(RADIUS_MD))
+            .p_3()
+            .rounded(cx.theme().radius_lg)
             .bg(p.sunken)
             .font_family(mono)
             .text_size(rems(TEXT_READ_SM))
             .line_height(rems(TEXT_READ_SM * LEADING_READ))
             .text_color(p.text2)
-            .child(text)
+            .child(
+                div()
+                    .max_h(rems(TEXT_READ_SM * LEADING_READ * max_lines))
+                    .overflow_hidden()
+                    .child(text),
+            )
     }
 
-    pub(super) fn permission_command(p: &Palette, mono: SharedString) -> impl IntoElement {
+    pub(super) fn permission_command(
+        p: &Palette,
+        cx: &App,
+        mono: SharedString,
+    ) -> impl IntoElement {
         Self::pinned(
-            p,
+            p, cx,
             IconName::SquareTerminal,
             p.warning,
             "Run a command?",
             "claude · Bash",
             Some(
                 v_flex()
-                    .gap(rems(CONTROL))
+                    .gap_2()
                     .child(Self::well(
-                        p,
+                        p, cx,
                         mono,
                         6.0,
                         "cargo test -p retry -- --test-threads=1 flaky \\\n  && cargo clippy -p retry -- -D warnings \\\n  && git diff --stat",
                     ))
                     .child(
                         div()
-                            .text_size(rems(TEXT_XS))
+                            .text_xs()
                             .text_color(p.muted)
                             .child("in atlas-api · runs tests, then lints, then reads the diff"),
                     )
@@ -394,24 +405,21 @@ impl Labs {
         )
     }
 
-    pub(super) fn permission_edit(p: &Palette, mono: SharedString) -> impl IntoElement {
+    pub(super) fn permission_edit(p: &Palette, cx: &App, mono: SharedString) -> impl IntoElement {
         let line = |sign: &'static str, text: &'static str, ink: Hsla| {
-            h_flex()
-                .gap(rems(CONTROL))
-                .text_color(ink)
-                .child(sign)
-                .child(text)
+            h_flex().gap_2().text_color(ink).child(sign).child(text)
         };
         Self::pinned(
             p,
+            cx,
             IconName::File,
             p.warning,
             "Edit src/backoff.rs?",
             "claude · Edit · +2 −1",
             Some(
                 v_flex()
-                    .p(rems(RELATED))
-                    .rounded(rems(RADIUS_MD))
+                    .p_3()
+                    .rounded(cx.theme().radius_lg)
                     .bg(p.sunken)
                     .font_family(mono)
                     .text_size(rems(TEXT_READ_SM))
@@ -453,7 +461,7 @@ impl Labs {
             ("Mark it flaky", "Retry the test up to 3 times on CI."),
         ];
         let tabs = h_flex()
-            .gap(rems(TIGHT))
+            .gap_1()
             .child(
                 action("tab-approach")
                     .ghost()
@@ -462,58 +470,50 @@ impl Labs {
                     .selected(true),
             )
             .child(action("tab-scope").ghost().small().label("Scope"))
-            .child(
-                div()
-                    .text_size(rems(TEXT_XS))
-                    .text_color(p.muted)
-                    .child("1 of 2"),
-            );
-        let rows = v_flex()
-            .gap(rems(ROW_GAP))
-            .children(options.iter().enumerate().map(|(i, (label, why))| {
-                let on = self.choice == i;
-                h_flex()
-                    .id(("choice", i))
-                    .cursor_pointer()
-                    .px(rems(CONTROL))
-                    .py(rems(TIGHT))
-                    .gap(rems(CONTROL))
-                    .rounded(rems(RADIUS_SM))
-                    .when(on, |d| d.bg(p.selected))
-                    .on_click(cx.listener(move |this, _, _, cx| {
-                        this.choice = i;
-                        cx.notify();
-                    }))
-                    .child(Radio::new(("radio", i)).checked(on))
-                    .child(
-                        v_flex()
-                            .flex_1()
-                            .min_w_0()
-                            .child(div().text_color(p.text).child(*label))
-                            .child(
-                                div()
-                                    .text_size(rems(TEXT_XS))
-                                    .text_color(p.muted)
-                                    .child(*why),
-                            ),
-                    )
-                    .child(key(&(i + 1).to_string()))
-            }));
+            .child(div().text_xs().text_color(p.muted).child("1 of 2"));
+        let rows =
+            v_flex()
+                .gap_0p5()
+                .children(options.iter().enumerate().map(|(i, (label, why))| {
+                    let on = self.choice == i;
+                    h_flex()
+                        .id(("choice", i))
+                        .cursor_pointer()
+                        .px_2()
+                        .py_1()
+                        .gap_2()
+                        .rounded(cx.theme().radius)
+                        .when(on, |d| d.bg(p.selected))
+                        .on_click(cx.listener(move |this, _, _, cx| {
+                            this.choice = i;
+                            cx.notify();
+                        }))
+                        .child(Radio::new(("radio", i)).checked(on))
+                        .child(
+                            v_flex()
+                                .flex_1()
+                                .min_w_0()
+                                .child(div().text_color(p.text).child(*label))
+                                .child(div().text_xs().text_color(p.muted).child(*why)),
+                        )
+                        .child(key(&(i + 1).to_string()))
+                }));
         let other = h_flex()
-            .px(rems(CONTROL))
-            .py(rems(TIGHT))
-            .gap(rems(CONTROL))
+            .px_2()
+            .py_1()
+            .gap_2()
             .child(Radio::new("radio-other").checked(false))
             .child(div().text_color(p.muted).child("Other — type an answer"));
         Self::pinned(
             p,
+            cx,
             IconName::Info,
             p.warning,
             "How should the flaky test be fixed?",
             "claude asks",
             Some(
                 v_flex()
-                    .gap(rems(CONTROL))
+                    .gap_2()
                     .child(tabs)
                     .child(rows)
                     .child(other)
@@ -535,16 +535,16 @@ impl Labs {
             "Docs examples",
         ];
         let rows = v_flex()
-            .gap(rems(ROW_GAP))
+            .gap_0p5()
             .children(options.iter().enumerate().map(|(i, label)| {
                 let on = self.picks[i];
                 h_flex()
                     .id(("pick", i))
                     .cursor_pointer()
-                    .px(rems(CONTROL))
-                    .py(rems(TIGHT))
-                    .gap(rems(CONTROL))
-                    .rounded(rems(RADIUS_SM))
+                    .px_2()
+                    .py_1()
+                    .gap_2()
+                    .rounded(cx.theme().radius)
                     .on_click(cx.listener(move |this, _, _, cx| {
                         this.picks[i] = !this.picks[i];
                         cx.notify();
@@ -556,6 +556,7 @@ impl Labs {
         let n = self.picks.iter().filter(|b| **b).count();
         Self::pinned(
             p,
+            cx,
             IconName::Info,
             p.warning,
             "Which suites should run after the change?",
@@ -574,28 +575,29 @@ impl Labs {
         )
     }
 
-    pub(super) fn question_text(p: &Palette) -> impl IntoElement {
+    pub(super) fn question_text(p: &Palette, cx: &App) -> impl IntoElement {
         Self::pinned(
             p,
+            cx,
             IconName::Info,
             p.warning,
             "What should the new config key be called?",
             "claude asks",
             Some(
                 v_flex()
-                    .gap(rems(CONTROL))
+                    .gap_2()
                     .child(
                         div()
-                            .text_size(rems(TEXT_XS))
+                            .text_xs()
                             .text_color(p.text2)
                             .child("It replaces retry_ms and is read by both services."),
                     )
                     .child(
                         div()
-                            .min_h(rems(INPUT_MIN_H))
-                            .px(rems(CONTROL))
-                            .py(rems(TIGHT))
-                            .rounded(rems(RADIUS_SM))
+                            .min_h_10()
+                            .px_2()
+                            .py_1()
+                            .rounded(cx.theme().radius)
                             .border_1()
                             .border_color(p.control)
                             .text_color(p.muted)
@@ -614,12 +616,12 @@ impl Labs {
     pub(super) fn queued(p: &Palette) -> impl IntoElement {
         h_flex()
             .w_full()
-            .px(rems(RELATED))
-            .py(rems(CONTROL))
-            .gap(rems(CONTROL))
+            .px_3()
+            .py_2()
+            .gap_2()
             .child(
                 div()
-                    .text_size(rems(TEXT_XS))
+                    .text_xs()
                     .text_color(p.muted)
                     .font_medium()
                     .child("Queued"),
@@ -645,15 +647,15 @@ impl Labs {
     pub(super) fn connecting(p: &Palette) -> impl IntoElement {
         h_flex()
             .w_full()
-            .px(rems(RELATED))
-            .py(rems(CONTROL))
-            .gap(rems(CONTROL))
+            .px_3()
+            .py_2()
+            .gap_2()
             .text_color(p.text2)
             .child(Spinner::new().small())
             .child(div().flex_1().child("Connecting… the agent is restarting"))
             .child(
                 div()
-                    .text_size(rems(TEXT_XS))
+                    .text_xs()
                     .text_color(p.muted)
                     .child("Send waits until it is up"),
             )
@@ -683,10 +685,10 @@ impl Labs {
                 v_flex()
                     .children(it.group.map(|g| {
                         div()
-                            .px(rems(CONTROL))
-                            .pt(rems(CONTROL))
-                            .pb(rems(TIGHT))
-                            .text_size(rems(TEXT_XS))
+                            .px_2()
+                            .pt_2()
+                            .pb_1()
+                            .text_xs()
                             .text_color(p.muted)
                             .child(g)
                     }))
@@ -694,19 +696,16 @@ impl Labs {
                         h_flex()
                             .id(("popup-row", i))
                             .h(rems(ROW_H))
-                            .px(rems(CONTROL))
-                            .gap(rems(CONTROL))
-                            .rounded(rems(RADIUS_SM))
+                            .px_2()
+                            .gap_2()
+                            .rounded(cx.theme().radius)
                             .when(i == highlight, |d| d.bg(p.selected))
                             .when_some(it.on, |d, on| {
                                 d.cursor_pointer()
                                     .hover(|d| d.bg(p.selected))
                                     .on_click(cx.listener(move |this, _, w, cx| on(this, w, cx)))
                             })
-                            .children(
-                                it.icon
-                                    .map(|ic| Icon::new(ic).size(rems(ICON)).text_color(p.muted)),
-                            )
+                            .children(it.icon.map(|ic| Icon::new(ic).small().text_color(p.muted)))
                             .child(
                                 div()
                                     .flex_none()
@@ -721,54 +720,44 @@ impl Labs {
                                     .flex_1()
                                     .min_w_0()
                                     .truncate()
-                                    .text_size(rems(TEXT_XS))
+                                    .text_xs()
                                     .text_color(p.muted)
                                     .child(it.detail),
                             )
                             .when(it.current, |d| {
-                                d.child(
-                                    Icon::new(IconName::Check)
-                                        .size(rems(ICON))
-                                        .text_color(p.text),
-                                )
+                                d.child(Icon::new(IconName::Check).small().text_color(p.text))
                             }),
                     )
             });
         v_flex()
             .when_some(width, |d, w| d.w(rems(w)))
             .when(width.is_none(), |d| d.w_full())
-            .p(rems(POPUP_INSET))
-            .rounded(rems(RADIUS_MD))
+            .p_1p5()
+            .rounded(cx.theme().radius_lg)
             .border_1()
             .border_color(p.control)
             .bg(p.panel)
             .shadow_lg()
             .child(
                 div()
-                    .px(rems(CONTROL))
-                    .pb(rems(TIGHT))
-                    .mb(rems(TIGHT))
+                    .px_2()
+                    .pb_1()
+                    .mb_1()
                     .border_b_1()
                     .border_color(p.hairline)
-                    .text_size(rems(TEXT_XS))
+                    .text_xs()
                     .font_medium()
                     .text_color(p.muted)
                     .child(header),
             )
             .children(shown)
-            .children(empty.map(|e| {
-                div()
-                    .px(rems(CONTROL))
-                    .py(rems(CONTROL))
-                    .text_color(p.muted)
-                    .child(e)
-            }))
+            .children(empty.map(|e| div().px_2().py_2().text_color(p.muted).child(e)))
             .when(total > POPUP_LIST_CAP, |d| {
                 d.child(
                     div()
-                        .px(rems(CONTROL))
-                        .py(rems(TIGHT))
-                        .text_size(rems(TEXT_XS))
+                        .px_2()
+                        .py_1()
+                        .text_xs()
                         .text_color(p.muted)
                         .child(format!(
                             "{} more — keep typing to narrow",
@@ -778,17 +767,17 @@ impl Labs {
             })
             .children(footer.map(|keys| {
                 h_flex()
-                    .mt(rems(TIGHT))
-                    .pt(rems(CONTROL))
-                    .px(rems(CONTROL))
-                    .gap(rems(RELATED))
+                    .mt_1()
+                    .pt_2()
+                    .px_2()
+                    .gap_3()
                     .border_t_1()
                     .border_color(p.hairline)
-                    .text_size(rems(TEXT_XS))
+                    .text_xs()
                     .text_color(p.muted)
                     .children(
                         keys.into_iter()
-                            .map(|(k, what)| h_flex().gap(rems(TIGHT)).child(key(k)).child(what)),
+                            .map(|(k, what)| h_flex().gap_1().child(key(k)).child(what)),
                     )
             }))
     }

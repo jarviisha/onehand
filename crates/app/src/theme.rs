@@ -279,6 +279,12 @@ pub(crate) fn install(cx: &mut App) {
     dark.name = "onehand Dark".into();
     paint(&mut light.colors, &LIGHT);
     paint(&mut dark.colors, &DARK);
+    // In the configs, not on the theme: choosing a mode applies a whole config,
+    // so a family set only on the theme would last until the first switch.
+    for config in [&mut light, &mut dark] {
+        config.font_family = Some(crate::fonts::UI_FAMILY.into());
+        config.mono_font_family = Some(crate::fonts::MONO_FAMILY.into());
+    }
 
     let theme = Theme::global_mut(cx);
     theme.light_theme = Rc::new(light);

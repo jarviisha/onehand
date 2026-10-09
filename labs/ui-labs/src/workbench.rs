@@ -223,9 +223,9 @@ impl Labs {
             )
             .child(
                 div()
-                    .px(rems(INSET))
-                    .py(rems(TIGHT))
-                    .text_size(rems(TEXT_XS))
+                    .px_4()
+                    .py_1()
+                    .text_xs()
                     .text_color(p.muted)
                     .child(format!(
                         "container {measured:.1}rem · {}",
@@ -288,7 +288,7 @@ impl Labs {
                             .absolute()
                             .top(gpui::relative(1.))
                             .left_0()
-                            .pt(rems(TIGHT))
+                            .pt_1()
                             .occlude()
                             .child(Self::popup(
                                 cx,
@@ -316,7 +316,7 @@ impl Labs {
                 .flex_1()
                 .min_w_0()
                 .overflow_x_scroll()
-                .gap(rems(TIGHT))
+                .gap_1()
                 .children(MODES.iter().map(|&(mode, label)| {
                     action(label)
                         .ghost()
@@ -334,8 +334,8 @@ impl Labs {
         h_flex()
             .h(rems(BAR_H))
             .flex_none()
-            .px(rems(CONTROL))
-            .gap(rems(TIGHT))
+            .px_2()
+            .gap_1()
             .border_b_1()
             .border_color(p.hairline)
             .when(focus && !wb.maximized, |d| {
@@ -353,7 +353,7 @@ impl Labs {
                             cx.notify();
                         })),
                 )
-                .child(Self::hairline_v(p).h(rems(ICON)))
+                .child(Self::hairline_v(p).h_3p5())
             })
             .child(modes)
             .when(compact, |d| d.child(div().flex_1()))
@@ -416,7 +416,7 @@ impl Labs {
                     h_flex()
                         .h(rems(SUBBAR_H))
                         .flex_none()
-                        .px(rems(CONTROL))
+                        .px_2()
                         .border_b_1()
                         .border_color(p.hairline)
                         .child(
@@ -447,7 +447,7 @@ impl Labs {
                 .h_full()
                 .child(
                     div()
-                        .p(rems(CONTROL))
+                        .p_2()
                         .border_b_1()
                         .border_color(p.hairline)
                         .child(Input::new(&wb.search).small()),
@@ -459,7 +459,7 @@ impl Labs {
                         .min_h_0()
                         .overflow_y_scroll()
                         .track_scroll(&wb.files_scroll)
-                        .p(rems(CONTROL))
+                        .p_2()
                         .children(rows.into_iter().map(|(path, depth, dir)| {
                             let name = path.rsplit('/').next().unwrap_or(path);
                             let open = wb.expanded.contains(path);
@@ -467,10 +467,10 @@ impl Labs {
                             h_flex()
                                 .id(path)
                                 .h(rems(ROW_H))
-                                .pl(rems(CONTROL + depth as f32 * TREE_INDENT))
-                                .pr(rems(CONTROL))
-                                .gap(rems(CONTROL))
-                                .rounded(rems(RADIUS_SM))
+                                .pl_2()
+                                .pr_2()
+                                .gap_2()
+                                .rounded(cx.theme().radius)
                                 .cursor_pointer()
                                 .hover(|d| d.bg(p.selected))
                                 .text_color(if picked { p.text } else { p.text2 })
@@ -492,7 +492,8 @@ impl Labs {
                                         (true, false) => IconName::FolderClosed,
                                         (false, _) => IconName::File,
                                     })
-                                    .size(rems(ICON))
+                                    .small()
+                                    .ml(rems(depth as f32 * TREE_INDENT))
                                     .text_color(p.muted),
                                 )
                                 .child(super::controls::full(
@@ -501,7 +502,7 @@ impl Labs {
                                 ))
                         }))
                         .when(empty, |d| {
-                            d.child(div().px(rems(CONTROL)).text_color(p.muted).child(format!(
+                            d.child(div().px_2().text_color(p.muted).child(format!(
                                 "No file matches \u{201c}{}\u{201d}.",
                                 query.trim()
                             )))
@@ -513,15 +514,15 @@ impl Labs {
                 .h_full()
                 .child(
                     div()
-                        .px(rems(INSET))
-                        .py(rems(CONTROL))
-                        .text_size(rems(TEXT_XS))
+                        .px_4()
+                        .py_2()
+                        .text_xs()
                         .text_color(p.muted)
                         .child(path),
                 )
                 .child(
                     div()
-                        .px(rems(INSET))
+                        .px_4()
                         .font_family(mono)
                         .text_size(self.read(TEXT_READ_SM))
                         .line_height(self.read(TEXT_READ_SM * LEADING_READ))
@@ -541,14 +542,14 @@ impl Labs {
     ) -> impl IntoElement {
         let wb = &self.wb;
         let list = v_flex()
-            .p(rems(CONTROL))
+            .p_2()
             .children(DOCS.iter().enumerate().map(|(i, (name, note))| {
                 let picked = wb.doc == Some(i);
                 v_flex()
                     .id(("doc", i))
-                    .px(rems(CONTROL))
-                    .py(rems(TIGHT))
-                    .rounded(rems(RADIUS_SM))
+                    .px_2()
+                    .py_1()
+                    .rounded(cx.theme().radius)
                     .cursor_pointer()
                     .hover(|d| d.bg(p.selected))
                     .when(picked, |d| d.bg(p.selected))
@@ -558,13 +559,7 @@ impl Labs {
                         cx.notify();
                     }))
                     .child(super::controls::full(format!("doc-{i}"), *name).text_color(p.text))
-                    .child(
-                        div()
-                            .truncate()
-                            .text_size(rems(TEXT_XS))
-                            .text_color(p.muted)
-                            .child(*note),
-                    )
+                    .child(div().truncate().text_xs().text_color(p.muted).child(*note))
             }))
             .into_any_element();
         let detail = wb.doc.map(|i| {
@@ -575,13 +570,13 @@ impl Labs {
                 .child(
                     v_flex()
                         .max_w(rems(DOC_MEASURE))
-                        .px(rems(INSET))
-                        .py(rems(SECTION))
-                        .gap(rems(RELATED))
+                        .px_4()
+                        .py_6()
+                        .gap_3()
                         .text_size(self.read(TEXT_READ))
                         .line_height(self.read(TEXT_READ * LEADING_DOC))
                         .text_color(p.text)
-                        .child(div().text_size(rems(TEXT_XL)).font_medium().child(DOCS[i].1))
+                        .child(div().text_xl().font_medium().child(DOCS[i].1))
                         .child("Every retry waits twice as long as the one before it, from 200 ms, and gives up after five attempts. The wait is read from the clock the caller passes in, so a test can pass a fake one and run in no time at all.")
                         .child("A setting can cap the wait and add jitter; both default to off, so the sequence is the same on every machine unless a project asks otherwise."),
                 )
@@ -598,7 +593,7 @@ impl Labs {
     ) -> impl IntoElement {
         let wb = &self.wb;
         let list = v_flex()
-            .p(rems(CONTROL))
+            .p_2()
             .children(
                 ISSUES
                     .iter()
@@ -607,9 +602,9 @@ impl Labs {
                         let picked = wb.issue == Some(i);
                         v_flex()
                             .id(("wb-issue", i))
-                            .px(rems(CONTROL))
-                            .py(rems(TIGHT))
-                            .rounded(rems(RADIUS_SM))
+                            .px_2()
+                            .py_1()
+                            .rounded(cx.theme().radius)
                             .cursor_pointer()
                             .hover(|d| d.bg(p.selected))
                             .when(picked, |d| d.bg(p.selected))
@@ -625,7 +620,7 @@ impl Labs {
                             .child(
                                 div()
                                     .truncate()
-                                    .text_size(rems(TEXT_XS))
+                                    .text_xs()
                                     .text_color(if i == 0 { p.warning } else { p.muted })
                                     .child(format!("{reference} · {work}")),
                             )
@@ -635,14 +630,14 @@ impl Labs {
         let detail = wb.issue.map(|i| {
             let (title, reference, work) = ISSUES[i];
             v_flex()
-                .px(rems(INSET))
-                .py(rems(SECTION))
-                .gap(rems(RELATED))
+                .px_4()
+                .py_6()
+                .gap_3()
                 .text_color(p.text)
-                .child(div().text_size(rems(TEXT_LG)).font_medium().child(title))
+                .child(div().text_base().font_medium().child(title))
                 .child(
                     div()
-                        .text_size(rems(TEXT_XS))
+                        .text_xs()
                         .text_color(p.muted)
                         .child(format!("Open · atlas-api {reference} · bug")),
                 )
@@ -663,22 +658,22 @@ impl Labs {
             .h_full()
             .child(
                 h_flex()
-                    .p(rems(CONTROL))
-                    .gap(rems(CONTROL))
+                    .p_2()
+                    .gap_2()
                     .border_b_1()
                     .border_color(p.hairline)
                     .child(
                         h_flex()
                             .flex_1()
                             .min_w_0()
-                            .h(rems(CONTROL_H))
-                            .px(rems(CONTROL))
-                            .gap(rems(CONTROL))
-                            .rounded(rems(RADIUS_SM))
+                            .h_6()
+                            .px_2()
+                            .gap_2()
+                            .rounded(cx.theme().radius)
                             .border_1()
                             .border_color(p.control)
                             .text_color(p.muted)
-                            .child(Icon::new(IconName::Search).size(rems(ICON)))
+                            .child(Icon::new(IconName::Search).small())
                             .child(div().truncate().child("Search issues")),
                     )
                     .child(
@@ -699,18 +694,18 @@ impl Labs {
             .min_w_0()
             .overflow_y_scroll()
             .child(
-                v_flex().p(rems(INSET)).child(
+                v_flex().p_4().child(
                     v_flex()
-                        .rounded(rems(RADIUS_MD))
+                        .rounded(cx.theme().radius_lg)
                         .border_1()
                         .border_color(p.hairline)
                         .children(PLUGINS.iter().enumerate().map(|(i, (name, about, meta))| {
                             let on = self.wb.plugins[i];
                             h_flex()
                                 .items_start()
-                                .px(rems(RELATED))
-                                .py(rems(CONTROL))
-                                .gap(rems(RELATED))
+                                .px_3()
+                                .py_2()
+                                .gap_3()
                                 .when(i + 1 < PLUGINS.len(), |d| {
                                     d.border_b_1().border_color(p.hairline)
                                 })
@@ -718,20 +713,15 @@ impl Labs {
                                     v_flex()
                                         .flex_1()
                                         .min_w_0()
-                                        .gap(rems(SUBLINE))
+                                        .gap_0p5()
                                         .child(div().font_medium().text_color(p.text).child(*name))
                                         .child(div().text_color(p.text2).child(*about))
                                         // Metadata on a line of its own, never
                                         // squeezed beside the controls.
-                                        .child(
-                                            div()
-                                                .text_size(rems(TEXT_XS))
-                                                .text_color(p.muted)
-                                                .child(*meta),
-                                        ),
+                                        .child(div().text_xs().text_color(p.muted).child(*meta)),
                                 )
                                 .child(
-                                    h_flex().flex_none().gap(rems(CONTROL)).child(
+                                    h_flex().flex_none().gap_2().child(
                                         Switch::new(("plugin-on", i))
                                             .cursor_pointer()
                                             .checked(on)
@@ -765,8 +755,8 @@ impl Labs {
                     .flex_1()
                     .min_h_0()
                     .overflow_hidden()
-                    .px(rems(CONTROL))
-                    .pt(rems(TIGHT))
+                    .px_2()
+                    .pt_1()
                     .text_color(p.text2)
                     .children(
                         source("src/backoff.rs")
@@ -778,7 +768,7 @@ impl Labs {
             .child(
                 h_flex()
                     .flex_none()
-                    .px(rems(CONTROL))
+                    .px_2()
                     .bg(p.sunken)
                     .text_color(p.text)
                     .child(div().flex_1().child("NORMAL  src/backoff.rs"))

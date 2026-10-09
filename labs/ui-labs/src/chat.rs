@@ -34,8 +34,8 @@ impl Labs {
         h_flex()
             .h(rems(BAR_H))
             .flex_none()
-            .px(rems(INSET))
-            .gap(rems(CONTROL))
+            .px_4()
+            .gap_2()
             .border_b_1()
             .border_color(p.hairline)
             .when(self.rail_hidden, |d| {
@@ -79,8 +79,8 @@ impl Labs {
                         d.child(
                             div()
                                 .absolute()
-                                .top(rems(BADGE_INSET))
-                                .right(rems(BADGE_INSET))
+                                .top_0p5()
+                                .right_0p5()
                                 .size(rems(BADGE_DOT))
                                 .rounded_full()
                                 .bg(p.accent),
@@ -113,11 +113,11 @@ impl Labs {
         let open = self.activity_open;
         let failed = ACTIVITY.iter().filter(|(_, f, _)| *f).count();
         v_flex()
-            .gap(rems(CONTROL))
+            .gap_2()
             .child(
                 h_flex()
                     .id("activity")
-                    .gap(rems(CONTROL))
+                    .gap_2()
                     .cursor_pointer()
                     .text_size(self.read(TEXT_READ_SM))
                     .text_color(p.text2)
@@ -128,7 +128,7 @@ impl Labs {
                     }))
                     .child(
                         Icon::new(IconName::ChevronRight)
-                            .size(rems(ICON_SM))
+                            .xsmall()
                             .rotate(gpui::radians(if open {
                                 std::f32::consts::FRAC_PI_2
                             } else {
@@ -144,11 +144,11 @@ impl Labs {
             .when(open, |d| {
                 d.children(ACTIVITY.iter().map(|(cmd, failed, out)| {
                     v_flex()
-                        .gap(rems(TIGHT))
-                        .pl(rems(INSET))
+                        .gap_1()
+                        .pl_4()
                         .child(
                             h_flex()
-                                .gap(rems(CONTROL))
+                                .gap_2()
                                 .text_size(self.read(TEXT_READ_SM))
                                 .child(
                                     div()
@@ -164,8 +164,8 @@ impl Labs {
                         )
                         .child(
                             div()
-                                .p(rems(RELATED))
-                                .rounded(rems(RADIUS_MD))
+                                .p_3()
+                                .rounded(cx.theme().radius_lg)
                                 .bg(p.sunken)
                                 .font_family(mono.clone())
                                 .text_size(self.read(TEXT_READ_SM))
@@ -192,9 +192,9 @@ impl Labs {
         let column = v_flex()
             .w_full()
             .max_w(rems(READ_MAX))
-            .px(rems(INSET))
-            .py(rems(SECTION))
-            .gap(rems(RELATED))
+            .px_4()
+            .py_6()
+            .gap_3()
             .text_size(self.read(TEXT_READ))
             .line_height(self.read(TEXT_READ * LEADING_READ))
             .text_color(p.text)
@@ -202,9 +202,9 @@ impl Labs {
                 h_flex().justify_end().child(
                     div()
                         .max_w(rems(BUBBLE_MAX))
-                        .px(rems(RELATED))
-                        .py(rems(CONTROL))
-                        .rounded(rems(RADIUS_XL))
+                        .px_3()
+                        .py_2()
+                        .rounded(cx.theme().radius_lg)
                         .bg(p.sunken)
                         .child("The retry test fails about one run in five. Find out why and fix it."),
                 ),
@@ -212,9 +212,9 @@ impl Labs {
             .child("I read the test and the retry function. The backoff uses wall-clock time, so on a slow machine the third attempt runs past the test's timeout.")
             .child(self.activity(p, mono, cx))
             .child("I will move the backoff onto a fake clock in the test, then run it again.")
-            .children(self.said(p));
+            .children(self.said(p, cx));
 
-        let composer_w = (width - INSET * 2.0).min(COMPOSER_MAX);
+        let composer_w = (width - GUTTER * 2.0).min(COMPOSER_MAX);
         let term_max = self.term.maximized && self.term.open;
         v_flex()
             .flex_1()
@@ -233,21 +233,12 @@ impl Labs {
                 // The stack owns the width, once, so the card and the composer
                 // under it cannot disagree about it.
                 .child(
-                    h_flex()
-                        .justify_center()
-                        .px(rems(INSET))
-                        .pb(rems(RELATED))
-                        .child(
-                            v_flex()
-                                .w_full()
-                                .max_w(rems(COMPOSER_MAX))
-                                .child(self.live_composer(
-                                    p,
-                                    composer_w < COMPOSER_SPLIT,
-                                    window,
-                                    cx,
-                                )),
-                        ),
+                    h_flex().justify_center().px_4().pb_3().child(
+                        v_flex()
+                            .w_full()
+                            .max_w(rems(COMPOSER_MAX))
+                            .child(self.live_composer(p, composer_w < COMPOSER_SPLIT, window, cx)),
+                    ),
                 )
             })
             .when(self.term.open, |d| {

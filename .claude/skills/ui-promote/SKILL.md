@@ -31,10 +31,9 @@ The lab is drawn on its own palette and tokens; the app reads the theme. Nothing
 | In the lab | In the app |
 |---|---|
 | A `Palette` role | the theme token that means the same (root `DESIGN.md`, Colour and state); a surface the ramp lacks goes into `crates/app/src/theme.rs` with its contrast asserted |
-| A spacing role (`TIGHT`, `RELATED`…) | the gpui base-4 step that matches |
-| A `RADIUS_*` | the theme's radius (root `DESIGN.md`, Typography and spacing) |
 | A width budget or chrome size | a `const` in the module that uses it, in rems, its reason beside it |
-| `TEXT_*` | the app's type roles (root `DESIGN.md`, Typography and spacing) |
+| `TEXT_READ*` | the app's type roles (root `DESIGN.md`, Typography and spacing) |
+| A base-4 step, a library size, the theme's radius | the same, unchanged |
 | A lab helper | the app's helper for the same thing (`gpui-ui`'s `references/components.md`) |
 
 The lab keeps its own constant while it still draws the idea: the lab is where the next version

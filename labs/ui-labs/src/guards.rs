@@ -140,9 +140,9 @@ fn every_button_goes_through_the_wrapper() {
 
 #[test]
 fn the_scan_tells_a_token_from_a_number() {
-    assert_eq!(literal_in("TIGHT * 0.5").as_deref(), Some("0.5"));
+    assert_eq!(literal_in("GUTTER * 0.5").as_deref(), Some("0.5"));
     assert_eq!(literal_in("16.0").as_deref(), Some("16.0"));
-    assert_eq!(literal_in("RELATED * 2.0"), None);
+    assert_eq!(literal_in("GUTTER * 2.0"), None);
     assert_eq!(literal_in("TEXT_READ_SM * LEADING_READ"), None);
     assert_eq!(literal_in("ROW_H2"), None);
     assert_eq!(arguments("x.w(rems(a(b)))", "rems("), vec!["a(b)"]);

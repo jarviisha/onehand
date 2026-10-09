@@ -121,7 +121,10 @@ justifies it, and describe its limits rather than treating a source scan as a Ru
   typeface — the cell is sized from one font while the row is drawn in another and every column lands
   past its glyph. `onehand_terminal_ui::spawn_pty` hands the grid the resolved family for exactly that reason;
   the vendored default is the string `monospace`, which is a CSS generic and not a family anything
-  enumerates.
+  enumerates. The app now ships its two families (`crate::fonts`, registered at boot before the theme
+  names them), so the theme's defaults always resolve; the scan still guards a family
+  `[font].monospace` names. A system family also brings its own metrics: SF Pro Display, the
+  `sans-serif` on one machine, sat every button label a pixel under its icon.
 - **`use super::*` in a test module inside `vendor/gpui-terminal` breaks `#[test]`.** That file imports
   gpui with a glob, and gpui exports an attribute macro of its own called `test`. Globbing it into a
   test module shadows the built-in attribute, and `gpui::test` expands to code carrying `#[test]` —

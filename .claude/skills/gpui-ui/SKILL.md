@@ -13,7 +13,7 @@ before reading anything else.
 | Editing | Binding contract | Every value comes from | Checks |
 |---|---|---|---|
 | `crates/app`, `plugins/builtin/*`, `crates/plugin-host` | `DESIGN.md` at the root, plus the `design-contract` skill; a feature's own screens are in `docs/tasks.md`, `docs/workflows.md`, `docs/unattended.md` | `cx.theme()` for colour and radius; the surface ramp in `crates/app/src/theme.rs`; for spacing and every other size, root `DESIGN.md`, *Typography and spacing* | `cargo test -p onehand` (its `guards` included), the touched plugin's tests, `make clippy CLIPPY_EXTRA="-- -D warnings"`, `make fmt` |
-| `labs/ui-labs` | `labs/ui-labs/DESIGN.md` | `labs/ui-labs/src/tokens.rs` only: spacing, chrome, type, radii, width budgets, state steps and the two `Palette`s | `cargo test --manifest-path labs/ui-labs/Cargo.toml --target-dir target` (its `guards` included), `cargo fmt --manifest-path labs/ui-labs/Cargo.toml` |
+| `labs/ui-labs` | `labs/ui-labs/DESIGN.md` | gpui's base-4 scale, gpui-component's sizes and the theme's radii, as in the app; everything else from `labs/ui-labs/src/tokens.rs`: chrome heights, reading type, width budgets, state steps and the two `Palette`s | `cargo test --manifest-path labs/ui-labs/Cargo.toml --target-dir target` (its `guards` included), `cargo fmt --manifest-path labs/ui-labs/Cargo.toml` |
 
 - **Never apply a labs rule to `crates/app`**, or an app rule to the lab. The only way a lab
   rule reaches the app is a promotion: use the `ui-promote` skill.
@@ -38,8 +38,10 @@ before reading anything else.
 - Name every size, gap, radius, width and colour; never write the number or hex at the call site.
   This skill names no values either: read them where they live.
 - **No constant fits?**
-  - Labs: add one to `tokens.rs`, in its role's group, with the reason beside it. Name it for its
-    role (`SUBLINE`), never for its arithmetic (`HALF_TIGHT`).
+  - Labs: a gap, padding, UI type size, control height or radius takes a base-4 step, a library
+    size or the theme's radius first. Anything else goes into `tokens.rs`, in its role's group,
+    with the reason beside it. Name it for its role (`GUTTER`), never for its arithmetic
+    (`HALF_BAR`).
   - App: a missing surface or ink goes into the ramp in `crates/app/src/theme.rs` with its
     contrast asserted in that file's tests, never into the one view that needed it. A missing size
     follows root `DESIGN.md`, *Typography and spacing*.

@@ -6,9 +6,12 @@ It is **not** the app's contract; `DESIGN.md` at the repository root is, and not
 into the root `DESIGN.md` at the same time. Where the two differ on purpose, the table under
 [Departures](#departures-from-the-apps-designmd) says so.
 
-**No value lives here.** Every size, gap, radius, width budget and colour is a named constant in
-`src/tokens.rs`, with the reason for it beside it. This file names those constants and never
-repeats their numbers, so a value has one place to change.
+**No value lives here.** Gaps, paddings, the UI's type sizes, control and icon heights and radii
+come from gpui's base-4 scale (`gap_2`, `text_xs`, `h_6`), gpui-component's sizes (`small`,
+`xsmall`) and the theme's `radius` and `radius_lg`, as in the app. Everything they do not give
+(chrome heights, reading sizes, width budgets, colour) is a named constant in `src/tokens.rs`, with
+the reason for it beside it. This file names those steps and constants and never repeats their
+numbers, so a value has one place to change.
 
 ## Principles
 
@@ -18,7 +21,7 @@ repeats their numbers, so a value has one place to change.
 2. **The conversation is the primary surface.** The Workbench and terminal appear on request and
    never leave the chat narrower than `CHAT_MIN`.
 3. **Density comes from aligned rows and disclosure,** not from more columns or smaller type.
-4. **Colour means state.** Warm neutrals carry everything. Blue is running and links, amber waits
+4. **Colour means state.** Neutral greys carry everything. Blue is running and links, amber waits
    on the person, green is done, red is danger. A selected row is a faint ink tint, never a hue.
 5. **One owner per outer padding.** A page inset, a card inset and a list inset never stack on the
    same label; a row's vertical rhythm comes from its own padding or its parent's gap, not both.
@@ -79,7 +82,7 @@ Conversation           Split                          Workbench focus
 - The workspace row, then the page rows (overview, Tasks with its count, Issues), then
   *New session*, the only filled control in the rail, then a hairline and the tree.
 - **A one-line row is `ROW_H`.** A session row is two lines when it has something to say: its name,
-  then a muted footnote (agent, or project under *All sessions*), `TIGHT` above and below. Its text starts `RAIL_INDENT` in,
+  then a muted footnote (agent, or project under *All sessions*), `py_1` above and below. Its text starts `RAIL_INDENT` in,
   under the project's name.
 - **State sits in a stable column** of `DOT_COLUMN` at the row's end, so names never shift
   beside a dot.
@@ -96,15 +99,15 @@ Conversation           Split                          Workbench focus
   each command shows with its outcome (`failed` in danger ink) and the tail of its output in a
   well.
 - **The composer stack** is at most `COMPOSER_MAX` wide and reads as one object: the pinned cards,
-  then the composer, `STACK_GAP` apart.
+  then the composer, `gap_2p5` apart.
 - **The composer** is the app's: a card of two rows, then a strip under it. The card holds the
-  field (at least `INPUT_MIN_H`, placeholder *Ask the agent…*) and the controls: `+`, Fast, the
+  field (at least `min_h_10`, placeholder *Ask the agent…*) and the controls: `+`, Fast, the
   model chip, then *Send* fixed at the end. The strip has the branch at the left and the permission
   mode at the right; below `COMPOSER_SPLIT` it takes two lines, the branch over the mode. Card and
-  strip are inset `COMPOSER_PAD`, and the field's text starts at that inset, on the chips' edge. A click
+  strip are inset `p_1p5`, and the field's text starts at that inset, on the chips' edge. A click
   anywhere in the field's area gives it the caret.
-- **Chips** are ghost buttons `CONTROL_H_SM` tall, inset `CHIP_PAD_X`, their words at `TEXT_XS` in
-  full ink and their glyphs muted: `+` (its glyph `PLUS_ICON`), Fast (the bolt and *On* or *Off*),
+- **Chips** are extra-small ghost buttons `h_6` tall, inset `px_1p5`, their words at `text_xs` in
+  full ink and their glyphs muted: `+` (its glyph `size_5`), Fast (the bolt and *On* or *Off*),
   the model (its name, then the effort in muted ink, and a caret), the branch (the branch glyph)
   and the mode (the shield).
 - **The card is the field's edge:** it darkens to `muted` while the field has the caret.
@@ -172,7 +175,7 @@ Conversation           Split                          Workbench focus
 
 - **A page**, not a dialog: a nav column of `SETTINGS_NAV` while the page holds it beside a form
   that can stay side by side, otherwise one control naming the section and opening the others.
-- **The form** is at most `FORM_MAX`, its title at `TEXT_LG`, its rows a hairline group; below
+- **The form** is at most `FORM_MAX`, its title at `text_base`, its rows a hairline group; below
   `FORM_STACK` each row's label stacks over its control. A long description wraps.
 - **Sections:** Appearance (theme and reading size as segmented controls, the font as a select),
   Workspace (the check command, switches), Agents, Connections, Shortcuts (key caps).
@@ -186,8 +189,8 @@ Conversation           Split                          Workbench focus
 ## Pages
 
 - The overview, Tasks and Issues take the content area and put the docks away. A page column is at
-  most `PAGE_MAX`, inset `INSET`, its sections `SECTION` apart.
-- **A section** is a heading at `TEXT_MD`, an optional control at its end, then its rows in one
+  most `PAGE_MAX`, inset `px_4`, its sections `gap_6` apart.
+- **A section** is a heading at `text_sm`, weight 500, an optional control at its end, then its rows in one
   hairline box divided by hairlines. A section that holds work or states (*Waiting on you*,
   *Running*, *Queued*…) shows its count; a reference section (*Projects*, *Recent
   conversations*, *Steps*, *What the work left*) does not.
@@ -201,7 +204,7 @@ Conversation           Split                          Workbench focus
 - **The overview:** *Waiting on you*, *Working*, *Projects* as tiles of `TILE_W` that wrap, then
   *Recent conversations*.
 - **Tasks:** *Needs attention* (with the project filter), *Running*, *Queued*, *Finished*. A task's
-  detail replaces the list in the same column under `← Tasks`: the title at `TEXT_XL` with its
+  detail replaces the list in the same column under `← Tasks`: the title at `text_xl` with its
   main action beside it, its facts with its state badge at their end, its steps, then what
   awaits approval.
 - **Issues:** the list beside the issue while the content area holds `ISSUE_LIST_W` +
@@ -213,37 +216,36 @@ Conversation           Split                          Workbench focus
 
 ## Type, spacing and shape
 
-| Role | Constant |
+| Role | Size |
 |---|---|
-| Metadata, chips, sub-lines | `TEXT_XS`, `muted` |
-| Rows, buttons, bars (the UI default) | `TEXT_SM` |
-| Section headings | `TEXT_MD`, weight 500 |
-| Dialog and form titles | `TEXT_LG`, weight 500 |
-| Page title | `TEXT_XL`, weight 500 |
+| Metadata, chips, sub-lines | `text_xs`, `muted` |
+| Rows, buttons, bars (the UI default, set once on the window) | `text_sm` |
+| Section headings | `text_sm`, weight 500 |
+| Dialog and form titles | `text_base`, weight 500 |
+| Page title | `text_xl`, weight 500 |
 | Transcript, composer, documents | `TEXT_READ` at `LEADING_READ` |
 | Activity lines, code | `TEXT_READ_SM`, mono for machine text |
 
 - **Two weights,** 400 and 500. Sentence case in every label, no exclamation marks. A back link
   names where it goes.
-- **Spacing is chosen by relationship:** `TIGHT` for an icon and its label, `CONTROL` between
-  adjacent controls, `RELATED` inside a card, `INSET` for a gutter, `SECTION` between groups,
-  `MAJOR` only between very different parts of a page. Inside a row, `SUBLINE` between its title
-  and the line under it; between rows stacked in a list, `ROW_GAP`.
-- **Controls:** buttons take gpui-component's small size, which is `CONTROL_H_SM`, so every
-  button on a bar or in a row is the same height; `CONTROL_H` is a single-line field and an
-  attachment chip. A tab is at most `TAB_MAX_W`.
-- **Radii are small:** `RADIUS_SM` for controls and rows, `RADIUS_MD` for wells, list boxes and
-  popups, `RADIUS_LG` for the composer and the cards pinned on it, `RADIUS_XL` for the bubble and a
-  dialog.
+- **Spacing is chosen by relationship,** on gpui's base-4 scale: `_1` for an icon and its label,
+  `_2` between adjacent controls, `_3` inside a card, `_4` for a gutter (`GUTTER` where a width sum
+  subtracts it), `_6` between groups, `_8` only between very different parts of a page. Inside a
+  row, `_0p5` between its title and the line under it; between rows stacked in a list, `_0p5`.
+- **Controls:** buttons take gpui-component's small size, `h_6`, so every button on a bar or in a
+  row is the same height; a single-line field and an attachment chip take the same `h_6`. Icons
+  take the library's `small` beside a row's text and `xsmall` in a chip. A tab is at most
+  `TAB_MAX_W`.
+- **Radii come from the theme:** `radius` for controls and rows, `radius_lg` for wells, list
+  boxes, popups, the composer and the cards pinned on it, the bubble and a dialog.
   A pill is only for a status badge.
 - **Truncation** is one line with an ellipsis and the full text on hover (names in the rail, the
   Workbench's lists and the terminal's tabs); state and primary actions always stay visible. A long name in a dialog wraps.
 - **Lines are hairlines:** `hairline` divides regions and rows, `control` edges a control. No
   thick borders, and no coloured bar down a card's side to mark it. A seam and the rail's rule are
   `HAIRLINE_PX`, the one length in pixels; an element's edge is one pixel.
-- **Fonts.** The proposal names Be Vietnam Pro for the UI and JetBrains Mono for machine text.
-  The lab draws with the theme's default families instead, because the app embeds no font and a
-  family that is not installed fails silently; adopting either means bundling it.
+- **Fonts.** Inter for the UI and JetBrains Mono for machine text: the families the app ships, read
+  from the same files in `assets/fonts/`, so the lab and the app draw in the same faces.
 
 ## Interaction
 
@@ -304,7 +306,7 @@ hierarchy are identical in both.
 - **State dot:** `DOT` in its `DOT_COLUMN`: `warning` waits on the person, `accent` is running,
   `success` is done and idle. The lab also marks a failed turn in `danger`.
 - **Segmented control:** two or three short labels; the chosen one takes the `selected` fill.
-- **Field:** a hairline `control` edge at `CONTROL_H`, its placeholder in sentence case.
+- **Field:** a hairline `control` edge at `h_6`, its placeholder in sentence case.
 - **Form row:** a label (and its description, wrapping) with the control at its end, a hairline
   under each row and one above the group; a switch always sits in a form row.
 - **Key cap (`Kbd`):** mono, used in Settings ▸ Shortcuts, in tooltips and in a card's footer.
@@ -322,14 +324,13 @@ hierarchy are identical in both.
 |---|---|
 | Docks are continuous surfaces divided by one hairline | each dock is a card inset on three sides |
 | The Workbench takes the content area when the chat would drop under `CHAT_MIN` | docks never crowd the conversation, with no rule for when they would |
-| A warm palette of its own, light and dark | gpui-component's theme plus the app's surface ramp |
+| A palette of its own, neutral greys in light and dark | gpui-component's theme plus the app's surface ramp |
 | Weights 400 and 500 only | titles are semibold |
 | *Stop* is a solid danger button with its word | Send and Stop share an icon button |
 | A question's description is said once | the description is repeated as the field's placeholder |
 | Settings is a page in the content area | Settings is a large dialog |
 | One primary per region, so a list and its detail side by side may each have one | one primary per view |
 | The composer is a panel card with no shadow | the composer card floats over the transcript with a shadow |
-| Spacing and radii are named roles in `src/tokens.rs` | gpui's base-4 scale and the theme's radius steps |
 
 ## Backlog
 
